@@ -1,4 +1,5 @@
 import { Preferences } from '@capacitor/preferences';
+import { Capacitor } from '@capacitor/core';
 
 export interface AuthTokens {
   accessToken: string;
@@ -7,27 +8,64 @@ export interface AuthTokens {
   tokenType: string;
 }
 
-const AUTH_TOKENS_KEY = 'auth_tokens';
+interface StorageProvider {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
+  remove(key: string): Promise<void>;
+  clear(): Promise<void>;
+}
 
-export const storageService = {
+const WebProvider: StorageProvider = {
   async get(key: string): Promise<string | null> {
-    const { value } = await Preferences.get({ key });
-    if (value !== null) return value;
     return typeof window !== 'undefined' ? localStorage.getItem(key) : null;
   },
-
   async set(key: string, value: string): Promise<void> {
-    await Preferences.set({ key, value });
     if (typeof window !== 'undefined') {
       localStorage.setItem(key, value);
     }
   },
-
   async remove(key: string): Promise<void> {
-    await Preferences.remove({ key });
     if (typeof window !== 'undefined') {
       localStorage.removeItem(key);
     }
+  },
+  async clear(): Promise<void> {
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+    }
+  }
+};
+
+const NativeProvider: StorageProvider = {
+  async get(key: string): Promise<string | null> {
+    const { value } = await Preferences.get({ key });
+    return value;
+  },
+  async set(key: string, value: string): Promise<void> {
+    await Preferences.set({ key, value });
+  },
+  async remove(key: string): Promise<void> {
+    await Preferences.remove({ key });
+  },
+  async clear(): Promise<void> {
+    await Preferences.clear();
+  }
+};
+
+const AUTH_TOKENS_KEY = 'auth_tokens';
+const provider: StorageProvider = Capacitor.isNativePlatform() ? NativeProvider : WebProvider;
+
+export const storageService = {
+  async get(key: string): Promise<string | null> {
+    return provider.get(key);
+  },
+
+  async set(key: string, value: string): Promise<void> {
+    await provider.set(key, value);
+  },
+
+  async remove(key: string): Promise<void> {
+    await provider.remove(key);
   },
 
   async setTokens(tokens: AuthTokens): Promise<void> {
@@ -54,7 +92,6 @@ export const storageService = {
     const tokens = await this.getTokens();
     if (!tokens) return null;
     
-    // Check if token is expired
     if (Date.now() >= tokens.expiresAt) {
       return null;
     }
@@ -66,5 +103,9 @@ export const storageService = {
     const tokens = await this.getTokens();
     if (!tokens) return true;
     return Date.now() >= tokens.expiresAt;
+  },
+
+  async clearAll(): Promise<void> {
+    await provider.clear();
   }
 };

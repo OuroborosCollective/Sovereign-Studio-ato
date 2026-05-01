@@ -4,12 +4,12 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './components/PaywallModal';
-import { PrivacyModal } from './components/PrivacyModal';
-import { MobileNavigation } from './components/MobileNavigation';
-import { Header } from './components/Header';
-import { ConfigBar } from './components/ConfigBar';
-import { storageService } from './services/storageService';
+import { PaywallModal } from './features/billing/components/PaywallModal';
+import { PrivacyModal } from './features/legal/components/PrivacyModal';
+import { MobileNavigation } from './features/navigation/components/MobileNavigation';
+import { Header } from './features/layout/components/Header';
+import { ConfigBar } from './features/repository/components/ConfigBar';
+import { storageService } from './features/shared/services/storageService';
 import Editor from '@monaco-editor/react';
 
 // --- Types ---
@@ -61,7 +61,6 @@ export default function App() {
 
   // --- Effects ---
   useEffect(() => {
-    // Load persisted data asynchronously from Capacitor Preferences or Local Storage
     const loadData = async () => {
       const pat = await storageService.get('ss_gh_pat');
       if (pat) setGhPat(pat);
@@ -84,12 +83,10 @@ export default function App() {
   useEffect(() => {
     fetchRepoTree();
     
-    // Cleanup on unmount
     return () => {
       if (ciPollTimer.current) window.clearTimeout(ciPollTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repoOwner, repoName]); // Fetch when repo changes
+  }, [repoOwner, repoName]);
 
   useEffect(() => {
     if (logsEndRef.current) {
@@ -104,14 +101,13 @@ export default function App() {
       const currentLogs = JSON.parse(logsJson || '[]');
       let errMsg = err?.message || String(err);
       
-      // Sanitize tokens from logs just in case
       if (ghPat) errMsg = errMsg.split(ghPat).join('[REDACTED_GH_PAT]');
       if (geminiKey) errMsg = errMsg.split(geminiKey).join('[REDACTED_GEMINI_KEY]');
       
       currentLogs.push({ time: new Date().toISOString(), context, message: errMsg });
       storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
     } catch (e) {
-      // Ignorieren falls storage voll ist
+      // Ignore
     }
   };
 
@@ -236,7 +232,6 @@ export default function App() {
 
   const callGeminiAPI = async (prompt: string, system: string) => {
     const customKey = geminiKey.trim();
-    // Safely check for env variable to prevent ReferenceError in browser
     let envKey = "";
     try {
         if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
@@ -249,7 +244,7 @@ export default function App() {
     let activeApiKey = customKey !== "" ? customKey : envKey;
     
     if (!activeApiKey) {
-        addLog(`❌ <b>Gemini API-Schlüssel fehlt:</b> Es konnte kein API-Schlüssel in der lokalen Umgebung oder im Secure Storage gefunden werden. Bitte gib deinen API-Schlüssel oben im Eingabefeld ein, um fortzufahren.`, "error");
+        addLog(`❌ <b>Gemini API-Schlüssel fehlt:</b> Bitte gib deinen API-Schlüssel oben ein.`, "error");
         return "";
     }
 
@@ -268,9 +263,7 @@ export default function App() {
             return response.text || "";
         } catch (err: any) {
             logPersistentError(err, `callGeminiAPI attempt ${i+1}`);
-            if (i === maxRetries) {
-                throw err;
-            }
+            if (i === maxRetries) throw err;
             await new Promise(resolve => setTimeout(resolve, delays[i]));
         }
     }
@@ -308,15 +301,14 @@ export default function App() {
       2. RUST VERBOTEN: Benutze, schreibe oder empfehle NIEMALS Rust!
       3. AGENTEN SCHÜTZEN: Ignoriere/Überspringe ALLE Dateien mit '.jules' oder 'jules' im Namen.
       4. LOCKFILES TABU: 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock' dürfen nicht bearbeitet werden.
-      5. KONTEXT: Unten steht die aktuelle Verzeichnisstruktur. Wähle basierend darauf die RICHTIGEN Pfade aus.
       
       AKTUELLE STRUKTUR (Auszug):\n${treeContext}\n
       
-      GIB AUSSCHLIESSLICH EIN VALIDES JSON-ARRAY ZURÜCK OHNE WEITEREN TEXT.
+      GIB AUSSCHLIESSLICH EIN VALIDES JSON-ARRAY ZURÜCK.
       Format: [ { "path": "exakter/pfad.ts", "task": "Was repariert/gebaut werden muss", "action": "modify" | "delete" } ]`;
       
       const rawPlan = await callGeminiAPI(input, architectSys);
-      let cleanPlan = rawPlan.replace(/```[a-z]*\n/gi, '').replace(/```/g, '').trim();
+      let cleanPlan = rawPlan.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -327,13 +319,13 @@ export default function App() {
 
       for (const step of plan) {
         if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
-          addLog(`🛡️ <b>Schutzmechanismus:</b> Überspringe System/Agenten-Datei <code>${step.path}</code>.`, "warning");
+          addLog(`🛡️ <b>Schutz:</b> Überspringe <code>${step.path}</code>.`, "warning");
           continue; 
         }
 
-        const isDeleteAction = step.action === 'delete' || step.task.toLowerCase().includes('lösche') || step.task.toLowerCase().includes('delete');
+        const isDeleteAction = step.action === 'delete' || step.task.toLowerCase().includes('lösche');
         if (isDeleteAction) {
-          addLog(`🗑️ <b>Löschen:</b> <code>${step.path}</code> zur Entfernung markiert.`, "info");
+          addLog(`🗑️ <b>Löschen:</b> <code>${step.path}</code> markiert.`, "info");
           newBatch.push({ path: step.path, isDelete: true });
           processed++;
           continue; 
@@ -346,37 +338,33 @@ export default function App() {
         try {
           const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
           if (res.ok) existingCode = await res.text();
-        } catch { /* ignore */ }
+        } catch { }
 
-        const compilerSys = `Du bist ein Elite Code-Generator.
-        TECH STACK: Node.js, TypeScript, React. KEIN RUST!
-        REGEL: Gib AUSSCHLIESSLICH den kompletten, validen, ausführbaren Code zurück. Keine Erklärungen.`;
+        const compilerSys = `Du bist ein Elite Code-Generator. TECH STACK: Node.js, TypeScript, React. KEIN RUST!
+        REGEL: Gib AUSSCHLIESSLICH den kompletten, validen Code zurück. Keine Erklärungen.`;
         
-        const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}\n\nSetze dies um.`;
+        const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/^```[a-z]*\n/gi, '').replace(/\n```$/gi, '').replace(/```/g, '').trim();
+        newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(/\n$/gi, '').replace(//g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
         setFileContent(newCode);
         processed++;
-        addLog(`✅ <b>Fertig:</b> <code>${step.path}</code> implementiert.`, "success");
+        addLog(`✅ <b>Fertig:</b> <code>${step.path}</code>.`, "success");
       }
 
       if (processed === 0) {
-        addLog(`ℹ️ Keine verwertbaren Aktionen vom Architekten zurückgegeben.`, "warning");
+        addLog(`ℹ️ Keine Aktionen ausgeführt.`, "warning");
         if (activePR.isFixing) setActivePR(p => ({ ...p, isFixing: false }));
       } else {
         setBatchFiles(prev => [...prev, ...newBatch]);
-        addLog(`🚀 <b>Workflow Abgeschlossen:</b> Dateien in Batch-Queue hinzugefügt.`, "success");
-        if (isAutoFix) {
-          addLog(`⚙️ <b>Auto-Fix aktiv:</b> Starte Push Pipeline...`, "warning");
-        }
+        addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
       }
 
     } catch (err: any) {
       logPersistentError(err, 'runArchitect');
-      addLog(`<b>Fehler im Architekt-Workflow:</b> ${err.message}`, "error");
+      addLog(`<b>Fehler:</b> ${err.message}`, "error");
       if (activePR.isFixing) setActivePR(p => ({ ...p, isFixing: false }));
     } finally {
       setIsProcessing(false);
@@ -390,7 +378,7 @@ export default function App() {
     }
     
     if (fullTree.length === 0) {
-        addLog("Bitte lade ein Repo, um Ideen zu generieren.", "warning");
+        addLog("Repo laden für Ideen.", "warning");
         return;
     }
     
@@ -402,12 +390,12 @@ export default function App() {
 
     setIsProcessing(true);
     setActiveTab('chat');
-    addLog("✨ Scanne Projektarchitektur für Ideen...", "idea");
+    addLog("✨ Scanne Architektur...", "idea");
     
     try {
         const paths = fullTree.slice(0, 150).map(f => f.path).join('\n');
-        const prompt = `Struktur:\n${paths}\n\nSchlage 3 präzise Architektur- oder Feature-Verbesserungen auf Deutsch vor.`;
-        const ideas = await callGeminiAPI(prompt, "Du bist Tech Lead. Analysiere das Repo. Antworte in kurzen Bulletpoints (HTML format, verwende <ul> und <li>, keine Markdown code blöcke).");
+        const prompt = `Struktur:\n${paths}\n\nSchlage 3 Verbesserungen vor.`;
+        const ideas = await callGeminiAPI(prompt, "Du bist Tech Lead. Antworte in kurzen Bulletpoints (HTML <ul><li>).");
         addLog(`✨ <b>Architektur Ideen:</b><br><div class="mt-2 text-stone-700">${ideas}</div>`, "idea");
     } catch (e: any) { 
         logPersistentError(e, 'suggestIdeas');
@@ -419,18 +407,12 @@ export default function App() {
   };
 
   const handlePush = async () => {
-    if (!ghPat) {
-       addLog("Kein GitHub PAT eingetragen! Push nicht möglich.", "error");
+    if (!ghPat || (!ghPat.startsWith('ghp_') && !ghPat.startsWith('github_pat_'))) {
+       addLog("Ungültiger GitHub PAT!", "error");
        return;
     }
     setIsProcessing(true);
     
-    if (!ghPat || (!ghPat.startsWith('ghp_') && !ghPat.startsWith('github_pat_'))) {
-       addLog('<b>Fehler:</b> Ein gültiger GitHub PAT (beginnend mit ghp_ oder github_pat_) ist erforderlich für Push & Commit.', 'error');
-       setIsProcessing(false);
-       return;
-    }
-
     try {
       const headers = { 'Authorization': `token ${ghPat}`, 'Accept': 'application/vnd.github.v3+json' };
       let branchName = activePR.branch;
@@ -475,10 +457,9 @@ export default function App() {
       });
       const newTreeData = await newTreeRes.json();
 
-      const msgPrompt = `Generiere kurze Commit-Message für: ${batchFiles.map(f=>f.path).join(", ")}.`;
       let commitMessage = `Sovereign AI Deployment (${batchFiles.length} actions)`;
       try {
-        const msg = await callGeminiAPI(msgPrompt, "Du bist Git Commit Generator. Antworte NUR mit text.");
+        const msg = await callGeminiAPI(`Commit msg for: ${batchFiles.map(f=>f.path).join(", ")}`, "Du bist Git Commit Generator.");
         if (msg) commitMessage = `✨ ${msg.trim()}`;
       } catch(e) {}
 
@@ -493,14 +474,14 @@ export default function App() {
 
       if (isNewBranch) {
           const prRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls`, {
-              method: 'POST', headers, body: JSON.stringify({ title: `Sovereign AI: ${branchName}`, head: branchName, base: "main", body: "Auto-generated AI modifications." })
+              method: 'POST', headers, body: JSON.stringify({ title: `Sovereign AI: ${branchName}`, head: branchName, base: "main", body: "AI modifications." })
           });
           const prData = await prRes.json();
           setActivePR({ branch: branchName, number: prData.number, lastErrorLog: "", isFixing: false, lastCommitSha: newCommitData.sha });
           addLog(`🟢 <b>PR #${prData.number} Erstellt!</b>`, "success");
       } else {
           setActivePR(p => ({ ...p, lastCommitSha: newCommitData.sha }));
-          addLog(`🟢 <b>Änderungen an PR #${activePR.number} gepusht!</b>`, "success");
+          addLog(`🟢 <b>Update an PR #${activePR.number} gepusht!</b>`, "success");
       }
       
       setBatchFiles([]);
@@ -514,59 +495,38 @@ export default function App() {
 
   const fetchCIStatus = async () => {
     if (!ghPat || !activePR.lastCommitSha) {
-        addLog("Bitte konfiguriere einen GitHub PAT und pushe zuerst Änderungen an einen PR.", "warning");
+        addLog("PAT und Push erforderlich.", "warning");
         return;
     }
     
     setIsProcessing(true);
-    addLog("⏳ Lade CI Status...", "info");
+    addLog("⏳ CI Status...", "info");
     try {
         const headers = { 'Authorization': `token ${ghPat}`, 'Accept': 'application/vnd.github.v3+json' };
         const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/commits/${activePR.lastCommitSha}/check-runs`, { headers });
-        if (!res.ok) throw new Error(`HTTP ${res.status} Fetch Failed`);
         const data = await res.json();
         
         if (data.check_runs && data.check_runs.length > 0) {
             const run = data.check_runs[0];
-            const isFailed = run.conclusion === 'failure' || run.conclusion === 'action_required';
+            const isFailed = run.conclusion === 'failure';
             const isRunning = run.status === 'in_progress' || run.status === 'queued';
             
-            setCiStatus({
-                text: run.name,
-                percent: isRunning ? 50 : 100,
-                isFailed,
-                isRunning
-            });
+            setCiStatus({ text: run.name, percent: isRunning ? 50 : 100, isFailed, isRunning });
 
             if (isFailed) {
-                 addLog(`❌ <b>CI Fehler erkannt (${run.name}):</b> Versuche Fehlerprotokoll zu prüfen...`, "error");
-                 let errorLog = run.output?.text || run.output?.summary || "Fehler in CI, Details konnten nicht im Check-Run Output gefunden werden.";
-                 if (errorLog.length > 3000) errorLog = errorLog.substring(errorLog.length - 3000);
-                 
-                 setActivePR(prev => ({ ...prev, lastErrorLog: errorLog }));
-                 addLog("⚠️ <b>Fehler-Log erfasst. Nutze den Fix Button für eine automatische Lösung.</b>", "warning");
+                 addLog(`❌ <b>CI Fehler:</b> ${run.name}`, "error");
+                 setActivePR(prev => ({ ...prev, lastErrorLog: run.output?.text || "Check output failed." }));
             } else if (isRunning) {
-                 addLog(`⏳ <b>CI läuft noch (${run.name}):</b> Bitte später nochmal prüfen...`, "info");
-                 setActivePR(prev => ({ ...prev, lastErrorLog: "" }));
+                 addLog(`⏳ <b>CI läuft...</b>`, "info");
             } else {
-                 addLog(`✅ <b>CI Erfolgreich (${run.name})!</b>`, "success");
-                 setActivePR(prev => ({ ...prev, lastErrorLog: "" }));
+                 addLog(`✅ <b>CI Erfolg!</b>`, "success");
             }
-        } else {
-             addLog("Keine CI Checks (Github Actions) für diesen Commit gefunden.", "info");
         }
     } catch(err: any) {
-        logPersistentError(err, 'fetchCIStatus');
         addLog(`<b>CI Check Error:</b> ${err.message}`, "error");
     } finally {
         setIsProcessing(false);
     }
-  };
-
-  const triggerCIFix = () => {
-    setActivePR(prev => ({ ...prev, isFixing: true }));
-    const taskPrompt = `Auto-Fix Triggered für CI Fehler:\n\n${activePR.lastErrorLog}\n\nBitte passe die entsprechenden Dateien basierend auf diesem Log an.`;
-    runArchitect(true, taskPrompt);
   };
 
   const getLogClasses = (type: string) => {
@@ -575,367 +535,95 @@ export default function App() {
       case 'success': return 'bg-green-50 border-green-200 text-green-800';
       case 'warning': return 'bg-amber-50 border-amber-200 text-amber-800';
       case 'idea': return 'bg-indigo-50 border-indigo-200 text-indigo-900';
-      case 'info': return 'bg-blue-50 border-blue-200 text-blue-900';
       default: return 'bg-stone-50 border-stone-200 text-stone-800';
     }
   };
 
   return (
-    <div className="w-full h-[100dvh] flex flex-col font-sans bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm selection:bg-indigo-200 selection:text-indigo-900 animate-fade-in">
-      
-      {/* Header */}
-      <Header 
-        loadingTree={loadingTree} 
-        setShowPrivacy={setShowPrivacy} 
-        handleCleanup={handleCleanup} 
-        fetchRepoTree={fetchRepoTree} 
-      />
+    <div className="w-full h-[100dvh] flex flex-col bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm animate-fade-in">
+      <Header loadingTree={loadingTree} setShowPrivacy={setShowPrivacy} handleCleanup={handleCleanup} fetchRepoTree={fetchRepoTree} />
+      <ConfigBar repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
 
-      {/* Config Bar */}
-      <ConfigBar
-        repoUrl={repoUrl}
-        setRepoUrl={setRepoUrl}
-        handleRepoChange={handleRepoChange}
-        ghPat={ghPat}
-        handleGhPatChange={handleGhPatChange}
-        geminiKey={geminiKey}
-        handleGeminiKeyChange={handleGeminiKeyChange}
-      />
-
-      {/* Main Area */}
       <main className="flex-1 flex overflow-hidden relative">
-        
-        {/* TAB: EXPLORER & ARCHITECT */}
+        {/* EXPLORER */}
         <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}>
-          
-          <div className="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0 shadow-sm">
-            <h3 className="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center">
-              <span className="flex items-center gap-1"><RefreshCw size={12}/> PR AUTO-RESOLVER</span>
-              <span className="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-800 text-[9px] uppercase">
-                {activePR.number ? `PR #${activePR.number}` : "Kein aktiver PR"}
-              </span>
+          <div className="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0">
+            <h3 className="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center uppercase">
+              <span><RefreshCw size={12} className="inline mr-1"/> CI RESOLVER</span>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-800 text-[9px]">{activePR.number ? `PR #${activePR.number}` : "-"}</span>
             </h3>
-            <div className="text-[10px] text-indigo-700 mb-2">
-              Ziel-Branch: <span className="font-mono font-bold">{activePR.branch || "-"}</span>
-            </div>
-            
-            <div className="flex gap-2">
-              <button 
-                onClick={triggerCIFix} 
-                className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 disabled:opacity-50 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors flex items-center justify-center gap-1"
-                disabled={isProcessing || !activePR.lastErrorLog}
-              >
-                <AlertTriangle size={12}/> CI FEHLER FIXEN
-              </button>
-              <button 
-                onClick={fetchCIStatus} 
-                disabled={isProcessing}
-                className="flex-1 bg-indigo-600 disabled:opacity-50 hover:bg-indigo-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors"
-                title="Prüft den Status des aktuellen CI-Laufs (GitHub Actions)"
-              >
-                CI PRÜFEN
-              </button>
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => runArchitect(true, activePR.lastErrorLog)} disabled={isProcessing || !activePR.lastErrorLog} className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">FIX CI</button>
+              <button onClick={fetchCIStatus} disabled={isProcessing} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">CI CHECK</button>
             </div>
           </div>
 
           <div className="p-3 bg-stone-50 border-b border-stone-200 shrink-0">
-            <h3 className="text-[11px] font-bold text-stone-700 mb-2 flex items-center gap-1">
-              <Sparkles size={12}/> ARCHITECT BLUEPRINT
-            </h3>
-            <textarea 
-              value={architectInput}
-              onChange={(e) => setArchitectInput(e.target.value)}
-              rows={3} 
-              className="w-full p-2 text-[11px] border border-stone-300 rounded focus:outline-none focus:border-indigo-500 resize-none shadow-inner" 
-              placeholder="Beschreibe Task..."
-            />
+            <h3 className="text-[11px] font-bold text-stone-700 mb-2 flex items-center gap-1 uppercase"><Sparkles size={12}/> Blueprint</h3>
+            <textarea value={architectInput} onChange={(e) => setArchitectInput(e.target.value)} rows={3} className="w-full p-2 text-[11px] border border-stone-300 rounded focus:border-indigo-500 resize-none shadow-inner" placeholder="Task..."/>
             <div className="flex gap-2 mt-2">
-              <button 
-                onClick={() => runArchitect()}
-                disabled={isProcessing}
-                className="flex-1 bg-stone-800 disabled:opacity-70 hover:bg-black text-white py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-1 hover-lift"
-              >
-                {isProcessing ? "LÄUFT..." : "GENERIERE"}
-              </button>
-              <button 
-                onClick={suggestIdeas}
-                disabled={isProcessing}
-                className="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all shadow-sm hover:shadow-md hover-lift"
-                title="KI-Vorschläge basierend auf Repository generieren"
-              >
-                ✨ IDEEN
-              </button>
+              <button onClick={() => runArchitect()} disabled={isProcessing} className="flex-1 bg-stone-800 hover:bg-black text-white py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all shadow-sm">GENERIERE</button>
+              <button onClick={suggestIdeas} disabled={isProcessing} className="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase">✨</button>
             </div>
-            
-            {!isPro ? (
+            {!isPro && (
                <div className="mt-3 bg-white p-2 rounded-lg border border-stone-200">
-                 <div className="flex justify-between items-center mb-1">
-                   <span className="text-[10px] font-bold text-stone-600">Free Limits</span>
-                   <button onClick={() => setShowPaywall(true)} className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-full transition-colors">PRO FREISCHALTEN</button>
-                 </div>
-                 
-                 <div className="space-y-2 mt-2">
-                   <div>
-                     <div className="flex justify-between text-[9px] text-stone-500 mb-0.5">
-                       <span>PR Auto-Resolver</span>
-                       <span>{prRuns} / 15</span>
-                     </div>
-                     <div className="w-full bg-stone-100 rounded-full h-1.5 overflow-hidden">
-                       <div className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (prRuns / 15) * 100)}%` }}></div>
-                     </div>
-                   </div>
-                   
-                   <div>
-                     <div className="flex justify-between text-[9px] text-stone-500 mb-0.5">
-                       <span>Ideen-Generator</span>
-                       <span>{ideaRuns} / 6</span>
-                     </div>
-                     <div className="w-full bg-stone-100 rounded-full h-1.5 overflow-hidden">
-                       <div className="bg-amber-400 h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (ideaRuns / 6) * 100)}%` }}></div>
-                     </div>
-                   </div>
-                 </div>
+                 <div className="flex justify-between text-[9px] text-stone-500 mb-1 font-bold"><span>PR Resolver</span><span>{prRuns}/15</span></div>
+                 <div className="w-full bg-stone-100 rounded-full h-1"><div className="bg-indigo-500 h-1 rounded-full" style={{ width: `${(prRuns / 15) * 100}%` }}></div></div>
                </div>
-            ) : (
-                <div className="mt-3 bg-indigo-50 px-3 py-3 rounded-xl border border-indigo-200/50 shadow-sm flex flex-col gap-2 relative overflow-hidden group">
-                   <div className="absolute -top-4 -right-4 p-2 opacity-5 group-hover:opacity-10 transition-opacity duration-300">
-                     <Shield size={64} />
-                   </div>
-                   <div className="flex items-center justify-between z-10">
-                     <span className="text-[10px] font-black text-indigo-900 flex items-center gap-1.5 uppercase tracking-wider"><Sparkles size={12} className="text-indigo-600"/> PRO AKTIV</span>
-                     <span className="text-[9px] font-bold bg-indigo-200/50 text-indigo-800 px-1.5 py-0.5 rounded shadow-sm">UNLIMITED</span>
-                   </div>
-                   <div className="text-[9.5px] text-indigo-700/80 leading-relaxed z-10 pr-4 mt-1 border-t border-indigo-200/50 pt-2">
-                     <b>Große Dateien Feature:</b> Du kannst nun Dateien über 500KB im intelligenten Editor laden und bearbeiten. Limits wurden vollständig aufgehoben!
-                   </div>
-                </div>
             )}
           </div>
 
           <div className="flex-1 overflow-y-auto bg-white custom-scrollbar">
-             {loadingTree ? (
-               <div className="p-4 text-xs flex flex-col items-center justify-center h-full">
-                  <div className="w-full flex-1 flex flex-col gap-3 py-4 max-w-sm">
-                    <div className="flex items-center justify-center mb-4 gap-2 text-stone-400 font-bold uppercase tracking-wide text-[10px]">
-                      <RefreshCw size={14} className="animate-spin text-stone-400" />
-                      Lade Repository Struktur...
-                    </div>
-                    {[...Array(12)].map((_, i) => (
-                      <div key={i} className="flex items-center gap-3">
-                         <div className="w-4 h-4 rounded bg-tree-skeleton shrink-0"></div>
-                         <div className={`h-3 rounded bg-tree-skeleton ${i % 4 === 0 ? 'w-full' : i % 3 === 0 ? 'w-2/3' : i % 2 === 0 ? 'w-4/5' : 'w-1/2'}`} style={{ animationDelay: `${i * 0.1}s` }}></div>
-                     </div>
-                    ))}
-                  </div>
-               </div>
-             ) : treeError ? (
-               <div className="p-4 text-xs text-red-500 text-center font-bold">{treeError}</div>
-             ) : (
+             {loadingTree ? <div className="p-4 text-xs flex justify-center"><RefreshCw size={14} className="animate-spin text-stone-400" /></div> : 
                <div className="select-none">
-                  {fullTree.slice(0, 200).map((file) => {
-                    const isActive = activeFile?.path === file.path;
-                    const isImportant = file.path.match(/package\.json$|\.tsx?$|\.jsx?$/i);
-                    const icon = file.path.includes('.json') ? '📦' : file.path.includes('.ts') ? '🟦' : file.path.includes('.js') ? '🟨' : '📄';
-                    
-                    return (
-                      <div 
-                        key={file.sha + file.path}
-                        onClick={() => loadFile(file)}
-                        className={`px-4 py-2 border-b border-stone-100 text-[13px] flex items-center gap-2 cursor-pointer transition-colors ${isActive ? 'bg-indigo-600 text-white font-bold shadow-md' : 'hover:bg-stone-50 text-stone-600'}`}
-                      >
-                         <span>{icon}</span>
-                         <span className={`truncate ${isImportant && !isActive ? 'font-medium' : ''}`}>{file.path}</span>
-                      </div>
-                    )
-                  })}
+                  {fullTree.slice(0, 200).map((file) => (
+                    <div key={file.path} onClick={() => loadFile(file)} className={`px-4 py-2 border-b border-stone-100 text-[13px] truncate cursor-pointer transition-colors ${activeFile?.path === file.path ? 'bg-indigo-600 text-white font-bold' : 'hover:bg-stone-50 text-stone-600'}`}>{file.path}</div>
+                  ))}
                </div>
-             )}
+             }
           </div>
         </div>
 
-        {/* TAB: EDITOR & BATCH */}
+        {/* EDITOR */}
         <div className={`${activeTab === 'editor' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 bg-stone-50/70 pb-14 lg:pb-0 relative`}>
-          
-          <div className="h-10 bg-white/60 backdrop-blur-md border-b border-stone-200/60 flex items-center px-3 shrink-0 overflow-x-auto hide-scrollbar select-none shadow-[0_2px_10px_rgba(0,0,0,0.02)] z-10">
-             <span className="text-[11px] font-mono text-stone-600 italic truncate mr-4 max-w-[200px]">
-               {activeFile ? activeFile.path : "Keine Datei gewählt"}
-             </span>
-          </div>
-
-          <div className="flex-1 p-2 lg:p-4 overflow-hidden flex flex-col relative">
-            <div className={`bg-[#0c0a09] font-mono flex-1 rounded-2xl shadow-[inset_0_2px_20px_rgba(0,0,0,0.5),0_4px_12px_rgba(0,0,0,0.1)] relative overflow-hidden flex flex-col border border-stone-800 ${isProcessing ? 'compile-active' : ''}`}>
-               {loadingFile || isProcessing ? (
-                 <div className="flex-1 flex flex-col bg-[#0c0a09] relative overflow-hidden">
-                    <div className="scanline"></div>
-                    <div className="p-4 flex gap-4 h-full relative z-10 leading-relaxed font-mono">
-                      <div className="w-8 shrink-0 flex flex-col items-end gap-[14px] text-stone-700 pt-[1px] border-r border-[#292524] pr-2 select-none opacity-50">
-                         {[...Array(20)].map((_, i) => (
-                            <span key={i} className="text-[12px] h-[12px] leading-none">{i + 1}</span>
-                         ))}
-                      </div>
-                      <div className="flex-1 flex flex-col pt-0 gap-[14px]">
-                        <div className="flex items-center gap-2 text-indigo-400 text-xs font-black tracking-widest uppercase mb-2 animate-pulse w-max bg-indigo-500/10 px-3 py-1 rounded">
-                           <RefreshCw size={14} className="animate-spin" /> {isProcessing ? "PROCESSING DATA..." : "DECRYPTING SOURCE..."}
-                        </div>
-                        {[...Array(15)].map((_, i) => (
-                          <div key={i} className={`h-[12px] rounded bg-cyber-skeleton ${i % 5 === 0 ? 'w-1/2' : i % 4 === 0 ? 'w-2/3' : i % 3 === 0 ? 'w-[80%]' : i % 2 === 0 ? 'w-1/3' : 'w-[90%]'}`} style={{ animationDelay: `${i * 0.05}s`, opacity: Math.max(0.1, 1 - i * 0.05) }}></div>
-                        ))}
-                      </div>
-                    </div>
-                 </div>
-               ) : (
-                 <div className="flex-1 auto-rows-max overflow-auto text-[12px] text-stone-300 relative h-full">
-                   {!activeFile ? (
-                      <div className="text-stone-500 italic p-4">// Wähle eine Datei im Explorer, um den Code zu laden.</div>
-                   ) : !isPro ? (
-                      <div className="flex flex-col items-center justify-center p-8 text-center h-full max-w-lg mx-auto animate-slide-up">
-                         <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center shadow-lg border border-white/5 mb-6 hover-lift transition-transform">
-                           <Shield size={32} className="text-indigo-400" />
-                         </div>
-                         <h3 className="text-lg font-black text-white mb-3">Premium Editor gesperrt</h3>
-                         <p className="text-stone-400 text-sm mb-8 leading-relaxed">
-                            Die Monaco Editor Ansicht sowie die Behebung von fehlerhaften Dateien sind Premium-Funktionen.
-                            Mit einem Upgrade schaltest du den kompletten <b className="text-white">Full-Workflow</b> frei: Von der Kreation, Linting, Fehlerbehebung über Datenbankanbindung bis hin zum Deployment.
-                         </p>
-                         
-                         <button 
-                           onClick={() => setShowPaywall(true)}
-                           className="bg-[#FFE01B] hover:bg-[#F2D000] text-black font-black uppercase text-[11px] tracking-wider py-4 px-8 rounded-full shadow-[0_4px_14px_rgba(255,224,27,0.4)] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 hover-lift"
-                         >
-                           <span>💌 Mit Mailchimp fortsetzen & Fixen</span>
-                         </button>
-
-                         <p className="text-stone-600 text-[10px] mt-6 font-medium">Auch Datenblatt-Uploads (PDF) werden nach dem Upgrade freigeschaltet.</p>
-                      </div>
-                   ) : (
-                      <div className="pointer-events-auto h-full w-full flex flex-col">
-                        {fileTooLarge && (
-                           <div className="bg-yellow-900/40 text-yellow-500 text-[10px] p-2 border-b border-yellow-700/50 flex items-center justify-between font-bold tracking-wider shrink-0 uppercase">
-                              <div className="flex items-center gap-2">
-                                ⚠️ Datei zu groß &gt;500KB. {isPro ? 'Vorschau-Modus aktiv.' : 'Nur für Pro-Nutzer.'}
-                              </div>
-                              {!isPro && (
-                                 <button onClick={() => setShowPaywall(true)} className="ml-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 px-2 py-0.5 rounded transition-colors border border-yellow-500/30 shadow-sm cursor-pointer pointer-events-auto">
-                                    PRO FREISCHALTEN
-                                 </button>
-                              )}
-                           </div>
-                        )}
-                        <div className="flex-1 min-h-0 relative">
-                           <Editor
-                              height="100%"
-                              defaultLanguage={activeFile.path.endsWith('.ts') || activeFile.path.endsWith('.tsx') ? 'typescript' : 
-                                             activeFile.path.endsWith('.js') || activeFile.path.endsWith('.jsx') ? 'javascript' : 
-                                             activeFile.path.endsWith('.json') ? 'json' :
-                                             activeFile.path.endsWith('.css') ? 'css' :
-                                             activeFile.path.endsWith('.html') ? 'html' :
-                                             activeFile.path.endsWith('.md') ? 'markdown' : 'plaintext'}
-                              theme="vs-dark"
-                              value={fileContent}
-                              options={{
-                                 readOnly: fileTooLarge || isProcessing,
-                                 minimap: { enabled: false },
-                                 fontSize: 12,
-                                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                                 padding: { top: 16 }
-                              }}
-                              onChange={(value) => {
-                                 if (value !== undefined && !fileTooLarge) {
-                                    setFileContent(value);
-                                 }
-                              }}
-                           />
-                        </div>
-                      </div>
+          <div className="h-10 bg-white/60 backdrop-blur-md border-b border-stone-200/60 flex items-center px-3 shrink-0 text-[11px] font-mono text-stone-600 italic truncate">{activeFile ? activeFile.path : "Keine Datei"}</div>
+          <div className="flex-1 p-2 lg:p-4 flex flex-col relative overflow-hidden">
+            <div className="bg-[#0c0a09] flex-1 rounded-2xl shadow-xl relative overflow-hidden flex flex-col border border-stone-800">
+               {loadingFile || isProcessing ? <div className="flex-1 flex items-center justify-center text-indigo-400 font-mono text-xs uppercase tracking-widest"><RefreshCw size={14} className="animate-spin mr-2"/> Processing...</div> : (
+                 <div className="flex-1 h-full">
+                   {!activeFile ? <div className="text-stone-500 italic p-4">// Wähle eine Datei</div> : (
+                      <Editor
+                          height="100%"
+                          defaultLanguage="typescript"
+                          theme="vs-dark"
+                          value={fileContent}
+                          options={{ readOnly: !isPro && fileTooLarge, minimap: { enabled: false }, fontSize: 12, padding: { top: 16 } }}
+                          onChange={(v) => v && !fileTooLarge && setFileContent(v)}
+                      />
                    )}
                  </div>
                )}
             </div>
           </div>
-
-          {batchFiles.length > 0 && (
-            <div className="border-t border-indigo-200 bg-white shrink-0 flex flex-col max-h-48 z-20 shadow-[0_-4px_24px_rgba(0,0,0,0.05)]">
-              <div className="px-3 py-2 bg-indigo-50/80 border-b border-indigo-100 flex items-center justify-between">
-                 <span className="text-[10px] font-bold text-indigo-800 uppercase flex items-center gap-1.5">
-                   <Code2 size={12} />
-                   KI Vorschläge (Pending)
-                 </span>
-                 <span className="text-[9px] bg-indigo-200 text-indigo-800 font-bold px-2 py-0.5 rounded-full">{batchFiles.length} Aktionen</span>
-              </div>
-              <div className="overflow-y-auto p-2 flex flex-col gap-1 custom-scrollbar">
-                 {batchFiles.map((bf, idx) => (
-                    <div key={idx} 
-                         onClick={() => {
-                           setActiveFile({ path: bf.path, type: 'blob', mode: '100644', sha: '' });
-                           setFileContent(bf.content || '');
-                           setFileTooLarge(false);
-                           addLog(`👁️ Vorschau für <code>${bf.path}</code> geöffnet.`, "info");
-                         }}
-                         className="flex items-center justify-between p-2.5 rounded-lg hover:bg-stone-50 border border-transparent hover:border-stone-200 cursor-pointer transition-all group hover-lift">
-                       <div className="flex items-center gap-2.5 truncate">
-                         {bf.isDelete ? <Trash2 size={14} className="text-red-500 shrink-0" /> : <FileText size={14} className="text-indigo-500 shrink-0" />}
-                         <span className="text-[11px] font-mono font-medium text-stone-700 truncate">{bf.path} {bf.isDelete ? '(Löschen)' : ''}</span>
-                       </div>
-                       <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wider">Vorschau</span>
-                    </div>
-                 ))}
-              </div>
-            </div>
-          )}
-
           <div className="h-16 border-t border-indigo-200 px-4 flex items-center justify-between bg-indigo-50 shrink-0">
-              <div className="truncate mr-4 flex-1">
-                  <h4 className="text-[10px] font-black text-indigo-800 uppercase">Sicherer Push</h4>
-                  <p className="text-[10px] text-indigo-600 italic truncate">{batchFiles.length} Änderungen in Queue.</p>
-              </div>
-              <button 
-                onClick={handlePush}
-                disabled={batchFiles.length === 0 || isProcessing}
-                className="shrink-0 flex items-center gap-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-[10px] uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 transition-all shadow-sm"
-              >
-                  {isProcessing ? <RefreshCw size={12} className="animate-spin"/> : <Shield size={12}/>} 
-                  {isProcessing ? "PUSHING..." : "PUSH AS PR"}
-              </button>
+              <div className="truncate"><h4 className="text-[10px] font-black text-indigo-800 uppercase">Sicherer Push</h4><p className="text-[10px] text-indigo-600 italic">{batchFiles.length} Aktionen.</p></div>
+              <button onClick={handlePush} disabled={batchFiles.length === 0 || isProcessing} className="flex items-center gap-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-[10px] uppercase shadow-sm">PUSH PR</button>
           </div>
         </div>
 
-        {/* TAB: CHAT LOG */}
-        <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10 shadow-[-4px_0_24px_rgba(0,0,0,0.02)]`}>
-           <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-800 flex items-center gap-2 justify-between shrink-0">
-               <div><span className="text-indigo-600">✨</span> SYSTEM LOG</div>
-               <button onClick={() => setLogs([])} className="text-[9px] text-stone-400 hover:text-stone-600 uppercase">Leeren</button>
-           </div>
-           
+        {/* LOG */}
+        <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
+           <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold flex justify-between shrink-0"><span>SYSTEM LOG</span><button onClick={() => setLogs([])} className="text-stone-400 hover:text-stone-600 uppercase">Leeren</button></div>
            <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] custom-scrollbar flex flex-col gap-3">
-              {logs.map((log) => (
-                <div key={log.id} className={`p-3 rounded-xl rounded-tl-none border shadow-sm leading-relaxed break-words ${getLogClasses(log.type)}`} dangerouslySetInnerHTML={{ __html: log.text }} />
-              ))}
+              {logs.map((log) => <div key={log.id} className={`p-3 rounded-xl rounded-tl-none border shadow-sm ${getLogClasses(log.type)}`} dangerouslySetInnerHTML={{ __html: log.text }} />)}
               <div ref={logsEndRef} />
            </div>
         </div>
-
       </main>
 
-      {/* Mobile Navigation */}
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-      
-      {/* Modals */}
-      <PaywallModal 
-        show={showPaywall} 
-        onClose={() => setShowPaywall(false)} 
-        onUpgrade={async () => {
-           setIsPro(true);
-           await storageService.set('ss_is_pro', 'true');
-           setShowPaywall(false);
-           addLog("🎉 <b>Sovereign Studio Pro freigeschaltet!</b> Vielen Dank für die Unterstützung und viel Erfolg beim Entwickeln.", "success");
-        }} 
-      />
-      
-      <PrivacyModal 
-        show={showPrivacy} 
-        onClose={() => setShowPrivacy(false)} 
-      />
-
+      <PaywallModal show={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
+      <PrivacyModal show={showPrivacy} onClose={() => setShowPrivacy(false)} />
     </div>
   );
 }
