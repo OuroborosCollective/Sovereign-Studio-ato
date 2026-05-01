@@ -234,10 +234,8 @@ export default function App() {
     const customKey = geminiKey.trim();
     let envKey = "";
     try {
-        if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
+        if (typeof (import.meta as any) !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
             envKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-        } else if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-            envKey = process.env.GEMINI_API_KEY;
         }
     } catch(e) {}
     
@@ -255,16 +253,10 @@ export default function App() {
     
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const response = await ai.models.generateContent({
-              model: "gemini-1.5-flash-latest",
-              contents: [{ role: "user", parts: [{ text: prompt }] }],
-              generationConfig: {
-                maxOutputTokens: 8192,
-              },
-              systemInstruction: system
-            });
-            const result = await response.response;
-            return result.text() || "";
+            const model = ai.getGenerativeModel({ model: "gemini-1.5-pro", systemInstruction: system });
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            return response.text() || "";
         } catch (err: any) {
             logPersistentError(err, `callGeminiAPI attempt ${i+1}`);
             if (i === maxRetries) throw err;
@@ -349,7 +341,7 @@ export default function App() {
         
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\n$/gi, '').replace(//g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
