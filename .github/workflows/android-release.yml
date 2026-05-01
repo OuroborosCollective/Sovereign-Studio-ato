@@ -1,0 +1,75 @@
+name: Android Release Build
+
+on:
+  push:
+    tags:
+      - 'v*' # Startet den Build, wenn du z.B. einen Tag wie "v1.0.0" pushst
+  workflow_dispatch: # Erlaubt den manuellen Start im GitHub Actions Tab
+
+jobs:
+  build:
+    name: Build & Sign Android Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+           npm install
+           npm run build
+           npx cap sync android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
+      - name: Build Android Release (AAB & APK)
+        run: |
+          cd android
+          ./gradlew bundleRelease assembleRelease
+
+      - name: Sign Android Release APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_apk
+        with:
+          releaseDirectory: android/app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.KEYSTORE_ENCODED }}
+          alias: ${{ secrets.KEYSTORE_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Sign Android Release AAB
+        uses: r0adkll/sign-android-release@v1
+        id: sign_aab
+        with:
+          releaseDirectory: android/app/build/outputs/bundle/release
+          signingKeyBase64: ${{ secrets.KEYSTORE_ENCODED }}
+          alias: ${{ secrets.KEYSTORE_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload Signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-Release-APK
+          path: ${{steps.sign_apk.outputs.signedReleaseFile}}
+
+      - name: Upload Signed AAB (For Google Play)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-Release-AAB
+          path: ${{steps.sign_aab.outputs.signedReleaseFile}}
