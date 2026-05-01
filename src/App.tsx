@@ -227,57 +227,27 @@ export default function App() {
             envKey = process.env.GEMINI_API_KEY;
         }
     } catch(e) {}
+    
     let activeApiKey = customKey !== "" ? customKey : envKey;
     
-    // Canvas Auto-Auth Simulator
     if (!activeApiKey) {
-       if (prompt.includes('Schlage 3 präzise Architektur- oder Feature-Verbesserungen auf')) {
-           await new Promise(r => setTimeout(r, 1200));
-           return "<ul><li><b>Mock-Modus:</b> Kein API-Key definiert. Canvas Auto-Connect aktiv.</li><li><b>Modularisierung:</b> Zerlege große Dateien in React-Komponenten.</li><li><b>Typisierung:</b> Erweitere TypeScript-Interfaces für mehr Sicherheit.</li></ul>";
-       }
-       if (system.includes('JSON-ARRAY') || prompt.includes('JSON-ARRAY')) {
-           await new Promise(r => setTimeout(r, 1200));
-           return `[{"path": "src/App.tsx", "task": "Canvas Auto-Connect Simulator aktiv: Mock-Änderung.", "action": "modify"}]`;
-       }
-       if (system.includes('Git Commit Generator') || prompt.includes('Commit-Message')) {
-           await new Promise(r => setTimeout(r, 500));
-           return "Auto-Deploy via Canvas Simulator";
-       }
-       await new Promise(r => setTimeout(r, 1200));
-       return `// [CANVAS AUTO-CONNECT SIMULATOR]
-// Kein Gemini API (Google Account) Key konfiguriert.
-// Füge einen Schlüssel hinzu, um echte Code-Generierung zu aktivieren.
-
-console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
+        addLog(`❌ <b>Gemini API-Schlüssel fehlt:</b> Es konnte kein API-Schlüssel in der lokalen Umgebung oder im Secure Storage gefunden werden. Bitte gib deinen API-Schlüssel oben im Eingabefeld ein, um fortzufahren.`, "error");
+        return "";
     }
 
-    if (customKey !== "" && !customKey.startsWith('AIza')) {
-       throw new Error("Ungültiger Gemini API Key. Der Schlüssel muss mit 'AIza' beginnen.");
-    }
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeApiKey}`;
-    
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: activeApiKey });
     const maxRetries = 4;
     const delays = [1000, 2000, 4000, 8000];
     
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const response = await fetch(url, {
-              method: 'POST', 
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                contents: [{ parts: [{ text: prompt }] }], 
-                systemInstruction: { parts: [{ text: system }] } 
-              })
+            const response = await ai.models.generateContent({
+              model: "gemini-3-flash-preview",
+              contents: prompt,
+              config: { systemInstruction: system }
             });
-            
-            if (!response.ok) {
-              const errData = await response.json().catch(()=>({}));
-              throw new Error(`API Fehler ${response.status}: ${errData?.error?.message || response.statusText}`);
-            }
-            
-            const data = await response.json();
-            return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            return response.text || "";
         } catch (err: any) {
             logPersistentError(err, `callGeminiAPI attempt ${i+1}`);
             if (i === maxRetries) {
@@ -595,7 +565,7 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
               type="password" 
               value={geminiKey}
               onChange={(e) => handleGeminiKeyChange(e.target.value)}
-              placeholder="Auto-Auth aktiv" 
+              placeholder="API-Schlüssel eingeben..." 
               className="text-xs px-2 py-1 border border-stone-300 rounded w-48 focus:outline-none focus:border-indigo-500 bg-white"
             />
           </div>
@@ -729,10 +699,10 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
                       <div 
                         key={file.sha + file.path}
                         onClick={() => loadFile(file)}
-                        className={`px-4 py-2 border-b border-stone-100 text-[13px] flex items-center gap-2 cursor-pointer transition-colors ${isActive ? 'bg-teal-50 text-teal-700 border-l-4 border-l-teal-600 font-semibold' : 'hover:bg-stone-50 text-stone-600'}`}
+                        className={`px-4 py-2 border-b border-stone-100 text-[13px] flex items-center gap-2 cursor-pointer transition-colors ${isActive ? 'bg-indigo-600 text-white font-bold shadow-md' : 'hover:bg-stone-50 text-stone-600'}`}
                       >
                          <span>{icon}</span>
-                         <span className={`truncate ${isImportant ? 'font-medium' : ''}`}>{file.path}</span>
+                         <span className={`truncate ${isImportant && !isActive ? 'font-medium' : ''}`}>{file.path}</span>
                       </div>
                     )
                   })}
