@@ -255,11 +255,16 @@ export default function App() {
     
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const response = await ai.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent({
-              systemInstruction: system,
-              contents: [{ role: "user", parts: [{ text: prompt }] }]
+            const response = await ai.models.generateContent({
+              model: "gemini-1.5-flash-latest",
+              contents: [{ role: "user", parts: [{ text: prompt }] }],
+              generationConfig: {
+                maxOutputTokens: 8192,
+              },
+              systemInstruction: system
             });
-            return response.response.text() || "";
+            const result = await response.response;
+            return result.text() || "";
         } catch (err: any) {
             logPersistentError(err, `callGeminiAPI attempt ${i+1}`);
             if (i === maxRetries) throw err;
@@ -544,7 +549,6 @@ export default function App() {
       <ConfigBar repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
 
       <main className="flex-1 flex overflow-hidden relative">
-        {/* EXPLORER */}
         <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}>
           <div className="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0">
             <h3 className="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center uppercase">
@@ -583,7 +587,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* EDITOR */}
         <div className={`${activeTab === 'editor' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 bg-stone-50/70 pb-14 lg:pb-0 relative`}>
           <div className="h-10 bg-white/60 backdrop-blur-md border-b border-stone-200/60 flex items-center px-3 shrink-0 text-[11px] font-mono text-stone-600 italic truncate">{activeFile ? activeFile.path : "Keine Datei"}</div>
           <div className="flex-1 p-2 lg:p-4 flex flex-col relative overflow-hidden">
@@ -610,7 +613,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* LOG */}
         <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
            <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold flex justify-between shrink-0"><span>SYSTEM LOG</span><button onClick={() => setLogs([])} className="text-stone-400 hover:text-stone-600 uppercase">Leeren</button></div>
            <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] custom-scrollbar flex flex-col gap-3">
