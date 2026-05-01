@@ -236,6 +236,8 @@ export default function App() {
     try {
         if (typeof (import.meta as any) !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
             envKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
+        } else if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
+            envKey = process.env.GEMINI_API_KEY;
         }
     } catch(e) {}
     
@@ -247,13 +249,14 @@ export default function App() {
     }
 
     const { GoogleGenAI } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey: activeApiKey });
+    const ai = new GoogleGenAI(activeApiKey);
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
+    
     const maxRetries = 4;
     const delays = [1000, 2000, 4000, 8000];
     
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const model = ai.getGenerativeModel({ model: "gemini-1.5-pro", systemInstruction: system });
             const result = await model.generateContent(prompt);
             const response = await result.response;
             return response.text() || "";
@@ -341,7 +344,7 @@ export default function App() {
         
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\n$/gi, '').replace(//g, '').trim();
+        newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(/\n$/gi, '').replace(//g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
@@ -541,6 +544,7 @@ export default function App() {
       <ConfigBar repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
 
       <main className="flex-1 flex overflow-hidden relative">
+        {/* EXPLORER */}
         <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}>
           <div className="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0">
             <h3 className="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center uppercase">
@@ -579,6 +583,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* EDITOR */}
         <div className={`${activeTab === 'editor' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 bg-stone-50/70 pb-14 lg:pb-0 relative`}>
           <div className="h-10 bg-white/60 backdrop-blur-md border-b border-stone-200/60 flex items-center px-3 shrink-0 text-[11px] font-mono text-stone-600 italic truncate">{activeFile ? activeFile.path : "Keine Datei"}</div>
           <div className="flex-1 p-2 lg:p-4 flex flex-col relative overflow-hidden">
@@ -605,6 +610,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* LOG */}
         <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
            <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold flex justify-between shrink-0"><span>SYSTEM LOG</span><button onClick={() => setLogs([])} className="text-stone-400 hover:text-stone-600 uppercase">Leeren</button></div>
            <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] custom-scrollbar flex flex-col gap-3">
