@@ -6,6 +6,10 @@ import {
 } from 'lucide-react';
 import { PaywallModal } from './components/PaywallModal';
 import { PrivacyModal } from './components/PrivacyModal';
+import { MobileNavigation } from './components/MobileNavigation';
+import { Header } from './components/Header';
+import { ConfigBar } from './components/ConfigBar';
+import { storageService } from './services/storageService';
 import Editor from '@monaco-editor/react';
 
 // --- Types ---
@@ -19,8 +23,8 @@ export default function App() {
   const [repoUrl, setRepoUrl] = useState("https://github.com/OuroborosCollective/Wasd");
   const [repoOwner, setRepoOwner] = useState("OuroborosCollective");
   const [repoName, setRepoName] = useState("Wasd");
-  const [ghPat, setGhPat] = useState(() => localStorage.getItem('ss_gh_pat') || "");
-  const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('ss_gemini_key') || "");
+  const [ghPat, setGhPat] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
   
   const [activeTab, setActiveTab] = useState<'explorer' | 'editor' | 'chat'>('explorer');
   const [fullTree, setFullTree] = useState<FileNode[]>([]);
@@ -45,17 +49,9 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   // --- Paywall & Usage Limits ---
-  const [prRuns, setPrRuns] = useState<number>(() => {
-    const saved = localStorage.getItem('ss_pr_runs');
-    return saved !== null ? parseInt(saved, 10) : 0;
-  });
-  const [ideaRuns, setIdeaRuns] = useState<number>(() => {
-    const saved = localStorage.getItem('ss_idea_runs');
-    return saved !== null ? parseInt(saved, 10) : 0;
-  });
-  const [isPro, setIsPro] = useState<boolean>(() => {
-    return localStorage.getItem('ss_is_pro') === 'true';
-  });
+  const [prRuns, setPrRuns] = useState<number>(0);
+  const [ideaRuns, setIdeaRuns] = useState<number>(0);
+  const [isPro, setIsPro] = useState<boolean>(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
@@ -64,6 +60,27 @@ export default function App() {
   const ciPollTimer = useRef<number | null>(null);
 
   // --- Effects ---
+  useEffect(() => {
+    // Load persisted data asynchronously from Capacitor Preferences or Local Storage
+    const loadData = async () => {
+      const pat = await storageService.get('ss_gh_pat');
+      if (pat) setGhPat(pat);
+
+      const gKey = await storageService.get('ss_gemini_key');
+      if (gKey) setGeminiKey(gKey);
+
+      const pr = await storageService.get('ss_pr_runs');
+      if (pr) setPrRuns(parseInt(pr, 10));
+
+      const idea = await storageService.get('ss_idea_runs');
+      if (idea) setIdeaRuns(parseInt(idea, 10));
+
+      const pro = await storageService.get('ss_is_pro');
+      if (pro) setIsPro(pro === 'true');
+    };
+    loadData();
+  }, []);
+
   useEffect(() => {
     fetchRepoTree();
     
@@ -81,9 +98,10 @@ export default function App() {
   }, [logs]);
 
   // --- Error Logger ---
-  const logPersistentError = (err: any, context: string) => {
+  const logPersistentError = async (err: any, context: string) => {
     try {
-      const currentLogs = JSON.parse(localStorage.getItem('ss_error_log') || '[]');
+      const logsJson = await storageService.get('ss_error_log');
+      const currentLogs = JSON.parse(logsJson || '[]');
       let errMsg = err?.message || String(err);
       
       // Sanitize tokens from logs just in case
@@ -91,26 +109,26 @@ export default function App() {
       if (geminiKey) errMsg = errMsg.split(geminiKey).join('[REDACTED_GEMINI_KEY]');
       
       currentLogs.push({ time: new Date().toISOString(), context, message: errMsg });
-      localStorage.setItem('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
+      storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
     } catch (e) {
-      // Ignorieren falls localStorage voll ist
+      // Ignorieren falls storage voll ist
     }
   };
 
   // --- Handlers ---
   const handleGhPatChange = (val: string) => {
     setGhPat(val);
-    localStorage.setItem('ss_gh_pat', val);
+    storageService.set('ss_gh_pat', val);
   };
 
   const handleGeminiKeyChange = (val: string) => {
     setGeminiKey(val);
-    localStorage.setItem('ss_gemini_key', val);
+    storageService.set('ss_gemini_key', val);
   };
 
-  const handleCleanup = () => {
-    localStorage.removeItem('ss_gh_pat');
-    localStorage.removeItem('ss_gemini_key');
+  const handleCleanup = async () => {
+    await storageService.remove('ss_gh_pat');
+    await storageService.remove('ss_gemini_key');
     setGhPat("");
     setGeminiKey("");
     setLogs([]);
@@ -270,7 +288,7 @@ export default function App() {
 
     setPrRuns(prev => {
       const newVal = prev + 1;
-      localStorage.setItem('ss_pr_runs', String(newVal));
+      storageService.set('ss_pr_runs', String(newVal));
       return newVal;
     });
 
@@ -378,7 +396,7 @@ export default function App() {
     
     setIdeaRuns(prev => {
       const newVal = prev + 1;
-      localStorage.setItem('ss_idea_runs', String(newVal));
+      storageService.set('ss_idea_runs', String(newVal));
       return newVal;
     });
 
@@ -494,6 +512,63 @@ export default function App() {
     }
   };
 
+  const fetchCIStatus = async () => {
+    if (!ghPat || !activePR.lastCommitSha) {
+        addLog("Bitte konfiguriere einen GitHub PAT und pushe zuerst Änderungen an einen PR.", "warning");
+        return;
+    }
+    
+    setIsProcessing(true);
+    addLog("⏳ Lade CI Status...", "info");
+    try {
+        const headers = { 'Authorization': `token ${ghPat}`, 'Accept': 'application/vnd.github.v3+json' };
+        const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/commits/${activePR.lastCommitSha}/check-runs`, { headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status} Fetch Failed`);
+        const data = await res.json();
+        
+        if (data.check_runs && data.check_runs.length > 0) {
+            const run = data.check_runs[0];
+            const isFailed = run.conclusion === 'failure' || run.conclusion === 'action_required';
+            const isRunning = run.status === 'in_progress' || run.status === 'queued';
+            
+            setCiStatus({
+                text: run.name,
+                percent: isRunning ? 50 : 100,
+                isFailed,
+                isRunning
+            });
+
+            if (isFailed) {
+                 addLog(`❌ <b>CI Fehler erkannt (${run.name}):</b> Versuche Fehlerprotokoll zu prüfen...`, "error");
+                 let errorLog = run.output?.text || run.output?.summary || "Fehler in CI, Details konnten nicht im Check-Run Output gefunden werden.";
+                 if (errorLog.length > 3000) errorLog = errorLog.substring(errorLog.length - 3000);
+                 
+                 setActivePR(prev => ({ ...prev, lastErrorLog: errorLog }));
+                 addLog("⚠️ <b>Fehler-Log erfasst. Nutze den Fix Button für eine automatische Lösung.</b>", "warning");
+            } else if (isRunning) {
+                 addLog(`⏳ <b>CI läuft noch (${run.name}):</b> Bitte später nochmal prüfen...`, "info");
+                 setActivePR(prev => ({ ...prev, lastErrorLog: "" }));
+            } else {
+                 addLog(`✅ <b>CI Erfolgreich (${run.name})!</b>`, "success");
+                 setActivePR(prev => ({ ...prev, lastErrorLog: "" }));
+            }
+        } else {
+             addLog("Keine CI Checks (Github Actions) für diesen Commit gefunden.", "info");
+        }
+    } catch(err: any) {
+        logPersistentError(err, 'fetchCIStatus');
+        addLog(`<b>CI Check Error:</b> ${err.message}`, "error");
+    } finally {
+        setIsProcessing(false);
+    }
+  };
+
+  const triggerCIFix = () => {
+    setActivePR(prev => ({ ...prev, isFixing: true }));
+    const taskPrompt = `Auto-Fix Triggered für CI Fehler:\n\n${activePR.lastErrorLog}\n\nBitte passe die entsprechenden Dateien basierend auf diesem Log an.`;
+    runArchitect(true, taskPrompt);
+  };
+
   const getLogClasses = (type: string) => {
     switch(type) {
       case 'error': return 'bg-red-50 border-red-200 text-red-800';
@@ -509,68 +584,23 @@ export default function App() {
     <div className="w-full h-[100dvh] flex flex-col font-sans bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm selection:bg-indigo-200 selection:text-indigo-900 animate-fade-in">
       
       {/* Header */}
-      <header className="h-14 bg-white/80 backdrop-blur-xl border-b border-stone-200/60 flex items-center justify-between px-4 shrink-0 shadow-[0_4px_30px_rgba(0,0,0,0.03)] z-50">
-        <div>
-          <h1 className="text-sm font-bold tracking-tight">SOVEREIGN<span className="text-indigo-600">_STUDIO</span></h1>
-          <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Auto-Resolver v3.0.0</div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full text-[10px] font-black tracking-wider shadow-sm mr-2 transition-all hover:shadow-md hover:bg-emerald-100/80 cursor-default" title="Hybrid API Canvas Auto-Auth verbunden">
-             <div className="relative flex h-2 w-2">
-               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-             </div>
-             CANVAS AUTO-AUTH
-          </div>
-          <button onClick={() => setShowPrivacy(true)} className="px-3 py-1.5 bg-stone-100 border border-stone-200 text-stone-600 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1">
-             <Info size={12} /> DATENSCHUTZ
-          </button>
-          <button onClick={handleCleanup} className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors flex items-center gap-1">
-            <Trash2 size={12} /> CLEANUP
-          </button>
-          <button onClick={fetchRepoTree} disabled={loadingTree} className="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1 disabled:opacity-50">
-            <RefreshCw size={12} className={loadingTree ? "animate-spin" : ""} /> {loadingTree ? "LADEN..." : "REFRESH"}
-          </button>
-        </div>
-      </header>
+      <Header 
+        loadingTree={loadingTree} 
+        setShowPrivacy={setShowPrivacy} 
+        handleCleanup={handleCleanup} 
+        fetchRepoTree={fetchRepoTree} 
+      />
 
       {/* Config Bar */}
-      <div className="h-12 bg-stone-50 border-b border-stone-200 flex items-center justify-between px-4 shrink-0 text-xs overflow-x-auto gap-4 hide-scrollbar">
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="font-bold text-stone-500 uppercase text-[10px] flex items-center gap-1"><Github size={12}/> Repo:</span>
-          <input 
-            type="text" 
-            value={repoUrl} 
-            onChange={(e) => setRepoUrl(e.target.value)}
-            className="text-xs px-2 py-1 border border-stone-300 rounded w-64 focus:outline-none focus:border-indigo-500 bg-white"
-          />
-          <button onClick={handleRepoChange} className="px-3 py-1 bg-indigo-600 text-white font-bold rounded hover:bg-indigo-700 transition-colors text-[10px] uppercase">
-            Laden
-          </button>
-        </div>
-        <div className="flex items-center gap-3 shrink-0" title="Datenschutz-Hinweis: APIs-Schlüssel werden ausschließlich lokal auf deinem Gerät (localStorage) gespeichert und nur für direkte, sichere HTTPS-Verbindungen zu GitHub und Google APIs verwendet. Es findet keine externe Erfassung oder Speicherung durch diese App statt.">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-stone-500 uppercase text-[10px] flex items-center gap-1 cursor-help"><Shield size={12}/> GH PAT:</span>
-            <input 
-              type="password" 
-              value={ghPat}
-              onChange={(e) => handleGhPatChange(e.target.value)}
-              placeholder="ghp_..." 
-              className="text-xs px-2 py-1 border border-stone-300 rounded w-40 focus:outline-none focus:border-indigo-500 bg-white"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-stone-500 uppercase text-[10px] flex items-center gap-1 cursor-help"><Key size={12}/> Gemini:</span>
-            <input 
-              type="password" 
-              value={geminiKey}
-              onChange={(e) => handleGeminiKeyChange(e.target.value)}
-              placeholder="API-Schlüssel eingeben..." 
-              className="text-xs px-2 py-1 border border-stone-300 rounded w-48 focus:outline-none focus:border-indigo-500 bg-white"
-            />
-          </div>
-        </div>
-      </div>
+      <ConfigBar
+        repoUrl={repoUrl}
+        setRepoUrl={setRepoUrl}
+        handleRepoChange={handleRepoChange}
+        ghPat={ghPat}
+        handleGhPatChange={handleGhPatChange}
+        geminiKey={geminiKey}
+        handleGeminiKeyChange={handleGeminiKeyChange}
+      />
 
       {/* Main Area */}
       <main className="flex-1 flex overflow-hidden relative">
@@ -590,7 +620,19 @@ export default function App() {
             </div>
             
             <div className="flex gap-2">
-              <button disabled className="flex-1 bg-indigo-600 disabled:opacity-50 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">
+              <button 
+                onClick={triggerCIFix} 
+                className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 disabled:opacity-50 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors flex items-center justify-center gap-1"
+                disabled={isProcessing || !activePR.lastErrorLog}
+              >
+                <AlertTriangle size={12}/> CI FEHLER FIXEN
+              </button>
+              <button 
+                onClick={fetchCIStatus} 
+                disabled={isProcessing}
+                className="flex-1 bg-indigo-600 disabled:opacity-50 hover:bg-indigo-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors"
+                title="Prüft den Status des aktuellen CI-Laufs (GitHub Actions)"
+              >
                 CI PRÜFEN
               </button>
             </div>
@@ -875,28 +917,15 @@ export default function App() {
       </main>
 
       {/* Mobile Navigation */}
-      <nav className="lg:hidden h-14 bg-white border-t border-stone-200 flex items-center justify-around shrink-0 z-50 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] absolute bottom-0 left-0 w-full select-none">
-         <button onClick={() => setActiveTab('explorer')} className={`flex flex-col items-center gap-1 w-1/3 py-2 transition-colors ${activeTab === 'explorer' ? 'text-indigo-600' : 'text-stone-400'}`}>
-            <Folder size={18} />
-            <span className="text-[9px] font-bold uppercase tracking-wider">Planung</span>
-         </button>
-         <button onClick={() => setActiveTab('editor')} className={`flex flex-col items-center gap-1 w-1/3 py-2 transition-colors ${activeTab === 'editor' ? 'text-indigo-600' : 'text-stone-400'}`}>
-            <Code2 size={18} />
-            <span className="text-[9px] font-bold uppercase tracking-wider">Code</span>
-         </button>
-         <button onClick={() => setActiveTab('chat')} className={`flex flex-col items-center gap-1 w-1/3 py-2 transition-colors ${activeTab === 'chat' ? 'text-indigo-600' : 'text-stone-400'}`}>
-            <MessageSquare size={18} />
-            <span className="text-[9px] font-bold uppercase tracking-wider">Log</span>
-         </button>
-      </nav>
+      <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
       
       {/* Modals */}
       <PaywallModal 
         show={showPaywall} 
         onClose={() => setShowPaywall(false)} 
-        onUpgrade={() => {
+        onUpgrade={async () => {
            setIsPro(true);
-           localStorage.setItem('ss_is_pro', 'true');
+           await storageService.set('ss_is_pro', 'true');
            setShowPaywall(false);
            addLog("🎉 <b>Sovereign Studio Pro freigeschaltet!</b> Vielen Dank für die Unterstützung und viel Erfolg beim Entwickeln.", "success");
         }} 
@@ -907,14 +936,6 @@ export default function App() {
         onClose={() => setShowPrivacy(false)} 
       />
 
-      <style dangerouslySetInnerHTML={{__html:`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}}/>
     </div>
   );
 }

@@ -16,32 +16,33 @@ export function PrivacyModal({ show, onClose }: PrivacyModalProps) {
           <div className="w-10 h-10 bg-stone-100 text-stone-600 rounded-full flex items-center justify-center shadow-sm shrink-0 transform hover:scale-110 transition-transform cursor-help">
             <Shield size={20} />
           </div>
-          <h2 className="text-lg font-black text-stone-800 tracking-tight">Datenschutz & Sicherheit</h2>
+          <h2 className="text-lg font-black text-stone-800 tracking-tight">Datenschutz & EULA (EU DSGVO)</h2>
         </div>
         
         <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4 text-xs text-stone-700 leading-relaxed flex-1">
           <section className="group hover:bg-stone-50 p-2 rounded-lg transition-colors">
-            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">1. Lokale Speicherung (Local Storage)</h3>
-            <p>Unsere Anwendung speichert Ihre eingegebenen API-Schlüssel (GitHub PAT, Gemini API Key) sowie Nutzungsstatistiken <b>ausschließlich lokal</b> auf Ihrem Endgerät im Browser/App-Storage (<code>localStorage</code>).</p>
+            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">1. Lokale Speicherung (Preferences) & DSGVO</h3>
+            <p>Die App speichert API-Schlüssel (GitHub PAT, Gemini API Key) <b>ausschließlich lokal</b> (über Capacitor Preferences oder lokalen App-Speicher). In Übereinstimmung mit der DSGVO weisen wir darauf hin, dass wir diese Schlüssel zu keinem Zeitpunkt unserer eigenen Infrastruktur zugänglich machen.</p>
           </section>
           
           <section className="group hover:bg-stone-50 p-2 rounded-lg transition-colors">
-            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">2. Keine externe Datenübertragung an Dritte</h3>
-            <p>Es werden keine Telemetriedaten, persönlichen Informationen oder API-Schlüssel an unsere eigenen Server gesendet. Die Kommunikation erfolgt direkt und verschlüsselt (TLS/SSL) über HTTPS zwischen Ihrem Client (der App) und den offiziellen Schnittstellen:</p>
+            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">2. Externe Dienstanbieter</h3>
+            <p>Die App kommuniziert zur Erfüllung ihrer Funktion über sichere (HTTPS) Protokolle mit:</p>
             <ul className="list-disc pl-5 mt-1 space-y-1">
-              <li><b>GitHub API</b> (api.github.com) für den Zugriff und das Pushen in Repositories.</li>
-              <li><b>Google Gemini API</b> (generativelanguage.googleapis.com) für KI-Funktionalitäten.</li>
+              <li><b>GitHub Inc.</b> (api.github.com) – Git-Repository-Verarbeitung.</li>
+              <li><b>Google Ireland Ltd.</b> (Generative AI) – KI-Unterstützung.</li>
+              <li><b>PostHog</b> (EU Server) – Aggregierte, anonymisierte Nutzungsstatistiken ohne PII (Personally Identifiable Information).</li>
             </ul>
           </section>
 
           <section className="group hover:bg-stone-50 p-2 rounded-lg transition-colors">
-            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">3. Token-Sicherheit</h3>
-            <p>Ihre API-Schlüssel sind für den Betrieb zwingend erforderlich und werden nicht extern persistiert. Wir empfehlen stets Token mit <b>minimalen Berechtigungen (Fine-grained PATs)</b> zu verwenden.</p>
+            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">3. Rechte der Betroffenen (DSGVO Art. 15-21)</h3>
+            <p>Da wir initial keine Kontodaten von Ihnen speichern, müssen Sie zur Löschung (Art. 17) der rein lokalen Daten den In-App "CLEANUP"-Button verwenden oder Ihren App-Datenspeicher leeren. Anonymisiertes Analytics-Tracking bedarf gemäß gängiger Praxis Ihrer expliziten Zustimmung.</p>
           </section>
           
           <section className="group hover:bg-stone-50 p-2 rounded-lg transition-colors">
-            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">4. Verantwortlichkeit</h3>
-            <p>Sie sind selbst für die Sicherheit Ihres Gerätes verantwortlich. Wenn Sie die App auf einem geteilten Gerät nutzen, empfehlen wir die Nutzung der "Cleanup"-Funktion oder das manuelle Löschen von Browserdaten nach Gebrauch, um Ihre Schlüssel zu entfernen.</p>
+            <h3 className="font-bold text-stone-900 text-sm mb-1 group-hover:text-indigo-700 transition-colors">4. Impressum & Kontakt</h3>
+            <p>Ouroboros Collective<br/>E-Mail: Rastamanweeste@gmail.com<br/>Weitere Bestimmungen in unserem offiziellen Endnutzer-Lizenzvertrag (EULA).</p>
           </section>
         </div>
 
@@ -50,7 +51,7 @@ export function PrivacyModal({ show, onClose }: PrivacyModalProps) {
             onClick={onClose}
             className="w-full px-4 py-2 bg-stone-800 hover:bg-black text-white font-bold rounded-xl uppercase text-[10px] transition-all transform hover:-translate-y-0.5 hover:shadow-lg"
            >
-            Gelesen und Verstanden
+            Akzeptieren & Schließen
           </button>
         </div>
       </div>
