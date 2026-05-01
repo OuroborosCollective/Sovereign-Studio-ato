@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { PaywallModal } from './components/PaywallModal';
 import { PrivacyModal } from './components/PrivacyModal';
+import Editor from '@monaco-editor/react';
 
 // --- Types ---
 type FileNode = { path: string, type: string, mode: string, sha: string };
@@ -29,7 +30,9 @@ export default function App() {
   const [activeFile, setActiveFile] = useState<FileNode | null>(null);
   const [fileContent, setFileContent] = useState("");
   const [loadingFile, setLoadingFile] = useState(false);
-  
+  const [fileTooLarge, setFileTooLarge] = useState(false);
+  const MAX_FILE_SIZE = 500 * 1024; // 500 KB
+
   const [batchFiles, setBatchFiles] = useState<BatchFile[]>([]);
   const [activePR, setActivePR] = useState<PRState>({ branch: null, number: null, lastErrorLog: "", isFixing: false, lastCommitSha: null });
   const [ciStatus, setCiStatus] = useState<{ text: string, percent: number, isFailed: boolean, isRunning: boolean } | null>(null);
@@ -130,6 +133,7 @@ export default function App() {
       
       setActiveFile(null);
       setFileContent("");
+      setFileTooLarge(false);
       setBatchFiles([]);
       setActivePR({ branch: null, number: null, lastErrorLog: "", isFixing: false, lastCommitSha: null });
       setCiStatus(null);
@@ -178,6 +182,7 @@ export default function App() {
     setActiveTab('editor');
     setLoadingFile(true);
     setFileContent("");
+    setFileTooLarge(false);
     
     try {
       const branch = activePR.branch || 'main';
@@ -193,7 +198,17 @@ export default function App() {
         if (!response.ok) throw new Error("Datei nicht lesbar");
       }
       const text = await response.text();
-      setFileContent(text);
+      if (text.length > MAX_FILE_SIZE) {
+         setFileTooLarge(true);
+         if (!isPro) {
+            setFileContent("// ⚠️ Diese Datei ist zu groß für den Free-Plan (>500KB).\n// Bitte schalte PRO frei, um große Dateien im Editor anzusehen.");
+         } else {
+            setFileContent(text.substring(0, 100000) + "\n\n... [File is too large to display entirely. Previewing first 100000 characters.] ...");
+         }
+      } else {
+         setFileTooLarge(false);
+         setFileContent(text);
+      }
     } catch (err) {
       setFileContent(`// Fehler beim Laden: ${err}`);
     } finally {
@@ -206,8 +221,8 @@ export default function App() {
     // Safely check for env variable to prevent ReferenceError in browser
     let envKey = "";
     try {
-        if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-            envKey = import.meta.env.VITE_GEMINI_API_KEY;
+        if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
+            envKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
         } else if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
             envKey = process.env.GEMINI_API_KEY;
         }
@@ -514,29 +529,37 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
       case 'error': return 'bg-red-50 border-red-200 text-red-800';
       case 'success': return 'bg-green-50 border-green-200 text-green-800';
       case 'warning': return 'bg-amber-50 border-amber-200 text-amber-800';
-      case 'idea': return 'bg-blue-50 border-blue-200 text-blue-900';
+      case 'idea': return 'bg-indigo-50 border-indigo-200 text-indigo-900';
+      case 'info': return 'bg-blue-50 border-blue-200 text-blue-900';
       default: return 'bg-stone-50 border-stone-200 text-stone-800';
     }
   };
 
   return (
-    <div className="w-full h-screen flex flex-col font-sans bg-[#fafaf9] text-stone-900 overflow-hidden text-sm">
+    <div className="w-full h-[100dvh] flex flex-col font-sans bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm selection:bg-indigo-200 selection:text-indigo-900 animate-fade-in">
       
       {/* Header */}
-      <header className="h-14 bg-white border-b border-stone-200 flex items-center justify-between px-4 shrink-0 shadow-sm z-50">
+      <header className="h-14 bg-white/80 backdrop-blur-xl border-b border-stone-200/60 flex items-center justify-between px-4 shrink-0 shadow-[0_4px_30px_rgba(0,0,0,0.03)] z-50">
         <div>
           <h1 className="text-sm font-bold tracking-tight">SOVEREIGN<span className="text-indigo-600">_STUDIO</span></h1>
           <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Auto-Resolver v3.0.0</div>
         </div>
         <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full text-[10px] font-black tracking-wider shadow-sm mr-2 transition-all hover:shadow-md hover:bg-emerald-100/80 cursor-default" title="Hybrid API Canvas Auto-Auth verbunden">
+             <div className="relative flex h-2 w-2">
+               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+             </div>
+             CANVAS AUTO-AUTH
+          </div>
           <button onClick={() => setShowPrivacy(true)} className="px-3 py-1.5 bg-stone-100 border border-stone-200 text-stone-600 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1">
              <Info size={12} /> DATENSCHUTZ
           </button>
           <button onClick={handleCleanup} className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors flex items-center gap-1">
             <Trash2 size={12} /> CLEANUP
           </button>
-          <button onClick={fetchRepoTree} className="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1">
-            <RefreshCw size={12} /> REFRESH
+          <button onClick={fetchRepoTree} disabled={loadingTree} className="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1 disabled:opacity-50">
+            <RefreshCw size={12} className={loadingTree ? "animate-spin" : ""} /> {loadingTree ? "LADEN..." : "REFRESH"}
           </button>
         </div>
       </header>
@@ -583,7 +606,7 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
       <main className="flex-1 flex overflow-hidden relative">
         
         {/* TAB: EXPLORER & ARCHITECT */}
-        <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200 bg-white h-full pb-14 lg:pb-0`}>
+        <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}>
           
           <div className="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0 shadow-sm">
             <h3 className="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center">
@@ -618,14 +641,14 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
               <button 
                 onClick={() => runArchitect()}
                 disabled={isProcessing}
-                className="flex-1 bg-stone-800 disabled:opacity-70 hover:bg-black text-white py-1.5 rounded text-[11px] font-bold uppercase transition-colors shadow-sm flex items-center justify-center gap-1"
+                className="flex-1 bg-stone-800 disabled:opacity-70 hover:bg-black text-white py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-1 hover-lift"
               >
                 {isProcessing ? "LÄUFT..." : "GENERIERE"}
               </button>
               <button 
                 onClick={suggestIdeas}
                 disabled={isProcessing}
-                className="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded text-[11px] font-bold uppercase transition-colors shadow-sm"
+                className="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all shadow-sm hover:shadow-md hover-lift"
                 title="KI-Vorschläge basierend auf Repository generieren"
               >
                 ✨ IDEEN
@@ -662,18 +685,36 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
                  </div>
                </div>
             ) : (
-                <div className="mt-3 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-100 flex items-center justify-between text-indigo-700">
-                    <span className="text-[10px] font-bold flex items-center gap-1"><Sparkles size={10}/> PRO AKTIV</span>
-                    <span className="text-[9px] font-medium opacity-80">Limits aufgehoben</span>
+                <div className="mt-3 bg-indigo-50 px-3 py-3 rounded-xl border border-indigo-200/50 shadow-sm flex flex-col gap-2 relative overflow-hidden group">
+                   <div className="absolute -top-4 -right-4 p-2 opacity-5 group-hover:opacity-10 transition-opacity duration-300">
+                     <Shield size={64} />
+                   </div>
+                   <div className="flex items-center justify-between z-10">
+                     <span className="text-[10px] font-black text-indigo-900 flex items-center gap-1.5 uppercase tracking-wider"><Sparkles size={12} className="text-indigo-600"/> PRO AKTIV</span>
+                     <span className="text-[9px] font-bold bg-indigo-200/50 text-indigo-800 px-1.5 py-0.5 rounded shadow-sm">UNLIMITED</span>
+                   </div>
+                   <div className="text-[9.5px] text-indigo-700/80 leading-relaxed z-10 pr-4 mt-1 border-t border-indigo-200/50 pt-2">
+                     <b>Große Dateien Feature:</b> Du kannst nun Dateien über 500KB im intelligenten Editor laden und bearbeiten. Limits wurden vollständig aufgehoben!
+                   </div>
                 </div>
             )}
           </div>
 
           <div className="flex-1 overflow-y-auto bg-white custom-scrollbar">
              {loadingTree ? (
-               <div className="p-4 text-xs italic text-stone-400 flex flex-col items-center justify-center h-full gap-2">
-                  <RefreshCw size={24} className="animate-spin" />
-                  <span>Struktur laden...</span>
+               <div className="p-4 text-xs flex flex-col items-center justify-center h-full">
+                  <div className="w-full flex-1 flex flex-col gap-3 py-4 max-w-sm">
+                    <div className="flex items-center justify-center mb-4 gap-2 text-stone-400 font-bold uppercase tracking-wide text-[10px]">
+                      <RefreshCw size={14} className="animate-spin text-stone-400" />
+                      Lade Repository Struktur...
+                    </div>
+                    {[...Array(12)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                         <div className="w-4 h-4 rounded bg-tree-skeleton shrink-0"></div>
+                         <div className={`h-3 rounded bg-tree-skeleton ${i % 4 === 0 ? 'w-full' : i % 3 === 0 ? 'w-2/3' : i % 2 === 0 ? 'w-4/5' : 'w-1/2'}`} style={{ animationDelay: `${i * 0.1}s` }}></div>
+                     </div>
+                    ))}
+                  </div>
                </div>
              ) : treeError ? (
                <div className="p-4 text-xs text-red-500 text-center font-bold">{treeError}</div>
@@ -701,40 +742,134 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
         </div>
 
         {/* TAB: EDITOR & BATCH */}
-        <div className={`${activeTab === 'editor' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 bg-stone-100 pb-14 lg:pb-0`}>
+        <div className={`${activeTab === 'editor' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 bg-stone-50/70 pb-14 lg:pb-0 relative`}>
           
-          <div className="h-10 bg-white border-b border-stone-200 flex items-center px-3 shrink-0 overflow-x-auto hide-scrollbar select-none">
+          <div className="h-10 bg-white/60 backdrop-blur-md border-b border-stone-200/60 flex items-center px-3 shrink-0 overflow-x-auto hide-scrollbar select-none shadow-[0_2px_10px_rgba(0,0,0,0.02)] z-10">
              <span className="text-[11px] font-mono text-stone-600 italic truncate mr-4 max-w-[200px]">
                {activeFile ? activeFile.path : "Keine Datei gewählt"}
              </span>
           </div>
 
-          <div className="flex-1 p-2 lg:p-4 overflow-hidden flex flex-col">
-            <div className="bg-[#0c0a09] font-mono flex-1 rounded-xl shadow-inner relative overflow-hidden flex flex-col">
+          <div className="flex-1 p-2 lg:p-4 overflow-hidden flex flex-col relative">
+            <div className={`bg-[#0c0a09] font-mono flex-1 rounded-2xl shadow-[inset_0_2px_20px_rgba(0,0,0,0.5),0_4px_12px_rgba(0,0,0,0.1)] relative overflow-hidden flex flex-col border border-stone-800 ${isProcessing ? 'compile-active' : ''}`}>
                {loadingFile || isProcessing ? (
-                 <div className="flex-1 flex flex-col items-center justify-center text-indigo-400 p-4 gap-3">
-                   <div className="animate-pulse flex flex-col items-center gap-2">
-                     <RefreshCw size={24} className="animate-spin" />
-                   </div>
+                 <div className="flex-1 flex flex-col bg-[#0c0a09] relative overflow-hidden">
+                    <div className="scanline"></div>
+                    <div className="p-4 flex gap-4 h-full relative z-10 leading-relaxed font-mono">
+                      <div className="w-8 shrink-0 flex flex-col items-end gap-[14px] text-stone-700 pt-[1px] border-r border-[#292524] pr-2 select-none opacity-50">
+                         {[...Array(20)].map((_, i) => (
+                            <span key={i} className="text-[12px] h-[12px] leading-none">{i + 1}</span>
+                         ))}
+                      </div>
+                      <div className="flex-1 flex flex-col pt-0 gap-[14px]">
+                        <div className="flex items-center gap-2 text-indigo-400 text-xs font-black tracking-widest uppercase mb-2 animate-pulse w-max bg-indigo-500/10 px-3 py-1 rounded">
+                           <RefreshCw size={14} className="animate-spin" /> {isProcessing ? "PROCESSING DATA..." : "DECRYPTING SOURCE..."}
+                        </div>
+                        {[...Array(15)].map((_, i) => (
+                          <div key={i} className={`h-[12px] rounded bg-cyber-skeleton ${i % 5 === 0 ? 'w-1/2' : i % 4 === 0 ? 'w-2/3' : i % 3 === 0 ? 'w-[80%]' : i % 2 === 0 ? 'w-1/3' : 'w-[90%]'}`} style={{ animationDelay: `${i * 0.05}s`, opacity: Math.max(0.1, 1 - i * 0.05) }}></div>
+                        ))}
+                      </div>
+                    </div>
                  </div>
                ) : (
-                 <div className="flex-1 auto-rows-max overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre custom-scrollbar leading-relaxed">
+                 <div className="flex-1 auto-rows-max overflow-auto text-[12px] text-stone-300 relative h-full">
                    {!activeFile ? (
-                      <div className="text-stone-500 italic mt-4 ml-4">// Wähle eine Datei im Explorer, um den Code zu laden.</div>
+                      <div className="text-stone-500 italic p-4">// Wähle eine Datei im Explorer, um den Code zu laden.</div>
+                   ) : !isPro ? (
+                      <div className="flex flex-col items-center justify-center p-8 text-center h-full max-w-lg mx-auto animate-slide-up">
+                         <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center shadow-lg border border-white/5 mb-6 hover-lift transition-transform">
+                           <Shield size={32} className="text-indigo-400" />
+                         </div>
+                         <h3 className="text-lg font-black text-white mb-3">Premium Editor gesperrt</h3>
+                         <p className="text-stone-400 text-sm mb-8 leading-relaxed">
+                            Die Monaco Editor Ansicht sowie die Behebung von fehlerhaften Dateien sind Premium-Funktionen.
+                            Mit einem Upgrade schaltest du den kompletten <b className="text-white">Full-Workflow</b> frei: Von der Kreation, Linting, Fehlerbehebung über Datenbankanbindung bis hin zum Deployment.
+                         </p>
+                         
+                         <button 
+                           onClick={() => setShowPaywall(true)}
+                           className="bg-[#FFE01B] hover:bg-[#F2D000] text-black font-black uppercase text-[11px] tracking-wider py-4 px-8 rounded-full shadow-[0_4px_14px_rgba(255,224,27,0.4)] transition-all hover:scale-105 active:scale-95 flex items-center gap-2 hover-lift"
+                         >
+                           <span>💌 Mit Mailchimp fortsetzen & Fixen</span>
+                         </button>
+
+                         <p className="text-stone-600 text-[10px] mt-6 font-medium">Auch Datenblatt-Uploads (PDF) werden nach dem Upgrade freigeschaltet.</p>
+                      </div>
                    ) : (
-                      <div className="pointer-events-auto">
-                        {fileContent.split('\n').map((line, idx) => (
-                           <div key={idx} className="flex gap-3 hover:bg-stone-800/50">
-                              <span className="text-stone-600 w-8 text-right shrink-0 select-none border-r border-[#292524] pr-2">{idx + 1}</span>
-                              <span className="text-stone-300 break-pre">{line}</span>
+                      <div className="pointer-events-auto h-full w-full flex flex-col">
+                        {fileTooLarge && (
+                           <div className="bg-yellow-900/40 text-yellow-500 text-[10px] p-2 border-b border-yellow-700/50 flex items-center justify-between font-bold tracking-wider shrink-0 uppercase">
+                              <div className="flex items-center gap-2">
+                                ⚠️ Datei zu groß &gt;500KB. {isPro ? 'Vorschau-Modus aktiv.' : 'Nur für Pro-Nutzer.'}
+                              </div>
+                              {!isPro && (
+                                 <button onClick={() => setShowPaywall(true)} className="ml-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 px-2 py-0.5 rounded transition-colors border border-yellow-500/30 shadow-sm cursor-pointer pointer-events-auto">
+                                    PRO FREISCHALTEN
+                                 </button>
+                              )}
                            </div>
-                        ))}
+                        )}
+                        <div className="flex-1 min-h-0 relative">
+                           <Editor
+                              height="100%"
+                              defaultLanguage={activeFile.path.endsWith('.ts') || activeFile.path.endsWith('.tsx') ? 'typescript' : 
+                                             activeFile.path.endsWith('.js') || activeFile.path.endsWith('.jsx') ? 'javascript' : 
+                                             activeFile.path.endsWith('.json') ? 'json' :
+                                             activeFile.path.endsWith('.css') ? 'css' :
+                                             activeFile.path.endsWith('.html') ? 'html' :
+                                             activeFile.path.endsWith('.md') ? 'markdown' : 'plaintext'}
+                              theme="vs-dark"
+                              value={fileContent}
+                              options={{
+                                 readOnly: fileTooLarge || isProcessing,
+                                 minimap: { enabled: false },
+                                 fontSize: 12,
+                                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                                 padding: { top: 16 }
+                              }}
+                              onChange={(value) => {
+                                 if (value !== undefined && !fileTooLarge) {
+                                    setFileContent(value);
+                                 }
+                              }}
+                           />
+                        </div>
                       </div>
                    )}
                  </div>
                )}
             </div>
           </div>
+
+          {batchFiles.length > 0 && (
+            <div className="border-t border-indigo-200 bg-white shrink-0 flex flex-col max-h-48 z-20 shadow-[0_-4px_24px_rgba(0,0,0,0.05)]">
+              <div className="px-3 py-2 bg-indigo-50/80 border-b border-indigo-100 flex items-center justify-between">
+                 <span className="text-[10px] font-bold text-indigo-800 uppercase flex items-center gap-1.5">
+                   <Code2 size={12} />
+                   KI Vorschläge (Pending)
+                 </span>
+                 <span className="text-[9px] bg-indigo-200 text-indigo-800 font-bold px-2 py-0.5 rounded-full">{batchFiles.length} Aktionen</span>
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 custom-scrollbar">
+                 {batchFiles.map((bf, idx) => (
+                    <div key={idx} 
+                         onClick={() => {
+                           setActiveFile({ path: bf.path, type: 'blob', mode: '100644', sha: '' });
+                           setFileContent(bf.content || '');
+                           setFileTooLarge(false);
+                           addLog(`👁️ Vorschau für <code>${bf.path}</code> geöffnet.`, "info");
+                         }}
+                         className="flex items-center justify-between p-2.5 rounded-lg hover:bg-stone-50 border border-transparent hover:border-stone-200 cursor-pointer transition-all group hover-lift">
+                       <div className="flex items-center gap-2.5 truncate">
+                         {bf.isDelete ? <Trash2 size={14} className="text-red-500 shrink-0" /> : <FileText size={14} className="text-indigo-500 shrink-0" />}
+                         <span className="text-[11px] font-mono font-medium text-stone-700 truncate">{bf.path} {bf.isDelete ? '(Löschen)' : ''}</span>
+                       </div>
+                       <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wider">Vorschau</span>
+                    </div>
+                 ))}
+              </div>
+            </div>
+          )}
 
           <div className="h-16 border-t border-indigo-200 px-4 flex items-center justify-between bg-indigo-50 shrink-0">
               <div className="truncate mr-4 flex-1">
@@ -746,13 +881,14 @@ console.log("Canvas Auto-Connect: Erfolgreiche Mock-Ausführung.");`;
                 disabled={batchFiles.length === 0 || isProcessing}
                 className="shrink-0 flex items-center gap-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-[10px] uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 transition-all shadow-sm"
               >
-                  <Shield size={12}/> PUSH AS PR
+                  {isProcessing ? <RefreshCw size={12} className="animate-spin"/> : <Shield size={12}/>} 
+                  {isProcessing ? "PUSHING..." : "PUSH AS PR"}
               </button>
           </div>
         </div>
 
         {/* TAB: CHAT LOG */}
-        <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200 bg-white h-full pb-14 lg:pb-0`}>
+        <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10 shadow-[-4px_0_24px_rgba(0,0,0,0.02)]`}>
            <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-800 flex items-center gap-2 justify-between shrink-0">
                <div><span className="text-indigo-600">✨</span> SYSTEM LOG</div>
                <button onClick={() => setLogs([])} className="text-[9px] text-stone-400 hover:text-stone-600 uppercase">Leeren</button>

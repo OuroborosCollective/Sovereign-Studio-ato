@@ -24,14 +24,15 @@ export function PaywallModal({ show, onClose, onUpgrade }: PaywallModalProps) {
         
         <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 mb-6 text-left hover:border-indigo-200 transition-colors">
           <ol className="list-decimal pl-4 text-xs text-stone-700 space-y-3 font-medium">
-            <li>Nutze diesen Link für eine einmalige <b>PayPal Zahlung über 5,55 €</b>: <br/>
+            <li>Nutze diesen Link für eine einmalige <b>Zahlung über 5,55 €</b>: <br/>
               <div className="mt-1.5 bg-white border border-stone-300 px-3 py-2 rounded-lg font-mono text-indigo-700 font-bold break-all flex items-center gap-2 hover:bg-stone-50 transition-colors">
                 <a href="https://www.paypal.com/ncp/payment/PDQS23735S9KJ" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1 group">
                   Zahle mit PayPal <Info size={12} className="group-hover:text-indigo-500 transition-colors" />
                 </a>
               </div>
             </li>
-            <li>Nach Freigabe der App kann der Kauf auch regulär über In-App-Purchase im Play Store durchgeführt werden.</li>
+            <li>Darin enthalten: kompletter Editor-Zugriff sowie der <b>Full-Workflow</b>: Kreation, Linting, Fixing, Datenbankanbindung und Deployment in einem Rutsch.</li>
+            <li>Ebenfalls freigeschaltet: Einbindung von Datenblättern und komplexen PDFs als Kontext für das Projekt.</li>
             <li className="text-stone-500 italic">Für diesen Release: Nutze PayPal und bestätige unten die erfolgreiche Transaktion zur sofortigen Freischaltung.</li>
           </ol>
         </div>
