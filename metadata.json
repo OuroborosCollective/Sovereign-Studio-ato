@@ -2,5 +2,10 @@
   "name": "",
   "description": "",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [],
+  "heuristics": {
+    "localPatterns": [],
+    "fixHistory": [],
+    "successfulBuildPatterns": []
+  }
 }
