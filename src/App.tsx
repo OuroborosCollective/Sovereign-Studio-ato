@@ -255,12 +255,11 @@ export default function App() {
     
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const response = await ai.models.generateContent({
-              model: "gemini-3-flash-preview",
-              contents: prompt,
-              config: { systemInstruction: system }
+            const response = await ai.getGenerativeModel({ model: "gemini-1.5-flash" }).generateContent({
+              systemInstruction: system,
+              contents: [{ role: "user", parts: [{ text: prompt }] }]
             });
-            return response.text || "";
+            return response.response.text() || "";
         } catch (err: any) {
             logPersistentError(err, `callGeminiAPI attempt ${i+1}`);
             if (i === maxRetries) throw err;
@@ -345,7 +344,7 @@ export default function App() {
         
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(/\n$/gi, '').replace(//g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
