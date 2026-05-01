@@ -1,5 +1,5 @@
-import React from 'react';
-import { Unlock, Info, Shield } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Unlock, Info, Shield, AlertTriangle } from 'lucide-react';
 
 interface PaywallModalProps {
   show: boolean;
@@ -8,6 +8,39 @@ interface PaywallModalProps {
 }
 
 export function PaywallModal({ show, onClose, onUpgrade }: PaywallModalProps) {
+  const [clickTime, setClickTime] = useState<number | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Reset error when modal closes
+  useEffect(() => {
+    if (!show) {
+      setErrorMsg(null);
+    }
+  }, [show]);
+
+  const handleLinkClick = () => {
+    setClickTime(Date.now());
+    setErrorMsg(null);
+  };
+
+  const handleVerify = () => {
+    if (!clickTime) {
+      setErrorMsg("Bitte klicke zuerst auf den PayPal-Link, um die Zahlung zu starten.");
+      return;
+    }
+    
+    const timePassedMs = Date.now() - clickTime;
+    const requiredWaitMs = 60000; // 1 minute
+    
+    if (timePassedMs < requiredWaitMs) {
+      const remainingSeconds = Math.ceil((requiredWaitMs - timePassedMs) / 1000);
+      setErrorMsg(`Verifizierung läuft noch... Bitte schließe die Zahlung zuerst vollständig bei PayPal ab. Versuche es in ${remainingSeconds} Sekunden erneut.`);
+      return;
+    }
+
+    onUpgrade();
+  };
+
   if (!show) return null;
 
   return (
@@ -22,11 +55,17 @@ export function PaywallModal({ show, onClose, onUpgrade }: PaywallModalProps) {
           Schalte die unbegrenzte Nutzung des PR Auto-Resolvers und der Ideen-Generation jetzt dauerhaft frei.
         </p>
         
-        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 mb-6 text-left hover:border-indigo-200 transition-colors">
+        <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 mb-4 text-left hover:border-indigo-200 transition-colors">
           <ol className="list-decimal pl-4 text-xs text-stone-700 space-y-3 font-medium">
             <li>Nutze diesen Link für eine einmalige <b>Zahlung über 5,55 €</b>: <br/>
               <div className="mt-1.5 bg-white border border-stone-300 px-3 py-2 rounded-lg font-mono text-indigo-700 font-bold break-all flex items-center gap-2 hover:bg-stone-50 transition-colors">
-                <a href="https://www.paypal.com/ncp/payment/PDQS23735S9KJ" target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1 group">
+                <a 
+                  href="https://www.paypal.com/ncp/payment/PDQS23735S9KJ" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  onClick={handleLinkClick}
+                  className="hover:underline flex items-center gap-1 group"
+                >
                   Zahle mit PayPal <Info size={12} className="group-hover:text-indigo-500 transition-colors" />
                 </a>
               </div>
@@ -37,6 +76,13 @@ export function PaywallModal({ show, onClose, onUpgrade }: PaywallModalProps) {
           </ol>
         </div>
 
+        {errorMsg && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2.5 rounded-lg text-xs font-bold flex items-start gap-2 text-left animate-in slide-in-from-top-2">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <p>{errorMsg}</p>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <button 
             onClick={onClose}
@@ -45,7 +91,7 @@ export function PaywallModal({ show, onClose, onUpgrade }: PaywallModalProps) {
             Vielleicht Später
           </button>
           <button 
-            onClick={onUpgrade}
+            onClick={handleVerify}
             className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl uppercase text-[10px] transition-all shadow-md transform hover:scale-[1.02]"
           >
             Zahlung bestätigt
