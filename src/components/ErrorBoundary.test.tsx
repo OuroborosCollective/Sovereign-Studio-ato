@@ -1,10 +1,10 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
 import { ErrorBoundary } from './ErrorBoundary';
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { storageService } from '../services/storageService';
 
-// Mock the storage service module
+// Mock storageService
 vi.mock('../services/storageService', () => {
   return {
     storageService: {
@@ -14,16 +14,15 @@ vi.mock('../services/storageService', () => {
   };
 });
 
-const ThrowError = () => {
-  throw new Error('Test Error');
+const ThrowError = ({ message = 'Test error' }) => {
+  throw new Error(message);
 };
 
 describe('ErrorBoundary', () => {
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  const originalConsoleError = console.error;
 
   beforeEach(() => {
-    // Suppress React's error boundary logging to keep test output clean
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    console.error = vi.fn();
     vi.clearAllMocks();
   });
 
@@ -38,49 +37,47 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByTestId('fallback')).toBeInTheDocument();
+    expect(screen.getByText('Something went wrong')).toBeDefined();
+    expect(screen.getByText('Error: Test error')).toBeDefined();
   });
 
-  it('should not bubble up exception when storageService.get fails', async () => {
-    // Mock storageService.get to throw an error
+  it('swallows storageService.get error silently', async () => {
+    const { storageService } = await import('../services/storageService');
     vi.mocked(storageService.get).mockRejectedValueOnce(new Error('Storage get failure'));
 
-    expect(() => {
-      render(
-        <ErrorBoundary>
-          <ThrowError />
-        </ErrorBoundary>
-      );
-    }).not.toThrow();
+    render(
+      <ErrorBoundary>
+        <ThrowError message="Error 1" />
+      </ErrorBoundary>
+    );
 
-    // Give some time for async logError to run
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => {
+      expect(storageService.get).toHaveBeenCalledWith('ss_error_log');
     });
 
-    expect(storageService.get).toHaveBeenCalledWith('ss_error_log');
+    // We wait a bit to ensure async operations resolve/reject
+    await new Promise(resolve => setTimeout(resolve, 10));
+
     expect(storageService.set).not.toHaveBeenCalled();
   });
 
-  it('should not bubble up exception when storageService.set fails', async () => {
-    // Mock storageService.get to succeed, but set to throw
-    vi.mocked(storageService.get).mockResolvedValueOnce('[]');
+  it('swallows storageService.set error silently', async () => {
+    const { storageService } = await import('../services/storageService');
+    vi.mocked(storageService.get).mockResolvedValueOnce(null);
     vi.mocked(storageService.set).mockRejectedValueOnce(new Error('Storage set failure'));
 
-    expect(() => {
-      render(
-        <ErrorBoundary>
-          <ThrowError />
-        </ErrorBoundary>
-      );
-    }).not.toThrow();
+    render(
+      <ErrorBoundary>
+        <ThrowError message="Error 2" />
+      </ErrorBoundary>
+    );
 
-    // Give some time for async logError to run
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => {
+      expect(storageService.get).toHaveBeenCalledWith('ss_error_log');
     });
 
-    expect(storageService.get).toHaveBeenCalledWith('ss_error_log');
-    expect(storageService.set).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(storageService.set).toHaveBeenCalled();
+    });
   });
 });

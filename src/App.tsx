@@ -244,8 +244,10 @@ export default function App() {
         return "";
     }
 
-    const { GoogleGenAI } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey: activeApiKey });
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const ai = new GoogleGenerativeAI(activeApiKey);
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
+    
     const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
@@ -310,7 +312,7 @@ export default function App() {
         const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/```/g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });

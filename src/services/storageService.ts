@@ -37,7 +37,7 @@ class WebStorageProvider implements IStorageProvider {
   }
 }
 
-class NativeStorageProvider implements IStorageProvider {
+export class NativeStorageProvider implements IStorageProvider {
   async getItem(key: string): Promise<string | null> {
     const { value } = await Preferences.get({ key });
     return value;
