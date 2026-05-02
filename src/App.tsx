@@ -4,11 +4,11 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './components/PaywallModal';
-import { PrivacyModal } from './components/PrivacyModal';
+import { PaywallModal } from './features/paywall/components/PaywallModal';
+import { PrivacyModal } from './features/privacy/components/PrivacyModal';
 import { MobileNavigation } from './components/MobileNavigation';
 import { Header } from './components/Header';
-import { ConfigBar } from './components/ConfigBar';
+import { ConfigBar } from './features/config/components/ConfigBar';
 import { storageService } from './services/storageService';
 import Editor from '@monaco-editor/react';
 
@@ -429,7 +429,7 @@ export default function App() {
   return (
     <div className="w-full h-[100dvh] flex flex-col bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm">
       <Header loadingTree={loadingTree} setShowPrivacy={setShowPrivacy} handleCleanup={handleCleanup} fetchRepoTree={fetchRepoTree} />
-      <ConfigBar repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
+      <ConfigBar />
 
       <main className="flex-1 flex overflow-hidden relative">
         <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
@@ -496,8 +496,8 @@ export default function App() {
       </main>
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-      <PaywallModal show={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
-      <PrivacyModal show={showPrivacy} onClose={() => setShowPrivacy(false)} />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
+      <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
   );
 }
