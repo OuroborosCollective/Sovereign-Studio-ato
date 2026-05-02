@@ -44,6 +44,7 @@ jobs:
           validate-wrappers: false
         with:
           gradle-version: current
+          validate-wrappers: false
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew

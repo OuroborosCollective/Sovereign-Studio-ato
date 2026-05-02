@@ -244,14 +244,14 @@ export default function App() {
         return "";
     }
 
-    const { GoogleGenAI } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey: activeApiKey });
-
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const ai = new GoogleGenerativeAI(activeApiKey);
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
     const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const result = await ai.models.generateContent({ model: "gemini-2.5-flash", contents: prompt, config: { systemInstruction: system } });
+            const result = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt, config: { systemInstruction: system } });
             return result.text || "";
         } catch (err: any) {
             if (i === maxRetries) throw err;
@@ -285,7 +285,7 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/```json/gi, '').replace(/```/g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/```/g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -312,7 +312,7 @@ export default function App() {
         const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/```[a-z]*\n/gi, '').replace(/```/g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
@@ -498,7 +498,7 @@ export default function App() {
       </main>
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }}  />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
       <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
   );
