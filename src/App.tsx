@@ -286,7 +286,7 @@ export default function App() {
     addLog("<b>Architekt evaluiert Blueprint...</b>", "info");
 
     try {
-      const treeContext = fullTree.slice(0, 400).map(f => f.path).join('\n');
+      const treeContext = fullTree.slice(0, 400).map(f => f.path).join('\\n');
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
@@ -296,32 +296,42 @@ export default function App() {
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
       
       const plan = JSON.parse(cleanPlan);
-      const newFiles: BatchFile[] = [];
+      const CONCURRENCY_LIMIT = 5;
+      const finalBatch: BatchFile[] = [];
 
-      for (const step of plan) {
-        if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
-          continue;
-        }
+      for (let i = 0; i < plan.length; i += CONCURRENCY_LIMIT) {
+        const chunk = plan.slice(i, i + CONCURRENCY_LIMIT);
+        const results = await Promise.all(chunk.map(async (step: any) => {
+          if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
+            return null;
+          }
 
-        addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
-        const branch = activePR.branch || 'main';
-        let existingCode = "";
-        try {
-          const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
-          if (res.ok) existingCode = await res.text();
-        } catch {}
+          addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
+          const branch = activePR.branch || 'main';
+          let existingCode = "";
+          try {
+            const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
+            if (res.ok) existingCode = await res.text();
+          } catch {}
 
-        const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
-        const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
-        let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/^[a-z]*\n/i, '').replace(/[a-z]*\n?/gi, '').replace(//g, '').trim();
-        
-        newFiles.push({ path: step.path, content: newCode });
-        setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
-        setFileContent(newCode);
+          const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
+          const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
+          let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
+          newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
+          
+          return { path: step.path, content: newCode };
+        }));
+
+        results.forEach(res => {
+           if(res) {
+             finalBatch.push(res);
+             setActiveFile({ path: res.path, type: 'blob', mode: '100644', sha: '' });
+             setFileContent(res.content || "");
+           }
+        });
       }
 
-      setBatchFiles(prev => [...prev, ...newFiles]);
+      setBatchFiles(prev => [...prev, ...finalBatch]);
       addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
     } catch (err: any) {
       logPersistentError(err, 'runArchitect');
@@ -504,7 +514,7 @@ export default function App() {
       </main>
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
       <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
   );
