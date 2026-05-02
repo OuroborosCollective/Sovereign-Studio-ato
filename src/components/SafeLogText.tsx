@@ -57,5 +57,5 @@ export const SafeLogText: React.FC<SafeLogTextProps> = ({ text }) => {
     stack[stack.length - 1].children.push(React.createElement(Tag, { key: `unclosed-${stack.length}` }, closed.children));
   }
 
-  return <>{stack[0].children}</>;
+  return <React.Fragment>{stack[0].children}</React.Fragment>;
 };
