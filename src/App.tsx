@@ -18,6 +18,10 @@ type LogMessage = { id: number, text: string, type: 'info' | 'success' | 'warnin
 type BatchFile = { path: string, content?: string, isDelete?: boolean };
 type PRState = { branch: string | null, number: number | null, lastErrorLog: string, isFixing: boolean, lastCommitSha: string | null };
 
+function SafeLogText({ text }: { text: string }) {
+  return <div dangerouslySetInnerHTML={{ __html: text }} />;
+}
+
 export default function App() {
   // --- State ---
   const [repoUrl, setRepoUrl] = useState("https://github.com/OuroborosCollective/Wasd");
@@ -111,15 +115,8 @@ export default function App() {
     }
   };
 
-  // --- Handlers ---
-  const handleGhPatChange = (val: string) => {
-    setGhPat(val);
-    storageService.set('ss_gh_pat', val);
-  };
-
-  const handleGeminiKeyChange = (val: string) => {
-    setGeminiKey(val);
-    storageService.set('ss_gemini_key', val);
+  const addLog = (text: string, type: LogMessage['type'] = 'info') => {
+    setLogs(prev => [...prev, { id: logIdCounter.current++, text, type }]);
   };
 
   const handleCleanup = async () => {
@@ -131,41 +128,7 @@ export default function App() {
     addLog('Workspace Cleanup abgeschlossen. Alle sensitiven API-Schlüssel wurden vom Gerät gelöscht.', 'success');
   };
 
-  const addLog = (text: string, type: LogMessage['type'] = 'info') => {
-    setLogs(prev => [...prev, { id: logIdCounter.current++, text, type }]);
-  };
-
-  const handleRepoChange = () => {
-    const regex = /github\.com\/([^/]+)\/([^/]+)/;
-    const match = repoUrl.match(regex);
-    if (match && match.length >= 3) {
-      const newOwner = match[1];
-      const newName = match[2].replace(/\.git$/, '');
-      setRepoOwner(newOwner);
-      setRepoName(newName);
-      addLog(`🔄 <b>Repository erfolgreich gewechselt:</b><br><code>${newOwner}/${newName}</code>`, 'success');
-      
-      setActiveFile(null);
-      setFileContent("");
-      setFileTooLarge(false);
-      setBatchFiles([]);
-      setActivePR({ branch: null, number: null, lastErrorLog: "", isFixing: false, lastCommitSha: null });
-      setCiStatus(null);
-      if (ciPollTimer.current) {
-        window.clearTimeout(ciPollTimer.current);
-        ciPollTimer.current = null;
-      }
-    } else {
-      addLog(`❌ <b>Ungültige URL.</b> Erwartet: <code>https://github.com/owner/repo</code>`, "error");
-    }
-  };
-
   const fetchRepoTree = async () => {
-    if (ghPat && !ghPat.startsWith('ghp_') && !ghPat.startsWith('github_pat_')) {
-       addLog('<b>Fehler:</b> Ungültiger GitHub PAT. Token muss mit "ghp_" oder "github_pat_" beginnen.', "error");
-       return;
-    }
-
     setLoadingTree(true);
     setTreeError("");
     try {
@@ -173,18 +136,13 @@ export default function App() {
       if (ghPat) headers['Authorization'] = `token ${ghPat}`;
       
       const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/main?recursive=1`, { headers });
-      if (!response.ok) throw new Error(`HTTP ${response.status} - Repository eventuell privat oder existiert nicht.`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      
-      if (data.truncated) {
-        addLog(`⚠️ <b>Achtung:</b> Repository ist sehr groß. Tree wurde von GitHub abgeschnitten.`, "warning");
-      }
-      
       const files = data.tree.filter((item: any) => item.type === 'blob');
       setFullTree(files);
-      addLog(`📁 <b>Tree geladen:</b> ${files.length} Dateien im Index gefunden.`, "success");
+      addLog(`📁 <b>Tree geladen:</b> ${files.length} Dateien gefunden.`, "success");
     } catch (err: any) {
-      addLog(`❌ <b>Fehler beim Laden des Trees:</b> ${err.message}<br>Tipp: Bei privaten Repositories PAT prüfen.`, "error");
+      addLog(`❌ <b>Tree Fehler:</b> ${err.message}`, "error");
       setTreeError("Repository konnte nicht geladen werden.");
     } finally {
       setLoadingTree(false);
@@ -196,7 +154,6 @@ export default function App() {
     setActiveTab('editor');
     setLoadingFile(true);
     setFileContent("");
-    setFileTooLarge(false);
     
     try {
       const branch = activePR.branch || 'main';
@@ -204,22 +161,10 @@ export default function App() {
       if (!response.ok) {
         const headers: Record<string, string> = { 'Accept': 'application/vnd.github.v3.raw' };
         if (ghPat) headers['Authorization'] = `token ${ghPat}`;
-        
         response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${file.path}?ref=${branch}`, { headers });
-        if (!response.ok) throw new Error("Datei nicht lesbar");
       }
       const text = await response.text();
-      if (text.length > MAX_FILE_SIZE) {
-         setFileTooLarge(true);
-         if (!isPro) {
-            setFileContent("// ⚠️ Diese Datei ist zu groß für den Free-Plan (>500KB).\n// Bitte schalte PRO frei, um große Dateien im Editor anzusehen.");
-         } else {
-            setFileContent(text.substring(0, 100000) + "\n\n... [File too large. Previewing first 100k chars.] ...");
-         }
-      } else {
-         setFileTooLarge(false);
-         setFileContent(text);
-      }
+      setFileContent(text);
     } catch (err) {
       setFileContent(`// Fehler beim Laden: ${err}`);
     } finally {
@@ -233,14 +178,12 @@ export default function App() {
     try {
         if (typeof (import.meta as any) !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
             envKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-        } else if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-            envKey = process.env.GEMINI_API_KEY;
         }
     } catch(e) {}
     
     let activeApiKey = customKey !== "" ? customKey : envKey;
     if (!activeApiKey) {
-        addLog(`❌ <b>Gemini API-Schlüssel fehlt.</b>`, "error");
+        addLog(`❌ <b>API-Schlüssel fehlt.</b>`, "error");
         return "";
     }
 
@@ -248,17 +191,13 @@ export default function App() {
     const ai = new GoogleGenerativeAI(activeApiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
-    const maxRetries = 3;
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            const result = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt, config: { systemInstruction: system } });
-            return result.text || "";
-        } catch (err: any) {
-            if (i === maxRetries) throw err;
-            await new Promise(r => setTimeout(r, 2000));
-        }
+    try {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+    } catch (err: any) {
+        throw err;
     }
-    return "";
   };
 
   const runArchitect = async (isAutoFix = false, autoFixLog = "") => {
@@ -285,23 +224,16 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/```/g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
       
       const plan = JSON.parse(cleanPlan);
-      const branch = activePR.branch || 'main';
+      const newBatch: BatchFile[] = [];
 
-      const CONCURRENCY_LIMIT = 5;
-      const results: (BatchFile | null)[] = [];
-
-      for (let i = 0; i < plan.length; i += CONCURRENCY_LIMIT) {
-        const chunk = plan.slice(i, i + CONCURRENCY_LIMIT);
-        const chunkResults = await Promise.all(chunk.map(async (step: any) => {
-          if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
-            return null;
-          }
+      for (const step of plan) {
+        if (step.path.match(/lock\.json|lock\.yaml|\.lock/i)) continue;
 
         addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
         const branch = activePR.branch || 'main';
@@ -321,7 +253,6 @@ export default function App() {
         setFileContent(newCode);
       }
 
-      const newBatch = results.filter((item): item is BatchFile => item !== null);
       setBatchFiles(prev => [...prev, ...newBatch]);
       addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
     } catch (err: any) {
@@ -374,7 +305,7 @@ export default function App() {
       const commitData = await commitRes.json();
       
       const tree = batchFiles.map(f => ({
-          path: f.path, mode: '100644', type: 'blob', content: f.content, sha: f.isDelete ? null : undefined
+          path: f.path, mode: '100644', type: 'blob', content: f.content
       }));
 
       const newTreeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees`, {
@@ -393,7 +324,7 @@ export default function App() {
 
       if (!activePR.branch) {
           const prRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls`, {
-              method: 'POST', headers, body: JSON.stringify({ title: `AI: ${branchName}`, head: branchName, base: "main", body: "AI edits." })
+              method: 'POST', headers, body: JSON.stringify({ title: `AI PR`, head: branchName, base: "main", body: "AI edits." })
           });
           const prData = await prRes.json();
           setActivePR({ branch: branchName, number: prData.number, lastErrorLog: "", isFixing: false, lastCommitSha: newCommitData.sha });
@@ -506,8 +437,6 @@ export default function App() {
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
       <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
-      <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
       <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
   );
