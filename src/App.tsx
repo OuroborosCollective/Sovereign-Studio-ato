@@ -291,7 +291,7 @@ export default function App() {
     try {
       const maxContextFiles = 400;
       const treeContext = fullTree.length > 0 
-        ? fullTree.slice(0, maxContextFiles).map(f => f.path).join('\\n') 
+        ? fullTree.slice(0, maxContextFiles).map(f => f.path).join('\n') 
         : "Keine Struktur geladen.";
       
       const architectSys = `Du bist ein brillanter Software-Architekt für das Projekt.
@@ -421,7 +421,7 @@ export default function App() {
       if (!branchName) {
           branchName = `architect-fix-${Date.now()}`;
           isNewBranch = true;
-          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/main`, {headers});
+          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/main`, { headers });
           const refData = await refRes.json();
           baseSha = refData.object.sha;
           
@@ -429,15 +429,15 @@ export default function App() {
               method: 'POST', headers, body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha })
           });
       } else {
-          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, {headers});
+          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, { headers });
           const refData = await refRes.json();
           baseSha = refData.object.sha;
       }
 
-      const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits/${baseSha}`, {headers});
+      const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits/${baseSha}`, { headers });
       const commitData = await commitRes.json();
       
-      const currentTreeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${commitData.tree.sha}?recursive=1`, {headers});
+      const currentTreeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${commitData.tree.sha}?recursive=1`, { headers });
       const currentTreeData = await currentTreeRes.json();
       const liveTree = currentTreeData.tree;
 
@@ -458,7 +458,7 @@ export default function App() {
 
       let commitMessage = `Sovereign AI Deployment (${batchFiles.length} actions)`;
       try {
-        const msg = await callGeminiAPI(`Commit msg for: ${batchFiles.map(f=>f.path).join(", ")}`, "Du bist Git Commit Generator.");
+        const msg = await callGeminiAPI(`Commit msg for: ${batchFiles.map(f => f.path).join(", ")}`, "Du bist Git Commit Generator.");
         if (msg) commitMessage = `✨ ${msg.trim()}`;
       } catch(e) {}
 
