@@ -4,12 +4,12 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './features/billing/components/PaywallModal';
-import { PrivacyModal } from './features/legal/components/PrivacyModal';
-import { MobileNavigation } from './features/navigation/components/MobileNavigation';
-import { Header } from './features/layout/components/Header';
-import { ConfigBar } from './features/repository/components/ConfigBar';
-import { storageService } from './features/shared/services/storageService';
+import { PaywallModal } from './components/PaywallModal';
+import { PrivacyModal } from './components/PrivacyModal';
+import { MobileNavigation } from './components/MobileNavigation';
+import { Header } from './components/Header';
+import { ConfigBar } from './components/ConfigBar';
+import { storageService } from './services/storageService';
 import Editor from '@monaco-editor/react';
 
 // --- Types ---
@@ -248,8 +248,8 @@ export default function App() {
         return "";
     }
 
-    const { GoogleGenAI } = await import("@google/genai");
-    const ai = new GoogleGenAI(activeApiKey);
+    const { GoogleGenAI } = await import("@google/generative-ai");
+    const ai = new GoogleGenAI({ apiKey: activeApiKey });
     const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
     const maxRetries = 4;
@@ -307,7 +307,7 @@ export default function App() {
       Format: [ { "path": "exakter/pfad.ts", "task": "Was repariert/gebaut werden muss", "action": "modify" | "delete" } ]`;
       
       const rawPlan = await callGeminiAPI(input, architectSys);
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/`/g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -344,7 +344,7 @@ export default function App() {
         
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/`/g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
