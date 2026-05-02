@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
-import App from './app/App.tsx';
+import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
