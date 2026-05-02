@@ -291,15 +291,17 @@ export default function App() {
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
       
       const plan = JSON.parse(cleanPlan);
-      const newBatch: BatchFile[] = [];
+      const branch = activePR.branch || 'main';
 
-      for (const step of plan) {
-        if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) continue;
+      const CONCURRENCY_LIMIT = 5;
+      const results: (BatchFile | null)[] = [];
 
-        if (step.action === 'delete') {
-          newBatch.push({ path: step.path, isDelete: true });
-          continue;
-        }
+      for (let i = 0; i < plan.length; i += CONCURRENCY_LIMIT) {
+        const chunk = plan.slice(i, i + CONCURRENCY_LIMIT);
+        const chunkResults = await Promise.all(chunk.map(async (step: any) => {
+          if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
+            return null;
+          }
 
         addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
         const branch = activePR.branch || 'main';
@@ -319,6 +321,7 @@ export default function App() {
         setFileContent(newCode);
       }
 
+      const newBatch = results.filter((item): item is BatchFile => item !== null);
       setBatchFiles(prev => [...prev, ...newBatch]);
       addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
     } catch (err: any) {
