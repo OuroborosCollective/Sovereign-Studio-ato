@@ -14,20 +14,19 @@ vi.mock('../services/storageService', () => {
   };
 });
 
-const ThrowError = ({ message = 'Test error' }) => {
+const ThrowError = ({ message = 'Test error' }: { message?: string }) => {
   throw new Error(message);
 };
 
 describe('ErrorBoundary', () => {
-  const originalConsoleError = console.error;
+  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   beforeEach(() => {
-    console.error = vi.fn();
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    consoleErrorSpy.mockRestore();
+    consoleErrorSpy.mockClear();
   });
 
   it('should catch errors and display fallback UI', () => {

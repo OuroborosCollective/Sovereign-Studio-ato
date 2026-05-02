@@ -4,7 +4,7 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './features/paywall/components/PaywallModal';
+import { PaywallModal } from './features/billing/PaywallModal';
 import { PrivacyModal } from './features/privacy/components/PrivacyModal';
 import { MobileNavigation } from './components/MobileNavigation';
 import { Header } from './components/Header';
@@ -290,7 +290,7 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/[`]/g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -317,7 +317,7 @@ export default function App() {
           const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
           const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
           let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-          newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(//g, '').trim();
+          newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(/[`]/g, '').trim();
           
           return { path: step.path, content: newCode };
         }));
