@@ -76,7 +76,8 @@ describe('ErrorBoundary', () => {
         if (args.length === 0) {
           super('2024-01-01T00:00:00.000Z');
         } else {
-          super(...args as any);
+          // @ts-ignore
+          super(...args);
         }
       }
       static now() {
