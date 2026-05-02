@@ -317,7 +317,7 @@ export default function App() {
           const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
           const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
           let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-          newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
+          newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(//g, '').trim();
           
           return { path: step.path, content: newCode };
         }));
@@ -325,14 +325,19 @@ export default function App() {
         results.forEach(res => {
            if(res) {
              finalBatch.push(res);
-             setActiveFile({ path: res.path, type: 'blob', mode: '100644', sha: '' });
-             setFileContent(res.content || "");
            }
         });
       }
 
       setBatchFiles(prev => [...prev, ...finalBatch]);
-      addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
+      
+      if (finalBatch.length > 0) {
+        const lastFile = finalBatch[finalBatch.length - 1];
+        setActiveFile({ path: lastFile.path, type: 'blob', mode: '100644', sha: '' });
+        setFileContent(lastFile.content || "");
+      }
+
+      addLog(`🚀 <b>Workflow Abgeschlossen.</b> ${finalBatch.length} Dateien generiert.`, "success");
     } catch (err: any) {
       logPersistentError(err, 'runArchitect');
       addLog(`<b>Fehler:</b> ${err.message}`, "error");
@@ -482,14 +487,24 @@ export default function App() {
           <div className="h-10 bg-white border-b border-stone-200 flex items-center px-3 shrink-0 text-[11px] font-mono text-stone-600 truncate">{activeFile ? activeFile.path : "Keine Datei"}</div>
           <div className="flex-1 p-2 lg:p-4 flex flex-col relative overflow-hidden">
             <div className="bg-[#0c0a09] flex-1 rounded-2xl shadow-xl relative overflow-hidden flex flex-col border border-stone-800">
-               {loadingFile || isProcessing ? <div className="flex-1 flex items-center justify-center text-indigo-400 font-mono text-xs uppercase"><RefreshCw size={14} className="animate-spin mr-2"/> Processing...</div> : (
+               {loadingFile || isProcessing ? (
+                 <div className="flex-1 flex items-center justify-center text-indigo-400 font-mono text-xs uppercase animate-pulse">
+                    <RefreshCw size={16} className="animate-spin mr-3"/> {isProcessing ? "Architecting changes..." : "Loading content..."}
+                 </div>
+               ) : (
                  <Editor
                     height="100%"
                     defaultLanguage="typescript"
                     theme="vs-dark"
                     value={fileContent}
-                    options={{ readOnly: !isPro && fileTooLarge, minimap: { enabled: false }, fontSize: 12 }}
-                    onChange={(v) => v && !fileTooLarge && setFileContent(v)}
+                    options={{ 
+                        readOnly: (!isPro && fileTooLarge), 
+                        minimap: { enabled: false }, 
+                        fontSize: 12,
+                        scrollBeyondLastLine: false,
+                        automaticLayout: true
+                    }}
+                    onChange={(v) => v !== undefined && !fileTooLarge && setFileContent(v)}
                  />
                )}
             </div>

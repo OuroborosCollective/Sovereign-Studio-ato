@@ -110,8 +110,62 @@ class AuthTokenRepository extends BaseRepository<AuthTokens> {
 
 export const authRepository = new AuthTokenRepository(provider);
 
+/**
+ * Service for GitHub operations including conflict-aware push logic.
+ */
+export const githubService = {
+  /**
+   * Updates a reference on GitHub with SHA verification to prevent race conditions.
+   * @throws Error if the remote SHA has changed since the operation started (Sync & Retry).
+   */
+  async handlePush(params: {
+    owner: string;
+    repo: string;
+    branch: string;
+    baseSha: string;
+    newCommitSha: string;
+    token: string;
+  }): Promise<void> {
+    const { owner, repo, branch, baseSha, newCommitSha, token } = params;
+    const url = `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`;
+    const headers = {
+      'Authorization': `token ${token}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json'
+    };
+
+    // 1. SHA Verification: Fetch current HEAD state immediately before patching
+    const headCheck = await fetch(url, { headers });
+    if (!headCheck.ok) {
+      throw new Error(`Failed to verify current HEAD: ${headCheck.statusText}`);
+    }
+    
+    const headData = await headCheck.json();
+    const currentRemoteSha = headData.object.sha;
+
+    // 2. Conflict Detection: If remote moved forward, abort to avoid overwriting changes
+    if (currentRemoteSha !== baseSha) {
+      throw new Error('Sync & Retry: Remote reference has changed. Please pull the latest changes before pushing.');
+    }
+
+    // 3. Patch Ref: Perform the actual update
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        sha: newCommitSha,
+        force: false
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to update reference on GitHub');
+    }
+  }
+};
+
 export const storageService = {
-  // Exposure of raw provider for generic use cases
   async get(key: string): Promise<string | null> {
     return provider.getItem(key);
   },
@@ -124,7 +178,6 @@ export const storageService = {
     await provider.removeItem(key);
   },
 
-  // Facade for AuthTokens (Maintains backward compatibility with improved logic)
   async setTokens(tokens: AuthTokens): Promise<void> {
     await authRepository.set(tokens);
   },
