@@ -307,7 +307,7 @@ export default function App() {
       Format: [ { "path": "exakter/pfad.ts", "task": "Was repariert/gebaut werden muss", "action": "modify" | "delete" } ]`;
       
       const rawPlan = await callGeminiAPI(input, architectSys);
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/`/g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -344,7 +344,7 @@ export default function App() {
         
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/`/g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
@@ -595,7 +595,7 @@ export default function App() {
                           theme="vs-dark"
                           value={fileContent}
                           options={{ readOnly: !isPro && fileTooLarge, minimap: { enabled: false }, fontSize: 12, padding: { top: 16 } }}
-                          onChange={(v) => { if (v !== undefined && (!fileTooLarge || isPro)) setFileContent(v); }}
+                          onChange={(v) => v && !fileTooLarge && setFileContent(v)}
                       />
                    )}
                  </div>
