@@ -307,7 +307,7 @@ export default function App() {
       Format: [ { "path": "exakter/pfad.ts", "task": "Was repariert/gebaut werden muss", "action": "modify" | "delete" } ]`;
       
       const rawPlan = await callGeminiAPI(input, architectSys);
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//gi, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
