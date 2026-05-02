@@ -18,8 +18,7 @@ type LogMessage = { id: number, text: string, type: 'info' | 'success' | 'warnin
 type BatchFile = { path: string, content?: string, isDelete?: boolean };
 type PRState = { branch: string | null, number: number | null, lastErrorLog: string, isFixing: boolean, lastCommitSha: string | null };
 
-// --- Helper Components ---
-const SafeLogText = ({ text }: { text: string }) => <span dangerouslySetInnerHTML={{ __html: text }} />;
+const SafeLogText = ({ text }: { text: string }) => <div dangerouslySetInnerHTML={{ __html: text }} />;
 
 export default function App() {
   // --- State ---
@@ -236,8 +235,6 @@ export default function App() {
     try {
         if (typeof (import.meta as any) !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GEMINI_API_KEY) {
             envKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-        } else if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-            envKey = process.env.GEMINI_API_KEY;
         }
     } catch(e) {}
     
@@ -249,12 +246,12 @@ export default function App() {
 
     const { GoogleGenerativeAI } = await import("@google/generative-ai");
     const ai = new GoogleGenerativeAI(activeApiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
     const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const result = await model.generateContent({ contents: [{ role: 'user', parts: [{ text: `${system}\n\nTask: ${prompt}` }] }] });
+            const result = await model.generateContent(prompt);
             const response = await result.response;
             return response.text() || "";
         } catch (err: any) {
@@ -285,7 +282,7 @@ export default function App() {
     addLog("<b>Architekt evaluiert Blueprint...</b>", "info");
 
     try {
-      const treeContext = fullTree.slice(0, 400).map(f => f.path).join('\n');
+      const treeContext = fullTree.slice(0, 400).map(f => f.path).join('\\n');
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
@@ -295,32 +292,39 @@ export default function App() {
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
       
       const plan = JSON.parse(cleanPlan);
-      const newBatch: BatchFile[] = [];
+      const branch = activePR.branch || 'main';
 
-      for (const step of plan) {
-        if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
-          continue;
-        }
+      const CONCURRENCY_LIMIT = 5;
+      const results: (BatchFile | null)[] = [];
 
-        addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
-        const branch = activePR.branch || 'main';
-        let existingCode = "";
-        try {
-          const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
-          if (res.ok) existingCode = await res.text();
-        } catch {}
+      for (let i = 0; i < plan.length; i += CONCURRENCY_LIMIT) {
+        const chunk = plan.slice(i, i + CONCURRENCY_LIMIT);
+        const chunkResults = await Promise.all(chunk.map(async (step: any) => {
+          if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
+            return null;
+          }
 
-        const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
-        const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
-        let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
-        
-        newBatch.push({ path: step.path, content: newCode });
-        setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
-        setFileContent(newCode);
+          addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
+          let existingCode = "";
+          try {
+            const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
+            if (res.ok) existingCode = await res.text();
+          } catch {}
+
+          const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
+          const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
+          let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
+          newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
+          
+          setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
+          setFileContent(newCode);
+          return { path: step.path, content: newCode };
+        }));
+        results.push(...chunkResults);
       }
 
-      setBatchFiles(prev => [...prev, ...newBatch]);
+      const validBatch = results.filter((item): item is BatchFile => item !== null);
+      setBatchFiles(prev => [...prev, ...validBatch]);
       addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
     } catch (err: any) {
       logPersistentError(err, 'runArchitect');
@@ -503,7 +507,7 @@ export default function App() {
       </main>
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
       <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
   );
