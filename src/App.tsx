@@ -202,9 +202,6 @@ export default function App() {
       const branch = activePR.branch || 'main';
       let response = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${file.path}`);
       if (!response.ok) {
-        if (ghPat && !ghPat.startsWith('ghp_') && !ghPat.startsWith('github_pat_')) {
-          throw new Error('Ungültiges PAT Format');
-        }
         const headers: Record<string, string> = { 'Accept': 'application/vnd.github.v3.raw' };
         if (ghPat) headers['Authorization'] = `token ${ghPat}`;
         
@@ -217,7 +214,7 @@ export default function App() {
          if (!isPro) {
             setFileContent("// ⚠️ Diese Datei ist zu groß für den Free-Plan (>500KB).\n// Bitte schalte PRO frei, um große Dateien im Editor anzusehen.");
          } else {
-            setFileContent(text.substring(0, 100000) + "\n\n... [File is too large to display entirely. Previewing first 100000 characters.] ...");
+            setFileContent(text.substring(0, 100000) + "\n\n... [File too large. Previewing first 100k chars.] ...");
          }
       } else {
          setFileTooLarge(false);
@@ -242,9 +239,8 @@ export default function App() {
     } catch(e) {}
     
     let activeApiKey = customKey !== "" ? customKey : envKey;
-    
     if (!activeApiKey) {
-        addLog(`❌ <b>Gemini API-Schlüssel fehlt:</b> Bitte gib deinen API-Schlüssel oben ein.`, "error");
+        addLog(`❌ <b>Gemini API-Schlüssel fehlt.</b>`, "error");
         return "";
     }
 
@@ -252,18 +248,14 @@ export default function App() {
     const ai = new GoogleGenAI({ apiKey: activeApiKey });
     const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
-    const maxRetries = 4;
-    const delays = [1000, 2000, 4000, 8000];
-    
+    const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
             const result = await model.generateContent(prompt);
-            const response = await result.response;
-            return response.text() || "";
+            return result.response.text() || "";
         } catch (err: any) {
-            logPersistentError(err, `callGeminiAPI attempt ${i+1}`);
             if (i === maxRetries) throw err;
-            await new Promise(resolve => setTimeout(resolve, delays[i]));
+            await new Promise(r => setTimeout(r, 2000));
         }
     }
     return "";
@@ -286,27 +278,13 @@ export default function App() {
 
     setIsProcessing(true);
     setActiveTab('editor');
-    addLog("<b>Architekt evaluiert Blueprint und wählt Ziel-Dateien...</b>", "info");
+    addLog("<b>Architekt evaluiert Blueprint...</b>", "info");
 
     try {
-      const maxContextFiles = 400;
-      const treeContext = fullTree.length > 0 
-        ? fullTree.slice(0, maxContextFiles).map(f => f.path).join('\n') 
-        : "Keine Struktur geladen.";
+      const treeContext = fullTree.slice(0, 400).map(f => f.path).join('\\n');
+      const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
+      const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      const architectSys = `Du bist ein brillanter Software-Architekt für das Projekt.
-      WICHTIGE PROJEKT-REGELN:
-      1. MONOREPO & NODE: Fokus auf Node.js, TypeScript, React.
-      2. RUST VERBOTEN: Benutze, schreibe oder empfehle NIEMALS Rust!
-      3. AGENTEN SCHÜTZEN: Ignoriere/Überspringe ALLE Dateien mit '.jules' oder 'jules' im Namen.
-      4. LOCKFILES TABU: 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock' dürfen nicht bearbeitet werden.
-      
-      AKTUELLE STRUKTUR (Auszug):\n${treeContext}\n
-      
-      GIB AUSSCHLIESSLICH EIN VALIDES JSON-ARRAY ZURÜCK.
-      Format: [ { "path": "exakter/pfad.ts", "task": "Was repariert/gebaut werden muss", "action": "modify" | "delete" } ]`;
-      
-      const rawPlan = await callGeminiAPI(input, architectSys);
       let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
@@ -314,34 +292,24 @@ export default function App() {
       
       const plan = JSON.parse(cleanPlan);
       const newBatch: BatchFile[] = [];
-      let processed = 0;
 
       for (const step of plan) {
-        if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
-          addLog(`🛡️ <b>Schutz:</b> Überspringe <code>${step.path}</code>.`, "warning");
-          continue; 
-        }
+        if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) continue;
 
-        const isDeleteAction = step.action === 'delete' || step.task.toLowerCase().includes('lösche');
-        if (isDeleteAction) {
-          addLog(`🗑️ <b>Löschen:</b> <code>${step.path}</code> markiert.`, "info");
+        if (step.action === 'delete') {
           newBatch.push({ path: step.path, isDelete: true });
-          processed++;
-          continue; 
+          continue;
         }
 
-        addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>...`, "info");
-        
+        addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
         const branch = activePR.branch || 'main';
         let existingCode = "";
         try {
           const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
           if (res.ok) existingCode = await res.text();
-        } catch { }
+        } catch {}
 
-        const compilerSys = `Du bist ein Elite Code-Generator. TECH STACK: Node.js, TypeScript, React. KEIN RUST!
-        REGEL: Gib AUSSCHLIESSLICH den kompletten, validen Code zurück. Keine Erklärungen.`;
-        
+        const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
         newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
@@ -349,121 +317,70 @@ export default function App() {
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
         setFileContent(newCode);
-        processed++;
-        addLog(`✅ <b>Fertig:</b> <code>${step.path}</code>.`, "success");
       }
 
-      if (processed === 0) {
-        addLog(`ℹ️ Keine Aktionen ausgeführt.`, "warning");
-        if (activePR.isFixing) setActivePR(p => ({ ...p, isFixing: false }));
-      } else {
-        setBatchFiles(prev => [...prev, ...newBatch]);
-        addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
-      }
-
+      setBatchFiles(prev => [...prev, ...newBatch]);
+      addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
     } catch (err: any) {
       logPersistentError(err, 'runArchitect');
       addLog(`<b>Fehler:</b> ${err.message}`, "error");
-      if (activePR.isFixing) setActivePR(p => ({ ...p, isFixing: false }));
     } finally {
       setIsProcessing(false);
     }
   };
 
   const suggestIdeas = async () => {
-    if (!isPro && ideaRuns >= 6) {
-        setShowPaywall(true);
-        return;
-    }
+    if (!isPro && ideaRuns >= 6) { setShowPaywall(true); return; }
+    if (fullTree.length === 0) return;
     
-    if (fullTree.length === 0) {
-        addLog("Repo laden für Ideen.", "warning");
-        return;
-    }
-    
-    setIdeaRuns(prev => {
-      const newVal = prev + 1;
-      storageService.set('ss_idea_runs', String(newVal));
-      return newVal;
-    });
-
+    setIdeaRuns(p => { const n = p + 1; storageService.set('ss_idea_runs', String(n)); return n; });
     setIsProcessing(true);
     setActiveTab('chat');
     addLog("✨ Scanne Architektur...", "idea");
     
     try {
         const paths = fullTree.slice(0, 150).map(f => f.path).join('\n');
-        const prompt = `Struktur:\n${paths}\n\nSchlage 3 Verbesserungen vor.`;
-        const ideas = await callGeminiAPI(prompt, "Du bist Tech Lead. Antworte in kurzen Bulletpoints (HTML <ul><li>).");
-        addLog(`✨ <b>Architektur Ideen:</b><br><div class="mt-2 text-stone-700">${ideas}</div>`, "idea");
-    } catch (e: any) { 
-        logPersistentError(e, 'suggestIdeas');
-        addLog(`Fehler: ${e.message}`, "error"); 
-    } 
-    finally { 
-        setIsProcessing(false); 
-    }
+        const ideas = await callGeminiAPI(`Struktur:\n${paths}\n\nSchlage 3 Verbesserungen vor.`, "Tech Lead. Bulletpoints.");
+        addLog(`✨ <b>Ideen:</b><br>${ideas}`, "idea");
+    } catch (e: any) { addLog(`Fehler: ${e.message}`, "error"); } 
+    finally { setIsProcessing(false); }
   };
 
   const handlePush = async () => {
-    if (!ghPat || (!ghPat.startsWith('ghp_') && !ghPat.startsWith('github_pat_'))) {
-       addLog("Ungültiger GitHub PAT!", "error");
-       return;
-    }
+    if (!ghPat) return;
     setIsProcessing(true);
-    
     try {
       const headers = { 'Authorization': `token ${ghPat}`, 'Accept': 'application/vnd.github.v3+json' };
-      let branchName = activePR.branch;
-      let isNewBranch = false;
+      let branchName = activePR.branch || `architect-fix-${Date.now()}`;
       let baseSha;
 
-      if (!branchName) {
-          branchName = `architect-fix-${Date.now()}`;
-          isNewBranch = true;
-          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/main`, { headers });
+      if (!activePR.branch) {
+          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/main`, {headers});
           const refData = await refRes.json();
           baseSha = refData.object.sha;
-          
           await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs`, {
               method: 'POST', headers, body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha })
           });
       } else {
-          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, { headers });
+          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, {headers});
           const refData = await refRes.json();
           baseSha = refData.object.sha;
       }
 
-      const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits/${baseSha}`, { headers });
+      const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits/${baseSha}`, {headers});
       const commitData = await commitRes.json();
       
-      const currentTreeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${commitData.tree.sha}?recursive=1`, { headers });
-      const currentTreeData = await currentTreeRes.json();
-      const liveTree = currentTreeData.tree;
-
-      const tree = [];
-      for (const f of batchFiles) {
-          if (f.isDelete) {
-              const existingItem = liveTree.find((item: any) => item.path === f.path);
-              if (existingItem) tree.push({ path: f.path, mode: existingItem.mode, type: existingItem.type, sha: null });
-          } else {
-              tree.push({ path: f.path, mode: '100644', type: 'blob', content: f.content });
-          }
-      }
+      const tree = batchFiles.map(f => ({
+          path: f.path, mode: '100644', type: 'blob', content: f.content, sha: f.isDelete ? null : undefined
+      }));
 
       const newTreeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees`, {
           method: 'POST', headers, body: JSON.stringify({ base_tree: commitData.tree.sha, tree })
       });
       const newTreeData = await newTreeRes.json();
 
-      let commitMessage = `Sovereign AI Deployment (${batchFiles.length} actions)`;
-      try {
-        const msg = await callGeminiAPI(`Commit msg for: ${batchFiles.map(f => f.path).join(", ")}`, "Du bist Git Commit Generator.");
-        if (msg) commitMessage = `✨ ${msg.trim()}`;
-      } catch(e) {}
-
       const newCommitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits`, {
-          method: 'POST', headers, body: JSON.stringify({ message: commitMessage, tree: newTreeData.sha, parents: [baseSha] })
+          method: 'POST', headers, body: JSON.stringify({ message: `AI Fix`, tree: newTreeData.sha, parents: [baseSha] })
       });
       const newCommitData = await newCommitRes.json();
 
@@ -471,61 +388,34 @@ export default function App() {
           method: 'PATCH', headers, body: JSON.stringify({ sha: newCommitData.sha })
       });
 
-      if (isNewBranch) {
+      if (!activePR.branch) {
           const prRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls`, {
-              method: 'POST', headers, body: JSON.stringify({ title: `Sovereign AI: ${branchName}`, head: branchName, base: "main", body: "AI modifications." })
+              method: 'POST', headers, body: JSON.stringify({ title: `AI: ${branchName}`, head: branchName, base: "main", body: "AI edits." })
           });
           const prData = await prRes.json();
           setActivePR({ branch: branchName, number: prData.number, lastErrorLog: "", isFixing: false, lastCommitSha: newCommitData.sha });
-          addLog(`🟢 <b>PR #${prData.number} Erstellt!</b>`, "success");
       } else {
           setActivePR(p => ({ ...p, lastCommitSha: newCommitData.sha }));
-          addLog(`🟢 <b>Update an PR #${activePR.number} gepusht!</b>`, "success");
       }
-      
       setBatchFiles([]);
-    } catch(err: any) {
-      logPersistentError(err, 'handlePush');
-      addLog(`<b>Push Error:</b> ${err.message}`, "error");
-    } finally {
-      setIsProcessing(false);
-    }
+      addLog("🟢 <b>Push erfolgreich!</b>", "success");
+    } catch(err: any) { addLog(`Push Error: ${err.message}`, "error"); }
+    finally { setIsProcessing(false); }
   };
 
   const fetchCIStatus = async () => {
-    if (!ghPat || !activePR.lastCommitSha) {
-        addLog("PAT und Push erforderlich.", "warning");
-        return;
-    }
-    
+    if (!ghPat || !activePR.lastCommitSha) return;
     setIsProcessing(true);
-    addLog("⏳ CI Status...", "info");
     try {
         const headers = { 'Authorization': `token ${ghPat}`, 'Accept': 'application/vnd.github.v3+json' };
         const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/commits/${activePR.lastCommitSha}/check-runs`, { headers });
         const data = await res.json();
-        
         if (data.check_runs && data.check_runs.length > 0) {
             const run = data.check_runs[0];
-            const isFailed = run.conclusion === 'failure';
-            const isRunning = run.status === 'in_progress' || run.status === 'queued';
-            
-            setCiStatus({ text: run.name, percent: isRunning ? 50 : 100, isFailed, isRunning });
-
-            if (isFailed) {
-                 addLog(`❌ <b>CI Fehler:</b> ${run.name}`, "error");
-                 setActivePR(prev => ({ ...prev, lastErrorLog: run.output?.text || "Check output failed." }));
-            } else if (isRunning) {
-                 addLog(`⏳ <b>CI läuft...</b>`, "info");
-            } else {
-                 addLog(`✅ <b>CI Erfolg!</b>`, "success");
-            }
+            setCiStatus({ text: run.name, percent: run.status === 'completed' ? 100 : 50, isFailed: run.conclusion === 'failure', isRunning: run.status !== 'completed' });
+            if (run.conclusion === 'failure') setActivePR(prev => ({ ...prev, lastErrorLog: run.output?.text || "CI failed." }));
         }
-    } catch(err: any) {
-        addLog(`<b>CI Check Error:</b> ${err.message}`, "error");
-    } finally {
-        setIsProcessing(false);
-    }
+    } catch(e) {} finally { setIsProcessing(false); }
   };
 
   const getLogClasses = (type: string) => {
@@ -539,43 +429,37 @@ export default function App() {
   };
 
   return (
-    <div className="w-full h-[100dvh] flex flex-col bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm animate-fade-in">
+    <div className="w-full h-[100dvh] flex flex-col bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm">
       <Header loadingTree={loadingTree} setShowPrivacy={setShowPrivacy} handleCleanup={handleCleanup} fetchRepoTree={fetchRepoTree} />
       <ConfigBar repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
 
       <main className="flex-1 flex overflow-hidden relative">
-        <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]`}>
+        <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
           <div className="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0">
             <h3 className="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center uppercase">
-              <span><RefreshCw size={12} className="inline mr-1"/> CI RESOLVER</span>
+              <span>CI RESOLVER</span>
               <span className="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-800 text-[9px]">{activePR.number ? `PR #${activePR.number}` : "-"}</span>
             </h3>
             <div className="flex gap-2 mt-2">
-              <button onClick={() => runArchitect(true, activePR.lastErrorLog)} disabled={isProcessing || !activePR.lastErrorLog} className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">FIX CI</button>
-              <button onClick={fetchCIStatus} disabled={isProcessing} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">CI CHECK</button>
+              <button onClick={() => runArchitect(true, activePR.lastErrorLog)} disabled={isProcessing || !activePR.lastErrorLog} className="flex-1 bg-rose-600 text-white py-1.5 rounded text-[10px] font-bold uppercase">FIX CI</button>
+              <button onClick={fetchCIStatus} disabled={isProcessing} className="flex-1 bg-indigo-600 text-white py-1.5 rounded text-[10px] font-bold uppercase">CHECK</button>
             </div>
           </div>
 
           <div className="p-3 bg-stone-50 border-b border-stone-200 shrink-0">
             <h3 className="text-[11px] font-bold text-stone-700 mb-2 flex items-center gap-1 uppercase"><Sparkles size={12}/> Blueprint</h3>
-            <textarea value={architectInput} onChange={(e) => setArchitectInput(e.target.value)} rows={3} className="w-full p-2 text-[11px] border border-stone-300 rounded focus:border-indigo-500 resize-none shadow-inner" placeholder="Task..."/>
+            <textarea value={architectInput} onChange={(e) => setArchitectInput(e.target.value)} rows={3} className="w-full p-2 text-[11px] border border-stone-300 rounded focus:border-indigo-500 resize-none" placeholder="Task..."/>
             <div className="flex gap-2 mt-2">
-              <button onClick={() => runArchitect()} disabled={isProcessing} className="flex-1 bg-stone-800 hover:bg-black text-white py-1.5 rounded-lg text-[11px] font-bold uppercase transition-all shadow-sm">GENERIERE</button>
-              <button onClick={suggestIdeas} disabled={isProcessing} className="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase">✨</button>
+              <button onClick={() => runArchitect()} disabled={isProcessing} className="flex-1 bg-stone-800 text-white py-1.5 rounded-lg text-[11px] font-bold uppercase">GENERIERE</button>
+              <button onClick={suggestIdeas} disabled={isProcessing} className="shrink-0 bg-yellow-100 border border-yellow-300 text-yellow-800 px-3 py-1.5 rounded-lg text-[11px]">✨</button>
             </div>
-            {!isPro && (
-               <div className="mt-3 bg-white p-2 rounded-lg border border-stone-200">
-                 <div className="flex justify-between text-[9px] text-stone-500 mb-1 font-bold"><span>PR Resolver</span><span>{prRuns}/15</span></div>
-                 <div className="w-full bg-stone-100 rounded-full h-1"><div className="bg-indigo-500 h-1 rounded-full" style={{ width: `${(prRuns / 15) * 100}%` }}></div></div>
-               </div>
-            )}
           </div>
 
           <div className="flex-1 overflow-y-auto bg-white custom-scrollbar">
              {loadingTree ? <div className="p-4 text-xs flex justify-center"><RefreshCw size={14} className="animate-spin text-stone-400" /></div> : 
-               <div className="select-none">
+               <div>
                   {fullTree.slice(0, 200).map((file) => (
-                    <div key={file.path} onClick={() => loadFile(file)} className={`px-4 py-2 border-b border-stone-100 text-[13px] truncate cursor-pointer transition-colors ${activeFile?.path === file.path ? 'bg-indigo-600 text-white font-bold' : 'hover:bg-stone-50 text-stone-600'}`}>{file.path}</div>
+                    <div key={file.path} onClick={() => loadFile(file)} className={`px-4 py-2 border-b border-stone-100 text-[13px] truncate cursor-pointer ${activeFile?.path === file.path ? 'bg-indigo-600 text-white font-bold' : 'hover:bg-stone-50 text-stone-600'}`}>{file.path}</div>
                   ))}
                </div>
              }
@@ -583,35 +467,31 @@ export default function App() {
         </div>
 
         <div className={`${activeTab === 'editor' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 bg-stone-50/70 pb-14 lg:pb-0 relative`}>
-          <div className="h-10 bg-white/60 backdrop-blur-md border-b border-stone-200/60 flex items-center px-3 shrink-0 text-[11px] font-mono text-stone-600 italic truncate">{activeFile ? activeFile.path : "Keine Datei"}</div>
+          <div className="h-10 bg-white border-b border-stone-200 flex items-center px-3 shrink-0 text-[11px] font-mono text-stone-600 truncate">{activeFile ? activeFile.path : "Keine Datei"}</div>
           <div className="flex-1 p-2 lg:p-4 flex flex-col relative overflow-hidden">
             <div className="bg-[#0c0a09] flex-1 rounded-2xl shadow-xl relative overflow-hidden flex flex-col border border-stone-800">
-               {loadingFile || isProcessing ? <div className="flex-1 flex items-center justify-center text-indigo-400 font-mono text-xs uppercase tracking-widest"><RefreshCw size={14} className="animate-spin mr-2"/> Processing...</div> : (
-                 <div className="flex-1 h-full">
-                   {!activeFile ? <div className="text-stone-500 italic p-4">// Wähle eine Datei</div> : (
-                      <Editor
-                          height="100%"
-                          defaultLanguage="typescript"
-                          theme="vs-dark"
-                          value={fileContent}
-                          options={{ readOnly: !isPro && fileTooLarge, minimap: { enabled: false }, fontSize: 12, padding: { top: 16 } }}
-                          onChange={(v) => v && !fileTooLarge && setFileContent(v)}
-                      />
-                   )}
-                 </div>
+               {loadingFile || isProcessing ? <div className="flex-1 flex items-center justify-center text-indigo-400 font-mono text-xs uppercase"><RefreshCw size={14} className="animate-spin mr-2"/> Processing...</div> : (
+                 <Editor
+                    height="100%"
+                    defaultLanguage="typescript"
+                    theme="vs-dark"
+                    value={fileContent}
+                    options={{ readOnly: !isPro && fileTooLarge, minimap: { enabled: false }, fontSize: 12 }}
+                    onChange={(v) => v && !fileTooLarge && setFileContent(v)}
+                 />
                )}
             </div>
           </div>
           <div className="h-16 border-t border-indigo-200 px-4 flex items-center justify-between bg-indigo-50 shrink-0">
-              <div className="truncate"><h4 className="text-[10px] font-black text-indigo-800 uppercase">Sicherer Push</h4><p className="text-[10px] text-indigo-600 italic">{batchFiles.length} Aktionen.</p></div>
-              <button onClick={handlePush} disabled={batchFiles.length === 0 || isProcessing} className="flex items-center gap-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-[10px] uppercase shadow-sm">PUSH PR</button>
+              <div className="truncate"><h4 className="text-[10px] font-black text-indigo-800 uppercase">Status</h4><p className="text-[10px] text-indigo-600">{batchFiles.length} Aktionen bereit.</p></div>
+              <button onClick={handlePush} disabled={batchFiles.length === 0 || isProcessing} className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-[10px] uppercase">PUSH PR</button>
           </div>
         </div>
 
         <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
-           <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold flex justify-between shrink-0"><span>SYSTEM LOG</span><button onClick={() => setLogs([])} className="text-stone-400 hover:text-stone-600 uppercase">Leeren</button></div>
-           <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] custom-scrollbar flex flex-col gap-3">
-              {logs.map((log) => <div key={log.id} className={`p-3 rounded-xl rounded-tl-none border shadow-sm ${getLogClasses(log.type)}`} dangerouslySetInnerHTML={{ __html: log.text }} />)}
+           <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold flex justify-between shrink-0"><span>LOG</span><button onClick={() => setLogs([])} className="text-stone-400">Clear</button></div>
+           <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] flex flex-col gap-3">
+              {logs.map((log) => <div key={log.id} className={`p-3 rounded-xl border ${getLogClasses(log.type)}`} dangerouslySetInnerHTML={{ __html: log.text }} />)}
               <div ref={logsEndRef} />
            </div>
         </div>
