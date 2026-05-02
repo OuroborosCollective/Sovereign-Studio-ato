@@ -505,6 +505,8 @@ export default function App() {
       </main>
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
+      <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />
       <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
       <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
