@@ -491,7 +491,11 @@ export default function App() {
         <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
            <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold flex justify-between shrink-0"><span>LOG</span><button onClick={() => setLogs([])} className="text-stone-400">Clear</button></div>
            <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] flex flex-col gap-3">
-              {logs.map((log) => <div key={log.id} className={`p-3 rounded-xl border ${getLogClasses(log.type)}`} dangerouslySetInnerHTML={{ __html: log.text }} />)}
+              {logs.map((log) => (
+                <div key={log.id} className={`p-3 rounded-xl border ${getLogClasses(log.type)}`}>
+                  <SafeLogText text={log.text} />
+                </div>
+              ))}
               <div ref={logsEndRef} />
            </div>
         </div>
