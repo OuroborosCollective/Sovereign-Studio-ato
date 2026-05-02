@@ -15,6 +15,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
+    "postinstall": "node patch-capacitor-google-auth.cjs",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
