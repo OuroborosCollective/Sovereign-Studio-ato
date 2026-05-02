@@ -372,19 +372,19 @@ export default function App() {
       let baseSha;
 
       if (!activePR.branch) {
-          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/main`, {headers});
+          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/main`, { headers });
           const refData = await refRes.json();
           baseSha = refData.object.sha;
           await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs`, {
               method: 'POST', headers, body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha })
           });
       } else {
-          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, {headers});
+          const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, { headers });
           const refData = await refRes.json();
           baseSha = refData.object.sha;
       }
 
-      const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits/${baseSha}`, {headers});
+      const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits/${baseSha}`, { headers });
       const commitData = await commitRes.json();
       
       const tree = batchFiles.map(f => ({
