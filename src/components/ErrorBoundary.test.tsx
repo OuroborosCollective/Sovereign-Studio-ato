@@ -36,8 +36,8 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeDefined();
-    expect(screen.getByText('Error: Test error')).toBeDefined();
+    expect(screen.getByTestId('fallback')).toBeDefined();
+    expect(screen.getByText('Custom Fallback')).toBeDefined();
   });
 
   it('swallows storageService.get error silently', async () => {
