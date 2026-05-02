@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { Header } from './Header';
 
-describe('Header Component', () => {
+describe('Header', () => {
   const defaultProps = {
     loadingTree: false,
     setShowPrivacy: vi.fn(),
@@ -10,41 +11,57 @@ describe('Header Component', () => {
     fetchRepoTree: vi.fn(),
   };
 
-  it('renders the header title', () => {
-    render(<Header {...defaultProps} />);
-    expect(screen.getByText('SOVEREIGN')).toBeInTheDocument();
-    expect(screen.getByText('_STUDIO')).toBeInTheDocument();
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
   });
 
-  it('renders buttons correctly', () => {
+  it('renders correctly with default props', () => {
     render(<Header {...defaultProps} />);
-    expect(screen.getByText('DATENSCHUTZ')).toBeInTheDocument();
-    expect(screen.getByText('CLEANUP')).toBeInTheDocument();
-    expect(screen.getByText('REFRESH')).toBeInTheDocument();
+    expect(screen.getByText(/SOVEREIGN/i)).toBeDefined();
+    expect(screen.getByText(/STUDIO/i)).toBeDefined();
+    expect(screen.getByText('CANVAS AUTO-AUTH')).toBeDefined();
+    expect(screen.getByRole('button', { name: /DATENSCHUTZ/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /CLEANUP/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /REFRESH/i })).toBeDefined();
   });
 
   it('calls setShowPrivacy when privacy button is clicked', () => {
-    render(<Header {...defaultProps} />);
-    fireEvent.click(screen.getByText('DATENSCHUTZ'));
-    expect(defaultProps.setShowPrivacy).toHaveBeenCalledWith(true);
+    const setShowPrivacyMock = vi.fn();
+    render(<Header {...defaultProps} setShowPrivacy={setShowPrivacyMock} />);
+
+    const privacyButton = screen.getByRole('button', { name: /DATENSCHUTZ/i });
+    fireEvent.click(privacyButton);
+
+    expect(setShowPrivacyMock).toHaveBeenCalledTimes(1);
+    expect(setShowPrivacyMock).toHaveBeenCalledWith(true);
   });
 
   it('calls handleCleanup when cleanup button is clicked', () => {
-    render(<Header {...defaultProps} />);
-    fireEvent.click(screen.getByText('CLEANUP'));
-    expect(defaultProps.handleCleanup).toHaveBeenCalled();
+    const handleCleanupMock = vi.fn();
+    render(<Header {...defaultProps} handleCleanup={handleCleanupMock} />);
+
+    const cleanupButton = screen.getByRole('button', { name: /CLEANUP/i });
+    fireEvent.click(cleanupButton);
+
+    expect(handleCleanupMock).toHaveBeenCalledTimes(1);
   });
 
   it('calls fetchRepoTree when refresh button is clicked', () => {
-    render(<Header {...defaultProps} />);
-    fireEvent.click(screen.getByText('REFRESH'));
-    expect(defaultProps.fetchRepoTree).toHaveBeenCalled();
+    const fetchRepoTreeMock = vi.fn();
+    render(<Header {...defaultProps} fetchRepoTree={fetchRepoTreeMock} />);
+
+    const refreshButton = screen.getByRole('button', { name: /REFRESH/i });
+    fireEvent.click(refreshButton);
+
+    expect(fetchRepoTreeMock).toHaveBeenCalledTimes(1);
   });
 
-  it('displays loading state and disables refresh button when loadingTree is true', () => {
+  it('disables refresh button and shows LADEN... when loadingTree is true', () => {
     render(<Header {...defaultProps} loadingTree={true} />);
-    const refreshButton = screen.getByRole('button', { name: /laden/i });
-    expect(refreshButton).toBeInTheDocument();
-    expect(refreshButton).toBeDisabled();
+
+    const refreshButton = screen.getByRole('button', { name: /LADEN.../i });
+    expect(refreshButton).toBeDefined();
+    expect((refreshButton as HTMLButtonElement).disabled).toBe(true);
   });
 });
