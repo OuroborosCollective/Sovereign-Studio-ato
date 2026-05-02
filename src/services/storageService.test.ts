@@ -1,56 +1,66 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { BaseRepository } from './storageService';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NativeStorageProvider } from './storageService';
+import { Preferences } from '@capacitor/preferences';
 
-describe('BaseRepository', () => {
-  let mockStorage: any;
-  let repository: BaseRepository<any>;
+// Mock Capacitor Preferences
+vi.mock('@capacitor/preferences', () => ({
+  Preferences: {
+    get: vi.fn(),
+    set: vi.fn(),
+    remove: vi.fn(),
+    clear: vi.fn(),
+  },
+}));
+
+describe('NativeStorageProvider', () => {
+  let provider: NativeStorageProvider;
 
   beforeEach(() => {
-    mockStorage = {
-      getItem: vi.fn(),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-      clear: vi.fn(),
-    };
-    repository = new BaseRepository('test_key', mockStorage);
-
-    // Silence console.error for clean test output
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    provider = new NativeStorageProvider();
+    vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  describe('getItem', () => {
+    it('should return value when key exists', async () => {
+      vi.mocked(Preferences.get).mockResolvedValueOnce({ value: 'test-value' });
+
+      const result = await provider.getItem('test-key');
+
+      expect(Preferences.get).toHaveBeenCalledWith({ key: 'test-key' });
+      expect(result).toBe('test-value');
+    });
+
+    it('should return null when key does not exist', async () => {
+      vi.mocked(Preferences.get).mockResolvedValueOnce({ value: null });
+
+      const result = await provider.getItem('test-key');
+
+      expect(Preferences.get).toHaveBeenCalledWith({ key: 'test-key' });
+      expect(result).toBeNull();
+    });
   });
 
-  describe('get', () => {
-    it('should return parsed JSON when valid JSON is retrieved', async () => {
-      const mockData = { id: 1, name: 'test' };
-      mockStorage.getItem.mockResolvedValue(JSON.stringify(mockData));
+  describe('setItem', () => {
+    it('should set value for key', async () => {
+      await provider.setItem('test-key', 'test-value');
 
-      const result = await repository.get();
-
-      expect(mockStorage.getItem).toHaveBeenCalledWith('test_key');
-      expect(result).toEqual(mockData);
+      expect(Preferences.set).toHaveBeenCalledWith({ key: 'test-key', value: 'test-value' });
     });
+  });
 
-    it('should return null when no value is retrieved', async () => {
-      mockStorage.getItem.mockResolvedValue(null);
+  describe('removeItem', () => {
+    it('should remove value for key', async () => {
+      await provider.removeItem('test-key');
 
-      const result = await repository.get();
-
-      expect(mockStorage.getItem).toHaveBeenCalledWith('test_key');
-      expect(result).toBeNull();
+      expect(Preferences.remove).toHaveBeenCalledWith({ key: 'test-key' });
     });
+  });
 
-    it('should gracefully return null and log an error when malformed JSON is retrieved', async () => {
-      const malformedJson = '{ invalid_json: true, }';
-      mockStorage.getItem.mockResolvedValue(malformedJson);
+  describe('clear', () => {
+    it('should clear all preferences', async () => {
+      await provider.clear();
 
-      const result = await repository.get();
-
-      expect(mockStorage.getItem).toHaveBeenCalledWith('test_key');
-      expect(result).toBeNull();
-      expect(console.error).toHaveBeenCalledWith('Error parsing storage key: test_key', expect.any(Error));
+      expect(Preferences.clear).toHaveBeenCalled();
     });
   });
 });
