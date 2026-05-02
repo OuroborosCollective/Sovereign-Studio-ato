@@ -1,64 +1,66 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { storageService, authRepository } from './storageService';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NativeStorageProvider } from './storageService';
+import { Preferences } from '@capacitor/preferences';
 
-describe('storageService.isTokenExpired', () => {
+// Mock Capacitor Preferences
+vi.mock('@capacitor/preferences', () => ({
+  Preferences: {
+    get: vi.fn(),
+    set: vi.fn(),
+    remove: vi.fn(),
+    clear: vi.fn(),
+  },
+}));
+
+describe('NativeStorageProvider', () => {
+  let provider: NativeStorageProvider;
+
   beforeEach(() => {
-    vi.useFakeTimers();
+    provider = new NativeStorageProvider();
+    vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
+  describe('getItem', () => {
+    it('should return value when key exists', async () => {
+      vi.mocked(Preferences.get).mockResolvedValueOnce({ value: 'test-value' });
 
-  it('should return true if no tokens exist', async () => {
-    vi.spyOn(authRepository, 'get').mockResolvedValue(null);
-    const result = await storageService.isTokenExpired();
-    expect(result).toBe(true);
-  });
+      const result = await provider.getItem('test-key');
 
-  it('should return true if token is expired', async () => {
-    const now = 1000000000000;
-    vi.setSystemTime(now);
-
-    vi.spyOn(authRepository, 'get').mockResolvedValue({
-      accessToken: 'access',
-      refreshToken: 'refresh',
-      expiresAt: now - 1000, // 1 second ago
-      tokenType: 'Bearer',
+      expect(Preferences.get).toHaveBeenCalledWith({ key: 'test-key' });
+      expect(result).toBe('test-value');
     });
 
-    const result = await storageService.isTokenExpired();
-    expect(result).toBe(true);
+    it('should return null when key does not exist', async () => {
+      vi.mocked(Preferences.get).mockResolvedValueOnce({ value: null });
+
+      const result = await provider.getItem('test-key');
+
+      expect(Preferences.get).toHaveBeenCalledWith({ key: 'test-key' });
+      expect(result).toBeNull();
+    });
   });
 
-  it('should return true if token expires exactly now', async () => {
-    const now = 1000000000000;
-    vi.setSystemTime(now);
+  describe('setItem', () => {
+    it('should set value for key', async () => {
+      await provider.setItem('test-key', 'test-value');
 
-    vi.spyOn(authRepository, 'get').mockResolvedValue({
-      accessToken: 'access',
-      refreshToken: 'refresh',
-      expiresAt: now,
-      tokenType: 'Bearer',
+      expect(Preferences.set).toHaveBeenCalledWith({ key: 'test-key', value: 'test-value' });
     });
-
-    const result = await storageService.isTokenExpired();
-    expect(result).toBe(true);
   });
 
-  it('should return false if token expires in the future', async () => {
-    const now = 1000000000000;
-    vi.setSystemTime(now);
+  describe('removeItem', () => {
+    it('should remove value for key', async () => {
+      await provider.removeItem('test-key');
 
-    vi.spyOn(authRepository, 'get').mockResolvedValue({
-      accessToken: 'access',
-      refreshToken: 'refresh',
-      expiresAt: now + 1000, // 1 second from now
-      tokenType: 'Bearer',
+      expect(Preferences.remove).toHaveBeenCalledWith({ key: 'test-key' });
     });
+  });
 
-    const result = await storageService.isTokenExpired();
-    expect(result).toBe(false);
+  describe('clear', () => {
+    it('should clear all preferences', async () => {
+      await provider.clear();
+
+      expect(Preferences.clear).toHaveBeenCalled();
+    });
   });
 });
