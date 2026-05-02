@@ -4,12 +4,12 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './features/billing/PaywallModal';
-import { PrivacyModal } from './features/privacy/components/PrivacyModal';
-import { MobileNavigation } from './components/MobileNavigation';
-import { Header } from './components/Header';
-import { ConfigBar } from './features/config/components/ConfigBar';
-import { storageService } from './services/storageService';
+import { PaywallModal } from '../features/billing/PaywallModal';
+import { PrivacyModal } from './components/PrivacyModal';
+import { MobileNavigation } from '../components/MobileNavigation';
+import { Header } from '../components/Header';
+import { ConfigBar } from '../features/config/components/ConfigBar';
+import { storageService } from '../services/storageService';
 import Editor from '@monaco-editor/react';
 
 // --- Types ---
@@ -37,7 +37,7 @@ export default function App() {
   
   const [activeFile, setActiveFile] = useState<FileNode | null>(null);
   const [fileContent, setFileContent] = useState("");
-  const [loadingFile, setLoadingFile] = useState(true);
+  const [loadingFile, setLoadingFile] = useState(false);
   const [fileTooLarge, setFileTooLarge] = useState(false);
   const MAX_FILE_SIZE = 500 * 1024; // 500 KB
 
@@ -105,14 +105,8 @@ export default function App() {
       const currentLogs = JSON.parse(logsJson || '[]');
       let errMsg = err?.message || String(err);
       
-      if (ghPat) {
-        const patRegex = new RegExp(ghPat, 'g');
-        errMsg = errMsg.replace(patRegex, '[REDACTED_GH_PAT]');
-      }
-      if (geminiKey) {
-        const geminiRegex = new RegExp(geminiKey, 'g');
-        errMsg = errMsg.replace(geminiRegex, '[REDACTED_GEMINI_KEY]');
-      }
+      if (ghPat) errMsg = errMsg.split(ghPat).join('[REDACTED_GH_PAT]');
+      if (geminiKey) errMsg = errMsg.split(geminiKey).join('[REDACTED_GEMINI_KEY]');
       
       currentLogs.push({ time: new Date().toISOString(), context, message: errMsg });
       storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
@@ -150,7 +144,7 @@ export default function App() {
     const match = repoUrl.match(regex);
     if (match && match.length >= 3) {
       const newOwner = match[1];
-      const newName = match[2].replace(/\.git$/, '');
+      const newName = match[2].split('.git').join('');
       setRepoOwner(newOwner);
       setRepoName(newName);
       addLog(`🔄 <b>Repository erfolgreich gewechselt:</b><br><code>${newOwner}/${newName}</code>`, 'success');
@@ -296,7 +290,7 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/`/g, '').trim();
+      let cleanPlan = rawPlan.split(/json/i).join('').split('`').join('').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -323,7 +317,7 @@ export default function App() {
           const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
           const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
           let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-          newCode = newCode.replace(/^[a-z]*\n/i, '').replace(/`/g, '').trim();
+          newCode = newCode.replace(/^[a-z]*\n/i, '').split('`').join('').trim();
           
           return { path: step.path, content: newCode };
         }));
@@ -479,15 +473,13 @@ export default function App() {
           </div>
 
           <div className="flex-1 overflow-y-auto bg-white custom-scrollbar">
-             {loadingTree ? (
-               <div className="p-4 text-xs flex justify-center"><RefreshCw size={14} className="animate-spin text-stone-400" /></div>
-             ) : (
+             {loadingTree ? <div className="p-4 text-xs flex justify-center"><RefreshCw size={14} className="animate-spin text-stone-400" /></div> : 
                <div>
                   {fullTree.slice(0, 200).map((file) => (
                     <div key={file.path} onClick={() => loadFile(file)} className={`px-4 py-2 border-b border-stone-100 text-[13px] truncate cursor-pointer ${activeFile?.path === file.path ? 'bg-indigo-600 text-white font-bold' : 'hover:bg-stone-50 text-stone-600'}`}>{file.path}</div>
                   ))}
                </div>
-             )}
+             }
           </div>
         </div>
 
