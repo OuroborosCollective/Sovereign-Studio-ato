@@ -4,12 +4,12 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './features/billing/PaywallModal';
-import { PrivacyModal } from './features/privacy/components/PrivacyModal';
-import { MobileNavigation } from './components/MobileNavigation';
-import { Header } from './components/Header';
-import { ConfigBar } from './features/config/components/ConfigBar';
-import { storageService } from './services/storageService';
+import { PaywallModal } from '../features/billing/PaywallModal';
+import { PrivacyModal } from '../features/privacy/components/PrivacyModal';
+import { MobileNavigation } from '../components/MobileNavigation';
+import { Header } from '../components/Header';
+import { ConfigBar } from '../features/config/components/ConfigBar';
+import { storageService } from '../services/storageService';
 import Editor from '@monaco-editor/react';
 
 // --- Types ---
@@ -144,7 +144,7 @@ export default function App() {
     const match = repoUrl.match(regex);
     if (match && match.length >= 3) {
       const newOwner = match[1];
-      const newName = match[2].replace(/\.git$/, '');
+      const newName = match[2].split('.git').join('');
       setRepoOwner(newOwner);
       setRepoName(newName);
       addLog(`🔄 <b>Repository erfolgreich gewechselt:</b><br><code>${newOwner}/${newName}</code>`, 'success');
@@ -290,7 +290,7 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/[`]/g, '').trim();
+      let cleanPlan = rawPlan.split(/json/i).join('').split('`').join('').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -317,7 +317,7 @@ export default function App() {
           const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
           const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
           let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-          newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(/[`]/g, '').trim();
+          newCode = newCode.replace(/^[a-z]*\n/i, '').split('`').join('').trim();
           
           return { path: step.path, content: newCode };
         }));

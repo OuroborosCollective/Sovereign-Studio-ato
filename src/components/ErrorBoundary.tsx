@@ -27,15 +27,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
     console.error('Uncaught error:', error, errorInfo);
     this.setState({ errorInfo });
     
-    // Log persistent error if available
     const logError = async () => {
       try {
-        const { storageService } = await import('../services/storageService');
+        const { storageService } = await import('../../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
         const currentLogs = JSON.parse(logsJson || '[]');
         currentLogs.push({ time: new Date().toISOString(), context: 'ErrorBoundary', message: error.message });
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
-      } catch (e) {}
+      } catch (e) {
+        // Silently fail logging
+      }
     };
     logError();
   }

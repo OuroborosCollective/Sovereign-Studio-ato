@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Settings, 
   X, 
@@ -7,8 +7,7 @@ import {
   RefreshCw, 
   Database, 
   Monitor, 
-  ShieldCheck,
-  ChevronRight
+  ShieldCheck
 } from 'lucide-react';
 
 interface ConfigState {
@@ -32,13 +31,12 @@ export const ConfigBar: React.FC = () => {
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
   const [isDirty, setIsDirty] = useState(false);
 
-  const handleChange = (key: keyof ConfigState, value: any) => {
+  const handleChange = (key: keyof ConfigState, value: string | number | boolean) => {
     setConfig(prev => ({ ...prev, [key]: value }));
     setIsDirty(true);
   };
 
   const handleSave = () => {
-    // Implementation for persisting config would go here
     console.log('Saving configuration:', config);
     setIsDirty(false);
     setTimeout(() => setIsOpen(false), 300);
@@ -50,16 +48,14 @@ export const ConfigBar: React.FC = () => {
   };
 
   return (
-    <>
-      {/* Overlay for mobile/sidebar closure */}
+    <React.Fragment>
       {isOpen && (
         <div 
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity"
           onClick={() => setIsOpen(false)}
-        />
+        ></div>
       )}
 
-      {/* Toggle Button (Floating when closed) */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
@@ -70,13 +66,11 @@ export const ConfigBar: React.FC = () => {
         </button>
       )}
 
-      {/* Configuration Sidebar */}
       <aside
         className={`fixed top-0 right-0 h-full w-80 bg-white border-l border-slate-200 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        {/* Header */}
         <header className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-indigo-100 text-indigo-600 rounded-lg">
@@ -92,10 +86,7 @@ export const ConfigBar: React.FC = () => {
           </button>
         </header>
 
-        {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
-          
-          {/* General Section */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
               <Monitor size={14} />
@@ -128,13 +119,12 @@ export const ConfigBar: React.FC = () => {
                     className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
                       config.autoSave ? 'translate-x-6' : 'translate-x-1'
                     }`} 
-                  />
+                  ></span>
                 </button>
               </div>
             </div>
           </section>
 
-          {/* API & Backend Section */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
               <Database size={14} />
@@ -160,7 +150,7 @@ export const ConfigBar: React.FC = () => {
                   min="0"
                   max="10"
                   value={config.maxRetries}
-                  onChange={(e) => handleChange('maxRetries', parseInt(e.target.value))}
+                  onChange={(e) => handleChange('maxRetries', parseInt(e.target.value, 10))}
                   className="mt-2 w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                 />
                 <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-medium">
@@ -172,7 +162,6 @@ export const ConfigBar: React.FC = () => {
             </div>
           </section>
 
-          {/* Development Section */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
               <ShieldCheck size={14} />
@@ -195,14 +184,13 @@ export const ConfigBar: React.FC = () => {
                     className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
                       config.debugMode ? 'translate-x-6' : 'translate-x-1'
                     }`} 
-                  />
+                  ></span>
                 </button>
               </div>
             </div>
           </section>
         </div>
 
-        {/* Footer Actions */}
         <footer className="p-6 border-t border-slate-100 bg-slate-50/80 flex flex-col gap-3">
           <button
             onClick={handleSave}
@@ -226,7 +214,7 @@ export const ConfigBar: React.FC = () => {
           </button>
         </footer>
       </aside>
-    </>
+    </React.Fragment>
   );
 };
 
