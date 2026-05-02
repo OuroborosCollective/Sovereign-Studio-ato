@@ -4,11 +4,11 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './components/PaywallModal';
-import { PrivacyModal } from './components/PrivacyModal';
+import { PaywallModal } from './features/paywall/components/PaywallModal';
+import { PrivacyModal } from './features/privacy/components/PrivacyModal';
 import { MobileNavigation } from './components/MobileNavigation';
 import { Header } from './components/Header';
-import { ConfigBar } from './components/ConfigBar';
+import { ConfigBar } from './features/config/components/ConfigBar';
 import { storageService } from './services/storageService';
 import Editor from '@monaco-editor/react';
 
@@ -244,15 +244,15 @@ export default function App() {
         return "";
     }
 
-    const { GoogleGenAI } = await import("@google/generative-ai");
-    const ai = new GoogleGenAI({ apiKey: activeApiKey });
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const ai = new GoogleGenerativeAI(activeApiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
     const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const result = await model.generateContent(prompt);
-            return result.response.text() || "";
+            const result = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt, config: { systemInstruction: system } });
+            return result.text || "";
         } catch (err: any) {
             if (i === maxRetries) throw err;
             await new Promise(r => setTimeout(r, 2000));
@@ -285,7 +285,7 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/```/g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -303,26 +303,22 @@ export default function App() {
             return null;
           }
 
-          if (step.action === 'delete') {
-            return { path: step.path, isDelete: true };
-          }
+        addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
+        const branch = activePR.branch || 'main';
+        let existingCode = "";
+        try {
+          const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
+          if (res.ok) existingCode = await res.text();
+        } catch {}
 
-          addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
-
-          let existingCode = "";
-          try {
-            const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
-            if (res.ok) existingCode = await res.text();
-          } catch {}
-
-          const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
-          const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
-          let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-          newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/```/g, '').trim();
-
-          return { path: step.path, content: newCode };
-        }));
-        results.push(...chunkResults);
+        const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
+        const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
+        let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
+        
+        newBatch.push({ path: step.path, content: newCode });
+        setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
+        setFileContent(newCode);
       }
 
       const newBatch = results.filter((item): item is BatchFile => item !== null);
@@ -438,7 +434,7 @@ export default function App() {
   return (
     <div className="w-full h-[100dvh] flex flex-col bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm">
       <Header loadingTree={loadingTree} setShowPrivacy={setShowPrivacy} handleCleanup={handleCleanup} fetchRepoTree={fetchRepoTree} />
-      <ConfigBar repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
+      <ConfigBar />
 
       <main className="flex-1 flex overflow-hidden relative">
         <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
@@ -498,15 +494,19 @@ export default function App() {
         <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-[350px] shrink-0 border-l border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
            <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold flex justify-between shrink-0"><span>LOG</span><button onClick={() => setLogs([])} className="text-stone-400">Clear</button></div>
            <div className="flex-1 overflow-y-auto p-4 bg-white text-[11px] flex flex-col gap-3">
-              {logs.map((log) => <div key={log.id} className={`p-3 rounded-xl border ${getLogClasses(log.type)}`} dangerouslySetInnerHTML={{ __html: log.text }} />)}
+              {logs.map((log) => (
+                <div key={log.id} className={`p-3 rounded-xl border ${getLogClasses(log.type)}`}>
+                  <SafeLogText text={log.text} />
+                </div>
+              ))}
               <div ref={logsEndRef} />
            </div>
         </div>
       </main>
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-      <PaywallModal show={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
-      <PrivacyModal show={showPrivacy} onClose={() => setShowPrivacy(false)} />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
+      <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
   );
 }
