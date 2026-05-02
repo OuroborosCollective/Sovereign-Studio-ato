@@ -18,6 +18,10 @@ type LogMessage = { id: number, text: string, type: 'info' | 'success' | 'warnin
 type BatchFile = { path: string, content?: string, isDelete?: boolean };
 type PRState = { branch: string | null, number: number | null, lastErrorLog: string, isFixing: boolean, lastCommitSha: string | null };
 
+const SafeLogText = ({ text }: { text: string }) => (
+  <span dangerouslySetInnerHTML={{ __html: text }} />
+);
+
 export default function App() {
   // --- State ---
   const [repoUrl, setRepoUrl] = useState("https://github.com/OuroborosCollective/Wasd");
@@ -251,8 +255,9 @@ export default function App() {
     const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const result = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt, config: { systemInstruction: system } });
-            return result.text || "";
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            return response.text() || "";
         } catch (err: any) {
             if (i === maxRetries) throw err;
             await new Promise(r => setTimeout(r, 2000));
@@ -285,44 +290,48 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/```/g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
       
       const plan = JSON.parse(cleanPlan);
-      const branch = activePR.branch || 'main';
-
       const CONCURRENCY_LIMIT = 5;
-      const results: (BatchFile | null)[] = [];
+      const finalBatch: BatchFile[] = [];
 
       for (let i = 0; i < plan.length; i += CONCURRENCY_LIMIT) {
         const chunk = plan.slice(i, i + CONCURRENCY_LIMIT);
-        const chunkResults = await Promise.all(chunk.map(async (step: any) => {
+        const results = await Promise.all(chunk.map(async (step: any) => {
           if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
             return null;
           }
 
-        addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
-        const branch = activePR.branch || 'main';
-        let existingCode = "";
-        try {
-          const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
-          if (res.ok) existingCode = await res.text();
-        } catch {}
+          addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
+          const branch = activePR.branch || 'main';
+          let existingCode = "";
+          try {
+            const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
+            if (res.ok) existingCode = await res.text();
+          } catch {}
 
-        const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
-        const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
-        let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
-        
-        newBatch.push({ path: step.path, content: newCode });
-        setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
-        setFileContent(newCode);
+          const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
+          const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
+          let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
+          newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
+          
+          return { path: step.path, content: newCode };
+        }));
+
+        results.forEach(res => {
+           if(res) {
+             finalBatch.push(res);
+             setActiveFile({ path: res.path, type: 'blob', mode: '100644', sha: '' });
+             setFileContent(res.content || "");
+           }
+        });
       }
 
-      const newBatch = results.filter((item): item is BatchFile => item !== null);
-      setBatchFiles(prev => [...prev, ...newBatch]);
+      setBatchFiles(prev => [...prev, ...finalBatch]);
       addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
     } catch (err: any) {
       logPersistentError(err, 'runArchitect');
@@ -506,8 +515,6 @@ export default function App() {
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
       <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
-      <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onSubscribe={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
       <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} onAccept={() => setShowPrivacy(false)} />
     </div>
   );

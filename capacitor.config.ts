@@ -4,6 +4,7 @@ const config: CapacitorConfig = {
   appId: 'com.sovereign.studio',
   appName: 'SovereignStudio',
   webDir: 'dist',
+  bundledWebRuntime: false,
   plugins: {
     GoogleAuth: {
       scopes: [

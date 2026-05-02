@@ -160,7 +160,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
 
           <div className="mt-10 text-center">
             <p className="text-xs text-slate-500 dark:text-slate-500">
-              Sichere Zahlung via Stripe. Keine versteckten Gebühren. Jederzeit kündbar.
+              Sichere In-App Abwicklung. Keine versteckten Gebühren. Jederzeit kündbar.
             </p>
           </div>
         </div>

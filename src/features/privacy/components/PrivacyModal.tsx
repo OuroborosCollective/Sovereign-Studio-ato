@@ -36,7 +36,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
       >
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
           <h2 id="privacy-title" className="text-xl font-bold text-slate-900 dark:text-white">
-            Datenschutzerklärung & Privatsphäre
+            Datenschutzerklärung & EU-DSGVO
           </h2>
           <button 
             onClick={onClose}
@@ -47,38 +47,48 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1 text-slate-600 dark:text-slate-300 space-y-4 text-sm leading-relaxed">
+        <div className="p-6 overflow-y-auto flex-1 text-slate-600 dark:text-slate-300 space-y-5 text-sm leading-relaxed">
           <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">1. Allgemeine Informationen</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">1. Verantwortliche Stelle</h3>
             <p>
-              Wir freuen uns über Ihr Interesse an unserer Anwendung. Der Schutz Ihrer Privatsphäre ist für uns von höchster Bedeutung. Im Folgenden informieren wir Sie detailliert über den Umgang mit Ihren Daten.
+              Verantwortlich für die Datenverarbeitung in dieser Anwendung ist der Betreiber. Bei Fragen zum Datenschutz können Sie sich jederzeit an den Support wenden.
             </p>
           </section>
 
           <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">2. Datenerfassung</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">2. KI-Datenverarbeitung (Google Gemini API)</h3>
             <p>
-              Beim Zugriff auf diese Anwendung werden automatisch Informationen allgemeiner Natur erfasst. Diese Informationen (Server-Logfiles) beinhalten etwa die Art des Webbrowsers, das verwendete Betriebssystem und den Domainnamen Ihres Internet-Service-Providers.
+              Diese Anwendung nutzt die Google Gemini API zur Verarbeitung von Texteingaben. Gemäß Google Play Data Safety Richtlinien weisen wir darauf hin:
             </p>
+            <ul className="list-disc ml-5 mt-2 space-y-1">
+              <li>Ihre Eingaben (Prompts) werden verschlüsselt an Server der Google Ireland Limited übertragen.</li>
+              <li>Die Daten werden ausschließlich zur Generierung der Antwort verarbeitet.</li>
+              <li>Es findet keine dauerhafte Verknüpfung Ihrer persönlichen Identität mit den KI-Anfragen statt, sofern nicht technisch für den Dienst erforderlich.</li>
+            </ul>
           </section>
 
           <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">3. Cookies & Local Storage</h3>
-            <p>
-              Wir verwenden technisch notwendige Cookies und Local Storage Einträge, um die Funktionalität der Anwendung zu gewährleisten und Ihre Präferenzen (wie z.B. Dark Mode Einstellungen) zu speichern.
-            </p>
+            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">3. Ihre Rechte nach EU-DSGVO</h3>
+            <p>Sie haben gegenüber uns folgende Rechte hinsichtlich der Sie betreffenden personenbezogenen Daten:</p>
+            <ul className="list-disc ml-5 mt-2 space-y-1">
+              <li><strong>Recht auf Auskunft (Art. 15 DSGVO):</strong> Sie können Informationen über Ihre von uns verarbeiteten Daten verlangen.</li>
+              <li><strong>Recht auf Berichtigung (Art. 16 DSGVO):</strong> Korrektur unrichtiger Daten.</li>
+              <li><strong>Recht auf Löschung (Art. 17 DSGVO):</strong> Sie können die unverzügliche Löschung Ihrer Daten fordern ("Recht auf Vergessenwerden").</li>
+              <li><strong>Recht auf Datenübertragbarkeit (Art. 20 DSGVO):</strong> Erhalt Ihrer Daten in einem strukturierten, gängigen Format.</li>
+              <li><strong>Widerrufsrecht:</strong> Erteilte Einwilligungen können Sie jederzeit mit Wirkung für die Zukunft widerrufen.</li>
+            </ul>
           </section>
 
           <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">4. Ihre Rechte</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">4. Datensicherheit</h3>
             <p>
-              Sie haben jederzeit das Recht auf unentgeltliche Auskunft über Ihre gespeicherten personenbezogenen Daten, deren Herkunft und Empfänger und den Zweck der Datenverarbeitung sowie ein Recht auf Berichtigung, Sperrung oder Löschung dieser Daten.
+              Wir setzen technische und organisatorische Sicherheitsmaßnahmen ein, um Ihre Daten gegen Manipulationen, Verlust oder unbefugten Zugriff zu schützen. Alle Datenübertragungen erfolgen über eine gesicherte TLS-Verschlüsselung (HTTPS).
             </p>
           </section>
 
-          <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-100 dark:border-slate-800">
-            <p className="text-xs italic">
-              Durch Klicken auf "Akzeptieren" stimmen Sie der Speicherung von Cookies auf Ihrem Gerät zu, um die Navigation zu verbessern und die Nutzung der Anwendung zu analysieren.
+          <section className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800/50">
+            <p className="text-xs text-blue-800 dark:text-blue-300">
+              Mit dem Klick auf "Alle akzeptieren" willigen Sie in die oben beschriebene Verarbeitung Ihrer Daten, insbesondere in den Datenaustausch mit der Google Gemini API zur Bereitstellung der KI-Funktionen, ein.
             </p>
           </section>
         </div>
