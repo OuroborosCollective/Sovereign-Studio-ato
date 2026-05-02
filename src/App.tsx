@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Folder, Code2, MessageSquare, Trash2, RefreshCw, Github, Key, 
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
-  Search, BookOpen, Flame, Beaker, Unlock
+  Search, BookOpen, Flame, Beaker, Unlock, Settings
 } from 'lucide-react';
 import { PaywallModal } from './components/PaywallModal';
-import { PrivacyModal } from './components/PrivacyModal';
+import PrivacyModal from './components/PrivacyModal';
 import { MobileNavigation } from './components/MobileNavigation';
 import { Header } from './components/Header';
 import { ConfigBar } from './components/ConfigBar';
@@ -54,6 +54,7 @@ export default function App() {
   const [isPro, setIsPro] = useState<boolean>(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logIdCounter = useRef(2);
@@ -244,8 +245,8 @@ export default function App() {
         return "";
     }
 
-    const { GoogleGenAI } = await import("@google/generative-ai");
-    const ai = new GoogleGenAI({ apiKey: activeApiKey });
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const ai = new GoogleGenerativeAI(activeApiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
     const maxRetries = 3;
@@ -285,7 +286,7 @@ export default function App() {
       const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
       const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
       
-      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(/```/g, '').trim();
       const startIdx = cleanPlan.indexOf('[');
       const endIdx = cleanPlan.lastIndexOf(']');
       if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
@@ -312,7 +313,7 @@ export default function App() {
         const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(//g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/```/g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
@@ -431,7 +432,8 @@ export default function App() {
   return (
     <div className="w-full h-[100dvh] flex flex-col bg-[#f3f3f2] text-stone-900 overflow-hidden text-sm">
       <Header loadingTree={loadingTree} setShowPrivacy={setShowPrivacy} handleCleanup={handleCleanup} fetchRepoTree={fetchRepoTree} />
-      <ConfigBar repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
+      <button onClick={() => setShowConfig(true)} className="fixed right-6 bottom-6 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all hover:scale-110 z-30 group"><Settings size={24} /></button>
+      <ConfigBar isOpen={showConfig} onClose={() => setShowConfig(false)} config={{ repoUrl, ghPat, geminiKey }} onChange={() => {}} onSave={() => {}} onReset={() => {}} repoUrl={repoUrl} setRepoUrl={setRepoUrl} handleRepoChange={handleRepoChange} ghPat={ghPat} handleGhPatChange={handleGhPatChange} geminiKey={geminiKey} handleGeminiKeyChange={handleGeminiKeyChange} />
 
       <main className="flex-1 flex overflow-hidden relative">
         <div className={`${activeTab === 'explorer' ? 'flex' : 'hidden'} lg:flex flex-col lg:w-80 shrink-0 border-r border-stone-200/60 glass-panel h-full pb-14 lg:pb-0 z-10`}>
@@ -498,8 +500,8 @@ export default function App() {
       </main>
 
       <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />
-      <PaywallModal show={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
-      <PrivacyModal show={showPrivacy} onClose={() => setShowPrivacy(false)} />
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} onUpgrade={async () => { setIsPro(true); await storageService.set('ss_is_pro', 'true'); setShowPaywall(false); }} />
+      <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />
     </div>
   );
 }
