@@ -59,7 +59,7 @@ export const ConfigBar: React.FC = () => {
         />
       )}
 
-      {/* Toggle Button (Fixed when closed) */}
+      {/* Toggle Button (Floating when closed) */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
