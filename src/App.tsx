@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Shield, CheckCircle } from 'lucide-react';
 
 interface PrivacyModalProps {
@@ -78,3 +78,19 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
     </div>
   );
 };
+
+const App: React.FC = () => {
+  const [isModalOpen, setIsModalOpen] = useState(true);
+
+  return (
+    <div className="min-h-screen bg-stone-50">
+      <PrivacyModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onAccept={() => setIsModalOpen(false)} 
+      />
+    </div>
+  );
+};
+
+export default App;
