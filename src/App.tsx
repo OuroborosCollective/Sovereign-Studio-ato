@@ -317,7 +317,7 @@ export default function App() {
           const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
           const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
           let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-          newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
+          newCode = newCode.replace(/^[a-z]*\n/gi, '').replace(/$/g, '').trim();
           
           return { path: step.path, content: newCode };
         }));
