@@ -595,7 +595,7 @@ export default function App() {
                           theme="vs-dark"
                           value={fileContent}
                           options={{ readOnly: !isPro && fileTooLarge, minimap: { enabled: false }, fontSize: 12, padding: { top: 16 } }}
-                          onChange={(v) => v && !fileTooLarge && setFileContent(v)}
+                          onChange={(v) => { if (v !== undefined && (!fileTooLarge || isPro)) setFileContent(v); }}
                       />
                    )}
                  </div>
