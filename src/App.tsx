@@ -4,7 +4,7 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from './features/paywall/components/PaywallModal';
+import { PaywallModal } from './features/billing/PaywallModal';
 import { PrivacyModal } from './features/privacy/components/PrivacyModal';
 import { MobileNavigation } from './components/MobileNavigation';
 import { Header } from './components/Header';

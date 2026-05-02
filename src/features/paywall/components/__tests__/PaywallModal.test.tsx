@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import PaywallModal from '../PaywallModal';
+import PaywallModal from '../../../billing/PaywallModal';
 
 describe('PaywallModal', () => {
   it('calls onSubscribe with the correct plan id when a subscribe button is clicked', async () => {
