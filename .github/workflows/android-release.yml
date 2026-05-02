@@ -3,12 +3,12 @@ name: Android Release Build
 on:
   push:
     tags:
-      - 'v*' # Startet den Build, wenn du z.B. einen Tag wie "v1.0.0" pushst
-  workflow_dispatch: # Erlaubt den manuellen Start im GitHub Actions Tab
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build & Sign Android Release
+    name: Build, Test & Sign Android Release
     runs-on: ubuntu-latest
 
     steps:
@@ -22,10 +22,16 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: |
-           npm install --legacy-peer-deps
-           npm run build
-           npx cap sync android
+        run: npm install --legacy-peer-deps
+
+      - name: Run Linting
+        run: npm run lint --if-present
+
+      - name: Run Unit Tests
+        run: npm test --if-present
+
+      - name: Build Web Project
+        run: npm run build
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -36,8 +42,9 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: current
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
@@ -45,7 +52,7 @@ jobs:
       - name: Build Android Release (AAB & APK)
         run: |
           cd android
-          gradle bundleRelease assembleRelease
+          ./gradlew bundleRelease assembleRelease
 
       - name: Sign Android Release APK
         uses: r0adkll/sign-android-release@v1
