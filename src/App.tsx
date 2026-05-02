@@ -4,12 +4,12 @@ import {
   Play, Sparkles, Shield, FileText, CheckCircle, AlertTriangle, Info, 
   Search, BookOpen, Flame, Beaker, Unlock
 } from 'lucide-react';
-import { PaywallModal } from '../features/billing/PaywallModal';
-import { PrivacyModal } from './components/PrivacyModal';
-import { MobileNavigation } from '../components/MobileNavigation';
-import { Header } from '../components/Header';
-import { ConfigBar } from '../features/config/components/ConfigBar';
-import { storageService } from '../services/storageService';
+import { PaywallModal } from './features/billing/PaywallModal';
+import { PrivacyModal } from './features/privacy/components/PrivacyModal';
+import { MobileNavigation } from './components/MobileNavigation';
+import { Header } from './components/Header';
+import { ConfigBar } from './features/config/components/ConfigBar';
+import { storageService } from './services/storageService';
 import Editor from '@monaco-editor/react';
 
 // --- Types ---
