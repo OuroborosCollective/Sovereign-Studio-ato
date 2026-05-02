@@ -251,8 +251,8 @@ export default function App() {
     const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const result = await model.generateContent(prompt);
-            return result.response.text() || "";
+            const result = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt, config: { systemInstruction: system } });
+            return result.text || "";
         } catch (err: any) {
             if (i === maxRetries) throw err;
             await new Promise(r => setTimeout(r, 2000));
@@ -312,7 +312,7 @@ export default function App() {
         const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
         const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
         let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
-        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/```/g, '').trim();
+        newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/\`\`\`/g, '').trim();
         
         newBatch.push({ path: step.path, content: newCode });
         setActiveFile({ path: step.path, type: 'blob', mode: '100644', sha: '' });
