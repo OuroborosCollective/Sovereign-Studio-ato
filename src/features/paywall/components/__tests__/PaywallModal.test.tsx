@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import PaywallModal from '../../../billing/PaywallModal';
+import PaywallModal from '../PaywallModal';
 
 describe('PaywallModal', () => {
   it('calls onSubscribe with the correct plan id when a subscribe button is clicked', async () => {
@@ -9,7 +9,7 @@ describe('PaywallModal', () => {
     const onCloseMock = vi.fn();
 
     render(
-      <PaywallModal isOpen={true} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
+      <PaywallModal show={true} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
     );
 
     const basicButton = screen.getByText('Kostenlos starten');
@@ -30,12 +30,12 @@ describe('PaywallModal', () => {
     expect(onSubscribeMock).toHaveBeenCalledTimes(3);
   });
 
-  it('does not render the modal when isOpen is false', () => {
+  it('does not render the modal when show is false', () => {
     const onSubscribeMock = vi.fn();
     const onCloseMock = vi.fn();
 
     const { container } = render(
-      <PaywallModal isOpen={false} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
+      <PaywallModal show={false} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
     );
 
     expect(container.firstChild).toBeNull();
@@ -46,7 +46,7 @@ describe('PaywallModal', () => {
     const onCloseMock = vi.fn();
 
     render(
-      <PaywallModal isOpen={true} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
+      <PaywallModal show={true} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
     );
 
     // The close button has no text but has an X icon. We can find it by its generic role or structure.
@@ -64,7 +64,7 @@ describe('PaywallModal', () => {
     const onCloseMock = vi.fn();
 
     const { container } = render(
-      <PaywallModal isOpen={true} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
+      <PaywallModal show={true} onClose={onCloseMock} onSubscribe={onSubscribeMock} />
     );
 
     // The backdrop is the first child div with absolute positioning
