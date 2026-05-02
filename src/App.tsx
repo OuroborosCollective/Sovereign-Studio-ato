@@ -251,8 +251,8 @@ export default function App() {
     const maxRetries = 3;
     for (let i = 0; i <= maxRetries; i++) {
         try {
-            const result = await model.generateContent(prompt);
-            return result.response.text() || "";
+            const result = await ai.models.generateContent({ model: 'gemini-1.5-flash', contents: prompt, config: { systemInstruction: system } });
+            return result.text || "";
         } catch (err: any) {
             if (i === maxRetries) throw err;
             await new Promise(r => setTimeout(r, 2000));

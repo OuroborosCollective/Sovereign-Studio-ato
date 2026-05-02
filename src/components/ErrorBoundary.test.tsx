@@ -27,12 +27,12 @@ describe('ErrorBoundary', () => {
   });
 
   afterEach(() => {
-    console.error = originalConsoleError;
+    consoleErrorSpy.mockRestore();
   });
 
-  it('renders fallback UI when an error is thrown', () => {
+  it('should catch errors and display fallback UI', () => {
     render(
-      <ErrorBoundary>
+      <ErrorBoundary fallback={<div data-testid="fallback">Custom Fallback</div>}>
         <ThrowError />
       </ErrorBoundary>
     );
