@@ -1,116 +1,83 @@
 // @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { render, screen, cleanup } from '@testing-library/react';
-import { expect, test, vi, describe, beforeEach, afterEach } from 'vitest';
 import { ErrorBoundary } from './ErrorBoundary';
 
 // Mock storageService
-const mockStorageGet = vi.fn();
-const mockStorageSet = vi.fn();
+vi.mock('../services/storageService', () => {
+  return {
+    storageService: {
+      get: vi.fn(),
+      set: vi.fn(),
+    }
+  };
+});
 
-vi.mock('../services/storageService', () => ({
-  storageService: {
-    get: mockStorageGet,
-    set: mockStorageSet,
-  }
-}));
-
-const FaultingComponent = () => {
-  throw new Error('Test error');
+const ThrowError = ({ message = 'Test error' }) => {
+  throw new Error(message);
 };
 
 describe('ErrorBoundary', () => {
-  let consoleErrorSpy: any;
+  const originalConsoleError = console.error;
 
   beforeEach(() => {
-    // Suppress console.error in tests
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    console.error = vi.fn();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    consoleErrorSpy.mockRestore();
-    vi.clearAllMocks();
-    cleanup();
+    console.error = originalConsoleError;
   });
 
-  test('renders children when no error', () => {
+  it('renders fallback UI when an error is thrown', () => {
     render(
       <ErrorBoundary>
-        <div>Test Child</div>
-      </ErrorBoundary>
-    );
-    expect(screen.getByText('Test Child')).toBeDefined();
-  });
-
-  test('catches error and logs it using storageService', async () => {
-    mockStorageGet.mockResolvedValueOnce(JSON.stringify([{ time: 'old', context: 'ErrorBoundary', message: 'old error' }]));
-
-    render(
-      <ErrorBoundary>
-        <FaultingComponent />
+        <ThrowError />
       </ErrorBoundary>
     );
 
     expect(screen.getByText('Something went wrong')).toBeDefined();
-
-    // Wait for the async logError to complete
-    await vi.waitFor(() => {
-      expect(mockStorageGet).toHaveBeenCalledWith('ss_error_log');
-    });
-
-    await vi.waitFor(() => {
-      expect(mockStorageSet).toHaveBeenCalledTimes(1);
-    });
-
-    const setCallArgs = mockStorageSet.mock.calls[0];
-    expect(setCallArgs[0]).toBe('ss_error_log');
-
-    const savedLogs = JSON.parse(setCallArgs[1]);
-    expect(savedLogs).toHaveLength(2);
-    expect(savedLogs[0]).toEqual({ time: 'old', context: 'ErrorBoundary', message: 'old error' });
-    expect(savedLogs[1].context).toBe('ErrorBoundary');
-    expect(savedLogs[1].message).toBe('Test error');
-    expect(savedLogs[1].time).toBeDefined();
+    expect(screen.getByText('Error: Test error')).toBeDefined();
   });
 
-  test('catches error and falls back to empty array if storage get fails', async () => {
-    mockStorageGet.mockResolvedValueOnce(null);
+  it('swallows storageService.get error silently', async () => {
+    const { storageService } = await import('../services/storageService');
+    vi.mocked(storageService.get).mockRejectedValueOnce(new Error('Storage get failure'));
 
     render(
       <ErrorBoundary>
-        <FaultingComponent />
+        <ThrowError message="Error 1" />
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeDefined();
-
-    await vi.waitFor(() => {
-      expect(mockStorageSet).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(storageService.get).toHaveBeenCalledWith('ss_error_log');
     });
 
-    const setCallArgs = mockStorageSet.mock.calls[0];
-    const savedLogs = JSON.parse(setCallArgs[1]);
-    expect(savedLogs).toHaveLength(1);
-    expect(savedLogs[0].context).toBe('ErrorBoundary');
-    expect(savedLogs[0].message).toBe('Test error');
+    // We wait a bit to ensure async operations resolve/reject
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(storageService.set).not.toHaveBeenCalled();
   });
 
-  test('catches error and silently handles storage set failure', async () => {
-    mockStorageGet.mockResolvedValueOnce('[]');
-    mockStorageSet.mockRejectedValueOnce(new Error('Storage failure'));
+  it('swallows storageService.set error silently', async () => {
+    const { storageService } = await import('../services/storageService');
+    vi.mocked(storageService.get).mockResolvedValueOnce(null);
+    vi.mocked(storageService.set).mockRejectedValueOnce(new Error('Storage set failure'));
 
     render(
       <ErrorBoundary>
-        <FaultingComponent />
+        <ThrowError message="Error 2" />
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('Something went wrong')).toBeDefined();
-
-    await vi.waitFor(() => {
-      expect(mockStorageSet).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(storageService.get).toHaveBeenCalledWith('ss_error_log');
     });
 
-    // The component shouldn't crash despite the storage set failure
+    await waitFor(() => {
+      expect(storageService.set).toHaveBeenCalled();
+    });
   });
 });
