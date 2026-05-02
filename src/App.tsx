@@ -244,8 +244,8 @@ export default function App() {
         return "";
     }
 
-    const { GoogleGenAI } = await import("@google/generative-ai");
-    const ai = new GoogleGenAI({ apiKey: activeApiKey });
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const ai = new GoogleGenerativeAI(activeApiKey);
     const model = ai.getGenerativeModel({ model: "gemini-1.5-flash", systemInstruction: system });
     
     const maxRetries = 3;
