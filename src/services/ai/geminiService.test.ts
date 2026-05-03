@@ -35,6 +35,7 @@ describe('GeminiService', () => {
     const result = await geminiService.generateText(prompt, TEST_MODEL);
 
     expect(result).toBe('Mocked AI response');
+    // Ensure call uses ModelParams object structure
     expect(getGenerativeModelMock).toHaveBeenCalledWith({ 
       model: TEST_MODEL 
     });
@@ -78,8 +79,7 @@ describe('GeminiService', () => {
   it('should accept optional temperature and topP parameters', async () => {
     generateContentMock.mockResolvedValue(mockResponse);
 
-    const prompt = 'test';
-    await geminiService.generateText(prompt, TEST_MODEL, { 
+    await geminiService.generateText('test', TEST_MODEL, { 
       temperature: 0.7,
       topP: 0.9
     });
@@ -91,6 +91,6 @@ describe('GeminiService', () => {
         topP: 0.9
       }
     });
-    expect(generateContentMock).toHaveBeenCalledWith(prompt);
+    expect(generateContentMock).toHaveBeenCalledWith('test');
   });
 });
