@@ -21,20 +21,28 @@ export interface GeminiResponse {
   usage?: any;
 }
 
-export const geminiService = {
+export class GeminiService {
   /**
    * Bereinigt die Response von Markdown-Code-Blöcken ohne verbotene Regex-Syntax.
    */
   cleanResponse(text: string): string {
     let cleaned = text.trim();
+    
+    // Entfernen von Markdown-Code-Block Markierungen am Anfang
     if (cleaned.startsWith("json")) {
       cleaned = cleaned.split("json").join("");
-    }
-    if (cleaned.startsWith("")) {
+    } else if (cleaned.startsWith("")) {
       cleaned = cleaned.split("").join("");
     }
+    
+    // Entfernen der Endmarkierungen
+    if (cleaned.endsWith("")) {
+      const parts = cleaned.split("");
+      cleaned = parts.join("");
+    }
+    
     return cleaned.trim();
-  },
+  }
 
   /**
    * Generiert eine einfache Textantwort basierend auf einem Prompt.
@@ -74,7 +82,7 @@ export const geminiService = {
       console.error("Gemini API generateText Error:", error);
       throw error;
     }
-  },
+  }
 
   /**
    * Spezifische Antigravity-Logik zur Generierung von Content.
@@ -88,7 +96,7 @@ export const geminiService = {
 
     const rawResponse = await this.generateText(prompt, enrichedOptions);
     return this.cleanResponse(rawResponse);
-  },
+  }
 
   /**
    * Startet oder führt einen Chat-Verlauf fort.
@@ -119,7 +127,7 @@ export const geminiService = {
       console.error("Gemini API Chat Error:", error);
       throw error;
     }
-  },
+  }
 
   /**
    * Hilfsmethode zur Validierung des API-Keys
@@ -127,4 +135,6 @@ export const geminiService = {
   hasValidConfig(): boolean {
     return !!API_KEY && API_KEY.length > 0;
   }
-};
+}
+
+export const geminiService = new GeminiService();
