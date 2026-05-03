@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { storageService } from '../services/storageService';
+import { storageService } from '../shared/api/storageService';
 
 export interface AppConfig {
   apiKey: string;
@@ -46,16 +46,9 @@ export const useConfig = () => {
   const updateConfig = useCallback(async (newParams: Partial<AppConfig>) => {
     setConfig((prev) => {
       const updated: AppConfig = { ...prev, ...newParams };
-      
-      const saveConfig = async () => {
-        try {
-          await storageService.set(CONFIG_STORAGE_KEY, JSON.stringify(updated));
-        } catch (err: unknown) {
-          console.error('Error saving config:', err);
-        }
-      };
-      
-      saveConfig();
+      storageService.set(CONFIG_STORAGE_KEY, JSON.stringify(updated)).catch((err: unknown) => 
+        console.error('Error saving config:', err)
+      );
       return updated;
     });
   }, []);
@@ -63,11 +56,7 @@ export const useConfig = () => {
   const resetToDefaults = useCallback(async () => {
     const freshConfig: AppConfig = { ...DEFAULT_CONFIG };
     setConfig(freshConfig);
-    try {
-      await storageService.set(CONFIG_STORAGE_KEY, JSON.stringify(freshConfig));
-    } catch (err: unknown) {
-      console.error('Error resetting config:', err);
-    }
+    await storageService.set(CONFIG_STORAGE_KEY, JSON.stringify(freshConfig));
   }, []);
 
   return {
