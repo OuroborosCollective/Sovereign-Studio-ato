@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { geminiService } from './geminiService';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const generateContentMock = vi.fn();
 const getGenerativeModelMock = vi.fn().mockReturnValue({
@@ -36,7 +35,9 @@ describe('GeminiService', () => {
     const result = await geminiService.generateText(prompt, TEST_MODEL);
 
     expect(result).toBe('Mocked AI response');
-    expect(getGenerativeModelMock).toHaveBeenCalledWith({ model: TEST_MODEL });
+    expect(getGenerativeModelMock).toHaveBeenCalledWith({ 
+      model: TEST_MODEL 
+    });
     expect(generateContentMock).toHaveBeenCalledWith(prompt);
   });
 
