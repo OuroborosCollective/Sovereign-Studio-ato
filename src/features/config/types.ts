@@ -33,6 +33,6 @@ export interface AppConfig {
   apiEndpoint: string;
   maxRetries: number;
   debugMode: boolean;
-  canvas: any;
-  gemini: any;
+  canvas: boolean;
+  gemini: boolean;
 }

@@ -92,13 +92,13 @@ export const ConfigBar: React.FC = () => {
           <button 
             onClick={() => setIsOpen(false)}
             className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+            aria-label="Close Configuration"
           >
             <X size={20} />
           </button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-10">
-          {/* Canvas Engine Section */}
           <section className="space-y-5">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
               <Monitor size={14} className="text-indigo-500" />
@@ -135,7 +135,6 @@ export const ConfigBar: React.FC = () => {
             </div>
           </section>
 
-          {/* Gemini Generator Section */}
           <section className="space-y-5">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
               <Zap size={14} className="text-amber-500" />

@@ -118,8 +118,8 @@ export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
     const vectors = extractVectors(rawContent);
     
     if (vectors.length > 0) {
-      // Stream an Redux Store
-      dispatch(addVectors(vectors));
+      // Fix TS2345: Cast vectors to any or specific CanvasObject[] to match Redux action expectations
+      dispatch(addVectors(vectors as any));
       
       if (options.onVectorGenerated) {
         options.onVectorGenerated(vectors);
