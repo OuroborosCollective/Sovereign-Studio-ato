@@ -16,18 +16,14 @@ describe('GeminiService', () => {
     expect(GeminiService).toBeDefined();
   });
 
-  it('should call generateContent statically with a valid parameters object', async () => {
-    const params = {
-      model: 'gemini-1.5-flash',
-      prompt: 'Test prompt',
-      systemInstruction: 'You are a helpful assistant'
-    };
+  it('should call generateContent statically with prompt parameter', async () => {
+    const prompt = 'Test prompt';
     const mockResponse = 'Mocked response';
     vi.mocked(GeminiService.generateContent).mockResolvedValue(mockResponse);
 
-    const result = await GeminiService.generateContent(params);
+    const result = await GeminiService.generateContent(prompt);
 
-    expect(GeminiService.generateContent).toHaveBeenCalledWith(params);
+    expect(GeminiService.generateContent).toHaveBeenCalledWith(prompt);
     expect(result).toBe(mockResponse);
   });
 });

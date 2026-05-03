@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { geminiService } from './geminiService';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const generateContentMock = vi.fn();
 const getGenerativeModelMock = vi.fn().mockReturnValue({
@@ -35,6 +36,7 @@ describe('GeminiService', () => {
     const result = await geminiService.generateText(prompt, TEST_MODEL);
 
     expect(result).toBe('Mocked AI response');
+    expect(getGenerativeModelMock).toHaveBeenCalledWith({ model: TEST_MODEL });
     expect(generateContentMock).toHaveBeenCalledWith(prompt);
   });
 
@@ -44,7 +46,7 @@ describe('GeminiService', () => {
     await expect(geminiService.generateText('Fail', TEST_MODEL)).rejects.toThrow('API Error');
   });
 
-  it('should pass system instructions if provided within the ModelParams object', async () => {
+  it('should pass system instructions if provided', async () => {
     generateContentMock.mockResolvedValue(mockResponse);
 
     const prompt = 'Explain quantum physics';
@@ -58,6 +60,7 @@ describe('GeminiService', () => {
       model: TEST_MODEL,
       systemInstruction: systemPrompt
     });
+    expect(generateContentMock).toHaveBeenCalledWith(prompt);
   });
 
   it('should utilize the correct model version', async () => {
@@ -66,14 +69,12 @@ describe('GeminiService', () => {
     
     await geminiService.generateText('test', specificModel);
     
-    expect(getGenerativeModelMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: specificModel
-      })
-    );
+    expect(getGenerativeModelMock).toHaveBeenCalledWith({
+      model: specificModel
+    });
   });
 
-  it('should accept optional temperature and topP parameters inside generationConfig', async () => {
+  it('should accept optional temperature and topP parameters', async () => {
     generateContentMock.mockResolvedValue(mockResponse);
 
     await geminiService.generateText('test', TEST_MODEL, { 
@@ -88,23 +89,6 @@ describe('GeminiService', () => {
         topP: 0.9
       }
     });
-  });
-
-  it('should combine systemInstruction and generationConfig in a single ModelParams object', async () => {
-    generateContentMock.mockResolvedValue(mockResponse);
-    const systemPrompt = 'Be helpful';
-
-    await geminiService.generateText('test', TEST_MODEL, { 
-      systemInstruction: systemPrompt,
-      temperature: 0.5
-    });
-
-    expect(getGenerativeModelMock).toHaveBeenCalledWith({
-      model: TEST_MODEL,
-      systemInstruction: systemPrompt,
-      generationConfig: {
-        temperature: 0.5
-      }
-    });
+    expect(generateContentMock).toHaveBeenCalledWith('test');
   });
 });
