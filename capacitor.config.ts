@@ -4,7 +4,9 @@ const config: CapacitorConfig = {
   appId: 'com.sovereign.studio',
   appName: 'Sovereign Studio',
   webDir: 'dist',
-  bundledWebRuntime: false,
+  server: {
+    androidScheme: 'https'
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 1500,

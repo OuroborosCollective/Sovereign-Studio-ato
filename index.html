@@ -7,9 +7,6 @@
     <meta name="color-scheme" content="light">
     <title>Sovereign Studio v3.3.2 - Stable Push Edition</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = { darkMode: 'class' };
-    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;600;700&display=swap');
         html, body {
@@ -51,33 +48,32 @@
         </div>
         <div class="flex items-center gap-3">
             
-            <!-- GOOGLE OAUTH BEREICH -->
-            <div id="google-auth-container" class="flex items-center gap-2 border-r border-stone-200 pr-3 mr-1">
-                <button id="google-auth-btn" onclick="loginWithGoogle()" class="px-3 py-1.5 bg-white border border-stone-200 text-stone-700 rounded text-[10px] font-bold hover:bg-stone-50 transition-colors flex items-center gap-1 shadow-sm">
+            <div class="flex items-center gap-2 border-r border-stone-200 pr-3 mr-1">
+                <button class="px-3 py-1.5 bg-white border border-stone-200 text-stone-700 rounded text-[10px] font-bold hover:bg-stone-50 transition-colors flex items-center gap-1 shadow-sm">
                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24">
-                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"></path>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"></path>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"></path>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"></path>
                     </svg> Login
                 </button>
-                <div id="google-user-info" class="hidden flex items-center gap-2">
-                    <img id="google-avatar" src="" class="w-6 h-6 rounded-full border border-stone-200" alt="Avatar">
+                <div class="hidden flex items-center gap-2">
+                    <img src="" class="w-6 h-6 rounded-full border border-stone-200" alt="Avatar">
                     <div class="flex flex-col">
-                        <span id="google-name" class="text-[10px] font-bold text-stone-700 leading-tight"></span>
+                        <span class="text-[10px] font-bold text-stone-700 leading-tight"></span>
                         <div class="flex gap-1">
-                            <button onclick="switchGoogleAccount()" class="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold leading-none">Wechseln</button>
+                            <button class="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold leading-none">Wechseln</button>
                             <span class="text-stone-300 text-[9px] leading-none">|</span>
-                            <button onclick="logoutGoogle()" class="text-[9px] text-rose-600 hover:text-rose-800 font-bold leading-none">Logout</button>
+                            <button class="text-[9px] text-rose-600 hover:text-rose-800 font-bold leading-none">Logout</button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <button id="cleanup-btn" onclick="logToSystem('Workspace Cleanup initiiert...', 'info')" class="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors">
+            <button class="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors">
                 🧹 CLEANUP
             </button>
-            <button onclick="fetchRepoTree()" class="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors">
+            <button class="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors">
                 🔄 REFRESH TREE
             </button>
         </div>
@@ -86,8 +82,8 @@
     <div class="h-12 bg-stone-50 border-b border-stone-200 flex items-center justify-between px-4 shrink-0 text-xs overflow-x-auto gap-4">
         <div class="flex items-center gap-2 shrink-0">
             <span class="font-bold text-stone-500 uppercase text-[10px]">GitHub URL:</span>
-            <input type="text" id="repo-url" value="https://github.com/OuroborosCollective/Wasd" placeholder="https://github.com/owner/repo" class="text-xs px-2 py-1 border border-stone-300 rounded w-64 focus:outline-none focus:border-indigo-500 bg-white">
-            <button onclick="changeRepository()" class="px-3 py-1 bg-indigo-600 text-white font-bold rounded hover:bg-indigo-700 transition-colors text-[10px] uppercase">
+            <input type="text" value="https://github.com/OuroborosCollective/Wasd" placeholder="https://github.com/owner/repo" class="text-xs px-2 py-1 border border-stone-300 rounded w-64 focus:outline-none focus:border-indigo-500 bg-white">
+            <button class="px-3 py-1 bg-indigo-600 text-white font-bold rounded hover:bg-indigo-700 transition-colors text-[10px] uppercase">
                 Repo Laden
             </button>
         </div>
@@ -95,38 +91,38 @@
         <div class="flex items-center gap-3 shrink-0">
             <div class="flex items-center gap-2">
                 <span class="font-bold text-stone-500 uppercase text-[10px]">GitHub PAT:</span>
-                <input type="password" id="gh-pat" placeholder="ghp_..." class="text-xs px-2 py-1 border border-stone-300 rounded w-40 focus:outline-none focus:border-indigo-500 bg-white" title="Erforderlich für Push/PR Funktionalität">
+                <input type="password" placeholder="ghp_..." class="text-xs px-2 py-1 border border-stone-300 rounded w-40 focus:outline-none focus:border-indigo-500 bg-white" title="Erforderlich für Push/PR Funktionalität">
             </div>
             <div class="flex items-center gap-2">
                 <span class="font-bold text-stone-500 uppercase text-[10px]">Gemini Key:</span>
-                <input type="password" id="gemini-key" placeholder="Canvas Auto-Auth aktiv" class="text-xs px-2 py-1 border border-stone-300 rounded w-48 focus:outline-none focus:border-indigo-500 bg-white">
+                <input type="password" placeholder="Canvas Auto-Auth aktiv" class="text-xs px-2 py-1 border border-stone-300 rounded w-48 focus:outline-none focus:border-indigo-500 bg-white">
             </div>
         </div>
     </div>
 
     <main class="flex-1 flex overflow-hidden relative">
-        <div id="view-explorer" class="app-view active lg:w-[320px] shrink-0">
+        <div class="app-view active lg:w-[320px] shrink-0">
             <div class="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0 shadow-sm relative">
                 <h3 class="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center">
                     <span>🔁 PR AUTO-RESOLVER</span>
-                    <span id="pr-status-badge" class="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-800 text-[9px] uppercase">Kein aktiver PR</span>
+                    <span class="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-800 text-[9px] uppercase">Kein aktiver PR</span>
                 </h3>
-                <div class="text-[10px] text-indigo-700 mb-2" id="pr-info">Ziel-Branch: <span class="font-mono font-bold">-</span></div>
+                <div class="text-[10px] text-indigo-700 mb-2">Ziel-Branch: <span class="font-mono font-bold">-</span></div>
                 
-                <div id="pr-progress-container" class="hidden mb-3">
+                <div class="hidden mb-3">
                     <div class="flex justify-between text-[9px] font-bold text-indigo-800 mb-1">
-                        <span id="pr-progress-text">Warte auf GitHub...</span>
-                        <span id="pr-progress-percent">0%</span>
+                        <span>Warte auf GitHub...</span>
+                        <span>0%</span>
                     </div>
                     <div class="w-full bg-indigo-200 rounded-full h-1.5">
-                        <div id="pr-progress-bar" class="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        <div class="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
                     </div>
                 </div>
 
                 <div class="flex gap-2">
-                    <button id="check-pr-btn" disabled class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors opacity-50 cursor-not-allowed">CI STATUS PRÜFEN</button>
-                    <button id="merge-pr-btn" class="hidden flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">✅ MERGE & DELETE</button>
-                    <button id="autofix-pr-btn" class="hidden flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">🛠️ MANUELLER FIX</button>
+                    <button disabled class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors opacity-50 cursor-not-allowed">CI STATUS PRÜFEN</button>
+                    <button class="hidden flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">✅ MERGE & DELETE</button>
+                    <button class="hidden flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">🛠️ MANUELLER FIX</button>
                 </div>
             </div>
 
@@ -134,32 +130,32 @@
                 <h3 class="text-[11px] font-bold text-stone-700 mb-2 flex justify-between items-center">
                     <span>⚡ ARCHITECT BLUEPRINT</span>
                 </h3>
-                <textarea id="architect-input" rows="3" class="w-full p-2 text-[11px] border border-stone-300 rounded focus:outline-none focus:border-indigo-500 resize-none shadow-inner" placeholder="Beschreibe das Feature oder den Fix. Der Architect generiert die nötigen Änderungen..."></textarea>
+                <textarea rows="3" class="w-full p-2 text-[11px] border border-stone-300 rounded focus:outline-none focus:border-indigo-500 resize-none shadow-inner" placeholder="Beschreibe das Feature oder den Fix. Der Architect generiert die nötigen Änderungen..."></textarea>
                 
                 <div class="flex gap-2 mt-2">
-                    <button id="run-architect-btn" class="flex-1 bg-stone-800 hover:bg-black text-white py-1.5 rounded text-[11px] font-bold uppercase transition-colors shadow-sm">🚀 Generieren</button>
-                    <button id="suggest-ideas-btn" class="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 py-1.5 px-3 rounded text-[11px] font-bold uppercase transition-colors shadow-sm">✨ IDEEN</button>
+                    <button class="flex-1 bg-stone-800 hover:bg-black text-white py-1.5 rounded text-[11px] font-bold uppercase transition-colors shadow-sm">🚀 Generieren</button>
+                    <button class="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 py-1.5 px-3 rounded text-[11px] font-bold uppercase transition-colors shadow-sm">✨ IDEEN</button>
                 </div>
                 <div class="flex gap-2 mt-2">
-                    <button id="auto-readme-btn" class="flex-1 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">README</button>
-                    <button id="dockerize-btn" class="flex-1 bg-blue-100 hover:bg-blue-200 border border-blue-300 text-blue-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">DOCKER</button>
-                    <button id="ci-cd-btn" class="flex-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">CI/CD</button>
-                    <button id="mermaid-diagram-btn" class="flex-1 bg-teal-100 hover:bg-teal-200 border border-teal-300 text-teal-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">DIAGRAMM</button>
-                    <button id="repo-onboarding-btn" class="flex-1 bg-fuchsia-100 hover:bg-fuchsia-200 border border-fuchsia-300 text-fuchsia-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">✨ ONBOARDING</button>
-                    <button id="tech-stack-btn" class="flex-1 bg-orange-100 hover:bg-orange-200 border border-orange-300 text-orange-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Analysiert verwendete Technologien">✨ TECH STACK</button>
+                    <button class="flex-1 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">README</button>
+                    <button class="flex-1 bg-blue-100 hover:bg-blue-200 border border-blue-300 text-blue-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">DOCKER</button>
+                    <button class="flex-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">CI/CD</button>
+                    <button class="flex-1 bg-teal-100 hover:bg-teal-200 border border-teal-300 text-teal-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">DIAGRAMM</button>
+                    <button class="flex-1 bg-fuchsia-100 hover:bg-fuchsia-200 border border-fuchsia-300 text-fuchsia-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">✨ ONBOARDING</button>
+                    <button class="flex-1 bg-orange-100 hover:bg-orange-200 border border-orange-300 text-orange-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Analysiert verwendete Technologien">✨ TECH STACK</button>
                 </div>
                 <div class="flex gap-2 mt-2">
-                    <button id="release-notes-btn" class="flex-1 bg-pink-100 hover:bg-pink-200 border border-pink-300 text-pink-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Generiert Release Notes aus den letzten Commits">✨ RELEASE NOTES</button>
-                    <button id="threat-model-btn" class="flex-1 bg-red-100 hover:bg-red-200 border border-red-300 text-red-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Generiert STRIDE Threat Model">✨ THREAT MODEL</button>
+                    <button class="flex-1 bg-pink-100 hover:bg-pink-200 border border-pink-300 text-pink-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Generiert Release Notes aus den letzten Commits">✨ RELEASE NOTES</button>
+                    <button class="flex-1 bg-red-100 hover:bg-red-200 border border-red-300 text-red-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Generiert STRIDE Threat Model">✨ THREAT MODEL</button>
                 </div>
             </div>
 
             <div class="p-2 bg-indigo-50/50 border-b border-stone-200 flex items-center gap-2 shrink-0">
-                <input type="text" id="smart-search-input" placeholder="Wo ist die Datenbank-Logik? ✨" class="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner">
-                <button id="smart-search-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold transition-colors shadow-sm uppercase shrink-0">✨ SUCHE</button>
+                <input type="text" placeholder="Wo ist die Datenbank-Logik? ✨" class="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner">
+                <button class="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold transition-colors shadow-sm uppercase shrink-0">✨ SUCHE</button>
             </div>
 
-            <div id="explorer-content" class="flex-1 overflow-y-auto bg-white">
+            <div class="flex-1 overflow-y-auto bg-white">
                 <div class="p-4 text-xs italic text-stone-400 flex flex-col items-center justify-center h-full gap-2">
                     <span class="text-2xl animate-pulse">📂</span>
                     <span>Lade Repository Struktur...</span>
@@ -167,43 +163,43 @@
             </div>
         </div>
 
-        <div id="view-editor" class="app-view flex-1 min-w-0">
+        <div class="app-view flex-1 min-w-0">
             <div class="h-10 bg-stone-50 border-b border-stone-200 flex items-center justify-between px-2 shrink-0 overflow-x-auto custom-scrollbar">
-                <div class="flex items-center gap-2 whitespace-nowrap" id="ai-toolbar-buttons">
-                    <span id="editor-filename" class="text-[11px] font-mono text-stone-600 italic truncate mr-2 px-2 max-w-[200px]">Keine Datei gewählt</span>
-                    <button id="rename-vars-btn" class="hidden px-2 py-1 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded hover:bg-emerald-200 transition-colors" title="Bessere Variablen- & Funktionsnamen">✨ CLEAN NAMES</button>
-                    <button id="generate-sql-btn" class="hidden px-2 py-1 bg-cyan-100 text-cyan-800 text-[9px] font-bold rounded hover:bg-cyan-200 transition-colors">✨ TO SQL</button>
-                    <button id="a11y-fix-btn" class="hidden px-2 py-1 bg-fuchsia-100 text-fuchsia-800 text-[9px] font-bold rounded hover:bg-fuchsia-200 transition-colors">✨ A11Y FIX</button>
-                    <button id="openapi-gen-btn" class="hidden px-2 py-1 bg-blue-100 text-blue-800 text-[9px] font-bold rounded hover:bg-blue-200 transition-colors">✨ OPENAPI</button>
-                    <button id="audio-review-btn" class="hidden px-2 py-1 bg-purple-100 text-purple-700 text-[9px] font-bold rounded hover:bg-purple-200 transition-colors">✨ AUDIO REVIEW</button>
-                    <button id="file-diagram-btn" class="hidden px-2 py-1 bg-teal-100 text-teal-700 text-[9px] font-bold rounded hover:bg-teal-200 transition-colors">✨ DIAGRAMM (FILE)</button>
-                    <button id="explain-pm-btn" class="hidden px-2 py-1 bg-sky-100 text-sky-800 text-[9px] font-bold rounded hover:bg-sky-200 transition-colors">✨ TO PM</button>
-                    <button id="convert-python-btn" class="hidden px-2 py-1 bg-yellow-100 text-yellow-800 text-[9px] font-bold rounded hover:bg-yellow-200 transition-colors">✨ TO PYTHON</button>
-                    <button id="analyze-code-btn" class="hidden px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200 transition-colors">✨ REVIEW</button>
-                    <button id="explain-code-btn" class="hidden px-2 py-1 bg-sky-100 text-sky-700 text-[9px] font-bold rounded hover:bg-sky-200 transition-colors">✨ ERKLÄREN</button>
-                    <button id="eli5-code-btn" class="hidden px-2 py-1 bg-pink-100 text-pink-700 text-[9px] font-bold rounded hover:bg-pink-200 transition-colors">✨ ELI5</button>
-                    <button id="optimize-code-btn" class="hidden px-2 py-1 bg-fuchsia-100 text-fuchsia-700 text-[9px] font-bold rounded hover:bg-fuchsia-200 transition-colors">✨ OPTIMIEREN</button>
-                    <button id="generate-tests-btn" class="hidden px-2 py-1 bg-green-100 text-green-700 text-[9px] font-bold rounded hover:bg-green-200 transition-colors">✨ TESTS</button>
-                    <button id="generate-docs-btn" class="hidden px-2 py-1 bg-amber-100 text-amber-700 text-[9px] font-bold rounded hover:bg-amber-200 transition-colors">✨ DOCS</button>
-                    <button id="convert-ts-btn" class="hidden px-2 py-1 bg-cyan-100 text-cyan-700 text-[9px] font-bold rounded hover:bg-cyan-200 transition-colors">✨ TO TS</button>
-                    <button id="convert-rust-btn" class="hidden px-2 py-1 bg-orange-100 text-orange-800 text-[9px] font-bold rounded hover:bg-orange-200 transition-colors">✨ TO RUST</button>
-                    <button id="add-logging-btn" class="hidden px-2 py-1 bg-teal-100 text-teal-800 text-[9px] font-bold rounded hover:bg-teal-200 transition-colors">✨ ADD LOGGING</button>
-                    <button id="security-audit-btn" class="hidden px-2 py-1 bg-rose-100 text-rose-700 text-[9px] font-bold rounded hover:bg-rose-200 transition-colors">✨ AUDIT</button>
-                    <button id="roast-code-btn" class="hidden px-2 py-1 bg-orange-100 text-orange-700 text-[9px] font-bold rounded hover:bg-orange-200 transition-colors">✨ ROAST</button>
-                    <button id="generate-mock-btn" class="hidden px-2 py-1 bg-lime-100 text-lime-700 text-[9px] font-bold rounded hover:bg-lime-200 transition-colors">✨ MOCKS</button>
-                    <button id="ux-review-btn" class="hidden px-2 py-1 bg-violet-100 text-violet-700 text-[9px] font-bold rounded hover:bg-violet-200 transition-colors">✨ UX REVIEW</button>
-                    <button id="tailwind-convert-btn" class="hidden px-2 py-1 bg-blue-100 text-blue-700 text-[9px] font-bold rounded hover:bg-blue-200 transition-colors">✨ TAILWIND</button>
-                    <button id="generate-storybook-btn" class="hidden px-2 py-1 bg-pink-100 text-pink-700 text-[9px] font-bold rounded hover:bg-pink-200 transition-colors">✨ STORYBOOK</button>
-                    <button id="bug-predict-btn" class="hidden px-2 py-1 bg-red-100 text-red-700 text-[9px] font-bold rounded hover:bg-red-200 transition-colors">✨ BUGS PREDICT</button>
-                    <button id="extract-i18n-btn" class="hidden px-2 py-1 bg-yellow-100 text-yellow-700 text-[9px] font-bold rounded hover:bg-yellow-200 transition-colors">✨ I18N</button>
-                    <button id="generate-zod-btn" class="hidden px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200 transition-colors">✨ ZOD</button>
-                    <button id="calc-complexity-btn" class="hidden px-2 py-1 bg-slate-100 text-slate-700 text-[9px] font-bold rounded hover:bg-slate-200 transition-colors">✨ BIG-O</button>
+                <div class="flex items-center gap-2 whitespace-nowrap">
+                    <span class="text-[11px] font-mono text-stone-600 italic truncate mr-2 px-2 max-w-[200px]">Keine Datei gewählt</span>
+                    <button class="hidden px-2 py-1 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded hover:bg-emerald-200 transition-colors" title="Bessere Variablen- & Funktionsnamen">✨ CLEAN NAMES</button>
+                    <button class="hidden px-2 py-1 bg-cyan-100 text-cyan-800 text-[9px] font-bold rounded hover:bg-cyan-200 transition-colors">✨ TO SQL</button>
+                    <button class="hidden px-2 py-1 bg-fuchsia-100 text-fuchsia-800 text-[9px] font-bold rounded hover:bg-fuchsia-200 transition-colors">✨ A11Y FIX</button>
+                    <button class="hidden px-2 py-1 bg-blue-100 text-blue-800 text-[9px] font-bold rounded hover:bg-blue-200 transition-colors">✨ OPENAPI</button>
+                    <button class="hidden px-2 py-1 bg-purple-100 text-purple-700 text-[9px] font-bold rounded hover:bg-purple-200 transition-colors">✨ AUDIO REVIEW</button>
+                    <button class="hidden px-2 py-1 bg-teal-100 text-teal-700 text-[9px] font-bold rounded hover:bg-teal-200 transition-colors">✨ DIAGRAMM (FILE)</button>
+                    <button class="hidden px-2 py-1 bg-sky-100 text-sky-800 text-[9px] font-bold rounded hover:bg-sky-200 transition-colors">✨ TO PM</button>
+                    <button class="hidden px-2 py-1 bg-yellow-100 text-yellow-800 text-[9px] font-bold rounded hover:bg-yellow-200 transition-colors">✨ TO PYTHON</button>
+                    <button class="hidden px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200 transition-colors">✨ REVIEW</button>
+                    <button class="hidden px-2 py-1 bg-sky-100 text-sky-700 text-[9px] font-bold rounded hover:bg-sky-200 transition-colors">✨ ERKLÄREN</button>
+                    <button class="hidden px-2 py-1 bg-pink-100 text-pink-700 text-[9px] font-bold rounded hover:bg-pink-200 transition-colors">✨ ELI5</button>
+                    <button class="hidden px-2 py-1 bg-fuchsia-100 text-fuchsia-700 text-[9px] font-bold rounded hover:bg-fuchsia-200 transition-colors">✨ OPTIMIEREN</button>
+                    <button class="hidden px-2 py-1 bg-green-100 text-green-700 text-[9px] font-bold rounded hover:bg-green-200 transition-colors">✨ TESTS</button>
+                    <button class="hidden px-2 py-1 bg-amber-100 text-amber-700 text-[9px] font-bold rounded hover:bg-amber-200 transition-colors">✨ DOCS</button>
+                    <button class="hidden px-2 py-1 bg-cyan-100 text-cyan-700 text-[9px] font-bold rounded hover:bg-cyan-200 transition-colors">✨ TO TS</button>
+                    <button class="hidden px-2 py-1 bg-orange-100 text-orange-800 text-[9px] font-bold rounded hover:bg-orange-200 transition-colors">✨ TO RUST</button>
+                    <button class="hidden px-2 py-1 bg-teal-100 text-teal-800 text-[9px] font-bold rounded hover:bg-teal-200 transition-colors">✨ ADD LOGGING</button>
+                    <button class="hidden px-2 py-1 bg-rose-100 text-rose-700 text-[9px] font-bold rounded hover:bg-rose-200 transition-colors">✨ AUDIT</button>
+                    <button class="hidden px-2 py-1 bg-orange-100 text-orange-700 text-[9px] font-bold rounded hover:bg-orange-200 transition-colors">✨ ROAST</button>
+                    <button class="hidden px-2 py-1 bg-lime-100 text-lime-700 text-[9px] font-bold rounded hover:bg-lime-200 transition-colors">✨ MOCKS</button>
+                    <button class="hidden px-2 py-1 bg-violet-100 text-violet-700 text-[9px] font-bold rounded hover:bg-violet-200 transition-colors">✨ UX REVIEW</button>
+                    <button class="hidden px-2 py-1 bg-blue-100 text-blue-700 text-[9px] font-bold rounded hover:bg-blue-200 transition-colors">✨ TAILWIND</button>
+                    <button class="hidden px-2 py-1 bg-pink-100 text-pink-700 text-[9px] font-bold rounded hover:bg-pink-200 transition-colors">✨ STORYBOOK</button>
+                    <button class="hidden px-2 py-1 bg-red-100 text-red-700 text-[9px] font-bold rounded hover:bg-red-200 transition-colors">✨ BUGS PREDICT</button>
+                    <button class="hidden px-2 py-1 bg-yellow-100 text-yellow-700 text-[9px] font-bold rounded hover:bg-yellow-200 transition-colors">✨ I18N</button>
+                    <button class="hidden px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200 transition-colors">✨ ZOD</button>
+                    <button class="hidden px-2 py-1 bg-slate-100 text-slate-700 text-[9px] font-bold rounded hover:bg-slate-200 transition-colors">✨ BIG-O</button>
                 </div>
             </div>
             
             <div class="flex-1 bg-stone-100/30 p-2 lg:p-4 overflow-hidden flex flex-col">
                 <div class="editor-bg flex-1 rounded-xl shadow-inner relative overflow-hidden flex flex-col">
-                    <div id="editor-body" class="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre custom-scrollbar font-mono leading-relaxed">
+                    <div class="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre custom-scrollbar font-mono leading-relaxed">
                         <div class="text-stone-500 italic mt-4 ml-4">// Wähle eine Datei im Explorer, um den Code zu laden.</div>
                     </div>
                 </div>
@@ -211,32 +207,32 @@
 
             <div class="h-12 bg-white border-t border-stone-200 flex items-center px-4 gap-3 shrink-0">
                 <span class="text-lg" title="AI Pair Programmer">🤖</span>
-                <input type="text" id="file-chat-input" placeholder="Frag Gemini etwas zu dieser Datei... (Enter zum Senden)" class="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 bg-stone-50">
-                <button id="file-chat-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase transition-colors shadow-sm shrink-0">✨ FRAGEN</button>
+                <input type="text" placeholder="Frag Gemini etwas zu dieser Datei..." class="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 bg-stone-50">
+                <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase transition-colors shadow-sm shrink-0">✨ FRAGEN</button>
             </div>
 
             <div class="h-16 border-t border-indigo-200 px-4 flex items-center justify-between bg-indigo-50 shrink-0 gap-3">
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-1">
-                        <h4 id="batch-status" class="text-[10px] font-black text-indigo-800 uppercase">PR-Queue: <span id="batch-count">0</span> Dateien</h4>
-                        <button id="auto-commit-msg-btn" class="hidden text-[9px] bg-indigo-200 hover:bg-indigo-300 text-indigo-800 px-2 py-0.5 rounded font-bold transition-colors">✨ AUTO MSG</button>
-                        <button id="draft-pr-desc-btn" class="hidden text-[9px] bg-purple-200 hover:bg-purple-300 text-purple-800 px-2 py-0.5 rounded font-bold transition-colors">✨ DRAFT PR DESC</button>
-                        <button id="pr-review-btn" class="hidden text-[9px] bg-rose-200 hover:bg-rose-300 text-rose-800 px-2 py-0.5 rounded font-bold transition-colors">✨ PRE-FLIGHT REVIEW</button>
+                        <h4 class="text-[10px] font-black text-indigo-800 uppercase">PR-Queue: <span>0</span> Dateien</h4>
+                        <button class="hidden text-[9px] bg-indigo-200 hover:bg-indigo-300 text-indigo-800 px-2 py-0.5 rounded font-bold transition-colors">✨ AUTO MSG</button>
+                        <button class="hidden text-[9px] bg-purple-200 hover:bg-purple-300 text-purple-800 px-2 py-0.5 rounded font-bold transition-colors">✨ DRAFT PR DESC</button>
+                        <button class="hidden text-[9px] bg-rose-200 hover:bg-rose-300 text-rose-800 px-2 py-0.5 rounded font-bold transition-colors">✨ PRE-FLIGHT REVIEW</button>
                     </div>
-                    <input type="text" id="commit-msg-input" placeholder="Commit Nachricht (optional)..." class="w-full text-[10px] p-1 border border-indigo-200 rounded focus:outline-none focus:border-indigo-500 bg-white" disabled>
+                    <input type="text" placeholder="Commit Nachricht (optional)..." class="w-full text-[10px] p-1 border border-indigo-200 rounded focus:outline-none focus:border-indigo-500 bg-white" disabled>
                 </div>
-                <button id="batch-commit-btn" disabled class="shrink-0 px-6 py-2 bg-stone-300 text-stone-500 rounded-lg font-bold text-[10px] uppercase cursor-not-allowed transition-all shadow-sm">
+                <button disabled class="shrink-0 px-6 py-2 bg-stone-300 text-stone-500 rounded-lg font-bold text-[10px] uppercase cursor-not-allowed transition-all shadow-sm">
                     🛡️ PUSH PR
                 </button>
             </div>
         </div>
 
-        <div id="view-chat" class="app-view lg:w-[350px] shrink-0 border-l border-stone-200">
+        <div class="app-view lg:w-[350px] shrink-0 border-l border-stone-200">
             <div class="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-800 flex items-center gap-2 shrink-0 justify-between">
                 <div><span class="text-indigo-600">✨</span> SYSTEM LOG</div>
-                <button onclick="document.getElementById('chat-history').innerHTML=''" class="text-[9px] text-stone-400 hover:text-stone-600">Leeren</button>
+                <button class="text-[9px] text-stone-400 hover:text-stone-600">Leeren</button>
             </div>
-            <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-4 bg-white text-[11px] custom-scrollbar scroll-smooth">
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-white text-[11px] custom-scrollbar scroll-smooth">
                 <div class="p-3 bg-stone-100 rounded-xl rounded-tl-none border border-stone-200 text-stone-700 shadow-sm">
                     <strong>🚀 Sovereign Studio v3.3.2 geladen</strong><br>
                     - <b>Google OAuth Integration:</b> Account-basierte Speicherung deiner Keys!<br>
@@ -248,900 +244,10 @@
     </main>
 
     <nav id="mobile-nav" class="h-14 bg-white border-t border-stone-200 flex items-center justify-around shrink-0 z-50 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-        <button onclick="switchTab('explorer')" id="tab-btn-explorer" class="flex flex-col items-center gap-1 text-indigo-600 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">📁</span><span class="text-[9px] uppercase tracking-wider">Planung</span></button>
-        <button onclick="switchTab('editor')" id="tab-btn-editor" class="flex flex-col items-center gap-1 text-stone-400 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">💻</span><span class="text-[9px] uppercase tracking-wider">Code</span></button>
-        <button onclick="switchTab('chat')" id="tab-btn-chat" class="flex flex-col items-center gap-1 text-stone-400 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">✨</span><span class="text-[9px] uppercase tracking-wider">Log</span></button>
+        <button class="flex flex-col items-center gap-1 text-indigo-600 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">📁</span><span class="text-[9px] uppercase tracking-wider">Planung</span></button>
+        <button class="flex flex-col items-center gap-1 text-stone-400 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">💻</span><span class="text-[9px] uppercase tracking-wider">Code</span></button>
+        <button class="flex flex-col items-center gap-1 text-stone-400 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">✨</span><span class="text-[9px] uppercase tracking-wider">Log</span></button>
     </nav>
 
-    <script>
-        // --- Globale Variablen ---
-        let repoOwner = "OuroborosCollective";
-        let repoName = "Wasd";
-        let defaultBranch = "main";
-        let fullTree = [];
-        let batchFiles = []; 
-        let activePR = { branch: null, number: null, lastErrorLog: "", isFixing: false, lastCommitSha: null };
-        let ciPollTimer = null;
-        let ciInitRetries = 0; 
-        let currentFileContent = "";
-        let autoFixCount = 0; 
-
-        const allAiButtons = [
-            'analyze-code-btn', 'explain-code-btn', 'eli5-code-btn', 'optimize-code-btn', 
-            'generate-tests-btn', 'generate-docs-btn', 'convert-ts-btn', 'convert-rust-btn', 'add-logging-btn', 'security-audit-btn', 'roast-code-btn',
-            'generate-mock-btn', 'ux-review-btn', 'tailwind-convert-btn', 'generate-storybook-btn', 'bug-predict-btn',
-            'extract-i18n-btn', 'generate-zod-btn', 'calc-complexity-btn', 'draft-pr-desc-btn', 'audio-review-btn',
-            'file-diagram-btn', 'explain-pm-btn', 'convert-python-btn', 'rename-vars-btn', 'generate-sql-btn', 'tech-stack-btn',
-            'a11y-fix-btn', 'openapi-gen-btn', 'release-notes-btn', 'threat-model-btn'
-        ];
-
-        // --- Hilfsfunktionen ---
-        function switchTab(tabId) {
-            document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
-            document.getElementById(`view-${tabId}`).classList.add('active');
-            
-            if (window.innerWidth < 1024) {
-                ['explorer', 'editor', 'chat'].forEach(id => {
-                    const btn = document.getElementById(`tab-btn-${id}`);
-                    if (id === tabId) { btn.classList.add('text-indigo-600'); btn.classList.remove('text-stone-400'); } 
-                    else { btn.classList.remove('text-indigo-600'); btn.classList.add('text-stone-400'); }
-                });
-            }
-        }
-
-        // Global zugänglich machen für die Module
-        window.logToSystem = function(text, type = 'info') {
-            const chat = document.getElementById('chat-history');
-            const msg = document.createElement('div');
-            const styles = { error: 'bg-red-50 border-red-200 text-red-800', success: 'bg-green-50 border-green-200 text-green-800', warning: 'bg-amber-50 border-amber-200 text-amber-800', idea: 'bg-blue-50 border-blue-200 text-blue-900', info: 'bg-stone-50 border-stone-200 text-stone-800' };
-            msg.className = `p-3 rounded-xl rounded-tl-none border ${styles[type] || styles.info} leading-relaxed mb-4 shadow-sm break-words`;
-            msg.innerHTML = text;
-            chat.appendChild(msg);
-            chat.scrollTop = chat.scrollHeight;
-        }
-
-        function setButtonsState(disabled) {
-            const buttons = ['run-architect-btn', 'suggest-ideas-btn', 'auto-readme-btn', 'dockerize-btn', 'ci-cd-btn', 'mermaid-diagram-btn', 'repo-onboarding-btn', 'tech-stack-btn', 'release-notes-btn', 'threat-model-btn', 'smart-search-btn', 'file-chat-btn', 'auto-commit-msg-btn', 'draft-pr-desc-btn', 'pr-review-btn', ...allAiButtons];
-            buttons.forEach(id => {
-                const el = document.getElementById(id);
-                if(el) el.disabled = disabled;
-            });
-        }
-
-        // --- Syntax Sanitizer ---
-        function sanitizeGeneratedCode(code) {
-            if (!code) return "";
-            let clean = code;
-            clean = clean.replace(/^```[a-zA-Z]*\n/gi, '').replace(/\n```$/gi, '').replace(/```/g, '').trim();
-            clean = clean.replace(/\bConst\b/g, 'const').replace(/\bLet\b/g, 'let');
-            clean = clean.split(".replace(//g,").join(".replace(/[`]/g,");
-            return clean;
-        }
-
-        function renderCodeToEditor(code) {
-            const editorBody = document.getElementById('editor-body');
-            editorBody.innerHTML = '';
-            const fragment = document.createDocumentFragment();
-            code.split('\n').forEach((line, idx) => {
-                const lineDiv = document.createElement('div');
-                lineDiv.className = 'code-line new-code'; 
-                lineDiv.innerHTML = `<span class="line-number text-stone-500">${idx + 1}</span><span class="text-green-300 whitespace-pre">${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</span>`;
-                fragment.appendChild(lineDiv);
-            });
-            editorBody.appendChild(fragment);
-        }
-
-        // --- API & Tree ---
-        function changeRepository() {
-            const urlInput = document.getElementById('repo-url').value.trim();
-            const match = urlInput.match(/github\.com\/([^\/]+)\/([^\/]+)/);
-            if (match && match.length >= 3) {
-                repoOwner = match[1]; repoName = match[2].replace(/\.git$/, '');
-                window.logToSystem(`🔄 <b>Repository gewechselt:</b><br><code>${repoOwner}/${repoName}</code>`, "success");
-                
-                document.getElementById('explorer-content').innerHTML = '<div class="p-4 text-xs italic text-stone-400 flex flex-col items-center gap-2"><span class="text-2xl animate-spin">⏳</span> Lade...</div>';
-                document.getElementById('editor-filename').textContent = "Keine Datei gewählt";
-                document.getElementById('editor-body').innerHTML = '<div class="text-stone-500 italic mt-4 ml-4">// Bereit...</div>';
-                
-                allAiButtons.forEach(id => { const btn = document.getElementById(id); if(btn) btn.classList.add('hidden'); });
-                currentFileContent = ""; batchFiles = []; autoFixCount = 0; updateBatchUI();
-                activePR = { branch: null, number: null, lastErrorLog: "", isFixing: false, lastCommitSha: null };
-                if (ciPollTimer) clearTimeout(ciPollTimer);
-                
-                document.getElementById('pr-info').innerHTML = `Ziel-Branch: <span class="font-mono font-bold">-</span>`;
-                document.getElementById('pr-status-badge').textContent = "Kein aktiver PR";
-                document.getElementById('pr-progress-container').classList.add('hidden');
-                
-                fetchRepoTree();
-            } else {
-                window.logToSystem(`❌ <b>Ungültige URL.</b>`, "error");
-            }
-        }
-
-        async function callGeminiAPI(prompt, system) {
-            const maxRetries = 4;
-            const delays = [1000, 2000, 4000, 8000];
-            const customKey = document.getElementById('gemini-key').value.trim();
-            const activeApiKey = customKey !== "" ? customKey : ""; 
-            
-            for (let i = 0; i <= maxRetries; i++) {
-                try {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeApiKey}`, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: system }] } })
-                    });
-                    if (!response.ok) throw new Error(`API Fehler ${response.status}`);
-                    const data = await response.json();
-                    if (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
-                        return data.candidates[0].content.parts[0].text || "";
-                    }
-                    return "";
-                } catch (err) {
-                    if (i === maxRetries) throw err;
-                    await new Promise(resolve => setTimeout(resolve, delays[i]));
-                }
-            }
-        }
-
-        async function callGeminiTTSAPI(prompt) {
-            const customKey = document.getElementById('gemini-key').value.trim();
-            const activeApiKey = customKey !== "" ? customKey : ""; 
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${activeApiKey}`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: {
-                            responseModalities: ["AUDIO"],
-                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
-                        }
-                    })
-                });
-                if (!response.ok) throw new Error(`TTS API Fehler ${response.status}`);
-                const data = await response.json();
-                if (data.candidates && data.candidates[0].content.parts[0].inlineData) {
-                    return data.candidates[0].content.parts[0].inlineData;
-                }
-                throw new Error("Keine Audio-Daten erhalten");
-            } catch (err) {
-                throw err;
-            }
-        }
-
-        function playWavFromPcm(base64Pcm, sampleRate) {
-            const binaryString = window.atob(base64Pcm);
-            const pcmBytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) { pcmBytes[i] = binaryString.charCodeAt(i); }
-            
-            const numChannels = 1; const bitsPerSample = 16;
-            const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-            const blockAlign = numChannels * (bitsPerSample / 8);
-            const wavHeader = new ArrayBuffer(44); const view = new DataView(wavHeader);
-            const writeStr = (v, off, str) => { for (let i=0; i<str.length; i++) v.setUint8(off+i, str.charCodeAt(i)); };
-            
-            writeStr(view, 0, 'RIFF'); view.setUint32(4, 36 + pcmBytes.byteLength, true);
-            writeStr(view, 8, 'WAVE'); writeStr(view, 12, 'fmt ');
-            view.setUint32(16, 16, true); view.setUint16(20, 1, true);
-            view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true);
-            view.setUint32(28, byteRate, true); view.setUint16(32, blockAlign, true);
-            view.setUint16(34, bitsPerSample, true); writeStr(view, 36, 'data');
-            view.setUint32(40, pcmBytes.byteLength, true);
-            
-            const wavBytes = new Uint8Array(44 + pcmBytes.byteLength);
-            wavBytes.set(new Uint8Array(wavHeader), 0); wavBytes.set(pcmBytes, 44);
-            
-            const blob = new Blob([wavBytes], { type: 'audio/wav' });
-            const audio = new Audio(URL.createObjectURL(blob));
-            audio.play();
-        }
-
-        async function fetchRepoTree() {
-            try {
-                const patInput = document.getElementById('gh-pat');
-                const pat = patInput ? patInput.value.trim() : '';
-                const headers = pat ? { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' } : {};
-                
-                const repoRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}`, { headers });
-                if (!repoRes.ok) throw new Error(`Kein Zugriff auf das Repository. Status: ${repoRes.status}. Hast du einen PAT hinterlegt?`);
-                const repoInfo = await repoRes.json();
-                defaultBranch = repoInfo.default_branch || 'main';
-
-                const treeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${defaultBranch}?recursive=1`, { headers });
-                if (!treeRes.ok) throw new Error(`Konnte den Tree für Branch '${defaultBranch}' nicht laden.`);
-
-                const data = await treeRes.json();
-                if (!data.tree) throw new Error("Keine Struktur gefunden.");
-                
-                fullTree = data.tree.filter(item => item.type === 'blob'); 
-                renderFlatTree();
-                window.logToSystem(`📁 <b>Tree geladen:</b> ${fullTree.length} Dateien (Branch: <code>${defaultBranch}</code>).`, "success");
-            } catch (err) {
-                window.logToSystem(`❌ <b>Fehler beim Laden des Trees:</b> ${err.message}`, "error");
-                document.getElementById('explorer-content').innerHTML = `<div class="p-4 text-xs text-red-500 font-bold text-center">Repository konnte nicht geladen werden.<br><br>${err.message}</div>`;
-            }
-        }
-
-        function renderFlatTree() {
-            const explorer = document.getElementById('explorer-content');
-            explorer.innerHTML = '';
-            const displayTree = fullTree.slice(0, 300);
-            
-            displayTree.forEach(file => {
-                const div = document.createElement('div');
-                div.className = 'file-tree-item group';
-                const isImportant = file.path.match(/package\.json$|\.tsx?$|\.jsx?$/i);
-                const icon = file.path.includes('.json') ? '📦' : file.path.includes('.ts') ? '🟦' : file.path.includes('.js') ? '🟨' : '📄';
-                div.innerHTML = `<span class="shrink-0 text-stone-400">${icon}</span><span class="truncate ${isImportant ? 'font-medium text-stone-700' : ''}" title="${file.path}">${file.path}</span>`;
-                
-                div.onclick = async () => {
-                    document.querySelectorAll('.file-tree-item').forEach(el => el.classList.remove('active-file'));
-                    div.classList.add('active-file');
-                    document.getElementById('editor-filename').textContent = file.path;
-                    const editorBody = document.getElementById('editor-body');
-                    editorBody.innerHTML = `<div class="text-stone-500 italic mt-4 ml-4 animate-pulse">Lade ${file.path}...</div>`;
-                    switchTab('editor');
-                    
-                    const existingCode = await fetchFileContent(file.path, activePR.branch || defaultBranch);
-                    currentFileContent = existingCode;
-                    allAiButtons.forEach(id => { const btn = document.getElementById(id); if(btn) btn.classList.remove('hidden'); });
-                    
-                    if (!existingCode) { editorBody.innerHTML = `<div class="text-red-500 italic mt-4 ml-4">Leer/Fehler</div>`; return; }
-                    renderCodeToEditor(existingCode);
-                };
-                explorer.appendChild(div);
-            });
-            
-            if (fullTree.length > 300) {
-                const hint = document.createElement('div');
-                hint.className = "p-3 text-center text-[10px] text-stone-400 italic bg-stone-50 border-t border-stone-200";
-                hint.innerText = `+ ${fullTree.length - 300} weitere Dateien`;
-                explorer.appendChild(hint);
-            }
-        }
-
-        async function fetchFileContent(path, branch = 'main') {
-            try {
-                let response = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${path}`);
-                if (!response.ok) {
-                    const pat = document.getElementById('gh-pat').value.trim();
-                    const headers = pat ? { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3.raw' } : {};
-                    response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${path}?ref=${branch}`, { headers });
-                    if (!response.ok) return "";
-                }
-                return await response.text();
-            } catch { return ""; }
-        }
-
-        function updateBatchUI() {
-            const btn = document.getElementById('batch-commit-btn');
-            const msgInput = document.getElementById('commit-msg-input');
-            const autoMsgBtn = document.getElementById('auto-commit-msg-btn');
-            const draftPrBtn = document.getElementById('draft-pr-desc-btn');
-            const prReviewBtn = document.getElementById('pr-review-btn');
-            
-            document.getElementById('batch-count').textContent = batchFiles.length;
-            
-            if (batchFiles.length > 0) {
-                btn.disabled = false; btn.classList.replace('bg-stone-300', 'bg-indigo-600'); btn.classList.replace('text-stone-500', 'text-white');
-                msgInput.disabled = false; autoMsgBtn.classList.remove('hidden'); draftPrBtn.classList.remove('hidden'); prReviewBtn.classList.remove('hidden');
-            } else {
-                btn.disabled = true; btn.classList.replace('bg-indigo-600', 'bg-stone-300'); btn.classList.replace('text-white', 'text-stone-500');
-                msgInput.disabled = true; msgInput.value = ""; autoMsgBtn.classList.add('hidden'); draftPrBtn.classList.add('hidden'); prReviewBtn.classList.add('hidden');
-            }
-        }
-
-        // --- KI Single Actions (In-Place Modifications) ---
-        async function runSingleFileAI(btnId, loadingText, logMsg, sysPrompt, applyCode = false, logType = "idea") {
-            const btn = document.getElementById(btnId);
-            const origText = btn.innerHTML; btn.innerHTML = loadingText; setButtonsState(true);
-            const filename = document.getElementById('editor-filename').textContent;
-            
-            if (filename === "Keine Datei gewählt") { setButtonsState(false); btn.innerHTML = origText; return; }
-            window.logToSystem(`<b>${logMsg}:</b> <code>${filename}</code>...`, "info");
-
-            try {
-                let result = await callGeminiAPI(`Datei: ${filename}\n\nCode:\n${currentFileContent}`, sysPrompt);
-                if (applyCode) {
-                    result = sanitizeGeneratedCode(result);
-                    batchFiles.push({ path: filename, content: result });
-                    updateBatchUI(); currentFileContent = result; renderCodeToEditor(result);
-                    window.logToSystem(`✨ <b>Erfolgreich:</b> <code>${filename}</code> aktualisiert.`, "success");
-                } else {
-                    window.logToSystem(`<b>Ergebnis (${filename}):</b><br><div class="mt-2 text-stone-700 text-[10px] bg-white p-3 rounded shadow-sm custom-scrollbar max-h-64 overflow-y-auto">${result.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`, logType);
-                    switchTab('chat');
-                }
-            } catch (e) { window.logToSystem(`Fehler: ${e.message}`, "error"); } finally { setButtonsState(false); btn.innerHTML = origText; }
-        }
-
-        // --- KI Single Actions (New File Generators) ---
-        async function runNewFileAI(btnId, loadingText, logMsg, sysPrompt, extChanger) {
-            const btn = document.getElementById(btnId);
-            const origText = btn.innerHTML; btn.innerHTML = loadingText; setButtonsState(true);
-            const filename = document.getElementById('editor-filename').textContent;
-
-            if (filename === "Keine Datei gewählt") { setButtonsState(false); btn.innerHTML = origText; return; }
-            window.logToSystem(`<b>${logMsg}:</b> Generiere für <code>${filename}</code>...`, "info");
-            
-            try {
-                let result = await callGeminiAPI(`Datei: ${filename}\n\nCode:\n${currentFileContent}`, sysPrompt);
-                result = sanitizeGeneratedCode(result);
-
-                const newPath = extChanger(filename);
-                batchFiles.push({ path: newPath, content: result });
-                updateBatchUI();
-
-                currentFileContent = result; document.getElementById('editor-filename').textContent = newPath;
-                renderCodeToEditor(result);
-                window.logToSystem(`✨ <b>Erfolgreich:</b> <code>${newPath}</code> erstellt.`, "success");
-            } catch (e) { window.logToSystem(`Fehler: ${e.message}`, "error"); } finally { setButtonsState(false); btn.innerHTML = origText; }
-        }
-
-        // --- Zuweisungen für die KI Buttons ---
-        document.getElementById('analyze-code-btn').onclick = () => runSingleFileAI('analyze-code-btn', "⏳...", "Review", "Analysiere den Code auf Bugs. Kurzes HTML.", false);
-        document.getElementById('explain-code-btn').onclick = () => runSingleFileAI('explain-code-btn', "⏳...", "Erklären", "Erkläre die Funktion präzise. HTML.", false, "idea");
-        document.getElementById('eli5-code-btn').onclick = () => runSingleFileAI('eli5-code-btn', "⏳...", "ELI5", "Erkläre als wäre ich 5. Nutze Analogien. HTML.", false, "idea");
-        document.getElementById('a11y-fix-btn').onclick = () => runSingleFileAI('a11y-fix-btn', "⏳...", "A11y Fix", "Du bist ein Web Accessibility (WCAG) Experte. Analysiere diesen Code und füge fehlende ARIA-Labels, alt-Attribute, semantische HTML-Tags und Tastatur-Navigation (tabindex) hinzu. Verändere nicht die Business-Logik oder das Styling. GIB NUR DEN CODE ZURÜCK.", true);
-        document.getElementById('rename-vars-btn').onclick = () => runSingleFileAI('rename-vars-btn', "⏳...", "Clean Names", "Du bist ein Clean Code Experte. Benenne alle Variablen, Konstanten und Funktionen in diesem Code so um, dass sie extrem sprechend und professionell sind. Keine Magic Numbers. Ändere NICHT die Logik, NUR die Namen. GIB NUR DEN CODE ZURÜCK.", true);
-        document.getElementById('optimize-code-btn').onclick = () => runSingleFileAI('optimize-code-btn', "⏳...", "Optimieren", "Refactore für Performance. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('add-logging-btn').onclick = () => runSingleFileAI('add-logging-btn', "⏳...", "Logging", "Füge detaillierte Debugging-Logs (Console/Logger) zu allen Funktionen hinzu. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('generate-docs-btn').onclick = () => runSingleFileAI('generate-docs-btn', "⏳...", "JSDoc", "Füge JSDoc hinzu. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('convert-ts-btn').onclick = () => runSingleFileAI('convert-ts-btn', "⏳...", "TS Konvertierung", "Konvertiere JS zu TS. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('convert-rust-btn').onclick = () => runNewFileAI('convert-rust-btn', "⏳...", "Rust Konvertierung", "Konvertiere diesen Code idiomatisch nach Rust. NUR RUST CODE ZURÜCKGEBEN.", (f) => f.replace(/\.[^/.]+$/, '.rs'));
-        document.getElementById('convert-python-btn').onclick = () => runNewFileAI('convert-python-btn', "⏳...", "Python Konvertierung", "Konvertiere diesen Code idiomatisch nach Python 3. NUR PYTHON CODE ZURÜCKGEBEN.", (f) => f.replace(/\.[^/.]+$/, '.py'));
-        document.getElementById('security-audit-btn').onclick = () => runSingleFileAI('security-audit-btn', "⏳...", "Audit", "Analysiere auf Security Leaks. HTML.", false, "error");
-        document.getElementById('roast-code-btn').onclick = () => runSingleFileAI('roast-code-btn', "⏳...", "Roast", "Roaste diesen Code sarkastisch. HTML.", false, "warning");
-        document.getElementById('ux-review-btn').onclick = () => runSingleFileAI('ux-review-btn', "⏳...", "UX Review", "UX/UI Accessibility Review. HTML.", false, "idea");
-        document.getElementById('tailwind-convert-btn').onclick = () => runSingleFileAI('tailwind-convert-btn', "⏳...", "Tailwind CSS", "Konvertiere Styles zu Tailwind. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('bug-predict-btn').onclick = () => runSingleFileAI('bug-predict-btn', "⏳...", "Bug Predict", "Sage 3 Laufzeitfehler voraus. HTML.", false, "error");
-        document.getElementById('calc-complexity-btn').onclick = () => runSingleFileAI('calc-complexity-btn', "⏳...", "Big-O", "Berechne Big-O Komplexität. HTML.", false, "idea");
-
-        document.getElementById('file-diagram-btn').onclick = () => runSingleFileAI('file-diagram-btn', "⏳...", "Flowchart", "Generiere ein detailliertes Mermaid.js Flowchart (graph TD) exakt für die Logik dieser Datei. GIB NUR DEN MERMAID CODE ZURÜCK.", false, "idea");
-        document.getElementById('explain-pm-btn').onclick = () => runSingleFileAI('explain-pm-btn', "⏳...", "PM Explain", "Erkläre den Zweck dieser Datei für einen nicht-technischen Projektmanager in 2-3 einfachen Sätzen auf Deutsch. Betone den Business Value. Nutze kein Fachjargon und poste keinen Code.", false, "idea");
-
-        document.getElementById('audio-review-btn').onclick = async () => {
-            const btn = document.getElementById('audio-review-btn'); const orig = btn.innerHTML;
-            const filename = document.getElementById('editor-filename').textContent;
-            if (filename === "Keine Datei gewählt") return;
-            btn.innerHTML = "⏳ AUDIO..."; setButtonsState(true);
-            window.logToSystem(`<b>Audio Review:</b> Generiere Sprachanalyse für <code>${filename}</code>...`, "info");
-            
-            try {
-                const prompt = `Du bist ein freundlicher, erfahrener Senior Developer. Gib ein kurzes, prägnantes Audio-Code-Review (max. 3 Sätze) für diese Datei auf Deutsch: \n\nDatei: ${filename}\nCode:\n${currentFileContent.substring(0, 1000)}`;
-                const inlineData = await callGeminiTTSAPI(prompt);
-                
-                const sampleRateMatch = inlineData.mimeType.match(/rate=(\d+)/);
-                const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000;
-                
-                playWavFromPcm(inlineData.data, sampleRate);
-                window.logToSystem(`🔊 <b>Audio Review läuft!</b> Die KI spricht die Code-Analyse zu <code>${filename}</code> jetzt aus.`, "idea");
-                switchTab('chat');
-            } catch (e) {
-                window.logToSystem(`Fehler beim Audio Review: ${e.message}`, "error");
-            } finally {
-                btn.innerHTML = orig; setButtonsState(false);
-            }
-        };
-
-        // Helper für Dateiendungen
-        document.getElementById('generate-tests-btn').onclick = () => runNewFileAI('generate-tests-btn', "⏳...", "Tests", "Schreibe Jest/Vitest Tests. NUR CODE ZURÜCK.", (f) => f.replace(/\.(ts|js|tsx|jsx)$/, '.test.$1'));
-        document.getElementById('generate-sql-btn').onclick = () => runNewFileAI('generate-sql-btn', "⏳...", "SQL Generierung", "Analysiere diese Datei (z.B. ein Model, Interface oder eine Klasse). Generiere dazu passend ein robustes PostgreSQL Schema (CREATE TABLE, Relationen, Indizes, Datentypen). GIB NUR DEN SQL CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.schema.sql'));
-        document.getElementById('openapi-gen-btn').onclick = () => runNewFileAI('openapi-gen-btn', "⏳...", "OpenAPI Spec", "Analysiere diese Datei (vermutlich ein Router, Controller oder API-Handler). Generiere eine vollständige, gültige OpenAPI 3.0 Spezifikation (im YAML Format) für alle hier definierten Endpunkte. Errate sinnvolle Request/Response Schemas basierend auf dem Code. GIB NUR DEN YAML CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.openapi.yaml'));
-        document.getElementById('generate-mock-btn').onclick = () => runNewFileAI('generate-mock-btn', "⏳...", "Mock", "Generiere JSON Mock Daten. NUR JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.mock.json'));
-        document.getElementById('generate-storybook-btn').onclick = () => runNewFileAI('generate-storybook-btn', "⏳...", "Storybook", "Storybook CSF 3.0 Story. NUR CODE ZURÜCK.", (f) => f.replace(/\.(ts|js|tsx|jsx)$/, '.stories.$1'));
-        document.getElementById('extract-i18n-btn').onclick = () => runNewFileAI('extract-i18n-btn', "⏳...", "i18n", "Extrahiere Strings als JSON. NUR JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.i18n.json'));
-        document.getElementById('generate-zod-btn').onclick = () => runNewFileAI('generate-zod-btn', "⏳...", "Zod", "Generiere Zod Schema. NUR CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.schema.ts'));
-
-
-        // --- Global DevOps Tools ---
-        document.getElementById('auto-readme-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('auto-readme-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Erstelle strukturierte README.md. NUR CODE ZURÜCK."));
-                batchFiles.push({ path: 'README.md', content: res }); updateBatchUI();
-                document.getElementById('editor-filename').textContent = 'README.md'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                window.logToSystem(`✨ <b>README.md generiert.</b>`, "success");
-            } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('dockerize-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('dockerize-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Generiere produktionsreifes Dockerfile. NUR CODE ZURÜCK."));
-                batchFiles.push({ path: 'Dockerfile', content: res }); updateBatchUI();
-                document.getElementById('editor-filename').textContent = 'Dockerfile'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                window.logToSystem(`✨ <b>Dockerfile generiert.</b>`, "success");
-            } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('ci-cd-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('ci-cd-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Erstelle GitHub Actions Pipeline (.github/workflows/ci.yml). NUR YAML CODE ZURÜCK."));
-                batchFiles.push({ path: '.github/workflows/ci.yml', content: res }); updateBatchUI();
-                document.getElementById('editor-filename').textContent = '.github/workflows/ci.yml'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                window.logToSystem(`✨ <b>CI Pipeline generiert.</b>`, "success");
-            } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('repo-onboarding-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('repo-onboarding-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI(`Repository Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Du bist ein Senior Architekt. Erstelle einen strukturierten 'Developer Onboarding Guide' (ONBOARDING.md) basierend auf dieser Dateistruktur. Erkläre die mutmaßliche Architektur, Hauptkomponenten und Tipps für neue Entwickler. NUR MARKDOWN ZURÜCKGEBEN."));
-                batchFiles.push({ path: 'ONBOARDING.md', content: res }); updateBatchUI();
-                document.getElementById('editor-filename').textContent = 'ONBOARDING.md'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                window.logToSystem(`✨ <b>Onboarding Guide generiert.</b>`, "success");
-            } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('tech-stack-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('tech-stack-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                let res = await callGeminiAPI(`Repository Struktur:\n${fullTree.slice(0, 500).map(f => f.path).join('\n')}`, "Analysiere diese Dateistruktur und identifiziere den verwendeten Tech-Stack. Generiere einen kurzen, visuell ansprechenden Bericht in HTML (kein Markdown). Bewerte die Architektur, nenne mutmaßliche Datenbanken, Frameworks und zeige mögliche Bottlenecks auf.");
-                window.logToSystem(`✨ <b>Tech Stack Analyse:</b><br><div class="mt-2 text-[11px] bg-white text-stone-800 p-3 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "idea");
-                switchTab('chat');
-            } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('release-notes-btn').onclick = async () => {
-            const btn = document.getElementById('release-notes-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                const pat = document.getElementById('gh-pat').value.trim();
-                const headers = pat ? { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' } : {};
-                const commitsRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/commits?sha=${defaultBranch}&per_page=20`, { headers });
-                if (!commitsRes.ok) throw new Error("Konnte Commits nicht abrufen. Möglicherweise fehlt der Token?");
-                const commitsData = await commitsRes.json();
-                const commitMessages = commitsData.map(c => `- ${c.commit.message}`).join('\n');
-
-                let res = await callGeminiAPI(`Letzte Commits:\n${commitMessages}`, "Du bist ein Product Manager. Schreibe wunderschöne, gut strukturierte Release Notes in HTML (ohne Markdown Backticks, nutze h3, ul, li) für diese Liste von Git Commits. Kategorisiere sie in '🚀 Neue Features', '🐛 Bugfixes' und '🔧 Wartung'. Filtere unwichtige Commits heraus.");
-                window.logToSystem(`✨ <b>Release Notes:</b><br><div class="mt-2 text-[12px] bg-pink-50 text-pink-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto font-sans">${res}</div>`, "idea");
-                switchTab('chat');
-            } catch(e) { window.logToSystem(`Fehler: ${e.message}`, "error"); } finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('threat-model-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('threat-model-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                let res = await callGeminiAPI(`Repository Struktur:\n${fullTree.slice(0, 400).map(f => f.path).join('\n')}`, "Du bist ein Cybersecurity-Experte. Führe eine kurze STRIDE-Threat-Modeling-Analyse für dieses Projekt anhand der Struktur durch. Identifiziere Angriffsvektoren (Spoofing, Tampering, Repudiation, Info Disclosure, DoS, EoP). Antworte in gut strukturiertem HTML (ohne Markdown Backticks).");
-                window.logToSystem(`🛡️ <b>Security Threat Model (STRIDE):</b><br><div class="mt-2 text-[11px] bg-red-50 text-red-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "error");
-                switchTab('chat');
-            } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('mermaid-diagram-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('mermaid-diagram-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
-            try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Erstelle Mermaid.js (graph TD). NUR MERMAID CODE ZURÜCK."));
-                window.logToSystem(`✨ <b>Diagramm:</b><br><div class="mt-2 text-[10px] bg-teal-50 p-3 rounded shadow-inner font-mono whitespace-pre overflow-x-auto">${res.replace(/</g, '&lt;')}</div>`, "success");
-                switchTab('chat');
-            } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
-        };
-
-        document.getElementById('auto-commit-msg-btn').onclick = async () => {
-            if (batchFiles.length === 0) return;
-            const btn = document.getElementById('auto-commit-msg-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; btn.disabled = true;
-            try {
-                let res = await callGeminiAPI(`Änderungen:\n${batchFiles.map(f => `${f.isDelete ? 'DEL' : 'MOD'}: ${f.path}`).join('\n')}`, "Schreibe EINE Zeile Commit Message (Conventional Commits). Keine Erklärung.");
-                document.getElementById('commit-msg-input').value = res.replace(/`/g, '').trim();
-            } catch(e) {} finally { btn.innerHTML = orig; btn.disabled = false; }
-        };
-
-        document.getElementById('draft-pr-desc-btn').onclick = async () => {
-            if (batchFiles.length === 0) return;
-            const btn = document.getElementById('draft-pr-desc-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; btn.disabled = true;
-            try {
-                const diffContext = batchFiles.map(f => `--- ${f.path} (${f.isDelete ? 'DELETED' : 'MODIFIED'}) ---\n${f.content ? f.content.substring(0, 500) + '...' : ''}`).join('\n\n');
-                let res = await callGeminiAPI(`Änderungen:\n${diffContext}`, "Du bist ein Senior Developer. Schreibe eine professionelle, ausführliche GitHub Pull Request Description in Markdown für diese Änderungen. Beinhalte: Summary, Motivation, Changes, Testing. Antworte NUR in Markdown (HTML-sicher umgewandelt).");
-                window.logToSystem(`✨ <b>PR Description Draft:</b><br><div class="mt-2 text-[10px] bg-purple-50 text-purple-900 p-3 rounded shadow-inner font-mono whitespace-pre-wrap overflow-x-auto">${res.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`, "idea");
-                switchTab('chat');
-            } catch(e) {
-                window.logToSystem(`Fehler beim Erstellen der PR Description: ${e.message}`, "error");
-            } finally { btn.innerHTML = orig; btn.disabled = false; }
-        };
-
-        document.getElementById('pr-review-btn').onclick = async () => {
-            if (batchFiles.length === 0) return;
-            const btn = document.getElementById('pr-review-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; btn.disabled = true;
-            try {
-                const diffContext = batchFiles.map(f => `--- ${f.path} (${f.isDelete ? 'DELETED' : 'MODIFIED'}) ---\n${f.content ? f.content.substring(0, 1000) + '...' : ''}`).join('\n\n');
-                let res = await callGeminiAPI(`Anstehende Änderungen:\n${diffContext}`, "Du bist ein extrem strenger Lead Engineer. Mache ein Pre-Flight Code Review für diese anstehenden Änderungen, bevor sie gepusht werden. Suche nach Logikfehlern, Performance-Engpässen, fehlenden Error-Handlings oder schlechten Namenskonventionen. Sei direkt, kritisch, aber hilfreich. Antworte in gut formatiertem HTML (ohne Markdown Backticks).");
-                window.logToSystem(`✨ <b>Pre-Flight Review:</b><br><div class="mt-2 text-[11px] bg-rose-50 text-rose-900 p-3 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "error");
-                switchTab('chat');
-            } catch(e) {
-                window.logToSystem(`Fehler beim Pre-Flight Review: ${e.message}`, "error");
-            } finally { btn.innerHTML = orig; btn.disabled = false; }
-        };
-
-        // --- Architect & Auto-Fix ---
-        async function runArchitectWorkflow(inputTask, isAutoFix = false) {
-            if (!inputTask) return;
-            const runBtn = document.getElementById('run-architect-btn'); setButtonsState(true); runBtn.textContent = "⏳ GENERIERE...";
-            switchTab('editor');
-            const editorBody = document.getElementById('editor-body');
-            editorBody.innerHTML = `<div class="text-indigo-400 font-bold p-4 animate-pulse">Analysiere Blueprint...</div>`;
-            window.logToSystem("<b>Architekt evaluiert...</b>", "info");
-
-            try {
-                const architectSys = "Du bist Software-Architekt. GIB NUR EIN JSON ARRAY ZURÜCK: [ { \"path\": \"pfad.ts\", \"task\": \"exakt was fehlt\", \"action\": \"modify\" | \"delete\" } ]\nStruktur:\n" + fullTree.slice(0, 400).map(f => f.path).join('\n');
-                let cleanPlan = (await callGeminiAPI(inputTask, architectSys)).replace(/^```[a-z]*\n/gi, '').replace(/\n```$/gi, '').replace(/```/g, '').trim();
-                cleanPlan = cleanPlan.replace(/,\s*]/g, ']').replace(/,\s*}/g, '}');
-                
-                const startIdx = cleanPlan.indexOf('['); const endIdx = cleanPlan.lastIndexOf(']');
-                if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
-                const plan = JSON.parse(cleanPlan);
-                
-                batchFiles = []; let processedFiles = 0;
-                for (let i = 0; i < plan.length; i++) {
-                    const step = plan[i];
-                    if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) continue; 
-                    if (step.action === 'delete') { batchFiles.push({ path: step.path, isDelete: true }); processedFiles++; continue; }
-
-                    document.getElementById('editor-filename').textContent = step.path;
-                    editorBody.innerHTML = `<div class="text-indigo-300 p-4 font-mono text-[11px]">Bearbeite: ${step.path}</div>`;
-                    const existingCode = await fetchFileContent(step.path, activePR.branch || defaultBranch);
-                    
-                    const compilerSys = "Du bist Code-Generator. WICHTIG: Nutze niemals replace(//g) als Regex. Vermeide TS1135. Keine leeren JSX-Tags. NUR CODE ZURÜCKGEBEN.";
-                    let newCode = sanitizeGeneratedCode(await callGeminiAPI(`Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}\nSetze um.`, compilerSys));
-                    
-                    batchFiles.push({ path: step.path, content: newCode }); currentFileContent = newCode; processedFiles++;
-                    renderCodeToEditor(newCode); window.logToSystem(`✅ <b>Fertig:</b> <code>${step.path}</code>`, "success");
-                }
-
-                if (processedFiles === 0) { activePR.isFixing = false; } else {
-                    updateBatchUI();
-                    if (isAutoFix) { await executePush(); activePR.isFixing = false; setTimeout(() => checkCIStatus(), 4000); }
-                }
-            } catch (err) { activePR.isFixing = false; window.logToSystem(`<b>Fehler:</b> ${err.message}`, "error"); } finally { setButtonsState(false); runBtn.textContent = "🚀 Generieren"; }
-        }
-        document.getElementById('run-architect-btn').onclick = () => runArchitectWorkflow(document.getElementById('architect-input').value.trim(), false);
-
-        // --- Smart Search & Chat ---
-        document.getElementById('smart-search-btn').onclick = async () => {
-            const query = document.getElementById('smart-search-input').value.trim();
-            if (!query || fullTree.length === 0) return;
-            const btn = document.getElementById('smart-search-btn'); btn.innerHTML = "⏳..."; btn.disabled = true;
-            try {
-                let bestMatch = (await callGeminiAPI(`Suchanfrage: "${query}"\nDateien:\n${fullTree.slice(0, 400).map(f => f.path).join('\n')}`, "Finde die EINE perfekte Datei. NUR PFAD ZURÜCK.")).replace(/`/g, '').trim();
-                if (fullTree.some(f => f.path === bestMatch)) {
-                    document.getElementById('editor-filename').textContent = bestMatch;
-                    currentFileContent = await fetchFileContent(bestMatch, activePR.branch || defaultBranch);
-                    switchTab('editor'); renderCodeToEditor(currentFileContent);
-                    allAiButtons.forEach(id => { const el = document.getElementById(id); if(el) el.classList.remove('hidden'); });
-                    window.logToSystem(`✨ <b>Suche erfolgreich:</b> <code>${bestMatch}</code>`, "success");
-                }
-            } catch (e) {} finally { btn.innerHTML = "✨ SUCHE"; btn.disabled = false; }
-        };
-
-        const handleFileChat = async () => {
-            const chatInput = document.getElementById('file-chat-input'); const chatBtn = document.getElementById('file-chat-btn');
-            const query = chatInput.value.trim(); const filename = document.getElementById('editor-filename').textContent;
-            if (!query || filename === "Keine Datei gewählt") return;
-            chatBtn.innerHTML = "⏳..."; chatBtn.disabled = true; switchTab('chat');
-            try {
-                const answer = await callGeminiAPI(`Kontext: ${filename}\nCode:\n${currentFileContent}\n\nFrage: ${query}`, "Du bist Pair Programmer. Antworte in HTML.");
-                window.logToSystem(`✨ <b>Gemini:</b><br><div class="mt-2 text-stone-700 text-[11px] bg-white p-3 rounded shadow-sm">${answer}</div>`, "idea");
-                chatInput.value = "";
-            } catch (e) {} finally { chatBtn.innerHTML = "✨ FRAGEN"; chatBtn.disabled = false; }
-        };
-        document.getElementById('file-chat-btn').onclick = handleFileChat;
-        document.getElementById('file-chat-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleFileChat(); });
-
-        document.getElementById('suggest-ideas-btn').onclick = async () => {
-            if (fullTree.length === 0) return;
-            const btn = document.getElementById('suggest-ideas-btn'); btn.disabled = true; btn.innerHTML = "⏳...";
-            try {
-                window.logToSystem(`✨ <b>Ideen:</b><br><div class="mt-2">${await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 150).map(f => f.path).join('\n')}`, "Schlage 3 Architektur-Ideen vor (HTML).")}</div>`, "idea");
-            } catch (e) {} finally { btn.disabled = false; btn.innerHTML = "✨ IDEEN"; }
-        };
-
-        // --- NEW: Safe Push Pipeline ---
-        async function executePush() {
-            const pat = document.getElementById('gh-pat').value.trim();
-            if (!pat) throw new Error("Kein GitHub PAT eingetragen! Zum Pushen von Code ist ein Token zwingend erforderlich.");
-            
-            document.getElementById('batch-commit-btn').textContent = "PUSHING..."; 
-            document.getElementById('batch-commit-btn').disabled = true;
-            
-            const headers = { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' };
-            let branchName = activePR.branch; 
-            let isNewBranch = false; 
-            let baseSha;
-
-            try {
-                if (!branchName) {
-                    branchName = `architect-fix-${Date.now()}`; 
-                    isNewBranch = true;
-                    
-                    const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${defaultBranch}`, {headers});
-                    if (!refRes.ok) throw new Error(`Basis-Branch '${defaultBranch}' nicht gefunden. Hast du Zugriff mit deinem Token?`);
-                    const refData = await refRes.json();
-                    
-                    if (!refData.object || !refData.object.sha) throw new Error("Konnte den SHA Hash des Basis-Branches nicht auslesen. API lieferte unvollständige Daten.");
-                    baseSha = refData.object.sha;
-                    
-                    const createBranchRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs`, { method: 'POST', headers, body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha }) });
-                    if (!createBranchRes.ok) throw new Error(`Konnte neuen Branch '${branchName}' nicht erstellen. Fehlen Push-Rechte?`);
-                } else {
-                    const refRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, {headers});
-                    if (!refRes.ok) throw new Error(`Aktiver PR-Branch '${branchName}' existiert nicht mehr.`);
-                    baseSha = (await refRes.json()).object.sha;
-                }
-
-                const commitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits/${baseSha}`, {headers});
-                const commitData = await commitRes.json();
-                
-                const currentTreeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${commitData.tree.sha}?recursive=1`, {headers});
-                const currentTreeData = await currentTreeRes.json();
-                
-                const tree = [];
-                for (const f of batchFiles) {
-                    if (f.isDelete) {
-                        const existingItem = currentTreeData.tree.find(item => item.path === f.path);
-                        if (existingItem) tree.push({ path: f.path, mode: existingItem.mode, type: existingItem.type, sha: null });
-                    } else {
-                        tree.push({ path: f.path, mode: '100644', type: 'blob', content: f.content });
-                    }
-                }
-
-                const newTreeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees`, { method: 'POST', headers, body: JSON.stringify({ base_tree: commitData.tree.sha, tree }) });
-                const newTreeData = await newTreeRes.json();
-                if (!newTreeData.sha) throw new Error("Tree-Erstellung bei GitHub fehlgeschlagen (Fehlerhafter Payload).");
-                
-                let commitMsg = document.getElementById('commit-msg-input').value.trim() || `Sovereign AI Deployment (${batchFiles.length} actions)`;
-                
-                const newCommitRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/commits`, { method: 'POST', headers, body: JSON.stringify({ message: commitMsg, tree: newTreeData.sha, parents: [baseSha] }) });
-                const newCommitData = await newCommitRes.json();
-                if (!newCommitData.sha) throw new Error("Commit-Erstellung bei GitHub fehlgeschlagen.");
-                
-                activePR.lastCommitSha = newCommitData.sha;
-                const patchRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${branchName}`, { method: 'PATCH', headers, body: JSON.stringify({ sha: newCommitData.sha }) });
-                if (!patchRes.ok) throw new Error("Konnte die Branch-Referenz nicht aktualisieren.");
-
-                if (isNewBranch) {
-                    const prRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls`, { method: 'POST', headers, body: JSON.stringify({ title: `Sovereign AI Fix`, head: branchName, base: defaultBranch, body: "AI modifications." }) });
-                    if (!prRes.ok) throw new Error("Pull Request konnte nicht erstellt werden.");
-                    
-                    const prData = await prRes.json();
-                    activePR = { branch: branchName, number: prData.number, lastErrorLog: "", isFixing: false, lastCommitSha: newCommitData.sha };
-                    
-                    document.getElementById('check-pr-btn').disabled = false; 
-                    document.getElementById('check-pr-btn').classList.replace('opacity-50', 'opacity-100'); 
-                    document.getElementById('check-pr-btn').classList.replace('cursor-not-allowed', 'cursor-pointer');
-                }
-                
-                batchFiles = []; 
-                updateBatchUI();
-                window.logToSystem(`🟢 <b>Erfolgreich gepusht!</b>`, "success");
-            } catch (err) {
-                throw err;
-            }
-        }
-
-        document.getElementById('batch-commit-btn').onclick = () => {
-            executePush().catch(err => { 
-                window.logToSystem(`<b>Push Error:</b> ${err.message}`, "error"); 
-                updateBatchUI(); 
-            });
-        };
-
-        async function checkCIStatus() {
-            const pat = document.getElementById('gh-pat').value.trim();
-            if (!pat || !activePR.branch) return;
-            const badge = document.getElementById('pr-status-badge'); const progBar = document.getElementById('pr-progress-bar');
-            document.getElementById('pr-progress-container').classList.remove('hidden');
-            
-            try {
-                const ref = activePR.lastCommitSha || activePR.branch;
-                const headers = { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' };
-                const [checkRes, runsRes] = await Promise.all([ fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/commits/${ref}/check-runs?t=${Date.now()}`, {headers}), fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs?head_sha=${ref}&t=${Date.now()}`, {headers}) ]);
-                const checkData = checkRes.ok ? await checkRes.json() : { total_count: 0, check_runs: [] };
-                const runsData = runsRes.ok ? await runsRes.json() : { total_count: 0, workflow_runs: [] };
-                
-                if ((checkData.total_count || 0) + (runsData.total_count || 0) === 0) {
-                    if (++ciInitRetries > 20) { badge.textContent = "✅ KEINE CI"; progBar.style.width = "100%"; document.getElementById('merge-pr-btn').classList.remove('hidden'); activePR.isFixing = false; return; }
-                    badge.textContent = `SUCHE CI...`; progBar.style.width = "5%"; ciPollTimer = setTimeout(checkCIStatus, 5000); return;
-                }
-
-                ciInitRetries = 0; let isRunning = false; let isFailed = false; let completed = 0;
-                let allRuns = [...(runsData.workflow_runs || [])];
-                if (checkData.check_runs) checkData.check_runs.forEach(cr => { if (!allRuns.find(ar => ar.name === cr.name)) allRuns.push(cr); });
-
-                allRuns.forEach(r => { if (r.status === 'completed') { completed++; if (!['success', 'neutral', 'skipped', 'cancelled'].includes(r.conclusion)) isFailed = true; } else isRunning = true; });
-                progBar.style.width = `${Math.max(15, Math.round((completed / allRuns.length) * 100))}%`;
-
-                if (isRunning) { 
-                    badge.textContent = "CI LÄUFT..."; 
-                    ciPollTimer = setTimeout(checkCIStatus, 5000); 
-                } 
-                else if (isFailed) { 
-                    badge.textContent = "❌ CI FEHLGESCHLAGEN"; progBar.style.width = `100%`; progBar.classList.replace('bg-indigo-600', 'bg-red-600');
-                    if(ciPollTimer) clearTimeout(ciPollTimer); 
-                    if (activePR.isFixing) return;
-                    
-                    activePR.isFixing = true; 
-                    
-                    try {
-                        let currentErrorLog = "";
-                        const failed = allRuns.filter(r => r.status === 'completed' && !['success', 'neutral', 'skipped', 'cancelled'].includes(r.conclusion));
-                        for (const run of failed) {
-                            if (run.workflow_id || run.run_number) {
-                                const jobs = (await (await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${run.id}/jobs`, {headers})).json()).jobs || [];
-                                for (const job of jobs.filter(j => j.status === 'completed' && !['success', 'neutral', 'skipped'].includes(j.conclusion))) {
-                                    const logText = await (await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/actions/jobs/${job.id}/logs`, {headers})).text();
-                                    const errors = logText.split('\n').filter(l => l.match(/error|err!|fail|exception|ts1135/i)).slice(0, 30);
-                                    currentErrorLog += errors.length > 0 ? errors.join('\n') + '\n' : logText.slice(-1000) + '\n';
-                                }
-                            }
-                        }
-                        currentErrorLog = currentErrorLog || "Unbekannter Fehler.";
-
-                        if (activePR.lastErrorLog === currentErrorLog) {
-                            autoFixCount++;
-                        } else {
-                            autoFixCount = 1;
-                            activePR.lastErrorLog = currentErrorLog;
-                        }
-
-                        if (autoFixCount > 3) { 
-                            window.logToSystem(`🛑 <b>Auto-Fix Limit erreicht (${autoFixCount}x in Folge identischer Fehler).</b> Bitte manuell prüfen.`, "error"); 
-                            document.getElementById('autofix-pr-btn').classList.remove('hidden'); 
-                            activePR.isFixing = false;
-                            return; 
-                        }
-                        
-                        window.logToSystem(`⚙️ <b>AUTO-FIX (Versuch ${autoFixCount}/3 für DIESEN Fehler)</b>...`, "info");
-                        runArchitectWorkflow(`BEHEBE DIESEN CI FEHLER:\n${currentErrorLog}\nACHTE AUF SYNTAX!`, true);
-                    } catch (err) { 
-                        activePR.isFixing = false; 
-                        window.logToSystem(`Fehler beim Auto-Fix: ${err.message}`, "error");
-                    }
-                } else {
-                    badge.textContent = "✅ CI GRÜN"; progBar.classList.replace('bg-indigo-600', 'bg-green-600');
-                    document.getElementById('autofix-pr-btn').classList.add('hidden'); document.getElementById('merge-pr-btn').classList.remove('hidden'); 
-                    activePR.isFixing = false; autoFixCount = 0;
-                }
-            } catch(e) { activePR.isFixing = false; }
-        }
-
-        document.getElementById('check-pr-btn').onclick = () => { if(ciPollTimer) clearTimeout(ciPollTimer); ciInitRetries = 0; activePR.isFixing = false; checkCIStatus(); };
-        document.getElementById('merge-pr-btn').onclick = async () => {
-            const pat = document.getElementById('gh-pat').value.trim(); if (!pat || !activePR.number) return;
-            const headers = { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' };
-            if((await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${activePR.number}/merge`, { method: 'PUT', headers, body: JSON.stringify({ merge_method: 'squash' }) })).ok) {
-                await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${activePR.branch}`, { method: 'DELETE', headers });
-                window.logToSystem(`🎉 <b>MERGE ERFOLGREICH!</b>`, "success");
-                document.getElementById('merge-pr-btn').classList.add('hidden'); document.getElementById('check-pr-btn').disabled = true;
-                activePR = { branch: null, number: null, lastErrorLog: "", isFixing: false, lastCommitSha: null }; autoFixCount = 0;
-            }
-        };
-
-        document.getElementById('autofix-pr-btn').onclick = () => runArchitectWorkflow(`Behebe:\n\n${activePR.lastErrorLog}`, true);
-        window.onload = () => { fetchRepoTree(); if (window.innerWidth < 1024) switchTab('explorer'); };
-    </script>
-
-    <!-- GOOGLE OAUTH & KEY STORAGE MODULE -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-
-        let auth;
-        let currentUserUid = 'default';
-
-        function saveKeys() {
-            const pat = document.getElementById('gh-pat').value;
-            const gemini = document.getElementById('gemini-key').value;
-            localStorage.setItem('sov_pat_' + currentUserUid, pat);
-            localStorage.setItem('sov_gemini_' + currentUserUid, gemini);
-        }
-
-        function loadKeys(uid) {
-            document.getElementById('gh-pat').value = localStorage.getItem('sov_pat_' + uid) || '';
-            document.getElementById('gemini-key').value = localStorage.getItem('sov_gemini_' + uid) || '';
-        }
-
-        // Listener, um Keys direkt in das Profil zu speichern, wenn man tippt
-        document.getElementById('gh-pat').addEventListener('input', saveKeys);
-        document.getElementById('gemini-key').addEventListener('input', saveKeys);
-
-        try {
-            // Environment Check
-            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "mock" };
-            
-            const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            const provider = new GoogleAuthProvider();
-            
-            // WICHTIG: Erzwingt den Google Account-Auswahlbildschirm (für das nahtlose Wechseln)
-            provider.setCustomParameters({ prompt: 'select_account' });
-
-            window.loginWithGoogle = async () => {
-                if (firebaseConfig.apiKey === "mock") {
-                    window.logToSystem('Mock-Modus: Keine Canvas-Firebase Umgebung erkannt. Generiere Dummy-Account zum Testen der Wechsel-Logik.', 'warning');
-                    mockLogin();
-                    return;
-                }
-                try {
-                    await signInWithPopup(auth, provider);
-                } catch(e) {
-                    if (e.code === 'auth/popup-blocked') {
-                        window.logToSystem('⚠️ <b>Popup blockiert!</b><br>Dein Browser blockiert das Google-Login-Fenster (typisch für Vorschau-Umgebungen). Um die UI und die Key-Speicherung trotzdem zu demonstrieren, aktiviere ich den <b>Mock-Modus</b>.', 'warning');
-                        mockLogin();
-                    } else {
-                        window.logToSystem('Login Fehler: ' + e.message, 'error');
-                    }
-                }
-            };
-
-            // Account wechseln nutzt exakt dieselbe Logik (da prompt: select_account gesetzt ist)
-            window.switchGoogleAccount = window.loginWithGoogle;
-
-            window.logoutGoogle = async () => {
-                if (firebaseConfig.apiKey === "mock") {
-                    mockLogout();
-                    return;
-                }
-                await signOut(auth);
-            };
-
-            onAuthStateChanged(auth, (user) => {
-                if(firebaseConfig.apiKey === "mock") return;
-                updateAuthUI(user);
-            });
-
-        } catch(e) {
-            console.warn("Firebase Init Fehler (Fallback auf Mock)", e);
-        }
-
-        // --- Mock Logik (Falls es außerhalb von Canvas / lokal betrieben wird) ---
-        let mockUserToggle = false;
-        function mockLogin() {
-            mockUserToggle = !mockUserToggle;
-            const mockUser = mockUserToggle ? 
-                { uid: 'mock_privat_123', displayName: 'Privat', photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix' } :
-                { uid: 'mock_arbeit_456', displayName: 'Work', photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=WorkAdmin' };
-            updateAuthUI(mockUser);
-        }
-        
-        function mockLogout() {
-            updateAuthUI(null);
-        }
-
-        // --- UI & State Updates ---
-        function updateAuthUI(user) {
-            const authBtn = document.getElementById('google-auth-btn');
-            const userInfo = document.getElementById('google-user-info');
-            
-            if (user) {
-                // 1. Setze die aktuelle UID
-                currentUserUid = user.uid;
-                
-                // 2. Lade die Keys, die zu diesem Account gehören!
-                loadKeys(user.uid);
-                
-                // 3. UI anpassen
-                authBtn.classList.add('hidden');
-                userInfo.classList.remove('hidden');
-                document.getElementById('google-avatar').src = user.photoURL || '';
-                document.getElementById('google-name').textContent = user.displayName || 'Google User';
-                
-                window.logToSystem(`👋 <b>Angemeldet als ${user.displayName}</b>.<br>Dein persönlicher Workspace und Keys wurden aus dem sicheren LocalStorage geladen.`, 'success');
-            } else {
-                currentUserUid = 'default';
-                loadKeys('default');
-                authBtn.classList.remove('hidden');
-                userInfo.classList.add('hidden');
-                window.logToSystem(`🔒 <b>Abgemeldet.</b> Standard-Workspace ohne hinterlegte Keys aktiv.`, 'info');
-            }
-        }
-        
-        // Initiale Lade-Routine (für den Default / Nicht eingeloggt Zustand)
-        loadKeys('default');
-    </script>
 </body>
 </html>

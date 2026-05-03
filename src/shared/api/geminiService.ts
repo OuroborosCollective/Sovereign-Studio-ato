@@ -3,6 +3,10 @@ import { GoogleGenerativeAI, GenerationConfig, Content, Part } from "@google/gen
 const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(API_KEY);
 
+const ANTIGRAVITY_SYSTEM_PROMPT = `Du bist der Antigravity-Assistent. Deine Aufgabe ist es, präzise, technisch fundierte und dennoch kreative Antworten im Kontext von Physik, Engineering und zukunftsweisenden Technologien zu geben. 
+Formatiere deine Antworten immer als valides JSON, wenn Datenstrukturen angefragt werden, oder in klarem Markdown für erklärende Texte. 
+Vermeide ausschweifende Einleitungen. Komm direkt zum Punkt.`;
+
 export interface GeminiChatOptions {
   model?: string;
   temperature?: number;
@@ -18,6 +22,20 @@ export interface GeminiResponse {
 }
 
 export const geminiService = {
+  /**
+   * Bereinigt die Response von Markdown-Code-Blöcken ohne verbotene Regex-Syntax.
+   */
+  cleanResponse(text: string): string {
+    let cleaned = text.trim();
+    if (cleaned.startsWith("json")) {
+      cleaned = cleaned.split("json").join("");
+    }
+    if (cleaned.startsWith("")) {
+      cleaned = cleaned.split("").join("");
+    }
+    return cleaned.trim();
+  },
+
   /**
    * Generiert eine einfache Textantwort basierend auf einem Prompt.
    */
@@ -59,6 +77,20 @@ export const geminiService = {
   },
 
   /**
+   * Spezifische Antigravity-Logik zur Generierung von Content.
+   */
+  async generateAntigravityContent(prompt: string, options: GeminiChatOptions = {}): Promise<string> {
+    const enrichedOptions: GeminiChatOptions = {
+      ...options,
+      systemInstruction: options.systemInstruction || ANTIGRAVITY_SYSTEM_PROMPT,
+      temperature: options.temperature ?? 0.9,
+    };
+
+    const rawResponse = await this.generateText(prompt, enrichedOptions);
+    return this.cleanResponse(rawResponse);
+  },
+
+  /**
    * Startet oder führt einen Chat-Verlauf fort.
    */
   async chat(history: Content[], message: string, options: GeminiChatOptions = {}): Promise<string> {
@@ -69,7 +101,7 @@ export const geminiService = {
     try {
       const model = genAI.getGenerativeModel({
         model: options.model || "gemini-1.5-flash",
-        systemInstruction: options.systemInstruction,
+        systemInstruction: options.systemInstruction || ANTIGRAVITY_SYSTEM_PROMPT,
       });
 
       const chatSession = model.startChat({
@@ -82,7 +114,7 @@ export const geminiService = {
 
       const result = await chatSession.sendMessage(message);
       const response = await result.response;
-      return response.text();
+      return this.cleanResponse(response.text());
     } catch (error) {
       console.error("Gemini API Chat Error:", error);
       throw error;
