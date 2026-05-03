@@ -33,7 +33,7 @@ export const fetchBillingData = createAsyncThunk(
   }
 );
 
-export const purchasePackageAction = createAsyncThunk(
+export const purchasePackage = createAsyncThunk(
   'billing/purchasePackage',
   async (packageId: string, { rejectWithValue }) => {
     try {
@@ -52,7 +52,7 @@ export const purchasePackageAction = createAsyncThunk(
   }
 );
 
-export const restorePurchasesAction = createAsyncThunk(
+export const restorePurchases = createAsyncThunk(
   'billing/restorePurchases',
   async (_, { rejectWithValue }) => {
     try {
@@ -100,27 +100,27 @@ const billingSlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       })
-      .addCase(purchasePackageAction.pending, (state) => {
+      .addCase(purchasePackage.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(purchasePackageAction.fulfilled, (state, action: PayloadAction<any>) => {
+      .addCase(purchasePackage.fulfilled, (state, action: PayloadAction<any>) => {
         state.loading = false;
         state.subscription = action.payload.subscription;
       })
-      .addCase(purchasePackageAction.rejected, (state, action) => {
+      .addCase(purchasePackage.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       })
-      .addCase(restorePurchasesAction.pending, (state) => {
+      .addCase(restorePurchases.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(restorePurchasesAction.fulfilled, (state, action: PayloadAction<any>) => {
+      .addCase(restorePurchases.fulfilled, (state, action: PayloadAction<any>) => {
         state.loading = false;
         state.subscription = action.payload.subscription;
       })
-      .addCase(restorePurchasesAction.rejected, (state, action) => {
+      .addCase(restorePurchases.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       });

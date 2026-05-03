@@ -85,7 +85,8 @@ export class GeminiService {
 
       const response = await result.response;
       const text = response.text();
-      return JSON.parse(this.constructor && (this.constructor as any).cleanJsonString ? (this.constructor as any).cleanJsonString(text) : text) as T;
+      const cleanedText = GeminiService.cleanJsonString(text);
+      return JSON.parse(cleanedText) as T;
     } catch (error) {
       console.error("GeminiService Error (generateJSON):", error);
       throw error;
@@ -108,15 +109,25 @@ export class GeminiService {
    * Hilfsmethode zum Bereinigen von Markdown-Umgebungen ohne verbotene Regex
    */
   public static cleanJsonString(input: string): string {
-    let clean = input;
-    if (clean.includes("json")) {
-      clean = clean.split("json").join("");
-    }
-    if (clean.includes("")) {
-      clean = clean.split("").join("");
+    let clean = input.trim();
+    if (clean.startsWith("")) {
+      const lines = clean.split("\n");
+      if (lines[0].includes("json")) {
+        clean = lines.slice(1, lines.length - 1).join("\n");
+      } else {
+        clean = lines.slice(1, lines.length - 1).join("\n");
+      }
     }
     return clean.trim();
   }
 }
 
 export const createGeminiService = (apiKey: string) => new GeminiService(apiKey);
+
+export const geminiService = {
+  generateText: GeminiService.generateText,
+  generateContent: GeminiService.generateContent,
+  cleanJsonString: GeminiService.cleanJsonString
+};
+
+export default GeminiService;
