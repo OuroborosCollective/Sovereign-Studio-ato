@@ -1,253 +1,36 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#fafaf9">
-    <meta name="color-scheme" content="light">
-    <title>Sovereign Studio v3.3.2 - Stable Push Edition</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#fafaf9" />
+    <meta name="color-scheme" content="light" />
+    <meta name="description" content="Sovereign Studio Canvas Tool - temporärer local-first Workflow für Planung und Architektur-Skizzen." />
+    <title>Sovereign Studio Canvas Tool</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;600;700&display=swap');
-        html, body {
-            width: 100%; 
-            height: 100vh;
-            height: 100dvh;
-            margin: 0; padding: 0;
-            background-color: #fafaf9; color: #1c1917;
-            font-family: 'Inter', sans-serif; overflow: hidden; display: flex; flex-direction: column;
-            overscroll-behavior: none;
-        }
-        .editor-bg { background-color: #0c0a09; font-family: 'Fira Code', monospace; }
-        .app-view { display: none; flex-direction: column; width: 100%; height: 100%; background-color: #fafaf9; }
-        .app-view.active { display: flex; }
-        @media (min-width: 1024px) {
-            .app-view { display: flex !important; height: 100%; border-right: 1px solid #e5e7eb; }
-            .app-view:last-child { border-right: none; }
-            #mobile-nav { display: none !important; }
-        }
-        .file-tree-item { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 13px; display: flex; align-items: center; gap: 10px; color: #57534e; cursor: pointer; transition: background-color 0.2s; }
-        .file-tree-item:hover { background-color: #f5f5f4; }
-        .file-tree-item.active-file { background-color: #f0fdfa; color: #0d9488; border-left: 4px solid #0d9488; font-weight: 600; }
-        .code-line { display: flex; gap: 12px; margin-bottom: 2px; }
-        .code-line.new-code { background-color: rgba(20, 83, 45, 0.3); } 
-        .code-line.delete-code { background-color: rgba(159, 18, 57, 0.3); }
-        .line-number { color: #57534e; text-align: right; width: 2.5rem; user-select: none; border-right: 1px solid #292524; padding-right: 6px; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap');
+
+      html,
+      body,
+      #root {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #fafaf9;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        overscroll-behavior: none;
+      }
+
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+      }
     </style>
-</head>
-<body>
-
-    <header class="h-14 bg-white border-b border-stone-200 flex items-center justify-between px-4 shrink-0 shadow-sm z-50">
-        <div>
-            <h1 class="text-sm font-bold tracking-tight">SOVEREIGN<span class="text-indigo-600">_STUDIO</span></h1>
-            <div class="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Auto-Resolver v3.3.2</div>
-        </div>
-        <div class="flex items-center gap-3">
-            
-            <div class="flex items-center gap-2 border-r border-stone-200 pr-3 mr-1">
-                <button class="px-3 py-1.5 bg-white border border-stone-200 text-stone-700 rounded text-[10px] font-bold hover:bg-stone-50 transition-colors flex items-center gap-1 shadow-sm">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24">
-                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"></path>
-                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"></path>
-                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"></path>
-                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"></path>
-                    </svg> Login
-                </button>
-                <div class="hidden flex items-center gap-2">
-                    <img src="" class="w-6 h-6 rounded-full border border-stone-200" alt="Avatar">
-                    <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-stone-700 leading-tight"></span>
-                        <div class="flex gap-1">
-                            <button class="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold leading-none">Wechseln</button>
-                            <span class="text-stone-300 text-[9px] leading-none">|</span>
-                            <button class="text-[9px] text-rose-600 hover:text-rose-800 font-bold leading-none">Logout</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <button class="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors">
-                🧹 CLEANUP
-            </button>
-            <button class="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors">
-                🔄 REFRESH TREE
-            </button>
-        </div>
-    </header>
-
-    <div class="h-12 bg-stone-50 border-b border-stone-200 flex items-center justify-between px-4 shrink-0 text-xs overflow-x-auto gap-4">
-        <div class="flex items-center gap-2 shrink-0">
-            <span class="font-bold text-stone-500 uppercase text-[10px]">GitHub URL:</span>
-            <input type="text" value="https://github.com/OuroborosCollective/Wasd" placeholder="https://github.com/owner/repo" class="text-xs px-2 py-1 border border-stone-300 rounded w-64 focus:outline-none focus:border-indigo-500 bg-white">
-            <button class="px-3 py-1 bg-indigo-600 text-white font-bold rounded hover:bg-indigo-700 transition-colors text-[10px] uppercase">
-                Repo Laden
-            </button>
-        </div>
-        
-        <div class="flex items-center gap-3 shrink-0">
-            <div class="flex items-center gap-2">
-                <span class="font-bold text-stone-500 uppercase text-[10px]">GitHub PAT:</span>
-                <input type="password" placeholder="ghp_..." class="text-xs px-2 py-1 border border-stone-300 rounded w-40 focus:outline-none focus:border-indigo-500 bg-white" title="Erforderlich für Push/PR Funktionalität">
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="font-bold text-stone-500 uppercase text-[10px]">Gemini Key:</span>
-                <input type="password" placeholder="Canvas Auto-Auth aktiv" class="text-xs px-2 py-1 border border-stone-300 rounded w-48 focus:outline-none focus:border-indigo-500 bg-white">
-            </div>
-        </div>
-    </div>
-
-    <main class="flex-1 flex overflow-hidden relative">
-        <div class="app-view active lg:w-[320px] shrink-0">
-            <div class="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0 shadow-sm relative">
-                <h3 class="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center">
-                    <span>🔁 PR AUTO-RESOLVER</span>
-                    <span class="px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-800 text-[9px] uppercase">Kein aktiver PR</span>
-                </h3>
-                <div class="text-[10px] text-indigo-700 mb-2">Ziel-Branch: <span class="font-mono font-bold">-</span></div>
-                
-                <div class="hidden mb-3">
-                    <div class="flex justify-between text-[9px] font-bold text-indigo-800 mb-1">
-                        <span>Warte auf GitHub...</span>
-                        <span>0%</span>
-                    </div>
-                    <div class="w-full bg-indigo-200 rounded-full h-1.5">
-                        <div class="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <div class="flex gap-2">
-                    <button disabled class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors opacity-50 cursor-not-allowed">CI STATUS PRÜFEN</button>
-                    <button class="hidden flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">✅ MERGE & DELETE</button>
-                    <button class="hidden flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded text-[10px] font-bold uppercase transition-colors">🛠️ MANUELLER FIX</button>
-                </div>
-            </div>
-
-            <div class="p-3 bg-stone-50 border-b border-stone-200 shrink-0">
-                <h3 class="text-[11px] font-bold text-stone-700 mb-2 flex justify-between items-center">
-                    <span>⚡ ARCHITECT BLUEPRINT</span>
-                </h3>
-                <textarea rows="3" class="w-full p-2 text-[11px] border border-stone-300 rounded focus:outline-none focus:border-indigo-500 resize-none shadow-inner" placeholder="Beschreibe das Feature oder den Fix. Der Architect generiert die nötigen Änderungen..."></textarea>
-                
-                <div class="flex gap-2 mt-2">
-                    <button class="flex-1 bg-stone-800 hover:bg-black text-white py-1.5 rounded text-[11px] font-bold uppercase transition-colors shadow-sm">🚀 Generieren</button>
-                    <button class="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 py-1.5 px-3 rounded text-[11px] font-bold uppercase transition-colors shadow-sm">✨ IDEEN</button>
-                </div>
-                <div class="flex gap-2 mt-2">
-                    <button class="flex-1 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">README</button>
-                    <button class="flex-1 bg-blue-100 hover:bg-blue-200 border border-blue-300 text-blue-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">DOCKER</button>
-                    <button class="flex-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">CI/CD</button>
-                    <button class="flex-1 bg-teal-100 hover:bg-teal-200 border border-teal-300 text-teal-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">DIAGRAMM</button>
-                    <button class="flex-1 bg-fuchsia-100 hover:bg-fuchsia-200 border border-fuchsia-300 text-fuchsia-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm">✨ ONBOARDING</button>
-                    <button class="flex-1 bg-orange-100 hover:bg-orange-200 border border-orange-300 text-orange-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Analysiert verwendete Technologien">✨ TECH STACK</button>
-                </div>
-                <div class="flex gap-2 mt-2">
-                    <button class="flex-1 bg-pink-100 hover:bg-pink-200 border border-pink-300 text-pink-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Generiert Release Notes aus den letzten Commits">✨ RELEASE NOTES</button>
-                    <button class="flex-1 bg-red-100 hover:bg-red-200 border border-red-300 text-red-800 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-colors shadow-sm" title="Generiert STRIDE Threat Model">✨ THREAT MODEL</button>
-                </div>
-            </div>
-
-            <div class="p-2 bg-indigo-50/50 border-b border-stone-200 flex items-center gap-2 shrink-0">
-                <input type="text" placeholder="Wo ist die Datenbank-Logik? ✨" class="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner">
-                <button class="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold transition-colors shadow-sm uppercase shrink-0">✨ SUCHE</button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto bg-white">
-                <div class="p-4 text-xs italic text-stone-400 flex flex-col items-center justify-center h-full gap-2">
-                    <span class="text-2xl animate-pulse">📂</span>
-                    <span>Lade Repository Struktur...</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="app-view flex-1 min-w-0">
-            <div class="h-10 bg-stone-50 border-b border-stone-200 flex items-center justify-between px-2 shrink-0 overflow-x-auto custom-scrollbar">
-                <div class="flex items-center gap-2 whitespace-nowrap">
-                    <span class="text-[11px] font-mono text-stone-600 italic truncate mr-2 px-2 max-w-[200px]">Keine Datei gewählt</span>
-                    <button class="hidden px-2 py-1 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded hover:bg-emerald-200 transition-colors" title="Bessere Variablen- & Funktionsnamen">✨ CLEAN NAMES</button>
-                    <button class="hidden px-2 py-1 bg-cyan-100 text-cyan-800 text-[9px] font-bold rounded hover:bg-cyan-200 transition-colors">✨ TO SQL</button>
-                    <button class="hidden px-2 py-1 bg-fuchsia-100 text-fuchsia-800 text-[9px] font-bold rounded hover:bg-fuchsia-200 transition-colors">✨ A11Y FIX</button>
-                    <button class="hidden px-2 py-1 bg-blue-100 text-blue-800 text-[9px] font-bold rounded hover:bg-blue-200 transition-colors">✨ OPENAPI</button>
-                    <button class="hidden px-2 py-1 bg-purple-100 text-purple-700 text-[9px] font-bold rounded hover:bg-purple-200 transition-colors">✨ AUDIO REVIEW</button>
-                    <button class="hidden px-2 py-1 bg-teal-100 text-teal-700 text-[9px] font-bold rounded hover:bg-teal-200 transition-colors">✨ DIAGRAMM (FILE)</button>
-                    <button class="hidden px-2 py-1 bg-sky-100 text-sky-800 text-[9px] font-bold rounded hover:bg-sky-200 transition-colors">✨ TO PM</button>
-                    <button class="hidden px-2 py-1 bg-yellow-100 text-yellow-800 text-[9px] font-bold rounded hover:bg-yellow-200 transition-colors">✨ TO PYTHON</button>
-                    <button class="hidden px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200 transition-colors">✨ REVIEW</button>
-                    <button class="hidden px-2 py-1 bg-sky-100 text-sky-700 text-[9px] font-bold rounded hover:bg-sky-200 transition-colors">✨ ERKLÄREN</button>
-                    <button class="hidden px-2 py-1 bg-pink-100 text-pink-700 text-[9px] font-bold rounded hover:bg-pink-200 transition-colors">✨ ELI5</button>
-                    <button class="hidden px-2 py-1 bg-fuchsia-100 text-fuchsia-700 text-[9px] font-bold rounded hover:bg-fuchsia-200 transition-colors">✨ OPTIMIEREN</button>
-                    <button class="hidden px-2 py-1 bg-green-100 text-green-700 text-[9px] font-bold rounded hover:bg-green-200 transition-colors">✨ TESTS</button>
-                    <button class="hidden px-2 py-1 bg-amber-100 text-amber-700 text-[9px] font-bold rounded hover:bg-amber-200 transition-colors">✨ DOCS</button>
-                    <button class="hidden px-2 py-1 bg-cyan-100 text-cyan-700 text-[9px] font-bold rounded hover:bg-cyan-200 transition-colors">✨ TO TS</button>
-                    <button class="hidden px-2 py-1 bg-orange-100 text-orange-800 text-[9px] font-bold rounded hover:bg-orange-200 transition-colors">✨ TO RUST</button>
-                    <button class="hidden px-2 py-1 bg-teal-100 text-teal-800 text-[9px] font-bold rounded hover:bg-teal-200 transition-colors">✨ ADD LOGGING</button>
-                    <button class="hidden px-2 py-1 bg-rose-100 text-rose-700 text-[9px] font-bold rounded hover:bg-rose-200 transition-colors">✨ AUDIT</button>
-                    <button class="hidden px-2 py-1 bg-orange-100 text-orange-700 text-[9px] font-bold rounded hover:bg-orange-200 transition-colors">✨ ROAST</button>
-                    <button class="hidden px-2 py-1 bg-lime-100 text-lime-700 text-[9px] font-bold rounded hover:bg-lime-200 transition-colors">✨ MOCKS</button>
-                    <button class="hidden px-2 py-1 bg-violet-100 text-violet-700 text-[9px] font-bold rounded hover:bg-violet-200 transition-colors">✨ UX REVIEW</button>
-                    <button class="hidden px-2 py-1 bg-blue-100 text-blue-700 text-[9px] font-bold rounded hover:bg-blue-200 transition-colors">✨ TAILWIND</button>
-                    <button class="hidden px-2 py-1 bg-pink-100 text-pink-700 text-[9px] font-bold rounded hover:bg-pink-200 transition-colors">✨ STORYBOOK</button>
-                    <button class="hidden px-2 py-1 bg-red-100 text-red-700 text-[9px] font-bold rounded hover:bg-red-200 transition-colors">✨ BUGS PREDICT</button>
-                    <button class="hidden px-2 py-1 bg-yellow-100 text-yellow-700 text-[9px] font-bold rounded hover:bg-yellow-200 transition-colors">✨ I18N</button>
-                    <button class="hidden px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200 transition-colors">✨ ZOD</button>
-                    <button class="hidden px-2 py-1 bg-slate-100 text-slate-700 text-[9px] font-bold rounded hover:bg-slate-200 transition-colors">✨ BIG-O</button>
-                </div>
-            </div>
-            
-            <div class="flex-1 bg-stone-100/30 p-2 lg:p-4 overflow-hidden flex flex-col">
-                <div class="editor-bg flex-1 rounded-xl shadow-inner relative overflow-hidden flex flex-col">
-                    <div class="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre custom-scrollbar font-mono leading-relaxed">
-                        <div class="text-stone-500 italic mt-4 ml-4">// Wähle eine Datei im Explorer, um den Code zu laden.</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="h-12 bg-white border-t border-stone-200 flex items-center px-4 gap-3 shrink-0">
-                <span class="text-lg" title="AI Pair Programmer">🤖</span>
-                <input type="text" placeholder="Frag Gemini etwas zu dieser Datei..." class="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 bg-stone-50">
-                <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase transition-colors shadow-sm shrink-0">✨ FRAGEN</button>
-            </div>
-
-            <div class="h-16 border-t border-indigo-200 px-4 flex items-center justify-between bg-indigo-50 shrink-0 gap-3">
-                <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1">
-                        <h4 class="text-[10px] font-black text-indigo-800 uppercase">PR-Queue: <span>0</span> Dateien</h4>
-                        <button class="hidden text-[9px] bg-indigo-200 hover:bg-indigo-300 text-indigo-800 px-2 py-0.5 rounded font-bold transition-colors">✨ AUTO MSG</button>
-                        <button class="hidden text-[9px] bg-purple-200 hover:bg-purple-300 text-purple-800 px-2 py-0.5 rounded font-bold transition-colors">✨ DRAFT PR DESC</button>
-                        <button class="hidden text-[9px] bg-rose-200 hover:bg-rose-300 text-rose-800 px-2 py-0.5 rounded font-bold transition-colors">✨ PRE-FLIGHT REVIEW</button>
-                    </div>
-                    <input type="text" placeholder="Commit Nachricht (optional)..." class="w-full text-[10px] p-1 border border-indigo-200 rounded focus:outline-none focus:border-indigo-500 bg-white" disabled>
-                </div>
-                <button disabled class="shrink-0 px-6 py-2 bg-stone-300 text-stone-500 rounded-lg font-bold text-[10px] uppercase cursor-not-allowed transition-all shadow-sm">
-                    🛡️ PUSH PR
-                </button>
-            </div>
-        </div>
-
-        <div class="app-view lg:w-[350px] shrink-0 border-l border-stone-200">
-            <div class="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-800 flex items-center gap-2 shrink-0 justify-between">
-                <div><span class="text-indigo-600">✨</span> SYSTEM LOG</div>
-                <button class="text-[9px] text-stone-400 hover:text-stone-600">Leeren</button>
-            </div>
-            <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-white text-[11px] custom-scrollbar scroll-smooth">
-                <div class="p-3 bg-stone-100 rounded-xl rounded-tl-none border border-stone-200 text-stone-700 shadow-sm">
-                    <strong>🚀 Sovereign Studio v3.3.2 geladen</strong><br>
-                    - <b>Google OAuth Integration:</b> Account-basierte Speicherung deiner Keys!<br>
-                    - <b>Smart Auto-Fix Logik:</b> Zählt jetzt nur noch identische CI-Fehler.<br>
-                    - <b>Push API Error Fix:</b> Behebt das 'sha' Problem beim Erstellen von PRs.
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <nav id="mobile-nav" class="h-14 bg-white border-t border-stone-200 flex items-center justify-around shrink-0 z-50 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-        <button class="flex flex-col items-center gap-1 text-indigo-600 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">📁</span><span class="text-[9px] uppercase tracking-wider">Planung</span></button>
-        <button class="flex flex-col items-center gap-1 text-stone-400 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">💻</span><span class="text-[9px] uppercase tracking-wider">Code</span></button>
-        <button class="flex flex-col items-center gap-1 text-stone-400 font-bold w-1/3 py-2 transition-colors"><span class="text-lg leading-none">✨</span><span class="text-[9px] uppercase tracking-wider">Log</span></button>
-    </nav>
-
-</body>
+  </head>
+  <body>
+    <noscript>Sovereign Studio benötigt JavaScript.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
