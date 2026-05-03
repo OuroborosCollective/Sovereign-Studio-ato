@@ -19,14 +19,12 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@capacitor-community/native-biometric": "^6.0.1",
     "@capacitor/app": "^6.0.0",
     "@capacitor/browser": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/haptics": "^6.0.0",
     "@capacitor/keyboard": "^6.0.0",
     "@capacitor/preferences": "^6.0.4",
-    "@capacitor/push-notifications": "^6.0.2",
     "@capacitor/splash-screen": "^6.0.0",
     "@capacitor/status-bar": "^6.0.0",
     "@codetrix-studio/capacitor-google-auth": "^3.3.1",
@@ -37,6 +35,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@tanstack/react-query": "^5.66.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "capacitor-native-biometric": "^6.0.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
