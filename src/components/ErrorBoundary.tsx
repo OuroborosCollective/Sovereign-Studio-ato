@@ -30,19 +30,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { storageService } = await import('../services/storageService');
+        const { storageService } = await import('../shared/api/storageService');
         const logsJson = await storageService.get('ss_error_log');
-        const currentLogs = JSON.parse(typeof logsJson === 'string' ? logsJson : '[]');
-        
-        if (Array.isArray(currentLogs)) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          currentLogs.push({ 
-            time: new Date().toISOString(), 
-            context: 'ErrorBoundary', 
-            message: errorMessage
-          });
-          await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
-        }
+        const currentLogs = JSON.parse(logsJson || '[]');
+        currentLogs.push({ 
+          time: new Date().toISOString(), 
+          context: 'ErrorBoundary', 
+          message: error instanceof Error ? error.message : String(error)
+        });
+        await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
         // Silently fail logging if storage service is unavailable
       }
@@ -60,10 +56,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
         return this.props.fallback;
       }
       
-      const errorMessage = this.state.error instanceof Error 
-        ? this.state.error.message 
-        : String(this.state.error || 'Unknown error');
-      
       return (
         <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white rounded-xl shadow-xl overflow-hidden border border-stone-200">
@@ -78,7 +70,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               
               {this.state.error && (
                 <div className="mt-4 p-3 bg-stone-100 rounded text-xs font-mono text-stone-800 break-words overflow-x-auto max-h-40 border border-stone-200">
-                  {errorMessage}
+                  {String(this.state.error)}
                 </div>
               )}
             </div>
