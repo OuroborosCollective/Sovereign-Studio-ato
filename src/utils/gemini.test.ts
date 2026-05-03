@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, GenerationConfig, ModelParams } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { vi } from 'vitest';
 
 vi.mock('@google/generative-ai', () => {
@@ -8,7 +8,7 @@ vi.mock('@google/generative-ai', () => {
     },
   });
 
-  const getGenerativeModelMock = vi.fn().mockImplementation((params: ModelParams) => {
+  const getGenerativeModelMock = vi.fn().mockImplementation(() => {
     return {
       generateContent: generateContentMock,
     };
@@ -34,11 +34,14 @@ export class GeminiService {
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-1.5-flash',
-      generationConfig,
-      systemInstruction: systemInstruction || undefined,
+      systemInstruction: systemInstruction,
     });
 
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig,
+    });
+
     const response = await result.response;
     return response.text();
   }
