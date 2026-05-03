@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { geminiService } from './geminiService';
 
+const sendMessageMock = vi.fn();
+const startChatMock = vi.fn().mockReturnValue({
+  sendMessage: sendMessageMock,
+});
 const generateContentMock = vi.fn();
 const getGenerativeModelMock = vi.fn().mockReturnValue({
   generateContent: generateContentMock,
+  startChat: startChatMock,
 });
 
 vi.mock('@google/generative-ai', () => {
@@ -26,6 +31,8 @@ describe('GeminiService', () => {
     vi.clearAllMocks();
     generateContentMock.mockReset();
     getGenerativeModelMock.mockClear();
+    startChatMock.mockClear();
+    sendMessageMock.mockReset();
   });
 
   it('should call generateContent with the correct parameters', async () => {
@@ -59,7 +66,10 @@ describe('GeminiService', () => {
 
     expect(getGenerativeModelMock).toHaveBeenCalledWith({
       model: TEST_MODEL,
-      systemInstruction: systemPrompt
+      systemInstruction: {
+        role: 'system',
+        parts: [{ text: systemPrompt }]
+      }
     });
     expect(generateContentMock).toHaveBeenCalledWith(prompt);
   });
@@ -91,5 +101,18 @@ describe('GeminiService', () => {
       }
     });
     expect(generateContentMock).toHaveBeenCalledWith('test');
+  });
+
+  it('should support chat functionality with correct startChat parameters', async () => {
+    sendMessageMock.mockResolvedValue(mockResponse);
+    
+    const history = [{ role: 'user', parts: [{ text: 'Hi' }] }];
+    const chat = await (geminiService as any).startChat(TEST_MODEL, { history });
+
+    expect(getGenerativeModelMock).toHaveBeenCalledWith({ model: TEST_MODEL });
+    expect(startChatMock).toHaveBeenCalledWith({ history });
+    
+    const result = await chat.sendMessage('Next');
+    expect(result.response.text()).toBe('Mocked AI response');
   });
 });
