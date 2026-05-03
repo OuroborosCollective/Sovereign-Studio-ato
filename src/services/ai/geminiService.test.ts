@@ -24,6 +24,8 @@ describe('GeminiService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    generateContentMock.mockReset();
+    getGenerativeModelMock.mockClear();
   });
 
   it('should call generateContent with the correct parameters', async () => {
