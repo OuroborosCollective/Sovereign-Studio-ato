@@ -52,6 +52,23 @@ export const purchasePackage = createAsyncThunk(
   }
 );
 
+export const cancelSubscription = createAsyncThunk(
+  'billing/cancelSubscription',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await fetch('/api/billing/cancel', {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error('Kündigung konnte nicht verarbeitet werden');
+      }
+      return await response.json();
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Fehler bei der Kündigung');
+    }
+  }
+);
+
 export const restorePurchases = createAsyncThunk(
   'billing/restorePurchases',
   async (_, { rejectWithValue }) => {
@@ -112,6 +129,17 @@ const billingSlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       })
+      .addCase(cancelSubscription.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(cancelSubscription.fulfilled, (state, action: PayloadAction<any>) => {
+        state.loading = false;
+        state.subscription = action.payload.subscription;
+      })
+      .addCase(cancelSubscription.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      })
       .addCase(restorePurchases.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -133,6 +161,7 @@ export const selectIsSubscribed = (state: { billing: BillingState }) => !!state.
 export const selectIsLoading = (state: { billing: BillingState }) => state.billing.loading;
 export const selectBillingError = (state: { billing: BillingState }) => state.billing.error;
 export const selectAvailablePackages = (state: { billing: BillingState }) => state.billing.availablePackages;
-export const selectPackages = (state: any) => state.billing.packages;
+export const selectInvoices = (state: { billing: BillingState }) => state.billing.invoices;
+export const selectPackages = (state: { billing: BillingState }) => state.billing.packages;
 
 export default billingSlice.reducer;
