@@ -1,18 +1,16 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
-const googleWebClientId = process.env.VITE_GOOGLE_CLIENT_ID;
-const googleAndroidClientId = process.env.VITE_GOOGLE_ANDROID_CLIENT_ID;
-const googleServerClientId = process.env.VITE_GOOGLE_SERVER_CLIENT_ID;
+const googleWebClientId = process.env.VITE_GOOGLE_CLIENT_ID ?? '';
+const googleAndroidClientId = process.env.VITE_GOOGLE_ANDROID_CLIENT_ID ?? googleWebClientId;
+const googleServerClientId = process.env.VITE_GOOGLE_SERVER_CLIENT_ID ?? googleWebClientId;
 
-const googleAuthConfig = googleWebClientId
-  ? {
-      scopes: ['profile', 'email'],
-      clientId: googleWebClientId,
-      androidClientId: googleAndroidClientId ?? googleWebClientId,
-      serverClientId: googleServerClientId ?? googleWebClientId,
-      forceCodeForRefreshToken: true,
-    }
-  : undefined;
+const googleAuthConfig = {
+  scopes: ['profile', 'email'],
+  clientId: googleWebClientId,
+  androidClientId: googleAndroidClientId,
+  serverClientId: googleServerClientId,
+  forceCodeForRefreshToken: true,
+};
 
 const config: CapacitorConfig = {
   appId: 'com.sovereign.studio',
@@ -31,6 +29,7 @@ const config: CapacitorConfig = {
     },
   },
   plugins: {
+    GoogleAuth: googleAuthConfig,
     SplashScreen: {
       launchShowDuration: 1500,
       showSpinner: true,
@@ -40,7 +39,6 @@ const config: CapacitorConfig = {
       splashImmersive: true,
       useDialog: false,
     },
-    ...(googleAuthConfig ? { GoogleAuth: googleAuthConfig } : {}),
   },
 };
 
