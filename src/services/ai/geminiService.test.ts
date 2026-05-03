@@ -35,6 +35,7 @@ describe('GeminiService', () => {
     const result = await geminiService.generateText(prompt, TEST_MODEL);
 
     expect(result).toBe('Mocked AI response');
+    // Ensure the call uses the complete ModelParams object structure
     expect(getGenerativeModelMock).toHaveBeenCalledWith({ 
       model: TEST_MODEL 
     });
@@ -42,6 +43,7 @@ describe('GeminiService', () => {
   });
 
   it('should handle API errors gracefully', async () => {
+    generateContentMock.mockResolvedValue(null);
     generateContentMock.mockRejectedValue(new Error('API Error'));
 
     await expect(geminiService.generateText('Fail', TEST_MODEL)).rejects.toThrow('API Error');
