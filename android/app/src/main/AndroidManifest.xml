@@ -12,6 +12,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false"
+        android:hardwareAccelerated="true"
         tools:targetApi="34">
 
         <activity
