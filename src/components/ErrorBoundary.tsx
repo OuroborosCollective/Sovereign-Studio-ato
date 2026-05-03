@@ -20,9 +20,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: unknown): State {
-    // Explicitly handle unknown type by converting to string or using message property
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorInstance = error instanceof Error ? error : new Error(errorMessage);
+    // Explicitly handle unknown type by converting to Error object
+    const errorInstance = error instanceof Error ? error : new Error(String(error));
     return { hasError: true, error: errorInstance, errorInfo: null };
   }
 
@@ -32,9 +31,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { storageService } = await import('../shared/api/storageService');
+        const { storageService } = await import('../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
-        const currentLogs = JSON.parse(logsJson || '[]');
+        
+        let currentLogs: Array<{time: string, context: string, message: string}> = [];
+        try {
+          currentLogs = JSON.parse(String(logsJson || '[]'));
+        } catch {
+          currentLogs = [];
+        }
         
         // Ensure the error message is extracted as a string
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -44,6 +49,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           context: 'ErrorBoundary', 
           message: errorMessage
         });
+        
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
         // Silently fail logging if storage service is unavailable
