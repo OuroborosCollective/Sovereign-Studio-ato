@@ -5,17 +5,18 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 export class GeminiService {
   static async generateContent(prompt: string): Promise<string> {
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction: 'Du bist ein hilfreicher Assistent.',
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 2048,
-      },
+      model: 'gemini-1.5-flash'
     });
 
-    const result = await model.generateContent(prompt);
+    const chatSession = model.startChat({
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.9,
+      },
+      history: [],
+    });
+
+    const result = await chatSession.sendMessage(prompt);
     const response = await result.response;
     return response.text();
   }
