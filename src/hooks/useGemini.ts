@@ -29,20 +29,30 @@ export const useGemini = (): UseGeminiReturn => {
 
     setIsLoading(true);
     setError(null);
+    setData(null);
 
     try {
-      const result = await GeminiService.generateContent(prompt, controller.signal);
+      const result = await GeminiService.generateContent(prompt, {
+        signal: controller.signal
+      });
+
       setData(result);
       return result;
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         return null;
       }
-      const errorMessage = err instanceof Error ? err.message : 'Ein unerwarteter Fehler ist aufgetreten';
+
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : 'Ein unerwarteter Fehler ist aufgetreten';
+
       setError(errorMessage);
       return null;
     } finally {
       if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
         setIsLoading(false);
       }
     }
@@ -51,7 +61,9 @@ export const useGemini = (): UseGeminiReturn => {
   const reset = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
+
     setIsLoading(false);
     setError(null);
     setData(null);
@@ -61,6 +73,7 @@ export const useGemini = (): UseGeminiReturn => {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
