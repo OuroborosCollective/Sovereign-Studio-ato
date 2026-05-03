@@ -59,9 +59,9 @@ jobs:
 
       - name: Decode release keystore
         run: |
-          mkdir -p android/keystore
-          printf '%s' '${{ secrets.KEYSTORE_BASE64 }}' | base64 --decode > android/keystore/release.jks
-          test -s android/keystore/release.jks
+          mkdir -p android/app/keystore
+          printf '%s' '${{ secrets.KEYSTORE_BASE64 }}' | base64 --decode > android/app/keystore/release.jks
+          test -s android/app/keystore/release.jks
 
       - name: Sync Capacitor Android
         run: npx cap sync android
