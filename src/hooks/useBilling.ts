@@ -46,7 +46,8 @@ export const useBilling = () => {
   }, []);
 
   return {
-    ...state,
+    isLoading: state.isLoading,
+    error: state.error,
     purchase,
   };
 };
