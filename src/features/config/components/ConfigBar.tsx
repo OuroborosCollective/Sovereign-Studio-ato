@@ -25,19 +25,21 @@ export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { 
     config, 
-    updateConfig, 
-    resetToDefaults 
+    updateField, 
+    saveConfig, 
+    resetToDefaults, 
+    isDirty 
   } = useConfig();
 
   const handleSave = async () => {
-    await updateConfig(config);
+    await saveConfig();
     setTimeout(() => {
       setIsOpen(false);
     }, 300);
   };
 
   const handleChange = <K extends keyof ConfigState>(key: K, value: ConfigState[K]) => {
-    updateConfig({ ...config, [key]: value });
+    updateField(key, value);
   };
 
   return (
@@ -193,7 +195,12 @@ export const ConfigBar: React.FC = () => {
         <footer className="p-6 border-t border-slate-100 bg-slate-50/80 flex flex-col gap-3">
           <button
             onClick={handleSave}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md"
+            disabled={!isDirty}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all shadow-sm ${
+              isDirty 
+                ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md' 
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+            }`}
           >
             <Save size={16} />
             <span>Apply Changes</span>
