@@ -7,37 +7,53 @@ interface MobileNavigationProps {
 }
 
 export function MobileNavigation({ activeTab, setActiveTab }: MobileNavigationProps) {
+  const tabs = [
+    { id: 'explorer' as const, icon: Folder, label: 'Planung' },
+    { id: 'editor' as const, icon: Code2, label: 'Code' },
+    { id: 'chat' as const, icon: MessageSquare, label: 'Log' }
+  ];
+
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/70 backdrop-blur-md border-t border-white/20 flex items-center justify-around shrink-0 z-[100] shadow-[0_-8px_32px_rgba(0,0,0,0.08)] select-none pb-safe">
-      <button 
-        onClick={() => setActiveTab('explorer')} 
-        className={`flex flex-col items-center justify-center gap-1 w-full h-full transition-all duration-300 ${activeTab === 'explorer' ? 'text-indigo-600' : 'text-stone-400 hover:text-stone-600'}`}
-      >
-        <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'explorer' ? 'bg-indigo-50' : 'bg-transparent'}`}>
-          <Folder size={20} strokeWidth={activeTab === 'explorer' ? 2.5 : 2} />
-        </div>
-        <span className="text-[10px] font-bold uppercase tracking-tight">Planung</span>
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('editor')} 
-        className={`flex flex-col items-center justify-center gap-1 w-full h-full transition-all duration-300 ${activeTab === 'editor' ? 'text-indigo-600' : 'text-stone-400 hover:text-stone-600'}`}
-      >
-        <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'editor' ? 'bg-indigo-50' : 'bg-transparent'}`}>
-          <Code2 size={20} strokeWidth={activeTab === 'editor' ? 2.5 : 2} />
-        </div>
-        <span className="text-[10px] font-bold uppercase tracking-tight">Code</span>
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('chat')} 
-        className={`flex flex-col items-center justify-center gap-1 w-full h-full transition-all duration-300 ${activeTab === 'chat' ? 'text-indigo-600' : 'text-stone-400 hover:text-stone-600'}`}
-      >
-        <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'chat' ? 'bg-indigo-50' : 'bg-transparent'}`}>
-          <MessageSquare size={20} strokeWidth={activeTab === 'chat' ? 2.5 : 2} />
-        </div>
-        <span className="text-[10px] font-bold uppercase tracking-tight">Log</span>
-      </button>
-    </nav>
+    <div className="lg:hidden absolute bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2.5rem)] max-w-sm z-[100] px-1 pointer-events-none">
+      <nav className="flex items-center justify-around h-16 bg-white/40 backdrop-blur-2xl border border-white/50 rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.15)] pointer-events-auto overflow-hidden ring-1 ring-black/5">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative flex flex-col items-center justify-center w-full h-full transition-all duration-500 ease-out outline-none tap-highlight-transparent ${
+                isActive ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {isActive && (
+                <div className="absolute inset-x-2 inset-y-2 bg-white/60 rounded-xl shadow-sm transition-all duration-500" />
+              )}
+              
+              <div className="relative flex flex-col items-center gap-0.5">
+                <div className={`p-1 transition-transform duration-300 ${isActive ? 'scale-110' : 'scale-100'}`}>
+                  <Icon 
+                    size={20} 
+                    strokeWidth={isActive ? 2.5 : 2} 
+                    className="transition-all duration-300"
+                  />
+                </div>
+                <span className={`text-[9px] font-black uppercase tracking-[0.1em] transition-all duration-300 ${
+                  isActive ? 'opacity-100 translate-y-0' : 'opacity-70 -translate-y-0.5'
+                }`}>
+                  {tab.label}
+                </span>
+              </div>
+
+              {isActive && (
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-indigo-600 rounded-t-full" />
+              )}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
