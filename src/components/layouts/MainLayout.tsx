@@ -1,9 +1,19 @@
 import React from 'react';
-import Header from '../Header';
-import MobileNavigation from '../MobileNavigation';
+import { Header } from '../Header';
+import { MobileNavigation } from '../MobileNavigation';
 
 interface MainLayoutProps {
   children: React.ReactNode;
+  headerProps: {
+    loadingTree: boolean;
+    setShowPrivacy: (show: boolean) => void;
+    handleCleanup: () => void;
+    fetchRepoTree: () => void;
+  };
+  mobileNavProps: {
+    activeTab: 'explorer' | 'editor' | 'chat';
+    setActiveTab: (tab: 'explorer' | 'editor' | 'chat') => void;
+  };
 }
 
 /**
@@ -13,7 +23,7 @@ interface MainLayoutProps {
  * Layer 10 (CPU): Main Content - Standard Rendering für Text-Stabilität.
  * Layer 50 (CPU/GPU): Navigation & UI Overlays.
  */
-const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
+const MainLayout: React.FC<MainLayoutProps> = ({ children, headerProps, mobileNavProps }) => {
   return (
     <div className="relative min-h-screen flex flex-col bg-background isolate overflow-x-hidden">
       {/* 
@@ -29,7 +39,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
       {/* UI Layer: Header (Standard Rendering für scharfe Schriften) */}
       <header className="sticky top-0 z-50 w-full transform-none">
-        <Header />
+        <Header {...headerProps} />
       </header>
 
       {/* Content Layer: Main Stacking Context */}
@@ -39,7 +49,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
       {/* UI Layer: Mobile Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden transform-gpu">
-        <MobileNavigation />
+        <MobileNavigation {...mobileNavProps} />
       </nav>
     </div>
   );
