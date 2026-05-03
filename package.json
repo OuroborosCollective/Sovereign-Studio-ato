@@ -67,5 +67,10 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "vitest": "^3.0.5"
+  },
+  "overrides": {
+    "@codetrix-studio/capacitor-google-auth": {
+      "@capacitor/core": "^6.0.0"
+    }
   }
 }
