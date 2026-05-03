@@ -3,10 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
-import { storageService } from '../../services/storageService';
+import { storageService } from '../services/storageService';
 
 // Mock storageService
-vi.mock('../../services/storageService', () => {
+vi.mock('../services/storageService', () => {
   return {
     storageService: {
       get: vi.fn(),

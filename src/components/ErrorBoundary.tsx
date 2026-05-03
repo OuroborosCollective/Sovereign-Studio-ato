@@ -39,7 +39,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
         });
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
-        // Silently fail logging
+        // Silently fail logging if storage service is unavailable
       }
     };
     logError();
@@ -87,6 +87,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    return this.props.children;
+    return this.props.children || null;
   }
 }
