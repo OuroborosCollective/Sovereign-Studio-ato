@@ -50,6 +50,30 @@
             <div class="text-[9px] font-bold text-indigo-600 uppercase tracking-widest">Auto-Resolver v3.3.2</div>
         </div>
         <div class="flex items-center gap-3">
+            
+            <!-- GOOGLE OAUTH BEREICH -->
+            <div id="google-auth-container" class="flex items-center gap-2 border-r border-stone-200 pr-3 mr-1">
+                <button id="google-auth-btn" onclick="loginWithGoogle()" class="px-3 py-1.5 bg-white border border-stone-200 text-stone-700 rounded text-[10px] font-bold hover:bg-stone-50 transition-colors flex items-center gap-1 shadow-sm">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg> Login
+                </button>
+                <div id="google-user-info" class="hidden flex items-center gap-2">
+                    <img id="google-avatar" src="" class="w-6 h-6 rounded-full border border-stone-200" alt="Avatar">
+                    <div class="flex flex-col">
+                        <span id="google-name" class="text-[10px] font-bold text-stone-700 leading-tight"></span>
+                        <div class="flex gap-1">
+                            <button onclick="switchGoogleAccount()" class="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold leading-none">Wechseln</button>
+                            <span class="text-stone-300 text-[9px] leading-none">|</span>
+                            <button onclick="logoutGoogle()" class="text-[9px] text-rose-600 hover:text-rose-800 font-bold leading-none">Logout</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <button id="cleanup-btn" onclick="logToSystem('Workspace Cleanup initiiert...', 'info')" class="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors">
                 🧹 CLEANUP
             </button>
@@ -215,7 +239,8 @@
             <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-4 bg-white text-[11px] custom-scrollbar scroll-smooth">
                 <div class="p-3 bg-stone-100 rounded-xl rounded-tl-none border border-stone-200 text-stone-700 shadow-sm">
                     <strong>🚀 Sovereign Studio v3.3.2 geladen</strong><br>
-                    - <b>Smart Auto-Fix Logik:</b> Zählt jetzt nur noch identische CI-Fehler. Sobald sich das Fehlerbild ändert, wird der Auto-Fix-Zähler zurückgesetzt!<br>
+                    - <b>Google OAuth Integration:</b> Account-basierte Speicherung deiner Keys!<br>
+                    - <b>Smart Auto-Fix Logik:</b> Zählt jetzt nur noch identische CI-Fehler.<br>
                     - <b>Push API Error Fix:</b> Behebt das 'sha' Problem beim Erstellen von PRs.
                 </div>
             </div>
@@ -264,7 +289,8 @@
             }
         }
 
-        function logToSystem(text, type = 'info') {
+        // Global zugänglich machen für die Module
+        window.logToSystem = function(text, type = 'info') {
             const chat = document.getElementById('chat-history');
             const msg = document.createElement('div');
             const styles = { error: 'bg-red-50 border-red-200 text-red-800', success: 'bg-green-50 border-green-200 text-green-800', warning: 'bg-amber-50 border-amber-200 text-amber-800', idea: 'bg-blue-50 border-blue-200 text-blue-900', info: 'bg-stone-50 border-stone-200 text-stone-800' };
@@ -311,7 +337,7 @@
             const match = urlInput.match(/github\.com\/([^\/]+)\/([^\/]+)/);
             if (match && match.length >= 3) {
                 repoOwner = match[1]; repoName = match[2].replace(/\.git$/, '');
-                logToSystem(`🔄 <b>Repository gewechselt:</b><br><code>${repoOwner}/${repoName}</code>`, "success");
+                window.logToSystem(`🔄 <b>Repository gewechselt:</b><br><code>${repoOwner}/${repoName}</code>`, "success");
                 
                 document.getElementById('explorer-content').innerHTML = '<div class="p-4 text-xs italic text-stone-400 flex flex-col items-center gap-2"><span class="text-2xl animate-spin">⏳</span> Lade...</div>';
                 document.getElementById('editor-filename').textContent = "Keine Datei gewählt";
@@ -328,7 +354,7 @@
                 
                 fetchRepoTree();
             } else {
-                logToSystem(`❌ <b>Ungültige URL.</b>`, "error");
+                window.logToSystem(`❌ <b>Ungültige URL.</b>`, "error");
             }
         }
 
@@ -428,9 +454,9 @@
                 
                 fullTree = data.tree.filter(item => item.type === 'blob'); 
                 renderFlatTree();
-                logToSystem(`📁 <b>Tree geladen:</b> ${fullTree.length} Dateien (Branch: <code>${defaultBranch}</code>).`, "success");
+                window.logToSystem(`📁 <b>Tree geladen:</b> ${fullTree.length} Dateien (Branch: <code>${defaultBranch}</code>).`, "success");
             } catch (err) {
-                logToSystem(`❌ <b>Fehler beim Laden des Trees:</b> ${err.message}`, "error");
+                window.logToSystem(`❌ <b>Fehler beim Laden des Trees:</b> ${err.message}`, "error");
                 document.getElementById('explorer-content').innerHTML = `<div class="p-4 text-xs text-red-500 font-bold text-center">Repository konnte nicht geladen werden.<br><br>${err.message}</div>`;
             }
         }
@@ -511,7 +537,7 @@
             const filename = document.getElementById('editor-filename').textContent;
             
             if (filename === "Keine Datei gewählt") { setButtonsState(false); btn.innerHTML = origText; return; }
-            logToSystem(`<b>${logMsg}:</b> <code>${filename}</code>...`, "info");
+            window.logToSystem(`<b>${logMsg}:</b> <code>${filename}</code>...`, "info");
 
             try {
                 let result = await callGeminiAPI(`Datei: ${filename}\n\nCode:\n${currentFileContent}`, sysPrompt);
@@ -519,12 +545,12 @@
                     result = sanitizeGeneratedCode(result);
                     batchFiles.push({ path: filename, content: result });
                     updateBatchUI(); currentFileContent = result; renderCodeToEditor(result);
-                    logToSystem(`✨ <b>Erfolgreich:</b> <code>${filename}</code> aktualisiert.`, "success");
+                    window.logToSystem(`✨ <b>Erfolgreich:</b> <code>${filename}</code> aktualisiert.`, "success");
                 } else {
-                    logToSystem(`<b>Ergebnis (${filename}):</b><br><div class="mt-2 text-stone-700 text-[10px] bg-white p-3 rounded shadow-sm custom-scrollbar max-h-64 overflow-y-auto">${result.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`, logType);
+                    window.logToSystem(`<b>Ergebnis (${filename}):</b><br><div class="mt-2 text-stone-700 text-[10px] bg-white p-3 rounded shadow-sm custom-scrollbar max-h-64 overflow-y-auto">${result.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`, logType);
                     switchTab('chat');
                 }
-            } catch (e) { logToSystem(`Fehler: ${e.message}`, "error"); } finally { setButtonsState(false); btn.innerHTML = origText; }
+            } catch (e) { window.logToSystem(`Fehler: ${e.message}`, "error"); } finally { setButtonsState(false); btn.innerHTML = origText; }
         }
 
         // --- KI Single Actions (New File Generators) ---
@@ -534,7 +560,7 @@
             const filename = document.getElementById('editor-filename').textContent;
 
             if (filename === "Keine Datei gewählt") { setButtonsState(false); btn.innerHTML = origText; return; }
-            logToSystem(`<b>${logMsg}:</b> Generiere für <code>${filename}</code>...`, "info");
+            window.logToSystem(`<b>${logMsg}:</b> Generiere für <code>${filename}</code>...`, "info");
             
             try {
                 let result = await callGeminiAPI(`Datei: ${filename}\n\nCode:\n${currentFileContent}`, sysPrompt);
@@ -546,8 +572,8 @@
 
                 currentFileContent = result; document.getElementById('editor-filename').textContent = newPath;
                 renderCodeToEditor(result);
-                logToSystem(`✨ <b>Erfolgreich:</b> <code>${newPath}</code> erstellt.`, "success");
-            } catch (e) { logToSystem(`Fehler: ${e.message}`, "error"); } finally { setButtonsState(false); btn.innerHTML = origText; }
+                window.logToSystem(`✨ <b>Erfolgreich:</b> <code>${newPath}</code> erstellt.`, "success");
+            } catch (e) { window.logToSystem(`Fehler: ${e.message}`, "error"); } finally { setButtonsState(false); btn.innerHTML = origText; }
         }
 
         // --- Zuweisungen für die KI Buttons ---
@@ -572,6 +598,30 @@
         document.getElementById('file-diagram-btn').onclick = () => runSingleFileAI('file-diagram-btn', "⏳...", "Flowchart", "Generiere ein detailliertes Mermaid.js Flowchart (graph TD) exakt für die Logik dieser Datei. GIB NUR DEN MERMAID CODE ZURÜCK.", false, "idea");
         document.getElementById('explain-pm-btn').onclick = () => runSingleFileAI('explain-pm-btn', "⏳...", "PM Explain", "Erkläre den Zweck dieser Datei für einen nicht-technischen Projektmanager in 2-3 einfachen Sätzen auf Deutsch. Betone den Business Value. Nutze kein Fachjargon und poste keinen Code.", false, "idea");
 
+        document.getElementById('audio-review-btn').onclick = async () => {
+            const btn = document.getElementById('audio-review-btn'); const orig = btn.innerHTML;
+            const filename = document.getElementById('editor-filename').textContent;
+            if (filename === "Keine Datei gewählt") return;
+            btn.innerHTML = "⏳ AUDIO..."; setButtonsState(true);
+            window.logToSystem(`<b>Audio Review:</b> Generiere Sprachanalyse für <code>${filename}</code>...`, "info");
+            
+            try {
+                const prompt = `Du bist ein freundlicher, erfahrener Senior Developer. Gib ein kurzes, prägnantes Audio-Code-Review (max. 3 Sätze) für diese Datei auf Deutsch: \n\nDatei: ${filename}\nCode:\n${currentFileContent.substring(0, 1000)}`;
+                const inlineData = await callGeminiTTSAPI(prompt);
+                
+                const sampleRateMatch = inlineData.mimeType.match(/rate=(\d+)/);
+                const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000;
+                
+                playWavFromPcm(inlineData.data, sampleRate);
+                window.logToSystem(`🔊 <b>Audio Review läuft!</b> Die KI spricht die Code-Analyse zu <code>${filename}</code> jetzt aus.`, "idea");
+                switchTab('chat');
+            } catch (e) {
+                window.logToSystem(`Fehler beim Audio Review: ${e.message}`, "error");
+            } finally {
+                btn.innerHTML = orig; setButtonsState(false);
+            }
+        };
+
         // Helper für Dateiendungen
         document.getElementById('generate-tests-btn').onclick = () => runNewFileAI('generate-tests-btn', "⏳...", "Tests", "Schreibe Jest/Vitest Tests. NUR CODE ZURÜCK.", (f) => f.replace(/\.(ts|js|tsx|jsx)$/, '.test.$1'));
         document.getElementById('generate-sql-btn').onclick = () => runNewFileAI('generate-sql-btn', "⏳...", "SQL Generierung", "Analysiere diese Datei (z.B. ein Model, Interface oder eine Klasse). Generiere dazu passend ein robustes PostgreSQL Schema (CREATE TABLE, Relationen, Indizes, Datentypen). GIB NUR DEN SQL CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.schema.sql'));
@@ -590,7 +640,7 @@
                 let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Erstelle strukturierte README.md. NUR CODE ZURÜCK."));
                 batchFiles.push({ path: 'README.md', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = 'README.md'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                logToSystem(`✨ <b>README.md generiert.</b>`, "success");
+                window.logToSystem(`✨ <b>README.md generiert.</b>`, "success");
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
         };
 
@@ -601,7 +651,7 @@
                 let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Generiere produktionsreifes Dockerfile. NUR CODE ZURÜCK."));
                 batchFiles.push({ path: 'Dockerfile', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = 'Dockerfile'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                logToSystem(`✨ <b>Dockerfile generiert.</b>`, "success");
+                window.logToSystem(`✨ <b>Dockerfile generiert.</b>`, "success");
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
         };
 
@@ -612,7 +662,7 @@
                 let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Erstelle GitHub Actions Pipeline (.github/workflows/ci.yml). NUR YAML CODE ZURÜCK."));
                 batchFiles.push({ path: '.github/workflows/ci.yml', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = '.github/workflows/ci.yml'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                logToSystem(`✨ <b>CI Pipeline generiert.</b>`, "success");
+                window.logToSystem(`✨ <b>CI Pipeline generiert.</b>`, "success");
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
         };
 
@@ -623,7 +673,7 @@
                 let res = sanitizeGeneratedCode(await callGeminiAPI(`Repository Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Du bist ein Senior Architekt. Erstelle einen strukturierten 'Developer Onboarding Guide' (ONBOARDING.md) basierend auf dieser Dateistruktur. Erkläre die mutmaßliche Architektur, Hauptkomponenten und Tipps für neue Entwickler. NUR MARKDOWN ZURÜCKGEBEN."));
                 batchFiles.push({ path: 'ONBOARDING.md', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = 'ONBOARDING.md'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
-                logToSystem(`✨ <b>Onboarding Guide generiert.</b>`, "success");
+                window.logToSystem(`✨ <b>Onboarding Guide generiert.</b>`, "success");
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
         };
 
@@ -632,7 +682,7 @@
             const btn = document.getElementById('tech-stack-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
                 let res = await callGeminiAPI(`Repository Struktur:\n${fullTree.slice(0, 500).map(f => f.path).join('\n')}`, "Analysiere diese Dateistruktur und identifiziere den verwendeten Tech-Stack. Generiere einen kurzen, visuell ansprechenden Bericht in HTML (kein Markdown). Bewerte die Architektur, nenne mutmaßliche Datenbanken, Frameworks und zeige mögliche Bottlenecks auf.");
-                logToSystem(`✨ <b>Tech Stack Analyse:</b><br><div class="mt-2 text-[11px] bg-white text-stone-800 p-3 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "idea");
+                window.logToSystem(`✨ <b>Tech Stack Analyse:</b><br><div class="mt-2 text-[11px] bg-white text-stone-800 p-3 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "idea");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
         };
@@ -648,9 +698,9 @@
                 const commitMessages = commitsData.map(c => `- ${c.commit.message}`).join('\n');
 
                 let res = await callGeminiAPI(`Letzte Commits:\n${commitMessages}`, "Du bist ein Product Manager. Schreibe wunderschöne, gut strukturierte Release Notes in HTML (ohne Markdown Backticks, nutze h3, ul, li) für diese Liste von Git Commits. Kategorisiere sie in '🚀 Neue Features', '🐛 Bugfixes' und '🔧 Wartung'. Filtere unwichtige Commits heraus.");
-                logToSystem(`✨ <b>Release Notes:</b><br><div class="mt-2 text-[12px] bg-pink-50 text-pink-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto font-sans">${res}</div>`, "idea");
+                window.logToSystem(`✨ <b>Release Notes:</b><br><div class="mt-2 text-[12px] bg-pink-50 text-pink-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto font-sans">${res}</div>`, "idea");
                 switchTab('chat');
-            } catch(e) { logToSystem(`Fehler: ${e.message}`, "error"); } finally { btn.innerHTML = orig; setButtonsState(false); }
+            } catch(e) { window.logToSystem(`Fehler: ${e.message}`, "error"); } finally { btn.innerHTML = orig; setButtonsState(false); }
         };
 
         document.getElementById('threat-model-btn').onclick = async () => {
@@ -658,7 +708,7 @@
             const btn = document.getElementById('threat-model-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
                 let res = await callGeminiAPI(`Repository Struktur:\n${fullTree.slice(0, 400).map(f => f.path).join('\n')}`, "Du bist ein Cybersecurity-Experte. Führe eine kurze STRIDE-Threat-Modeling-Analyse für dieses Projekt anhand der Struktur durch. Identifiziere Angriffsvektoren (Spoofing, Tampering, Repudiation, Info Disclosure, DoS, EoP). Antworte in gut strukturiertem HTML (ohne Markdown Backticks).");
-                logToSystem(`🛡️ <b>Security Threat Model (STRIDE):</b><br><div class="mt-2 text-[11px] bg-red-50 text-red-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "error");
+                window.logToSystem(`🛡️ <b>Security Threat Model (STRIDE):</b><br><div class="mt-2 text-[11px] bg-red-50 text-red-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "error");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
         };
@@ -668,7 +718,7 @@
             const btn = document.getElementById('mermaid-diagram-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
                 let res = sanitizeGeneratedCode(await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 300).map(f => f.path).join('\n')}`, "Erstelle Mermaid.js (graph TD). NUR MERMAID CODE ZURÜCK."));
-                logToSystem(`✨ <b>Diagramm:</b><br><div class="mt-2 text-[10px] bg-teal-50 p-3 rounded shadow-inner font-mono whitespace-pre overflow-x-auto">${res.replace(/</g, '&lt;')}</div>`, "success");
+                window.logToSystem(`✨ <b>Diagramm:</b><br><div class="mt-2 text-[10px] bg-teal-50 p-3 rounded shadow-inner font-mono whitespace-pre overflow-x-auto">${res.replace(/</g, '&lt;')}</div>`, "success");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
         };
@@ -688,10 +738,10 @@
             try {
                 const diffContext = batchFiles.map(f => `--- ${f.path} (${f.isDelete ? 'DELETED' : 'MODIFIED'}) ---\n${f.content ? f.content.substring(0, 500) + '...' : ''}`).join('\n\n');
                 let res = await callGeminiAPI(`Änderungen:\n${diffContext}`, "Du bist ein Senior Developer. Schreibe eine professionelle, ausführliche GitHub Pull Request Description in Markdown für diese Änderungen. Beinhalte: Summary, Motivation, Changes, Testing. Antworte NUR in Markdown (HTML-sicher umgewandelt).");
-                logToSystem(`✨ <b>PR Description Draft:</b><br><div class="mt-2 text-[10px] bg-purple-50 text-purple-900 p-3 rounded shadow-inner font-mono whitespace-pre-wrap overflow-x-auto">${res.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`, "idea");
+                window.logToSystem(`✨ <b>PR Description Draft:</b><br><div class="mt-2 text-[10px] bg-purple-50 text-purple-900 p-3 rounded shadow-inner font-mono whitespace-pre-wrap overflow-x-auto">${res.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`, "idea");
                 switchTab('chat');
             } catch(e) {
-                logToSystem(`Fehler beim Erstellen der PR Description: ${e.message}`, "error");
+                window.logToSystem(`Fehler beim Erstellen der PR Description: ${e.message}`, "error");
             } finally { btn.innerHTML = orig; btn.disabled = false; }
         };
 
@@ -701,10 +751,10 @@
             try {
                 const diffContext = batchFiles.map(f => `--- ${f.path} (${f.isDelete ? 'DELETED' : 'MODIFIED'}) ---\n${f.content ? f.content.substring(0, 1000) + '...' : ''}`).join('\n\n');
                 let res = await callGeminiAPI(`Anstehende Änderungen:\n${diffContext}`, "Du bist ein extrem strenger Lead Engineer. Mache ein Pre-Flight Code Review für diese anstehenden Änderungen, bevor sie gepusht werden. Suche nach Logikfehlern, Performance-Engpässen, fehlenden Error-Handlings oder schlechten Namenskonventionen. Sei direkt, kritisch, aber hilfreich. Antworte in gut formatiertem HTML (ohne Markdown Backticks).");
-                logToSystem(`✨ <b>Pre-Flight Review:</b><br><div class="mt-2 text-[11px] bg-rose-50 text-rose-900 p-3 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "error");
+                window.logToSystem(`✨ <b>Pre-Flight Review:</b><br><div class="mt-2 text-[11px] bg-rose-50 text-rose-900 p-3 rounded shadow-inner max-h-80 overflow-y-auto">${res}</div>`, "error");
                 switchTab('chat');
             } catch(e) {
-                logToSystem(`Fehler beim Pre-Flight Review: ${e.message}`, "error");
+                window.logToSystem(`Fehler beim Pre-Flight Review: ${e.message}`, "error");
             } finally { btn.innerHTML = orig; btn.disabled = false; }
         };
 
@@ -715,7 +765,7 @@
             switchTab('editor');
             const editorBody = document.getElementById('editor-body');
             editorBody.innerHTML = `<div class="text-indigo-400 font-bold p-4 animate-pulse">Analysiere Blueprint...</div>`;
-            logToSystem("<b>Architekt evaluiert...</b>", "info");
+            window.logToSystem("<b>Architekt evaluiert...</b>", "info");
 
             try {
                 const architectSys = "Du bist Software-Architekt. GIB NUR EIN JSON ARRAY ZURÜCK: [ { \"path\": \"pfad.ts\", \"task\": \"exakt was fehlt\", \"action\": \"modify\" | \"delete\" } ]\nStruktur:\n" + fullTree.slice(0, 400).map(f => f.path).join('\n');
@@ -740,14 +790,14 @@
                     let newCode = sanitizeGeneratedCode(await callGeminiAPI(`Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}\nSetze um.`, compilerSys));
                     
                     batchFiles.push({ path: step.path, content: newCode }); currentFileContent = newCode; processedFiles++;
-                    renderCodeToEditor(newCode); logToSystem(`✅ <b>Fertig:</b> <code>${step.path}</code>`, "success");
+                    renderCodeToEditor(newCode); window.logToSystem(`✅ <b>Fertig:</b> <code>${step.path}</code>`, "success");
                 }
 
                 if (processedFiles === 0) { activePR.isFixing = false; } else {
                     updateBatchUI();
                     if (isAutoFix) { await executePush(); activePR.isFixing = false; setTimeout(() => checkCIStatus(), 4000); }
                 }
-            } catch (err) { activePR.isFixing = false; logToSystem(`<b>Fehler:</b> ${err.message}`, "error"); } finally { setButtonsState(false); runBtn.textContent = "🚀 Generieren"; }
+            } catch (err) { activePR.isFixing = false; window.logToSystem(`<b>Fehler:</b> ${err.message}`, "error"); } finally { setButtonsState(false); runBtn.textContent = "🚀 Generieren"; }
         }
         document.getElementById('run-architect-btn').onclick = () => runArchitectWorkflow(document.getElementById('architect-input').value.trim(), false);
 
@@ -763,7 +813,7 @@
                     currentFileContent = await fetchFileContent(bestMatch, activePR.branch || defaultBranch);
                     switchTab('editor'); renderCodeToEditor(currentFileContent);
                     allAiButtons.forEach(id => { const el = document.getElementById(id); if(el) el.classList.remove('hidden'); });
-                    logToSystem(`✨ <b>Suche erfolgreich:</b> <code>${bestMatch}</code>`, "success");
+                    window.logToSystem(`✨ <b>Suche erfolgreich:</b> <code>${bestMatch}</code>`, "success");
                 }
             } catch (e) {} finally { btn.innerHTML = "✨ SUCHE"; btn.disabled = false; }
         };
@@ -775,7 +825,7 @@
             chatBtn.innerHTML = "⏳..."; chatBtn.disabled = true; switchTab('chat');
             try {
                 const answer = await callGeminiAPI(`Kontext: ${filename}\nCode:\n${currentFileContent}\n\nFrage: ${query}`, "Du bist Pair Programmer. Antworte in HTML.");
-                logToSystem(`✨ <b>Gemini:</b><br><div class="mt-2 text-stone-700 text-[11px] bg-white p-3 rounded shadow-sm">${answer}</div>`, "idea");
+                window.logToSystem(`✨ <b>Gemini:</b><br><div class="mt-2 text-stone-700 text-[11px] bg-white p-3 rounded shadow-sm">${answer}</div>`, "idea");
                 chatInput.value = "";
             } catch (e) {} finally { chatBtn.innerHTML = "✨ FRAGEN"; chatBtn.disabled = false; }
         };
@@ -786,7 +836,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('suggest-ideas-btn'); btn.disabled = true; btn.innerHTML = "⏳...";
             try {
-                logToSystem(`✨ <b>Ideen:</b><br><div class="mt-2">${await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 150).map(f => f.path).join('\n')}`, "Schlage 3 Architektur-Ideen vor (HTML).")}</div>`, "idea");
+                window.logToSystem(`✨ <b>Ideen:</b><br><div class="mt-2">${await callGeminiAPI(`Struktur:\n${fullTree.slice(0, 150).map(f => f.path).join('\n')}`, "Schlage 3 Architektur-Ideen vor (HTML).")}</div>`, "idea");
             } catch (e) {} finally { btn.disabled = false; btn.innerHTML = "✨ IDEEN"; }
         };
 
@@ -867,7 +917,7 @@
                 
                 batchFiles = []; 
                 updateBatchUI();
-                logToSystem(`🟢 <b>Erfolgreich gepusht!</b>`, "success");
+                window.logToSystem(`🟢 <b>Erfolgreich gepusht!</b>`, "success");
             } catch (err) {
                 throw err;
             }
@@ -875,7 +925,7 @@
 
         document.getElementById('batch-commit-btn').onclick = () => {
             executePush().catch(err => { 
-                logToSystem(`<b>Push Error:</b> ${err.message}`, "error"); 
+                window.logToSystem(`<b>Push Error:</b> ${err.message}`, "error"); 
                 updateBatchUI(); 
             });
         };
@@ -917,7 +967,6 @@
                     activePR.isFixing = true; 
                     
                     try {
-                        // 1. Logs sammeln
                         let currentErrorLog = "";
                         const failed = allRuns.filter(r => r.status === 'completed' && !['success', 'neutral', 'skipped', 'cancelled'].includes(r.conclusion));
                         for (const run of failed) {
@@ -932,27 +981,25 @@
                         }
                         currentErrorLog = currentErrorLog || "Unbekannter Fehler.";
 
-                        // 2. Prüfen, ob es der EXAKT gleiche Fehler wie beim letzten Mal ist
                         if (activePR.lastErrorLog === currentErrorLog) {
-                            autoFixCount++; // Fehler ist gleich geblieben, Zähler hoch
+                            autoFixCount++;
                         } else {
-                            autoFixCount = 1; // Neues Fehlerbild! Zähler wird zurückgesetzt
+                            autoFixCount = 1;
                             activePR.lastErrorLog = currentErrorLog;
                         }
 
-                        // 3. Limit-Prüfung anhand des korrekten Zählers
                         if (autoFixCount > 3) { 
-                            logToSystem(`🛑 <b>Auto-Fix Limit erreicht (${autoFixCount}x in Folge identischer Fehler).</b> Bitte manuell prüfen.`, "error"); 
+                            window.logToSystem(`🛑 <b>Auto-Fix Limit erreicht (${autoFixCount}x in Folge identischer Fehler).</b> Bitte manuell prüfen.`, "error"); 
                             document.getElementById('autofix-pr-btn').classList.remove('hidden'); 
                             activePR.isFixing = false;
                             return; 
                         }
                         
-                        logToSystem(`⚙️ <b>AUTO-FIX (Versuch ${autoFixCount}/3 für DIESEN Fehler)</b>...`, "info");
+                        window.logToSystem(`⚙️ <b>AUTO-FIX (Versuch ${autoFixCount}/3 für DIESEN Fehler)</b>...`, "info");
                         runArchitectWorkflow(`BEHEBE DIESEN CI FEHLER:\n${currentErrorLog}\nACHTE AUF SYNTAX!`, true);
                     } catch (err) { 
                         activePR.isFixing = false; 
-                        logToSystem(`Fehler beim Auto-Fix: ${err.message}`, "error");
+                        window.logToSystem(`Fehler beim Auto-Fix: ${err.message}`, "error");
                     }
                 } else {
                     badge.textContent = "✅ CI GRÜN"; progBar.classList.replace('bg-indigo-600', 'bg-green-600');
@@ -968,7 +1015,7 @@
             const headers = { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' };
             if((await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${activePR.number}/merge`, { method: 'PUT', headers, body: JSON.stringify({ merge_method: 'squash' }) })).ok) {
                 await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/refs/heads/${activePR.branch}`, { method: 'DELETE', headers });
-                logToSystem(`🎉 <b>MERGE ERFOLGREICH!</b>`, "success");
+                window.logToSystem(`🎉 <b>MERGE ERFOLGREICH!</b>`, "success");
                 document.getElementById('merge-pr-btn').classList.add('hidden'); document.getElementById('check-pr-btn').disabled = true;
                 activePR = { branch: null, number: null, lastErrorLog: "", isFixing: false, lastCommitSha: null }; autoFixCount = 0;
             }
@@ -976,6 +1023,125 @@
 
         document.getElementById('autofix-pr-btn').onclick = () => runArchitectWorkflow(`Behebe:\n\n${activePR.lastErrorLog}`, true);
         window.onload = () => { fetchRepoTree(); if (window.innerWidth < 1024) switchTab('explorer'); };
+    </script>
+
+    <!-- GOOGLE OAUTH & KEY STORAGE MODULE -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        let auth;
+        let currentUserUid = 'default';
+
+        function saveKeys() {
+            const pat = document.getElementById('gh-pat').value;
+            const gemini = document.getElementById('gemini-key').value;
+            localStorage.setItem('sov_pat_' + currentUserUid, pat);
+            localStorage.setItem('sov_gemini_' + currentUserUid, gemini);
+        }
+
+        function loadKeys(uid) {
+            document.getElementById('gh-pat').value = localStorage.getItem('sov_pat_' + uid) || '';
+            document.getElementById('gemini-key').value = localStorage.getItem('sov_gemini_' + uid) || '';
+        }
+
+        // Listener, um Keys direkt in das Profil zu speichern, wenn man tippt
+        document.getElementById('gh-pat').addEventListener('input', saveKeys);
+        document.getElementById('gemini-key').addEventListener('input', saveKeys);
+
+        try {
+            // Environment Check
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "mock" };
+            
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            const provider = new GoogleAuthProvider();
+            
+            // WICHTIG: Erzwingt den Google Account-Auswahlbildschirm (für das nahtlose Wechseln)
+            provider.setCustomParameters({ prompt: 'select_account' });
+
+            window.loginWithGoogle = async () => {
+                if (firebaseConfig.apiKey === "mock") {
+                    window.logToSystem('Mock-Modus: Keine Canvas-Firebase Umgebung erkannt. Generiere Dummy-Account zum Testen der Wechsel-Logik.', 'warning');
+                    mockLogin();
+                    return;
+                }
+                try {
+                    await signInWithPopup(auth, provider);
+                } catch(e) {
+                    if (e.code === 'auth/popup-blocked') {
+                        window.logToSystem('⚠️ <b>Popup blockiert!</b><br>Dein Browser blockiert das Google-Login-Fenster (typisch für Vorschau-Umgebungen). Um die UI und die Key-Speicherung trotzdem zu demonstrieren, aktiviere ich den <b>Mock-Modus</b>.', 'warning');
+                        mockLogin();
+                    } else {
+                        window.logToSystem('Login Fehler: ' + e.message, 'error');
+                    }
+                }
+            };
+
+            // Account wechseln nutzt exakt dieselbe Logik (da prompt: select_account gesetzt ist)
+            window.switchGoogleAccount = window.loginWithGoogle;
+
+            window.logoutGoogle = async () => {
+                if (firebaseConfig.apiKey === "mock") {
+                    mockLogout();
+                    return;
+                }
+                await signOut(auth);
+            };
+
+            onAuthStateChanged(auth, (user) => {
+                if(firebaseConfig.apiKey === "mock") return;
+                updateAuthUI(user);
+            });
+
+        } catch(e) {
+            console.warn("Firebase Init Fehler (Fallback auf Mock)", e);
+        }
+
+        // --- Mock Logik (Falls es außerhalb von Canvas / lokal betrieben wird) ---
+        let mockUserToggle = false;
+        function mockLogin() {
+            mockUserToggle = !mockUserToggle;
+            const mockUser = mockUserToggle ? 
+                { uid: 'mock_privat_123', displayName: 'Privat', photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix' } :
+                { uid: 'mock_arbeit_456', displayName: 'Work', photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=WorkAdmin' };
+            updateAuthUI(mockUser);
+        }
+        
+        function mockLogout() {
+            updateAuthUI(null);
+        }
+
+        // --- UI & State Updates ---
+        function updateAuthUI(user) {
+            const authBtn = document.getElementById('google-auth-btn');
+            const userInfo = document.getElementById('google-user-info');
+            
+            if (user) {
+                // 1. Setze die aktuelle UID
+                currentUserUid = user.uid;
+                
+                // 2. Lade die Keys, die zu diesem Account gehören!
+                loadKeys(user.uid);
+                
+                // 3. UI anpassen
+                authBtn.classList.add('hidden');
+                userInfo.classList.remove('hidden');
+                document.getElementById('google-avatar').src = user.photoURL || '';
+                document.getElementById('google-name').textContent = user.displayName || 'Google User';
+                
+                window.logToSystem(`👋 <b>Angemeldet als ${user.displayName}</b>.<br>Dein persönlicher Workspace und Keys wurden aus dem sicheren LocalStorage geladen.`, 'success');
+            } else {
+                currentUserUid = 'default';
+                loadKeys('default');
+                authBtn.classList.remove('hidden');
+                userInfo.classList.add('hidden');
+                window.logToSystem(`🔒 <b>Abgemeldet.</b> Standard-Workspace ohne hinterlegte Keys aktiv.`, 'info');
+            }
+        }
+        
+        // Initiale Lade-Routine (für den Default / Nicht eingeloggt Zustand)
+        loadKeys('default');
     </script>
 </body>
 </html>
