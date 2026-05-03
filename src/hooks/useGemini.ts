@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { geminiService } from '../utils/gemini';
+import { GeminiService } from '../services/geminiService';
 
 interface UseGeminiReturn {
   isLoading: boolean;
@@ -23,7 +23,7 @@ export const useGemini = (): UseGeminiReturn => {
     setError(null);
 
     try {
-      const result = await geminiService.generateResponse(prompt);
+      const result = await GeminiService.generateResponse(prompt);
       setData(result);
       return result;
     } catch (err: unknown) {

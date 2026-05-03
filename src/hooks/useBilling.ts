@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
 import {
   selectIsSubscribed,
   selectIsLoading,
@@ -7,11 +7,11 @@ import {
   selectAvailablePackages,
   purchasePackageAction,
   restorePurchasesAction,
-} from '../store/slices/billingSlice';
+} from '../features/billing/billingSlice';
 
 /**
  * Hook zur Kapselung der Paywall-Logik und In-App-Purchase Status.
- * Nutzt typed Hooks für Redux (useAppDispatch, useAppSelector).
+ * Bietet Zugriff auf den Abonnement-Status und Kauf-Funktionen.
  */
 export const useBilling = () => {
   const dispatch = useAppDispatch();

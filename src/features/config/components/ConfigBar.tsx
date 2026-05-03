@@ -9,15 +9,8 @@ import {
   Monitor, 
   ShieldCheck
 } from 'lucide-react';
-import { useConfig } from '../hooks/useConfig';
-
-export interface ConfigState {
-  theme: 'light' | 'dark' | 'system';
-  autoSave: boolean;
-  apiEndpoint: string;
-  maxRetries: number;
-  debugMode: boolean;
-}
+import { useConfig } from '../../../hooks/useConfig';
+import { ConfigState } from '../types';
 
 export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
