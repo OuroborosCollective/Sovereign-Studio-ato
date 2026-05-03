@@ -10,28 +10,37 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useConfig } from '../../../hooks/useConfig';
-import { AppConfig } from '../types';
 
-export type ConfigProperties = AppConfig;
+export interface AppConfig {
+  theme: 'light' | 'dark' | 'system';
+  autoSave: boolean;
+  apiEndpoint: string;
+  maxRetries: number;
+  debugMode: boolean;
+}
+
+export type ConfigState = AppConfig;
 
 export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { 
     config, 
-    updateConfig, 
+    updateField, 
+    saveConfig, 
     resetToDefaults, 
-    isLoaded 
+    isDirty 
   } = useConfig();
 
-  const handleApply = () => {
-    setTimeout(() => setIsOpen(false), 300);
+  const handleSave = async () => {
+    await saveConfig();
+    setTimeout(() => {
+      setIsOpen(false);
+    }, 300);
   };
 
-  const handleChange = <K extends keyof ConfigProperties>(key: K, value: ConfigProperties[K]) => {
-    updateConfig({ [key]: value });
+  const handleChange = <K extends keyof ConfigState>(key: K, value: ConfigState[K]) => {
+    updateField(key, value);
   };
-
-  if (!isLoaded) return null;
 
   return (
     <React.Fragment>
@@ -39,7 +48,9 @@ export const ConfigBar: React.FC = () => {
         <div 
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 transition-opacity"
           onClick={() => setIsOpen(false)}
-        ></div>
+        >
+          <span className="sr-only">Close Overlay</span>
+        </div>
       )}
 
       {!isOpen && (
@@ -84,7 +95,7 @@ export const ConfigBar: React.FC = () => {
                 <span className="text-sm font-medium text-slate-700">Theme</span>
                 <select 
                   value={config.theme}
-                  onChange={(e) => handleChange('theme', e.target.value as ConfigProperties['theme'])}
+                  onChange={(e) => handleChange('theme', e.target.value as ConfigState['theme'])}
                   className="mt-1.5 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                 >
                   <option value="light">Light Mode</option>
@@ -105,7 +116,9 @@ export const ConfigBar: React.FC = () => {
                     className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
                       config.autoSave ? 'translate-x-6' : 'translate-x-1'
                     }`} 
-                  ></span>
+                  >
+                    <span className="sr-only">Toggle</span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -170,7 +183,9 @@ export const ConfigBar: React.FC = () => {
                     className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
                       config.debugMode ? 'translate-x-6' : 'translate-x-1'
                     }`} 
-                  ></span>
+                  >
+                    <span className="sr-only">Toggle</span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -179,11 +194,16 @@ export const ConfigBar: React.FC = () => {
 
         <footer className="p-6 border-t border-slate-100 bg-slate-50/80 flex flex-col gap-3">
           <button
-            onClick={handleApply}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md"
+            onClick={handleSave}
+            disabled={!isDirty}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all shadow-sm ${
+              isDirty 
+                ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md' 
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+            }`}
           >
             <Save size={16} />
-            Apply Changes
+            <span>Apply Changes</span>
           </button>
           
           <button
@@ -191,7 +211,7 @@ export const ConfigBar: React.FC = () => {
             className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-medium text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
           >
             <RefreshCw size={14} />
-            Reset Defaults
+            <span>Reset Defaults</span>
           </button>
         </footer>
       </aside>
