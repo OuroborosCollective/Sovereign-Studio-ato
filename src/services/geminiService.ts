@@ -1,9 +1,9 @@
 import { generateContent, streamContent } from "../utils/gemini";
 
-export const geminiService = {
+export const GeminiService = {
   generateContent,
   streamContent,
 };
 
 export { generateContent, streamContent };
-export default geminiService;
+export default GeminiService;

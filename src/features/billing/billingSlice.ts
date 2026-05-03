@@ -130,4 +130,8 @@ export const selectIsLoading = (state: { billing: BillingState }) => state.billi
 export const selectBillingError = (state: { billing: BillingState }) => state.billing.error;
 export const selectAvailablePackages = (state: { billing: BillingState }) => state.billing.availablePackages;
 
+export const selectBillingPackages = selectAvailablePackages;
+export const purchasePackage = purchasePackageAction;
+export const restorePurchases = restorePurchasesAction;
+
 export default billingSlice.reducer;
