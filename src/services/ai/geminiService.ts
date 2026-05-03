@@ -5,16 +5,26 @@ export interface GeminiResponse {
   usage?: any;
 }
 
+export interface GenerateOptions {
+  prompt: string;
+  systemInstruction?: string;
+  modelName?: string;
+  config?: GenerationConfig;
+}
+
 export class GeminiService {
   private genAI: GoogleGenerativeAI;
   private model: GenerativeModel;
 
-  constructor(apiKey: string, modelName: string = "gemini-1.5-flash") {
+  constructor(apiKey: string, modelName: string = "gemini-1.5-flash", systemInstruction?: string) {
     if (!apiKey) {
       throw new Error("Gemini API Key is missing");
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({ model: modelName });
+    this.model = this.genAI.getGenerativeModel({ 
+      model: modelName,
+      systemInstruction: systemInstruction ? { role: "system", parts: [{ text: systemInstruction }] } : undefined
+    });
   }
 
   /**
@@ -22,12 +32,15 @@ export class GeminiService {
    */
   static async generateContent(
     apiKey: string, 
-    prompt: string, 
-    modelName: string = "gemini-1.5-flash", 
-    config?: GenerationConfig
+    options: GenerateOptions
   ): Promise<GenerateContentResult> {
+    const { prompt, systemInstruction, modelName = "gemini-1.5-flash", config } = options;
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: modelName });
+    const model = genAI.getGenerativeModel({ 
+      model: modelName,
+      systemInstruction: systemInstruction ? { role: "system", parts: [{ text: systemInstruction }] } : undefined
+    });
+    
     return await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: config,
@@ -39,12 +52,10 @@ export class GeminiService {
    */
   static async generateText(
     apiKey: string, 
-    prompt: string, 
-    modelName: string = "gemini-1.5-flash", 
-    config?: GenerationConfig
+    options: GenerateOptions
   ): Promise<string> {
     try {
-      const result = await this.generateContent(apiKey, prompt, modelName, config);
+      const result = await this.generateContent(apiKey, options);
       const response = await result.response;
       return response.text();
     } catch (error) {
@@ -54,12 +65,31 @@ export class GeminiService {
   }
 
   /**
-   * Generiert einfachen Text-Content basierend auf einem Prompt
+   * Generiert einfachen Text-Content basierend auf Optionen
    */
-  async generateText(prompt: string, config?: GenerationConfig): Promise<string> {
+  async generateText(options: GenerateOptions | string): Promise<string> {
     try {
-      const result = await this.model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      let promptText: string;
+      let config: GenerationConfig | undefined;
+      let activeModel = this.model;
+
+      if (typeof options === "string") {
+        promptText = options;
+      } else {
+        promptText = options.prompt;
+        config = options.config;
+        
+        // Falls spezifische Model-Optionen für diesen Call nötig sind
+        if (options.systemInstruction || options.modelName) {
+          activeModel = this.genAI.getGenerativeModel({
+            model: options.modelName || "gemini-1.5-flash",
+            systemInstruction: options.systemInstruction ? { role: "system", parts: [{ text: options.systemInstruction }] } : undefined
+          });
+        }
+      }
+
+      const result = await activeModel.generateContent({
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
         generationConfig: config,
       });
       const response = await result.response;
@@ -73,11 +103,29 @@ export class GeminiService {
   /**
    * Generiert strukturierten JSON Content
    */
-  async generateJSON<T>(prompt: string, schemaConfig?: any): Promise<T> {
+  async generateJSON<T>(options: GenerateOptions | string, schemaConfig?: any): Promise<T> {
     try {
-      const result = await this.model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      let promptText: string;
+      let config: GenerationConfig | undefined;
+      let activeModel = this.model;
+
+      if (typeof options === "string") {
+        promptText = options;
+      } else {
+        promptText = options.prompt;
+        config = options.config;
+        if (options.systemInstruction || options.modelName) {
+          activeModel = this.genAI.getGenerativeModel({
+            model: options.modelName || "gemini-1.5-flash",
+            systemInstruction: options.systemInstruction ? { role: "system", parts: [{ text: options.systemInstruction }] } : undefined
+          });
+        }
+      }
+
+      const result = await activeModel.generateContent({
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
         generationConfig: {
+          ...config,
           ...schemaConfig,
           responseMimeType: "application/json",
         },
@@ -106,15 +154,14 @@ export class GeminiService {
   }
 
   /**
-   * Hilfsmethode zum Bereinigen von Markdown-Umgebungen ohne verbotene Regex
+   * Hilfsmethode zum Bereinigen von Markdown-Umgebungen
    */
   public static cleanJsonString(input: string): string {
     let clean = input.trim();
     if (clean.startsWith("")) {
       const lines = clean.split("\n");
-      if (lines[0].includes("json")) {
-        clean = lines.slice(1, lines.length - 1).join("\n");
-      } else {
+      // Entferne die erste Zeile (json oder ) und die letzte Zeile ()
+      if (lines.length > 2) {
         clean = lines.slice(1, lines.length - 1).join("\n");
       }
     }
