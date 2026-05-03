@@ -30,13 +30,17 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { storageService } = await import('../shared/api/storageService');
+        const { storageService } = await import('../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
         const currentLogs = JSON.parse(logsJson || '[]');
+        
+        // Ensure message is a string by checking instance or converting
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
         currentLogs.push({ 
           time: new Date().toISOString(), 
           context: 'ErrorBoundary', 
-          message: error instanceof Error ? error.message : String(error)
+          message: errorMessage
         });
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
@@ -70,12 +74,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
               
               {this.state.error && (
                 <div className="mt-4 p-3 bg-stone-100 rounded text-xs font-mono text-stone-800 break-words overflow-x-auto max-h-40 border border-stone-200">
-                  {String(this.state.error)}
+                  {this.state.error instanceof Error ? this.state.error.message : String(this.state.error)}
                 </div>
               )}
             </div>
             <div className="px-6 py-4 bg-stone-50 border-t border-stone-200 flex justify-end">
               <button
+                type="button"
                 onClick={this.handleReload}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700 transition-colors"
               >
