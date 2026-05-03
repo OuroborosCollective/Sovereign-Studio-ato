@@ -15,7 +15,7 @@ const config: CapacitorConfig = {
     allowMixedContent: true,
     captureInput: true,
     buildOptions: {
-      releaseType: 'release'
+      releaseType: 'AAB'
     }
   },
   plugins: {

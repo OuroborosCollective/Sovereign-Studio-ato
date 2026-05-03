@@ -72,6 +72,15 @@ export const canvasSlice = createSlice({
         state.objects.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
       }
     },
+    addVectors: (state, action: PayloadAction<CanvasObject[]>) => {
+      action.payload.forEach((newObj) => {
+        const exists = state.objects.some((obj) => obj.id === newObj.id);
+        if (!exists) {
+          state.objects.push(newObj);
+        }
+      });
+      state.objects.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+    },
     updateObject: (state, action: PayloadAction<Partial<CanvasObject> & { id: string }>) => {
       const index = state.objects.findIndex((obj) => obj.id === action.payload.id);
       if (index !== -1) {
@@ -128,6 +137,7 @@ export const canvasSlice = createSlice({
 
 export const {
   addObject,
+  addVectors,
   updateObject,
   removeObject,
   removeObjects,

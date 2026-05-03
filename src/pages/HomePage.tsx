@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import MainLayout from '../components/layout/MainLayout';
+import MainLayout from '../components/layouts/MainLayout';
 import ErrorBoundary from '../components/common/ErrorBoundary';
 
 /**

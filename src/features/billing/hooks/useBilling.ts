@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 
 interface Subscription {
   id: string;
@@ -73,7 +73,6 @@ export const useBilling = () => {
   const purchase = async (planId: string) => {
     setState((prev) => ({ ...prev, loading: true }));
     try {
-      // API Call Simulation für den Kaufprozess
       await new Promise((resolve) => setTimeout(resolve, 1500));
       await fetchBillingData();
     } catch (err) {
@@ -117,8 +116,13 @@ export const useBilling = () => {
     fetchBillingData();
   }, [fetchBillingData]);
 
+  const currentPlanId = useMemo(() => state.subscription?.plan ?? null, [state.subscription]);
+  const isProcessing = state.loading;
+
   return {
     ...state,
+    isProcessing,
+    currentPlanId,
     refresh: fetchBillingData,
     purchase,
     updateSubscription,
