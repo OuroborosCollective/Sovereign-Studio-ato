@@ -1,15 +1,3 @@
-// src/features/config/types.ts
-export interface AppConfig {
-  theme: 'light' | 'dark' | 'system';
-  autoSave: boolean;
-  apiEndpoint: string;
-  maxRetries: number;
-  debugMode: boolean;
-}
-
-export type ConfigState = AppConfig;
-
-// src/features/config/components/ConfigBar.tsx
 import React, { useState } from 'react';
 import { 
   Settings, 
@@ -22,26 +10,28 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useConfig } from '../../../hooks/useConfig';
-import { ConfigState } from '../types';
+import { AppConfig } from '../types';
+
+export type ConfigProperties = AppConfig;
 
 export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { 
     config, 
-    updateField, 
-    saveConfig, 
+    updateConfig, 
     resetToDefaults, 
-    isDirty 
+    isLoaded 
   } = useConfig();
 
-  const handleSave = async () => {
-    await saveConfig();
+  const handleApply = () => {
     setTimeout(() => setIsOpen(false), 300);
   };
 
-  const handleChange = <K extends keyof ConfigState>(key: K, value: ConfigState[K]) => {
-    updateField(key, value);
+  const handleChange = <K extends keyof ConfigProperties>(key: K, value: ConfigProperties[K]) => {
+    updateConfig({ [key]: value });
   };
+
+  if (!isLoaded) return null;
 
   return (
     <React.Fragment>
@@ -94,7 +84,7 @@ export const ConfigBar: React.FC = () => {
                 <span className="text-sm font-medium text-slate-700">Theme</span>
                 <select 
                   value={config.theme}
-                  onChange={(e) => handleChange('theme', e.target.value as ConfigState['theme'])}
+                  onChange={(e) => handleChange('theme', e.target.value as ConfigProperties['theme'])}
                   className="mt-1.5 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                 >
                   <option value="light">Light Mode</option>
@@ -189,13 +179,8 @@ export const ConfigBar: React.FC = () => {
 
         <footer className="p-6 border-t border-slate-100 bg-slate-50/80 flex flex-col gap-3">
           <button
-            onClick={handleSave}
-            disabled={!isDirty}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all shadow-sm ${
-              isDirty 
-                ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md' 
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-            }`}
+            onClick={handleApply}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md"
           >
             <Save size={16} />
             Apply Changes

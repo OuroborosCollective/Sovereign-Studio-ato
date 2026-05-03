@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import {
   selectIsSubscribed,
-  selectBillingLoading,
+  selectIsLoading,
   selectBillingError,
   selectPackages,
   purchasePackage,
@@ -17,7 +17,7 @@ export const useBilling = () => {
   const dispatch = useAppDispatch();
 
   const isSubscribed = useAppSelector(selectIsSubscribed);
-  const isLoading = useAppSelector(selectBillingLoading);
+  const isLoading = useAppSelector(selectIsLoading);
   const error = useAppSelector(selectBillingError);
   const packages = useAppSelector(selectPackages);
 

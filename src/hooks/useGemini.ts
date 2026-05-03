@@ -23,7 +23,7 @@ export const useGemini = (): UseGeminiReturn => {
     setError(null);
 
     try {
-      const result = await GeminiService.generateResponse(prompt);
+      const result = await GeminiService.generateContent(prompt);
       setData(result);
       return result;
     } catch (err: unknown) {

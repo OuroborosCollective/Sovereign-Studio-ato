@@ -56,7 +56,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   isOpen, 
   onClose 
 }) => {
-  const { loadingTier, handleSubscription } = useBilling();
+  const { purchase } = useBilling(onClose);
 
   if (!isOpen) return null;
 
@@ -124,22 +124,17 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 </ul>
 
                 <button
-                  disabled={Boolean(loadingTier)}
-                  onClick={() => handleSubscription(tier.id)}
+                  onClick={() => purchase(tier.id)}
                   className={`w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all ${
                     Boolean(tier.isPopular)
                       ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md'
                       : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  }`}
                 >
-                  {String(loadingTier) === tier.id ? (
-                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <React.Fragment>
-                      {tier.id === 'free' ? 'Aktueller Plan' : 'Plan wählen'}
-                      <ArrowRight className="w-4 h-4" />
-                    </React.Fragment>
-                  )}
+                  <React.Fragment>
+                    {tier.id === 'free' ? 'Aktueller Plan' : 'Plan wählen'}
+                    <ArrowRight className="w-4 h-4" />
+                  </React.Fragment>
                 </button>
               </div>
             ))}
