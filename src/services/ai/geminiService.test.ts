@@ -35,7 +35,6 @@ describe('GeminiService', () => {
     const result = await geminiService.generateText(prompt, TEST_MODEL);
 
     expect(result).toBe('Mocked AI response');
-    // Ensure call uses ModelParams object structure
     expect(getGenerativeModelMock).toHaveBeenCalledWith({ 
       model: TEST_MODEL 
     });
