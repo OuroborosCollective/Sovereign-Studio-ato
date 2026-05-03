@@ -35,7 +35,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@tanstack/react-query": "^5.66.0",
     "@vitejs/plugin-react": "^5.0.4",
-    "capacitor-native-biometric": "^6.0.0",
+    "capacitor-native-biometric": "^5.0.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
