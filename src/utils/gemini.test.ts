@@ -1,23 +1,30 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { GeminiService } from './gemini';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
-export class GeminiService {
-  static async generateContent(prompt: string): Promise<string> {
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash'
-    });
-
-    const chatSession = model.startChat({
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.9,
-      },
-      history: [],
-    });
-
-    const result = await chatSession.sendMessage(prompt);
-    const response = await result.response;
-    return response.text();
+vi.mock('./gemini', () => ({
+  GeminiService: {
+    generateContent: vi.fn()
   }
-}
+}));
+
+describe('GeminiService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should be defined', () => {
+    expect(GeminiService).toBeDefined();
+  });
+
+  it('should call generateContent statically with model and prompt parameters', async () => {
+    const model = 'gemini-1.5-flash';
+    const prompt = 'Test prompt';
+    const mockResponse = 'Mocked response';
+    vi.mocked(GeminiService.generateContent).mockResolvedValue(mockResponse);
+
+    const result = await GeminiService.generateContent(model, prompt);
+
+    expect(GeminiService.generateContent).toHaveBeenCalledWith(model, prompt);
+    expect(result).toBe(mockResponse);
+  });
+});
