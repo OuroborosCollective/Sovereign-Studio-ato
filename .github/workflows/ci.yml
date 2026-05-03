@@ -25,7 +25,7 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Check Linting
         run: npm run lint || echo "Linting step skipped - add lint script to package.json"
@@ -60,7 +60,7 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Download Web Build Artifact
         uses: actions/download-artifact@v4
