@@ -1,15 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
-import { GeminiService } from '../../features/ai/geminiService';
+import { geminiService } from '../../shared/api/geminiService';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 vi.mock('@google/generative-ai');
 
 describe('GeminiService', () => {
-  let service: GeminiService;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new GeminiService();
   });
 
   afterEach(() => {
@@ -33,7 +30,7 @@ describe('GeminiService', () => {
       getGenerativeModel: mockGetGenerativeModel,
     }));
 
-    const result = await service.generateText('Hello Gemini');
+    const result = await geminiService.generateText('Hello Gemini');
 
     expect(result).toBe(mockResponseText);
     expect(mockGetGenerativeModel).toHaveBeenCalledWith({ model: 'gemini-pro' });
@@ -51,6 +48,6 @@ describe('GeminiService', () => {
       }),
     }));
 
-    await expect(service.generateText('Hello Gemini')).rejects.toThrow('API Error');
+    await expect(geminiService.generateText('Hello Gemini')).rejects.toThrow('API Error');
   });
 });

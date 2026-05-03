@@ -27,29 +27,12 @@ export interface ConfigOption<T> {
 export type ThemeOption = ConfigOption<Theme>;
 export type LanguageOption = ConfigOption<Language>;
 
-export interface CanvasConfig {
-  gridSize: number;
-  showGrid: boolean;
-  snapToGrid: boolean;
-  theme: 'light' | 'dark' | 'auto';
-  zoomLevel: number;
-}
-
-export interface GeminiConfig {
-  model: string;
-  apiKey?: string;
-  temperature: number;
-  maxOutputTokens: number;
-  topP: number;
-  topK: number;
-}
-
 export interface AppConfig {
   theme: string;
   autoSave: boolean;
   apiEndpoint: string;
   maxRetries: number;
   debugMode: boolean;
-  canvas: CanvasConfig;
-  gemini: GeminiConfig;
+  canvas: any;
+  gemini: any;
 }

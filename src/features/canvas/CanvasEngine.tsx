@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -46,7 +46,6 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
 
-    // Globale Fabric Optimierungen für WebView Low-Latency
     fabric.Object.prototype.objectCaching = true;
     fabric.Object.prototype.noScaleCache = false;
     fabric.Object.prototype.transparentCorners = false;
@@ -56,13 +55,11 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       height: containerRef.current.clientHeight,
       backgroundColor: '#f8fafc',
       preserveObjectStacking: true,
-      renderOnAddRemove: false, // Optimierter Batch-Render
-      statefullCache: true,
+      renderOnAddRemove: false,
     });
 
     fabricCanvasRef.current = fabricCanvas;
 
-    // Zoom-Handler (Infinite Canvas Feeling) mit rAF Optimierung
     fabricCanvas.on('mouse:wheel', (opt) => {
       const delta = opt.e.deltaY;
       let zoom = fabricCanvas.getZoom();
@@ -81,30 +78,30 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     fabricCanvas.on('mouse:down', (opt) => {
       const evt = opt.e;
       if (evt.altKey === true) {
-        fabricCanvas.isDragging = true;
+        (fabricCanvas as any).isDragging = true;
         fabricCanvas.selection = false;
-        fabricCanvas.lastPosX = evt.clientX;
-        fabricCanvas.lastPosY = evt.clientY;
+        (fabricCanvas as any).lastPosX = evt.clientX;
+        (fabricCanvas as any).lastPosY = evt.clientY;
       }
     });
 
     fabricCanvas.on('mouse:move', (opt) => {
-      if (fabricCanvas.isDragging) {
+      if ((fabricCanvas as any).isDragging) {
         const e = opt.e;
         const vpt = fabricCanvas.viewportTransform;
         if (vpt) {
-          vpt[4] += e.clientX - fabricCanvas.lastPosX;
-          vpt[5] += e.clientY - fabricCanvas.lastPosY;
+          vpt[4] += e.clientX - (fabricCanvas as any).lastPosX;
+          vpt[5] += e.clientY - (fabricCanvas as any).lastPosY;
           fabricCanvas.requestRenderAll();
-          fabricCanvas.lastPosX = e.clientX;
-          fabricCanvas.lastPosY = e.clientY;
+          (fabricCanvas as any).lastPosX = e.clientX;
+          (fabricCanvas as any).lastPosY = e.clientY;
         }
       }
     });
 
     fabricCanvas.on('mouse:up', () => {
       fabricCanvas.setViewportTransform(fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0]);
-      fabricCanvas.isDragging = false;
+      (fabricCanvas as any).isDragging = false;
       fabricCanvas.selection = true;
     });
 
