@@ -1,22 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import { storageService } from '../shared/api/storageService';
-
-export interface AppConfig {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  temperature: number;
-  maxTokens: number;
-  topP: number;
-}
+import type { AppConfig } from '../features/config/types';
 
 const DEFAULT_CONFIG: AppConfig = {
-  apiKey: '',
-  baseUrl: 'https://api.openai.com/v1',
-  model: 'gpt-4-turbo',
-  temperature: 0.7,
-  maxTokens: 2000,
-  topP: 1,
+  canvas: {
+    resolutionScale: 1,
+    fpsLimit: 60,
+    showStats: false,
+    bloomEnabled: true,
+  },
+  gemini: {
+    temperature: 0.7,
+    topP: 1,
+    maxTokens: 2000,
+    model: 'gemini-1.5-flash',
+  },
 };
 
 const CONFIG_STORAGE_KEY = 'app_settings_v1';

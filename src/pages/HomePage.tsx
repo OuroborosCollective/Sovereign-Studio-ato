@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
-import ErrorBoundary from '../components/common/ErrorBoundary';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 /**
  * CanvasEngine
@@ -138,9 +138,25 @@ const CanvasEngine: React.FC = () => {
  * HomePage
  * Fullscreen Interface Transformation.
  */
+import { useState } from 'react';
+
 const HomePage: React.FC = () => {
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [activeTab, setActiveTab] = useState<'explorer' | 'editor' | 'chat'>('explorer');
+
   return (
-    <MainLayout>
+    <MainLayout
+      headerProps={{
+        loadingTree: false,
+        setShowPrivacy,
+        handleCleanup: () => console.log('Cleanup...'),
+        fetchRepoTree: () => console.log('Fetching Repo Tree...')
+      }}
+      mobileNavProps={{
+        activeTab,
+        setActiveTab
+      }}
+    >
       <ErrorBoundary>
         <main className="relative w-full h-screen overflow-hidden flex items-center justify-center">
           <CanvasEngine />
