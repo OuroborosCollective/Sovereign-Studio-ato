@@ -1,9 +1,15 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 export class GeminiService {
   private static instance: GeminiService;
+  private genAI: GoogleGenerativeAI | null = null;
   private apiKey: string | undefined;
 
   constructor(apiKey?: string) {
     this.apiKey = apiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (this.apiKey) {
+      this.genAI = new GoogleGenerativeAI(this.apiKey);
+    }
   }
 
   public static getInstance(apiKey?: string): GeminiService {
@@ -18,94 +24,48 @@ export class GeminiService {
     return service.generateResponse(prompt);
   }
 
-  async generateResponse(prompt: string): Promise<string> {
-    if (!this.apiKey) {
+  async generateResponse(prompt: string, systemInstruction?: string): Promise<string> {
+    if (!this.apiKey || !this.genAI) {
       throw new Error("Gemini API Key is missing");
     }
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
+      const model = this.genAI.getGenerativeModel({ 
+        model: "gemini-pro",
+        systemInstruction: systemInstruction 
       });
-
-      const data = await response.json();
       
-      if (!data.candidates || data.candidates.length === 0) {
-        throw new Error("No candidates returned from Gemini API");
-      }
-
-      return data.candidates[0].content.parts[0].text;
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      return response.text();
     } catch (error) {
       console.error("Gemini API Error:", error);
       throw error;
     }
   }
 
-  async *streamResponse(prompt: string): AsyncGenerator<string> {
-    if (!this.apiKey) {
+  async *streamResponse(prompt: string, systemInstruction?: string): AsyncGenerator<string> {
+    if (!this.apiKey || !this.genAI) {
       throw new Error("Gemini API Key is missing");
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent?key=${this.apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
-    });
+    try {
+      const model = this.genAI.getGenerativeModel({ 
+        model: "gemini-pro",
+        systemInstruction: systemInstruction 
+      });
 
-    if (!response.body) {
-      throw new Error("Response body is null");
-    }
+      const result = await model.generateContentStream(prompt);
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      
-      let startBracket = buffer.indexOf('{"candidates"');
-      while (startBracket !== -1) {
-        let bracketCount = 0;
-        let endBracket = -1;
-        
-        for (let i = startBracket; i < buffer.length; i++) {
-          if (buffer[i] === '{') bracketCount++;
-          else if (buffer[i] === '}') bracketCount--;
-          
-          if (bracketCount === 0) {
-            endBracket = i;
-            break;
-          }
-        }
-
-        if (endBracket !== -1) {
-          const jsonStr = buffer.substring(startBracket, endBracket + 1);
-          try {
-            const data = JSON.parse(jsonStr);
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) yield text;
-          } catch (e) {
-            console.error("Error parsing stream chunk", e);
-          }
-          buffer = buffer.substring(endBracket + 1);
-          startBracket = buffer.indexOf('{"candidates"');
-        } else {
-          break;
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        if (chunkText) {
+          yield chunkText;
         }
       }
+    } catch (error) {
+      console.error("Gemini Stream Error:", error);
+      throw error;
     }
   }
 }

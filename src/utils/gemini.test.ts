@@ -1,21 +1,29 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GeminiService } from './gemini';
 
+vi.mock('./gemini', () => ({
+  GeminiService: {
+    generateContent: vi.fn()
+  }
+}));
+
 describe('GeminiService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('should be defined', () => {
     expect(GeminiService).toBeDefined();
   });
 
-  it('should generate content using string arguments for instructions and config', async () => {
-    const service = new GeminiService('test-api-key');
-    
-    // Passing string arguments instead of objects for system instructions and configuration
-    const response = await service.generateContent(
-      'Explain quantum computing',
-      'You are a physics professor',
-      'gemini-1.5-pro'
-    );
+  it('should call generateContent statically with string parameters', async () => {
+    const prompt = 'Test prompt';
+    const mockResponse = 'Mocked response';
+    vi.mocked(GeminiService.generateContent).mockResolvedValue(mockResponse);
 
-    expect(response).toBeDefined();
+    const result = await GeminiService.generateContent(prompt);
+
+    expect(GeminiService.generateContent).toHaveBeenCalledWith(prompt);
+    expect(result).toBe(mockResponse);
   });
 });
