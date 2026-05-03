@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
-import App from './App';
+import ProductMagicApp from './ProductMagicApp';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
@@ -55,7 +55,7 @@ if (container) {
   root.render(
     <StrictMode>
       <ErrorBoundary>
-        <App />
+        <ProductMagicApp />
       </ErrorBoundary>
     </StrictMode>
   );
