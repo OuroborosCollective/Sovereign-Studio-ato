@@ -13,6 +13,10 @@ export class GeminiService {
     return GeminiService.instance;
   }
 
+  public static async generateResponse(prompt: string, apiKey?: string): Promise<string> {
+    return GeminiService.getInstance(apiKey).generateResponse(prompt);
+  }
+
   async generateResponse(prompt: string): Promise<string> {
     if (!this.apiKey) {
       throw new Error("Gemini API Key is missing");

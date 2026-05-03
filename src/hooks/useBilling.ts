@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import {
   selectIsSubscribed,
-  selectBillingLoading,
+  selectIsLoading,
   selectBillingError,
   selectBillingPackages,
   purchasePackage,
@@ -17,7 +17,7 @@ export const useBilling = () => {
   const dispatch = useAppDispatch();
 
   const isSubscribed = useAppSelector(selectIsSubscribed);
-  const isLoading = useAppSelector(selectBillingLoading);
+  const isLoading = useAppSelector(selectIsLoading);
   const error = useAppSelector(selectBillingError);
   const packages = useAppSelector(selectBillingPackages);
 
@@ -33,7 +33,7 @@ export const useBilling = () => {
     [dispatch]
   );
 
-  const restore = useCallback(async () => {
+  const handleRestorePurchases = useCallback(async () => {
     try {
       await dispatch(restorePurchases()).unwrap();
       return { success: true, error: null };
@@ -54,7 +54,7 @@ export const useBilling = () => {
     error,
     packages,
     purchase,
-    restorePurchases: restore,
+    restorePurchases: handleRestorePurchases,
   };
 };
 
