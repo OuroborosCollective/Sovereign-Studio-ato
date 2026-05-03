@@ -19,7 +19,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@capacitor-community/native-biometric": "^6.0.0",
+    "capacitor-native-biometric": "^6.0.0",
     "@capacitor/app": "^6.0.0",
     "@capacitor/browser": "^6.0.0",
     "@capacitor/core": "^6.0.0",
