@@ -1,27 +1,66 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { GeminiService } from './gemini';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(API_KEY);
-
-export class GeminiService {
-  static async generateContent(prompt: string): Promise<string> {
-    try {
-      const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 2048,
-        },
-      });
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
-    } catch (error) {
-      console.error("Gemini Service Error:", error);
-      throw error;
+vi.mock('@google/generative-ai', () => {
+  const generateContentMock = vi.fn().mockResolvedValue({
+    response: {
+      text: () => 'Mocked response'
     }
-  }
-}
+  });
+
+  const getGenerativeModelMock = vi.fn().mockReturnValue({
+    generateContent: generateContentMock
+  });
+
+  return {
+    GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
+      getGenerativeModel: getGenerativeModelMock
+    }))
+  };
+});
+
+describe('GeminiService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should be defined', () => {
+    expect(GeminiService).toBeDefined();
+  });
+
+  it('should call getGenerativeModel with a single ModelParams object', async () => {
+    const prompt = 'Test prompt';
+    
+    const result = await GeminiService.generateContent(prompt);
+
+    const MockedAI = vi.mocked(GoogleGenerativeAI);
+    const aiInstance = MockedAI.mock.results[0].value;
+
+    expect(aiInstance.getGenerativeModel).toHaveBeenCalledWith({
+      model: expect.any(String),
+      systemInstruction: expect.any(String),
+      generationConfig: expect.objectContaining({
+        temperature: expect.any(Number),
+        topP: expect.any(Number),
+        topK: expect.any(Number),
+        maxOutputTokens: expect.any(Number),
+        responseMimeType: expect.any(String)
+      })
+    });
+
+    expect(result).toBe('Mocked response');
+  });
+
+  it('should handle configuration within the generation call', async () => {
+    const prompt = 'Test prompt';
+    const result = await GeminiService.generateContent(prompt);
+    
+    const MockedAI = vi.mocked(GoogleGenerativeAI);
+    const aiInstance = MockedAI.mock.results[0].value;
+    const modelInstance = aiInstance.getGenerativeModel.mock.results[0].value;
+
+    expect(modelInstance.generateContent).toHaveBeenCalledWith(prompt);
+    expect(result).toBe('Mocked response');
+  });
+});
