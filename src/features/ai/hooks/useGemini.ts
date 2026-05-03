@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
-import { addVectors } from '@/store/slices/canvasSlice';
+import { addVectors } from '../../canvas/canvasSlice';
 
 /**
  * Interface für Canvas-Vektorelemente
