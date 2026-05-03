@@ -1,88 +1,100 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { GeminiService } from '../services/ai/geminiService';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-interface UseGeminiReturn {
-  isLoading: boolean;
-  error: string | null;
-  data: string | null;
-  generate: (prompt: string) => Promise<string | null>;
-  reset: () => void;
+export interface GenerateOptions {
+  model?: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  topK?: number;
+  topP?: number;
+  signal?: AbortSignal;
 }
 
-export const useGemini = (): UseGeminiReturn => {
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+type GenerateContentSecondArg = string | GenerateOptions | undefined;
 
-  const generate = useCallback(async (prompt: string): Promise<string | null> => {
-    if (!prompt.trim()) {
-      return null;
-    }
+const DEFAULT_MODEL = 'gemini-1.5-flash';
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+function getApiKey(): string {
+  const apiKey =
+    import.meta.env.VITE_GEMINI_API_KEY ||
+    import.meta.env.VITE_GOOGLE_AI_API_KEY ||
+    import.meta.env.VITE_GOOGLE_API_KEY;
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+  if (!apiKey) {
+    throw new Error(
+      'Gemini API Key fehlt. Bitte VITE_GEMINI_API_KEY in deiner .env Datei setzen.'
+    );
+  }
 
-    setIsLoading(true);
-    setError(null);
-    setData(null);
+  return apiKey;
+}
 
-    try {
-      const result = await GeminiService.generateContent(prompt, {
-        signal: controller.signal
-      });
-
-      setData(result);
-      return result;
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        return null;
-      }
-
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : 'Ein unerwarteter Fehler ist aufgetreten';
-
-      setError(errorMessage);
-      return null;
-    } finally {
-      if (abortControllerRef.current === controller) {
-        abortControllerRef.current = null;
-        setIsLoading(false);
-      }
-    }
-  }, []);
-
-  const reset = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    setIsLoading(false);
-    setError(null);
-    setData(null);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
+function normalizeGenerateOptions(
+  secondArg?: GenerateContentSecondArg
+): Required<Pick<GenerateOptions, 'model'>> & Omit<GenerateOptions, 'model'> {
+  if (typeof secondArg === 'string') {
+    return {
+      model: secondArg
     };
-  }, []);
+  }
 
   return {
-    isLoading,
-    error,
-    data,
-    generate,
-    reset
+    model: secondArg?.model ?? DEFAULT_MODEL,
+    temperature: secondArg?.temperature,
+    maxOutputTokens: secondArg?.maxOutputTokens,
+    topK: secondArg?.topK,
+    topP: secondArg?.topP,
+    signal: secondArg?.signal
   };
-};
+}
+
+export class GeminiService {
+  static async generateContent(
+    prompt: string,
+    optionsOrModel?: GenerateContentSecondArg
+  ): Promise<string> {
+    if (!prompt.trim()) {
+      throw new Error('Prompt darf nicht leer sein.');
+    }
+
+    const options = normalizeGenerateOptions(optionsOrModel);
+
+    if (options.signal?.aborted) {
+      throw new DOMException('Request aborted', 'AbortError');
+    }
+
+    const apiKey = getApiKey();
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    const model = genAI.getGenerativeModel({
+      model: options.model,
+      generationConfig: {
+        temperature: options.temperature,
+        maxOutputTokens: options.maxOutputTokens,
+        topK: options.topK,
+        topP: options.topP
+      }
+    });
+
+    const abortPromise = new Promise<never>((_, reject) => {
+      options.signal?.addEventListener(
+        'abort',
+        () => {
+          reject(new DOMException('Request aborted', 'AbortError'));
+        },
+        { once: true }
+      );
+    });
+
+    const generatePromise = model.generateContent(prompt);
+
+    const result = await Promise.race([generatePromise, abortPromise]);
+    const response = result.response;
+    const text = response.text();
+
+    if (!text.trim()) {
+      throw new Error('Gemini hat keine Antwort zurückgegeben.');
+    }
+
+    return text;
+  }
+}
