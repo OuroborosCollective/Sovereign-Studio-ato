@@ -10,6 +10,8 @@ export interface GenerateOptions {
   systemInstruction?: string;
   modelName?: string;
   config?: GenerationConfig;
+  temperature?: number;
+  topP?: number;
 }
 
 export class GeminiService {
@@ -34,16 +36,22 @@ export class GeminiService {
     apiKey: string, 
     options: GenerateOptions
   ): Promise<GenerateContentResult> {
-    const { prompt, systemInstruction, modelName = "gemini-1.5-flash", config } = options;
+    const { prompt, systemInstruction, modelName = "gemini-1.5-flash", config, temperature, topP } = options;
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
       model: modelName,
       systemInstruction: systemInstruction ? { role: "system", parts: [{ text: systemInstruction }] } : undefined
     });
+
+    const generationConfig: GenerationConfig = {
+      ...config,
+      temperature: temperature !== undefined ? temperature : config?.temperature,
+      topP: topP !== undefined ? topP : config?.topP,
+    };
     
     return await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: config,
+      generationConfig,
     });
   }
 
@@ -70,16 +78,19 @@ export class GeminiService {
   async generateText(options: GenerateOptions | string): Promise<string> {
     try {
       let promptText: string;
-      let config: GenerationConfig | undefined;
+      let generationConfig: GenerationConfig | undefined;
       let activeModel = this.model;
 
       if (typeof options === "string") {
         promptText = options;
       } else {
         promptText = options.prompt;
-        config = options.config;
+        generationConfig = {
+          ...options.config,
+          temperature: options.temperature !== undefined ? options.temperature : options.config?.temperature,
+          topP: options.topP !== undefined ? options.topP : options.config?.topP,
+        };
         
-        // Falls spezifische Model-Optionen für diesen Call nötig sind
         if (options.systemInstruction || options.modelName) {
           activeModel = this.genAI.getGenerativeModel({
             model: options.modelName || "gemini-1.5-flash",
@@ -90,7 +101,7 @@ export class GeminiService {
 
       const result = await activeModel.generateContent({
         contents: [{ role: "user", parts: [{ text: promptText }] }],
-        generationConfig: config,
+        generationConfig,
       });
       const response = await result.response;
       return response.text();
@@ -106,14 +117,18 @@ export class GeminiService {
   async generateJSON<T>(options: GenerateOptions | string, schemaConfig?: any): Promise<T> {
     try {
       let promptText: string;
-      let config: GenerationConfig | undefined;
+      let generationConfig: GenerationConfig | undefined;
       let activeModel = this.model;
 
       if (typeof options === "string") {
         promptText = options;
       } else {
         promptText = options.prompt;
-        config = options.config;
+        generationConfig = {
+          ...options.config,
+          temperature: options.temperature !== undefined ? options.temperature : options.config?.temperature,
+          topP: options.topP !== undefined ? options.topP : options.config?.topP,
+        };
         if (options.systemInstruction || options.modelName) {
           activeModel = this.genAI.getGenerativeModel({
             model: options.modelName || "gemini-1.5-flash",
@@ -125,7 +140,7 @@ export class GeminiService {
       const result = await activeModel.generateContent({
         contents: [{ role: "user", parts: [{ text: promptText }] }],
         generationConfig: {
-          ...config,
+          ...generationConfig,
           ...schemaConfig,
           responseMimeType: "application/json",
         },
@@ -160,7 +175,6 @@ export class GeminiService {
     let clean = input.trim();
     if (clean.startsWith("")) {
       const lines = clean.split("\n");
-      // Entferne die erste Zeile (json oder ) und die letzte Zeile ()
       if (lines.length > 2) {
         clean = lines.slice(1, lines.length - 1).join("\n");
       }
