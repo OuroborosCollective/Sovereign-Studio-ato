@@ -20,7 +20,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: unknown): State {
-    const errorInstance = error instanceof Error ? error : new Error(String(error));
+    // Explicitly handle unknown type by converting to string or using message property
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorInstance = error instanceof Error ? error : new Error(errorMessage);
     return { hasError: true, error: errorInstance, errorInfo: null };
   }
 
@@ -30,13 +32,17 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { storageService } = await import('../shared/api/storageService');
+        const { storageService } = await import('../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
         const currentLogs = JSON.parse(logsJson || '[]');
+        
+        // Ensure the error message is extracted as a string
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
         currentLogs.push({ 
           time: new Date().toISOString(), 
           context: 'ErrorBoundary', 
-          message: error instanceof Error ? error.message : String(error)
+          message: errorMessage
         });
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
@@ -70,7 +76,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               
               {this.state.error && (
                 <div className="mt-4 p-3 bg-stone-100 rounded text-xs font-mono text-stone-800 break-words overflow-x-auto max-h-40 border border-stone-200">
-                  {String(this.state.error)}
+                  {this.state.error.message || String(this.state.error)}
                 </div>
               )}
             </div>
