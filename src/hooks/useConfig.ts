@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { storageService } from '../services/storageService';
+import { storageService } from '../shared/api/storageService';
 
 export interface AppConfig {
   apiKey: string;

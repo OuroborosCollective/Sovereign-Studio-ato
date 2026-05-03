@@ -30,7 +30,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { storageService } = await import('../services/storageService');
+        const { storageService } = await import('../shared/api/storageService');
         const logsJson = await storageService.get('ss_error_log');
         const currentLogs = JSON.parse(logsJson || '[]');
         currentLogs.push({ 
