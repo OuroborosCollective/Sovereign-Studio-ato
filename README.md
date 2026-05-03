@@ -18,3 +18,11 @@ View your app in AI Studio: https://ai.studio/apps/4507da01-c05c-447b-8066-e4ab5
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Capacitor Build Patch
+
+This repository includes a utility script `patch_capacitor.cjs` designed to streamline mobile deployments.
+
+- **Purpose**: Fixes Android Gradle and Manifest compatibility issues encountered during the build process.
+- **Scope**: Specifically optimized for Capacitor 6 builds to ensure seamless integration with the latest Android SDK requirements and manifest merging rules.
+- **Usage**: This script is typically invoked automatically during the build lifecycle to maintain environment consistency.
