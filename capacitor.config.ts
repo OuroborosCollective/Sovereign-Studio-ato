@@ -4,8 +4,12 @@ const config: CapacitorConfig = {
   appId: 'com.sovereign.studio',
   appName: 'Sovereign Studio',
   webDir: 'dist',
+  bundledWebRuntime: false,
   server: {
-    androidScheme: 'https'
+    androidScheme: 'https',
+    allowNavigation: [
+      '*'
+    ]
   },
   plugins: {
     SplashScreen: {
