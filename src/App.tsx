@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Shield, CheckCircle, LogOut, Layout } from 'lucide-react';
+import { Shield, CheckCircle, LogOut, Layout, Zap, Cpu } from 'lucide-react';
 
 interface UserSession {
   id: string;
@@ -107,7 +107,7 @@ const LandingPage: React.FC<{ onLogin: () => void }> = ({ onLogin }) => (
   </div>
 );
 
-const CanvasPage: React.FC<{ user: UserSession; onLogout: () => void }> = ({ user, onLogout }) => (
+const CanvasPage: React.FC<{ user: UserSession; onLogout: () => void; isConnected: boolean }> = ({ user, onLogout, isConnected }) => (
   <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
     <header className="p-6 border-b border-stone-200 bg-white flex justify-between items-center">
       <div className="flex items-center gap-3">
@@ -115,6 +115,12 @@ const CanvasPage: React.FC<{ user: UserSession; onLogout: () => void }> = ({ use
           <Shield size={18} />
         </div>
         <span className="font-bold tracking-tight">Canvas View</span>
+        {isConnected && (
+          <div className="flex items-center gap-1.5 ml-4 px-2 py-1 bg-green-50 border border-green-100 rounded-full">
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+            <span className="text-[10px] font-bold text-green-700 uppercase tracking-tight">Live Connection</span>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-4">
         <div className="hidden sm:flex flex-col items-end">
@@ -141,14 +147,20 @@ const CanvasPage: React.FC<{ user: UserSession; onLogout: () => void }> = ({ use
           </div>
         </div>
         <div className="h-[60vh] bg-stone-900 rounded-[2rem] shadow-2xl p-8 text-white overflow-hidden">
-          <h3 className="text-lg font-bold mb-4 text-indigo-400">Insights</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-indigo-400">Insights</h3>
+            <Zap size={18} className={isConnected ? "text-yellow-400" : "text-stone-600"} />
+          </div>
           <div className="space-y-4">
             <div className="p-4 bg-stone-800 rounded-xl border border-stone-700">
               <p className="text-xs text-stone-400 mb-1 uppercase tracking-tighter">Status</p>
               <p className="text-sm font-medium">Sitzung aktiv und verschlüsselt</p>
             </div>
             <div className="p-4 bg-indigo-600/10 rounded-xl border border-indigo-500/20">
-              <p className="text-xs text-indigo-300 mb-1 uppercase tracking-tighter">Local Node</p>
+              <div className="flex items-center gap-2 mb-1">
+                <Cpu size={12} className="text-indigo-300" />
+                <p className="text-xs text-indigo-300 uppercase tracking-tighter">Local Node</p>
+              </div>
               <p className="text-sm font-medium">Bereit für Datei-Upload</p>
             </div>
           </div>
@@ -162,22 +174,63 @@ const App: React.FC = () => {
   const [view, setView] = useState<'landing' | 'canvas'>('landing');
   const [user, setUser] = useState<UserSession | null>(null);
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [isCanvasConnected, setIsCanvasConnected] = useState(false);
+
+  const establishCanvasConnection = useCallback(() => {
+    console.log('Initializing AI-Canvas Connection...');
+    setIsCanvasConnected(true);
+  }, []);
+
+  const handleDeepLink = useCallback((url: string) => {
+    const params = new URL(url).searchParams;
+    const token = params.get('token');
+    const email = params.get('email');
+
+    if (token && email) {
+      const session: UserSession = {
+        id: token,
+        email: email,
+        name: email.split('@')[0],
+        imageUrl: ''
+      };
+      setUser(session);
+      localStorage.setItem('user_session', JSON.stringify(session));
+      localStorage.setItem('app_view', 'canvas');
+      setView('canvas');
+      establishCanvasConnection();
+    }
+  }, [establishCanvasConnection]);
 
   const initializeApp = useCallback(() => {
     const savedView = localStorage.getItem('app_view');
     const savedUser = localStorage.getItem('user_session');
     
+    if (window.location.search.includes('token=')) {
+      handleDeepLink(window.location.href);
+      return;
+    }
+
     if (savedView === 'canvas' && savedUser) {
       setUser(JSON.parse(savedUser));
       setView('canvas');
+      establishCanvasConnection();
     } else {
       setIsPrivacyModalOpen(true);
     }
-  }, []);
+  }, [handleDeepLink, establishCanvasConnection]);
 
   useEffect(() => {
     initializeApp();
-  }, [initializeApp]);
+    
+    const handleUrlChange = () => {
+      if (window.location.search.includes('token=')) {
+        handleDeepLink(window.location.href);
+      }
+    };
+
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, [initializeApp, handleDeepLink]);
 
   const handleLogin = async () => {
     try {
@@ -193,6 +246,7 @@ const App: React.FC = () => {
       localStorage.setItem('app_view', 'canvas');
       setView('canvas');
       setIsPrivacyModalOpen(false);
+      establishCanvasConnection();
     } catch (error) {
       console.error('Login error', error);
     }
@@ -204,6 +258,7 @@ const App: React.FC = () => {
     setUser(null);
     setView('landing');
     setIsPrivacyModalOpen(true);
+    setIsCanvasConnected(false);
   };
 
   return (
@@ -211,7 +266,7 @@ const App: React.FC = () => {
       {view === 'landing' ? (
         <LandingPage onLogin={handleLogin} />
       ) : (
-        user && <CanvasPage user={user} onLogout={handleLogout} />
+        user && <CanvasPage user={user} onLogout={handleLogout} isConnected={isCanvasConnected} />
       )}
 
       <PrivacyModal 

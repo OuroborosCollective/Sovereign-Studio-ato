@@ -23,6 +23,14 @@ export class StorageService {
     }
   }
 
+  public set<T>(key: string, value: T): void {
+    this.setItem(key, value);
+  }
+
+  public get<T>(key: string): T | null {
+    return this.getItem(key);
+  }
+
   public removeItem(key: string): void {
     if (!this.storage) return;
     try {

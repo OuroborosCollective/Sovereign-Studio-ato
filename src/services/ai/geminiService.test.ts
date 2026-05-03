@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
-import { GeminiService } from './geminiService';
+import { GeminiService } from '../../shared/api/geminiService';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 vi.mock('@google/generative-ai');
@@ -9,7 +9,7 @@ describe('GeminiService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new GeminiService('test-api-key');
+    service = new GeminiService();
   });
 
   afterEach(() => {

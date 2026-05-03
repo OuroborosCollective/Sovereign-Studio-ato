@@ -36,13 +36,6 @@ export const useBilling = () => {
     try {
       setState((prev) => ({ ...prev, loading: true, error: null }));
       
-      // In einer realen Applikation würden hier API-Calls stehen
-      // const [subRes, invRes] = await Promise.all([
-      //   fetch('/api/billing/subscription'),
-      //   fetch('/api/billing/invoices')
-      // ]);
-      
-      // Mock-Daten für die Funktionalität
       const mockSubscription: Subscription = {
         id: 'sub_123',
         plan: 'pro',
@@ -77,10 +70,24 @@ export const useBilling = () => {
     }
   }, []);
 
+  const purchase = async (planId: string) => {
+    setState((prev) => ({ ...prev, loading: true }));
+    try {
+      // API Call Simulation für den Kaufprozess
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await fetchBillingData();
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Fehler beim Abschließen des Kaufs',
+      }));
+    }
+  };
+
   const updateSubscription = async (planId: string) => {
     setState((prev) => ({ ...prev, loading: true }));
     try {
-      // API Call zur Aktualisierung
       await new Promise((resolve) => setTimeout(resolve, 1000));
       await fetchBillingData();
     } catch (err) {
@@ -95,7 +102,6 @@ export const useBilling = () => {
   const cancelSubscription = async () => {
     setState((prev) => ({ ...prev, loading: true }));
     try {
-      // API Call zur Kündigung
       await new Promise((resolve) => setTimeout(resolve, 1000));
       await fetchBillingData();
     } catch (err) {
@@ -114,6 +120,7 @@ export const useBilling = () => {
   return {
     ...state,
     refresh: fetchBillingData,
+    purchase,
     updateSubscription,
     cancelSubscription,
   };
