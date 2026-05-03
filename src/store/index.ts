@@ -1,8 +1,9 @@
 import { configureStore } from '@reduxjs/toolkit';
+import billingReducer from '../features/billing/billingSlice';
 
 export const store = configureStore({
   reducer: {
-    // Add your reducers here
+    billing: billingReducer,
   },
 });
 
