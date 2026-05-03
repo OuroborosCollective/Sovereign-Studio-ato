@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
+import { storageService } from '../services/storageService';
 
 // Mock storageService
 vi.mock('../services/storageService', () => {
@@ -41,7 +42,6 @@ describe('ErrorBoundary', () => {
   });
 
   it('swallows storageService.get error silently', async () => {
-    const { storageService } = await import('../services/storageService');
     vi.mocked(storageService.get).mockRejectedValueOnce(new Error('Storage get failure'));
 
     render(
@@ -55,13 +55,14 @@ describe('ErrorBoundary', () => {
     });
 
     // We wait a bit to ensure async operations resolve/reject
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
 
     expect(storageService.set).not.toHaveBeenCalled();
   });
 
   it('swallows storageService.set error silently', async () => {
-    const { storageService } = await import('../services/storageService');
     vi.mocked(storageService.get).mockResolvedValueOnce(null);
     vi.mocked(storageService.set).mockRejectedValueOnce(new Error('Storage set failure'));
 

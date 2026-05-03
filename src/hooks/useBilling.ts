@@ -1,61 +1,53 @@
-import { useCallback, useMemo } from 'react';
-import { useAppSelector, useAppDispatch } from '../store/hooks';
-import {
-  selectIsSubscribed,
-  selectIsLoading,
-  selectBillingError,
-  selectPackages,
-  purchasePackage,
-  restorePurchases,
-} from '../features/billing/billingSlice';
+import { useState, useCallback } from 'react';
 
-/**
- * Hook zur Kapselung der Paywall-Logik und In-App-Purchase Status.
- * Bietet Zugriff auf den Abonnement-Status und Kauf-Funktionen.
- */
+interface BillingState {
+  isLoading: boolean;
+  error: string | null;
+}
+
+interface PurchaseResponse {
+  success: boolean;
+  url?: string;
+  orderId?: string;
+}
+
 export const useBilling = () => {
-  const dispatch = useAppDispatch();
+  const [state, setState] = useState<BillingState>({
+    isLoading: false,
+    error: null,
+  });
 
-  const isSubscribed = useAppSelector(selectIsSubscribed);
-  const isLoading = useAppSelector(selectIsLoading);
-  const error = useAppSelector(selectBillingError);
-  const packages = useAppSelector(selectPackages);
-
-  const purchase = useCallback(
-    async (packageId: string) => {
-      try {
-        await dispatch(purchasePackage(packageId)).unwrap();
-        return { success: true, error: null };
-      } catch (err) {
-        return { success: false, error: err };
-      }
-    },
-    [dispatch]
-  );
-
-  const restore = useCallback(async () => {
+  const purchase = useCallback(async (planId: string): Promise<PurchaseResponse> => {
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    
     try {
-      await dispatch(restorePurchases()).unwrap();
-      return { success: true, error: null };
-    } catch (err) {
-      return { success: false, error: err };
-    }
-  }, [dispatch]);
+      const response = await fetch('/api/billing/purchase', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ planId }),
+      });
 
-  const billingStatus = useMemo(() => ({
-    isPro: isSubscribed,
-    canAccessPremiumFeatures: isSubscribed,
-    showPaywall: !isSubscribed && !isLoading,
-  }), [isSubscribed, isLoading]);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Purchase failed');
+      }
+
+      const data: PurchaseResponse = await response.json();
+      return data;
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setState((prev) => ({ ...prev, error: errorMessage }));
+      throw err;
+    } finally {
+      setState((prev) => ({ ...prev, isLoading: false }));
+    }
+  }, []);
 
   return {
-    ...billingStatus,
-    isLoading,
-    error,
-    packages,
+    isLoading: state.isLoading,
+    error: state.error,
     purchase,
-    restorePurchases: restore,
   };
 };
-
-export default useBilling;

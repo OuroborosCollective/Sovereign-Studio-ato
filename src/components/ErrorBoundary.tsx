@@ -32,10 +32,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
         const { storageService } = await import('../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
         const currentLogs = JSON.parse(logsJson || '[]');
-        currentLogs.push({ time: new Date().toISOString(), context: 'ErrorBoundary', message: error.message });
+        currentLogs.push({ 
+          time: new Date().toISOString(), 
+          context: 'ErrorBoundary', 
+          message: error.message 
+        });
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
-        // Silently fail logging
+        // Silently fail logging if storage service is unavailable
       }
     };
     logError();
@@ -68,7 +72,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
                   {this.state.error.toString()}
                 </div>
               )}
-              
             </div>
             <div className="px-6 py-4 bg-stone-50 border-t border-stone-200 flex justify-end">
               <button
@@ -84,6 +87,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    return this.props.children;
+    return this.props.children || null;
   }
 }
