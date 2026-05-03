@@ -8,6 +8,14 @@ export interface AuthTokens {
   tokenType: string;
 }
 
+export interface AppConfig {
+  theme: string;
+  autoSave: boolean;
+  apiEndpoint: string;
+  maxRetries: number;
+  debugMode: boolean;
+}
+
 interface IStorageProvider {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
@@ -108,7 +116,14 @@ class AuthTokenRepository extends BaseRepository<AuthTokens> {
   }
 }
 
+class AppConfigRepository extends BaseRepository<AppConfig> {
+  constructor(storage: IStorageProvider) {
+    super('app_config', storage);
+  }
+}
+
 export const authRepository = new AuthTokenRepository(provider);
+export const configRepository = new AppConfigRepository(provider);
 
 /**
  * Service for GitHub operations including conflict-aware push logic.
@@ -134,7 +149,6 @@ export const githubService = {
       'Content-Type': 'application/json'
     };
 
-    // 1. SHA Verification: Fetch current HEAD state immediately before patching
     const headCheck = await fetch(url, { headers });
     if (!headCheck.ok) {
       throw new Error(`Failed to verify current HEAD: ${headCheck.statusText}`);
@@ -143,12 +157,10 @@ export const githubService = {
     const headData = await headCheck.json();
     const currentRemoteSha = headData.object.sha;
 
-    // 2. Conflict Detection: If remote moved forward, abort to avoid overwriting changes
     if (currentRemoteSha !== baseSha) {
       throw new Error('Sync & Retry: Remote reference has changed. Please pull the latest changes before pushing.');
     }
 
-    // 3. Patch Ref: Perform the actual update
     const response = await fetch(url, {
       method: 'PATCH',
       headers,
@@ -196,6 +208,14 @@ export const storageService = {
 
   async isTokenExpired(): Promise<boolean> {
     return authRepository.isTokenExpired();
+  },
+
+  async setConfig(config: AppConfig): Promise<void> {
+    await configRepository.set(config);
+  },
+
+  async getConfig(): Promise<AppConfig | null> {
+    return configRepository.get();
   },
 
   async clearAll(): Promise<void> {

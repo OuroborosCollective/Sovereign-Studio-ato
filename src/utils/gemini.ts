@@ -13,14 +13,6 @@ export class GeminiService {
     return GeminiService.instance;
   }
 
-  public static async generateContent(prompt: string, apiKey?: string): Promise<string> {
-    return GeminiService.getInstance(apiKey).generateResponse(prompt);
-  }
-
-  public static async generateText(prompt: string, apiKey?: string): Promise<string> {
-    return GeminiService.getInstance(apiKey).generateResponse(prompt);
-  }
-
   async generateResponse(prompt: string): Promise<string> {
     if (!this.apiKey) {
       throw new Error("Gemini API Key is missing");
@@ -114,7 +106,8 @@ export class GeminiService {
 }
 
 export const generateContent = async (prompt: string, apiKey?: string): Promise<string> => {
-  return GeminiService.generateContent(prompt, apiKey);
+  const service = GeminiService.getInstance(apiKey);
+  return service.generateResponse(prompt);
 };
 
 export const streamContent = async function* (prompt: string, apiKey?: string): AsyncGenerator<string> {
