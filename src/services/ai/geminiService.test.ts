@@ -1,102 +1,158 @@
-import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
-import { geminiService } from './geminiService';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GeminiService } from './geminiService';
+import type { GenerateOptions } from './geminiService';
 
-const generateContentMock = vi.fn() as Mock;
-const getGenerativeModelMock = vi.fn().mockReturnValue({
-  generateContent: generateContentMock,
-}) as Mock;
+const mocks = vi.hoisted(() => {
+  const generateContentMock = vi.fn();
+  const getGenerativeModelMock = vi.fn();
+
+  return {
+    generateContentMock,
+    getGenerativeModelMock,
+  };
+});
 
 vi.mock('@google/generative-ai', () => {
   return {
     GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
-      getGenerativeModel: getGenerativeModelMock,
+      getGenerativeModel: mocks.getGenerativeModelMock,
     })),
   };
 });
 
 describe('GeminiService', () => {
-  const mockResponse = {
-    response: {
-      text: () => 'Mocked AI response',
-    },
-  };
-  const TEST_MODEL = 'gemini-1.5-pro';
-
   beforeEach(() => {
     vi.clearAllMocks();
-    generateContentMock.mockReset();
-    getGenerativeModelMock.mockClear();
-  });
 
-  it('should call generateContent with the correct parameters', async () => {
-    generateContentMock.mockResolvedValue(mockResponse);
+    mocks.generateContentMock.mockResolvedValue({
+      response: {
+        text: () => 'Mocked response content',
+      },
+    });
 
-    const prompt = 'Hello, AI!';
-    const result = await geminiService.generateText(prompt, { model: TEST_MODEL });
-
-    expect(result).toBe('Mocked AI response');
-    expect(getGenerativeModelMock).toHaveBeenCalledWith(TEST_MODEL);
-    expect(generateContentMock).toHaveBeenCalledWith({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    mocks.getGenerativeModelMock.mockReturnValue({
+      generateContent: mocks.generateContentMock,
     });
   });
 
-  it('should handle API errors gracefully', async () => {
-    generateContentMock.mockRejectedValue(new Error('API Error'));
-
-    await expect(geminiService.generateText('Fail', { model: TEST_MODEL })).rejects.toThrow('API Error');
+  it('creates the GoogleGenerativeAI client', () => {
+    expect(GoogleGenerativeAI).toHaveBeenCalledWith(expect.any(String));
   });
 
-  it('should pass system instructions if provided', async () => {
-    generateContentMock.mockResolvedValue(mockResponse);
+  it('generates content with the default model', async () => {
+    const result = await GeminiService.generateContent('Hello Gemini');
 
-    const prompt = 'Explain quantum physics';
-    const systemPrompt = 'Speak like a pirate';
-    
-    await geminiService.generateText(prompt, { 
-      model: TEST_MODEL,
-      systemInstruction: systemPrompt 
+    expect(result).toBe('Mocked response content');
+
+    expect(mocks.getGenerativeModelMock).toHaveBeenCalledWith({
+      model: 'gemini-1.5-flash',
     });
 
-    expect(getGenerativeModelMock).toHaveBeenCalledWith(TEST_MODEL, {
-      systemInstruction: systemPrompt
-    });
-    expect(generateContentMock).toHaveBeenCalledWith({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-  });
-
-  it('should utilize the correct model version', async () => {
-    generateContentMock.mockResolvedValue(mockResponse);
-    const specificModel = 'gemini-1.5-flash';
-    const prompt = 'test';
-    
-    await geminiService.generateText(prompt, { model: specificModel });
-    
-    expect(getGenerativeModelMock).toHaveBeenCalledWith(specificModel);
-    expect(generateContentMock).toHaveBeenCalledWith({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-  });
-
-  it('should accept optional temperature and topP parameters within generationConfig', async () => {
-    generateContentMock.mockResolvedValue(mockResponse);
-
-    const prompt = 'test';
-    await geminiService.generateText(prompt, { 
-      model: TEST_MODEL,
-      temperature: 0.7,
-      topP: 0.9
-    });
-
-    expect(getGenerativeModelMock).toHaveBeenCalledWith(TEST_MODEL, {
+    expect(mocks.generateContentMock).toHaveBeenCalledWith({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: 'Hello Gemini' }],
+        },
+      ],
       generationConfig: {
         temperature: 0.7,
-        topP: 0.9
-      }
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 8192,
+      },
     });
-    expect(generateContentMock).toHaveBeenCalledWith({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  });
+
+  it('generates content with a custom model', async () => {
+    const options: GenerateOptions = {
+      model: 'gemini-1.5-pro',
+    };
+
+    const result = await GeminiService.generateContent('Use custom model', options);
+
+    expect(result).toBe('Mocked response content');
+
+    expect(mocks.getGenerativeModelMock).toHaveBeenCalledWith({
+      model: 'gemini-1.5-pro',
     });
+  });
+
+  it('supports legacy string systemInstruction argument', async () => {
+    const result = await GeminiService.generateContent(
+      'Explain the world lore',
+      'You are a fantasy MMORPG oracle.'
+    );
+
+    expect(result).toBe('Mocked response content');
+
+    expect(mocks.getGenerativeModelMock).toHaveBeenCalledWith({
+      model: 'gemini-1.5-flash',
+      systemInstruction: {
+        role: 'system',
+        parts: [{ text: 'You are a fantasy MMORPG oracle.' }],
+      },
+    });
+  });
+
+  it('supports systemInstruction inside GenerateOptions', async () => {
+    const options: GenerateOptions = {
+      model: 'gemini-1.5-flash',
+      systemInstruction: 'You are an NPC quest writer.',
+    };
+
+    const result = await GeminiService.generateContent('Create a quest', options);
+
+    expect(result).toBe('Mocked response content');
+
+    expect(mocks.getGenerativeModelMock).toHaveBeenCalledWith({
+      model: 'gemini-1.5-flash',
+      systemInstruction: {
+        role: 'system',
+        parts: [{ text: 'You are an NPC quest writer.' }],
+      },
+    });
+  });
+
+  it('merges custom generationConfig with defaults', async () => {
+    const options: GenerateOptions = {
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+      },
+    };
+
+    const result = await GeminiService.generateContent('Low creativity answer', options);
+
+    expect(result).toBe('Mocked response content');
+
+    expect(mocks.generateContentMock).toHaveBeenCalledWith({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: 'Low creativity answer' }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 1024,
+      },
+    });
+  });
+
+  it('propagates generateContent errors', async () => {
+    mocks.generateContentMock.mockRejectedValueOnce(new Error('Gemini failed'));
+
+    const options: GenerateOptions = {
+      model: 'gemini-1.5-flash',
+    };
+
+    await expect(
+      GeminiService.generateContent('Trigger failure', options)
+    ).rejects.toThrow('Gemini failed');
   });
 });
