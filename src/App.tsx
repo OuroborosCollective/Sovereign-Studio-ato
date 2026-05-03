@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, CheckCircle } from 'lucide-react';
 
 interface PrivacyModalProps {
@@ -80,14 +80,121 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
 };
 
 const App: React.FC = () => {
-  const [isModalOpen, setIsModalOpen] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [view, setView] = useState<'landing' | 'canvas'>('landing');
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const savedView = localStorage.getItem('app_view');
+    const savedUser = localStorage.getItem('user_session');
+    
+    if (savedView === 'canvas' && savedUser) {
+      setView('canvas');
+      setUser(JSON.parse(savedUser));
+    } else {
+      setIsModalOpen(true);
+    }
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      // Simulation of Native Plugin Call (e.g., Capacitor Google Auth)
+      // const result = await GoogleAuth.signIn();
+      const mockResult = { 
+        id: '12345', 
+        email: 'user@example.com', 
+        name: 'Sovereign User',
+        imageUrl: ''
+      };
+      
+      setUser(mockResult);
+      localStorage.setItem('user_session', JSON.stringify(mockResult));
+      triggerCanvas();
+    } catch (error) {
+      console.error('Login failed', error);
+    }
+  };
+
+  const triggerCanvas = () => {
+    setView('canvas');
+    localStorage.setItem('app_view', 'canvas');
+    setIsModalOpen(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('app_view');
+    localStorage.removeItem('user_session');
+    setView('landing');
+    setUser(null);
+    setIsModalOpen(true);
+  };
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-stone-50 text-stone-900 font-sans">
+      {view === 'landing' ? (
+        <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center">
+          <div className="w-20 h-20 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center text-white mb-8 shadow-2xl shadow-indigo-200">
+            <Shield size={40} />
+          </div>
+          <h1 className="text-4xl font-black tracking-tighter mb-4 text-stone-900">
+            Sovereign Studio
+          </h1>
+          <p className="text-stone-500 max-w-sm mb-12 leading-relaxed">
+            Deine Entwicklungsumgebung für sichere, lokale Code-Analysen und AI-Integration.
+          </p>
+          <button 
+            onClick={handleGoogleLogin}
+            className="group relative flex items-center gap-4 bg-white border border-stone-200 px-8 py-4 rounded-2xl shadow-sm hover:shadow-md transition-all active:scale-95"
+          >
+            <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
+            <span className="font-bold text-stone-700">Mit Google fortfahren</span>
+          </button>
+        </div>
+      ) : (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <header className="p-6 border-b border-stone-200 bg-white flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white">
+                <Shield size={18} />
+              </div>
+              <span className="font-bold tracking-tight">Canvas View</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-medium text-stone-500">{user?.email}</span>
+              <button 
+                onClick={handleLogout}
+                className="text-[10px] font-black uppercase tracking-widest text-stone-400 hover:text-red-500 transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          </header>
+          <main className="p-8">
+            <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="col-span-2 h-[60vh] bg-white rounded-[2rem] border border-stone-200 shadow-sm p-8">
+                <h3 className="text-lg font-bold mb-4">Workspace</h3>
+                <div className="w-full h-full bg-stone-50 rounded-xl border border-dashed border-stone-200 flex items-center justify-center">
+                  <p className="text-stone-400 text-sm">Bereit für die Analyse...</p>
+                </div>
+              </div>
+              <div className="h-[60vh] bg-stone-900 rounded-[2rem] shadow-2xl p-8 text-white">
+                <h3 className="text-lg font-bold mb-4 text-indigo-400">Insights</h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-stone-800 rounded-xl border border-stone-700">
+                    <p className="text-xs text-stone-400 mb-1 uppercase tracking-tighter">Status</p>
+                    <p className="text-sm font-medium">Sitzung aktiv und verschlüsselt</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      )}
+
       <PrivacyModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        onAccept={() => setIsModalOpen(false)} 
+        onAccept={handleGoogleLogin} 
       />
     </div>
   );
