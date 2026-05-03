@@ -3,6 +3,11 @@ apply plugin: 'com.android.application'
 android {
     namespace "com.sovereign.studio"
     compileSdk 34
+
+    aaptOptions {
+        cruncherEnabled = false
+    }
+
     defaultConfig {
         applicationId "com.sovereign.studio"
         minSdkVersion rootProject.ext.minSdkVersion
