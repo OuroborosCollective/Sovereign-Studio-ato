@@ -1,5 +1,5 @@
-import { useSelector, useDispatch } from 'react-redux';
 import { useCallback, useMemo } from 'react';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
   selectIsSubscribed,
   selectIsLoading,
@@ -7,24 +7,24 @@ import {
   selectAvailablePackages,
   purchasePackageAction,
   restorePurchasesAction,
-} from '../store/billing/billingSlice';
+} from '../store/slices/billingSlice';
 
 /**
  * Hook zur Kapselung der Paywall-Logik und In-App-Purchase Status.
- * Bietet Zugriff auf den Abonnement-Status und Kauf-Funktionen.
+ * Nutzt typed Hooks für Redux (useAppDispatch, useAppSelector).
  */
 export const useBilling = () => {
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
 
-  const isSubscribed = useSelector(selectIsSubscribed);
-  const isLoading = useSelector(selectIsLoading);
-  const error = useSelector(selectBillingError);
-  const packages = useSelector(selectAvailablePackages);
+  const isSubscribed = useAppSelector(selectIsSubscribed);
+  const isLoading = useAppSelector(selectIsLoading);
+  const error = useAppSelector(selectBillingError);
+  const packages = useAppSelector(selectAvailablePackages);
 
   const purchase = useCallback(
     async (packageId: string) => {
       try {
-        await (dispatch as any)(purchasePackageAction(packageId)).unwrap();
+        await dispatch(purchasePackageAction(packageId)).unwrap();
         return { success: true, error: null };
       } catch (err) {
         return { success: false, error: err };
@@ -35,7 +35,7 @@ export const useBilling = () => {
 
   const restorePurchases = useCallback(async () => {
     try {
-      await (dispatch as any)(restorePurchasesAction()).unwrap();
+      await dispatch(restorePurchasesAction()).unwrap();
       return { success: true, error: null };
     } catch (err) {
       return { success: false, error: err };

@@ -31,6 +31,7 @@
     "@google/genai": "^1.29.0",
     "@google/generative-ai": "^0.24.1",
     "@monaco-editor/react": "^4.7.0",
+    "@reduxjs/toolkit": "^2.5.1",
     "@tailwindcss/vite": "^4.1.14",
     "@tanstack/react-query": "^5.66.0",
     "@vitejs/plugin-react": "^5.0.4",
@@ -41,6 +42,7 @@
     "posthog-js": "^1.372.6",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-redux": "^9.2.0",
     "vite": "^6.2.3",
     "zustand": "^5.0.3"
   },

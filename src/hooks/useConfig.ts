@@ -26,11 +26,11 @@ export const useConfig = () => {
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   useEffect(() => {
-    const loadSavedConfig = async () => {
+    const loadSavedConfig = async (): Promise<void> => {
       try {
-        const saved = await storageService.get<AppConfig>(CONFIG_STORAGE_KEY);
-        if (saved) {
-          setConfig({ ...DEFAULT_CONFIG, ...saved });
+        const saved = await storageService.getItem<AppConfig>(CONFIG_STORAGE_KEY);
+        if (saved && typeof saved === 'object') {
+          setConfig((prev: AppConfig) => ({ ...prev, ...saved }));
         }
       } catch (error) {
         console.error('Error loading config from storage:', error);
@@ -39,22 +39,22 @@ export const useConfig = () => {
       }
     };
 
-    loadSavedConfig();
+    void loadSavedConfig();
   }, []);
 
-  const updateConfig = useCallback(async (newParams: Partial<AppConfig>) => {
-    setConfig((prev) => {
-      const updated = { ...prev, ...newParams };
-      storageService.set(CONFIG_STORAGE_KEY, updated).catch((err) => 
+  const updateConfig = useCallback(async (newParams: Partial<AppConfig>): Promise<void> => {
+    setConfig((prev: AppConfig) => {
+      const updated: AppConfig = { ...prev, ...(newParams && typeof newParams === 'object' ? newParams : {}) };
+      storageService.setItem<AppConfig>(CONFIG_STORAGE_KEY, updated).catch((err: unknown) => 
         console.error('Error saving config:', err)
       );
       return updated;
     });
   }, []);
 
-  const resetToDefaults = useCallback(async () => {
+  const resetToDefaults = useCallback(async (): Promise<void> => {
     setConfig(DEFAULT_CONFIG);
-    await storageService.set(CONFIG_STORAGE_KEY, DEFAULT_CONFIG);
+    await storageService.setItem<AppConfig>(CONFIG_STORAGE_KEY, DEFAULT_CONFIG);
   }, []);
 
   return {

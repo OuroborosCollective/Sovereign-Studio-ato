@@ -1,59 +1,3 @@
-// src/features/config/types.ts
-export interface ConfigState {
-  theme: 'light' | 'dark' | 'system';
-  autoSave: boolean;
-  apiEndpoint: string;
-  maxRetries: number;
-  debugMode: boolean;
-}
-
-// src/features/config/hooks/useConfig.ts
-import { useState, useCallback, useMemo } from 'react';
-import { ConfigState } from '../types';
-
-const DEFAULT_CONFIG: ConfigState = {
-  theme: 'system',
-  autoSave: true,
-  apiEndpoint: 'https://api.example.com/v1',
-  maxRetries: 3,
-  debugMode: false
-};
-
-export const useConfig = () => {
-  const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
-  const [persistedConfig, setPersistedConfig] = useState<ConfigState>(DEFAULT_CONFIG);
-
-  const updateField = useCallback(<K extends keyof ConfigState>(key: K, value: ConfigState[K]) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
-  }, []);
-
-  const saveConfig = useCallback(async () => {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        setPersistedConfig({ ...config });
-        resolve();
-      }, 500);
-    });
-  }, [config]);
-
-  const resetToDefaults = useCallback(() => {
-    setConfig({ ...DEFAULT_CONFIG });
-  }, []);
-
-  const isDirty = useMemo(() => {
-    return JSON.stringify(config) !== JSON.stringify(persistedConfig);
-  }, [config, persistedConfig]);
-
-  return {
-    config,
-    updateField,
-    saveConfig,
-    resetToDefaults,
-    isDirty
-  };
-};
-
-// src/features/config/components/ConfigBar.tsx
 import React, { useState } from 'react';
 import { 
   Settings, 
@@ -66,7 +10,14 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useConfig } from '../hooks/useConfig';
-import { ConfigState } from '../types';
+
+export interface ConfigState {
+  theme: 'light' | 'dark' | 'system';
+  autoSave: boolean;
+  apiEndpoint: string;
+  maxRetries: number;
+  debugMode: boolean;
+}
 
 export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
