@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDispatch } from 'react-redux';
+import { addVectors } from '@/store/slices/canvasSlice';
 
 /**
  * Interface für Canvas-Vektorelemente
@@ -18,6 +20,7 @@ export interface GeminiHookOptions {
   model?: string;
   offlineFallback?: string;
   onVectorGenerated?: (vectors: CanvasVector[]) => void;
+  autoDispatch?: boolean;
 }
 
 export interface GeminiHookResult {
@@ -45,6 +48,7 @@ const extractVectors = (text: string): CanvasVector[] => {
 };
 
 export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
+  const dispatch = useDispatch();
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState<boolean>(
@@ -102,7 +106,7 @@ export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
   }, [isOnline, options.model, options.offlineFallback]);
 
   /**
-   * Erzeugt Canvas-kompatible Datenstrukturen via Middleware-Transformation
+   * Erzeugt Canvas-kompatible Datenstrukturen und streamt diese in den Redux Store
    */
   const generateCanvasVectors = useCallback(async (prompt: string): Promise<CanvasVector[]> => {
     const systemInstruction = "Antworte ausschließlich im JSON-Format als Array von CanvasVector-Objekten. " +
@@ -113,12 +117,17 @@ export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
     const rawContent = await generateContent(enhancedPrompt);
     const vectors = extractVectors(rawContent);
     
-    if (vectors.length > 0 && options.onVectorGenerated) {
-      options.onVectorGenerated(vectors);
+    if (vectors.length > 0) {
+      // Stream an Redux Store
+      dispatch(addVectors(vectors));
+      
+      if (options.onVectorGenerated) {
+        options.onVectorGenerated(vectors);
+      }
     }
     
     return vectors;
-  }, [generateContent, options]);
+  }, [generateContent, options, dispatch]);
 
   return {
     generateContent,

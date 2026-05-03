@@ -4,11 +4,11 @@ import ErrorBoundary from '../components/common/ErrorBoundary';
 
 /**
  * CanvasEngine
- * Kern-Engine für die generative Hintergrund-Ebene.
- * Realisiert ein dynamisches Partikel-Netzwerk mit Vektor-Interaktionen.
+ * Hochperformante Partikel-Simulation für den systemweiten Hintergrund.
  */
 const CanvasEngine: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mouseRef = useRef({ x: 0, y: 0, active: false });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -19,6 +19,8 @@ const CanvasEngine: React.FC = () => {
 
     let animationFrameId: number;
     let particles: Particle[] = [];
+    const particleCount = 150;
+    const connectionDistance = 160;
 
     class Particle {
       x: number = 0;
@@ -28,46 +30,58 @@ const CanvasEngine: React.FC = () => {
       radius: number = 0;
 
       constructor(w: number, h: number) {
-        this.init(w, h);
+        this.reset(w, h);
       }
 
-      init(w: number, h: number) {
+      reset(w: number, h: number) {
         this.x = Math.random() * w;
         this.y = Math.random() * h;
-        this.vx = (Math.random() - 0.5) * 0.6;
-        this.vy = (Math.random() - 0.5) * 0.6;
-        this.radius = Math.random() * 1.5 + 0.5;
+        this.vx = (Math.random() - 0.5) * 0.4;
+        this.vy = (Math.random() - 0.5) * 0.4;
+        this.radius = Math.random() * 1.2 + 0.8;
       }
 
       update(w: number, h: number) {
         this.x += this.vx;
         this.y += this.vy;
 
-        if (this.x < 0 || this.x > w) this.vx *= -1;
-        if (this.y < 0 || this.y > h) this.vy *= -1;
+        if (this.x < 0) this.x = w;
+        if (this.x > w) this.x = 0;
+        if (this.y < 0) this.y = h;
+        if (this.y > h) this.y = 0;
+
+        if (mouseRef.current.active) {
+          const dx = mouseRef.current.x - this.x;
+          const dy = mouseRef.current.y - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 200) {
+            this.vx -= dx * 0.0001;
+            this.vy -= dy * 0.0001;
+          }
+        }
       }
     }
 
     const init = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      particles = Array.from({ length: 120 }, () => new Particle(canvas.width, canvas.height));
+      particles = Array.from({ length: particleCount }, () => new Particle(canvas.width, canvas.height));
     };
 
     const draw = () => {
       if (!ctx || !canvas) return;
-      
+
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.lineWidth = 0.8;
+      ctx.lineWidth = 0.6;
       for (let i = 0; i < particles.length; i++) {
         const p1 = particles[i];
         p1.update(canvas.width, canvas.height);
 
         ctx.beginPath();
         ctx.arc(p1.x, p1.y, p1.radius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.5)';
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.4)';
         ctx.fill();
 
         for (let j = i + 1; j < particles.length; j++) {
@@ -76,9 +90,10 @@ const CanvasEngine: React.FC = () => {
           const dy = p1.y - p2.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          if (dist < 150) {
+          if (dist < connectionDistance) {
+            const alpha = 0.2 * (1 - dist / connectionDistance);
             ctx.beginPath();
-            ctx.strokeStyle = `rgba(56, 189, 248, ${0.15 * (1 - dist / 150)})`;
+            ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
             ctx.moveTo(p1.x, p1.y);
             ctx.lineTo(p2.x, p2.y);
             ctx.stroke();
@@ -88,16 +103,25 @@ const CanvasEngine: React.FC = () => {
       animationFrameId = requestAnimationFrame(draw);
     };
 
-    const handleResize = () => {
-      init();
+    const handleResize = () => init();
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseRef.current = { x: e.clientX, y: e.clientY, active: true };
+    };
+    const handleMouseLeave = () => {
+      mouseRef.current.active = false;
     };
 
     window.addEventListener('resize', handleResize);
+    window.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
+
     init();
     draw();
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mouseleave', handleMouseLeave);
       cancelAnimationFrame(animationFrameId);
     };
   }, []);
@@ -105,72 +129,97 @@ const CanvasEngine: React.FC = () => {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 w-full h-full pointer-events-none"
+      className="fixed inset-0 z-0 bg-slate-950"
     />
   );
 };
 
 /**
  * HomePage
- * Transformiert in einen Full-Screen Host für generative Daten-Visualisierungen.
+ * Fullscreen Interface Transformation.
  */
 const HomePage: React.FC = () => {
   return (
     <MainLayout>
       <ErrorBoundary>
-        <div className="relative min-h-[calc(100vh-64px)] w-full flex flex-col items-center justify-center overflow-hidden">
+        <main className="relative w-full h-screen overflow-hidden flex items-center justify-center">
           <CanvasEngine />
-          
-          <div className="relative z-10 flex flex-col items-center text-center px-4">
-            <div className="mb-6 px-4 py-1 border border-sky-500/30 bg-sky-500/5 rounded-full backdrop-blur-sm">
-              <span className="text-sky-400 text-xs font-mono tracking-[0.3em] uppercase">
-                Neural Interface Active
-              </span>
-            </div>
 
-            <h1 className="text-6xl md:text-8xl font-black text-white tracking-tighter mb-4">
-              SOVEREIGN<span className="text-sky-500">.</span>CORE
-            </h1>
-            
-            <p className="max-w-2xl text-slate-400 text-lg md:text-xl font-light leading-relaxed mb-12">
-              Zentrale Steuereinheit für generative Datenverarbeitung und 
-              Ressourcen-Visualisierung in Echtzeit.
-            </p>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
-              {[
-                { label: 'Analytics', val: '0x1F' },
-                { label: 'Security', val: 'Active' },
-                { label: 'Compute', val: '98.2%' },
-                { label: 'Node', val: 'Primary' }
-              ].map((stat, idx) => (
-                <div key={idx} className="p-4 bg-white/5 border border-white/10 backdrop-blur-md rounded-xl group hover:border-sky-500/50 transition-colors">
-                  <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1 group-hover:text-sky-400 transition-colors">
-                    {stat.label}
-                  </div>
-                  <div className="text-xl font-mono text-white">
-                    {stat.val}
-                  </div>
+          {/* System HUD Overlay */}
+          <div className="absolute inset-0 z-10 flex flex-col justify-between p-8 pointer-events-none">
+            {/* Top Bar */}
+            <div className="flex justify-between items-start">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+                  <span className="text-sky-500 font-mono text-xs tracking-widest uppercase">System Online</span>
                 </div>
-              ))}
+                <span className="text-slate-500 font-mono text-[10px]">SVRGN_CORE_V4.2.0</span>
+              </div>
+              <div className="text-right">
+                <div className="text-white font-mono text-xl">10:42:04</div>
+                <div className="text-slate-500 font-mono text-[10px] uppercase">Zentralzeit-Referenz</div>
+              </div>
             </div>
 
-            <button className="mt-12 group relative px-10 py-4 overflow-hidden rounded-full bg-white text-slate-950 font-bold transition-all hover:scale-105 active:scale-95">
-              <span className="relative z-10 uppercase tracking-widest text-sm">Initialize System Check</span>
-              <div className="absolute inset-0 bg-sky-500 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-            </button>
-          </div>
+            {/* Central Control Unit */}
+            <div className="flex flex-col items-center pointer-events-auto">
+              <div className="mb-8 p-4 border border-white/5 bg-slate-950/40 backdrop-blur-xl rounded-2xl flex flex-col items-center max-w-lg text-center">
+                <h1 className="text-5xl md:text-7xl font-black text-white tracking-tight mb-2">
+                  CORE<span className="text-sky-500">.</span>INTERFACE
+                </h1>
+                <p className="text-slate-400 font-light text-sm md:text-base leading-relaxed">
+                  Generative Datenströme werden in Echtzeit synchronisiert. 
+                  Sovereign Studio Design-Coder initiiert Protokoll-Layer.
+                </p>
+                
+                <div className="mt-8 flex gap-4">
+                  <button className="px-8 py-3 bg-white text-slate-950 font-bold text-xs uppercase tracking-widest rounded-full hover:bg-sky-500 hover:text-white transition-all transform hover:scale-105 active:scale-95">
+                    Start Protocol
+                  </button>
+                  <button className="px-8 py-3 border border-white/10 bg-white/5 text-white font-bold text-xs uppercase tracking-widest rounded-full hover:bg-white/10 transition-all backdrop-blur-sm">
+                    Analyze
+                  </button>
+                </div>
+              </div>
 
-          <div className="absolute bottom-8 left-8 right-8 flex justify-between items-center text-[10px] font-mono text-slate-600 tracking-[0.2em] uppercase pointer-events-none">
-            <div className="flex gap-4">
-              <span>Latency: 12ms</span>
-              <span>Buffer: Optimal</span>
+              {/* Live Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
+                {[
+                  { label: 'Uplink', val: 'Active', unit: 'Stable' },
+                  { label: 'Neural', val: '84.2', unit: 'GFLOPS' },
+                  { label: 'Latency', val: '12', unit: 'ms' },
+                  { label: 'Load', val: '14', unit: '%' }
+                ].map((stat, i) => (
+                  <div key={i} className="p-4 bg-slate-950/40 border border-white/5 backdrop-blur-md rounded-xl hover:border-sky-500/30 transition-colors">
+                    <div className="text-[9px] uppercase tracking-tighter text-slate-500">{stat.label}</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-lg font-mono text-white">{stat.val}</span>
+                      <span className="text-[9px] font-mono text-sky-500/70">{stat.unit}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div>
-              &copy; 2024 Sovereign Studio Design-Coder
+
+            {/* Footer Bar */}
+            <div className="flex justify-between items-end text-slate-600 font-mono text-[9px] uppercase tracking-widest">
+              <div className="flex gap-8">
+                <div className="flex flex-col">
+                  <span>Memory Sector</span>
+                  <span className="text-slate-400">0x004F32A</span>
+                </div>
+                <div className="flex flex-col">
+                  <span>Encryption</span>
+                  <span className="text-slate-400">AES-256-GCM</span>
+                </div>
+              </div>
+              <div>
+                &copy; 2024 SOVEREIGN STUDIO DESIGN-CODER
+              </div>
             </div>
           </div>
-        </div>
+        </main>
       </ErrorBoundary>
     </MainLayout>
   );

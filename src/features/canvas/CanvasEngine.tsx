@@ -1,10 +1,9 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
+import { fabric } from 'fabric';
+import { useDispatch, useSelector } from 'react-redux';
 
-interface Point {
-  x: number;
-  y: number;
-}
-
+// Angenommene Typen und Actions aus dem Redux-Store
+// Diese müssten in src/store/canvasSlice.ts definiert sein
 interface CanvasObject {
   id: string;
   type: 'ai-text' | 'ai-shape' | 'ai-image';
@@ -15,189 +14,209 @@ interface CanvasObject {
   data: any;
 }
 
-interface CanvasEngineProps {
-  initialObjects?: CanvasObject[];
-  onObjectSelect?: (id: string | null) => void;
+interface RootState {
+  canvas: {
+    objects: CanvasObject[];
+    selectedId: string | null;
+  };
 }
 
-/**
- * Sovereign Studio Infinite Canvas Engine
- * Handhabt Rendering, Transformationen und KI-Objekt-Manipulation
- */
-export const CanvasEngine: React.FC<CanvasEngineProps> = ({ 
-  initialObjects = [], 
-  onObjectSelect 
-}) => {
+// Mock-Actions (sollten aus dem eigentlichen Slice kommen)
+const updateObject = (payload: Partial<CanvasObject> & { id: string }) => ({ type: 'canvas/updateObject', payload });
+const selectObject = (id: string | null) => ({ type: 'canvas/selectObject', payload: id });
+
+interface CanvasEngineProps {
+  className?: string;
+}
+
+export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // State für Transformation (Infinite Canvas)
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [lastMousePos, setLastMousePos] = useState<Point>({ x: 0, y: 0 });
+  const dispatch = useDispatch();
   
-  // State für KI-generierte Objekte
-  const [objects, setObjects] = useState<CanvasObject[]>(initialObjects);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const objects = useSelector((state: RootState) => state.canvas.objects);
+  const selectedId = useSelector((state: RootState) => state.canvas.selectedId);
 
-  // Zeichnen des Canvas
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Reset Transformation und Clear
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Grid Hintergrund (Infinite Feel)
-    const gridSize = 50 * scale;
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    
-    const startX = offset.x % gridSize;
-    const startY = offset.y % gridSize;
-
-    for (let x = startX; x < canvas.width; x += gridSize) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvas.height);
-    }
-    for (let y = startY; y < canvas.height; y += gridSize) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
-    }
-    ctx.stroke();
-
-    // Kamera-Transformation anwenden
-    ctx.translate(offset.x, offset.y);
-    ctx.scale(scale, scale);
-
-    // Objekte rendern
-    objects.forEach((obj) => {
-      ctx.save();
-      
-      if (selectedId === obj.id) {
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 2 / scale;
-        ctx.strokeRect(obj.x - 4, obj.y - 4, obj.width + 8, obj.height + 8);
-      }
-
-      if (obj.type === 'ai-text') {
-        ctx.fillStyle = '#1e293b';
-        ctx.font = `${16}px Inter, sans-serif`;
-        ctx.fillText(obj.data.text || '', obj.x, obj.y + 16);
-      } else if (obj.type === 'ai-shape') {
-        ctx.fillStyle = obj.data.color || '#94a3b8';
-        ctx.fillRect(obj.x, obj.y, obj.width, obj.height);
-      }
-
-      ctx.restore();
-    });
-  }, [offset, scale, objects, selectedId]);
-
-  // Effekt für Canvas-Resize und Loop
+  // Initialisierung des Fabric Canvas
   useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current && canvasRef.current) {
-        canvasRef.current.width = containerRef.current.clientWidth;
-        canvasRef.current.height = containerRef.current.clientHeight;
-        render();
+    if (!canvasRef.current || !containerRef.current) return;
+
+    const fabricCanvas = new fabric.Canvas(canvasRef.current, {
+      width: containerRef.current.clientWidth,
+      height: containerRef.current.clientHeight,
+      backgroundColor: '#f8fafc',
+      preserveObjectStacking: true,
+    });
+
+    fabricCanvasRef.current = fabricCanvas;
+
+    // Zoom-Handler (Infinite Canvas Feeling)
+    fabricCanvas.on('mouse:wheel', (opt) => {
+      const delta = opt.e.deltaY;
+      let zoom = fabricCanvas.getZoom();
+      zoom *= 0.999 ** delta;
+      if (zoom > 20) zoom = 20;
+      if (zoom < 0.01) zoom = 0.01;
+      fabricCanvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+    });
+
+    // Panning (Alt + Drag)
+    fabricCanvas.on('mouse:down', (opt) => {
+      const evt = opt.e;
+      if (evt.altKey === true) {
+        fabricCanvas.isDragging = true;
+        fabricCanvas.selection = false;
+        fabricCanvas.lastPosX = evt.clientX;
+        fabricCanvas.lastPosY = evt.clientY;
       }
+    });
+
+    fabricCanvas.on('mouse:move', (opt) => {
+      if (fabricCanvas.isDragging) {
+        const e = opt.e;
+        const vpt = fabricCanvas.viewportTransform;
+        if (vpt) {
+          vpt[4] += e.clientX - fabricCanvas.lastPosX;
+          vpt[5] += e.clientY - fabricCanvas.lastPosY;
+          fabricCanvas.requestRenderAll();
+          fabricCanvas.lastPosX = e.clientX;
+          fabricCanvas.lastPosY = e.clientY;
+        }
+      }
+    });
+
+    fabricCanvas.on('mouse:up', () => {
+      fabricCanvas.setViewportTransform(fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0]);
+      fabricCanvas.isDragging = false;
+      fabricCanvas.selection = true;
+    });
+
+    // Redux Sync: Auswahl
+    fabricCanvas.on('selection:created', (e) => {
+      const activeObject = e.selected?.[0] as any;
+      if (activeObject?.id) dispatch(selectObject(activeObject.id));
+    });
+
+    fabricCanvas.on('selection:cleared', () => {
+      dispatch(selectObject(null));
+    });
+
+    // Redux Sync: Transformationen
+    const handleModified = (e: fabric.IEvent) => {
+      const obj = e.target;
+      if (!obj || !(obj as any).id) return;
+
+      dispatch(updateObject({
+        id: (obj as any).id,
+        x: obj.left || 0,
+        y: obj.top || 0,
+        width: (obj.width || 0) * (obj.scaleX || 1),
+        height: (obj.height || 0) * (obj.scaleY || 1),
+      }));
     };
 
-    window.addEventListener('resize', handleResize);
-    handleResize();
+    fabricCanvas.on('object:modified', handleModified);
 
-    let animationFrameId: number;
-    const loop = () => {
-      render();
-      animationFrameId = requestAnimationFrame(loop);
-    };
-    loop();
+    // Resize Observer
+    const resizeObserver = new ResizeObserver(() => {
+      if (containerRef.current && fabricCanvasRef.current) {
+        fabricCanvasRef.current.setDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animationFrameId);
+      resizeObserver.disconnect();
+      fabricCanvas.dispose();
     };
-  }, [render]);
+  }, [dispatch]);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || (e.button === 0 && e.spaceKey)) {
-      setIsPanning(true);
-      setLastMousePos({ x: e.clientX, y: e.clientY });
-    } else {
-      // Hit Detection für Objekte
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      
-      const mouseX = (e.clientX - rect.left - offset.x) / scale;
-      const mouseY = (e.clientY - rect.top - offset.y) / scale;
+  // Sync Objects von Redux zu Fabric
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
 
-      const hit = objects.find(obj => 
-        mouseX >= obj.x && mouseX <= obj.x + obj.width &&
-        mouseY >= obj.y && mouseY <= obj.y + obj.height
-      );
-
-      setSelectedId(hit?.id || null);
-      if (onObjectSelect) onObjectSelect(hit?.id || null);
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      const dx = e.clientX - lastMousePos.x;
-      const dy = e.clientY - lastMousePos.y;
-      setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-      setLastMousePos({ x: e.clientX, y: e.clientY });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomIntensity = 0.001;
-    const delta = -e.deltaY;
-    const newScale = Math.min(Math.max(scale + delta * zoomIntensity, 0.1), 10);
+    const currentFabricObjects = canvas.getObjects();
     
-    // Zoom zum Mauszeiger
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    objects.forEach((objData) => {
+      const existingObj = currentFabricObjects.find((o: any) => o.id === objData.id);
 
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+      if (existingObj) {
+        // Update falls nötig
+        if (existingObj.left !== objData.x || existingObj.top !== objData.y) {
+          existingObj.set({ left: objData.x, top: objData.y });
+          existingObj.setCoords();
+        }
+      } else {
+        // Neu erstellen
+        let newObj: fabric.Object;
 
-    const zoomFactor = newScale / scale;
-    
-    setOffset(prev => ({
-      x: mouseX - (mouseX - prev.x) * zoomFactor,
-      y: mouseY - (mouseY - prev.y) * zoomFactor
-    }));
-    setScale(newScale);
-  };
+        if (objData.type === 'ai-text') {
+          newObj = new fabric.IText(objData.data.text || '', {
+            left: objData.x,
+            top: objData.y,
+            fontSize: 16,
+            fontFamily: 'Inter',
+          });
+        } else {
+          newObj = new fabric.Rect({
+            left: objData.x,
+            top: objData.y,
+            width: objData.width,
+            height: objData.height,
+            fill: objData.data.color || '#94a3b8',
+            rx: 4,
+            ry: 4,
+          });
+        }
+
+        (newObj as any).id = objData.id;
+        canvas.add(newObj);
+      }
+    });
+
+    // Entferne gelöschte Objekte
+    currentFabricObjects.forEach((fObj: any) => {
+      if (!objects.find(o => o.id === fObj.id)) {
+        canvas.remove(fObj);
+      }
+    });
+
+    canvas.requestRenderAll();
+  }, [objects]);
+
+  // Sync Selektion von Redux zu Fabric
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+
+    const activeObj = canvas.getActiveObject() as any;
+    if (selectedId && (!activeObj || activeObj.id !== selectedId)) {
+      const target = canvas.getObjects().find((o: any) => o.id === selectedId);
+      if (target) {
+        canvas.setActiveObject(target);
+        canvas.requestRenderAll();
+      }
+    } else if (!selectedId && activeObj) {
+      canvas.discardActiveObject();
+      canvas.requestRenderAll();
+    }
+  }, [selectedId]);
 
   return (
     <div 
       ref={containerRef} 
-      style={{ width: '100%', height: '100%', overflow: 'hidden', background: '#f8fafc', position: 'relative' }}
+      className={`w-full h-full overflow-hidden relative ${className || ''}`}
+      style={{ minHeight: '400px' }}
     >
-      <canvas
-        ref={canvasRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
-        style={{ display: 'block', cursor: isPanning ? 'grabbing' : 'default' }}
-      />
-      <div style={{ position: 'absolute', bottom: 20, right: 20, pointerEvents: 'none', background: 'rgba(255,255,255,0.8)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
-        Zoom: {Math.round(scale * 100)}% | Pos: {Math.round(offset.x)}, {Math.round(offset.y)}
-      </div>
+      <canvas ref={canvasRef} />
     </div>
   );
 };

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Check, 
   X, 
@@ -6,7 +7,8 @@ import {
   Crown, 
   ShieldCheck, 
   ArrowRight,
-  Loader2
+  Loader2,
+  Sparkles
 } from 'lucide-react';
 import { useBilling } from './hooks/useBilling';
 
@@ -29,17 +31,17 @@ const PRICING_TIERS: PricingTier[] = [
     name: 'Free',
     price: '€0',
     credits: 10,
-    description: 'Für Einsteiger und kleine Projekte.',
-    features: ['10 Design Credits', 'Basis Support', 'Community Zugriff'],
-    icon: <Zap className="w-5 h-5 text-gray-400" />
+    description: 'Perfekt für erste Gehversuche im Sovereign Studio.',
+    features: ['10 Design Credits', 'Basis Support', 'Standard Rendering'],
+    icon: <Zap className="w-5 h-5 text-slate-400" />
   },
   {
     id: 'pro',
     name: 'Pro',
     price: '€19',
     credits: 500,
-    description: 'Für Profis, die mehr Leistung benötigen.',
-    features: ['500 Design Credits', 'Prioritäts-Support', 'Erweiterte Analysen', 'Team-Kollaboration'],
+    description: 'Für Power-User mit hohem Output-Volumen.',
+    features: ['500 Design Credits', 'Prioritäts-Support', '4K Export', 'Kommerzielle Lizenz'],
     isPopular: true,
     icon: <Crown className="w-5 h-5 text-yellow-500" />
   },
@@ -48,8 +50,8 @@ const PRICING_TIERS: PricingTier[] = [
     name: 'Enterprise',
     price: 'Custom',
     credits: 'Unlimited',
-    description: 'Maßgeschneiderte Lösungen für Teams.',
-    features: ['Unlimitierte Credits', 'Eigener Account Manager', 'SLA Garantien', 'Custom Reporting'],
+    description: 'Skalierbare Infrastruktur für Agenturen.',
+    features: ['Unlimitierte Credits', 'API Zugriff', 'SLA Support', 'Custom Models'],
     icon: <ShieldCheck className="w-5 h-5 text-blue-500" />
   }
 ];
@@ -63,146 +65,178 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   isOpen, 
   onClose 
 }) => {
-  const { purchase, isProcessing } = useBilling();
+  const { purchase, isProcessing, currentPlanId } = useBilling();
   const [loadingTier, setLoadingTier] = useState<TierId | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  if (!isOpen || !mounted) return null;
 
   const handlePurchase = async (tierId: TierId) => {
-    if (tierId === 'free') return;
+    if (tierId === currentPlanId || tierId === 'free') return;
     
     setLoadingTier(tierId);
     try {
       await purchase(tierId);
       onClose();
     } catch (error) {
-      console.error('Purchase transaction failed:', error);
+      console.error('Billing Error:', error);
     } finally {
       setLoadingTier(null);
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="relative w-full max-w-6xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-300">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div 
+        className="absolute inset-0 bg-slate-950/40 backdrop-blur-xl transition-opacity animate-in fade-in duration-300"
+        onClick={onClose}
+      />
+      
+      <div className="relative w-full max-w-6xl bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden border border-slate-200 dark:border-white/10 animate-in zoom-in-95 duration-300">
         <button 
           type="button"
           onClick={onClose}
-          className="absolute top-6 right-6 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+          className="absolute top-8 right-8 p-2.5 rounded-full bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 transition-all z-20"
         >
-          <X className="w-6 h-6 text-slate-500" />
+          <X className="w-5 h-5 text-slate-500 dark:text-slate-400" />
         </button>
 
-        <div className="p-8 md:p-14">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-black text-slate-900 dark:text-white mb-4 tracking-tight">
-              Upgrade dein Creative-Potenzial
-            </h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-              Wähle den Plan, der zu deinem Workflow passt, und schalte sofort Credits für die Canvas-Generierung frei.
-            </p>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[600px]">
+          <div className="lg:col-span-12 p-8 md:p-16">
+            <div className="flex flex-col items-center text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-widest mb-6">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Premium Access</span>
+              </div>
+              <h2 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4 tracking-tight leading-tight">
+                Bereit für das nächste Level?
+              </h2>
+              <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl">
+                Wähle deinen Plan und schalte sofortige Design-Power frei. 
+                Keine versteckten Gebühren, volle Transparenz.
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {PRICING_TIERS.map((tier) => {
-              const isLoading = loadingTier === tier.id || (isProcessing && loadingTier === tier.id);
-              
-              return (
-                <div 
-                  key={tier.id}
-                  className={`relative flex flex-col p-8 rounded-2xl border-2 transition-all duration-300 ${
-                    tier.isPopular 
-                      ? 'border-blue-500 shadow-xl shadow-blue-500/10 bg-blue-50/30 dark:bg-blue-900/10 scale-105 z-10' 
-                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
-                  }`}
-                >
-                  {tier.isPopular && (
-                    <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                      <span className="bg-blue-600 text-white text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-lg">
-                        Meistgewählt
-                      </span>
-                    </div>
-                  )}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+              {PRICING_TIERS.map((tier) => {
+                const isCurrent = currentPlanId === tier.id;
+                const isLoading = loadingTier === tier.id;
+                
+                return (
+                  <div 
+                    key={tier.id}
+                    className={`group relative flex flex-col p-8 rounded-[2rem] border transition-all duration-500 ${
+                      tier.isPopular 
+                        ? 'border-blue-500/50 bg-blue-50/50 dark:bg-blue-500/5 ring-4 ring-blue-500/10' 
+                        : 'border-slate-200 dark:border-white/5 bg-white dark:bg-white/[0.02] hover:border-slate-300 dark:hover:border-white/20'
+                    }`}
+                  >
+                    {tier.isPopular && (
+                      <div className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                        <span className="bg-blue-600 text-white text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-[0.2em] shadow-lg shadow-blue-500/40">
+                          Empfohlen
+                        </span>
+                      </div>
+                    )}
 
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className={`p-3 rounded-xl ${tier.isPopular ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-slate-100 dark:bg-slate-800'}`}>
-                      {tier.icon}
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className={`p-3.5 rounded-2xl ${tier.isPopular ? 'bg-blue-600 text-white shadow-xl shadow-blue-500/20' : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300'}`}>
+                        {tier.icon}
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-white">{tier.name}</h3>
+                        <p className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">
+                          {tier.credits} Credits
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">{tier.name}</h3>
-                      <p className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-                        {tier.credits} Credits inklusive
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="mb-6">
-                    <div className="flex items-baseline gap-1">
+                    <div className="mb-6 flex items-baseline gap-1">
                       <span className="text-5xl font-black text-slate-900 dark:text-white">{tier.price}</span>
-                      {tier.id !== 'enterprise' && (
-                        <span className="text-slate-500 font-medium">/ Monat</span>
+                      {tier.id !== 'enterprise' && tier.id !== 'free' && (
+                        <span className="text-slate-400 font-bold text-sm">/ Monat</span>
                       )}
                     </div>
-                  </div>
 
-                  <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400 mb-8 min-h-[48px]">
-                    {tier.description}
-                  </p>
+                    <p className="text-sm font-medium leading-relaxed text-slate-500 dark:text-slate-400 mb-8 min-h-[48px]">
+                      {tier.description}
+                    </p>
 
-                  <div className="space-y-4 mb-10 flex-grow">
-                    {tier.features.map((feature, idx) => (
-                      <div key={idx} className="flex items-start gap-3">
-                        <div className="mt-1 bg-green-500/10 rounded-full p-0.5">
-                          <Check className="w-3.5 h-3.5 text-green-500" />
+                    <div className="space-y-4 mb-10 flex-grow">
+                      {tier.features.map((feature, idx) => (
+                        <div key={idx} className="flex items-start gap-3">
+                          <div className={`mt-1 rounded-full p-0.5 ${tier.isPopular ? 'bg-blue-500/20' : 'bg-green-500/10'}`}>
+                            <Check className={`w-3.5 h-3.5 ${tier.isPopular ? 'text-blue-500' : 'text-green-500'}`} />
+                          </div>
+                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{feature}</span>
                         </div>
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{feature}</span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handlePurchase(tier.id)}
+                      disabled={isCurrent || isProcessing}
+                      className={`relative w-full py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.97] ${
+                        isCurrent
+                          ? 'bg-slate-100 dark:bg-white/5 text-slate-400 cursor-default'
+                          : tier.isPopular
+                            ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30'
+                            : 'bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 shadow-xl'
+                      }`}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <React.Fragment>
+                          <span>{isCurrent ? 'Aktiver Plan' : (tier.id === 'enterprise' ? 'Kontaktieren' : 'Auswählen')}</span>
+                          {!isCurrent && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />}
+                        </React.Fragment>
+                      )}
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handlePurchase(tier.id)}
-                    disabled={tier.id === 'free' || isProcessing}
-                    className={`group relative w-full py-4 px-6 rounded-xl font-bold flex items-center justify-center gap-3 transition-all active:scale-[0.98] ${
-                      tier.isPopular 
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/25'
-                        : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
-                    } ${tier.id === 'free' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                  >
-                    {isLoading ? (
-                      <Loader2 className="w-5 h-5 animate-spin text-white" />
-                    ) : (
-                      <React.Fragment>
-                        <span>{tier.id === 'free' ? 'Aktueller Plan' : 'Jetzt upgraden'}</span>
-                        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                      </React.Fragment>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-14 pt-8 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-8">
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Sicherheit</span>
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-400 italic">SSL-verschlüsselt</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Flexibilität</span>
-                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Jederzeit kündbar</span>
-              </div>
+                );
+              })}
             </div>
-            <p className="text-xs text-slate-400 dark:text-slate-500 text-center md:text-right max-w-sm">
-              Mit dem Kauf akzeptieren Sie unsere Nutzungsbedingungen. Die Credits werden sofort nach Zahlungseingang deinem Account gutgeschrieben.
-            </p>
+
+            <div className="mt-16 pt-10 border-t border-slate-100 dark:border-white/5 flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="flex items-center gap-10">
+                <div className="space-y-1">
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sicherheit</div>
+                  <div className="text-sm font-bold text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    AES-256 Verschlüsselt
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Support</div>
+                  <div className="text-sm font-bold text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                    24/7 Priority-Chat
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs font-medium text-slate-400 dark:text-slate-500 text-center md:text-right max-w-sm leading-relaxed">
+                Preise inkl. MwSt. Abonnements können jederzeit in den Kontoeinstellungen gekündigt werden. Es gelten unsere AGB.
+              </p>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 export default PaywallModal;
