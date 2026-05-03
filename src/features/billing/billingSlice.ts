@@ -4,6 +4,7 @@ interface BillingState {
   subscription: any | null;
   invoices: any[];
   availablePackages: any[];
+  packages: any[];
   loading: boolean;
   error: string | null;
 }
@@ -12,6 +13,7 @@ const initialState: BillingState = {
   subscription: null,
   invoices: [],
   availablePackages: [],
+  packages: [],
   loading: false,
   error: null,
 };
@@ -73,6 +75,7 @@ const billingSlice = createSlice({
       state.subscription = null;
       state.invoices = [];
       state.availablePackages = [];
+      state.packages = [];
       state.loading = false;
       state.error = null;
     },
@@ -91,6 +94,7 @@ const billingSlice = createSlice({
         state.subscription = action.payload.subscription;
         state.invoices = action.payload.invoices || [];
         state.availablePackages = action.payload.availablePackages || [];
+        state.packages = action.payload.packages || action.payload.availablePackages || [];
       })
       .addCase(fetchBillingData.rejected, (state, action) => {
         state.loading = false;
@@ -129,9 +133,6 @@ export const selectIsSubscribed = (state: { billing: BillingState }) => !!state.
 export const selectIsLoading = (state: { billing: BillingState }) => state.billing.loading;
 export const selectBillingError = (state: { billing: BillingState }) => state.billing.error;
 export const selectAvailablePackages = (state: { billing: BillingState }) => state.billing.availablePackages;
-
-export const selectBillingPackages = selectAvailablePackages;
-export const purchasePackage = purchasePackageAction;
-export const restorePurchases = restorePurchasesAction;
+export const selectPackages = (state: any) => state.billing.packages;
 
 export default billingSlice.reducer;

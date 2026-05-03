@@ -28,10 +28,10 @@ export const useConfig = () => {
   useEffect(() => {
     const loadSavedConfig = async () => {
       try {
-        const saved = await storageService.get<unknown>(CONFIG_STORAGE_KEY);
-        // Behebe Spread-Fehler durch Prüfung auf Objekt-Typ
-        if (saved !== null && typeof saved === 'object' && !Array.isArray(saved)) {
-          setConfig((prev) => ({ ...prev, ...(saved as Partial<AppConfig>) }));
+        const saved = await storageService.get(CONFIG_STORAGE_KEY);
+        if (saved) {
+          const parsed = typeof saved === 'string' ? JSON.parse(saved) : saved;
+          setConfig((prev) => ({ ...prev, ...parsed }));
         }
       } catch (error) {
         console.error('Error loading config from storage:', error);
@@ -40,18 +40,13 @@ export const useConfig = () => {
       }
     };
 
-    void loadSavedConfig();
+    loadSavedConfig();
   }, []);
 
   const updateConfig = useCallback(async (newParams: Partial<AppConfig>) => {
-    // Sicherstellen, dass ein gültiges Objekt übergeben wurde
-    if (!newParams || typeof newParams !== 'object' || Array.isArray(newParams)) {
-      return;
-    }
-
     setConfig((prev) => {
       const updated: AppConfig = { ...prev, ...newParams };
-      void storageService.set(CONFIG_STORAGE_KEY, updated).catch((err: unknown) => 
+      storageService.set(CONFIG_STORAGE_KEY, JSON.stringify(updated)).catch((err: unknown) => 
         console.error('Error saving config:', err)
       );
       return updated;
@@ -61,7 +56,7 @@ export const useConfig = () => {
   const resetToDefaults = useCallback(async () => {
     const freshConfig: AppConfig = { ...DEFAULT_CONFIG };
     setConfig(freshConfig);
-    await storageService.set(CONFIG_STORAGE_KEY, freshConfig);
+    await storageService.set(CONFIG_STORAGE_KEY, JSON.stringify(freshConfig));
   }, []);
 
   return {

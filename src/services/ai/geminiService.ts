@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, GenerativeModel, GenerationConfig, Content } from "@google/generative-ai";
+import { GoogleGenerativeAI, GenerativeModel, GenerationConfig, Content, GenerateContentResult } from "@google/generative-ai";
 
 export interface GeminiResponse {
   text: string;
@@ -15,6 +15,42 @@ export class GeminiService {
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({ model: modelName });
+  }
+
+  /**
+   * Statische Methode zur Inhaltsgenerierung
+   */
+  static async generateContent(
+    apiKey: string, 
+    prompt: string, 
+    modelName: string = "gemini-1.5-flash", 
+    config?: GenerationConfig
+  ): Promise<GenerateContentResult> {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+    return await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: config,
+    });
+  }
+
+  /**
+   * Statische Methode zur Textgenerierung
+   */
+  static async generateText(
+    apiKey: string, 
+    prompt: string, 
+    modelName: string = "gemini-1.5-flash", 
+    config?: GenerationConfig
+  ): Promise<string> {
+    try {
+      const result = await this.generateContent(apiKey, prompt, modelName, config);
+      const response = await result.response;
+      return response.text();
+    } catch (error) {
+      console.error("GeminiService Static Error (generateText):", error);
+      throw error;
+    }
   }
 
   /**
@@ -49,7 +85,7 @@ export class GeminiService {
 
       const response = await result.response;
       const text = response.text();
-      return JSON.parse(text) as T;
+      return JSON.parse(this.constructor && (this.constructor as any).cleanJsonString ? (this.constructor as any).cleanJsonString(text) : text) as T;
     } catch (error) {
       console.error("GeminiService Error (generateJSON):", error);
       throw error;

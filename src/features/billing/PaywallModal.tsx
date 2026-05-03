@@ -56,7 +56,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   isOpen, 
   onClose 
 }) => {
-  const { purchase } = useBilling(onClose);
+  const { purchase } = useBilling();
 
   if (!isOpen) return null;
 

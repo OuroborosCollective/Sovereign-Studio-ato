@@ -26,3 +26,11 @@ export interface ConfigOption<T> {
 
 export type ThemeOption = ConfigOption<Theme>;
 export type LanguageOption = ConfigOption<Language>;
+
+export interface AppConfig {
+  theme: string;
+  autoSave: boolean;
+  apiEndpoint: string;
+  maxRetries: number;
+  debugMode: boolean;
+}
