@@ -2,11 +2,11 @@ import { useCallback, useMemo } from 'react';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import {
   selectIsSubscribed,
-  selectIsLoading,
+  selectBillingLoading,
   selectBillingError,
-  selectAvailablePackages,
-  purchasePackageAction,
-  restorePurchasesAction,
+  selectBillingPackages,
+  purchasePackage,
+  restorePurchases,
 } from '../features/billing/billingSlice';
 
 /**
@@ -17,14 +17,14 @@ export const useBilling = () => {
   const dispatch = useAppDispatch();
 
   const isSubscribed = useAppSelector(selectIsSubscribed);
-  const isLoading = useAppSelector(selectIsLoading);
+  const isLoading = useAppSelector(selectBillingLoading);
   const error = useAppSelector(selectBillingError);
-  const packages = useAppSelector(selectAvailablePackages);
+  const packages = useAppSelector(selectBillingPackages);
 
   const purchase = useCallback(
     async (packageId: string) => {
       try {
-        await dispatch(purchasePackageAction(packageId)).unwrap();
+        await dispatch(purchasePackage(packageId)).unwrap();
         return { success: true, error: null };
       } catch (err) {
         return { success: false, error: err };
@@ -33,9 +33,9 @@ export const useBilling = () => {
     [dispatch]
   );
 
-  const restorePurchases = useCallback(async () => {
+  const restore = useCallback(async () => {
     try {
-      await dispatch(restorePurchasesAction()).unwrap();
+      await dispatch(restorePurchases()).unwrap();
       return { success: true, error: null };
     } catch (err) {
       return { success: false, error: err };
@@ -54,7 +54,7 @@ export const useBilling = () => {
     error,
     packages,
     purchase,
-    restorePurchases,
+    restorePurchases: restore,
   };
 };
 

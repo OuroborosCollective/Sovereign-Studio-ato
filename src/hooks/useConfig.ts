@@ -29,7 +29,7 @@ export const useConfig = () => {
     const loadSavedConfig = async () => {
       try {
         const saved = await storageService.get<AppConfig>(CONFIG_STORAGE_KEY);
-        if (saved) {
+        if (saved && typeof saved === 'object') {
           setConfig({ ...DEFAULT_CONFIG, ...saved });
         }
       } catch (error) {
@@ -45,7 +45,8 @@ export const useConfig = () => {
   const updateConfig = useCallback(async (newParams: Partial<AppConfig>) => {
     setConfig((prev) => {
       const updated = { ...prev, ...newParams };
-      storageService.set(CONFIG_STORAGE_KEY, updated).catch((err) => 
+      // Explicitly pass generic type to storage call
+      storageService.set<AppConfig>(CONFIG_STORAGE_KEY, updated).catch((err: unknown) => 
         console.error('Error saving config:', err)
       );
       return updated;
@@ -54,7 +55,8 @@ export const useConfig = () => {
 
   const resetToDefaults = useCallback(async () => {
     setConfig(DEFAULT_CONFIG);
-    await storageService.set(CONFIG_STORAGE_KEY, DEFAULT_CONFIG);
+    // Correct generic type usage and await the result
+    await storageService.set<AppConfig>(CONFIG_STORAGE_KEY, DEFAULT_CONFIG);
   }, []);
 
   return {

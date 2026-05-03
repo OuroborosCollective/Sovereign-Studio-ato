@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService } from '../utils/gemini';
 
 interface UseGeminiReturn {
   isLoading: boolean;

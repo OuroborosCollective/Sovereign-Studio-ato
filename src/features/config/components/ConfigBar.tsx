@@ -14,6 +14,7 @@ import { ConfigState } from '../types';
 
 export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
+  
   const { 
     config, 
     updateField, 
