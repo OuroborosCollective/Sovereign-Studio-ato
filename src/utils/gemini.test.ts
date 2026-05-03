@@ -1,10 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, ModelParams } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
 
 export class GeminiService {
   static async generateContent(prompt: string, systemInstruction?: string) {
-    const model = genAI.getGenerativeModel({
+    const modelParams: ModelParams = {
       model: 'gemini-1.5-flash',
       systemInstruction: systemInstruction
         ? {
@@ -18,7 +18,9 @@ export class GeminiService {
         topK: 40,
         maxOutputTokens: 8192,
       },
-    });
+    };
+
+    const model = genAI.getGenerativeModel(modelParams);
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
