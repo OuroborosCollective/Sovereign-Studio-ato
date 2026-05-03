@@ -23,7 +23,8 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "types": [
-      "vite/client"
+      "vite/client",
+      "vitest/globals"
     ]
   }
 }

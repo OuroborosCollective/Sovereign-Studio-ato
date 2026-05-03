@@ -29,10 +29,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { default: storageService } = await import('../services/storageService');
+        const { storageService } = await import('../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
         const currentLogs = JSON.parse(logsJson || '[]');
-        currentLogs.push({ time: new Date().toISOString(), context: 'ErrorBoundary', message: error.message });
+        currentLogs.push({ 
+          time: new Date().toISOString(), 
+          context: 'ErrorBoundary', 
+          message: error.message 
+        });
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
         // Silently fail logging
@@ -63,12 +67,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
                 An unexpected error occurred in the application UI. The team has been notified.
               </p>
               
-              {this.state.error ? (
+              {this.state.error && (
                 <div className="mt-4 p-3 bg-stone-100 rounded text-xs font-mono text-stone-800 break-words overflow-x-auto max-h-40 border border-stone-200">
                   {this.state.error.toString()}
                 </div>
-              ) : null}
-              
+              )}
             </div>
             <div className="px-6 py-4 bg-stone-50 border-t border-stone-200 flex justify-end">
               <button

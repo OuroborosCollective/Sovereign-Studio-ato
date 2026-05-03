@@ -7,7 +7,7 @@ import {
   ShieldCheck, 
   ArrowRight 
 } from 'lucide-react';
-import useBilling from '../../hooks/useBilling';
+import { useBilling } from './hooks/useBilling';
 
 interface PaywallModalProps {
   isOpen: boolean;

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi, Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 import { GeminiService } from './geminiService';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
