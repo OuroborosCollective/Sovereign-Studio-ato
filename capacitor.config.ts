@@ -4,12 +4,19 @@ const config: CapacitorConfig = {
   appId: 'com.sovereign.studio',
   appName: 'Sovereign Studio',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https',
     allowNavigation: [
       '*'
     ]
+  },
+  android: {
+    backgroundColor: '#f4f4f4',
+    allowMixedContent: true,
+    captureInput: true,
+    buildOptions: {
+      releaseType: 'release'
+    }
   },
   plugins: {
     SplashScreen: {
@@ -18,7 +25,8 @@ const config: CapacitorConfig = {
       backgroundColor: '#f4f4f4',
       androidScaleType: 'CENTER_CROP',
       splashFullScreen: true,
-      splashImmersive: true
+      splashImmersive: true,
+      useDialog: false
     },
     GoogleAuth: {
       scopes: ['profile', 'email'],

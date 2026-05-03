@@ -1,9 +1,7 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { fabric } from 'fabric';
 import { useDispatch, useSelector } from 'react-redux';
 
-// Angenommene Typen und Actions aus dem Redux-Store
-// Diese müssten in src/store/canvasSlice.ts definiert sein
 interface CanvasObject {
   id: string;
   type: 'ai-text' | 'ai-shape' | 'ai-image';
@@ -21,13 +19,20 @@ interface RootState {
   };
 }
 
-// Mock-Actions (sollten aus dem eigentlichen Slice kommen)
 const updateObject = (payload: Partial<CanvasObject> & { id: string }) => ({ type: 'canvas/updateObject', payload });
 const selectObject = (id: string | null) => ({ type: 'canvas/selectObject', payload: id });
 
 interface CanvasEngineProps {
   className?: string;
 }
+
+const HW_ACCELERATION_STYLE: React.CSSProperties = {
+  transform: 'translateZ(0)',
+  backfaceVisibility: 'hidden',
+  perspective: 1000,
+  willChange: 'transform',
+  WebkitFontSmoothing: 'antialiased',
+};
 
 export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -38,32 +43,41 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const objects = useSelector((state: RootState) => state.canvas.objects);
   const selectedId = useSelector((state: RootState) => state.canvas.selectedId);
 
-  // Initialisierung des Fabric Canvas
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
+
+    // Globale Fabric Optimierungen für WebView Low-Latency
+    fabric.Object.prototype.objectCaching = true;
+    fabric.Object.prototype.noScaleCache = false;
+    fabric.Object.prototype.transparentCorners = false;
 
     const fabricCanvas = new fabric.Canvas(canvasRef.current, {
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
       backgroundColor: '#f8fafc',
       preserveObjectStacking: true,
+      renderOnAddRemove: false, // Optimierter Batch-Render
+      statefullCache: true,
     });
 
     fabricCanvasRef.current = fabricCanvas;
 
-    // Zoom-Handler (Infinite Canvas Feeling)
+    // Zoom-Handler (Infinite Canvas Feeling) mit rAF Optimierung
     fabricCanvas.on('mouse:wheel', (opt) => {
       const delta = opt.e.deltaY;
       let zoom = fabricCanvas.getZoom();
       zoom *= 0.999 ** delta;
       if (zoom > 20) zoom = 20;
       if (zoom < 0.01) zoom = 0.01;
-      fabricCanvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      
+      requestAnimationFrame(() => {
+        fabricCanvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      });
+      
       opt.e.preventDefault();
       opt.e.stopPropagation();
     });
 
-    // Panning (Alt + Drag)
     fabricCanvas.on('mouse:down', (opt) => {
       const evt = opt.e;
       if (evt.altKey === true) {
@@ -94,7 +108,6 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       fabricCanvas.selection = true;
     });
 
-    // Redux Sync: Auswahl
     fabricCanvas.on('selection:created', (e) => {
       const activeObject = e.selected?.[0] as any;
       if (activeObject?.id) dispatch(selectObject(activeObject.id));
@@ -104,7 +117,6 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       dispatch(selectObject(null));
     });
 
-    // Redux Sync: Transformationen
     const handleModified = (e: fabric.IEvent) => {
       const obj = e.target;
       if (!obj || !(obj as any).id) return;
@@ -120,12 +132,12 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     fabricCanvas.on('object:modified', handleModified);
 
-    // Resize Observer
     const resizeObserver = new ResizeObserver(() => {
       if (containerRef.current && fabricCanvasRef.current) {
-        fabricCanvasRef.current.setDimensions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
+        const width = containerRef.current.clientWidth;
+        const height = containerRef.current.clientHeight;
+        requestAnimationFrame(() => {
+          fabricCanvasRef.current?.setDimensions({ width, height });
         });
       }
     });
@@ -138,24 +150,23 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     };
   }, [dispatch]);
 
-  // Sync Objects von Redux zu Fabric
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
     const currentFabricObjects = canvas.getObjects();
+    let hasChanges = false;
     
     objects.forEach((objData) => {
       const existingObj = currentFabricObjects.find((o: any) => o.id === objData.id);
 
       if (existingObj) {
-        // Update falls nötig
         if (existingObj.left !== objData.x || existingObj.top !== objData.y) {
           existingObj.set({ left: objData.x, top: objData.y });
           existingObj.setCoords();
+          hasChanges = true;
         }
       } else {
-        // Neu erstellen
         let newObj: fabric.Object;
 
         if (objData.type === 'ai-text') {
@@ -179,20 +190,22 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
         (newObj as any).id = objData.id;
         canvas.add(newObj);
+        hasChanges = true;
       }
     });
 
-    // Entferne gelöschte Objekte
     currentFabricObjects.forEach((fObj: any) => {
       if (!objects.find(o => o.id === fObj.id)) {
         canvas.remove(fObj);
+        hasChanges = true;
       }
     });
 
-    canvas.requestRenderAll();
+    if (hasChanges) {
+      canvas.requestRenderAll();
+    }
   }, [objects]);
 
-  // Sync Selektion von Redux zu Fabric
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
@@ -213,10 +226,16 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   return (
     <div 
       ref={containerRef} 
-      className={`w-full h-full overflow-hidden relative ${className || ''}`}
-      style={{ minHeight: '400px' }}
+      className={`w-full h-full overflow-hidden relative bg-slate-50 ${className || ''}`}
+      style={{ 
+        minHeight: '400px',
+        ...HW_ACCELERATION_STYLE 
+      }}
     >
-      <canvas ref={canvasRef} />
+      <canvas 
+        ref={canvasRef} 
+        style={HW_ACCELERATION_STYLE}
+      />
     </div>
   );
 };

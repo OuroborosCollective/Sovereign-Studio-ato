@@ -1,6 +1,9 @@
 import { configureStore, Middleware } from '@reduxjs/toolkit';
+import { Preferences } from '@capacitor/preferences';
 import billingReducer from '../features/billing/billingSlice';
 import canvasReducer, { addObject } from '../features/canvas/canvasSlice';
+
+const PERSISTENCE_KEY = 'sovereign_canvas_state_mirror';
 
 const canvasMiddleware: Middleware = (store) => (next) => (action: any) => {
   if (action.type === 'ai/setGeneratedContent' || action.type === 'ai/responseReceived') {
@@ -11,13 +14,34 @@ const canvasMiddleware: Middleware = (store) => (next) => (action: any) => {
   return next(action);
 };
 
+const persistenceMiddleware: Middleware = (store) => (next) => (action) => {
+  const result = next(action);
+  const state = store.getState();
+  
+  if (action.type.startsWith('canvas/')) {
+    const persistData = async () => {
+      try {
+        await Preferences.set({
+          key: PERSISTENCE_KEY,
+          value: JSON.stringify(state.canvas),
+        });
+      } catch (error) {
+        console.error('Failed to mirror canvas state to native storage', error);
+      }
+    };
+    persistData();
+  }
+  
+  return result;
+};
+
 export const store = configureStore({
   reducer: {
     billing: billingReducer,
     canvas: canvasReducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(canvasMiddleware),
+    getDefaultMiddleware().concat(canvasMiddleware, persistenceMiddleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;
