@@ -20,7 +20,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: unknown): State {
-    // Explicitly handle unknown type by converting to string or using message property
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorInstance = error instanceof Error ? error : new Error(errorMessage);
     return { hasError: true, error: errorInstance, errorInfo: null };
@@ -32,11 +31,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { storageService } = await import('../shared/api/storageService');
+        const { storageService } = await import('../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
-        const currentLogs = JSON.parse(logsJson || '[]');
         
-        // Ensure the error message is extracted as a string
+        // Convert logsJson (potentially unknown) to string for JSON.parse to fix TS2345
+        const safeLogsJson = typeof logsJson === 'string' ? logsJson : String(logsJson || '[]');
+        const currentLogs = JSON.parse(safeLogsJson);
+        
         const errorMessage = error instanceof Error ? error.message : String(error);
         
         currentLogs.push({ 
