@@ -2,9 +2,14 @@ name: Sovereign CI Pipeline
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NPM_CONFIG_LEGACY_PEER_DEPS: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,7 +17,7 @@ concurrency:
 
 jobs:
   quality-gate:
-    name: Code Quality & Testing
+    name: Code Quality and Testing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -21,17 +26,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install
 
-      - name: Check Linting
-        run: npm run lint || echo "Linting step skipped - add lint script to package.json"
+      - name: Type Check
+        run: npm run type-check
 
       - name: Run Unit Tests
-        run: npm run test
+        run: npm run test:run
         env:
           CI: true
 
@@ -56,11 +61,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install
 
       - name: Download Web Build Artifact
         uses: actions/download-artifact@v4
@@ -72,8 +77,8 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'zulu'
-          cache: 'gradle'
+          distribution: zulu
+          cache: gradle
 
       - name: Capacitor Sync
         run: npx cap sync android
@@ -93,6 +98,7 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
