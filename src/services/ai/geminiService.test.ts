@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { geminiService } from './geminiService';
 
-const generateContentMock = vi.fn();
+const generateContentMock = vi.fn() as Mock;
 const getGenerativeModelMock = vi.fn().mockReturnValue({
   generateContent: generateContentMock,
-});
+}) as Mock;
 
 vi.mock('@google/generative-ai', () => {
   return {
