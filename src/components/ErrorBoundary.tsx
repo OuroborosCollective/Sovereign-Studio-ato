@@ -19,8 +19,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
     errorInfo: null,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error, errorInfo: null };
+  public static getDerivedStateFromError(error: unknown): State {
+    const errorInstance = error instanceof Error ? error : new Error(String(error));
+    return { hasError: true, error: errorInstance, errorInfo: null };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -29,13 +30,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
     
     const logError = async () => {
       try {
-        const { storageService } = await import('../shared/api/storageService');
+        const { storageService } = await import('../services/storageService');
         const logsJson = await storageService.get('ss_error_log');
         const currentLogs = JSON.parse(logsJson || '[]');
         currentLogs.push({ 
           time: new Date().toISOString(), 
           context: 'ErrorBoundary', 
-          message: error.message 
+          message: error instanceof Error ? error.message : String(error)
         });
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
       } catch (e) {
@@ -69,7 +70,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               
               {this.state.error && (
                 <div className="mt-4 p-3 bg-stone-100 rounded text-xs font-mono text-stone-800 break-words overflow-x-auto max-h-40 border border-stone-200">
-                  {this.state.error.toString()}
+                  {String(this.state.error)}
                 </div>
               )}
             </div>
