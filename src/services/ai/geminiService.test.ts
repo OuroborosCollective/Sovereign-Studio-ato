@@ -32,7 +32,7 @@ describe('GeminiService', () => {
     generateContentMock.mockResolvedValue(mockResponse);
 
     const prompt = 'Hello, AI!';
-    const result = await geminiService.generateText(prompt, TEST_MODEL);
+    const result = await geminiService.generateText(TEST_MODEL, { prompt });
 
     expect(result).toBe('Mocked AI response');
     expect(getGenerativeModelMock).toHaveBeenCalledWith(TEST_MODEL);
@@ -44,7 +44,7 @@ describe('GeminiService', () => {
   it('should handle API errors gracefully', async () => {
     generateContentMock.mockRejectedValue(new Error('API Error'));
 
-    await expect(geminiService.generateText('Fail', TEST_MODEL)).rejects.toThrow('API Error');
+    await expect(geminiService.generateText(TEST_MODEL, { prompt: 'Fail' })).rejects.toThrow('API Error');
   });
 
   it('should pass system instructions if provided', async () => {
@@ -53,7 +53,8 @@ describe('GeminiService', () => {
     const prompt = 'Explain quantum physics';
     const systemPrompt = 'Speak like a pirate';
     
-    await geminiService.generateText(prompt, TEST_MODEL, { 
+    await geminiService.generateText(TEST_MODEL, { 
+      prompt,
       systemInstruction: systemPrompt 
     });
 
@@ -70,7 +71,7 @@ describe('GeminiService', () => {
     const specificModel = 'gemini-1.5-flash';
     const prompt = 'test';
     
-    await geminiService.generateText(prompt, specificModel);
+    await geminiService.generateText(specificModel, { prompt });
     
     expect(getGenerativeModelMock).toHaveBeenCalledWith(specificModel);
     expect(generateContentMock).toHaveBeenCalledWith({
@@ -82,7 +83,8 @@ describe('GeminiService', () => {
     generateContentMock.mockResolvedValue(mockResponse);
 
     const prompt = 'test';
-    await geminiService.generateText(prompt, TEST_MODEL, { 
+    await geminiService.generateText(TEST_MODEL, { 
+      prompt,
       temperature: 0.7,
       topP: 0.9
     });
