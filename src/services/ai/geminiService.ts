@@ -1,18 +1,21 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import type { GenerationConfig } from '@google/generative-ai';
+export type GeminiModel = 'gemini-1.5-flash' | 'gemini-1.5-pro' | 'gemini-1.0-pro';
+
+export interface GenerationConfig {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxOutputTokens?: number;
+  stopSequences?: string[];
+}
 
 export interface GenerateOptions {
-  model?: string;
+  model?: GeminiModel;
   systemInstruction?: string;
   generationConfig?: Partial<GenerationConfig>;
 }
 
-const apiKey =
-  (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) || 'test-api-key';
-
-const genAI = new GoogleGenerativeAI(apiKey);
-
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+const DEFAULT_MODEL: GeminiModel = 'gemini-1.5-flash';
+const API_ENDPOINT = '/api/ai/generate';
 
 export class GeminiService {
   static async generateContent(
@@ -32,31 +35,32 @@ export class GeminiService {
       ...options.generationConfig,
     };
 
-    const generativeModelOptions = {
+    const payload = {
       model: options.model ?? DEFAULT_MODEL,
-      ...(options.systemInstruction
-        ? {
-            systemInstruction: {
-              role: 'system',
-              parts: [{ text: options.systemInstruction }],
-            },
-          }
-        : {}),
+      systemInstruction: options.systemInstruction,
+      prompt,
+      generationConfig,
     };
 
-    const model = genAI.getGenerativeModel(generativeModelOptions);
-
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }],
+    try {
+      const response = await fetch(API_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      ],
-      generationConfig,
-    });
+        body: JSON.stringify(payload),
+      });
 
-    const response = await result.response;
-    return response.text();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to generate content');
+      }
+
+      const data = await response.json();
+      return data.text;
+    } catch (error) {
+      console.error('GeminiService Error:', error);
+      throw error;
+    }
   }
 }
