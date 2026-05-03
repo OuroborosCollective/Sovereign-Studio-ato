@@ -11,7 +11,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
-        android:usesCleartextTraffic="false"
+        android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
         tools:targetApi="34">
 
