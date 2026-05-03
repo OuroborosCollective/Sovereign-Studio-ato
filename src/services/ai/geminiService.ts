@@ -1,194 +1,62 @@
-import { GoogleGenerativeAI, GenerativeModel, GenerationConfig, Content, GenerateContentResult } from "@google/generative-ai";
-
-export interface GeminiResponse {
-  text: string;
-  usage?: any;
-}
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import type { GenerationConfig } from '@google/generative-ai';
 
 export interface GenerateOptions {
-  prompt: string;
+  model?: string;
   systemInstruction?: string;
-  modelName?: string;
-  config?: GenerationConfig;
-  temperature?: number;
-  topP?: number;
+  generationConfig?: Partial<GenerationConfig>;
 }
+
+const apiKey =
+  (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) || 'test-api-key';
+
+const genAI = new GoogleGenerativeAI(apiKey);
+
+const DEFAULT_MODEL = 'gemini-1.5-flash';
 
 export class GeminiService {
-  private genAI: GoogleGenerativeAI;
-  private model: GenerativeModel;
-
-  constructor(apiKey: string, modelName: string = "gemini-1.5-flash", systemInstruction?: string) {
-    if (!apiKey) {
-      throw new Error("Gemini API Key is missing");
-    }
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({ 
-      model: modelName,
-      systemInstruction: systemInstruction ? { role: "system", parts: [{ text: systemInstruction }] } : undefined
-    });
-  }
-
-  /**
-   * Statische Methode zur Inhaltsgenerierung
-   */
   static async generateContent(
-    apiKey: string, 
-    options: GenerateOptions
-  ): Promise<GenerateContentResult> {
-    const { prompt, systemInstruction, modelName = "gemini-1.5-flash", config, temperature, topP } = options;
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: modelName,
-      systemInstruction: systemInstruction ? { role: "system", parts: [{ text: systemInstruction }] } : undefined
-    });
+    prompt: string,
+    optionsOrSystemInstruction: GenerateOptions | string = {}
+  ): Promise<string> {
+    const options: GenerateOptions =
+      typeof optionsOrSystemInstruction === 'string'
+        ? { systemInstruction: optionsOrSystemInstruction }
+        : optionsOrSystemInstruction;
 
     const generationConfig: GenerationConfig = {
-      ...config,
-      temperature: temperature !== undefined ? temperature : config?.temperature,
-      topP: topP !== undefined ? topP : config?.topP,
+      temperature: 0.7,
+      topP: 0.95,
+      topK: 40,
+      maxOutputTokens: 8192,
+      ...options.generationConfig,
     };
-    
-    return await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+
+    const generativeModelOptions = {
+      model: options.model ?? DEFAULT_MODEL,
+      ...(options.systemInstruction
+        ? {
+            systemInstruction: {
+              role: 'system',
+              parts: [{ text: options.systemInstruction }],
+            },
+          }
+        : {}),
+    };
+
+    const model = genAI.getGenerativeModel(generativeModelOptions);
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
       generationConfig,
     });
-  }
 
-  /**
-   * Statische Methode zur Textgenerierung
-   */
-  static async generateText(
-    apiKey: string, 
-    options: GenerateOptions
-  ): Promise<string> {
-    try {
-      const result = await this.generateContent(apiKey, options);
-      const response = await result.response;
-      return response.text();
-    } catch (error) {
-      console.error("GeminiService Static Error (generateText):", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Generiert einfachen Text-Content basierend auf Optionen
-   */
-  async generateText(options: GenerateOptions | string): Promise<string> {
-    try {
-      let promptText: string;
-      let generationConfig: GenerationConfig | undefined;
-      let activeModel = this.model;
-
-      if (typeof options === "string") {
-        promptText = options;
-      } else {
-        promptText = options.prompt;
-        generationConfig = {
-          ...options.config,
-          temperature: options.temperature !== undefined ? options.temperature : options.config?.temperature,
-          topP: options.topP !== undefined ? options.topP : options.config?.topP,
-        };
-        
-        if (options.systemInstruction || options.modelName) {
-          activeModel = this.genAI.getGenerativeModel({
-            model: options.modelName || "gemini-1.5-flash",
-            systemInstruction: options.systemInstruction ? { role: "system", parts: [{ text: options.systemInstruction }] } : undefined
-          });
-        }
-      }
-
-      const result = await activeModel.generateContent({
-        contents: [{ role: "user", parts: [{ text: promptText }] }],
-        generationConfig,
-      });
-      const response = await result.response;
-      return response.text();
-    } catch (error) {
-      console.error("GeminiService Error (generateText):", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Generiert strukturierten JSON Content
-   */
-  async generateJSON<T>(options: GenerateOptions | string, schemaConfig?: any): Promise<T> {
-    try {
-      let promptText: string;
-      let generationConfig: GenerationConfig | undefined;
-      let activeModel = this.model;
-
-      if (typeof options === "string") {
-        promptText = options;
-      } else {
-        promptText = options.prompt;
-        generationConfig = {
-          ...options.config,
-          temperature: options.temperature !== undefined ? options.temperature : options.config?.temperature,
-          topP: options.topP !== undefined ? options.topP : options.config?.topP,
-        };
-        if (options.systemInstruction || options.modelName) {
-          activeModel = this.genAI.getGenerativeModel({
-            model: options.modelName || "gemini-1.5-flash",
-            systemInstruction: options.systemInstruction ? { role: "system", parts: [{ text: options.systemInstruction }] } : undefined
-          });
-        }
-      }
-
-      const result = await activeModel.generateContent({
-        contents: [{ role: "user", parts: [{ text: promptText }] }],
-        generationConfig: {
-          ...generationConfig,
-          ...schemaConfig,
-          responseMimeType: "application/json",
-        },
-      });
-
-      const response = await result.response;
-      const text = response.text();
-      const cleanedText = GeminiService.cleanJsonString(text);
-      return JSON.parse(cleanedText) as T;
-    } catch (error) {
-      console.error("GeminiService Error (generateJSON):", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Startet eine Chat-Session
-   */
-  async startChat(history: Content[] = []) {
-    return this.model.startChat({
-      history,
-      generationConfig: {
-        maxOutputTokens: 2048,
-      },
-    });
-  }
-
-  /**
-   * Hilfsmethode zum Bereinigen von Markdown-Umgebungen
-   */
-  public static cleanJsonString(input: string): string {
-    let clean = input.trim();
-    if (clean.startsWith("")) {
-      const lines = clean.split("\n");
-      if (lines.length > 2) {
-        clean = lines.slice(1, lines.length - 1).join("\n");
-      }
-    }
-    return clean.trim();
+    const response = await result.response;
+    return response.text();
   }
 }
-
-export const createGeminiService = (apiKey: string) => new GeminiService(apiKey);
-
-export const geminiService = {
-  generateText: GeminiService.generateText,
-  generateContent: GeminiService.generateContent,
-  cleanJsonString: GeminiService.cleanJsonString
-};
-
-export default GeminiService;
