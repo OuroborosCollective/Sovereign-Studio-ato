@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+def releaseVersionCode = (project.findProperty('versionCode') ?: System.getenv('ANDROID_VERSION_CODE') ?: '2') as Integer
+def releaseVersionName = (project.findProperty('versionName') ?: System.getenv('ANDROID_VERSION_NAME') ?: '1.1.0').toString()
+def releaseStoreFile = project.findProperty('android.injected.signing.store.file') ?: System.getenv('ANDROID_KEYSTORE_PATH')
+def releaseStorePassword = project.findProperty('android.injected.signing.store.password') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias') ?: System.getenv('ANDROID_KEY_ALIAS')
+def releaseKeyPassword = project.findProperty('android.injected.signing.key.password') ?: System.getenv('ANDROID_KEY_PASSWORD')
+def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace "com.sovereign.studio"
     compileSdk 34
@@ -12,20 +20,50 @@ android {
         applicationId "com.sovereign.studio"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion 34
-        versionCode 2
-        versionName "1.1.0"
+        versionCode releaseVersionCode
+        versionName releaseVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders = [appAuthRedirectScheme: 'com.sovereign.studio']
+        manifestPlaceholders = [
+            appAuthRedirectScheme: 'com.sovereign.studio',
+            usesCleartextTraffic: 'false'
+        ]
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+             // Default: https://android.googlesource.com/platforms/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    buildTypes {
+
+    signingConfigs {
         release {
+            if (releaseSigningConfigured) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            manifestPlaceholders = [
+                appAuthRedirectScheme: 'com.sovereign.studio',
+                usesCleartextTraffic: 'true'
+            ]
+        }
+        release {
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            } else {
+                logger.lifecycle('Release signing is not configured. Signed Play Store artifacts require ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD.')
+            }
             minifyEnabled true
             shrinkResources true
+            manifestPlaceholders = [
+                appAuthRedirectScheme: 'com.sovereign.studio',
+                usesCleartextTraffic: 'false'
+            ]
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
@@ -44,7 +82,7 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "com.google.android.gms:play-services-auth:21.2.0"
     implementation project(':capacitor-android')
-    testImplementation "junit:junit:$junitVersion"
+    testImplementation "junit:junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
