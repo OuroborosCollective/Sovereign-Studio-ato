@@ -22,7 +22,9 @@ export const nativeBridge: NativeBridge = {
 
   biometrics: {
     isAvailable: async () => {
-      if (!isNative) return false;
+      if (!isNative) {
+        return false;
+      }
       try {
         const result = await NativeBiometric.isAvailable();
         return !!result.isAvailable;
@@ -32,6 +34,7 @@ export const nativeBridge: NativeBridge = {
     },
     authenticate: async (reason: string, title: string = 'Authentifizierung') => {
       if (!isNative) {
+        // Mock success for development/web preview
         return true; 
       }
       try {
@@ -63,11 +66,19 @@ export const nativeBridge: NativeBridge = {
     },
     addListener: async (eventName: string, callback: (data: any) => void) => {
       if (!isNative) return;
-      await PushNotifications.addListener(eventName as any, callback);
+      try {
+        await PushNotifications.addListener(eventName as any, callback);
+      } catch (error) {
+        console.error('Push addListener error:', error);
+      }
     },
     removeAllListeners: async () => {
       if (!isNative) return;
-      await PushNotifications.removeAllListeners();
+      try {
+        await PushNotifications.removeAllListeners();
+      } catch (error) {
+        console.error('Push removeAllListeners error:', error);
+      }
     },
   },
 };
