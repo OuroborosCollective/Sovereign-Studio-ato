@@ -1,6 +1,27 @@
 import { GoogleGenerativeAI, GenerationConfig, ModelParams } from '@google/generative-ai';
+import { vi } from 'vitest';
 
-const genAI = new GoogleGenerativeAI((import.meta.env.VITE_GEMINI_API_KEY as string) || '');
+vi.mock('@google/generative-ai', () => {
+  const generateContentMock = vi.fn().mockResolvedValue({
+    response: {
+      text: () => 'Mocked response content',
+    },
+  });
+
+  const getGenerativeModelMock = vi.fn().mockImplementation((params: ModelParams | string) => {
+    return {
+      generateContent: generateContentMock,
+    };
+  });
+
+  return {
+    GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
+      getGenerativeModel: getGenerativeModelMock,
+    })),
+  };
+});
+
+const genAI = new GoogleGenerativeAI((import.meta.env.VITE_GEMINI_API_KEY as string) || 'test-api-key');
 
 export class GeminiService {
   static async generateContent(prompt: string, systemInstruction?: string): Promise<string> {
