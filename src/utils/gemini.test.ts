@@ -34,7 +34,7 @@ export class GeminiService {
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-1.5-flash',
-      systemInstruction: systemInstruction,
+      systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
     });
 
     const result = await model.generateContent({
