@@ -43,7 +43,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          validate-wrappers: false
+          validate-wrappers: true
 
       - name: Sync Capacitor Android
         run: npx cap sync android
@@ -54,7 +54,7 @@ jobs:
       - name: Build Android Release (AAB & APK)
         run: |
           cd android
-          ./gradlew bundleRelease assembleRelease
+          ./gradlew bundleRelease assembleRelease --no-daemon
 
       - name: Sign Android Release APK
         uses: r0adkll/sign-android-release@v1
@@ -80,10 +80,20 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SovereignStudio-Release-APK
-          path: ${{steps.sign_apk.outputs.signedReleaseFile}}
+          path: ${{ steps.sign_apk.outputs.signedReleaseFile }}
+          if-no-files-found: error
 
       - name: Upload Signed AAB (For Google Play)
         uses: actions/upload-artifact@v4
         with:
           name: SovereignStudio-Release-AAB
-          path: ${{steps.sign_aab.outputs.signedReleaseFile}}
+          path: ${{ steps.sign_aab.outputs.signedReleaseFile }}
+          if-no-files-found: error
+
+      - name: Upload ProGuard Mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-ProGuard-Mapping
+          path: android/app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: warn
+          retention-days: 30

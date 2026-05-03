@@ -13,6 +13,7 @@
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
+        android:largeHeap="true"
         tools:targetApi="34">
 
         <activity
