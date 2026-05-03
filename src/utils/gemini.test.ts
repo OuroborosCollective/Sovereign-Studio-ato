@@ -6,10 +6,12 @@ export class GeminiService {
   static async generateContent(prompt: string, systemInstruction?: string) {
     const model = genAI.getGenerativeModel({
       model: 'gemini-1.5-flash',
-      systemInstruction: systemInstruction ? {
-        role: 'system',
-        parts: [{ text: systemInstruction }],
-      } : undefined,
+      systemInstruction: systemInstruction
+        ? {
+            role: 'system',
+            parts: [{ text: systemInstruction }],
+          }
+        : undefined,
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,

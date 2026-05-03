@@ -32,7 +32,13 @@ export class GeminiService {
     try {
       const model = this.genAI.getGenerativeModel({ 
         model: "gemini-pro",
-        systemInstruction: systemInstruction 
+        systemInstruction: systemInstruction,
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 2048,
+        }
       });
       
       const result = await model.generateContent(prompt);
@@ -52,7 +58,13 @@ export class GeminiService {
     try {
       const model = this.genAI.getGenerativeModel({ 
         model: "gemini-pro",
-        systemInstruction: systemInstruction 
+        systemInstruction: systemInstruction,
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 2048,
+        }
       });
 
       const result = await model.generateContentStream(prompt);
