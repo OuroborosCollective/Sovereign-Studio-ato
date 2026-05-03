@@ -59,7 +59,11 @@ describe('GeminiService', () => {
       systemInstruction: systemPrompt 
     });
 
-    expect(modelMock.generateContent).toHaveBeenCalled();
+    expect(genAIInstance.getGenerativeModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: TEST_MODEL
+      })
+    );
   });
 
   it('should utilize the correct model version', async () => {
@@ -85,6 +89,10 @@ describe('GeminiService', () => {
       topP: 0.9
     });
 
-    expect(genAIInstance.getGenerativeModel).toHaveBeenCalled();
+    expect(genAIInstance.getGenerativeModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: TEST_MODEL
+      })
+    );
   });
 });
