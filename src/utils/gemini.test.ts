@@ -1,8 +1,14 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { GenerationConfig } from '@google/generative-ai';
 
-export interface GenerateOptions {
-  model?: string;
+export type GeminiModelName =
+  | 'gemini-1.5-flash'
+  | 'gemini-1.5-pro'
+  | 'gemini-pro'
+  | string;
+
+export interface GeminiGenerateOptions {
+  model?: GeminiModelName;
   systemInstruction?: string;
   generationConfig?: Partial<GenerationConfig>;
 }
@@ -17,9 +23,9 @@ const DEFAULT_MODEL = 'gemini-1.5-flash';
 export class GeminiService {
   static async generateContent(
     prompt: string,
-    optionsOrSystemInstruction: GenerateOptions | string = {}
+    optionsOrSystemInstruction: GeminiGenerateOptions | string = {}
   ): Promise<string> {
-    const options: GenerateOptions =
+    const options: GeminiGenerateOptions =
       typeof optionsOrSystemInstruction === 'string'
         ? { systemInstruction: optionsOrSystemInstruction }
         : optionsOrSystemInstruction;
