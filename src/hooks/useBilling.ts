@@ -7,7 +7,7 @@ import {
   selectAvailablePackages,
   purchasePackageAction,
   restorePurchasesAction,
-} from '../features/billing/billingSlice';
+} from '../store/billing/billingSlice';
 
 /**
  * Hook zur Kapselung der Paywall-Logik und In-App-Purchase Status.
@@ -24,7 +24,7 @@ export const useBilling = () => {
   const purchase = useCallback(
     async (packageId: string) => {
       try {
-        await dispatch(purchasePackageAction(packageId)).unwrap();
+        await (dispatch as any)(purchasePackageAction(packageId)).unwrap();
         return { success: true, error: null };
       } catch (err) {
         return { success: false, error: err };
@@ -35,7 +35,7 @@ export const useBilling = () => {
 
   const restorePurchases = useCallback(async () => {
     try {
-      await dispatch(restorePurchasesAction()).unwrap();
+      await (dispatch as any)(restorePurchasesAction()).unwrap();
       return { success: true, error: null };
     } catch (err) {
       return { success: false, error: err };
