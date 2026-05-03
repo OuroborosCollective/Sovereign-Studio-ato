@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Check, 
   X, 
@@ -7,11 +7,11 @@ import {
   ShieldCheck, 
   ArrowRight 
 } from 'lucide-react';
+import { useBilling } from '../../hooks/useBilling';
 
 interface PaywallModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpgrade?: (planId: string) => Promise<void>;
 }
 
 interface PricingTier {
@@ -54,24 +54,11 @@ const PRICING_TIERS: PricingTier[] = [
 
 export const PaywallModal: React.FC<PaywallModalProps> = ({ 
   isOpen, 
-  onClose, 
-  onUpgrade 
+  onClose 
 }) => {
-  const [loading, setLoading] = useState<string | null>(null);
+  const { loadingTier, handleSubscription } = useBilling(onClose);
 
   if (!isOpen) return null;
-
-  const handleSubscription = async (tierId: string) => {
-    if (!onUpgrade) return;
-    setLoading(tierId);
-    try {
-      await onUpgrade(tierId);
-    } catch (error) {
-      console.error('Subscription error:', error);
-    } finally {
-      setLoading(null);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -137,7 +124,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 </ul>
 
                 <button
-                  disabled={!!loading}
+                  disabled={!!loadingTier}
                   onClick={() => handleSubscription(tier.id)}
                   className={`w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all ${
                     tier.isPopular
@@ -145,7 +132,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                       : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  {loading === tier.id ? (
+                  {loadingTier === tier.id ? (
                     <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>

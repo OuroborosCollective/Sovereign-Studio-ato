@@ -9,42 +9,26 @@ import {
   Monitor, 
   ShieldCheck
 } from 'lucide-react';
-
-interface ConfigState {
-  theme: 'light' | 'dark' | 'system';
-  apiEndpoint: string;
-  autoSave: boolean;
-  debugMode: boolean;
-  maxRetries: number;
-}
-
-const DEFAULT_CONFIG: ConfigState = {
-  theme: 'system',
-  apiEndpoint: 'https://api.example.com/v1',
-  autoSave: true,
-  debugMode: false,
-  maxRetries: 3
-};
+import { useConfig } from '../hooks/useConfig';
+import { ConfigState } from '../types';
 
 export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
-  const [isDirty, setIsDirty] = useState(false);
+  const { 
+    config, 
+    updateField, 
+    saveConfig, 
+    resetToDefaults, 
+    isDirty 
+  } = useConfig();
 
-  const handleChange = (key: keyof ConfigState, value: string | number | boolean) => {
-    setConfig(prev => ({ ...prev, [key]: value }));
-    setIsDirty(true);
-  };
-
-  const handleSave = () => {
-    console.log('Saving configuration:', config);
-    setIsDirty(false);
+  const handleSave = async () => {
+    await saveConfig();
     setTimeout(() => setIsOpen(false), 300);
   };
 
-  const handleReset = () => {
-    setConfig(DEFAULT_CONFIG);
-    setIsDirty(true);
+  const handleChange = (key: keyof ConfigState, value: string | number | boolean) => {
+    updateField(key, value);
   };
 
   return (
@@ -98,7 +82,7 @@ export const ConfigBar: React.FC = () => {
                 <span className="text-sm font-medium text-slate-700">Theme</span>
                 <select 
                   value={config.theme}
-                  onChange={(e) => handleChange('theme', e.target.value)}
+                  onChange={(e) => handleChange('theme', e.target.value as ConfigState['theme'])}
                   className="mt-1.5 w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                 >
                   <option value="light">Light Mode</option>
@@ -206,7 +190,7 @@ export const ConfigBar: React.FC = () => {
           </button>
           
           <button
-            onClick={handleReset}
+            onClick={resetToDefaults}
             className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-medium text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
           >
             <RefreshCw size={14} />
