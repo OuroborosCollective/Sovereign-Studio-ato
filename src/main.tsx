@@ -8,13 +8,11 @@ import './index.css';
 
 /**
  * Global Polyfills and Performance Optimizations
- * Target: Webview Performance and AI Streaming Stability
+ * Target: WebView performance and stable canvas interactions.
  */
 if (typeof window !== 'undefined') {
-  // Global reference for compatibility with various libraries
   (window as any).global = window;
 
-  // Polyfill requestIdleCallback for background AI processing tasks
   (window as any).requestIdleCallback = window.requestIdleCallback || ((cb: any) => {
     const start = Date.now();
     return setTimeout(() => {
@@ -25,24 +23,30 @@ if (typeof window !== 'undefined') {
     }, 1);
   });
 
-  // Optimize Canvas and Streaming Render Performance via CSS Inject
   const style = document.createElement('style');
   style.innerHTML = 'canvas { will-change: transform; transform: translateZ(0); } .ai-stream-container { contain: content; }';
   document.head.appendChild(style);
 }
 
-// Initialize PostHog
-posthog.init('YOUR_PROJECT_API_KEY', {
-  api_host: 'https://eu.i.posthog.com',
-  person_profiles: 'identified_only',
-});
+const posthogKey = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
+const posthogHost = (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ?? 'https://eu.i.posthog.com';
 
-// Initialize Google Auth SDK for mobile and web platforms
-GoogleAuth.initialize({
-  clientId: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
-  scopes: ['profile', 'email'],
-  grantOfflineAccess: true,
-});
+if (posthogKey) {
+  posthog.init(posthogKey, {
+    api_host: posthogHost,
+    person_profiles: 'identified_only',
+  });
+}
+
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+if (googleClientId) {
+  GoogleAuth.initialize({
+    clientId: googleClientId,
+    scopes: ['profile', 'email'],
+    grantOfflineAccess: true,
+  });
+}
 
 const container = document.getElementById('root');
 
