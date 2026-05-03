@@ -15,7 +15,7 @@ if (typeof window !== 'undefined') {
   (window as any).global = window;
 
   // Polyfill requestIdleCallback for background AI processing tasks
-  window.requestIdleCallback = window.requestIdleCallback || ((cb) => {
+  (window as any).requestIdleCallback = window.requestIdleCallback || ((cb: any) => {
     const start = Date.now();
     return setTimeout(() => {
       cb({
@@ -53,6 +53,6 @@ if (container) {
       <ErrorBoundary>
         <App />
       </ErrorBoundary>
-    </StrictMode>,
+    </StrictMode>
   );
 }
