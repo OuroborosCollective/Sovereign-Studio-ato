@@ -1,10 +1,36 @@
 import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 
-interface BillingState {
-  subscription: any | null;
-  invoices: any[];
-  availablePackages: any[];
-  packages: any[];
+export interface Subscription {
+  id: string;
+  status: string;
+  planId: string;
+  currentPeriodEnd: string;
+  cancelAtPeriodEnd: boolean;
+}
+
+export interface Invoice {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  date: string;
+  pdfUrl?: string;
+}
+
+export interface BillingPackage {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  interval: 'month' | 'year' | 'once';
+  features: string[];
+}
+
+export interface BillingState {
+  subscription: Subscription | null;
+  invoices: Invoice[];
+  availablePackages: BillingPackage[];
+  packages: BillingPackage[];
   loading: boolean;
   error: string | null;
 }
@@ -157,6 +183,7 @@ const billingSlice = createSlice({
 
 export const { resetBillingState, setBillingError } = billingSlice.actions;
 
+export const selectSubscription = (state: { billing: BillingState }) => state.billing.subscription;
 export const selectIsSubscribed = (state: { billing: BillingState }) => !!state.billing.subscription;
 export const selectIsLoading = (state: { billing: BillingState }) => state.billing.loading;
 export const selectBillingError = (state: { billing: BillingState }) => state.billing.error;
