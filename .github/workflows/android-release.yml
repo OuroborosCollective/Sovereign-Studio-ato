@@ -41,17 +41,26 @@ jobs:
 
       - name: Build AAB
         run: |
+          chmod +x android/gradlew
           cd android
           ./gradlew bundleRelease --no-daemon
 
-      - name: Install Fastlane
+      - name: Verify AAB exists
         run: |
-          cd android
-          gem install fastlane
+          test -f android/app/build/outputs/bundle/release/app-release.aab
+          ls -lah android/app/build/outputs/bundle/release/
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install Fastlane
+        run: gem install fastlane
 
       - name: Upload to Play Store
         env:
           PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
         run: |
           cd android
-          fastlane deploy_production
+          fastlane deploy_production --verbose
