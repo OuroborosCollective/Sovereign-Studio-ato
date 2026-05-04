@@ -11,12 +11,12 @@
     "build": "vite build && cap copy",
     "preview": "vite preview",
     "clean": "rimraf dist",
-    "lint": "tsc --noEmit",
+    "lint": "eslint .",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "postinstall": "node patch_capacitor.cjs",
-    "type-check": "tsc --noEmit"
+    "postinstall": "node patch_capacitor.cjs # Applied to fix Capacitor Google Auth dependency issues on Android/iOS",
+    "type-check": "tsc"
   },
   "dependencies": {
     "@capgo/capacitor-native-biometric": "^6.0.0",
@@ -61,6 +61,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitest/ui": "^3.0.5",
     "autoprefixer": "^10.4.21",
+    "eslint": "^9.0.0",
     "jsdom": "^26.0.0",
     "rimraf": "^6.0.1",
     "tailwindcss": "^4.1.14",

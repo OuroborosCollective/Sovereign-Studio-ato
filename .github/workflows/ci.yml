@@ -22,15 +22,27 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: 'npm'
+
+      - name: Cache Node Modules
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: Install Dependencies
-        run: npm install
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm ci
 
       - name: Type Check
         run: npm run type-check
@@ -57,15 +69,19 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Restore Node Modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
 
       - name: Download Web Build Artifact
         uses: actions/download-artifact@v4
@@ -102,6 +118,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Run NPM Audit
         run: npm audit --audit-level=high --omit=dev

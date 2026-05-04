@@ -1,7 +1,17 @@
 apply plugin: 'com.android.application'
 
-def releaseVersionCode = (project.findProperty('versionCode') ?: System.getenv('ANDROID_VERSION_CODE') ?: '2') as Integer
-def releaseVersionName = (project.findProperty('versionName') ?: System.getenv('ANDROID_VERSION_NAME') ?: '1.1.0').toString()
+def releaseVersionCodeStr = project.findProperty('versionCode') ?: System.getenv('ANDROID_VERSION_CODE')
+if (!releaseVersionCodeStr) {
+    throw new GradleException("Build aborted: ANDROID_VERSION_CODE environment variable or 'versionCode' property is missing.")
+}
+def releaseVersionCode = releaseVersionCodeStr as Integer
+
+def releaseVersionName = project.findProperty('versionName') ?: System.getenv('ANDROID_VERSION_NAME')
+if (!releaseVersionName) {
+    throw new GradleException("Build aborted: ANDROID_VERSION_NAME environment variable or 'versionName' property is missing.")
+}
+releaseVersionName = releaseVersionName.toString()
+
 def releaseStoreFile = project.findProperty('android.injected.signing.store.file') ?: System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseStorePassword = project.findProperty('android.injected.signing.store.password') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias') ?: System.getenv('ANDROID_KEY_ALIAS')
