@@ -14,7 +14,7 @@ def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && relea
 
 android {
     namespace "com.arestudio.nocode.aab"
-    compileSdk 34
+    compileSdk 35
 
     aaptOptions {
         cruncherEnabled = false
@@ -23,7 +23,7 @@ android {
     defaultConfig {
         applicationId "com.arestudio.nocode.aab"
         minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion 34
+        targetSdkVersion 35
         versionCode releaseVersionCode
         versionName releaseVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
