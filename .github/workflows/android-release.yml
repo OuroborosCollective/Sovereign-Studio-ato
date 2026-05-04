@@ -109,5 +109,5 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
           packageName: ${{ secrets.ANDROID_PACKAGE_NAME }}
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
-          track: production
+          tracks: production
           status: completed
