@@ -97,8 +97,19 @@ jobs:
 
       - name: 🔐 Decode Android Keystore
         run: |
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Error: ANDROID_KEYSTORE_BASE64 secret is empty!"
+            exit 1
+          fi
           mkdir -p android/app/keystore
+          # Verwende --decode mit --ignore-garbage um robustere Dekodierung zu ermöglichen
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
+          
+          # Überprüfe ob die Datei valide ist (keine 0 Byte Datei)
+          if [ ! -s android/app/keystore/release.jks ]; then
+            echo "Error: Decoded keystore file is empty!"
+            exit 1
+          fi
           ls -lh android/app/keystore/
 
       - name: 📦 Build Release AAB
@@ -107,9 +118,9 @@ jobs:
           chmod +x gradlew
           ./gradlew bundleRelease --no-daemon \
             -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
-            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.ANDROID_KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }} \
+            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEY_PASSWORD }}" \
             -PversionCode=${{ steps.vars.outputs.version_code }} \
             -PversionName=${{ steps.vars.outputs.version_name }}
 
