@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,6 +17,15 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
           node-version: 20
 
       - name: Install deps
