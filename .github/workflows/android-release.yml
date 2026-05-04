@@ -77,9 +77,13 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew bundleRelease --no-daemon
+          # Wir übergeben die Parameter als Projekt-Properties (-P), damit Gradle sie sicher erkennt
+          ./gradlew bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=keystore/release.jks \
+            -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD
         env:
-          ANDROID_KEYSTORE_PATH: "keystore/release.jks"
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -91,7 +95,6 @@ jobs:
           mkdir -p release-bundle
           cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/
           cp android/app/keystore/release.jks release-bundle/
-          # Optional: Create a text file with version info
           echo "Version: $(node -p "require('./package.json').version")" > release-bundle/version.txt
           echo "Build Number: ${{ github.run_number }}" >> release-bundle/version.txt
 
@@ -103,7 +106,7 @@ jobs:
           retention-days: 7
 
       - name: 🚀 Upload to Google Play (Optional/Manual)
-        if: false # Deaktiviert, da Berechtigungen in der Console fehlen
+        if: false
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
