@@ -31,7 +31,7 @@ Do not commit keystore files, passwords, Play Console keys, OAuth secrets, or AP
 
 Before production submission, check these items:
 
-- Package name is stable: `com.sovereign.studio`.
+- Package name is stable: `com.arestudio.nocode.aab`.
 - `versionCode` is higher than previous Play uploads.
 - Release artifact is the signed `.aab`, not the APK.
 - App name, short description, full description, screenshots and feature graphic are present.

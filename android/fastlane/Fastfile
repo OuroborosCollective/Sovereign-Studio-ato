@@ -1,0 +1,12 @@
+default_platform(:android)
+
+platform :android do
+  lane :deploy_production do
+    upload_to_play_store(
+      track: 'production',
+      aab: '../app/build/outputs/bundle/release/app-release.aab',
+      json_key_data: ENV['PLAY_STORE_JSON_KEY'],
+      package_name: 'com.arestudio.nocode.aab'
+    )
+  end
+end
