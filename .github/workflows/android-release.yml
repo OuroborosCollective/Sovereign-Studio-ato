@@ -2,52 +2,33 @@ name: 🚀 Android Production Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
 
       - name: Install deps
-        run: npm install
-
-      - name: Auto tag from package.json version
-        if: github.ref == 'refs/heads/main'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          TAG="v$VERSION"
-
-          echo "Detected version: $TAG"
-
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag already exists → skip"
-            exit 0
-          fi
-
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          git tag $TAG
-
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
+        run: npm install --legacy-peer-deps
 
       - name: Build Web
         run: npm run build
@@ -69,17 +50,26 @@ jobs:
 
       - name: Build AAB
         run: |
+          chmod +x android/gradlew
           cd android
           ./gradlew bundleRelease --no-daemon
 
-      - name: Install Fastlane
+      - name: Verify AAB exists
         run: |
-          cd android
-          gem install fastlane
+          test -f android/app/build/outputs/bundle/release/app-release.aab
+          ls -lah android/app/build/outputs/bundle/release/
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install Fastlane
+        run: gem install fastlane
 
       - name: Upload to Play Store
         env:
           PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
         run: |
           cd android
-          fastlane deploy_production
+          fastlane deploy_production --verbose

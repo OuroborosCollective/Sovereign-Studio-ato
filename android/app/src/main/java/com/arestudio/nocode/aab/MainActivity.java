@@ -1,4 +1,4 @@
-package com.sovereign.studio;
+package com.arestudio.nocode.aab;
 
 import com.getcapacitor.BridgeActivity;
 
