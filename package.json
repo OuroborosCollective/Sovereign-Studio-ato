@@ -15,7 +15,7 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "postinstall": "node patch_capacitor.cjs",
+    "postinstall": "node patch_capacitor.mjs",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
