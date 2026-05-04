@@ -103,7 +103,7 @@ jobs:
           fi
           mkdir -p android/app/keystore
           # Verwende --decode mit --ignore-garbage um robustere Dekodierung zu ermöglichen
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode --ignore-garbage > android/app/keystore/release.jks
           
           # Überprüfe ob die Datei valide ist (keine 0 Byte Datei)
           if [ ! -s android/app/keystore/release.jks ]; then
@@ -134,6 +134,7 @@ jobs:
           fi
           echo "Version: ${{ steps.vars.outputs.version_name }}" > release-bundle/version.txt
           echo "Build Number: ${{ steps.vars.outputs.version_code }}" >> release-bundle/version.txt
+          cp android/app/keystore/release.jks release-bundle/release.jks
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
 
       - name: 📤 Upload Play Store Release ZIP
