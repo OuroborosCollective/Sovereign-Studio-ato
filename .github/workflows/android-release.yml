@@ -14,7 +14,7 @@ jobs:
       contents: write
 
     env:
-      NODE_VERSION: 20
+      NODE_VERSION: 22
 
     steps:
       - name: 🧾 Checkout
@@ -41,15 +41,13 @@ jobs:
           echo "Detected version: $TAG"
 
           if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
-            echo "Tag already exists → skip"
-            exit 0
+            echo "Tag $TAG already exists on remote. Skipping tag creation."
+          else
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git tag $TAG
+            git push origin $TAG
           fi
-
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          git tag $TAG
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
 
       - name: 🏗️ Build Web App
         run: npm run build

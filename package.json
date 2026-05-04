@@ -15,8 +15,8 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "postinstall": "node patch_capacitor.cjs # Applied to fix Capacitor Google Auth dependency issues on Android/iOS",
-    "type-check": "tsc"
+    "postinstall": "node patch_capacitor.cjs",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@capgo/capacitor-native-biometric": "^6.0.0",
@@ -56,7 +56,7 @@
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/express": "^4.17.21",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitest/ui": "^3.0.5",
@@ -76,7 +76,7 @@
     }
   },
   "engines": {
-    "node": ">=20",
+    "node": ">=22",
     "npm": ">=10"
   }
 }
