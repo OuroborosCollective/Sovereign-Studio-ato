@@ -20,7 +20,7 @@ jobs:
       - name: 🧾 Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v4
@@ -29,7 +29,7 @@ jobs:
           cache: npm
 
       - name: 📦 Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: 🏷️ Create Git Tag from package.json
         if: github.ref == 'refs/heads/main'
@@ -96,46 +96,18 @@ jobs:
           chmod +x gradlew
           ./gradlew bundleRelease --no-daemon
 
-      - name: 🔑 Prepare Play Store API Key
-        run: |
-          cd android
-          echo "$PLAY_STORE_JSON_KEY" > key.json
-        env:
-          PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+      - name: 📤 Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 7
 
-      - name: ⚙️ Generate Fastlane Config
-        run: |
-          cd android
-          mkdir -p fastlane
-
-          cat > fastlane/Appfile <<EOF
-          package_name("${{ secrets.ANDROID_PACKAGE_NAME }}")
-          json_key_file("key.json")
-          EOF
-
-          cat > fastlane/Fastfile <<EOF
-          default_platform(:android)
-
-          platform :android do
-            desc "Deploy to Play Store Production"
-            lane :deploy_production do
-              upload_to_play_store(
-                track: 'production',
-                aab: '../android/app/build/outputs/bundle/release/app-release.aab',
-                skip_upload_metadata: true,
-                skip_upload_images: true,
-                skip_upload_screenshots: true
-              )
-            end
-          end
-          EOF
-
-      - name: 🚀 Install Fastlane
-        run: |
-          cd android
-          gem install fastlane
-
-      - name: 📤 Upload to Play Store
-        run: |
-          cd android
-          fastlane deploy_production
+      - name: 🚀 Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          packageName: ${{ secrets.ANDROID_PACKAGE_NAME }}
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: production
+          status: completed
