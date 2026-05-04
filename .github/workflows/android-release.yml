@@ -1,108 +1,57 @@
-name: Android Release Build
+name: 🚀 Android Production Release
 
 on:
   push:
-    branches:
-      - main
     tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version_code:
-        description: Android versionCode for this release
-        required: false
-        type: string
-      version_name:
-        description: Android versionName for this release
-        required: false
-        type: string
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NPM_CONFIG_LEGACY_PEER_DEPS: true
+      - "v*.*.*"
 
 jobs:
   build:
-    name: Build and sign Play Store release
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: 20
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm install
 
-      - name: Type check
-        run: npm run type-check
-
-      - name: Run unit tests
-        run: npm run test:run
-        env:
-          CI: true
-
-      - name: Build web project
+      - name: Build Web
         run: npm run build
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: '17'
-          cache: gradle
-
-      - name: Decode release keystore
-        run: |
-          mkdir -p android/app/keystore
-          printf '%s' '${{ secrets.KEYSTORE_BASE64 }}' | base64 --decode > android/app/keystore/release.jks
-          test -s android/app/keystore/release.jks
-
-      - name: Sync Capacitor Android
+      - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x android/gradlew
+      - name: Decode Keystore
+        run: |
+          mkdir -p android/app/keystore
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
 
-      - name: Build signed release AAB and APK
-        working-directory: android
+      - name: Create gradle.properties
+        run: |
+          echo "MYAPP_UPLOAD_STORE_FILE=keystore/release.jks" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/gradle.properties
+
+      - name: Build AAB
+        run: |
+          cd android
+          ./gradlew bundleRelease --no-daemon
+
+      - name: Install Fastlane
+        run: |
+          cd android
+          gem install fastlane
+
+      - name: Upload to Play Store
         env:
-          ANDROID_KEYSTORE_PATH: keystore/release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          ANDROID_VERSION_CODE: ${{ inputs.version_code }}
-          ANDROID_VERSION_NAME: ${{ inputs.version_name }}
-        run: ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
-
-      - name: Verify release APK signature
-        run: $ANDROID_HOME/build-tools/34.0.0/apksigner verify --verbose android/app/build/outputs/apk/release/app-release.apk
-
-      - name: Upload signed release AAB for Google Play
-        uses: actions/upload-artifact@v4
-        with:
-          name: SovereignStudio-playstore-release-aab
-          path: android/app/build/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload signed release APK for device testing
-        uses: actions/upload-artifact@v4
-        with:
-          name: SovereignStudio-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload ProGuard mapping
-        uses: actions/upload-artifact@v4
-        with:
-          name: SovereignStudio-proguard-mapping
-          path: android/app/build/outputs/mapping/release/mapping.txt
-          if-no-files-found: warn
-          retention-days: 90
+          PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+        run: |
+          cd android
+          fastlane deploy_production
