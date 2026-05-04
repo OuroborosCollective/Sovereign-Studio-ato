@@ -26,6 +26,7 @@ jobs:
           distribution: zulu
           java-version: '17'
           cache: gradle
+          node-version: 20
 
       - name: Install deps
         run: npm install --legacy-peer-deps
