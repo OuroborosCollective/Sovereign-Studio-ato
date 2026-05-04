@@ -1,9 +1,9 @@
 apply plugin: 'com.android.application'
 
-def releaseVersionCodeStr = project.findProperty('versionCode') ?: System.getenv('ANDROID_VERSION_CODE') ?: "1"
+def releaseVersionCodeStr = project.hasProperty('versionCode') ? project.getProperty('versionCode') : System.getenv('ANDROID_VERSION_CODE') ?: "1"
 def releaseVersionCode = releaseVersionCodeStr as Integer
 
-def releaseVersionName = project.findProperty('versionName') ?: System.getenv('ANDROID_VERSION_NAME') ?: "1.0.0-dev"
+def releaseVersionName = project.hasProperty('versionName') ? project.getProperty('versionName') : System.getenv('ANDROID_VERSION_NAME') ?: "1.0.0-dev"
 releaseVersionName = releaseVersionName.toString()
 
 def releaseStoreFile = project.findProperty('android.injected.signing.store.file') ?: System.getenv('ANDROID_KEYSTORE_PATH')

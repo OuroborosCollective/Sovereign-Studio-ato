@@ -5,6 +5,15 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Optional: Version Code (must be higher than previous Play uploads)'
+        required: false
+        type: string
+      version_name:
+        description: 'Optional: Version Name (e.g., 1.1.1)'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -77,32 +86,39 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          # Wir nutzen den absoluten Pfad für den Keystore, um Gradle-Daemon-Probleme zu vermeiden
+          # Verwende die übergebenen Version Codes/Namen oder Standardwerte
+          VERSION_CODE=${{ github.event.inputs.version_code || github.run_number }}
+          VERSION_NAME=${{ github.event.inputs.version_name || (node -p "require('../package.json').version") }}
+          echo "Building AAB with Version Code: $VERSION_CODE, Version Name: $VERSION_NAME"
           ./gradlew bundleRelease --no-daemon \
             -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
-            -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD
+            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.ANDROID_KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }} \
+            -PversionCode=$VERSION_CODE \
+            -PversionName=$VERSION_NAME
         env:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_VERSION_CODE: ${{ github.run_number }}
-          ANDROID_VERSION_NAME: $(node -p "require('../package.json').version")
 
       - name: 📁 Prepare Artifacts for Download
         run: |
           mkdir -p release-bundle
-          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/
-          cp android/app/keystore/release.jks release-bundle/
+          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
+          # Proguard mapping file, if minification is enabled
+          if [ -f android/app/build/outputs/mapping/release/mapping.txt ]; then
+            cp android/app/build/outputs/mapping/release/mapping.txt release-bundle/SovereignStudio-proguard-mapping.txt
+          fi
           echo "Version: $(node -p "require('./package.json').version")" > release-bundle/version.txt
           echo "Build Number: ${{ github.run_number }}" >> release-bundle/version.txt
+          zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
 
-      - name: 📤 Upload Signed AAB & Keystore
+      - name: 📤 Upload Play Store Release ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: signed-android-release-bundle
-          path: release-bundle/
+          name: SovereignStudio-PlayStore-Release
+          path: SovereignStudio-PlayStore-Release.zip
           retention-days: 7
 
       - name: 🚀 Upload to Google Play (Optional/Manual)
@@ -110,7 +126,7 @@ jobs:
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
-          packageName: ${{ secrets.ANDROID_PACKAGE_NAME }}
+          packageName: com.arestudio.nocode.aab
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
           tracks: production
           status: completed
