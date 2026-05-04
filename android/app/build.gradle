@@ -9,7 +9,7 @@ def releaseKeyPassword = project.findProperty('android.injected.signing.key.pass
 def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
 android {
-    namespace "com.sovereign.studio"
+    namespace "com.arestudio.nocode.aab"
     compileSdk 34
 
     aaptOptions {
@@ -17,14 +17,14 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.sovereign.studio"
+        applicationId "com.arestudio.nocode.aab"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion 34
         versionCode releaseVersionCode
         versionName releaseVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [
-            appAuthRedirectScheme: 'com.sovereign.studio',
+            appAuthRedirectScheme: 'com.arestudio.nocode.aab',
             usesCleartextTraffic: 'false'
         ]
         aaptOptions {
@@ -48,7 +48,7 @@ android {
     buildTypes {
         debug {
             manifestPlaceholders = [
-                appAuthRedirectScheme: 'com.sovereign.studio',
+                appAuthRedirectScheme: 'com.arestudio.nocode.aab',
                 usesCleartextTraffic: 'true'
             ]
         }
@@ -61,7 +61,7 @@ android {
             minifyEnabled true
             shrinkResources true
             manifestPlaceholders = [
-                appAuthRedirectScheme: 'com.sovereign.studio',
+                appAuthRedirectScheme: 'com.arestudio.nocode.aab',
                 usesCleartextTraffic: 'false'
             ]
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
