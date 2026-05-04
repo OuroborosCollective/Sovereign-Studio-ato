@@ -9,13 +9,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
-
     env:
-      NODE_VERSION: 20
-
+      NODE_VERSION: 22
     steps:
       - name: 🧾 Checkout
         uses: actions/checkout@v4
@@ -39,15 +36,12 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           TAG="v$VERSION"
           echo "Detected version: $TAG"
-
           if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
             echo "Tag already exists → skip"
             exit 0
           fi
-
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-
           git tag $TAG
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
 
@@ -79,22 +73,18 @@ jobs:
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
           ls -lh android/app/keystore/
 
-      - name: 📝 Create gradle.properties securely
-        run: |
-          echo "MYAPP_UPLOAD_STORE_FILE=keystore/release.jks" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_ALIAS=$MYAPP_UPLOAD_KEY_ALIAS" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_STORE_PASSWORD=$MYAPP_UPLOAD_STORE_PASSWORD" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_PASSWORD=$MYAPP_UPLOAD_KEY_PASSWORD" >> android/gradle.properties
-        env:
-          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-
       - name: 📦 Build Release AAB
         run: |
           cd android
           chmod +x gradlew
           ./gradlew bundleRelease --no-daemon
+        env:
+          ANDROID_KEYSTORE_PATH: "keystore/release.jks"
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+          ANDROID_VERSION_NAME: $(node -p "require('../package.json').version")
 
       - name: 📤 Upload AAB Artifact
         uses: actions/upload-artifact@v4
