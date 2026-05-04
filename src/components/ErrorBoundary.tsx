@@ -21,11 +21,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   public static getDerivedStateFromError(error: unknown): State {
     const errorInstance = error instanceof Error ? error : new Error(String(error));
+    console.error('[GHOST_PILOT_FAILURE] UI_CRASH_DETECTED:', errorInstance.message);
     return { hasError: true, error: errorInstance, errorInfo: null };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    console.error('[GHOST_PILOT_FAILURE] CAUGHT_EXCEPTION:', error.message);
+    console.error('[GHOST_PILOT_FAILURE] STACK_TRACE:', error.stack);
+    console.error('[GHOST_PILOT_FAILURE] COMPONENT_STACK:', errorInfo.componentStack);
+    
     this.setState({ errorInfo });
     
     const logError = async () => {
