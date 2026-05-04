@@ -103,14 +103,17 @@ jobs:
           fi
           mkdir -p android/app/keystore
           # Verwende --decode mit --ignore-garbage um robustere Dekodierung zu ermöglichen
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode --ignore-garbage > android/app/keystore/release.jks
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 --decode --ignore-garbage > android/app/keystore/release.jks
           
           # Überprüfe ob die Datei valide ist (keine 0 Byte Datei)
           if [ ! -s android/app/keystore/release.jks ]; then
             echo "Error: Decoded keystore file is empty!"
             exit 1
           fi
+          echo "Keystore file info:"
           ls -lh android/app/keystore/
+          echo "Checking keystore with keytool..."
+          keytool -list -keystore android/app/keystore/release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" || echo "Warning: keytool could not list keystore content. Password might be wrong or file corrupted."
 
       - name: 📦 Build Release AAB
         run: |
