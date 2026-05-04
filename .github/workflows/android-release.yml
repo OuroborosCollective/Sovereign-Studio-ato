@@ -77,9 +77,9 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          # Wir übergeben die Parameter als Projekt-Properties (-P), damit Gradle sie sicher erkennt
+          # Wir nutzen den absoluten Pfad für den Keystore, um Gradle-Daemon-Probleme zu vermeiden
           ./gradlew bundleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file=keystore/release.jks \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
             -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
             -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS \
             -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD
