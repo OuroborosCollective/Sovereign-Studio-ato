@@ -13,7 +13,7 @@ const googleAuthConfig = {
 };
 
 const config: CapacitorConfig = {
-  appId: 'com.sovereign.studio',
+  appId: 'com.arestudio.nocode.aab',
   appName: 'Sovereign Studio',
   webDir: 'dist',
   server: {
