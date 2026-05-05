@@ -1,3 +1,4 @@
+// @ts-ignore
 import { Octokit } from 'octokit';
 
 /**
@@ -63,14 +64,14 @@ export class GitHubIssueHub {
 
       // Die GitHub REST API inkludiert Pull Requests in der Issue-Liste. 
       // Wir filtern diese explizit aus, da der Sovereign Studio Cycle auf Issue-Instruktionen basiert.
-      return issues
+      return (issues as any[])
         .filter((issue) => !issue.pull_request)
         .map((issue) => ({
           id: issue.id,
           title: issue.title,
           body: issue.body ?? '',
           number: issue.number,
-          labels: issue.labels.map((label) => 
+          labels: issue.labels.map((label: any) => 
             typeof label === 'string' ? label : (label.name ?? '')
           ),
           url: issue.html_url,

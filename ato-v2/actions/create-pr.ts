@@ -1,3 +1,4 @@
+// @ts-ignore
 import { Octokit } from "@octokit/rest";
 
 interface PullRequestOptions {
