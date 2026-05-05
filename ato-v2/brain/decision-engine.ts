@@ -1,23 +1,15 @@
 import { 
   SignalImpact, 
-  SystemSignal, 
-  ArchitecturalAction, 
-  ActionType 
+  SystemSignal,
+  ActionType,
+  ArchitecturalAction
 } from './types';
 
 /**
  * Sovereign Studio V3 - Decision Engine
  * Maps analyzed signals to high-performance architectural or content actions.
- * Optimized for Capacitor 6 and Mobile-First hybrid architectures.
+ * Optimized for Gemini API integration and Capacitor 6 hybrid workflows.
  */
-
-// Fix TS2693: SignalImpact must be an enum to be used as a value
-export enum DecisionSignalImpact {
-  LOW = 'LOW',
-  MEDIUM = 'MEDIUM',
-  HIGH = 'HIGH',
-  CRITICAL = 'CRITICAL'
-}
 
 export enum DecisionState {
   IDLE = 'IDLE',
@@ -61,15 +53,15 @@ export class DecisionEngine {
   }
 
   /**
-   * Core mapping logic for Sovereign Studio hybrid architecture.
-   * Fix TS2367: signal.type union now includes 'UI_INCONSISTENCY'
+   * Core mapping logic for Sovereign Studio V3 hybrid architecture.
+   * Fixes TS2367 by explicitly handling the SignalType union including 'UI_INCONSISTENCY'.
    */
   private mapSignalToAction(signal: SystemSignal): ArchitecturalAction {
     const { type, impact, metadata } = signal;
 
     // High Impact Performance signals trigger Native Capacitor Optimizations
-    // Using cast to ensure enum comparison compatibility if imported from external types
-    if (impact === (SignalImpact.CRITICAL as any) && this.context.platform !== 'web') {
+    // Fix TS2693: Explicitly using SignalImpact enum values for comparison
+    if (impact === SignalImpact.CRITICAL && this.context.platform !== 'web') {
       return {
         type: ActionType.OPTIMIZE_NATIVE,
         priority: 1,
@@ -78,16 +70,12 @@ export class DecisionEngine {
       };
     }
 
-    // Logic for LLM-driven UI updates
-    // Fix TS2339: metadata now contains optional targetId
+    // Logic for LLM-driven UI updates (Fixes TS2367)
     if (type === 'UI_INCONSISTENCY') {
       return {
         type: ActionType.REFACTOR_COMPONENT,
         priority: 2,
-        payload: { 
-          componentId: metadata.targetId || 'root', 
-          pattern: 'MobileFirst' 
-        },
+        payload: { componentId: metadata.targetId, pattern: 'MobileFirst' },
         timestamp: Date.now()
       };
     }
@@ -101,14 +89,19 @@ export class DecisionEngine {
     };
   }
 
+  /**
+   * Ensures action conforms to Mobile-First constraints and platform-specific requirements.
+   */
   private validateAction(action: ArchitecturalAction): ArchitecturalAction {
-    // Ensure action conforms to Mobile-First constraints
     if (this.context.platform === 'android' && action.type === ActionType.REFACTOR_COMPONENT) {
       action.payload.optimizeForTouch = true;
     }
     return action;
   }
 
+  /**
+   * Provides a safe fallback in case of mapping failures.
+   */
   private fallbackAction(signal: SystemSignal): ArchitecturalAction {
     return {
       type: ActionType.LOG_ERROR,
@@ -121,22 +114,4 @@ export class DecisionEngine {
   public getState(): DecisionState {
     return this.currentState;
   }
-}
-
-/**
- * Enhanced types for internal Engine communication and external extension
- */
-export enum ActionType {
-  OPTIMIZE_NATIVE = 'OPTIMIZE_NATIVE',
-  REFACTOR_COMPONENT = 'REFACTOR_COMPONENT',
-  SYNC_STATE = 'SYNC_STATE',
-  LOG_ERROR = 'LOG_ERROR',
-  GENERATE_CONTENT = 'GENERATE_CONTENT'
-}
-
-export interface ArchitecturalAction {
-  type: ActionType;
-  priority: number;
-  payload: Record<string, any>;
-  timestamp: number;
 }

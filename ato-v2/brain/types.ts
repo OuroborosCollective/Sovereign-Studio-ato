@@ -2,7 +2,25 @@ export type ModelProvider = 'gemini-1.5-pro' | 'gemini-1.5-flash' | 'custom';
 
 export type DecisionUrgency = 'low' | 'medium' | 'high' | 'critical';
 
-export type SignalImpact = 'minimal' | 'low' | 'medium' | 'high' | 'critical';
+export enum SignalImpact {
+  MINIMAL = 'minimal',
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  CRITICAL = 'critical'
+}
+
+export type ActionType = 'create' | 'update' | 'delete' | 'patch' | 'refactor' | 'optimize' | 'deploy' | 'rollback' | 'analyze';
+
+export interface ArchitecturalAction {
+  id: string;
+  type: ActionType;
+  path: string;
+  description: string;
+  payload?: string;
+  dependencies?: string[];
+  priority: number;
+}
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -23,6 +41,7 @@ export interface SystemSignal {
   metadata?: {
     platform?: 'android' | 'ios' | 'web';
     version?: string;
+    targetId?: string;
   };
 }
 
