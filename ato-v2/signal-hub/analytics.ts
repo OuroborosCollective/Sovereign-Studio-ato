@@ -62,7 +62,11 @@ class AnalyticsProcessor {
       });
     });
 
-    observer.observe({ type: 'largest-contentful-paint', buffered: true });
+    try {
+      observer.observe({ type: 'largest-contentful-paint', buffered: true });
+    } catch (e) {
+      console.warn('[AnalyticsProcessor] LCP observer not supported or failed', e);
+    }
   }
 
   private initInteractionListeners(): void {
@@ -109,6 +113,15 @@ class AnalyticsProcessor {
         payload: { endpoint, duration, threshold: this.API_LATENCY_THRESHOLD }
       });
     }
+    
+    this.metricsBuffer.push({
+      id: crypto.randomUUID(),
+      name: 'API_LATENCY',
+      value: duration,
+      threshold: this.API_LATENCY_THRESHOLD,
+      timestamp: Date.now(),
+      metadata: { endpoint }
+    });
   }
 
   private async evaluateMetric(metric: PerformanceMetric): Promise<void> {
@@ -132,6 +145,8 @@ class AnalyticsProcessor {
   }
 
   private emitTaskTrigger(trigger: TaskTrigger): void {
+    if (typeof window === 'undefined') return;
+
     // Dispatch to Signal Hub / Gemini Orchestrator
     const event = new CustomEvent('sovereign:task_trigger', { detail: trigger });
     window.dispatchEvent(event);

@@ -1,4 +1,4 @@
-import { createPatch } from 'diff';
+import * as Diff from 'diff';
 
 /**
  * Sovereign Studio V3 - Patch Engine
@@ -35,7 +35,7 @@ export class PatchEngine {
       }
 
       // Erzeugung des Unified Diffs mit standardisierten Header-Präfixen
-      const patch = createPatch(
+      const patch = Diff.createPatch(
         filename,
         originalCode,
         modifiedCode,
@@ -77,8 +77,9 @@ export class PatchEngine {
     // Durchsuche Segmente nach Code-Blöcken (jeder zweite Eintrag nach dem Split-Pattern)
     for (let i = 1; i < segments.length; i += 2) {
       const segment = segments[i];
+      if (!segment) continue;
+
       const lines = segment.split('\n');
-      
       if (lines.length === 0) continue;
 
       const firstLine = lines[0].toLowerCase().trim();
@@ -87,7 +88,7 @@ export class PatchEngine {
         'typescript', 'ts', 'tsx', 
         'javascript', 'js', 'json', 
         'css', 'scss', 'html', 
-        'xml', 'markdown', 'bash'
+        'xml', 'markdown', 'bash', 'yaml', 'yml'
       ];
       
       if (languages.some(lang => firstLine === lang || firstLine.startsWith(lang))) {
@@ -97,7 +98,7 @@ export class PatchEngine {
       }
     }
 
-    // Fallback: Extraktion des ersten verfügbaren Inhalts-Segments
+    // Fallback: Extraktion des ersten verfügbaren Inhalts-Segments nach dem ersten Delimiter
     return segments[1] ? segments[1].trim() : response.trim();
   }
 }

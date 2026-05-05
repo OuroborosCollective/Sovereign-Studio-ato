@@ -26,6 +26,7 @@ export class BetaFeedbackService {
 
   /**
    * Aggregates user feedback with device context and sanitizes the input.
+   * Leverages Capacitor 6 Device plugin for environment metadata.
    */
   public async processAndSubmit(input: RawFeedbackInput): Promise<{ success: boolean; id?: string }> {
     try {
@@ -84,21 +85,26 @@ export class BetaFeedbackService {
    * Transmits the sanitized data to the Signal-Hub aggregation endpoint.
    */
   private async transmit(payload: BetaFeedbackPayload): Promise<{ success: boolean; id?: string }> {
-    const response = await fetch(BetaFeedbackService.ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Sovereign-Source': 'Beta-Tester-V3'
-      },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch(BetaFeedbackService.ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Sovereign-Source': 'Beta-Tester-V3'
+        },
+        body: JSON.stringify(payload),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Signal-Hub rejection: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Signal-Hub rejection: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      return { success: true, id: result.id };
+    } catch (error) {
+      console.error('[BetaFeedbackService] Transmission error:', error);
+      throw error;
     }
-
-    const result = await response.json();
-    return { success: true, id: result.id };
   }
 }
 
