@@ -1,4 +1,4 @@
-import * as Diff from 'diff';
+import { createPatch } from 'diff';
 
 /**
  * Sovereign Studio V3 - Patch Engine
@@ -35,7 +35,7 @@ export class PatchEngine {
       }
 
       // Erzeugung des Unified Diffs mit standardisierten Header-Präfixen
-      const patch = Diff.createPatch(
+      const patch = createPatch(
         filename,
         originalCode,
         modifiedCode,

@@ -1,4 +1,4 @@
-import { Octokit } from '@octokit/rest';
+import { Octokit } from 'octokit';
 
 /**
  * GitHubIssueSignal
@@ -51,7 +51,7 @@ export class GitHubIssueHub {
     options: SignalFilterOptions = {}
   ): Promise<GitHubIssueSignal[]> {
     try {
-      const { data: issues } = await this.octokit.issues.listForRepo({
+      const { data: issues } = await this.octokit.rest.issues.listForRepo({
         owner,
         repo,
         state: options.state || 'open',
@@ -96,7 +96,7 @@ export class GitHubIssueHub {
   ): Promise<void> {
     try {
       // Kommentar für den Audit-Trail im GitHub Issue hinterlassen
-      await this.octokit.issues.createComment({
+      await this.octokit.rest.issues.createComment({
         owner,
         repo,
         issue_number: issueNumber,
@@ -104,7 +104,7 @@ export class GitHubIssueHub {
       });
 
       // Status-Label aktualisieren
-      await this.octokit.issues.addLabels({
+      await this.octokit.rest.issues.addLabels({
         owner,
         repo,
         issue_number: issueNumber,
@@ -114,7 +114,7 @@ export class GitHubIssueHub {
       // Optional: Entferne das ursprüngliche 'autonomous-task' Label, wenn 'processed' erreicht wurde
       if (statusLabel === 'processed') {
         try {
-          await this.octokit.issues.removeLabel({
+          await this.octokit.rest.issues.removeLabel({
             owner,
             repo,
             issue_number: issueNumber,

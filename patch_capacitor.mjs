@@ -64,15 +64,17 @@ const runPatch = () => {
 };
 
 /**
- * Execution check using WHATWG URL API to resolve DEP0169.
+ * Execution check using modern WHATWG URL API to resolve DEP0169.
  * Replaces deprecated url.parse() logic with modern URL comparison.
  */
 const isMainModule = () => {
   if (!process.argv[1]) return false;
   try {
-    // Resolve real path to handle symlinks correctly in monorepos
+    // Resolve absolute path and convert to file:// URL string
     const scriptPath = pathToFileURL(fs.realpathSync(process.argv[1])).href;
+    // import.meta.url is already a compliant URL string
     const currentModulePath = new URL(import.meta.url).href;
+    
     return scriptPath === currentModulePath;
   } catch (e) {
     return false;
