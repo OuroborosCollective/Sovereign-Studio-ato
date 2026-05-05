@@ -1,4 +1,3 @@
-// @ts-ignore
 import { Octokit } from 'octokit';
 
 /**
@@ -37,6 +36,10 @@ export class GitHubIssueHub {
   private octokit: Octokit;
 
   constructor(token: string) {
+    /**
+     * Initialisierung des Octokit Clients. 
+     * Verwendet die offizielle 'octokit' Bibliothek zur Interaktion mit der GitHub REST API.
+     */
     this.octokit = new Octokit({
       auth: token,
     });
@@ -62,16 +65,18 @@ export class GitHubIssueHub {
         direction: 'desc',
       });
 
-      // Die GitHub REST API inkludiert Pull Requests in der Issue-Liste. 
-      // Wir filtern diese explizit aus, da der Sovereign Studio Cycle auf Issue-Instruktionen basiert.
-      return (issues as any[])
+      /**
+       * Die GitHub REST API inkludiert Pull Requests in der Issue-Liste. 
+       * Wir filtern diese explizit aus, da der Sovereign Studio Cycle auf reinen Issue-Instruktionen basiert.
+       */
+      return issues
         .filter((issue) => !issue.pull_request)
         .map((issue) => ({
           id: issue.id,
           title: issue.title,
           body: issue.body ?? '',
           number: issue.number,
-          labels: issue.labels.map((label: any) => 
+          labels: issue.labels.map((label) => 
             typeof label === 'string' ? label : (label.name ?? '')
           ),
           url: issue.html_url,
@@ -101,7 +106,7 @@ export class GitHubIssueHub {
         owner,
         repo,
         issue_number: issueNumber,
-        body: `### [Sovereign Studio V3] Autonomous Cycle Update\nStatus set to: **${statusLabel}**\n*Timestamp: ${new Date().toISOString()}*`,
+        body: `### [Sovereign Studio Design-Coder] Autonomous Cycle Update\nStatus set to: **${statusLabel}**\n*Timestamp: ${new Date().toISOString()}*`,
       });
 
       // Status-Label aktualisieren
@@ -122,7 +127,7 @@ export class GitHubIssueHub {
             name: 'autonomous-task',
           });
         } catch (e) {
-          // Ignorieren, falls das Label bereits manuell entfernt wurde
+          // Fehler ignorieren, falls das Label bereits manuell entfernt wurde
         }
       }
     } catch (error: any) {
@@ -135,4 +140,4 @@ export class GitHubIssueHub {
 /**
  * Fabrikfunktion zur Initialisierung des GitHub Signal Hubs.
  */
-export const createGitHubSignalHub = (token: string) => new GitHubIssueHub(token);
+export const createGitHubSignalHub = (token: string): GitHubIssueHub => new GitHubIssueHub(token);
