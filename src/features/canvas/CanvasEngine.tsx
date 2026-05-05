@@ -1,26 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
 import { useDispatch, useSelector } from 'react-redux';
-
-interface CanvasObject {
-  id: string;
-  type: 'ai-text' | 'ai-shape' | 'ai-image';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  data: any;
-}
-
-interface RootState {
-  canvas: {
-    objects: CanvasObject[];
-    selectedId: string | null;
-  };
-}
-
-const updateObject = (payload: Partial<CanvasObject> & { id: string }) => ({ type: 'canvas/updateObject', payload });
-const selectObject = (id: string | null) => ({ type: 'canvas/selectObject', payload: id });
+import { 
+  CanvasObject, 
+  RootState, 
+  updateObject, 
+  selectObject 
+} from './canvasSlice';
 
 interface CanvasEngineProps {
   className?: string;
@@ -154,13 +140,19 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const currentFabricObjects = canvas.getObjects();
     let hasChanges = false;
     
-    objects.forEach((objData) => {
+    objects.forEach((objData, index) => {
       const existingObj = currentFabricObjects.find((o: any) => o.id === objData.id);
 
       if (existingObj) {
-        if (existingObj.left !== objData.x || existingObj.top !== objData.y) {
+        const needsUpdate = 
+          existingObj.left !== objData.x || 
+          existingObj.top !== objData.y || 
+          canvas.getObjects().indexOf(existingObj) !== index;
+
+        if (needsUpdate) {
           existingObj.set({ left: objData.x, top: objData.y });
           existingObj.setCoords();
+          canvas.moveTo(existingObj, index);
           hasChanges = true;
         }
       } else {
@@ -187,6 +179,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
         (newObj as any).id = objData.id;
         canvas.add(newObj);
+        canvas.moveTo(newObj, index);
         hasChanges = true;
       }
     });
