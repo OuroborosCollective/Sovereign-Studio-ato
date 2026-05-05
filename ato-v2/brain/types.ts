@@ -2,12 +2,28 @@ export type ModelProvider = 'gemini-1.5-pro' | 'gemini-1.5-flash' | 'custom';
 
 export type DecisionUrgency = 'low' | 'medium' | 'high' | 'critical';
 
+export type SignalImpact = 'minimal' | 'low' | 'medium' | 'high' | 'critical';
+
 export interface ModelConfig {
   provider: ModelProvider;
   temperature: number;
   maxTokens: number;
   topP?: number;
   topK?: number;
+}
+
+export interface SystemSignal {
+  id: string;
+  type: 'performance' | 'security' | 'user_intent' | 'system_health' | 'api_limit' | 'git_event';
+  source: string;
+  timestamp: number;
+  impact: SignalImpact;
+  payload: Record<string, unknown>;
+  handled: boolean;
+  metadata?: {
+    platform?: 'android' | 'ios' | 'web';
+    version?: string;
+  };
 }
 
 export interface BrainDecision {
@@ -53,6 +69,7 @@ export interface DecisionEngineInterface {
   analyze(context: DecisionContext): Promise<EngineResult>;
   refine(decisionId: string, feedback: string): Promise<BrainDecision>;
   execute(decision: BrainDecision): Promise<void>;
+  processSignal(signal: SystemSignal): Promise<void>;
 }
 
 export type BrainStatus = 'idle' | 'processing' | 'learning' | 'error';
@@ -62,4 +79,5 @@ export interface BrainState {
   lastDecision?: BrainDecision;
   config: ModelConfig;
   activeCapabilities: BrainCapability[];
+  activeSignals: SystemSignal[];
 }
