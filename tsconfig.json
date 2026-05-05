@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "moduleResolution": "bundler",
+    "esModuleInterop": true,
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": true,

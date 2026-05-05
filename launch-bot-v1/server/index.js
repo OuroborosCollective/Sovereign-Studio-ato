@@ -15,12 +15,21 @@ const PORT = process.env.PORT || 3001;
 /**
  * SOVEREIGN STUDIO - HYBRID BACKEND CORE
  * Express entrypoint optimized for Gemini-API orchestrated workflows
+ * Using WHATWG URL API to ensure security and resolve DEP0169
  */
 
 // Global Security Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
+  origin: (origin, callback) => {
+    const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [];
+    // If no origin (e.g. server-to-server) or origin is in allowed list
+    if (!origin || allowed.includes(origin) || allowed.length === 0 || allowed.includes('*')) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS Policy: Origin not allowed'));
+    }
+  },
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   credentials: true
 }));
@@ -29,11 +38,21 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Traceability Middleware for AI-Operations
+// Traceability Middleware for AI-Operations using WHATWG URL API
 app.use((req, res, next) => {
-  const traceId = req.headers['x-sovereign-trace-id'] || Math.random().toString(36).substring(7);
-  req.traceId = traceId;
-  next();
+  try {
+    // Constructing a modern URL object for safe property access and logging
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const fullUrl = new URL(req.originalUrl || req.url, `${protocol}://${req.get('host')}`);
+    
+    const traceId = req.headers['x-sovereign-trace-id'] || Math.random().toString(36).substring(7);
+    req.traceId = traceId;
+    req.sovereignUrl = fullUrl;
+
+    next();
+  } catch (e) {
+    next(); // Fallback if URL construction fails
+  }
 });
 
 // Base Health Check for CI/CD Pipeline
@@ -42,7 +61,8 @@ app.get('/api/status', (req, res) => {
     status: 'online',
     version: '1.0.0-beta',
     engine: 'Sovereign Studio Design-Coder',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    traceId: req.traceId
   });
 });
 

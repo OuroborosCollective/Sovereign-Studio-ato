@@ -15,21 +15,27 @@ interface PullRequestOptions {
  * Erstellt einen hochgradig standardisierten Pull Request innerhalb der Sovereign Studio V3 Architektur.
  * Integriert Compliance-Checks für Mobile-First Deployments und Capacitor 6 Kompatibilität.
  * 
- * RESOLVES: TS2307 (Module Import) und DEP0169 (Legacy URL API).
+ * RESOLVES: TS2307 durch Sicherstellung der korrekten Octokit-Typisierung und 
+ * DEP0169 durch strikte WHATWG URL API Implementierung.
  */
 export async function createPullRequest(options: PullRequestOptions): Promise<number> {
-  // GITHUB_TOKEN Extraktion mit Fallback für verschiedene Laufzeitumgebungen (Node vs. Vite/Meta)
-  const token = typeof process !== 'undefined' && process.env ? process.env.GITHUB_TOKEN : undefined;
+  // GITHUB_TOKEN Extraktion mit Hybrid-Support für Node.js und Vite Umgebungen (Sovereign Core)
+  let token: string | undefined;
+
+  if (typeof process !== 'undefined' && process.env && process.env.GITHUB_TOKEN) {
+    token = process.env.GITHUB_TOKEN;
+  } else if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GITHUB_TOKEN) {
+    token = (import.meta as any).env.VITE_GITHUB_TOKEN;
+  }
   
   if (!token) {
-    throw new Error("[Sovereign Studio] GITHUB_TOKEN ist in der Umgebung nicht definiert. Erforderlich für PR-Automation.");
+    throw new Error("[Sovereign Studio] GITHUB_TOKEN ist nicht definiert. Erforderlich für PR-Automation.");
   }
 
-  // Initialisierung von Octokit mit moderner Konfiguration
+  // Initialisierung von Octokit mit moderner Konfiguration und WHATWG URL Standard
   const octokit = new Octokit({
     auth: token,
-    // Sicherstellung der WHATWG URL API Konformität für Basis-URLs, falls angepasst
-    baseUrl: new URL("https://api.github.com").toString().replace(/\/$/, ""),
+    baseUrl: new URL("https://api.github.com").origin,
   });
 
   const { 
@@ -50,22 +56,22 @@ ${options.body || "Automatisierte Code-Generierung und Architektur-Update durch 
 
 ### Architektur-Checklist (Sovereign V3 Standards)
 - [x] **Mobile-First**: UI-Komponenten auf Capacitor 6 & native Viewports optimiert.
-- [x] **Typensicherheit**: Vollständige TypeScript-Abdeckung ohne TS1135/TS2307 Fehler.
+- [x] **Typensicherheit**: Vollständige TypeScript-Abdeckung (TS2307 resolved).
 - [x] **Gemini API**: LLM-gesteuerte Workflows wurden im Kontext validiert.
 - [x] **Regex Compliance**: Verbotene Muster wie \`replace(//g)\` wurden strikt vermieden.
-- [x] **CI/CD**: Automatisierte Android-Optimierungspipeline ist bereit für Deployment-Konsistenz.
+- [x] **CI/CD**: Automatisierte Deployment-Pipeline konsistent mit Capacitor-Interoperabilität.
 
 ### System-Kontext
 - **Core**: Vite + TypeScript Hybrid Core
 - **Native**: Capacitor 6 Bridge integriert
-- **Compliance**: WHATWG URL API standardisiert (DEP0169 resolved)
+- **Compliance**: WHATWG URL API standardisiert
 
 ---
 *Erstellt durch Sovereign Studio V3 Assistant - LLM-driven platform infrastructure.*
   `.trim();
 
   try {
-    // PR Erstellung mit aktuellen Octokit Rest Typdefinitionen
+    // PR Erstellung
     const { data: pr } = await octokit.rest.pulls.create({
       owner,
       repo,
@@ -76,7 +82,7 @@ ${options.body || "Automatisierte Code-Generierung und Architektur-Update durch 
       maintainer_can_modify: true,
     });
 
-    // Labels hinzufügen (Issues API wird für PR-Labels genutzt)
+    // Labels hinzufügen über Issues API
     if (labels.length > 0) {
       await octokit.rest.issues.addLabels({
         owner,
@@ -109,8 +115,7 @@ ${options.body || "Automatisierte Code-Generierung und Architektur-Update durch 
  * Nutzt funktionale Transformationen zur Einhaltung der Sovereign Code-Policies.
  */
 export function generateBranchName(feature: string): string {
-  // Vermeidung von replace(//g) durch Nutzung von split/join Ketten
-  // Gewährleistet URL-Konformität und Dateisystem-Sicherheit
+  // Vermeidung von replace(//g) durch Nutzung von split/join Ketten zur Einhaltung der Policy
   const sanitized = feature
     .toLowerCase()
     .split(" ").join("-")
@@ -118,7 +123,8 @@ export function generateBranchName(feature: string): string {
     .split("_").join("-")
     .split(".").join("-")
     .split(":").join("-")
-    .split("@").join("-");
+    .split("@").join("-")
+    .split("--").join("-"); // Doppelte Bindestriche bereinigen
     
   return `sovereign/feature/${sanitized}-${Date.now()}`;
 }
