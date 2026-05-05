@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NPM_CONFIG_LEGACY_PEER_DEPS: true
 
 concurrency:
@@ -25,14 +25,24 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
 
+      - name: Cache Node Modules
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
       - name: Install Dependencies
-        run: npm ci
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm install
 
       - name: Type Check
         run: npm run type-check
@@ -62,14 +72,16 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Restore Node Modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
 
       - name: Download Web Build Artifact
         uses: actions/download-artifact@v4
@@ -81,8 +93,8 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'zulu'
-          cache: 'gradle'
+          distribution: zulu
+          cache: gradle
 
       - name: Capacitor Sync
         run: npx cap sync android
