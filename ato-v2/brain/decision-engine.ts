@@ -1,13 +1,12 @@
 import { 
   SignalImpact, 
-  SystemSignal, 
-  ArchitecturalAction, 
-  ActionType 
+  SystemSignal 
 } from './types';
 
 /**
  * Sovereign Studio V3 - Decision Engine
  * Maps analyzed signals to high-performance architectural or content actions.
+ * Optimized for Mobile-First hybrid architecture (Capacitor 6 + Vite).
  */
 
 export enum DecisionState {
@@ -23,6 +22,25 @@ export interface DecisionContext {
   platform: 'web' | 'ios' | 'android';
   performanceMetrics: Record<string, number>;
   activeModule: string;
+}
+
+/**
+ * Type definitions for internal Engine communication.
+ * Exported to satisfy merged declaration requirements and fix TS2395.
+ */
+export enum ActionType {
+  OPTIMIZE_NATIVE = 'OPTIMIZE_NATIVE',
+  REFACTOR_COMPONENT = 'REFACTOR_COMPONENT',
+  SYNC_STATE = 'SYNC_STATE',
+  LOG_ERROR = 'LOG_ERROR',
+  GENERATE_CONTENT = 'GENERATE_CONTENT'
+}
+
+export interface ArchitecturalAction {
+  type: ActionType;
+  priority: number;
+  payload: Record<string, any>;
+  timestamp: number;
 }
 
 export class DecisionEngine {
@@ -86,14 +104,19 @@ export class DecisionEngine {
     };
   }
 
+  /**
+   * Ensures action conforms to Mobile-First and Native constraints.
+   */
   private validateAction(action: ArchitecturalAction): ArchitecturalAction {
-    // Ensure action conforms to Mobile-First constraints
     if (this.context.platform === 'android' && action.type === ActionType.REFACTOR_COMPONENT) {
       action.payload.optimizeForTouch = true;
     }
     return action;
   }
 
+  /**
+   * Fallback mechanism to ensure system stability.
+   */
   private fallbackAction(signal: SystemSignal): ArchitecturalAction {
     return {
       type: ActionType.LOG_ERROR,
@@ -106,22 +129,4 @@ export class DecisionEngine {
   public getState(): DecisionState {
     return this.currentState;
   }
-}
-
-/**
- * Type definitions for internal Engine communication
- */
-export enum ActionType {
-  OPTIMIZE_NATIVE = 'OPTIMIZE_NATIVE',
-  REFACTOR_COMPONENT = 'REFACTOR_COMPONENT',
-  SYNC_STATE = 'SYNC_STATE',
-  LOG_ERROR = 'LOG_ERROR',
-  GENERATE_CONTENT = 'GENERATE_CONTENT'
-}
-
-export interface ArchitecturalAction {
-  type: ActionType;
-  priority: number;
-  payload: Record<string, any>;
-  timestamp: number;
 }
