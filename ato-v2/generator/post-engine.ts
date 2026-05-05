@@ -59,9 +59,18 @@ export class PostEngine {
 
   private parseResponse(text: string): GeneratedContent {
     try {
-      const cleaned = text.replace(/json/i, "").replace(//i, "").trim();
+      // Extracting JSON by identifying the first and last curly braces to avoid markdown noise
+      const firstBrace = text.indexOf("{");
+      const lastBrace = text.lastIndexOf("}") + 1;
+      
+      if (firstBrace === -1 || lastBrace === 0) {
+        throw new Error("No JSON object found in response");
+      }
+
+      const cleaned = text.substring(firstBrace, lastBrace);
       return JSON.parse(cleaned) as GeneratedContent;
     } catch (error) {
+      console.error("[PostEngine] Parsing failed:", error);
       return {
         releaseNotes: "Error parsing release notes.",
         socialMedia: { linkedin: "", twitter: "" },
@@ -87,6 +96,19 @@ export class PostEngine {
     }
 
     return fragment;
+  }
+
+  /**
+   * Helper to ensure WHATWG URL compliance for release links
+   * Replaces deprecated url.parse() logic as per DEP0169
+   */
+  public constructReleaseUrl(baseUrl: string, version: string): string {
+    try {
+      const url = new URL(`/releases/tag/v${version}`, baseUrl);
+      return url.toString();
+    } catch (e) {
+      return "";
+    }
   }
 }
 
