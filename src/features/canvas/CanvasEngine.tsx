@@ -1,11 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
 import { useDispatch, useSelector } from 'react-redux';
+import { RootState } from '../../store';
 import { 
   CanvasObject, 
-  RootState, 
   updateObject, 
-  selectObject 
+  selectObjects 
 } from './canvasSlice';
 
 interface CanvasEngineProps {
@@ -93,11 +93,11 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     fabricCanvas.on('selection:created', (e) => {
       const activeObject = e.selected?.[0] as any;
-      if (activeObject?.id) dispatch(selectObject(activeObject.id));
+      if (activeObject?.id) dispatch(selectObjects(activeObject.id));
     });
 
     fabricCanvas.on('selection:cleared', () => {
-      dispatch(selectObject(null));
+      dispatch(selectObjects(null));
     });
 
     const handleModified = (e: fabric.IEvent) => {
