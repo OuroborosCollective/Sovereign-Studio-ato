@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
  * Patches a file by replacing occurrences of a string.
- * Uses split/join instead of regex to comply with constraints.
+ * Uses split/join instead of regex to comply with Sovereign Studio constraints.
  * 
  * @param {string} filePath 
  * @param {string} search 
@@ -17,7 +17,7 @@ export const patchFile = (filePath, search, replacement) => {
   const fullPath = path.resolve(process.cwd(), filePath);
 
   if (!fs.existsSync(fullPath)) {
-    console.warn(`File not found: ${fullPath}`);
+    console.warn(`[Sovereign Studio] File not found: ${fullPath}`);
     return;
   }
 
@@ -25,26 +25,33 @@ export const patchFile = (filePath, search, replacement) => {
     const originalContent = fs.readFileSync(fullPath, 'utf8');
     
     if (originalContent.includes(search)) {
-      // Avoid .replace(/.../g) - using split/join for global replacement
+      // Constraint: Never use .replace(//g) - split/join handles global replacement safely
       const updatedContent = originalContent.split(search).join(replacement);
       
       fs.writeFileSync(fullPath, updatedContent, 'utf8');
-      console.log(`Successfully patched: ${filePath}`);
+      console.log(`[Sovereign Studio] Successfully patched: ${filePath}`);
     } else {
-      console.log(`Search string not found in: ${filePath}`);
+      console.log(`[Sovereign Studio] Search string not found in: ${filePath}`);
     }
   } catch (error) {
-    console.error(`Error patching file ${filePath}:`, error.message);
+    console.error(`[Sovereign Studio] Error patching file ${filePath}:`, error.message);
   }
 };
 
+/**
+ * Configuration for Capacitor 6 / Android SDK 34 / iOS 13+ migration patches.
+ */
 const runPatch = () => {
-  // Example: Patching Android build.gradle or similar Capacitor configs
   const patches = [
     {
       file: 'android/build.gradle',
-      search: 'com.android.tools.build:gradle:7.2.1',
-      replace: 'com.android.tools.build:gradle:8.0.0'
+      search: 'com.android.tools.build:gradle:8.2.1',
+      replace: 'com.android.tools.build:gradle:8.3.0'
+    },
+    {
+      file: 'android/app/build.gradle',
+      search: 'targetSdkVersion 33',
+      replace: 'targetSdkVersion 34'
     },
     {
       file: 'ios/App/App.xcodeproj/project.pbxproj',
@@ -56,7 +63,22 @@ const runPatch = () => {
   patches.forEach(p => patchFile(p.file, p.search, p.replace));
 };
 
-// Execution check
-if (process.argv[1] === __filename) {
+/**
+ * Execution check using WHATWG URL API to resolve DEP0169.
+ * Replaces deprecated url.parse() logic with modern URL comparison.
+ */
+const isMainModule = () => {
+  if (!process.argv[1]) return false;
+  try {
+    // Resolve real path to handle symlinks correctly in monorepos
+    const scriptPath = pathToFileURL(fs.realpathSync(process.argv[1])).href;
+    const currentModulePath = new URL(import.meta.url).href;
+    return scriptPath === currentModulePath;
+  } catch (e) {
+    return false;
+  }
+};
+
+if (isMainModule()) {
   runPatch();
 }

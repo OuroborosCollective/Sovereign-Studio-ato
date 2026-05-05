@@ -40,13 +40,11 @@ jobs:
       - name: 🏷️ Determine Versioning
         id: vars
         run: |
-          # Ermittle Version Name aus package.json falls nicht übergeben
           INPUT_NAME="${{ github.event.inputs.version_name }}"
           if [ -z "$INPUT_NAME" ]; then
             INPUT_NAME=$(node -p "require('./package.json').version")
           fi
           
-          # Ermittle Version Code aus Run Number falls nicht übergeben
           INPUT_CODE="${{ github.event.inputs.version_code }}"
           if [ -z "$INPUT_CODE" ]; then
             INPUT_CODE="${{ github.run_number }}"
@@ -102,10 +100,8 @@ jobs:
             exit 1
           fi
           mkdir -p android/app/keystore
-          # Verwende --decode mit --ignore-garbage um robustere Dekodierung zu ermöglichen
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 --decode --ignore-garbage > android/app/keystore/release.jks
           
-          # Überprüfe ob die Datei valide ist (keine 0 Byte Datei)
           if [ ! -s android/app/keystore/release.jks ]; then
             echo "Error: Decoded keystore file is empty!"
             exit 1
@@ -113,7 +109,7 @@ jobs:
           echo "Keystore file info:"
           ls -lh android/app/keystore/
           echo "Checking keystore with keytool..."
-          keytool -list -keystore android/app/keystore/release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" || echo "Warning: keytool could not list keystore content. Password might be wrong or file corrupted."
+          keytool -list -keystore android/app/keystore/release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" || echo "Warning: keytool could not list keystore content."
 
       - name: 📦 Build Release AAB
         run: |
@@ -131,7 +127,6 @@ jobs:
         run: |
           mkdir -p release-bundle
           cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
-          # Proguard mapping file, if minification is enabled
           if [ -f android/app/build/outputs/mapping/release/mapping.txt ]; then
             cp android/app/build/outputs/mapping/release/mapping.txt release-bundle/SovereignStudio-proguard-mapping.txt
           fi
