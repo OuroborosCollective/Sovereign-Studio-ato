@@ -10,6 +10,8 @@ export enum SignalImpact {
   CRITICAL = 'critical'
 }
 
+export type SignalType = 'performance' | 'security' | 'user_intent' | 'system_health' | 'api_limit' | 'git_event';
+
 export type ActionType = 'create' | 'update' | 'delete' | 'patch' | 'refactor' | 'optimize' | 'deploy' | 'rollback' | 'analyze';
 
 export interface ArchitecturalAction {
@@ -32,7 +34,7 @@ export interface ModelConfig {
 
 export interface SystemSignal {
   id: string;
-  type: 'performance' | 'security' | 'user_intent' | 'system_health' | 'api_limit' | 'git_event';
+  type: SignalType;
   source: string;
   timestamp: number;
   impact: SignalImpact;

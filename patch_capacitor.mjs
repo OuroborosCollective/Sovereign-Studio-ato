@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,7 +14,6 @@ const __dirname = path.dirname(__filename);
  * @param {string} replacement 
  */
 export const patchFile = (filePath, search, replacement) => {
-  // Path resolution using standard path utilities
   const fullPath = path.resolve(process.cwd(), filePath);
 
   if (!fs.existsSync(fullPath)) {
@@ -39,12 +38,20 @@ export const patchFile = (filePath, search, replacement) => {
   }
 };
 
+/**
+ * Configuration for Capacitor 6 / Android SDK 34 / iOS 13+ migration patches.
+ */
 const runPatch = () => {
   const patches = [
     {
       file: 'android/build.gradle',
-      search: 'com.android.tools.build:gradle:7.2.1',
-      replace: 'com.android.tools.build:gradle:8.0.0'
+      search: 'com.android.tools.build:gradle:8.2.1',
+      replace: 'com.android.tools.build:gradle:8.3.0'
+    },
+    {
+      file: 'android/app/build.gradle',
+      search: 'targetSdkVersion 33',
+      replace: 'targetSdkVersion 34'
     },
     {
       file: 'ios/App/App.xcodeproj/project.pbxproj',
@@ -63,10 +70,12 @@ const runPatch = () => {
 const isMainModule = () => {
   if (!process.argv[1]) return false;
   try {
-    const scriptPath = new URL(`file://${process.argv[1]}`).href;
-    return scriptPath === import.meta.url;
+    // Resolve real path to handle symlinks correctly in monorepos
+    const scriptPath = pathToFileURL(fs.realpathSync(process.argv[1])).href;
+    const currentModulePath = new URL(import.meta.url).href;
+    return scriptPath === currentModulePath;
   } catch (e) {
-    return process.argv[1] === __filename;
+    return false;
   }
 };
 
