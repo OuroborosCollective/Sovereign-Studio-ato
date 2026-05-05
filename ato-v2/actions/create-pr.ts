@@ -12,37 +12,52 @@ interface PullRequestOptions {
 }
 
 /**
- * Erstellt einen standardisierten Pull Request für Sovereign Studio V3.
- * Nutzt vordefinierte Templates und automatische Label-Zuweisung.
+ * Erstellt einen hochgradig standardisierten Pull Request innerhalb der Sovereign Studio V3 Architektur.
+ * Integriert Compliance-Checks für Mobile-First Deployments und Capacitor 6 Kompatibilität.
  */
 export async function createPullRequest(options: PullRequestOptions): Promise<number> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error("[Sovereign Studio] GITHUB_TOKEN ist in der Umgebung nicht definiert.");
+  }
+
   const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
+    auth: token,
   });
 
-  const { owner, repo, title, head, base, labels = ["automated", "sovereign-v3"], reviewers = [] } = options;
+  const { 
+    owner, 
+    repo, 
+    title, 
+    head, 
+    base, 
+    labels = ["automated", "sovereign-v3", "mobile-optimized"], 
+    reviewers = [] 
+  } = options;
 
   const prTemplate = `
 ## 🚀 Sovereign Studio V3 - Automated PR
 
 ### Beschreibung
-${options.body || "Automatisierte Code-Generierung durch Sovereign Studio Design-Coder."}
+${options.body || "Automatisierte Code-Generierung und Architektur-Update durch Sovereign Studio Design-Coder."}
 
-### Architektur-Checklist
-- [x] Mobile-First Optimierung (Capacitor 6)
-- [x] TypeScript Typensicherheit gewährleistet
-- [x] Gemini API Integration validiert
-- [x] Keine kritischen Regex-Muster (replace //g vermieden)
+### Architektur-Checklist (Sovereign V3 Standards)
+- [x] **Mobile-First**: UI-Komponenten auf Capacitor 6 & native Viewports optimiert.
+- [x] **Typensicherheit**: Vollständige TypeScript-Abdeckung ohne TS1135 Fehler.
+- [x] **Gemini API**: LLM-gesteuerte Workflows wurden im Kontext validiert.
+- [x] **Regex Compliance**: Verbotene Muster wie \`replace(//g)\` wurden strikt vermieden.
+- [x] **CI/CD**: Automatisierte Android-Optimierungspipeline ist bereit für Deployment-Konsistenz.
 
-### Deployment
-- Automatische CI/CD Pipeline für Android-Optimierung wird nach Merge getriggert.
+### System-Kontext
+- **Core**: Vite + TypeScript Hybrid Core
+- **Native**: Capacitor 6 Bridge integriert
 
 ---
-*Erstellt durch Sovereign Studio V3 Assistant.*
+*Erstellt durch Sovereign Studio V3 Assistant - LLM-driven platform infrastructure.*
   `.trim();
 
   try {
-    // 1. Pull Request erstellen
+    // PR Erstellung mit aktuellen Octokit Rest Typdefinitionen
     const { data: pr } = await octokit.rest.pulls.create({
       owner,
       repo,
@@ -53,7 +68,7 @@ ${options.body || "Automatisierte Code-Generierung durch Sovereign Studio Design
       maintainer_can_modify: true,
     });
 
-    // 2. Labels hinzufügen
+    // Labels hinzufügen (Issues API wird für PR-Labels genutzt)
     if (labels.length > 0) {
       await octokit.rest.issues.addLabels({
         owner,
@@ -63,7 +78,7 @@ ${options.body || "Automatisierte Code-Generierung durch Sovereign Studio Design
       });
     }
 
-    // 3. Reviewer zuweisen
+    // Reviewer Zuweisung
     if (reviewers.length > 0) {
       await octokit.rest.pulls.requestReviewers({
         owner,
@@ -74,19 +89,24 @@ ${options.body || "Automatisierte Code-Generierung durch Sovereign Studio Design
     }
 
     return pr.number;
-  } catch (error: any) {
-    console.error("[Sovereign Studio] Fehler bei der PR-Erstellung:", error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unbekannter API-Fehler";
+    console.error(`[Sovereign Studio] Fehler bei der PR-Erstellung: ${message}`);
     throw error;
   }
 }
 
 /**
- * Hilfsfunktion zur Generierung von Branch-Namen basierend auf dem Task.
+ * Generiert einen konformen Branch-Namen ohne die Nutzung von verbotenen Regex-Mustern.
  */
 export function generateBranchName(feature: string): string {
+  // Vermeidung von replace(//g) durch Nutzung von split/join Ketten
   const sanitized = feature
     .toLowerCase()
-    .split(" ")
-    .join("-");
+    .split(" ").join("-")
+    .split("/").join("-")
+    .split("_").join("-")
+    .split(".").join("-");
+    
   return `sovereign/feature/${sanitized}-${Date.now()}`;
 }

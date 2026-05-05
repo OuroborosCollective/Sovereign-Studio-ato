@@ -1,8 +1,9 @@
-import { diffLines, Change } from 'diff';
+import { createPatch } from 'diff';
 
 /**
  * Sovereign Studio V3 - Patch Engine
  * Transformiert LLM-Generierungen in valide Unified Diff Patches für die Repository-Synchronisation.
+ * Optimiert für die hybride Architektur (Vite/Capacitor) und Gemini-API-Workflows.
  */
 
 export interface PatchOptions {
@@ -25,20 +26,32 @@ export class PatchEngine {
 
   /**
    * Erzeugt einen Git-kompatiblen Patch aus dem Originalzustand und dem LLM-Vorschlag.
+   * Nutzt die createPatch-Methode der diff-Library für höchste Format-Konsistenz.
    */
   public generatePatch(filename: string, originalCode: string, modifiedCode: string): PatchResult {
     try {
-      const changes = diffLines(originalCode, modifiedCode);
-      
-      if (!this.hasChanges(changes)) {
+      if (originalCode === modifiedCode) {
         return { success: true, patch: '' };
       }
 
-      const patch = this.buildUnifiedDiff(filename, changes);
-      
+      // Erzeugung des Unified Diffs mit standardisierten Header-Präfixen
+      const patch = createPatch(
+        filename,
+        originalCode,
+        modifiedCode,
+        `a/${filename}`,
+        `b/${filename}`,
+        { context: this.contextLines }
+      );
+
+      // Prüfung ob tatsächliche Änderungen (Hunks) im Patch enthalten sind
+      // Verhindert das Senden leerer Patches mit nur Metadaten
+      const lines = patch.split('\n');
+      const hasHunks = lines.some(line => line.startsWith('@@'));
+
       return {
         success: true,
-        patch
+        patch: hasHunks ? patch : ''
       };
     } catch (error) {
       return {
@@ -50,123 +63,41 @@ export class PatchEngine {
   }
 
   /**
-   * Prüft ob tatsächliche Änderungen vorliegen.
-   */
-  private hasChanges(changes: Change[]): boolean {
-    return changes.some(change => change.added || change.removed);
-  }
-
-  /**
-   * Konstruiert das Unified Diff Format gemäß Git Standards.
-   */
-  private buildUnifiedDiff(filename: string, changes: Change[]): string {
-    const timestamp = new Date().toISOString();
-    const header = [
-      `--- a/${filename}\t${timestamp}`,
-      `+++ b/${filename}\t${timestamp}`
-    ];
-
-    let oldLineCounter = 1;
-    let newLineCounter = 1;
-    const hunks: string[] = [];
-
-    // Zusammenfassung der Changes in Hunks für effiziente Datei-Operationen in Capacitor/Vite
-    let currentHunkLines: string[] = [];
-    let hunkOldStart = 0;
-    let hunkNewStart = 0;
-    let hunkOldCount = 0;
-    let hunkNewCount = 0;
-
-    changes.forEach((change) => {
-      const lines = this.splitIntoLines(change.value);
-
-      if (change.added || change.removed) {
-        if (hunkOldStart === 0) {
-          hunkOldStart = oldLineCounter;
-          hunkNewStart = newLineCounter;
-        }
-
-        lines.forEach(line => {
-          if (change.added) {
-            currentHunkLines.push(`+${line}`);
-            hunkNewCount++;
-            newLineCounter++;
-          } else {
-            currentHunkLines.push(`-${line}`);
-            hunkOldCount++;
-            oldLineCounter++;
-          }
-        });
-      } else {
-        // Kontext-Zeilen oder Hunk-Abschluss
-        if (hunkOldStart !== 0) {
-          // Hinzufügen von Kontext nach einer Änderung (limitieren auf contextLines)
-          const postContext = lines.slice(0, this.contextLines);
-          postContext.forEach(line => {
-            currentHunkLines.push(` ${line}`);
-            hunkOldCount++;
-            hunkNewCount++;
-          });
-
-          const hunkHeader = `@@ -${hunkOldStart},${hunkOldCount} +${hunkNewStart},${hunkNewCount} @@`;
-          hunks.push(hunkHeader, ...currentHunkLines);
-
-          // Reset für nächsten Hunk
-          currentHunkLines = [];
-          hunkOldStart = 0;
-          hunkNewStart = 0;
-          hunkOldCount = 0;
-          hunkNewCount = 0;
-        }
-        
-        oldLineCounter += lines.length;
-        newLineCounter += lines.length;
-      }
-    });
-
-    // Falls noch ein offener Hunk existiert
-    if (currentHunkLines.length > 0) {
-      const hunkHeader = `@@ -${hunkOldStart},${hunkOldCount} +${hunkNewStart},${hunkNewCount} @@`;
-      hunks.push(hunkHeader, ...currentHunkLines);
-    }
-
-    return [...header, ...hunks].join('\n') + '\n';
-  }
-
-  /**
-   * Hilfsmethode zum Zeilen-Splitting ohne Regex-Globale (Safe-Pattern).
-   */
-  private splitIntoLines(text: string): string[] {
-    const lines = text.split('\n');
-    // Entferne leere Endzeile durch split
-    if (lines.length > 0 && lines[lines.length - 1] === '') {
-      lines.pop();
-    }
-    return lines;
-  }
-
-  /**
    * Extrahiert Code-Blöcke aus LLM-Antworten (Markdown-Sicher).
+   * Implementiert ohne globale Regex-Ersetzungen zur Einhaltung der Sicherheitsvorgaben.
    */
   public extractCodeFromResponse(response: string): string {
-    const codeBlockStart = '';
-    if (!response.includes(codeBlockStart)) return response.trim();
+    const delimiter = '';
+    if (!response.includes(delimiter)) {
+      return response.trim();
+    }
 
-    const parts = response.split(codeBlockStart);
-    for (const part of parts) {
-      // Prüft auf gängige Sprachen im Sovereign Studio Stack
-      if (part.startsWith('typescript') || part.startsWith('ts') || part.startsWith('tsx') || part.startsWith('javascript') || part.startsWith('js')) {
-        const lines = part.split('\n');
-        lines.shift(); // Sprach-Identifier entfernen
-        return lines.join('\n').trim();
+    const segments = response.split(delimiter);
+    
+    // Durchsuche Segmente nach Code-Blöcken (jeder zweite Eintrag nach dem Split-Pattern)
+    for (let i = 1; i < segments.length; i += 2) {
+      const segment = segments[i];
+      const lines = segment.split('\n');
+      
+      if (lines.length === 0) continue;
+
+      const firstLine = lines[0].toLowerCase().trim();
+      // Validierung gängiger Dateitypen im Sovereign Studio V3 Stack
+      const languages = [
+        'typescript', 'ts', 'tsx', 
+        'javascript', 'js', 'json', 
+        'css', 'scss', 'html', 
+        'xml', 'markdown', 'bash'
+      ];
+      
+      if (languages.some(lang => firstLine === lang || firstLine.startsWith(lang))) {
+        // Entferne Sprach-Identifier-Zeile und gebe den Code-Rumpf zurück
+        const codeLines = lines.slice(1);
+        return codeLines.join('\n').trim();
       }
     }
-    
-    // Fallback auf den ersten Block wenn kein Identifier gefunden wurde
-    if (parts.length >= 2) {
-      return parts[1].trim();
-    }
 
-    return response.trim();
+    // Fallback: Extraktion des ersten verfügbaren Inhalts-Segments
+    return segments[1] ? segments[1].trim() : response.trim();
   }
 }

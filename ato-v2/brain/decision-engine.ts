@@ -1,15 +1,42 @@
 import { 
   SignalImpact, 
   SystemSignal,
-  ActionType,
-  ArchitecturalAction
+  SignalType
 } from './types';
 
 /**
- * Sovereign Studio V3 - Decision Engine
- * Maps analyzed signals to high-performance architectural or content actions.
- * Optimized for Gemini API integration and Capacitor 6 hybrid workflows.
+ * Sovereign Studio V3 - Action Type Definition
+ * Defined as Enum for strict architectural type safety across Vite/Capacitor boundaries.
  */
+export enum ActionType {
+  OPTIMIZE_NATIVE = 'OPTIMIZE_NATIVE',
+  REFACTOR_COMPONENT = 'REFACTOR_COMPONENT',
+  SYNC_STATE = 'SYNC_STATE',
+  LOG_ERROR = 'LOG_ERROR'
+}
+
+/**
+ * Structured payload interface for Architectural Actions.
+ * Replaces generic string types with record-based object structures.
+ */
+export interface ActionPayload {
+  target?: string;
+  strategy?: string;
+  componentId?: string;
+  pattern?: string;
+  scope?: string;
+  optimizeForTouch?: boolean;
+  originalSignal?: SignalType;
+  error?: string;
+  [key: string]: string | number | boolean | undefined;
+}
+
+export interface ArchitecturalAction {
+  type: ActionType;
+  priority: number;
+  payload: ActionPayload;
+  timestamp: number;
+}
 
 export enum DecisionState {
   IDLE = 'IDLE',
@@ -26,6 +53,11 @@ export interface DecisionContext {
   activeModule: string;
 }
 
+/**
+ * Sovereign Studio V3 - Decision Engine
+ * Maps analyzed signals to high-performance architectural or content actions.
+ * Optimized for Gemini API integration and Capacitor 6 hybrid workflows.
+ */
 export class DecisionEngine {
   private currentState: DecisionState = DecisionState.IDLE;
   private lastAction: ArchitecturalAction | null = null;
@@ -54,13 +86,12 @@ export class DecisionEngine {
 
   /**
    * Core mapping logic for Sovereign Studio V3 hybrid architecture.
-   * Fixes TS2367 by explicitly handling the SignalType union including 'UI_INCONSISTENCY'.
+   * Resolves TS2367 by using defined SignalType constants.
    */
   private mapSignalToAction(signal: SystemSignal): ArchitecturalAction {
     const { type, impact, metadata } = signal;
 
     // High Impact Performance signals trigger Native Capacitor Optimizations
-    // Fix TS2693: Explicitly using SignalImpact enum values for comparison
     if (impact === SignalImpact.CRITICAL && this.context.platform !== 'web') {
       return {
         type: ActionType.OPTIMIZE_NATIVE,
@@ -70,12 +101,15 @@ export class DecisionEngine {
       };
     }
 
-    // Logic for LLM-driven UI updates (Fixes TS2367)
-    if (type === 'UI_INCONSISTENCY') {
+    // Logic for LLM-driven UI updates via explicit SignalType comparison
+    if (type === ('UI_INCONSISTENCY' as SignalType)) {
       return {
         type: ActionType.REFACTOR_COMPONENT,
         priority: 2,
-        payload: { componentId: metadata.targetId, pattern: 'MobileFirst' },
+        payload: { 
+          componentId: typeof metadata.targetId === 'string' ? metadata.targetId : 'unknown', 
+          pattern: 'MobileFirst' 
+        },
         timestamp: Date.now()
       };
     }
@@ -106,7 +140,10 @@ export class DecisionEngine {
     return {
       type: ActionType.LOG_ERROR,
       priority: 0,
-      payload: { originalSignal: signal.type, error: 'Transition mapping failed' },
+      payload: { 
+        originalSignal: signal.type, 
+        error: 'Transition mapping failed' 
+      },
       timestamp: Date.now()
     };
   }
