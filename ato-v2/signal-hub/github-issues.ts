@@ -1,5 +1,9 @@
-import { Octokit } from '@octokit/rest';
+import { Octokit } from 'octokit';
 
+/**
+ * GitHubIssueSignal
+ * Definiert die Struktur eines Signals, das aus einem GitHub Issue extrahiert wurde.
+ */
 export interface GitHubIssueSignal {
   id: number;
   title: string;
@@ -12,6 +16,10 @@ export interface GitHubIssueSignal {
   updatedAt: string;
 }
 
+/**
+ * SignalFilterOptions
+ * Filteroptionen für die Synchronisation von Issues.
+ */
 export interface SignalFilterOptions {
   labels?: string[];
   state?: 'open' | 'closed' | 'all';
@@ -20,8 +28,9 @@ export interface SignalFilterOptions {
 
 /**
  * GitHubIssueHub
- * Integriert GitHub Issues als Signal-Quelle für den autonomen Sovereign Studio Cycle.
- * Nutzt Octokit zur Kommunikation mit der GitHub REST API.
+ * Kern-Komponente zur Integration von GitHub Issues als Signal-Quelle für den 
+ * autonomen Sovereign Studio Cycle. Ermöglicht die Steuerung von Entwicklungsaufgaben
+ * direkt über das GitHub-Repository.
  */
 export class GitHubIssueHub {
   private octokit: Octokit;
@@ -34,7 +43,7 @@ export class GitHubIssueHub {
 
   /**
    * Holt Issues, die für den autonomen Entwicklungszyklus markiert sind.
-   * Standardmäßig wird nach dem Label 'autonomous-task' gefiltert.
+   * Filtert standardmäßig nach 'autonomous-task' und schließt Pull Requests aus.
    */
   async fetchAutonomousSignals(
     owner: string,
@@ -42,7 +51,7 @@ export class GitHubIssueHub {
     options: SignalFilterOptions = {}
   ): Promise<GitHubIssueSignal[]> {
     try {
-      const { data: issues } = await this.octokit.issues.listForRepo({
+      const { data: issues } = await this.octokit.rest.issues.listForRepo({
         owner,
         repo,
         state: options.state || 'open',
@@ -52,8 +61,8 @@ export class GitHubIssueHub {
         direction: 'desc',
       });
 
-      // GitHub API inkludiert Pull Requests in der Issue-Liste. 
-      // Wir filtern diese explizit aus, falls sie keine reinen Issues sind.
+      // Die GitHub REST API inkludiert Pull Requests in der Issue-Liste. 
+      // Wir filtern diese explizit aus, da der Sovereign Studio Cycle auf Issue-Instruktionen basiert.
       return issues
         .filter((issue) => !issue.pull_request)
         .map((issue) => ({
@@ -69,14 +78,15 @@ export class GitHubIssueHub {
           createdAt: issue.created_at,
           updatedAt: issue.updated_at,
         }));
-    } catch (error) {
+    } catch (error: any) {
       console.error('[GitHubIssueHub] Error fetching signals:', error);
-      throw new Error('Failed to synchronize with GitHub Signal Hub');
+      throw new Error(`Failed to synchronize with GitHub Signal Hub: ${error.message}`);
     }
   }
 
   /**
-   * Aktualisiert ein Issue nach der Verarbeitung durch den Sovereign Studio Assistant.
+   * Aktualisiert den Status eines Signals im Repository nach der Verarbeitung 
+   * durch den Sovereign Studio Assistant. Hinterlässt einen Audit-Log Kommentar.
    */
   async acknowledgeSignal(
     owner: string,
@@ -85,23 +95,43 @@ export class GitHubIssueHub {
     statusLabel: 'processed' | 'failed' | 'in-progress'
   ): Promise<void> {
     try {
-      await this.octokit.issues.createComment({
+      // Kommentar für den Audit-Trail im GitHub Issue hinterlassen
+      await this.octokit.rest.issues.createComment({
         owner,
         repo,
         issue_number: issueNumber,
-        body: `[Sovereign Studio V3] Autonomous Cycle Update: Status set to ${statusLabel}`,
+        body: `### [Sovereign Studio V3] Autonomous Cycle Update\nStatus set to: **${statusLabel}**\n*Timestamp: ${new Date().toISOString()}*`,
       });
 
-      await this.octokit.issues.addLabels({
+      // Status-Label aktualisieren
+      await this.octokit.rest.issues.addLabels({
         owner,
         repo,
         issue_number: issueNumber,
         labels: [statusLabel],
       });
-    } catch (error) {
+
+      // Optional: Entferne das ursprüngliche 'autonomous-task' Label, wenn 'processed' erreicht wurde
+      if (statusLabel === 'processed') {
+        try {
+          await this.octokit.rest.issues.removeLabel({
+            owner,
+            repo,
+            issue_number: issueNumber,
+            name: 'autonomous-task',
+          });
+        } catch (e) {
+          // Ignorieren, falls das Label bereits manuell entfernt wurde
+        }
+      }
+    } catch (error: any) {
       console.error('[GitHubIssueHub] Error acknowledging signal:', error);
+      throw new Error(`Failed to update GitHub Signal status: ${error.message}`);
     }
   }
 }
 
+/**
+ * Fabrikfunktion zur Initialisierung des GitHub Signal Hubs.
+ */
 export const createGitHubSignalHub = (token: string) => new GitHubIssueHub(token);
