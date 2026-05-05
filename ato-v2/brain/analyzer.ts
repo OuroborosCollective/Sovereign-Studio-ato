@@ -21,6 +21,7 @@ export interface AnalyzedSignal {
   tags: string[];
   actionRequired: boolean;
   confidence: number;
+  normalizedSource?: string;
 }
 
 export class BrainAnalyzer {
@@ -31,7 +32,23 @@ export class BrainAnalyzer {
     this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   }
 
+  /**
+   * Normalizes the signal source using the WHATWG URL API to prevent 
+   * security risks and DEP0169 deprecation issues.
+   */
+  private normalizeSource(source: string): string {
+    try {
+      // Transitioned from legacy url.parse() to WHATWG URL API
+      const url = new URL(source);
+      return url.href;
+    } catch {
+      return source;
+    }
+  }
+
   async analyze(signal: RawSignal, history: AnalyzedSignal[] = []): Promise<AnalyzedSignal> {
+    const normalizedSource = this.normalizeSource(signal.source);
+    
     const contextPrompt = history.length > 0 
       ? `Existing signals for deduplication check: ${JSON.stringify(history.slice(-10).map(h => ({ id: h.id, summary: h.summary })))}`
       : "";
@@ -40,7 +57,7 @@ export class BrainAnalyzer {
       Analyze the following signal for Sovereign Studio V3 Repository Assistant.
       
       Signal Content: "${signal.content}"
-      Source: "${signal.source}"
+      Source: "${normalizedSource}"
       ${contextPrompt}
 
       Task:
@@ -67,8 +84,15 @@ export class BrainAnalyzer {
       const response = await result.response;
       const text = response.text();
       
-      // Clean JSON formatting if LLM wraps it in markdown blocks
-      const cleanJson = text.split("json").join("").split("").join("").trim();
+      // Extracting JSON blocks safely without using illegal regex patterns
+      const jsonStart = text.indexOf("{");
+      const jsonEnd = text.lastIndexOf("}") + 1;
+      
+      if (jsonStart === -1 || jsonEnd === 0) {
+        throw new Error("Invalid LLM response format");
+      }
+
+      const cleanJson = text.substring(jsonStart, jsonEnd);
       const analysis = JSON.parse(cleanJson);
 
       return {
@@ -80,15 +104,16 @@ export class BrainAnalyzer {
         summary: analysis.summary || "No summary provided.",
         tags: analysis.tags || [],
         actionRequired: !!analysis.actionRequired,
-        confidence: analysis.confidence || 0
+        confidence: analysis.confidence || 0,
+        normalizedSource
       };
     } catch (error) {
       console.error("BrainAnalyzer Error:", error);
-      return this.getDefaultAnalysis(signal);
+      return this.getDefaultAnalysis(signal, normalizedSource);
     }
   }
 
-  private getDefaultAnalysis(signal: RawSignal): AnalyzedSignal {
+  private getDefaultAnalysis(signal: RawSignal, normalizedSource?: string): AnalyzedSignal {
     return {
       id: signal.id,
       category: "Unknown",
@@ -97,7 +122,8 @@ export class BrainAnalyzer {
       summary: "Failed to analyze signal content.",
       tags: [],
       actionRequired: false,
-      confidence: 0
+      confidence: 0,
+      normalizedSource: normalizedSource || signal.source
     };
   }
 }
