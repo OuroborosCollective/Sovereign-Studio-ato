@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+import { execSync } from 'child_process';
 
 /**
  * Sovereign Studio V3 - Keystore Generation Utility

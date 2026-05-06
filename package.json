@@ -9,6 +9,10 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build && cap copy",
+    "build:android": "vite build && cap sync android",
+    "build:apk": "npm run build:android && cd android && ./gradlew assembleRelease",
+    "build:aab": "npm run build:android && cd android && ./gradlew bundleRelease",
+    "generate-keystore": "node gen-key.js",
     "preview": "vite preview",
     "clean": "rimraf dist",
     "lint": "eslint .",
