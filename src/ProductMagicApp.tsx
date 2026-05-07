@@ -1,42 +1,9 @@
 import React, { useMemo, useState } from 'react';
+import { FileItem, Card, WorkView, PipelineState, ProjectSettings } from './features/product/types';
+import { makeId, demoFiles, starterCards, defaultSettings } from './features/product/constants';
 import { AlertTriangle, Bot, CheckCircle, Code2, Download, Eye, FolderTree, Plus, RefreshCw, Rocket, Send, Settings, Shield, Sparkles, Trash2, Wand2 } from 'lucide-react';
 
-type FileItem = { path: string; icon: string };
-type Card = { id: string; title: string; body: string };
-type WorkView = 'editor' | 'pipeline';
-type PipelineState = 'idle' | 'publishing' | 'validating' | 'failed' | 'patching' | 'green';
-type ProjectSettings = {
-  repoMode: 'single' | 'monorepo';
-  packageManager: 'auto' | 'npm' | 'pnpm' | 'yarn' | 'bun';
-  installStrategy: 'safe' | 'workspace' | 'frozen';
-  linter: 'auto' | 'eslint' | 'biome' | 'prettier-eslint';
-  specialization: string;
-  maxFixLoops: number;
-};
 
-const makeId = () => String(Date.now() + Math.random());
-const demoFiles: FileItem[] = [
-  { path: 'src/App.tsx', icon: '🟦' },
-  { path: 'src/main.tsx', icon: '🟦' },
-  { path: 'package.json', icon: '📦' },
-  { path: 'pnpm-workspace.yaml', icon: '🧩' },
-  { path: '.github/workflows/ci.yml', icon: '⚙️' },
-  { path: 'android/app/build.gradle', icon: '🤖' },
-];
-const starterCards = (): Card[] => [
-  { id: makeId(), title: '1 · Wunsch', body: 'User beschreibt das gewünschte Produkt oder Feature in natürlicher Sprache.' },
-  { id: makeId(), title: '2 · Repo lesen', body: 'Dateibaum, Struktur, Workflows und wichtige Dateien werden als Kontext genutzt.' },
-  { id: makeId(), title: '3 · Code erzeugen', body: 'Der Agent wechselt in den Editor und schreibt sichtbaren Code in Dateien.' },
-  { id: makeId(), title: '4 · Publish & Validate', body: 'Push/PR wird vorbereitet, Workflows werden geprüft, Fehler springen zurück in den Editor.' },
-];
-const defaultSettings: ProjectSettings = {
-  repoMode: 'monorepo',
-  packageManager: 'pnpm',
-  installStrategy: 'workspace',
-  linter: 'auto',
-  specialization: 'React/Vite + Capacitor Android + GitHub Actions Release Pipeline',
-  maxFixLoops: 3,
-};
 
 export default function ProductMagicApp() {
   const [repoUrl, setRepoUrl] = useState('https://github.com/OuroborosCollective/Wasd');

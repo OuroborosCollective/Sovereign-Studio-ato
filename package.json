@@ -19,7 +19,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@capgo/capacitor-native-biometric": "^6.0.0",
     "@capacitor/app": "^6.0.0",
     "@capacitor/browser": "^6.0.0",
     "@capacitor/core": "^6.0.0",
@@ -29,6 +28,7 @@
     "@capacitor/push-notifications": "^6.0.0",
     "@capacitor/splash-screen": "^6.0.0",
     "@capacitor/status-bar": "^6.0.0",
+    "@capgo/capacitor-native-biometric": "^6.0.0",
     "@codetrix-studio/capacitor-google-auth": "^3.3.1",
     "@google/genai": "^1.29.0",
     "@google/generative-ai": "^0.24.1",
@@ -59,6 +59,7 @@
     "@types/node": "^20.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
     "@vitest/ui": "^3.0.5",
     "autoprefixer": "^10.4.21",
     "jsdom": "^26.0.0",
@@ -66,7 +67,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3",
+    "vite": "^5.4.21",
     "vitest": "^3.0.5"
   },
   "overrides": {
