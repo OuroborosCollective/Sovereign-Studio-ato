@@ -14,14 +14,18 @@ export class ReviewerAgent {
   }
 
   /**
-   * Führt eine tiefgreifende Qualitätsprüfung des Codes durch.
-   * @param {string} code - Der zu prüfende Code.
+   * Führt eine tiefgreifende Qualitätsprüfung des Codes und Inhalts durch.
+   * @param {string} content - Der zu prüfende Code oder Text.
    * @param {string} filePath - Pfad der Datei für kontextuelle Analyse.
    * @returns {Promise<Object>} Review-Ergebnis.
    */
-  async review(code, filePath) {
-    const staticAnalysis = this._performStaticCheck(code);
+  async review(content, filePath) {
+    // 1. Statische Code-Analyse
+    const staticAnalysis = this._performStaticCheck(content);
     
+    // 2. Marketing & Security Sanitization Pipeline
+    const sanitization = this.sanitizeMarketingContent(content);
+
     if (!staticAnalysis.passed) {
       return {
         status: "REJECTED",
@@ -31,18 +35,29 @@ export class ReviewerAgent {
       };
     }
 
+    if (!sanitization.isClean && (filePath.endsWith('.md') || filePath.includes('marketing') || filePath.includes('docs'))) {
+      return {
+        status: "REVISIONS_REQUIRED",
+        score: 40,
+        errors: sanitization.detectedIssues,
+        sanitizedVersion: sanitization.sanitizedContent,
+        suggestions: ["Interne Pfade, Secrets oder falsches Branding in Marketing-Materialien erkannt."]
+      };
+    }
+
     const prompt = `
-      Analysiere den folgenden Code für das Sovereign Studio (Vite/Capacitor-6 Stack).
+      Analysiere den folgenden Dateiinhalt für das Sovereign Studio (Vite/Capacitor-6 Stack).
       
       DATEI: ${filePath}
-      CODE:
-      ${code}
+      INHALT:
+      ${content}
 
       KRITERIEN:
       1. Architektur: Entspricht es dem Build-to-Deploy Workflow?
       2. Performance: Effiziente Nutzung von Gemini-Integrationen oder UI-Rendering?
       3. Sicherheit: Keine Hardcoded Secrets, korrekte Capacitor Permissions?
-      4. Best Practices: Keine Verwendung von verbotenen Mustern (z.B. globale Regex-Ersetzung via replace(//g)).
+      4. Branding: Wird "Sovereign Studio V3" korrekt und exklusiv verwendet?
+      5. Best Practices: Keine Verwendung von verbotenen Mustern (z.B. globale Regex-Ersetzung via replace(//g)).
       
       ANTWORTE IM JSON-FORMAT:
       {
@@ -50,14 +65,23 @@ export class ReviewerAgent {
         "score": 0-100,
         "criticalFlaws": [],
         "improvements": [],
-        "isCapacitorCompatible": boolean
+        "isCapacitorCompatible": boolean,
+        "brandingCheck": "PASSED" | "FAILED"
       }
     `;
 
     try {
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
-      return JSON.parse(response.text().replace(/json|/g, "").trim());
+      const jsonResponse = JSON.parse(response.text().replace(/json|/g, "").trim());
+      
+      // Merge sanitization results if applicable
+      if (!sanitization.isClean) {
+        jsonResponse.status = "REVISIONS_REQUIRED";
+        jsonResponse.criticalFlaws.push(...sanitization.detectedIssues);
+      }
+
+      return jsonResponse;
     } catch (error) {
       return {
         status: "ERROR",
@@ -68,26 +92,76 @@ export class ReviewerAgent {
   }
 
   /**
+   * Scannt und bereinigt Marketing-Texte von internen Informationen.
+   */
+  sanitizeMarketingContent(text) {
+    const issues = [];
+    let sanitized = text;
+
+    // 1. Interne GitHub-Links (Deep-Links in Repos)
+    const githubRegex = /https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/(blob|tree)\/[^\s]+/g;
+    if (githubRegex.test(sanitized)) {
+      issues.push("Interne GitHub-Struktur-Links erkannt.");
+      sanitized = sanitized.replace(githubRegex, "[OFFICIAL_REPOSITORY_ROOT]");
+    }
+
+    // 2. Lokale Dateipfade (Unix & Windows Heuristik)
+    const pathRegex = /(\/[a-zA-Z0-9._\-/]+|[A-Z]:\\[a-zA-Z0-9._\-\\]+)/g;
+    sanitized = sanitized.replace(pathRegex, (match) => {
+      if (match.includes('/') && match.split('/').length > 2 && !match.startsWith('http')) {
+        issues.push(`Interner Pfad erkannt: ${match}`);
+        return "[INTERNAL_FILE_PATH]";
+      }
+      return match;
+    });
+
+    // 3. .env Variablen & Secrets
+    const envRegex = /(VITE_[A-Z0-9_]+|process\.env\.[A-Z0-9_]+|[A-Z0-9_]{20,})/g;
+    if (envRegex.test(sanitized)) {
+      issues.push("Potenzielle Environment-Variablen oder Secrets erkannt.");
+      sanitized = sanitized.replace(envRegex, "[REDACTED_CONFIG]");
+    }
+
+    // 4. Lokale URLs (localhost/IPs)
+    const localUrlRegex = /http:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?/g;
+    if (localUrlRegex.test(sanitized)) {
+      issues.push("Lokale Entwicklungs-URLs gefunden.");
+      sanitized = sanitized.replace(localUrlRegex, "https://sovereign-studio.app");
+    }
+
+    // 5. Branding Enforcement (Upgrade "Sovereign Studio" zu "Sovereign Studio V3")
+    if (sanitized.includes("Sovereign Studio") && !sanitized.includes("Sovereign Studio V3")) {
+      sanitized = sanitized.replace(/Sovereign Studio(?! V3)/g, "Sovereign Studio V3");
+    }
+
+    return {
+      isClean: issues.length === 0,
+      sanitizedContent: sanitized,
+      detectedIssues: issues
+    };
+  }
+
+  /**
    * Statische Code-Analyse basierend auf Sovereign Studio Restriktionen.
    */
   _performStaticCheck(code) {
     const errors = [];
 
-    // Verbot von replace(//g)
+    // Verbot von replace(//g) -> Muss replaceAll sein
     if (code.includes(".replace(/") && code.includes("/g)")) {
-      errors.push("Verbotenes Muster erkannt: 'replace(//g)' ist nicht erlaubt. Nutzen Sie 'replaceAll' oder spezifische Logik.");
+      errors.push("Verbotenes Muster: 'replace(//g)' ist instabil. Nutzen Sie 'replaceAll' oder String-Literale.");
     }
 
-    // Prävention von TS1135 (häufig durch fehlerhafte Labels oder unvollständige Syntax)
+    // Prävention von TS1135
     if (code.includes(" : ") && !code.includes("?") && !code.match(/case|default|get|set/)) {
       if (this._detectPotentialTS1135(code)) {
-        errors.push("Potenzieller TS1135 Fehler: Verdächtige Doppelpunkt-Nutzung außerhalb von Ternary-Operatoren oder Objektliteralen.");
+        errors.push("Potenzieller TS1135 Fehler: Verdächtige Doppelpunkt-Nutzung (Label-Syntax-Fehler).");
       }
     }
 
-    // Leere JSX-Tags Suche (Keine <></> ohne Inhalt oder leere Divs ohne Zweck)
+    // Leere JSX-Tags Suche
     if (code.match(/<>\s*<\/>/) || code.match(/<div>\s*<\/div>/)) {
-      errors.push("Leere JSX-Tags oder Fragmente erkannt. Sovereign Studio verbietet redundante DOM-Nodes.");
+      errors.push("Leere JSX-Tags oder Fragmente ohne Inhalt erkannt.");
     }
 
     return {
@@ -97,7 +171,6 @@ export class ReviewerAgent {
   }
 
   _detectPotentialTS1135(code) {
-    // Einfache Heuristik zur Erkennung verwaister Labels oder Syntax-Fragmente
     const lines = code.split("\n");
     return lines.some(line => {
       const trimmed = line.trim();
