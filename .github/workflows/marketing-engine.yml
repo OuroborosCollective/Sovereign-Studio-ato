@@ -1,0 +1,52 @@
+name: Marketing Engine
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Android Release"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marketing-engine
+  cancel-in-progress: false
+
+jobs:
+  marketing-dry-run:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate Required Secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "Validating autonomous marketing environment..."
+
+          test -n "$GEMINI_API_KEY" || (echo "Missing GEMINI_API_KEY" && exit 1)
+          test -n "$SUPABASE_URL" || (echo "Missing SUPABASE_URL" && exit 1)
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || (echo "Missing SUPABASE_SERVICE_ROLE_KEY" && exit 1)
+
+          echo "Environment validation complete"
+
+      - name: Generate Safe Marketing Context
+        run: |
+          mkdir -p marketing-output
+
+          echo '{"status":"dry-run","mode":"safe","posting":"disabled"}' > marketing-output/status.json
+
+          echo "Ghost Pilot marketing foundation initialized"
+
+      - name: Upload Dry Run Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketing-engine-dry-run
+          path: marketing-output/
