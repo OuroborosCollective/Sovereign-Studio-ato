@@ -1,7 +1,11 @@
 apply plugin: 'com.android.application'
 
-def releaseVersionCode = (project.findProperty('versionCode') ?: System.getenv('ANDROID_VERSION_CODE') ?: '2') as Integer
-def releaseVersionName = (project.findProperty('versionName') ?: System.getenv('ANDROID_VERSION_NAME') ?: '1.1.0').toString()
+def releaseVersionCodeStr = project.hasProperty('versionCode') ? project.getProperty('versionCode') : System.getenv('ANDROID_VERSION_CODE') ?: "1"
+def releaseVersionCode = releaseVersionCodeStr as Integer
+
+def releaseVersionName = project.hasProperty('versionName') ? project.getProperty('versionName') : System.getenv('ANDROID_VERSION_NAME') ?: "1.0.0-dev"
+releaseVersionName = releaseVersionName.toString()
+
 def releaseStoreFile = project.findProperty('android.injected.signing.store.file') ?: System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseStorePassword = project.findProperty('android.injected.signing.store.password') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias') ?: System.getenv('ANDROID_KEY_ALIAS')
@@ -10,7 +14,7 @@ def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && relea
 
 android {
     namespace "com.arestudio.nocode.aab"
-    compileSdk 34
+    compileSdk 35
 
     aaptOptions {
         cruncherEnabled = false
@@ -19,7 +23,7 @@ android {
     defaultConfig {
         applicationId "com.arestudio.nocode.aab"
         minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion 34
+        targetSdkVersion 35
         versionCode releaseVersionCode
         versionName releaseVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

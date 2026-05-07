@@ -40,23 +40,33 @@ if (posthogKey) {
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
-if (googleClientId) {
-  GoogleAuth.initialize({
-    clientId: googleClientId,
-    scopes: ['profile', 'email'],
-    grantOfflineAccess: true,
-  });
-}
+const initAndRender = async () => {
+  if (googleClientId) {
+    try {
+      await GoogleAuth.initialize({
+        clientId: googleClientId,
+        scopes: ['profile', 'email'],
+        grantOfflineAccess: true,
+      });
+    } catch (error) {
+      console.error('GoogleAuth initialization failed', error);
+    }
+  }
 
-const container = document.getElementById('root');
+  const container = document.getElementById('root');
 
-if (container) {
-  const root = createRoot(container);
-  root.render(
-    <StrictMode>
-      <ErrorBoundary>
-        <ProductMagicApp />
-      </ErrorBoundary>
-    </StrictMode>
-  );
-}
+  if (container) {
+    const root = createRoot(container);
+    // Note: root.render() returns void and cannot be followed by .catch().
+    // Any rendering errors are handled by the ErrorBoundary component.
+    root.render(
+      <StrictMode>
+        <ErrorBoundary>
+          <ProductMagicApp />
+        </ErrorBoundary>
+      </StrictMode>
+    );
+  }
+};
+
+initAndRender();

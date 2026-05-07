@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "metadata": {
+    "provider": "Sovereign Studio Design-Coder",
+    "description": "User database for Sovereign Studio AI Repo-Editor"
+  },
+  "users": [
+    {
+      "id": "default-admin-01",
+      "profile": {
+        "username": "sovereign_dev",
+        "role": "admin",
+        "createdAt": "2023-10-27T10:00:00Z"
+      },
+      "settings": {
+        "appearance": {
+          "theme": "system",
+          "accentColor": "#6366f1"
+        },
+        "editor": {
+          "fontSize": 14,
+          "tabSize": 2,
+          "autoSave": true,
+          "formatOnSave": true
+        },
+        "ai_integration": {
+          "provider": "gemini",
+          "model": "gemini-1.5-pro",
+          "streamResponses": true
+        }
+      },
+      "nativeBridge": {
+        "capacitor_permissions": [
+          "filesystem",
+          "network"
+        ],
+        "deviceSync": true
+      },
+      "projects": []
+    }
+  ],
+  "schema": {
+    "type": "database",
+    "storageMode": "local_json_filesystem"
+  }
+}
