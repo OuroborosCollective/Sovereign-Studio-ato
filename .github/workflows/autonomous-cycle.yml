@@ -1,0 +1,80 @@
+name: Sovereign Studio V3 ATO Pipeline
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_optimization:
+        description: 'Force deep code optimization'
+        required: false
+        default: 'false'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/logic/ato/**'
+      - 'scripts/ato/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  autonomous-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Initialize ATO Environment
+        run: |
+          mkdir -p .ato/logs
+          mkdir -p .ato/artifacts
+
+      - name: Execute Autonomous Tuning & Optimization (v2)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          APP_ENV: production
+          FORCE_OPT: ${{ github.event.inputs.force_optimization }}
+        run: npx tsx scripts/ato/autonomous-pipeline.ts
+
+      - name: Run Quality Assurance & Mobile Validation
+        run: |
+          npm run lint
+          npm run build
+          npx cap sync android
+
+      - name: Commit Autonomous Improvements
+        run: |
+          git config --local user.email "ato-bot@sovereign-studio.ai"
+          git config --local user.name "Sovereign ATO Bot"
+          git add .
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(ato): autonomous optimization cycle [skip ci]"
+            git push origin main
+          else
+            echo "No changes detected in this cycle."
+          fi
+
+      - name: Archive ATO Cycle Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ato-cycle-logs-${{ github.run_id }}
+          path: .ato/logs/
+          retention-days: 7

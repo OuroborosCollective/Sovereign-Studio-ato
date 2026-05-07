@@ -1,0 +1,26 @@
+{
+  "name": "sovereign-launch-assets",
+  "version": "1.0.0",
+  "description": "Storage manifest for AI-generated Markdown and JSON assets within the Sovereign Studio ecosystem.",
+  "structure": {
+    "markdown": {
+      "path": "launch/docs/",
+      "extension": ".md",
+      "type": "documentation_assets"
+    },
+    "data": {
+      "path": "launch/metadata/",
+      "extension": ".json",
+      "type": "configuration_assets"
+    }
+  },
+  "metadata": {
+    "generator": "Sovereign Studio Design-Coder",
+    "engine": "Gemini-API",
+    "workflow": "automated-ci-cd-deployment"
+  },
+  "git": {
+    "keep": true,
+    "ignore_patterns": []
+  }
+}
