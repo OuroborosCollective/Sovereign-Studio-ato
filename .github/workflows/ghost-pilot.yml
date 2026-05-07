@@ -113,10 +113,14 @@ jobs:
               | grep "adb shell" || true
           )
 
-          echo "$COMMANDS" > test_sequence.sh
+          {
+            echo "#!/usr/bin/env bash"
+            echo "set +e"
+            echo "$COMMANDS"
+          } > test_sequence.sh
 
-          if [ ! -s test_sequence.sh ]; then
-            echo "adb shell input keyevent 3" > test_sequence.sh
+          if ! grep -q "adb shell" test_sequence.sh; then
+            echo "adb shell input keyevent 3" >> test_sequence.sh
           fi
 
           chmod +x test_sequence.sh
@@ -139,24 +143,20 @@ jobs:
             -camera-back none
 
           script: |
+            set -e
+
             adb wait-for-device
 
             adb logcat -c
 
-            adb logcat *:E > emulator_error.log &
+            adb logcat *:E > emulator_error.log 2>&1 &
             LOGCAT_PID=$!
 
             echo "Starting Ghost Pilot sequence..."
 
             chmod +x test_sequence.sh
 
-            while IFS= read -r line; do
-              echo "Executing: $line"
-
-              bash -c "$line" || true
-
-              sleep 1
-            done < test_sequence.sh
+            bash test_sequence.sh || true
 
             sleep 5
 
