@@ -31,7 +31,7 @@ export class ReviewerAgent {
         status: "REJECTED",
         score: 0,
         errors: staticAnalysis.errors,
-        suggestions: ["Beheben Sie die kritischen Syntax-Verstöße gegen die Sovereign Studio Guidelines."]
+        suggestions: ["Beheben Sie die kritischen Syntax-Verstöße gegen die NOCode Studio Guidelines."]
       };
     }
 
@@ -46,7 +46,7 @@ export class ReviewerAgent {
     }
 
     const prompt = `
-      Analysiere den folgenden Dateiinhalt für das Sovereign Studio (Vite/Capacitor-6 Stack).
+      Analysiere den folgenden Dateiinhalt für das NOCode Studio (Vite/Capacitor-6 Stack).
       
       DATEI: ${filePath}
       INHALT:
@@ -56,7 +56,7 @@ export class ReviewerAgent {
       1. Architektur: Entspricht es dem Build-to-Deploy Workflow?
       2. Performance: Effiziente Nutzung von Gemini-Integrationen oder UI-Rendering?
       3. Sicherheit: Keine Hardcoded Secrets, korrekte Capacitor Permissions?
-      4. Branding: Wird "Sovereign Studio V3" korrekt und exklusiv verwendet?
+      4. Branding: Wird "NOCode Studio" korrekt und exklusiv verwendet?
       5. Best Practices: Keine Verwendung von verbotenen Mustern (z.B. globale Regex-Ersetzung via replace(//g)).
       
       ANTWORTE IM JSON-FORMAT:
@@ -129,9 +129,11 @@ export class ReviewerAgent {
       sanitized = sanitized.replace(localUrlRegex, "https://sovereign-studio.app");
     }
 
-    // 5. Branding Enforcement (Upgrade "Sovereign Studio" zu "Sovereign Studio V3")
-    if (sanitized.includes("Sovereign Studio") && !sanitized.includes("Sovereign Studio V3")) {
-      sanitized = sanitized.replace(/Sovereign Studio(?! V3)/g, "Sovereign Studio V3");
+    // 5. Branding Enforcement (Enforce "NOCode Studio")
+    const forbiddenBrands = /Sovereign Studio V3|Sovereign Studio|Ghost Pilot/gi;
+    if (forbiddenBrands.test(sanitized)) {
+      issues.push("Falsches Branding erkannt. Begriffe wie Sovereign Studio oder Ghost Pilot sind verboten.");
+      sanitized = sanitized.replace(forbiddenBrands, "NOCode Studio");
     }
 
     return {
@@ -142,7 +144,7 @@ export class ReviewerAgent {
   }
 
   /**
-   * Statische Code-Analyse basierend auf Sovereign Studio Restriktionen.
+   * Statische Code-Analyse basierend auf NOCode Studio Restriktionen.
    */
   _performStaticCheck(code) {
     const errors = [];
