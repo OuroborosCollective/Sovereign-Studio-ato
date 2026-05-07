@@ -1,0 +1,52 @@
+name: Beta Marketing Engine
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * 1' # Run every Monday at 12:00 UTC
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-marketing-engine
+  cancel-in-progress: false
+
+jobs:
+  marketing-campaign:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Marketing Campaign
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "Starting autonomous beta marketing engine..."
+          node launch-bot-v1/marketing/generate-campaign.js
+
+      - name: Commit Used Promo Codes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(marketing): update available promo codes [skip ci]"
+          file_pattern: launch-bot-v1/marketing/promo-codes.txt
+
+      - name: Upload Campaign Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta-campaign-output
+          path: launch-bot-v1/marketing/campaign-output.json
+          if-no-files-found: ignore

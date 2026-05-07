@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 /**
  * MarketerAgent
  * Spezialisiert auf die Extraktion technischer Errungenschaften und deren Transformation 
- * in hochgradig konvertierende Marketing-Assets für Sovereign Studio V3.
+ * in hochgradig konvertierende Marketing-Assets für NOCode Studio.
  * Fokus: NoCode-Problemlösung, Early Bird Scarcity und Multi-Channel Distribution.
  */
 export class MarketerAgent {
@@ -14,11 +14,11 @@ export class MarketerAgent {
     this.pricing = {
       anchorPrice: "6.49€",
       totalEarlyBirdCodes: 135,
-      ghostMarketingPool: 66,
-      offerType: "Early Bird Access"
+      ghostMarketingPool: 0,
+      offerType: "Beta Tester Access"
     };
     this.coreContext = `
-      Sovereign Studio V3: Autonomous AI-powered repository architect.
+      NOCode Studio: Autonomous AI-powered repository architect.
       Stack: Vite/React Core, Capacitor 6 Native Android, ATO-V2 Intelligence Mesh.
       Value Prop: Überwindet NoCode-Limits durch echte autonome Software-Produktion.
     `;
@@ -29,7 +29,7 @@ export class MarketerAgent {
    */
   async generateReleaseNotes(version, diffData, buildMetrics) {
     const prompt = `
-      Handle als Lead Marketing Agent für Sovereign Studio.
+      Handle als Lead Marketing Agent für NOCode Studio.
       Erstelle eine Release-Ankündigung für Version ${version}.
       
       KONTEXT:
@@ -61,13 +61,14 @@ export class MarketerAgent {
       Erstelle Marketing-Inhalte für drei Kanäle basierend auf diesem Feature: ${JSON.stringify(featureUpdate)}
       
       ZENTRALE BOTSCHAFT:
-      - NoCode-Tools scheitern an Komplexität? Sovereign Studio löst das durch autonome KI-Orchestrierung (ATO-V2).
-      - Echte Native Android Apps (APK/AAB) direkt aus dem Prompt.
+      - Ziel: Wir brauchen 14 aktive Tester für 2 Wochen!
+      - NOCode Studio löst App-Entwicklung ohne Kosten.
+      - Die App kostet normalerweise 6,49€, aber mit den Codes ist der nocode agent völlig kostenfrei.
       - Unschlagbarer Preis: ${this.pricing.anchorPrice}.
       
       KANÄLE:
       1. REDDIT (r/nocode, r/reactnative): Ein "Problem-Solution" Post. Fokus auf den Schmerz von NoCode-Limits.
-      2. TWITTER/X: Ein technischer Hype-Thread (5 Posts). Nutze Symbole, betone "Ghost-Pilot CI/CD".
+      2. TWITTER/X: Ein technischer Hype-Thread (5 Posts). Nutze Symbole, betone die Einfachheit von NOCode Studio.
       3. DISCORD: Community-Ankündigung. Direkt, motivierend, "Get your Code now" Call-to-Action.
       
       SCARCITY:
@@ -101,7 +102,7 @@ export class MarketerAgent {
   async createGhostMarketingPush(repoState) {
     const prompt = `
       Analysiere den Status: ${JSON.stringify(repoState)}
-      Erstelle eine Kampagne, die zeigt, wie Sovereign Studio sich selbst verbessert hat.
+      Erstelle eine Kampagne, die zeigt, wie NOCode Studio sich selbst verbessert hat.
       Nutze die ${this.pricing.ghostMarketingPool} reservierten Codes als "Ghost-Marketing" Initial-Zünder.
       Slogan-Vorschlag: "The engine that builds itself. For ${this.pricing.anchorPrice}."
     `;
