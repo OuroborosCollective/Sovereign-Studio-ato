@@ -7,8 +7,9 @@ on:
 
 jobs:
   ghost-pilot:
-    runs-on: macos-latest
-    timeout-minutes: 45
+    # Optimierte Resource-Usage durch Umstellung auf Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -19,22 +20,27 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Prepare Context
         id: context
         run: |
           STRINGS_PATH="android/app/src/main/res/values/strings.xml"
-          APP_PATH="App.tsx"
+          APP_PATH="src/App.tsx" # Standard Vite/React Pfad korrigiert
           
           if [ -f "$STRINGS_PATH" ]; then
             cat "$STRINGS_PATH" > strings_extracted.txt
           else
-            echo "Empty" > strings_extracted.txt
+            echo "Empty Strings" > strings_extracted.txt
           fi
           
           if [ -f "$APP_PATH" ]; then
             cat "$APP_PATH" > app_extracted.txt
+          elif [ -f "App.tsx" ]; then
+            cat "App.tsx" > app_extracted.txt
           else
-            echo "Empty" > app_extracted.txt
+            echo "Empty Code" > app_extracted.txt
           fi
 
       - name: Generate ADB Sequence via Gemini
@@ -44,19 +50,25 @@ jobs:
           STRINGS_ESCAPED=$(jq -Rs . < strings_extracted.txt)
           APP_ESCAPED=$(jq -Rs . < app_extracted.txt)
           
-          QUERY="Analyze the following Android strings and React Native code. Generate a sequence of 'adb shell input' commands (tap, text, keyevent) to navigate the app and attempt to trigger an ErrorBoundary. Return ONLY the shell commands, one per line.
+          QUERY="Analyze the following Android strings and React code. Generate a robust sequence of 'adb shell input' commands (tap, text, keyevent) to navigate the app and attempt to trigger an ErrorBoundary or crash. Focus on edge cases. Return ONLY the shell commands, one per line. Do not include markdown formatting.
           
           Strings: $STRINGS_ESCAPED
           Code: $APP_ESCAPED"
           
-          # Create JSON payload without illegal characters
-          printf '{"contents": [{"parts": [{"text": %s}]}]}' "$(echo "$QUERY" | jq -R .)" > payload.json
+          # Erstellung des Payloads mit sauberem Escaping
+          PAYLOAD=$(jq -n --arg q "$QUERY" '{"contents": [{"parts": [{"text": $q}]}]}')
+          echo "$PAYLOAD" > payload.json
           
           RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
             -H "Content-Type: application/json" \
             -d @payload.json)
           
-          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text' | grep "adb shell" > test_sequence.sh
+          # Extrahiere Befehle und bereinige mögliche Markdown-Artefakte
+          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text' | sed 's/bash//g' | sed 's///g' | grep "adb shell" > test_sequence.sh
+          
+          if [ ! -s test_sequence.sh ]; then
+            echo "adb shell input keyevent 3" > test_sequence.sh # Fallback: Home Button
+          fi
 
       - name: Run Test on Emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -67,27 +79,45 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
+            # Warte auf Paket-Manager
+            adb wait-for-device
+            
             # Clear logs
             adb logcat -c
             
-            # Start Logcat capture in background
+            # Start Logcat capture in background für Fehleranalyse
             adb logcat *:E > emulator_error.log &
             LOGCAT_PID=$!
             
-            echo "Starting generated test sequence..."
+            echo "Starting generated Ghost Pilot sequence..."
             chmod +x test_sequence.sh
-            bash test_sequence.sh
             
-            # Allow time for async errors to surface
+            # Führe generierte Sequenz aus
+            while IFS= read -r line; do
+              echo "Executing: $line"
+              $line
+              sleep 1
+            done < test_sequence.sh
+            
+            # Pufferzeit für asynchrone Fehler
             sleep 5
             
             kill $LOGCAT_PID
             
-            # Scan for ErrorBoundary or Crashes
-            if grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError" emulator_error.log; then
-              echo "FAIL: Error detected in logcat"
-              grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError" emulator_error.log
+            # Scan nach ErrorBoundary, Fatals oder RuntimeErrors
+            if grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR" emulator_error.log; then
+              echo "FAIL: System- oder App-Crash in Logcat detektiert"
+              grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR" emulator_error.log | head -n 20
               exit 1
             else
-              echo "SUCCESS: No ErrorBoundary events detected"
+              echo "SUCCESS: Keine kritischen Fehler während der Sequenz gefunden"
             fi
+
+      - name: Upload Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-pilot-logs
+          path: |
+            emulator_error.log
+            test_sequence.sh

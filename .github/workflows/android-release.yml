@@ -17,24 +17,26 @@ on:
 
 jobs:
   build:
+    name: 🏗️ Build & Release Android
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     env:
       NODE_VERSION: 22
     steps:
-      - name: 🧾 Checkout
+      - name: 🧾 Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: 🟢 Setup Node
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: 📦 Install dependencies
+      - name: 📦 Install Dependencies
         run: npm install
 
       - name: 🏷️ Determine Versioning
@@ -54,30 +56,29 @@ jobs:
           echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
           echo "Building with Version Name: $INPUT_NAME, Version Code: $INPUT_CODE"
 
-      - name: 🏷️ Create Git Tag from package.json
+      - name: 🏷️ Create Git Tag
         if: github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.vars.outputs.version_name }}"
           TAG="v$VERSION"
-          echo "Detected version: $TAG"
           if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
-            echo "Tag already exists → skip"
-            exit 0
+            echo "Tag $TAG already exists, skipping."
+          else
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git tag $TAG
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
           fi
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git tag $TAG
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
 
-      - name: 🏗️ Build Web App
+      - name: 🏗️ Build Web Application
         run: npm run build
 
-      - name: 🔄 Sync Capacitor
+      - name: 🔄 Sync Capacitor Android
         run: npx cap sync android
 
-      - name: ☕ Setup Java (required for Android build)
+      - name: ☕ Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -96,22 +97,18 @@ jobs:
       - name: 🔐 Decode Android Keystore
         run: |
           if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "Error: ANDROID_KEYSTORE_BASE64 secret is empty!"
+            echo "Error: ANDROID_KEYSTORE_BASE64 is missing."
             exit 1
           fi
           mkdir -p android/app/keystore
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 --decode --ignore-garbage > android/app/keystore/release.jks
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
           
           if [ ! -s android/app/keystore/release.jks ]; then
-            echo "Error: Decoded keystore file is empty!"
+            echo "Error: Failed to decode keystore."
             exit 1
           fi
-          echo "Keystore file info:"
-          ls -lh android/app/keystore/
-          echo "Checking keystore with keytool..."
-          keytool -list -keystore android/app/keystore/release.jks -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" || echo "Warning: keytool could not list keystore content."
 
-      - name: 📦 Build Release AAB
+      - name: 📦 Build Release AAB (Android App Bundle)
         run: |
           cd android
           chmod +x gradlew
@@ -123,7 +120,7 @@ jobs:
             -PversionCode=${{ steps.vars.outputs.version_code }} \
             -PversionName=${{ steps.vars.outputs.version_name }}
 
-      - name: 📁 Prepare Artifacts for Download
+      - name: 📁 Prepare Production Artifacts
         run: |
           mkdir -p release-bundle
           cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
@@ -131,18 +128,31 @@ jobs:
             cp android/app/build/outputs/mapping/release/mapping.txt release-bundle/SovereignStudio-proguard-mapping.txt
           fi
           echo "Version: ${{ steps.vars.outputs.version_name }}" > release-bundle/version.txt
-          echo "Build Number: ${{ steps.vars.outputs.version_code }}" >> release-bundle/version.txt
-          cp android/app/keystore/release.jks release-bundle/release.jks
+          echo "Build: ${{ steps.vars.outputs.version_code }}" >> release-bundle/version.txt
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
 
-      - name: 📤 Upload Play Store Release ZIP
+      - name: 📤 Upload Release Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SovereignStudio-PlayStore-Release
           path: SovereignStudio-PlayStore-Release.zip
-          retention-days: 7
+          retention-days: 14
 
-      - name: 🚀 Upload to Google Play (Optional/Manual)
+      - name: 🔥 Ignite Marketing Loop
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: marketing_ignition_trigger
+          client-payload: |
+            {
+              "vouchers": 66,
+              "campaign_mode": "initial_spark",
+              "version": "${{ steps.vars.outputs.version_name }}",
+              "build_number": "${{ steps.vars.outputs.version_code }}",
+              "platform": "android"
+            }
+
+      - name: 🚀 Google Play Release (Manual Step)
         if: false
         uses: r0adkll/upload-google-play@v1
         with:
