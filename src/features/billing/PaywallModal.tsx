@@ -81,10 +81,10 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
 
   if (!isOpen || !mounted) return null;
 
-  const handlePurchase = async (tierId: TierId) => {
+  const handlePurchase = async (tierId: string) => {
     if (tierId === currentPlanId || tierId === 'free') return;
     
-    setLoadingTier(tierId);
+    setLoadingTier(tierId as TierId);
     try {
       await purchase(tierId);
       onClose();

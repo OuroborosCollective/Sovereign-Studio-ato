@@ -7,9 +7,9 @@ on:
 
 jobs:
   ghost-pilot:
-    # Optimierte Resource-Usage durch Umstellung auf Ubuntu
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -23,18 +23,28 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validate Gemini API Key
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "❌ Missing GEMINI_API_KEY"
+            exit 1
+          fi
+
       - name: Prepare Context
         id: context
         run: |
           STRINGS_PATH="android/app/src/main/res/values/strings.xml"
-          APP_PATH="src/App.tsx" # Standard Vite/React Pfad korrigiert
-          
+          APP_PATH="src/App.tsx"
+
           if [ -f "$STRINGS_PATH" ]; then
             cat "$STRINGS_PATH" > strings_extracted.txt
           else
             echo "Empty Strings" > strings_extracted.txt
           fi
-          
+
           if [ -f "$APP_PATH" ]; then
             cat "$APP_PATH" > app_extracted.txt
           elif [ -f "App.tsx" ]; then
@@ -47,28 +57,76 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
+          set -e
+
           STRINGS_ESCAPED=$(jq -Rs . < strings_extracted.txt)
           APP_ESCAPED=$(jq -Rs . < app_extracted.txt)
-          
-          QUERY="Analyze the following Android strings and React code. Generate a robust sequence of 'adb shell input' commands (tap, text, keyevent) to navigate the app and attempt to trigger an ErrorBoundary or crash. Focus on edge cases. Return ONLY the shell commands, one per line. Do not include markdown formatting.
-          
-          Strings: $STRINGS_ESCAPED
-          Code: $APP_ESCAPED"
-          
-          # Erstellung des Payloads mit sauberem Escaping
-          PAYLOAD=$(jq -n --arg q "$QUERY" '{"contents": [{"parts": [{"text": $q}]}]}')
+
+          QUERY="Analyze the following Android strings and React code.
+
+          Generate a robust sequence of adb shell input commands
+          (tap, text, keyevent, swipe).
+
+          Goals:
+          - navigate through the app
+          - stress unusual edge cases
+          - trigger ErrorBoundary states
+          - trigger crashes if possible
+          - abuse forms and navigation
+
+          Return ONLY adb shell commands.
+          One command per line.
+          No markdown formatting.
+
+          Strings:
+          $STRINGS_ESCAPED
+
+          Code:
+          $APP_ESCAPED"
+
+          PAYLOAD=$(jq -n --arg q "$QUERY" '{
+            contents: [
+              {
+                parts: [
+                  {
+                    text: $q
+                  }
+                ]
+              }
+            ]
+          }')
+
           echo "$PAYLOAD" > payload.json
-          
-          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
+
+          RESPONSE=$(curl -s -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
             -H "Content-Type: application/json" \
             -d @payload.json)
-          
-          # Extrahiere Befehle und bereinige mögliche Markdown-Artefakte
-          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text' | sed 's/bash//g' | sed 's///g' | grep "adb shell" > test_sequence.sh
-          
-          if [ ! -s test_sequence.sh ]; then
-            echo "adb shell input keyevent 3" > test_sequence.sh # Fallback: Home Button
+
+          echo "$RESPONSE" > response.json
+
+          COMMANDS=$(
+            echo "$RESPONSE" \
+              | jq -r '.candidates[0].content.parts[0].text // empty' \
+              | sed 's/```bash//g' \
+              | sed 's/```//g' \
+              | grep "adb shell" || true
+          )
+
+          {
+            echo "#!/usr/bin/env bash"
+            echo "set +e"
+            echo "$COMMANDS"
+          } > test_sequence.sh
+
+          if ! grep -q "adb shell" test_sequence.sh; then
+            echo "adb shell input keyevent 3" >> test_sequence.sh
           fi
+
+          chmod +x test_sequence.sh
+
+          echo "=== GENERATED COMMANDS ==="
+          cat test_sequence.sh
 
       - name: Run Test on Emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -76,48 +134,55 @@ jobs:
           api-level: 31
           arch: x86_64
           force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
+          emulator-options: >
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -camera-back none
+
           script: |
-            # Warte auf Paket-Manager
+            set -e
+
             adb wait-for-device
-            
-            # Clear logs
+
             adb logcat -c
-            
-            # Start Logcat capture in background für Fehleranalyse
-            adb logcat *:E > emulator_error.log &
+
+            adb logcat *:E > emulator_error.log 2>&1 &
             LOGCAT_PID=$!
-            
-            echo "Starting generated Ghost Pilot sequence..."
+
+            echo "Starting Ghost Pilot sequence..."
+
             chmod +x test_sequence.sh
-            
-            # Führe generierte Sequenz aus
-            while IFS= read -r line; do
-              echo "Executing: $line"
-              $line
-              sleep 1
-            done < test_sequence.sh
-            
-            # Pufferzeit für asynchrone Fehler
+
+            bash test_sequence.sh || true
+
             sleep 5
-            
-            kill $LOGCAT_PID
-            
-            # Scan nach ErrorBoundary, Fatals oder RuntimeErrors
-            if grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR" emulator_error.log; then
-              echo "FAIL: System- oder App-Crash in Logcat detektiert"
-              grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR" emulator_error.log | head -n 20
+
+            kill $LOGCAT_PID || true
+
+            echo "=== ERROR SCAN ==="
+
+            if grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR|CRASH" emulator_error.log; then
+              echo "❌ Crash detected"
+
+              grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR|CRASH" emulator_error.log | head -n 20
+
               exit 1
             else
-              echo "SUCCESS: Keine kritischen Fehler während der Sequenz gefunden"
+              echo "✅ No critical crash detected"
             fi
 
-      - name: Upload Logs on Failure
-        if: failure()
+      - name: Upload Logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ghost-pilot-logs
+          name: ghost-pilot-artifacts
           path: |
             emulator_error.log
             test_sequence.sh
+            payload.json
+            response.json
+            strings_extracted.txt
+            app_extracted.txt
