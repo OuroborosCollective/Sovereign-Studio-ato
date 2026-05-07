@@ -13,8 +13,9 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "express": "^4.19.2",
-    "fs-extra": "^11.2.0",
+    "fs-extra": "^11.3.5",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

@@ -10,4 +10,4 @@ android/app/src/main/assets/public/
 android/app/build/
 
 # Keystores
-*.keystore
+*.keystoremarketing-output/
