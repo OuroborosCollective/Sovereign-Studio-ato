@@ -150,8 +150,19 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const currentFabricObjects = canvas.getObjects();
     let hasChanges = false;
     
+    // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups
+    const existingFabricObjectsMap = new Map<string, fabric.Object>();
+    currentFabricObjects.forEach((fObj: any) => {
+      if (fObj.id) {
+        existingFabricObjectsMap.set(fObj.id, fObj);
+      }
+    });
+
+    const reduxObjectIdsSet = new Set<string>();
+
     objects.forEach((objData, index) => {
-      const existingObj = currentFabricObjects.find((o: any) => o.id === objData.id);
+      reduxObjectIdsSet.add(objData.id);
+      const existingObj = existingFabricObjectsMap.get(objData.id);
 
       if (existingObj) {
         const needsUpdate = 
@@ -195,7 +206,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     });
 
     currentFabricObjects.forEach((fObj: any) => {
-      if (!objects.find(o => o.id === fObj.id)) {
+      if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
         hasChanges = true;
       }
