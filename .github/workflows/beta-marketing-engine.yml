@@ -1,0 +1,54 @@
+name: Beta Marketing Engine
+
+on:
+  workflow_dispatch: # Allow manual triggering
+  schedule:
+    - cron: '0 10 * * 1,3,5' # Run automatically at 10:00 AM on Mon, Wed, Fri
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-marketing-engine
+  cancel-in-progress: false
+
+jobs:
+  generate-marketing-content:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'launch-bot-v1/package.json'
+
+      - name: Install Dependencies
+        working-directory: ./launch-bot-v1
+        run: npm ci
+
+      - name: Validate Gemini API Key
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "Error: GEMINI_API_KEY secret is required."
+            exit 1
+          fi
+
+      - name: Run Marketing Content Generator
+        working-directory: ./launch-bot-v1
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node marketing/generate-posts.js
+
+      - name: Upload Generated Content
+        uses: actions/upload-artifact@v4
+        with:
+          name: nocode-studio-marketing-materials
+          path: marketing-output/
+          retention-days: 7

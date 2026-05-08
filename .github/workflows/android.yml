@@ -2,10 +2,12 @@ name: Android Build
 
 on:
   push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch: # Allows manual trigger
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NPM_CONFIG_LEGACY_PEER_DEPS: true
 
 jobs:
   build:
@@ -19,40 +21,35 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install
 
       - name: Build Web App
         run: npm run build
 
-      - name: Sync Capacitor
-        run: npx cap sync android
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '17'
-          cache: 'gradle'
+          cache: gradle
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: current
+      - name: Sync Capacitor
+        run: npx cap sync android
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
-        
-      - name: Build Android APK (Debug)
+
+      - name: Build Android APK Debug
         run: |
           cd android
-          gradle assembleDebug
-          
+          ./gradlew assembleDebug --stacktrace
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug.apk
+          name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk

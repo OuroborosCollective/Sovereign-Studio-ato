@@ -19,23 +19,43 @@ export class ErrorBoundary extends React.Component<Props, State> {
     errorInfo: null,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error, errorInfo: null };
+  public static getDerivedStateFromError(error: unknown): State {
+    const errorInstance = error instanceof Error ? error : new Error(String(error));
+    console.error('[GHOST_PILOT_FAILURE] UI_CRASH_DETECTED:', errorInstance.message);
+    return { hasError: true, error: errorInstance, errorInfo: null };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    console.error('[GHOST_PILOT_FAILURE] CAUGHT_EXCEPTION:', error.message);
+    console.error('[GHOST_PILOT_FAILURE] STACK_TRACE:', error.stack);
+    console.error('[GHOST_PILOT_FAILURE] COMPONENT_STACK:', errorInfo.componentStack);
+    
     this.setState({ errorInfo });
     
-    // Log persistent error if available
     const logError = async () => {
       try {
-        const { storageService } = await import('../services/storageService');
+        const { storageService } = await import('../shared/api/storageService');
         const logsJson = await storageService.get('ss_error_log');
-        const currentLogs = JSON.parse(logsJson || '[]');
-        currentLogs.push({ time: new Date().toISOString(), context: 'ErrorBoundary', message: error.message });
+        
+        let currentLogs: Array<{time: string, context: string, message: string}> = [];
+        try {
+          currentLogs = JSON.parse(String(logsJson || '[]'));
+        } catch {
+          currentLogs = [];
+        }
+        
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        currentLogs.push({ 
+          time: new Date().toISOString(), 
+          context: 'ErrorBoundary', 
+          message: errorMessage
+        });
+        
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
-      } catch (e) {}
+      } catch (e) {
+        // Silently fail logging if storage service is unavailable
+      }
     };
     logError();
   }
@@ -64,10 +84,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
               
               {this.state.error && (
                 <div className="mt-4 p-3 bg-stone-100 rounded text-xs font-mono text-stone-800 break-words overflow-x-auto max-h-40 border border-stone-200">
-                  {this.state.error.toString()}
+                  {this.state.error.message || String(this.state.error)}
                 </div>
               )}
-              
             </div>
             <div className="px-6 py-4 bg-stone-50 border-t border-stone-200 flex justify-end">
               <button
@@ -83,6 +102,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    return this.props.children;
+    return this.props.children || null;
   }
 }

@@ -1,100 +1,101 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface PrivacyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAccept: () => void;
-  onDecline?: () => void;
 }
 
-export const PrivacyModal: React.FC<PrivacyModalProps> = ({
-  isOpen,
-  onClose,
-  onAccept,
-  onDecline
-}) => {
+export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) => {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const firstFocusableRef = useRef<HTMLButtonElement>(null);
+  const lastFocusableRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
+      firstFocusableRef.current?.focus();
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+
+        if (e.key === 'Tab') {
+          if (e.shiftKey) {
+            if (document.activeElement === firstFocusableRef.current) {
+              e.preventDefault();
+              lastFocusableRef.current?.focus();
+            }
+          } else {
+            if (document.activeElement === lastFocusableRef.current) {
+              e.preventDefault();
+              firstFocusableRef.current?.focus();
+            }
+          }
+        }
+      };
+
+      document.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+        document.body.style.overflow = '';
+      };
     }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen]);
+    return undefined;
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div 
-        className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="privacy-title"
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black bg-opacity-50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="privacy-modal-title"
+    >
+      <div
+        ref={modalRef}
+        className="relative w-full max-w-2xl p-6 mx-4 bg-white rounded-lg shadow-xl dark:bg-gray-800"
       >
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
-          <h2 id="privacy-title" className="text-xl font-bold text-slate-900 dark:text-white">
-            Datenschutzerklärung & Privatsphäre
+        <div className="flex items-center justify-between mb-4 border-b pb-2">
+          <h2
+            id="privacy-modal-title"
+            className="text-xl font-semibold text-gray-900 dark:text-white"
+          >
+            Datenschutzbestimmungen
           </h2>
-          <button 
+          <button
+            ref={firstFocusableRef}
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
             aria-label="Schließen"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            <span className="text-2xl" aria-hidden="true">&times;</span>
           </button>
         </div>
-
-        <div className="p-6 overflow-y-auto flex-1 text-slate-600 dark:text-slate-300 space-y-4 text-sm leading-relaxed">
+        
+        <div className="space-y-4 overflow-y-auto max-h-96 text-gray-600 dark:text-gray-300">
           <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">1. Allgemeine Informationen</h3>
-            <p>
-              Wir freuen uns über Ihr Interesse an unserer Anwendung. Der Schutz Ihrer Privatsphäre ist für uns von höchster Bedeutung. Im Folgenden informieren wir Sie detailliert über den Umgang mit Ihren Daten.
-            </p>
+            <h3 className="font-bold text-gray-900 dark:text-white">1. Datenerfassung</h3>
+            <p>Wir erfassen nur technisch notwendige Daten, um die Funktionalität dieser Anwendung zu gewährleisten.</p>
           </section>
-
           <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">2. Datenerfassung</h3>
-            <p>
-              Beim Zugriff auf diese Anwendung werden automatisch Informationen allgemeiner Natur erfasst. Diese Informationen (Server-Logfiles) beinhalten etwa die Art des Webbrowsers, das verwendete Betriebssystem und den Domainnamen Ihres Internet-Service-Providers.
-            </p>
+            <h3 className="font-bold text-gray-900 dark:text-white">2. Datennutzung</h3>
+            <p>Ihre Daten werden nicht an Dritte weitergegeben und ausschließlich lokal oder in gesicherten Umgebungen verarbeitet.</p>
           </section>
-
           <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">3. Cookies & Local Storage</h3>
-            <p>
-              Wir verwenden technisch notwendige Cookies und Local Storage Einträge, um die Funktionalität der Anwendung zu gewährleisten und Ihre Präferenzen (wie z.B. Dark Mode Einstellungen) zu speichern.
-            </p>
-          </section>
-
-          <section>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-2">4. Ihre Rechte</h3>
-            <p>
-              Sie haben jederzeit das Recht auf unentgeltliche Auskunft über Ihre gespeicherten personenbezogenen Daten, deren Herkunft und Empfänger und den Zweck der Datenverarbeitung sowie ein Recht auf Berichtigung, Sperrung oder Löschung dieser Daten.
-            </p>
-          </section>
-
-          <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-100 dark:border-slate-800">
-            <p className="text-xs italic">
-              Durch Klicken auf "Akzeptieren" stimmen Sie der Speicherung von Cookies auf Ihrem Gerät zu, um die Navigation zu verbessern und die Nutzung der Anwendung zu analysieren.
-            </p>
+            <h3 className="font-bold text-gray-900 dark:text-white">3. Ihre Rechte</h3>
+            <p>Sie haben jederzeit das Recht auf Auskunft, Berichtigung oder Löschung Ihrer gespeicherten Daten.</p>
           </section>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-col sm:flex-row justify-end gap-3">
+        <div className="mt-6 flex justify-end">
           <button
-            onClick={onDecline || onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors border border-slate-300 dark:border-slate-700"
+            ref={lastFocusableRef}
+            onClick={onClose}
+            className="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            Ablehnen
-          </button>
-          <button
-            onClick={onAccept}
-            className="px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm shadow-blue-500/20 transition-all active:scale-95"
-          >
-            Alle akzeptieren
+            Verstanden
           </button>
         </div>
       </div>
