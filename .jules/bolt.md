@@ -1,3 +1,6 @@
 ## 2024-05-07 - [O(N²) Array Lookups in Canvas Render Loop]
 **Learning:** The previous implementation synchronized an array of Redux state objects with the active Fabric.js canvas objects inside an effect hook using nested array `.find()` calls. This resulted in O(N²) time complexity which acts as a heavy performance bottleneck and can drop frames for large canvas object counts.
 **Action:** When reconciling external state with internal canvas state, always build O(1) Hash Maps (`Map` for existing elements, `Set` for IDs to remove) before looping, bringing the reconciliation complexity down to O(N).
+## 2024-05-08 - [O(n^2) Math.sqrt() in Particle Systems]
+**Learning:** The particle system in `src/pages/HomePage.tsx` computed the exact distance between every pair of particles using `Math.sqrt()` to check if a line should be drawn. This resulted in O(N²) expensive square root calculations per frame, even for points far apart, dragging down FPS.
+**Action:** Always replace `Math.sqrt(distSq) < limit` checks with squared distance comparisons (`distSq < limitSq`). Only compute the actual square root *inside* the condition if the exact linear distance is needed for further calculations (like opacity interpolation).
