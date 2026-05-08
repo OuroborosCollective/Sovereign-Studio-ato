@@ -316,6 +316,59 @@ const App: React.FC = () => {
         { headers }
       );
 
+<<<<<<< performance-parallelize-architect-api-calls-17382946508699983224
+    try {
+      const treeContext = fullTree.slice(0, 400).map(f => f.path).join('\\n');
+      const architectSys = `Du bist Architekt. TECH: Node, TS, React. KEIN RUST! GIB NUR JSON ZURÜCK: [ { "path": "...", "task": "...", "action": "modify" } ]`;
+      const rawPlan = await callGeminiAPI(input + "\nTree:\n" + treeContext, architectSys);
+      
+      let cleanPlan = rawPlan.replace(/json/gi, '').replace(//g, '').trim();
+      const startIdx = cleanPlan.indexOf('[');
+      const endIdx = cleanPlan.lastIndexOf(']');
+      if (startIdx !== -1 && endIdx !== -1) cleanPlan = cleanPlan.substring(startIdx, endIdx + 1);
+      
+      const plan = JSON.parse(cleanPlan);
+      const branch = activePR.branch || 'main';
+
+      const CONCURRENCY_LIMIT = 5;
+      const results: (BatchFile | null)[] = [];
+
+      for (let i = 0; i < plan.length; i += CONCURRENCY_LIMIT) {
+        const chunk = plan.slice(i, i + CONCURRENCY_LIMIT);
+        const chunkResults = await Promise.all(chunk.map(async (step: any) => {
+          if (step.path.match(/lock\.json|lock\.yaml|\.lock/i) || step.path.toLowerCase().includes('jules')) {
+            return null;
+          }
+
+          if (step.action === 'delete') {
+            return { path: step.path, isDelete: true };
+          }
+
+          addLog(`⚙️ <b>Schreibe Code:</b> <code>${step.path}</code>`, "info");
+
+          let existingCode = "";
+          try {
+            const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${step.path}`);
+            if (res.ok) existingCode = await res.text();
+          } catch {}
+
+          const compilerSys = `Du bist ein Elite Code-Generator. TECH: Node, TS, React. KEIN RUST! Gib AUSSCHLIESSLICH den kompletten, validen Code zurück.`;
+          const compilerPrompt = `Datei: ${step.path}\nBisheriger Code:\n${existingCode}\n\nAufgabe: ${step.task}`;
+          let newCode = await callGeminiAPI(compilerPrompt, compilerSys);
+          newCode = newCode.replace(/[a-z]*\n/gi, '').replace(/```/g, '').trim();
+
+          return { path: step.path, content: newCode };
+        }));
+        results.push(...chunkResults);
+      }
+
+      const newBatch = results.filter((item): item is BatchFile => item !== null);
+      setBatchFiles(prev => [...prev, ...newBatch]);
+      addLog(`🚀 <b>Workflow Abgeschlossen.</b>`, "success");
+    } catch (err: any) {
+      logPersistentError(err, 'runArchitect');
+      addLog(`<b>Fehler:</b> ${err.message}`, "error");
+=======
       if (!response.ok) {
         throw new Error(`GitHub API ${response.status}`);
       }
@@ -333,6 +386,7 @@ const App: React.FC = () => {
       console.error(error);
       setRepoStatus('Repo konnte nicht geladen werden. Prüfe URL, Branch, Token oder Repo-Rechte.');
       addLog('Repo-Laden fehlgeschlagen. Demo-Dateibaum bleibt verfügbar.');
+>>>>>>> main
     } finally {
       setIsRepoBusy(false);
     }
