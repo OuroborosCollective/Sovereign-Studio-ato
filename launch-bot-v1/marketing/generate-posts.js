@@ -17,7 +17,7 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 async function generateMarketingPosts() {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `
 You are a top-tier marketing copywriter. Your task is to write engaging, viral-ready social media posts for our new consumer app: "NOCode Studio".
