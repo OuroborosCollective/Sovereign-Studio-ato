@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,10 +20,22 @@ async function generateMarketingPosts() {
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
+    let commitMessage = '';
+    try {
+      commitMessage = execSync('git log -1 --pretty=%B').toString().trim();
+    } catch (err) {
+      console.warn('Could not fetch latest commit message:', err.message);
+    }
+
     const prompt = `
 You are a top-tier marketing copywriter. Your task is to write engaging, viral-ready social media posts for our new consumer app: "NOCode Studio".
 
-CRITICAL CONTEXT & RULES:
+We have just pushed a new update with the following commit message:
+"${commitMessage}"
+
+FIRST, analyze the commit message. If the commit does NOT contain any new features, notable changes, or content worth marketing to end-users (e.g., if it is just a minor refactor, test fix, or documentation update), you MUST respond with EXACTLY the word "IDLE".
+
+If there are notable changes, proceed with the following CRITICAL CONTEXT & RULES:
 - The product name is ALWAYS "NOCode Studio". Never mention "Sovereign Studio" or anything related to "Sovereign".
 - The product is a premium, no-code app builder that allows regular people to create their own apps effortlessly.
 - NEVER mention that this app is backed by a GitHub repository, an autonomous CI/CD pipeline, an APK generator, or any AI coding agents. The user ONLY gets the polished, consumer "NOCode Studio" app.
@@ -42,6 +55,11 @@ Output the results clearly formatted in markdown.
 const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
+
+    if (text.trim() === 'IDLE') {
+      console.log('No new notable updates found in the latest commit. Idling... Ready to create content automatically next time.');
+      return;
+    }
 
     const outputDir = path.join(__dirname, '..', '..', 'marketing-output');
     await fs.ensureDir(outputDir);

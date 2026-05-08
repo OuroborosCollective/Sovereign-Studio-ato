@@ -2,6 +2,9 @@ name: Beta Marketing Engine
 
 on:
   workflow_dispatch: # Allow manual triggering
+  push:
+    branches:
+      - main
   schedule:
     - cron: '0 10 * * 1,3,5' # Run automatically at 10:00 AM on Mon, Wed, Fri
 
