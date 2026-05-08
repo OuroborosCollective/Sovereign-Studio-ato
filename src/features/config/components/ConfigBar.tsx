@@ -11,22 +11,7 @@ import {
   Activity
 } from 'lucide-react';
 import { useConfig } from '../../../hooks/useConfig';
-
-export interface AppConfig {
-  canvas: {
-    resolutionScale: number;
-    fpsLimit: number;
-    showStats: boolean;
-    bloomEnabled: boolean;
-  };
-  gemini: {
-    temperature: number;
-    topP: number;
-    maxTokens: number;
-    model: 'gemini-1.5-pro' | 'gemini-1.5-flash';
-  };
-  [key: string]: any;
-}
+import type { AppConfig } from '../types';
 
 export const ConfigBar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);

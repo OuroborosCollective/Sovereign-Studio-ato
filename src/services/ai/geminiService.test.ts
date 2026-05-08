@@ -1,15 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
-import { GeminiService } from '../../features/ai/geminiService';
+import { geminiService } from '../../features/ai/geminiService';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 vi.mock('@google/generative-ai');
 
 describe('GeminiService', () => {
-  let service: GeminiService;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new GeminiService();
   });
 
   afterEach(() => {
@@ -33,10 +30,13 @@ describe('GeminiService', () => {
       getGenerativeModel: mockGetGenerativeModel,
     }));
 
-    const result = await service.generateText('Hello Gemini');
+    // Re-import to re-evaluate after mock
+    const { geminiService: localGeminiService } = await import('../../features/ai/geminiService');
+
+    const result = await localGeminiService.generateText('Hello Gemini');
 
     expect(result).toBe(mockResponseText);
-    expect(mockGetGenerativeModel).toHaveBeenCalledWith({ model: 'gemini-pro' });
+    expect(mockGetGenerativeModel).toHaveBeenCalledWith({ model: 'gemini-1.5-flash', generationConfig: { temperature: 0.7, topK: undefined, topP: undefined, maxOutputTokens: undefined, stopSequences: undefined } });
     expect(mockGenerateContent).toHaveBeenCalledWith('Hello Gemini');
   });
 
@@ -45,12 +45,17 @@ describe('GeminiService', () => {
     
     const mockGenerateContent = vi.fn().mockRejectedValue(mockError);
 
+    const mockGetGenerativeModel = vi.fn().mockReturnValue({
+      generateContent: mockGenerateContent,
+    });
+
     (GoogleGenerativeAI as unknown as Mock).mockImplementation(() => ({
-      getGenerativeModel: vi.fn().mockReturnValue({
-        generateContent: mockGenerateContent,
-      }),
+      getGenerativeModel: mockGetGenerativeModel,
     }));
 
-    await expect(service.generateText('Hello Gemini')).rejects.toThrow('API Error');
+    vi.resetModules();
+    const { geminiService: localGeminiService } = await import('../../features/ai/geminiService');
+
+    await expect(localGeminiService.generateText('Hello Gemini')).rejects.toThrow('API Error');
   });
 });

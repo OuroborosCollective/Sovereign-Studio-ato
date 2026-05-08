@@ -28,11 +28,17 @@ export type ThemeOption = ConfigOption<Theme>;
 export type LanguageOption = ConfigOption<Language>;
 
 export interface AppConfig {
-  theme: string;
-  autoSave: boolean;
-  apiEndpoint: string;
-  maxRetries: number;
-  debugMode: boolean;
-  canvas: boolean;
-  gemini: boolean;
+  canvas: {
+    resolutionScale: number;
+    fpsLimit: number;
+    showStats: boolean;
+    bloomEnabled: boolean;
+  };
+  gemini: {
+    temperature: number;
+    topP: number;
+    maxTokens: number;
+    model: 'gemini-1.5-pro' | 'gemini-1.5-flash';
+  };
+  [key: string]: any;
 }

@@ -1,14 +1,38 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ConfigBar } from './ConfigBar';
 import { expect, describe, it, beforeEach, afterEach, vi } from 'vitest';
+import { useConfig } from '../../../hooks/useConfig';
+
+vi.mock('../../../hooks/useConfig');
 
 describe('ConfigBar', () => {
+  const mockUpdateConfig = vi.fn();
+  const mockResetToDefaults = vi.fn();
+
   beforeEach(() => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.mocked(useConfig).mockReturnValue({
+      config: {
+        canvas: {
+          resolutionScale: 1,
+          fpsLimit: 60,
+          showStats: false,
+          bloomEnabled: true,
+        },
+        gemini: {
+          temperature: 0.7,
+          topP: 1,
+          maxTokens: 2000,
+          model: 'gemini-1.5-flash',
+        },
+      },
+      updateConfig: mockUpdateConfig,
+      resetToDefaults: mockResetToDefaults,
+      isLoaded: true,
+    });
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   const openConfigBar = () => {
@@ -21,86 +45,66 @@ describe('ConfigBar', () => {
     expect(screen.getByLabelText('Open Configuration')).toBeInTheDocument();
   });
 
-  it('handles state changes correctly', () => {
+  it('does not render if config is not loaded', () => {
+    vi.mocked(useConfig).mockReturnValueOnce({
+      config: {} as any,
+      updateConfig: mockUpdateConfig,
+      resetToDefaults: mockResetToDefaults,
+      isLoaded: false,
+    });
+    const { container } = render(<ConfigBar />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('handles canvas state changes correctly', () => {
     render(<ConfigBar />);
     openConfigBar();
 
-    const applyButton = screen.getByText('Apply Changes');
-    expect(applyButton).toBeDisabled(); // Initially disabled because isDirty is false
+    // Test Resolution Scale
+    const resolutionInput = screen.getAllByRole('slider')[0];
+    fireEvent.change(resolutionInput, { target: { value: '1.5' } });
 
-    // Change API Endpoint
-    const apiEndpointInput = screen.getByLabelText('API Endpoint');
-    fireEvent.change(apiEndpointInput, { target: { value: 'https://newapi.example.com' } });
+    expect(mockUpdateConfig).toHaveBeenCalledWith({
+      canvas: expect.objectContaining({ resolutionScale: 1.5 })
+    });
 
-    // isDirty should now be true, so apply changes should be enabled
-    expect(applyButton).not.toBeDisabled();
-    expect(apiEndpointInput).toHaveValue('https://newapi.example.com');
+    // Test Performance Stats Toggle
+    const statsButton = screen.getByText('Performance Stats').nextElementSibling as HTMLButtonElement;
+    fireEvent.click(statsButton);
 
-    // Test Theme select
-    const themeSelect = screen.getByLabelText('Theme');
-    fireEvent.change(themeSelect, { target: { value: 'dark' } });
-    expect(themeSelect).toHaveValue('dark');
+    expect(mockUpdateConfig).toHaveBeenCalledWith({
+      canvas: expect.objectContaining({ showStats: true })
+    });
+  });
 
-    // Test Range
-    const retriesInput = screen.getByRole('slider');
-    fireEvent.change(retriesInput, { target: { value: '5' } });
-    // Value of input type range is a string and needs special assertion for some reason or just standard toHaveValue
-    expect(retriesInput).toHaveValue('5');
+  it('handles gemini state changes correctly', () => {
+    render(<ConfigBar />);
+    openConfigBar();
 
-    // Click Apply Changes
-    fireEvent.click(applyButton);
-    // After apply, it logs and isDirty becomes false
-    expect(applyButton).toBeDisabled();
+    // Test Model Selection
+    const modelSelect = screen.getByRole('combobox');
+    fireEvent.change(modelSelect, { target: { value: 'gemini-1.5-pro' } });
 
-    // Check if it was saved (console.log was called)
-    expect(console.log).toHaveBeenCalledWith('Saving configuration:', expect.objectContaining({
-      apiEndpoint: 'https://newapi.example.com',
-      theme: 'dark',
-      maxRetries: 5
-    }));
+    expect(mockUpdateConfig).toHaveBeenCalledWith({
+      gemini: expect.objectContaining({ model: 'gemini-1.5-pro' })
+    });
+
+    // Test Temperature Slider
+    const tempInput = screen.getAllByRole('slider')[1];
+    fireEvent.change(tempInput, { target: { value: '0.9' } });
+
+    expect(mockUpdateConfig).toHaveBeenCalledWith({
+      gemini: expect.objectContaining({ temperature: 0.9 })
+    });
   });
 
   it('handles reset correctly', () => {
     render(<ConfigBar />);
     openConfigBar();
 
-    const apiEndpointInput = screen.getByLabelText('API Endpoint');
-    fireEvent.change(apiEndpointInput, { target: { value: 'https://newapi.example.com' } });
-
-    const applyButton = screen.getByText('Apply Changes');
-    expect(applyButton).not.toBeDisabled();
-
-    const resetButton = screen.getByText('Reset Defaults');
+    const resetButton = screen.getByText('Reset Engine Defaults');
     fireEvent.click(resetButton);
 
-    // After reset, value should be default
-    expect(apiEndpointInput).toHaveValue('https://api.example.com/v1');
-
-    // Resetting sets isDirty to true
-    expect(applyButton).not.toBeDisabled();
-  });
-
-  it('handles toggle buttons (autoSave, debugMode)', () => {
-    render(<ConfigBar />);
-    openConfigBar();
-
-    const applyButton = screen.getByText('Apply Changes');
-
-    const autoSaveText = screen.getByText('Auto Save Changes');
-    const autoSaveButton = autoSaveText.nextElementSibling as HTMLButtonElement;
-
-    expect(autoSaveButton).toHaveClass('bg-indigo-600'); // default is true
-    fireEvent.click(autoSaveButton);
-    expect(autoSaveButton).toHaveClass('bg-slate-200'); // toggled to false
-
-    const debugModeText = screen.getByText('Debug Mode');
-    const debugModeDiv = debugModeText.parentElement?.parentElement;
-    const debugModeButton = debugModeDiv?.querySelector('button') as HTMLButtonElement;
-
-    expect(debugModeButton).toHaveClass('bg-slate-300'); // default is false
-    fireEvent.click(debugModeButton);
-    expect(debugModeButton).toHaveClass('bg-amber-500'); // toggled to true
-
-    expect(applyButton).not.toBeDisabled();
+    expect(mockResetToDefaults).toHaveBeenCalled();
   });
 });
