@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
-import { geminiService } from '../../features/ai/geminiService';
+import { geminiService } from './geminiService';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 vi.mock('@google/generative-ai');
@@ -31,7 +31,7 @@ describe('GeminiService', () => {
     }));
 
     // Re-import to re-evaluate after mock
-    const { geminiService: localGeminiService } = await import('../../features/ai/geminiService');
+    const { geminiService: localGeminiService } = await import('./geminiService');
 
     const result = await localGeminiService.generateText('Hello Gemini');
 
@@ -54,7 +54,7 @@ describe('GeminiService', () => {
     }));
 
     vi.resetModules();
-    const { geminiService: localGeminiService } = await import('../../features/ai/geminiService');
+    const { geminiService: localGeminiService } = await import('./geminiService');
 
     await expect(localGeminiService.generateText('Hello Gemini')).rejects.toThrow('API Error');
   });
