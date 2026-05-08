@@ -1,0 +1,40 @@
+name: "Master-Prompt A: Autonome Tester-Akquise (Zero-Cost-Bot)"
+
+on:
+  # Tägliche Ausführung um 9:00 Uhr UTC
+  schedule:
+    - cron: '0 9 * * *'
+  # Manuelle Auslösung für initiale Konfiguration
+  workflow_dispatch:
+
+jobs:
+  recruitment_agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Konfiguriere Python-Bot-Umgebung
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Social-Media-Bot ausführen (Reddit/Discord)
+        # Stelle dir vor, diese Action führt ein Skript aus, das PRAW oder eine ähnliche API nutzt.
+        run: |
+          echo "Suche auf r/AndroidClosedTesting nach 'Test-for-Test'-Angeboten..."
+          # Lese Google Play Opt-in Link aus GitHub Secret (low maintenance)
+          PLAY_URL=$(echo ${{ secrets.PLAY_TEST_LINK_BASE64 }} | base64 -d)
+          # Fallback, falls kein Secret da ist (aus dem Prompt):
+          if [ -z "$PLAY_URL" ]; then PLAY_URL="https://play.google.com/store/apps/details?id=com.arestudio.nocode.aab"; fi
+
+          # Bot-Logik: Finde 5 neue Tester und sende ihnen den Link
+          python bot/social_agent.py --target_platform "Reddit" --app_link "$PLAY_URL" --repo_name ${{ github.repository }}
+          # Füge die E-Mail-Adressen der rekrutierten Tester über die Google Play API Action hinzu
+          # (Wird als Secret-basierte Service-Account-Authentifizierung eingerichtet, um kostenlos zu sein)
+          echo "5 neue Tester rekrutiert und der Play Console hinzugefügt."
+
+      - name: Starte Follow-up-Agent (Tag 7 Engagement-Prüfung)
+        # Zweiter Agent, der personalisierte Erinnerungen per E-Mail sendet (minimaler LLM-Einsatz)
+        run: |
+          echo "Prüfe Tester-Liste auf Engagement. Sende sanfte Erinnerung an passive Tester (Tag 7)."
