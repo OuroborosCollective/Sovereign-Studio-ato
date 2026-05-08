@@ -1,17 +1,5 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
-const googleWebClientId = process.env.VITE_GOOGLE_CLIENT_ID ?? '';
-const googleAndroidClientId = process.env.VITE_GOOGLE_ANDROID_CLIENT_ID ?? googleWebClientId;
-const googleServerClientId = process.env.VITE_GOOGLE_SERVER_CLIENT_ID ?? googleWebClientId;
-
-const googleAuthConfig = {
-  scopes: ['profile', 'email'],
-  clientId: googleWebClientId,
-  androidClientId: googleAndroidClientId,
-  serverClientId: googleServerClientId,
-  forceCodeForRefreshToken: true,
-};
-
 const config: CapacitorConfig = {
   appId: 'com.arestudio.nocode.aab',
   appName: 'Sovereign Studio',
@@ -29,7 +17,13 @@ const config: CapacitorConfig = {
     },
   },
   plugins: {
-    GoogleAuth: googleAuthConfig,
+    GoogleAuth: {
+      scopes: ['profile', 'email'],
+      clientId: 'REPLACE_WITH_VITE_GOOGLE_CLIENT_ID',
+      androidClientId: 'REPLACE_WITH_VITE_GOOGLE_ANDROID_CLIENT_ID',
+      serverClientId: 'REPLACE_WITH_VITE_GOOGLE_SERVER_CLIENT_ID',
+      forceCodeForRefreshToken: true,
+    },
     SplashScreen: {
       launchShowDuration: 1500,
       showSpinner: true,

@@ -10,15 +10,16 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
+    "baseUrl": ".",
     "moduleResolution": "bundler",
+    "esModuleInterop": true,
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./src/*"],
+      "@ato-v2/*": ["./src/ato-v2/*"]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true,

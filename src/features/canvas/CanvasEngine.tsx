@@ -1,26 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
 import { useDispatch, useSelector } from 'react-redux';
-
-interface CanvasObject {
-  id: string;
-  type: 'ai-text' | 'ai-shape' | 'ai-image';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  data: any;
-}
-
-interface RootState {
-  canvas: {
-    objects: CanvasObject[];
-    selectedId: string | null;
-  };
-}
-
-const updateObject = (payload: Partial<CanvasObject> & { id: string }) => ({ type: 'canvas/updateObject', payload });
-const selectObject = (id: string | null) => ({ type: 'canvas/selectObject', payload: id });
+import { RootState } from '../../store/index';
+import { 
+  CanvasObject, 
+  updateObject, 
+  selectObjects 
+} from './canvasSlice';
 
 interface CanvasEngineProps {
   className?: string;
@@ -41,7 +27,8 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const dispatch = useDispatch();
   
   const objects = useSelector((state: RootState) => state.canvas.objects);
-  const selectedId = useSelector((state: RootState) => state.canvas.selectedId);
+  const selectedIds = useSelector((state: RootState) => state.canvas.selectedIds);
+  const primarySelectedId = selectedIds.length > 0 ? selectedIds[0] : null;
 
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
@@ -107,11 +94,20 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     fabricCanvas.on('selection:created', (e) => {
       const activeObject = e.selected?.[0] as any;
-      if (activeObject?.id) dispatch(selectObject(activeObject.id));
+      if (activeObject?.id) {
+        dispatch(selectObjects([activeObject.id]));
+      }
+    });
+
+    fabricCanvas.on('selection:updated', (e) => {
+      const activeObject = e.selected?.[0] as any;
+      if (activeObject?.id) {
+        dispatch(selectObjects([activeObject.id]));
+      }
     });
 
     fabricCanvas.on('selection:cleared', () => {
-      dispatch(selectObject(null));
+      dispatch(selectObjects([]));
     });
 
     const handleModified = (e: fabric.IEvent) => {
@@ -154,13 +150,19 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const currentFabricObjects = canvas.getObjects();
     let hasChanges = false;
     
-    objects.forEach((objData) => {
+    objects.forEach((objData, index) => {
       const existingObj = currentFabricObjects.find((o: any) => o.id === objData.id);
 
       if (existingObj) {
-        if (existingObj.left !== objData.x || existingObj.top !== objData.y) {
+        const needsUpdate = 
+          existingObj.left !== objData.x || 
+          existingObj.top !== objData.y || 
+          canvas.getObjects().indexOf(existingObj) !== index;
+
+        if (needsUpdate) {
           existingObj.set({ left: objData.x, top: objData.y });
           existingObj.setCoords();
+          canvas.moveTo(existingObj, index);
           hasChanges = true;
         }
       } else {
@@ -187,6 +189,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
         (newObj as any).id = objData.id;
         canvas.add(newObj);
+        canvas.moveTo(newObj, index);
         hasChanges = true;
       }
     });
@@ -208,17 +211,20 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     if (!canvas) return;
 
     const activeObj = canvas.getActiveObject() as any;
-    if (selectedId && (!activeObj || activeObj.id !== selectedId)) {
-      const target = canvas.getObjects().find((o: any) => o.id === selectedId);
-      if (target) {
-        canvas.setActiveObject(target);
-        canvas.requestRenderAll();
+    
+    if (primarySelectedId) {
+      if (!activeObj || activeObj.id !== primarySelectedId) {
+        const target = canvas.getObjects().find((o: any) => o.id === primarySelectedId);
+        if (target) {
+          canvas.setActiveObject(target);
+          canvas.requestRenderAll();
+        }
       }
-    } else if (!selectedId && activeObj) {
+    } else if (activeObj) {
       canvas.discardActiveObject();
       canvas.requestRenderAll();
     }
-  }, [selectedId]);
+  }, [primarySelectedId]);
 
   return (
     <div 

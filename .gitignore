@@ -8,3 +8,6 @@ coverage/
 !.env.example
 android/app/src/main/assets/public/
 android/app/build/
+
+# Keystores
+*.keystoremarketing-output/

@@ -1,0 +1,188 @@
+name: Ghost Pilot Android Test
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  ghost-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validate Gemini API Key
+        run: |
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "❌ Missing GEMINI_API_KEY"
+            exit 1
+          fi
+
+      - name: Prepare Context
+        id: context
+        run: |
+          STRINGS_PATH="android/app/src/main/res/values/strings.xml"
+          APP_PATH="src/App.tsx"
+
+          if [ -f "$STRINGS_PATH" ]; then
+            cat "$STRINGS_PATH" > strings_extracted.txt
+          else
+            echo "Empty Strings" > strings_extracted.txt
+          fi
+
+          if [ -f "$APP_PATH" ]; then
+            cat "$APP_PATH" > app_extracted.txt
+          elif [ -f "App.tsx" ]; then
+            cat "App.tsx" > app_extracted.txt
+          else
+            echo "Empty Code" > app_extracted.txt
+          fi
+
+      - name: Generate ADB Sequence via Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -e
+
+          STRINGS_ESCAPED=$(jq -Rs . < strings_extracted.txt)
+          APP_ESCAPED=$(jq -Rs . < app_extracted.txt)
+
+          QUERY="Analyze the following Android strings and React code.
+
+          Generate a robust sequence of adb shell input commands
+          (tap, text, keyevent, swipe).
+
+          Goals:
+          - navigate through the app
+          - stress unusual edge cases
+          - trigger ErrorBoundary states
+          - trigger crashes if possible
+          - abuse forms and navigation
+
+          Return ONLY adb shell commands.
+          One command per line.
+          No markdown formatting.
+
+          Strings:
+          $STRINGS_ESCAPED
+
+          Code:
+          $APP_ESCAPED"
+
+          PAYLOAD=$(jq -n --arg q "$QUERY" '{
+            contents: [
+              {
+                parts: [
+                  {
+                    text: $q
+                  }
+                ]
+              }
+            ]
+          }')
+
+          echo "$PAYLOAD" > payload.json
+
+          RESPONSE=$(curl -s -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d @payload.json)
+
+          echo "$RESPONSE" > response.json
+
+          COMMANDS=$(
+            echo "$RESPONSE" \
+              | jq -r '.candidates[0].content.parts[0].text // empty' \
+              | sed 's/```bash//g' \
+              | sed 's/```//g' \
+              | grep "adb shell" || true
+          )
+
+          {
+            echo "#!/usr/bin/env bash"
+            echo "set +e"
+            echo "$COMMANDS"
+          } > test_sequence.sh
+
+          if ! grep -q "adb shell" test_sequence.sh; then
+            echo "adb shell input keyevent 3" >> test_sequence.sh
+          fi
+
+          chmod +x test_sequence.sh
+
+          echo "=== GENERATED COMMANDS ==="
+          cat test_sequence.sh
+
+      - name: Run Test on Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          arch: x86_64
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: >
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -camera-back none
+
+          script: |
+            set -e
+
+            adb wait-for-device
+
+            adb logcat -c
+
+            adb logcat *:E > emulator_error.log 2>&1 &
+            LOGCAT_PID=$!
+
+            echo "Starting Ghost Pilot sequence..."
+
+            chmod +x test_sequence.sh
+
+            bash test_sequence.sh || true
+
+            sleep 5
+
+            kill $LOGCAT_PID || true
+
+            echo "=== ERROR SCAN ==="
+
+            if grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR|CRASH" emulator_error.log; then
+              echo "❌ Crash detected"
+
+              grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR|CRASH" emulator_error.log | head -n 20
+
+              exit 1
+            else
+              echo "✅ No critical crash detected"
+            fi
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghost-pilot-artifacts
+          path: |
+            emulator_error.log
+            test_sequence.sh
+            payload.json
+            response.json
+            strings_extracted.txt
+            app_extracted.txt

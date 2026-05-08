@@ -5,59 +5,80 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Optional: Version Code (must be higher than previous Play uploads)'
+        required: false
+        type: string
+      version_name:
+        description: 'Optional: Version Name (e.g., 1.1.1)'
+        required: false
+        type: string
 
 jobs:
   build:
+    name: 🏗️ Build & Release Android
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
-
+      actions: write
     env:
-      NODE_VERSION: 20
-
+      NODE_VERSION: 22
     steps:
-      - name: 🧾 Checkout
+      - name: 🧾 Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: 🟢 Setup Node
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: 📦 Install dependencies
-        run: npm ci
+      - name: 📦 Install Dependencies
+        run: npm install
 
-      - name: 🏷️ Create Git Tag from package.json
+      - name: 🏷️ Determine Versioning
+        id: vars
+        run: |
+          INPUT_NAME="${{ github.event.inputs.version_name }}"
+          if [ -z "$INPUT_NAME" ]; then
+            INPUT_NAME=$(node -p "require('./package.json').version")
+          fi
+          
+          INPUT_CODE="${{ github.event.inputs.version_code }}"
+          if [ -z "$INPUT_CODE" ]; then
+            INPUT_CODE="${{ github.run_number }}"
+          fi
+          
+          echo "version_name=$INPUT_NAME" >> $GITHUB_OUTPUT
+          echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
+          echo "Building with Version Name: $INPUT_NAME, Version Code: $INPUT_CODE"
+
+      - name: 🏷️ Create Git Tag
         if: github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION="${{ steps.vars.outputs.version_name }}"
           TAG="v$VERSION"
-          echo "Detected version: $TAG"
-
           if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
-            echo "Tag already exists → skip"
-            exit 0
+            echo "Tag $TAG already exists, skipping."
+          else
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git tag $TAG
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
           fi
 
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          git tag $TAG
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
-
-      - name: 🏗️ Build Web App
+      - name: 🏗️ Build Web Application
         run: npm run build
 
-      - name: 🔄 Sync Capacitor
+      - name: 🔄 Sync Capacitor Android
         run: npx cap sync android
 
-      - name: ☕ Setup Java (required for Android build)
+      - name: ☕ Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -75,67 +96,68 @@ jobs:
 
       - name: 🔐 Decode Android Keystore
         run: |
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Error: ANDROID_KEYSTORE_BASE64 is missing."
+            exit 1
+          fi
           mkdir -p android/app/keystore
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
-          ls -lh android/app/keystore/
+          
+          if [ ! -s android/app/keystore/release.jks ]; then
+            echo "Error: Failed to decode keystore."
+            exit 1
+          fi
 
-      - name: 📝 Create gradle.properties securely
-        run: |
-          echo "MYAPP_UPLOAD_STORE_FILE=keystore/release.jks" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_ALIAS=$MYAPP_UPLOAD_KEY_ALIAS" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_STORE_PASSWORD=$MYAPP_UPLOAD_STORE_PASSWORD" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_PASSWORD=$MYAPP_UPLOAD_KEY_PASSWORD" >> android/gradle.properties
-        env:
-          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-
-      - name: 📦 Build Release AAB
+      - name: 📦 Build Release AAB (Android App Bundle)
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew bundleRelease --no-daemon
+          ./gradlew bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
+            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -PversionCode=${{ steps.vars.outputs.version_code }} \
+            -PversionName=${{ steps.vars.outputs.version_name }}
 
-      - name: 🔑 Prepare Play Store API Key
+      - name: 📁 Prepare Production Artifacts
         run: |
-          cd android
-          echo "$PLAY_STORE_JSON_KEY" > key.json
-        env:
-          PLAY_STORE_JSON_KEY: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          mkdir -p release-bundle
+          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
+          if [ -f android/app/build/outputs/mapping/release/mapping.txt ]; then
+            cp android/app/build/outputs/mapping/release/mapping.txt release-bundle/SovereignStudio-proguard-mapping.txt
+          fi
+          echo "Version: ${{ steps.vars.outputs.version_name }}" > release-bundle/version.txt
+          echo "Build: ${{ steps.vars.outputs.version_code }}" >> release-bundle/version.txt
+          zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
 
-      - name: ⚙️ Generate Fastlane Config
-        run: |
-          cd android
-          mkdir -p fastlane
+      - name: 📤 Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-PlayStore-Release
+          path: SovereignStudio-PlayStore-Release.zip
+          retention-days: 14
 
-          cat > fastlane/Appfile <<EOF
-          package_name("${{ secrets.ANDROID_PACKAGE_NAME }}")
-          json_key_file("key.json")
-          EOF
+      - name: 🔥 Ignite Marketing Loop
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: marketing_ignition_trigger
+          client-payload: |
+            {
+              "vouchers": 66,
+              "campaign_mode": "initial_spark",
+              "version": "${{ steps.vars.outputs.version_name }}",
+              "build_number": "${{ steps.vars.outputs.version_code }}",
+              "platform": "android"
+            }
 
-          cat > fastlane/Fastfile <<EOF
-          default_platform(:android)
-
-          platform :android do
-            desc "Deploy to Play Store Production"
-            lane :deploy_production do
-              upload_to_play_store(
-                track: 'production',
-                aab: '../android/app/build/outputs/bundle/release/app-release.aab',
-                skip_upload_metadata: true,
-                skip_upload_images: true,
-                skip_upload_screenshots: true
-              )
-            end
-          end
-          EOF
-
-      - name: 🚀 Install Fastlane
-        run: |
-          cd android
-          gem install fastlane
-
-      - name: 📤 Upload to Play Store
-        run: |
-          cd android
-          fastlane deploy_production
+      - name: 🚀 Google Play Release (Manual Step)
+        if: false
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
+          packageName: com.arestudio.nocode.aab
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          tracks: production
+          status: completed
