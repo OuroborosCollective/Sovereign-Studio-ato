@@ -165,10 +165,11 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       const existingObj = existingFabricObjectsMap.get(objData.id);
 
       if (existingObj) {
+        // ⚡ Bolt: Use O(1) canvas.item(index) instead of O(N) getObjects().indexOf(existingObj)
         const needsUpdate = 
           existingObj.left !== objData.x || 
           existingObj.top !== objData.y || 
-          canvas.getObjects().indexOf(existingObj) !== index;
+          (canvas.item(index) as any) !== existingObj;
 
         if (needsUpdate) {
           existingObj.set({ left: objData.x, top: objData.y });
