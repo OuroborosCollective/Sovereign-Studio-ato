@@ -1,4 +1,5 @@
 name: Master-Prompt C: ZERO-TOUCH MASTER WORKFLOW (Komplett autonom, ohne Kosten/Wartung)
+
 on:
   # 1. Auslöser: Täglicher Cron Job für Engagement-Sicherung und Rekrutierung
   schedule:
@@ -7,10 +8,10 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
-    if: github.event.pull_request.merged == true
   # 3. Auslöser: Externer Crash-Report (WebHook vom Firebase Crashlytics)
   repository_dispatch:
     types: [crash_report_received]
+
 jobs:
 
   # JOB 1: Tägliche Rekrutierung und Engagement-Sicherung (Modell A)
@@ -19,6 +20,8 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Starte Social-Agent & Daily-Device-Simulation
         run: |
           # Führe beide Prozesse gleichzeitig aus, um Zeit zu sparen.
@@ -26,6 +29,7 @@ jobs:
           python ./agents/recruiter.py --target "COMMUNITY"
           # Interaktion (Prompt B Logik): Starte 12 simulierte Geräte mit Proxy-Rotation
           ./scripts/simulate_engagement.sh --target_count 12 --use_secrets_proxy ${{ secrets.PROXY_INFRASTRUCTURE_BASE64 }}
+
   # JOB 2: Autonomer KI-Autofix (Modell C - Kybernetische Wartung)
   ai_autofix_loop:
     name: KI-Wartung: Jules-basierter Autofix
@@ -35,6 +39,8 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Konvertiere Crash-Report in strukturiertes Issue
         # Nutzt LLM zur Aggregation von unstrukturiertem Feedback aus dem client_payload
         uses: code-sanitizer/llm-issue-planner@v1
@@ -50,13 +56,15 @@ jobs:
             Erstelle einen Code-Patch, der diesen Fehler behebt, schreibe einen begleitenden Unit-Test und öffne einen Pull Request.
             Architektonische Regeln: Halte dich strikt an das Muster des Stateless Determinism.
           jules_api_key: ${{ secrets.JULES_API_KEY }}
+
   # JOB 3: Automatisches Deployment nach Fix (Zero-Touch Publishing)
   automated_release:
     name: Zero-Touch-Deployment
-    needs: [ai_autofix_loop]
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Baue und signiere das Android App Bundle (.aab)
         # Nutzt Base64-kodierten Keystore aus Secrets
         uses: build-tools/android-builder@v1
