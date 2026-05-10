@@ -13,7 +13,7 @@ if (!apiKey) {
 }
 
 // Use mock for test key - always pass in CI/test scenarios
-const isTest = apiKey.startsWith("test_") || apiKey === "dummy_key" || apiKey.startsWith("AIzaSyDemo");
+const isTest = apiKey.startsWith("test_") || apiKey === "dummy_key" || apiKey.startsWith("AIzaSyDemo") || apiKey.includes("no_key");
 
 if (isTest) { 
   const outputDir = path.join(__dirname, "..", "..", "marketing-output");
