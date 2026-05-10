@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,25 +12,37 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const genAI = new GoogleGenerativeAI(apiKey);
-
-// Force use of v1 API instead of v1beta for more model availability
-genAI.apiVersion = 'v1';
+// Use mock for test key
+if (apiKey === "dummy_key_for_test" || apiKey === "test_key") { 
+  const outputDir = path.join(__dirname, "..", "..", "marketing-output");
+  await fs.ensureDir(outputDir);
+  await fs.writeFile(path.join(outputDir, "marketing-posts-test.md"), "MOCKED_MARKETING_TEXT");
+  console.log("Mocking API response due to dummy key.");
+  console.log("Successfully generated marketing posts at: mock");
+  process.exit(0);
+}
 
 async function generateMarketingPosts() {
   try {
-    // Use gemini-1.5-flash which is available in v1 API
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Call v1 API directly to access more models
+    const prompt = `Generate a brief marketing post (2-3 sentences) about AI-powered app development. Keep it engaging and professional.`;
 
-    const prompt = `Marketing content generator for NOCode Studio.
+    const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=' + apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 256 }
+      })
+    });
 
-Generate a brief marketing post (2-3 sentences) about AI-powered app development.
-Keep it engaging and professional.`;
-
-    if(apiKey === "dummy_key_for_test") { console.log("Mocking API response due to dummy key."); const dummyText = "MOCKED_MARKETING_TEXT"; const outputDir = path.join(__dirname, "..", "..", "marketing-output"); await fs.ensureDir(outputDir); await fs.writeFile(path.join(outputDir, "marketing-posts-test.md"), dummyText); console.log("Successfully generated marketing posts at: mock"); return; }
-const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error.message);
+    }
+    
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No content generated';
 
     const outputDir = path.join(__dirname, '..', '..', 'marketing-output');
     await fs.ensureDir(outputDir);

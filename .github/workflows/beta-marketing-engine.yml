@@ -28,9 +28,7 @@ jobs:
 
       - name: Install Dependencies
         working-directory: ./launch-bot-v1
-        run: |
-          npm install --no-package-lock --ignore-scripts
-          ls -la node_modules/@google/
+        run: npm install --no-package-lock --ignore-scripts
 
       - name: Run Marketing Content Generator
         working-directory: ./launch-bot-v1
