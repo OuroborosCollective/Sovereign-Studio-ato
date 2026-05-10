@@ -31,16 +31,23 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'launch-bot-v1/package.json'
 
-      - name: Generate Safe Marketing Context
+      - name: Install Dependencies
+        working-directory: ./launch-bot-v1
+        run: npm install --no-package-lock --ignore-scripts
+
+      - name: Run Marketing Content Generator
+        working-directory: ./launch-bot-v1
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          mkdir -p marketing-output
+          # Use first 5 beta codes from promo-codes.txt
+          BETA_CODES=$(head -5 ./marketing/promo-codes.txt 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+          echo "Using beta codes: $BETA_CODES"
+          node marketing/generate-posts.js "$BETA_CODES"
 
-          echo '{"status":"dry-run","mode":"safe","posting":"disabled"}' > marketing-output/status.json
-
-          echo "Ghost Pilot marketing foundation initialized"
-
-      - name: Upload Dry Run Artifacts
+      - name: Upload Generated Content
         uses: actions/upload-artifact@v4
         with:
           name: marketing-engine-dry-run
           path: marketing-output/
+          retention-days: 7

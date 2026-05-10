@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,62 +8,74 @@ const __dirname = path.dirname(__filename);
 
 const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
+// Command-line argument: beta codes
+const betaCodes = process.argv[2] || '';
+
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.arestudio.nocode.aab';
+
 if (!apiKey) {
   console.error('Error: GEMINI_API_KEY or VITE_GEMINI_API_KEY environment variable is missing.');
   process.exit(1);
 }
 
+const genAI = new GoogleGenerativeAI(apiKey);
+
 async function generateMarketingPosts() {
-  // Generate mock content by default
-  let text = "MOCKED_MARKETING_TEXT - Default marketing content";
-  
   try {
-    // Call v1beta API directly
-    const prompt = `Generate a brief marketing post (2-3 sentences) about AI-powered app development. Keep it engaging and professional.`;
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 256 }
-      })
-    });
+    const betaCodesList = betaCodes.split(',').filter(c => c.trim());
+    const codesPreview = betaCodesList.slice(0, 3).join(', ') + (betaCodesList.length > 3 ? '...' : '');
+    
+    const prompt = `Generate exciting marketing content for NOCode Studio - an AI-powered app development platform!
 
-    // Check if response is valid JSON
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      console.log('Invalid response content-type, using mock');
-      throw new Error('Invalid API response');
+Target: Google Play Store app users
+App Link: ${PLAY_STORE_URL}
+
+${betaCodesList.length > 0 ? `EXCLUSIVE BETA CODES: ${codesPreview}` : ''}
+
+Requirements:
+1. Include the exact Play Store URL: ${PLAY_STORE_URL}
+2. Create excitement about the AI-powered app building experience
+3. If beta codes provided, mention them prominently - users can use these codes for premium features
+4. Keep it engaging and professional (2-3 short paragraphs)
+5. End with a clear call-to-action to download
+
+Make it compelling and unique - stand out from typical app promotions!`;
+
+    console.log('Generating marketing content for:', PLAY_STORE_URL);
+    if (betaCodesList.length > 0) {
+      console.log('Including beta codes:', codesPreview);
     }
     
-    const data = await response.json();
-    
-    if (data.error) {
-      console.log('API error: ' + data.error.message + ', using mock');
-      throw new Error(data.error.message);
-    }
-    
-    text = data.candidates?.[0]?.content?.parts?.[0]?.text || text;
-  } catch (err) {
-    console.log('API call failed: ' + err.message + ', generating mock content');
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    const outputDir = path.join(__dirname, '..', '..', 'marketing-output');
+    await fs.ensureDir(outputDir);
+
+    // Add metadata footer
+    const contentWithMeta = `${text}
+
+---
+📱 Download: ${PLAY_STORE_URL}
+${betaCodesList.length > 0 ? `🎁 Beta Codes: ${betaCodesList.join(', ')}` : ''}`;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `marketing-posts-${timestamp}.md`;
+    const outputPath = path.join(outputDir, filename);
+
+    await fs.writeFile(outputPath, contentWithMeta);
+
+    console.log(`Successfully generated marketing posts at: ${outputPath}`);
+    console.log('\n--- Preview ---');
+    console.log(text);
+
+  } catch (error) {
+    console.error('Error generating marketing content:', error);
+    process.exit(1);
   }
-
-  const outputDir = path.join(__dirname, '..', '..', 'marketing-output');
-  await fs.ensureDir(outputDir);
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `marketing-posts-${timestamp}.md`;
-  const outputPath = path.join(outputDir, filename);
-
-  await fs.writeFile(outputPath, text);
-
-  console.log(`Successfully generated marketing posts at: ${outputPath}`);
-  console.log('\n--- Preview ---');
-  console.log(text);
 }
 
-generateMarketingPosts().catch(err => {
-  console.error('Error generating marketing content:', err);
-  process.exit(1);
-});
+generateMarketingPosts();

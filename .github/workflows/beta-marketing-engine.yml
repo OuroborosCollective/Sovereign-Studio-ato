@@ -33,9 +33,12 @@ jobs:
       - name: Run Marketing Content Generator
         working-directory: ./launch-bot-v1
         env:
-          # Use test key if no real key is configured
-          GEMINI_API_KEY: ${{ secrets.AI_API_KEY || 'test_no_key_configured' }}
-        run: node marketing/generate-posts.js
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # Use first 5 beta codes from promo-codes.txt
+          BETA_CODES=$(head -5 ./marketing/promo-codes.txt 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+          echo "Using beta codes: $BETA_CODES"
+          node marketing/generate-posts.js "$BETA_CODES"
 
       - name: Upload Generated Content
         uses: actions/upload-artifact@v4
