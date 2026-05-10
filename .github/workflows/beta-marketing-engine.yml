@@ -26,9 +26,21 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Get npm cache directory
+        id: npm-cache
+        run: echo "dir=$(npm config get cache)" >> $GITHUB_OUTPUT
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: launch-bot-v1/node_modules
+          key: ${{ runner.os }}-npm-v22-${{ hashFiles('launch-bot-v1/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-v22-
+
       - name: Install Dependencies
         working-directory: ./launch-bot-v1
-        run: npm install --no-package-lock
+        run: npm install --no-package-lock --ignore-scripts
 
       - name: Run Marketing Content Generator
         working-directory: ./launch-bot-v1
