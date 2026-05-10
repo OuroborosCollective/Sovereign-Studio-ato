@@ -17,9 +17,13 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 async function generateMarketingPosts() {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // Use a reliable model - gemini-1.5-flash is stable
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    const prompt = `Marketing content generator for NOCode Studio.`;
+    const prompt = `Marketing content generator for NOCode Studio.
+
+Generate a brief marketing post (2-3 sentences) about AI-powered app development.
+Keep it engaging and professional.`;
 
     if(apiKey === "dummy_key_for_test") { console.log("Mocking API response due to dummy key."); const dummyText = "MOCKED_MARKETING_TEXT"; const outputDir = path.join(__dirname, "..", "..", "marketing-output"); await fs.ensureDir(outputDir); await fs.writeFile(path.join(outputDir, "marketing-posts-test.md"), dummyText); console.log("Successfully generated marketing posts at: mock"); return; }
 const result = await model.generateContent(prompt);

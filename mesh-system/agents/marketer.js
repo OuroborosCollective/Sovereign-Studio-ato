@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+const API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
 /**
  * MarketerAgent
  * Spezialisiert auf die Extraktion technischer Errungenschaften und deren Transformation 
@@ -8,8 +10,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
  */
 export class MarketerAgent {
   constructor(apiKey) {
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is required");
+    }
     this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    // Use gemini-1.5-flash for speed and cost efficiency
+    this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     this.brandVoice = "Visionär, technisch präzise, souverän und disruptiv.";
     this.pricing = {
       anchorPrice: "6.49€",
