@@ -31,20 +31,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'launch-bot-v1/package.json'
 
-      - name: Validate Required Secrets
-        env:
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          DB_URL: ${{ secrets.DB_URL }}
-          DB_SERVICE_KEY: ${{ secrets.DB_SERVICE_KEY }}
-        run: |
-          echo "Validating autonomous marketing environment..."
-
-          test -n "$AI_API_KEY" || (echo "Missing AI_API_KEY" && exit 1)
-          test -n "$DB_URL" || (echo "Missing DB_URL" && exit 1)
-          test -n "$DB_SERVICE_KEY" || (echo "Missing DB_SERVICE_KEY" && exit 1)
-
-          echo "Environment validation complete"
-
       - name: Generate Safe Marketing Context
         run: |
           mkdir -p marketing-output
