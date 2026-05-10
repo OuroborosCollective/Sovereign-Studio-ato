@@ -17,8 +17,8 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 async function generateMarketingPosts() {
   try {
-    // Use a reliable model - gemini-1.5-flash is stable
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Use a reliable model - gemini-1.5-flash-8b is stable and available
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-8b' });
 
     const prompt = `Marketing content generator for NOCode Studio.
 
