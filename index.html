@@ -667,10 +667,10 @@
             document.getElementById('batch-count').textContent = batchFiles.length;
             
             if (batchFiles.length > 0) {
-                btn.disabled = false; btn.classList.replace('bg-stone-300', 'bg-indigo-600'); btn.classList.replace('text-stone-500', 'text-white');
+                btn.disabled = false; btn.classList.remove('bg-stone-300'); btn.classList.add('bg-indigo-600'); btn.classList.remove('text-stone-500'); btn.classList.add('text-white');
                 msgInput.disabled = false; autoMsgBtn.classList.remove('hidden'); draftPrBtn.classList.remove('hidden'); prReviewBtn.classList.remove('hidden');
             } else {
-                btn.disabled = true; btn.classList.replace('bg-indigo-600', 'bg-stone-300'); btn.classList.replace('text-white', 'text-stone-500');
+                btn.disabled = true; btn.classList.remove('bg-indigo-600'); btn.classList.add('bg-stone-300'); btn.classList.remove('text-white'); btn.classList.add('text-stone-500');
                 msgInput.disabled = true; msgInput.value = ""; autoMsgBtn.classList.add('hidden'); draftPrBtn.classList.add('hidden'); prReviewBtn.classList.add('hidden');
             }
         }
@@ -1215,8 +1215,8 @@
                     activePR = { branch: branchName, number: prData.number, lastErrorLog: "", isFixing: false, lastCommitSha: newCommitData.sha };
                     
                     document.getElementById('check-pr-btn').disabled = false; 
-                    document.getElementById('check-pr-btn').classList.replace('opacity-50', 'opacity-100'); 
-                    document.getElementById('check-pr-btn').classList.replace('cursor-not-allowed', 'cursor-pointer');
+                    document.getElementById('check-pr-btn').classList.remove('opacity-50'); document.getElementById('check-pr-btn').classList.add('opacity-100');
+                    document.getElementById('check-pr-btn').classList.remove('cursor-not-allowed'); document.getElementById('check-pr-btn').classList.add('cursor-pointer');
                 }
                 
                 batchFiles = []; 
@@ -1272,7 +1272,7 @@
                     ciPollTimer = setTimeout(checkCIStatus, 5000); 
                 } 
                 else if (isFailed) { 
-                    badge.textContent = "❌ CI FEHLGESCHLAGEN"; progBar.style.width = "100%"; progBar.classList.replace('bg-indigo-600', 'bg-red-600');
+                    badge.textContent = "❌ CI FEHLGESCHLAGEN"; progBar.style.width = "100%"; progBar.classList.remove('bg-indigo-600'); progBar.classList.add('bg-red-600');
                     if(ciPollTimer) clearTimeout(ciPollTimer); 
                     if (activePR.isFixing) return;
                     
@@ -1317,7 +1317,7 @@
                         window.logToSystem('Fehler beim Auto-Fix: ' + err.message, "error");
                     }
                 } else {
-                    badge.textContent = "✅ CI GRÜN"; progBar.classList.replace('bg-indigo-600', 'bg-green-600');
+                    badge.textContent = "✅ CI GRÜN"; progBar.classList.remove('bg-indigo-600'); progBar.classList.add('bg-green-600');
                     document.getElementById('autofix-pr-btn').classList.add('hidden'); document.getElementById('merge-pr-btn').classList.remove('hidden'); 
                     activePR.isFixing = false; autoFixCount = 0;
                 }
@@ -1338,65 +1338,85 @@
         };
 
         document.getElementById('autofix-pr-btn').onclick = () => runArchitectWorkflow('Behebe folgenden Bruch in meiner Matrix:\n\n' + activePR.lastErrorLog, true);
-        window.onload = () => { fetchRepoTree(); if (window.innerWidth < 1024) switchTab('explorer'); };
+        document.addEventListener('DOMContentLoaded', function() { fetchRepoTree(); if (window.innerWidth < 1024) switchTab('explorer'); });
     </script>
 
-
-    <!-- GOOGLE OAUTH & KEY STORAGE MODULE -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-
-        let auth;
+    <!-- GOOGLE OAUTH & KEY STORAGE MODULE - Capacitor Compatible -->
+    <script>
         let currentUserUid = 'default';
 
-
         function saveKeys() {
-            const pat = document.getElementById('gh-pat').value;
-            const gemini = document.getElementById('gemini-key').value;
+            const pat = document.getElementById('gh-pat')?.value || '';
+            const gemini = document.getElementById('gemini-key')?.value || '';
             localStorage.setItem('sov_pat_' + currentUserUid, pat);
             localStorage.setItem('sov_gemini_' + currentUserUid, gemini);
         }
 
-
         function loadKeys(uid) {
-            document.getElementById('gh-pat').value = localStorage.getItem('sov_pat_' + uid) || '';
-            document.getElementById('gemini-key').value = localStorage.getItem('sov_gemini_' + uid) || '';
+            const patEl = document.getElementById('gh-pat');
+            const geminiEl = document.getElementById('gemini-key');
+            if (patEl) patEl.value = localStorage.getItem('sov_pat_' + uid) || '';
+            if (geminiEl) geminiEl.value = localStorage.getItem('sov_gemini_' + uid) || '';
         }
 
+        // Auto-save on input
+        document.addEventListener('DOMContentLoaded', function() {
+            const patInput = document.getElementById('gh-pat');
+            const geminiInput = document.getElementById('gemini-key');
+            if (patInput) patInput.addEventListener('input', saveKeys);
+            if (geminiInput) geminiInput.addEventListener('input', saveKeys);
+            loadKeys('default');
+        });
 
-        document.getElementById('gh-pat').addEventListener('input', saveKeys);
-        document.getElementById('gemini-key').addEventListener('input', saveKeys);
+        // Try to use Capacitor GoogleAuth plugin
+        let useCapacitorOAuth = false;
+        
+        async function tryCapacitorGoogleAuth() {
+            try {
+                if (window.GoogleAuth) {
+                    useCapacitorOAuth = true;
+                    return true;
+                }
+            } catch(e) {}
+            return false;
+        }
 
+        // Check for Capacitor on load
+        document.addEventListener('DOMContentLoaded', async function() {
+            await tryCapacitorGoogleAuth();
+        });
 
-        try {
-            const firebaseConfig = { apiKey: "AIzaSyDemoKeyForDev" };
-            
-            const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            const provider = new GoogleAuthProvider();
-            
-            provider.setCustomParameters({ prompt: 'select_account' });
-
-
-            window.loginWithGoogle = async () => {
-                window.logToSystem('⚠️ <b>OAuth Demo-Modus:</b> Firebase-Konfiguration erforderlich für echte OAuth-Authentifizierung. Verwende Mock-Modus für Tests.', 'warning');
+        window.loginWithGoogle = async function() {
+            if (useCapacitorOAuth) {
+                try {
+                    const result = await window.GoogleAuth.signIn();
+                    updateAuthUI({
+                        uid: result.user.uid,
+                        displayName: result.user.displayName,
+                        photoURL: result.user.imageURL
+                    });
+                    window.logToSystem('✅ <b>Google OAuth erfolgreich!</b> via Capacitor', 'success');
+                } catch(e) {
+                    window.logToSystem('⚠️ <b>OAuth Fehler:</b> ' + e.message, 'error');
+                    mockLogin();
+                }
+            } else {
+                // Fallback to mock for web
+                window.logToSystem('⚠️ <b>OAuth Demo-Modus:</b> Capacitor nicht verfügbar. Verwende Mock-Modus.', 'warning');
                 mockLogin();
-                return;
-            };
+            }
+        };
 
+        window.switchGoogleAccount = window.loginWithGoogle;
 
-            window.switchGoogleAccount = window.loginWithGoogle;
-
-
-            window.logoutGoogle = async () => {
-                mockLogout();
-            };
-
-        } catch(e) {
-            console.warn("Firebase Init Fehler (Fallback auf Mock)", e);
-        }
-
+        window.logoutGoogle = async function() {
+            if (useCapacitorOAuth) {
+                try {
+                    await window.GoogleAuth.signOut();
+                } catch(e) {}
+            }
+            mockLogout();
+        };
 
         let mockUserToggle = false;
         function mockLogin() {
@@ -1411,7 +1431,6 @@
             updateAuthUI(null);
         }
 
-
         function updateAuthUI(user) {
             const authBtn = document.getElementById('google-auth-btn');
             const userInfo = document.getElementById('google-user-info');
@@ -1420,18 +1439,26 @@
                 currentUserUid = user.uid;
                 loadKeys(user.uid);
                 
-                authBtn.classList.add('hidden');
-                userInfo.classList.remove('hidden');
-                document.getElementById('google-avatar').src = user.photoURL || '';
-                document.getElementById('google-name').textContent = user.displayName || 'Google User';
+                if(authBtn) authBtn.classList.add('hidden');
+                if(userInfo) userInfo.classList.remove('hidden');
+                const avatar = document.getElementById('google-avatar');
+                const name = document.getElementById('google-name');
+                if(avatar) avatar.src = user.photoURL || '';
+                if(name) name.textContent = user.displayName || 'Google User';
                 
-                window.logToSystem('👋 <b>Angemeldet als ' + user.displayName + '</b>.<br>Der Architekt hat deinen persönlichen Workspace & Keys geladen.', 'success');
+                window.logToSystem('👋 <b>Angemeldet als ' + (user.displayName || 'User') + '</b>.<br>Der Architekt hat deinen persönlichen Workspace & Keys geladen.', 'success');
             } else {
                 currentUserUid = 'default';
                 loadKeys('default');
-                authBtn.classList.remove('hidden');
-                userInfo.classList.add('hidden');
+                if(authBtn) authBtn.classList.remove('hidden');
+                if(userInfo) userInfo.classList.add('hidden');
                 window.logToSystem('🔒 <b>Abgemeldet.</b> Default-Blueprint (ohne Keys) wieder aktiv.', 'info');
+            }
+        }
+
+        // Load keys on startup
+        loadKeys('default');
+    </script>
             }
         }
         
