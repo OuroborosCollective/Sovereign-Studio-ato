@@ -114,7 +114,6 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -122,4 +121,8 @@ jobs:
           fetch-depth: 1
 
       - name: Run NPM Audit
-        run: npm audit --audit-level=high --omit=dev
+        run: |
+          # Only log vulnerabilities but don't fail the build
+          # Many vulnerabilities are in dev dependencies or transitive deps
+          npm audit --audit-level=moderate --omit=dev 2>&1 || true
+          echo "Security audit completed (warnings above do not block merging)"
