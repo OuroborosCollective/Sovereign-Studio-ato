@@ -21,13 +21,18 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey);
 
 async function generateMarketingPosts() {
-  try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  let text = '';
+  let retries = 3;
+  let delay = 2000;
+  
+  while (retries > 0) {
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-    const betaCodesList = betaCodes.split(',').filter(c => c.trim());
-    const codesPreview = betaCodesList.slice(0, 3).join(', ') + (betaCodesList.length > 3 ? '...' : '');
-    
-    const prompt = `Generate exciting marketing content for NOCode Studio - an AI-powered app development platform!
+      const betaCodesList = betaCodes.split(',').filter(c => c.trim());
+      const codesPreview = betaCodesList.slice(0, 3).join(', ') + (betaCodesList.length > 3 ? '...' : '');
+      
+      const prompt = `Generate exciting marketing content for NOCode Studio - an AI-powered app development platform!
 
 Target: Google Play Store app users
 App Link: ${PLAY_STORE_URL}
@@ -43,39 +48,50 @@ Requirements:
 
 Make it compelling and unique - stand out from typical app promotions!`;
 
-    console.log('Generating marketing content for:', PLAY_STORE_URL);
-    if (betaCodesList.length > 0) {
-      console.log('Including beta codes:', codesPreview);
+      console.log('Generating marketing content for:', PLAY_STORE_URL);
+      if (betaCodesList.length > 0) {
+        console.log('Including beta codes:', codesPreview);
+      }
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      text = response.text();
+      break;
+    } catch (error) {
+      retries--;
+      if (error.status === 429 && retries > 0) {
+        console.log(`Rate limited, retrying in ${delay/1000}s... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 1.5;
+      } else {
+        throw error;
+      }
     }
-    
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+  }
 
-    const outputDir = path.join(__dirname, '..', '..', 'marketing-output');
-    await fs.ensureDir(outputDir);
+  const outputDir = path.join(__dirname, '..', '..', 'marketing-output');
+  await fs.ensureDir(outputDir);
 
-    // Add metadata footer
-    const contentWithMeta = `${text}
+  // Add metadata footer
+  const betaCodesList = betaCodes.split(',').filter(c => c.trim());
+  const contentWithMeta = `${text}
 
 ---
 📱 Download: ${PLAY_STORE_URL}
 ${betaCodesList.length > 0 ? `🎁 Beta Codes: ${betaCodesList.join(', ')}` : ''}`;
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `marketing-posts-${timestamp}.md`;
-    const outputPath = path.join(outputDir, filename);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `marketing-posts-${timestamp}.md`;
+  const outputPath = path.join(outputDir, filename);
 
-    await fs.writeFile(outputPath, contentWithMeta);
+  await fs.writeFile(outputPath, contentWithMeta);
 
-    console.log(`Successfully generated marketing posts at: ${outputPath}`);
-    console.log('\n--- Preview ---');
-    console.log(text);
-
-  } catch (error) {
-    console.error('Error generating marketing content:', error);
-    process.exit(1);
-  }
+  console.log(`Successfully generated marketing posts at: ${outputPath}`);
+  console.log('\n--- Preview ---');
+  console.log(text);
 }
 
-generateMarketingPosts();
+generateMarketingPosts().catch(err => {
+  console.error('Error generating marketing content:', err);
+  process.exit(1);
+});
