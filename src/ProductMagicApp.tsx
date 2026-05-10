@@ -131,7 +131,11 @@ export default function ProductMagicApp() {
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <label className="flex items-center gap-2"><span className="font-bold text-stone-500 uppercase text-[10px]">GitHub PAT:</span><input value={accessKey} onChange={(event) => setAccessKey(event.target.value)} type="password" placeholder="nur im Feld" className="text-xs px-2 py-1 border border-stone-300 rounded w-40 focus:outline-none focus:border-indigo-500 bg-white" /></label>
-          <label className="flex items-center gap-2"><span className="font-bold text-stone-500 uppercase text-[10px]">Gemini Key:</span><input value={geminiKey} onChange={(event) => setGeminiKey(event.target.value)} type="password" placeholder="optional" className="text-xs px-2 py-1 border border-stone-300 rounded w-40 focus:outline-none focus:border-indigo-500 bg-white" /></label>
+          <label className="flex items-center gap-2">
+            <span className="font-bold text-stone-500 uppercase text-[10px]">Gemini Key:</span>
+            <input value={geminiKey} onChange={(event) => setGeminiKey(event.target.value)} type="password" placeholder="hier API-Key einfügen" className="text-xs px-2 py-1 border border-stone-300 rounded w-40 focus:outline-none focus:border-indigo-500 bg-white" />
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[10px] px-2 py-1 bg-amber-100 border border-amber-300 text-amber-800 rounded hover:bg-amber-200 font-bold" title="Hier kostenlosen API-Key erstellen">🌐 AI Studio</a>
+          </label>
         </div>
       </div>
 
