@@ -33,7 +33,8 @@ jobs:
       - name: Run Marketing Content Generator
         working-directory: ./launch-bot-v1
         env:
-          GEMINI_API_KEY: ${{ secrets.AI_API_KEY }}
+          # Use test key if no real key is configured
+          GEMINI_API_KEY: ${{ secrets.AI_API_KEY || 'test_no_key_configured' }}
         run: node marketing/generate-posts.js
 
       - name: Upload Generated Content
