@@ -25,12 +25,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: 'launch-bot-v1/package.json'
 
       - name: Install Dependencies
         working-directory: ./launch-bot-v1
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Run Marketing Content Generator
         working-directory: ./launch-bot-v1
