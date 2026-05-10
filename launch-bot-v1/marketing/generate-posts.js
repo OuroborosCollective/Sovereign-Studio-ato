@@ -23,7 +23,7 @@ const genAI = new GoogleGenerativeAI(apiKey);
 async function generateMarketingPosts() {
   let text = '';
   let retries = 3;
-  let delay = 2000;
+  let delay = 5000;
   
   while (retries > 0) {
     try {
@@ -59,12 +59,29 @@ Make it compelling and unique - stand out from typical app promotions!`;
       break;
     } catch (error) {
       retries--;
-      if (error.status === 429 && retries > 0) {
-        console.log(`Rate limited, retrying in ${delay/1000}s... (${retries} attempts left)`);
+      const retryAfter = error.errorDetails?.find(e => e['@type'] === 'type.googleapis.com/google.rpc.RelayInfo')?.retryDelaySeconds;
+      const waitTime = retryAfter ? retryAfter * 1000 : delay;
+      
+      if ((error.status === 429 || error.message?.includes('quota')) && retries > 0) {
+        console.log(`Rate limited/quota exceeded, retrying in ${waitTime/1000}s... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        delay *= 2;
+      } else if (retries > 0) {
+        console.log(`API error: ${error.message}, retrying in ${delay/1000}s... (${retries} attempts left)`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 1.5;
       } else {
-        throw error;
+        // Fall back to mock content on complete failure
+        console.log('All retries exhausted, using fallback content');
+        const betaCodesList = betaCodes.split(',').filter(c => c.trim());
+        text = `🚀 Build Apps with AI - No Coding Required!
+
+NOCODE Studio brings the power of AI to app development. Describe your idea in plain English, and watch your app come to life INSTANTLY.
+
+📱 Get the app: ${PLAY_STORE_URL}
+${betaCodesList.length > 0 ? `\n🎁 Exclusive beta access codes: ${betaCodesList.join(', ')}` : ''}
+
+Built for creators, entrepreneurs, and anyone with a great idea. Download now and start building!`;
       }
     }
   }
