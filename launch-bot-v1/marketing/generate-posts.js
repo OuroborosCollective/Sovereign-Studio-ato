@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generativeai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
