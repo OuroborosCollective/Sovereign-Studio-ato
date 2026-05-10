@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generativeai';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,10 +15,13 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey);
 
+// Force use of v1 API instead of v1beta for more model availability
+genAI.apiVersion = 'v1';
+
 async function generateMarketingPosts() {
   try {
-    // Use a reliable model - gemini-1.5-flash-8b is stable and available
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-8b' });
+    // Use gemini-1.5-flash which is available in v1 API
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `Marketing content generator for NOCode Studio.
 
