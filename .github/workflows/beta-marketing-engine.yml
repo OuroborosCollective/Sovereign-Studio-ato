@@ -30,7 +30,7 @@ jobs:
 
       - name: Install Dependencies
         working-directory: ./launch-bot-v1
-        run: npm ci
+        run: npm install
 
       - name: Run Marketing Content Generator
         working-directory: ./launch-bot-v1
