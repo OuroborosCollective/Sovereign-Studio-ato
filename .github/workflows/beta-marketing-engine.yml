@@ -32,19 +32,19 @@ jobs:
         working-directory: ./launch-bot-v1
         run: npm ci
 
-      - name: Validate Gemini API Key
+      - name: Validate AI API Key
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
         run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "Error: GEMINI_API_KEY secret is required."
+          if [ -z "$AI_API_KEY" ]; then
+            echo "Error: AI_API_KEY secret is required."
             exit 1
           fi
 
       - name: Run Marketing Content Generator
         working-directory: ./launch-bot-v1
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.AI_API_KEY }}
         run: node marketing/generate-posts.js
 
       - name: Upload Generated Content

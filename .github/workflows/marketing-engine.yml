@@ -33,15 +33,15 @@ jobs:
 
       - name: Validate Required Secrets
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_SERVICE_KEY: ${{ secrets.DB_SERVICE_KEY }}
         run: |
           echo "Validating autonomous marketing environment..."
 
-          test -n "$GEMINI_API_KEY" || (echo "Missing GEMINI_API_KEY" && exit 1)
-          test -n "$SUPABASE_URL" || (echo "Missing SUPABASE_URL" && exit 1)
-          test -n "$SUPABASE_SERVICE_ROLE_KEY" || (echo "Missing SUPABASE_SERVICE_ROLE_KEY" && exit 1)
+          test -n "$AI_API_KEY" || (echo "Missing AI_API_KEY" && exit 1)
+          test -n "$DB_URL" || (echo "Missing DB_URL" && exit 1)
+          test -n "$DB_SERVICE_KEY" || (echo "Missing DB_SERVICE_KEY" && exit 1)
 
           echo "Environment validation complete"
 
