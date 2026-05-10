@@ -19,9 +19,9 @@
 				"profile",
 				"email"
 			],
-			"clientId": "",
-			"androidClientId": "",
-			"serverClientId": "",
+			"clientId": "REPLACE_WITH_VITE_GOOGLE_CLIENT_ID",
+			"androidClientId": "REPLACE_WITH_VITE_GOOGLE_ANDROID_CLIENT_ID",
+			"serverClientId": "REPLACE_WITH_VITE_GOOGLE_SERVER_CLIENT_ID",
 			"forceCodeForRefreshToken": true
 		},
 		"SplashScreen": {
