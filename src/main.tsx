@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { store } from './store';
 import App from './App';
+import GlitchFilters from './components/GlitchFilters';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
@@ -36,6 +37,7 @@ if (container) {
     <StrictMode>
       <ErrorBoundary>
         <Provider store={store}>
+          <GlitchFilters />
           <App />
         </Provider>
       </ErrorBoundary>

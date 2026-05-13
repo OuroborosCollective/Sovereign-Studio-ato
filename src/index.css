@@ -20,7 +20,7 @@
   
   --font-ui: var(--font-ui);
   --font-terminal: var(--font-terminal);
-  
+
   --animate-scanline: scanline 2.5s infinite linear;
   --animate-screen-shake: screen-shake 0.2s infinite;
   --animate-pulse-slow: pulse-slow 2s infinite ease-in-out;
@@ -88,6 +88,7 @@
   .organic-fire-glitch {
     animation: screen-shake 0.1s infinite;
     background: color-mix(in srgb, var(--color-fire-red) 20%, transparent);
+    filter: url(#organic-fire-filter);
   }
 
   .fira-code {
@@ -102,5 +103,20 @@
       color-mix(in srgb, var(--color-marina-blue) 1.5%, transparent) 2px,
       color-mix(in srgb, var(--color-marina-blue) 1.5%, transparent) 4px
     );
+  }
+
+  .resonance-pulse {
+    animation: resonance-pulse var(--resonance-duration, 2s) infinite ease-in-out;
+  }
+
+  @keyframes resonance-pulse {
+    0%, 100% {
+      opacity: var(--resonance-min-opacity, 0.4);
+      filter: drop-shadow(0 0 5px var(--resonance-color, var(--color-marina-blue)));
+    }
+    50% {
+      opacity: var(--resonance-max-opacity, 1);
+      filter: drop-shadow(0 0 20px var(--resonance-color, var(--color-marina-blue)));
+    }
   }
 }

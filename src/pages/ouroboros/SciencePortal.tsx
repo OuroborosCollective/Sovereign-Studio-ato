@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAppSelector } from '../../store/hooks';
 import { motion } from 'framer-motion';
-import { Activity, Shield, Zap, Database, Terminal, LayoutDashboard } from 'lucide-react';
+import { Activity, Shield, Zap, Database, Terminal, LayoutDashboard, Cpu } from 'lucide-react';
 
 const Sparkline: React.FC<{ color: string, res: number }> = ({ color, res }) => {
   const [points, setPoints] = useState<number[]>(Array(20).fill(50));
@@ -16,10 +16,10 @@ const Sparkline: React.FC<{ color: string, res: number }> = ({ color, res }) => 
     return () => clearInterval(interval);
   }, [res]);
 
-  const path = points.map((p, i) => `${i * 5},${p}`).join(' L ');
+  const path = points.map((p, i) => `${i * 6},${p}`).join(' L ');
 
   return (
-    <svg width="100" height="60" className="overflow-visible">
+    <svg width="120" height="60" className="overflow-visible">
       <polyline
         fill="none"
         stroke={color}
@@ -31,14 +31,60 @@ const Sparkline: React.FC<{ color: string, res: number }> = ({ color, res }) => 
   );
 };
 
+const NeuralGrid: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let frame = 0;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.1)';
+      ctx.lineWidth = 1;
+
+      const size = 30;
+      for (let x = 0; x < canvas.width; x += size) {
+        for (let y = 0; y < canvas.height; y += size) {
+          const noise = Math.sin(x * 0.01 + y * 0.01 + frame * 0.05);
+          if (noise > 0.8) {
+            ctx.fillStyle = `rgba(57, 255, 20, ${noise - 0.5})`;
+            ctx.fillRect(x, y, 2, 2);
+          }
+          ctx.strokeRect(x, y, size, size);
+        }
+      }
+      frame++;
+      requestAnimationFrame(draw);
+    };
+    draw();
+  }, []);
+
+  return <canvas ref={canvasRef} width={800} height={400} className="w-full h-full opacity-30" />;
+};
+
 const SciencePortal: React.FC = () => {
   const telemetry = useAppSelector((state) => state.ouroboros.telemetry);
   const resonance = useAppSelector((state) => state.ouroboros.resonance);
+  const [matrixData, setMatrixData] = useState<string[]>([]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMatrixData(prev => {
+        const line = Array(40).fill(0).map(() => Math.random() > 0.5 ? '1' : '0').join('');
+        return [line, ...prev.slice(0, 15)];
+      });
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex h-screen bg-matte-black text-white font-ui overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-16 border-r border-marina-blue/10 flex flex-col items-center py-8 gap-8 bg-black/40 backdrop-blur-md">
+      <aside className="w-16 border-r border-marina-blue/10 flex flex-col items-center py-8 gap-8 bg-black/40 backdrop-blur-md z-20">
         <LayoutDashboard className="text-marina-blue w-6 h-6" />
         <Database className="text-slate-600 hover:text-marina-blue transition-colors cursor-pointer w-5 h-5" />
         <Activity className="text-slate-600 hover:text-marina-blue transition-colors cursor-pointer w-5 h-5" />
@@ -75,13 +121,9 @@ const SciencePortal: React.FC = () => {
 
         {/* Dashboard Grid */}
         <div className="flex-1 p-8 grid grid-cols-12 gap-6 overflow-y-auto relative custom-scrollbar">
-          {/* Background Layer Placeholder - screen (10).png */}
-          <div className="absolute inset-0 bg-[url('https://lh3.googleusercontent.com/aida/ADBb0ujuvZPDqAvKkBKBGuseIfmpD2fbQElMsesiOCJnrcpyKAQ1IiM8dCucNJNJwgGNd7mucYt1_FdCP4slpGGboOTD0vFCL0w_d4IXWBHF3uLyBprL2GFkKYGxuB0f19r5sEg9Q8-iIqMhK_h-dl05_h7P9NXljTeSl0mFGfitHFkYfVowEI-MB_FFQoDsyrbi837Pj_oxUOx43IHBn-ACp5JPtjTRaW9Yho8zTIRtxiU7E0K855hfPveId94')] bg-cover bg-center opacity-10 pointer-events-none" />
-
           {/* Widgets */}
           <motion.div
-            style={{ opacity: 0.6 + Math.sin(Date.now() * 0.001) * 0.2 }}
-            className="col-span-12 lg:col-span-4 glass-terminal p-6 rounded-lg border border-marina-blue/20 relative overflow-hidden"
+            className="col-span-12 lg:col-span-4 glass-terminal p-6 rounded-lg border border-marina-blue/20 relative overflow-hidden resonance-pulse"
           >
             <div className="flex justify-between items-start mb-4">
               <h3 className="fira-code text-marina-blue text-xs uppercase tracking-widest">ARE-Trader</h3>
@@ -92,8 +134,8 @@ const SciencePortal: React.FC = () => {
           </motion.div>
 
           <motion.div
-            style={{ opacity: 0.6 + Math.cos(Date.now() * 0.001) * 0.2 }}
-            className="col-span-12 lg:col-span-4 glass-terminal p-6 rounded-lg border border-marina-blue/20"
+            className="col-span-12 lg:col-span-4 glass-terminal p-6 rounded-lg border border-marina-blue/20 resonance-pulse"
+            style={{ animationDelay: '0.5s' } as any}
           >
             <div className="flex justify-between items-start mb-4">
               <h3 className="fira-code text-marina-blue text-xs uppercase tracking-widest">Health-Decay</h3>
@@ -103,10 +145,20 @@ const SciencePortal: React.FC = () => {
             <div className="text-[10px] text-slate-500 fira-code uppercase tracking-wider">CELLULAR_INTEGRITY_OPTIMAL</div>
           </motion.div>
 
-          {/* Large Visual Area */}
-          <div className="col-span-12 lg:col-span-8 h-[400px] glass-terminal rounded-lg border border-marina-blue/10 flex items-center justify-center relative">
-             <div className="absolute inset-0 bg-gradient-to-br from-marina-blue/5 to-transparent pointer-events-none" />
-             <div className="text-marina-blue/20 fira-code text-xs uppercase tracking-[1em]">Matrix_Visualization_Layer</div>
+          {/* Dynamic Matrix Data Stream + Neural Grid */}
+          <div className="col-span-12 lg:col-span-8 h-[400px] glass-terminal rounded-lg border border-marina-blue/10 flex flex-col relative overflow-hidden">
+             <div className="absolute inset-0 z-0">
+                <NeuralGrid />
+             </div>
+             <div className="relative z-10 p-4 flex flex-col h-full">
+                <div className="text-[10px] fira-code text-marina-blue/40 uppercase tracking-widest mb-4">Matrix_Stream_Output</div>
+                <div className="flex-1 fira-code text-[10px] text-marina-blue/20 leading-none break-all overflow-hidden select-none">
+                  {matrixData.map((line, i) => (
+                    <div key={i} className="mb-1">{line}</div>
+                  ))}
+                </div>
+             </div>
+             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 pointer-events-none" />
           </div>
 
           <div className="col-span-12 lg:col-span-4 h-[400px] glass-terminal rounded-lg border border-marina-blue/10 p-6 flex flex-col">
@@ -117,6 +169,7 @@ const SciencePortal: React.FC = () => {
                <div>[02:45:23] {">>"} ARE_PAYLOAD_VALIDATED</div>
                <div className="text-sunset-orange">[02:45:24] {">>"} WARN_LATENCY_SPIKE_12ms</div>
                <div>[02:45:25] {">>"} ROOT_GATE_READY</div>
+               <div className="text-neon-green">[02:45:26] {">>"} NEURAL_GRID_ACTIVE</div>
             </div>
           </div>
         </div>

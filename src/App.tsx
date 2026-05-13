@@ -4,11 +4,20 @@ import SciencePortal from './pages/ouroboros/SciencePortal';
 import ChainValidator from './pages/ouroboros/ChainValidator';
 import GameHUD from './pages/ouroboros/GameHUD';
 import AssetRepository from './pages/ouroboros/AssetRepository';
+import WorldChunk from './pages/ouroboros/WorldChunk';
 import { useAppSelector } from './store/hooks';
 
 const App: React.FC = () => {
   const isRootInitialized = useAppSelector((state) => state.ouroboros.isRootInitialized);
+  const resonance = useAppSelector((state) => state.ouroboros.resonance);
   const [currentPage, setCurrentPage] = useState<string>('auth');
+
+  useEffect(() => {
+    // Sync global resonance CSS variables
+    const root = document.documentElement;
+    root.style.setProperty('--resonance-duration', `${1 / resonance}s`);
+    root.style.setProperty('--resonance-max-opacity', `${0.5 + resonance * 0.5}`);
+  }, [resonance]);
 
   // Handle navigation via internal state since no router is installed
   const renderPage = () => {
@@ -23,6 +32,8 @@ const App: React.FC = () => {
         return <GameHUD />;
       case 'assets':
         return <AssetRepository />;
+      case 'chunks':
+        return <WorldChunk />;
       default:
         return <AuthRoot />;
     }
@@ -43,6 +54,7 @@ const App: React.FC = () => {
         <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 flex gap-4 px-6 py-3 glass-terminal rounded-full border border-marina-blue/20 z-50 transition-all hover:border-marina-blue/50">
           {[
             { id: 'portal', label: 'Matrix' },
+            { id: 'chunks', label: 'Chunks' },
             { id: 'validator', label: 'Bridge' },
             { id: 'hud', label: 'Tactical' },
             { id: 'assets', label: 'Assets' }
