@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Box, Code, Layers, Share2, Info } from 'lucide-react';
 
 const AssetRepository: React.FC = () => {
