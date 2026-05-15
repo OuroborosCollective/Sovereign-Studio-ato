@@ -105,7 +105,11 @@ export const canvasSlice = createSlice({
      * Batch-Insert für Vektor-Gruppen oder KI-generierte Szenen.
      */
     addVectors: (state, action: PayloadAction<CanvasObject[]>) => {
-      const existingIds = new Set(state.objects.map(obj => obj.id));
+      // ⚡ Bolt: Avoid allocating an intermediate array via .map() to reduce GC overhead
+      const existingIds = new Set<string>();
+      for (const obj of state.objects) {
+        existingIds.add(obj.id);
+      }
       action.payload.forEach((newObj) => {
         if (!existingIds.has(newObj.id)) {
           state.objects.push(newObj);
