@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { initializeRoot, triggerError, clearError } from '../../features/ouroboros/ouroborosSlice';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 const AuthRoot: React.FC = () => {
   const [hash, setHash] = useState('');
