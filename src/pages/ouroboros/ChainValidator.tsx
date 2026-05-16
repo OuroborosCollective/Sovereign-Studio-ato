@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 const ChainValidator: React.FC = () => {
   const sourceHash = "0x5f3e22e7e3384b8b8085644911b70263";

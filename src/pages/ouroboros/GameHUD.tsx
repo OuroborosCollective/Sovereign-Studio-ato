@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 const GameHUD: React.FC = () => {
   const [syncHz, setSyncHz] = useState(10.00);
