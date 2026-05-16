@@ -463,7 +463,7 @@
                     });
                     if (!response.ok) {
                         if (response.status === 401) throw new Error("401 Unauthorized - Ungültiger oder fehlender Gemini API Key! Trage oben rechts einen validen Key ein.");
-                        throw new Error('API Fehler ' + response.status);
+                        throw new Error('API Fehler ' + response.status + ' - Bitte GitHub PAT und/oder Gemini Key eingeben!');
                     }
                     const data = await response.json();
                     if (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {

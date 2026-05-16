@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import posthog from 'posthog-js';
-import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
-import ProductMagicApp from './ProductMagicApp';
+import { Provider } from 'react-redux';
+import { store } from './store';
+import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
@@ -28,45 +28,17 @@ if (typeof window !== 'undefined') {
   document.head.appendChild(style);
 }
 
-const posthogKey = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
-const posthogHost = (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ?? 'https://eu.i.posthog.com';
+const container = document.getElementById('root');
 
-if (posthogKey) {
-  posthog.init(posthogKey, {
-    api_host: posthogHost,
-    person_profiles: 'identified_only',
-  });
+if (container) {
+  const root = createRoot(container);
+  root.render(
+    <StrictMode>
+      <ErrorBoundary>
+        <Provider store={store}>
+          <App />
+        </Provider>
+      </ErrorBoundary>
+    </StrictMode>
+  );
 }
-
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
-
-const initAndRender = async () => {
-  if (googleClientId) {
-    try {
-      await GoogleAuth.initialize({
-        clientId: googleClientId,
-        scopes: ['profile', 'email'],
-        grantOfflineAccess: true,
-      });
-    } catch (error) {
-      console.error('GoogleAuth initialization failed', error);
-    }
-  }
-
-  const container = document.getElementById('root');
-
-  if (container) {
-    const root = createRoot(container);
-    // Note: root.render() returns void and cannot be followed by .catch().
-    // Any rendering errors are handled by the ErrorBoundary component.
-    root.render(
-      <StrictMode>
-        <ErrorBoundary>
-          <ProductMagicApp />
-        </ErrorBoundary>
-      </StrictMode>
-    );
-  }
-};
-
-initAndRender();
