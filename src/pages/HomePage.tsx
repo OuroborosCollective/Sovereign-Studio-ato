@@ -53,7 +53,7 @@ const CanvasEngine: React.FC = () => {
         if (mouseRef.current.active) {
           const dx = mouseRef.current.x - this.x;
           const dy = mouseRef.current.y - this.y;
-          // ⚡ Bolt: Use squared distance to avoid expensive Math.sqrt in render loop
+          // ⚡ Bolt: Optimize with squared distance to avoid expensive Math.sqrt calls
           const distSq = dx * dx + dy * dy;
           if (distSq < 40000) { // 200 * 200
             this.vx -= dx * 0.0001;
@@ -76,6 +76,8 @@ const CanvasEngine: React.FC = () => {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.lineWidth = 0.6;
+      const connectionDistanceSq = connectionDistance * connectionDistance;
+
       for (let i = 0; i < particles.length; i++) {
         const p1 = particles[i];
         p1.update(canvas.width, canvas.height);
@@ -89,11 +91,10 @@ const CanvasEngine: React.FC = () => {
           const p2 = particles[j];
           const dx = p1.x - p2.x;
           const dy = p1.y - p2.y;
-          // ⚡ Bolt: Use squared distance first to avoid expensive Math.sqrt for particles out of range
           const distSq = dx * dx + dy * dy;
 
-          if (distSq < connectionDistance * connectionDistance) {
-            const dist = Math.sqrt(distSq); // Only calculate exact distance if needed for alpha
+          if (distSq < connectionDistanceSq) {
+            const dist = Math.sqrt(distSq);
             const alpha = 0.2 * (1 - dist / connectionDistance);
             ctx.beginPath();
             ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
