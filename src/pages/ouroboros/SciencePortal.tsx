@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAppSelector } from '../../store/hooks';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Activity, Shield, Zap, Database, Terminal, LayoutDashboard } from 'lucide-react';
 
 const Sparkline: React.FC<{ color: string, res: number }> = ({ color, res }) => {
