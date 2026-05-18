@@ -31,6 +31,7 @@ describe('GeminiService', () => {
     }));
 
     // Re-import to re-evaluate after mock
+    vi.resetModules();
     const { geminiService: localGeminiService } = await import('./geminiService');
 
     const result = await localGeminiService.generateText('Hello Gemini');
