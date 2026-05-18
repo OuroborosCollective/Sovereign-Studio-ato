@@ -91,6 +91,7 @@ const CanvasEngine: React.FC = () => {
           const p2 = particles[j];
           const dx = p1.x - p2.x;
           const dy = p1.y - p2.y;
+          // ⚡ Bolt: Optimize with squared distance, only calculate Math.sqrt if within range
           const distSq = dx * dx + dy * dy;
 
           if (distSq < connectionDistanceSq) {

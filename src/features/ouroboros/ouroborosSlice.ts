@@ -1,54 +1,59 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
-interface OuroborosState {
-  telemetry: {
-    sysLoad: number;
-    resSync: number;
-    latency: number;
-    uplinkStatus: 'ACTIVE' | 'OFFLINE' | 'SYNCING';
-  };
-  resonance: number;
+export interface AREPayload {
+  isActive?: boolean;
+}
+
+export interface OuroborosState {
+  isAuthSequenceActive: boolean;
+  activeAREPayload: AREPayload | null;
+  errorState: string | null;
   isRootInitialized: boolean;
-  kappaPosHash: string;
-  errorState: boolean;
+  telemetry: any;
+  resonance: any;
 }
 
 const initialState: OuroborosState = {
-  telemetry: {
-    sysLoad: 14,
-    resSync: 10.00,
-    latency: 12,
-    uplinkStatus: 'ACTIVE',
-  },
-  resonance: 0.842,
+  isAuthSequenceActive: false,
+  activeAREPayload: null,
+  errorState: null,
   isRootInitialized: false,
-  kappaPosHash: '',
-  errorState: false,
+  telemetry: null,
+  resonance: null,
 };
 
-const ouroborosSlice = createSlice({
+export const ouroborosSlice = createSlice({
   name: 'ouroboros',
   initialState,
   reducers: {
-    setTelemetry: (state, action: PayloadAction<Partial<OuroborosState['telemetry']>>) => {
-      state.telemetry = { ...state.telemetry, ...action.payload };
+    startAuthSequence: (state) => {
+      state.isAuthSequenceActive = true;
     },
-    setResonance: (state, action: PayloadAction<number>) => {
-      state.resonance = action.payload;
+    stopAuthSequence: (state) => {
+      state.isAuthSequenceActive = false;
     },
-    initializeRoot: (state, action: PayloadAction<string>) => {
-      state.kappaPosHash = action.payload;
+    setAREPayload: (state, action: PayloadAction<AREPayload | null>) => {
+      state.activeAREPayload = action.payload;
+    },
+    initializeRoot: (state, action: PayloadAction<any>) => {
       state.isRootInitialized = true;
-      state.errorState = false;
     },
-    triggerError: (state) => {
-      state.errorState = true;
+    triggerError: (state, action: PayloadAction<string>) => {
+      state.errorState = action.payload;
     },
     clearError: (state) => {
-      state.errorState = false;
+      state.errorState = null;
     },
   },
 });
 
-export const { setTelemetry, setResonance, initializeRoot, triggerError, clearError } = ouroborosSlice.actions;
+export const {
+  startAuthSequence,
+  stopAuthSequence,
+  setAREPayload,
+  initializeRoot,
+  triggerError,
+  clearError
+} = ouroborosSlice.actions;
+
 export default ouroborosSlice.reducer;
