@@ -5,3 +5,6 @@
 **Learning:** In high-frequency render loops like canvas particle systems (`HomePage.tsx`), calculating `Math.sqrt` on every frame for distance checks acts as a significant performance bottleneck.
 **Action:** When calculating distances just for comparison (e.g. `dist < threshold`), always compute and compare the squared distance (`distSq < threshold * threshold`). Only invoke `Math.sqrt` conditionally if the exact distance value is strictly required inside the threshold block.
 >>>>>> main
+## 2024-05-15 - [O(N²) indexOf in Canvas Render Loop]
+**Learning:** Checking an item's index in a Fabric.js canvas using `canvas.getObjects().indexOf(existingObj)` inside a reconciliation loop creates an $O(N^2)$ bottleneck because `indexOf` is an $O(N)$ operation inside an $O(N)$ `forEach` loop.
+**Action:** When validating if an object is at its correct target index in the canvas, use $O(1)$ direct array access via `canvas.item(index) !== existingObj` instead of checking the object's index with `indexOf`.
