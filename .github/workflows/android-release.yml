@@ -82,7 +82,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: ⚡ Cache Gradle
         uses: actions/cache@v4
@@ -152,8 +152,8 @@ jobs:
               "platform": "android"
             }
 
-      - name: 🚀 Google Play Release (Manual Step)
-        if: false
+      - name: 🚀 Google Play Release
+        if: always()
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
@@ -161,3 +161,19 @@ jobs:
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
           tracks: production
           status: completed
+
+# ============================================================
+# 📋 PLAY STORE CONFIGURATION REQUIRED
+# ============================================================
+# To enable Google Play publishing, you need a Service Account:
+#
+# 1. Go to Google Play Console → Settings → Developer Account → API Access
+# 2. Create a new Service Account with "Release Manager" role
+# 3. Download the JSON key file
+# 4. Add the JSON content as a GitHub Secret named PLAY_STORE_JSON_KEY
+#
+# The OAuth client ID you provided is for user authorization and cannot
+# be used for automated Play Store publishing. A Service Account is required.
+#
+# For help: https://developers.google.com/play/android-publish/quickstart#service-account
+# ============================================================

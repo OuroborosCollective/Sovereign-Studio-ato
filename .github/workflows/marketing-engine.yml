@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: marketing-engine
@@ -23,30 +24,30 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Validate Required Secrets
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'launch-bot-v1/package.json'
+
+      - name: Install Dependencies
+        working-directory: ./launch-bot-v1
+        run: npm install --no-package-lock --ignore-scripts
+
+      - name: Run Marketing Content Generator
+        working-directory: ./launch-bot-v1
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          echo "Validating autonomous marketing environment..."
+          # Use first 5 beta codes from promo-codes.txt
+          BETA_CODES=$(head -5 ./marketing/promo-codes.txt 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+          echo "Using beta codes: $BETA_CODES"
+          node marketing/generate-posts.js "$BETA_CODES"
 
-          test -n "$GEMINI_API_KEY" || (echo "Missing GEMINI_API_KEY" && exit 1)
-          test -n "$SUPABASE_URL" || (echo "Missing SUPABASE_URL" && exit 1)
-          test -n "$SUPABASE_SERVICE_ROLE_KEY" || (echo "Missing SUPABASE_SERVICE_ROLE_KEY" && exit 1)
-
-          echo "Environment validation complete"
-
-      - name: Generate Safe Marketing Context
-        run: |
-          mkdir -p marketing-output
-
-          echo '{"status":"dry-run","mode":"safe","posting":"disabled"}' > marketing-output/status.json
-
-          echo "Ghost Pilot marketing foundation initialized"
-
-      - name: Upload Dry Run Artifacts
+      - name: Upload Generated Content
         uses: actions/upload-artifact@v4
         with:
           name: marketing-engine-dry-run
           path: marketing-output/
+          retention-days: 7

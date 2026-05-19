@@ -1,9 +1,5 @@
 [
 	{
-		"pkg": "@capgo/capacitor-native-biometric",
-		"classpath": "ee.forgr.biometric.NativeBiometric"
-	},
-	{
 		"pkg": "@capacitor/app",
 		"classpath": "com.capacitorjs.plugins.app.AppPlugin"
 	},
@@ -38,6 +34,10 @@
 	{
 		"pkg": "@capacitor/status-bar",
 		"classpath": "com.capacitorjs.plugins.statusbar.StatusBarPlugin"
+	},
+	{
+		"pkg": "@capgo/capacitor-native-biometric",
+		"classpath": "ee.forgr.biometric.NativeBiometric"
 	},
 	{
 		"pkg": "@codetrix-studio/capacitor-google-auth",

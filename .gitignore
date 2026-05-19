@@ -11,3 +11,4 @@ android/app/build/
 
 # Keystores
 *.keystoremarketing-output/
+marketing-output/

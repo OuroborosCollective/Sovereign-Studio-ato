@@ -2,9 +2,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export class ReviewerAgent {
   constructor(apiKey) {
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is required");
+    }
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({ 
-      model: "gemini-1.5-pro",
+      model: "gemini-1.5-flash",
       generationConfig: {
         temperature: 0.1,
         topP: 0.8,

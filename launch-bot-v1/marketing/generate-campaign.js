@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { MarketerAgent } from '../../mesh-system/agents/marketer.js';
-import { ReviewerAgent } from '../../mesh-system/agents/reviewer.js';
+import { MarketerAgent } from './marketer.js';
+import { ReviewerAgent } from './reviewer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
