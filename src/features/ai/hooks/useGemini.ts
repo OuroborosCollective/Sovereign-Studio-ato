@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
-import { addVectors } from '../../canvas/canvasSlice';
+import { addVectors, CanvasObject } from '../../canvas/canvasSlice';
 
 /**
  * Interface für Canvas-Vektorelemente
@@ -45,6 +45,37 @@ const extractVectors = (text: string): CanvasVector[] => {
     console.error("Fehler bei der Vektor-Transformation:", err);
     return [];
   }
+};
+
+/**
+ * Transformiert CanvasVector (KI-Format) in CanvasObject (App-Format)
+ */
+const mapVectorToCanvasObject = (vector: CanvasVector): CanvasObject => {
+  return {
+    id: vector.id,
+    type: vector.type === 'text' ? 'ai-text' : vector.type,
+    x: vector.data?.x ?? 0,
+    y: vector.data?.y ?? 0,
+    left: vector.data?.x ?? 0,
+    top: vector.data?.y ?? 0,
+    width: vector.data?.width ?? 100,
+    height: vector.data?.height ?? 100,
+    scaleX: 1,
+    scaleY: 1,
+    angle: 0,
+    flipX: false,
+    flipY: false,
+    opacity: 1,
+    visible: true,
+    zIndex: 0,
+    aiGenerated: true,
+    fill: vector.style?.fill || 'transparent',
+    stroke: vector.style?.stroke || '#000000',
+    strokeWidth: vector.style?.strokeWidth || 1,
+    data: vector.data,
+    path: vector.type === 'path' ? (vector.data?.points || []) : undefined,
+    text: vector.type === 'text' ? (vector.data?.text || '') : undefined,
+  };
 };
 
 export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
@@ -118,8 +149,9 @@ export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
     const vectors = extractVectors(rawContent);
     
     if (vectors.length > 0) {
-      // Fix TS2345: Cast vectors to any or specific CanvasObject[] to match Redux action expectations
-      dispatch(addVectors(vectors as any));
+      // Transform vectors to CanvasObject structure to satisfy TypeScript and Redux
+      const canvasObjects = vectors.map(mapVectorToCanvasObject);
+      dispatch(addVectors(canvasObjects));
       
       if (options.onVectorGenerated) {
         options.onVectorGenerated(vectors);
