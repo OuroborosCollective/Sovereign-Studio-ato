@@ -78,8 +78,8 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "5.4.21",
-    "vitest": "^2.1.9"
+    "vite": "8.0.13",
+    "vitest": "^4.1.6"
   },
   "overrides": {
     "@codetrix-studio/capacitor-google-auth": {
