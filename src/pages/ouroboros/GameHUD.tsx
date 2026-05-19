@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 
-const GameHUD: React.FC = () => {
+const SyncIndicator: React.FC = () => {
   const [syncHz, setSyncHz] = useState(10.00);
 
   useEffect(() => {
@@ -11,6 +11,15 @@ const GameHUD: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  return (
+    <div className="absolute top-16 text-center">
+      <div className="fira-code text-[10px] text-marina-blue font-bold tracking-widest">SYNC LCK</div>
+      <div className="fira-code text-sm text-neon-green neon-string-green">{syncHz.toFixed(2)} Hz</div>
+    </div>
+  );
+};
+
+const GameHUD: React.FC = () => {
   return (
     <div className="relative h-screen w-full bg-matte-black overflow-hidden select-none cursor-crosshair">
       {/* Background World View Placeholder - screen (1).png */}
@@ -30,10 +39,7 @@ const GameHUD: React.FC = () => {
           <div className="h-12 w-[1px] bg-marina-blue shadow-[0_0_5px_#00E5FF] absolute" />
 
           {/* Sync Indicator */}
-          <div className="absolute top-16 text-center">
-            <div className="fira-code text-[10px] text-marina-blue font-bold tracking-widest">SYNC LCK</div>
-            <div className="fira-code text-sm text-neon-green neon-string-green">{syncHz.toFixed(2)} Hz</div>
-          </div>
+          <SyncIndicator />
         </div>
       </div>
 

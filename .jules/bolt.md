@@ -9,3 +9,7 @@
 ## 2024-05-13 - [Avoid Intermediate Arrays when building Sets]
 **Learning:** In `canvasSlice.ts`, when constructing a `Set` from an array of objects to get unique IDs, the code previously did `new Set(state.objects.map(obj => obj.id))`. This created a large temporary intermediate array just to build the set, introducing memory overhead and unnecessary GC pauses during heavy state reconciliation.
 **Action:** Replace `Array.map` passed directly into `Set` constructor with a simple `for` loop that iterates the array and explicitly calls `.add` on the `Set`, skipping the intermediate array allocation altogether.
+
+## 2024-05-18 - [Isolate High-Frequency State Updates]
+**Learning:** React components containing high-frequency state updates (e.g., driven by `setInterval(..., 100)`) will cause their entire component tree to re-render constantly. In complex views like `SciencePortal.tsx` and `GameHUD.tsx` with many nested elements and `motion.div` animations, this creates a significant main thread bottleneck.
+**Action:** Extract high-frequency state and its rendering logic into isolated "leaf" components (e.g., `<SyncIndicator />`, `<MatrixStream />`). This ensures only the tiny subset of the DOM that actually changes is re-evaluated by React, preserving parent and sibling component performance.
