@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { Activity, Shield, Zap, Database, Terminal, LayoutDashboard, Cpu } from 'lucide-react';
 
 const Sparkline: React.FC<{ color: string, res: number }> = ({ color, res }) => {
-  const [points, setPoints] = useState<number[]>(Array(20).fill(50));
+  const [points, setPoints] = useState<number[]>(() => Array(20).fill(50));
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -66,20 +66,34 @@ const NeuralGrid: React.FC = () => {
   return <canvas ref={canvasRef} width={800} height={400} className="w-full h-full opacity-30" />;
 };
 
-const SciencePortal: React.FC = () => {
-  const telemetry = useAppSelector((state) => state.ouroboros.telemetry);
-  const resonance = useAppSelector((state) => state.ouroboros.resonance);
+const MatrixStream: React.FC = () => {
   const [matrixData, setMatrixData] = useState<string[]>([]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       setMatrixData(prev => {
-        const line = Array(40).fill(0).map(() => Math.random() > 0.5 ? '1' : '0').join('');
+        let line = '';
+        for (let i = 0; i < 40; i++) {
+          line += Math.random() > 0.5 ? '1' : '0';
+        }
         return [line, ...prev.slice(0, 15)];
       });
     }, 200);
     return () => clearInterval(interval);
   }, []);
+
+  return (
+    <div className="flex-1 fira-code text-[10px] text-marina-blue/20 leading-none break-all overflow-hidden select-none">
+      {matrixData.map((line, i) => (
+        <div key={i} className="mb-1">{line}</div>
+      ))}
+    </div>
+  );
+};
+
+const SciencePortal: React.FC = () => {
+  const telemetry = useAppSelector((state) => state.ouroboros.telemetry);
+  const resonance = useAppSelector((state) => state.ouroboros.resonance);
 
   return (
     <div className="flex h-screen bg-matte-black text-white font-ui overflow-hidden">
@@ -152,11 +166,7 @@ const SciencePortal: React.FC = () => {
              </div>
              <div className="relative z-10 p-4 flex flex-col h-full">
                 <div className="text-[10px] fira-code text-marina-blue/40 uppercase tracking-widest mb-4">Matrix_Stream_Output</div>
-                <div className="flex-1 fira-code text-[10px] text-marina-blue/20 leading-none break-all overflow-hidden select-none">
-                  {matrixData.map((line, i) => (
-                    <div key={i} className="mb-1">{line}</div>
-                  ))}
-                </div>
+                <MatrixStream />
              </div>
              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 pointer-events-none" />
           </div>
