@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Sovereign Studio</string>
-    <string name="title_activity_main">Sovereign Studio</string>
+    <string name="app_name">NOCode Studio</string>
+    <string name="title_activity_main">NOCode Studio</string>
     <string name="package_name">com.arestudio.nocode.aab</string>
     <string name="custom_url_scheme">com.arestudio.nocode.aab</string>
     <string name="google_client_id">REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com</string>
