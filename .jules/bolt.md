@@ -1,15 +1,3 @@
-## 2024-05-07 - [O(N²) Array Lookups in Canvas Render Loop]
-**Learning:** The previous implementation synchronized an array of Redux state objects with the active Fabric.js canvas objects inside an effect hook using nested array `.find()` calls. This resulted in O(N²) time complexity which acts as a heavy performance bottleneck and can drop frames for large canvas object counts.
-**Action:** When reconciling external state with internal canvas state, always build O(1) Hash Maps (`Map` for existing elements, `Set` for IDs to remove) before looping, bringing the reconciliation complexity down to O(N).
-
-## 2024-05-11 - [Expensive Math.sqrt in High-Frequency Render Loops]
-**Learning:** High-frequency particle system render loops (e.g., in `CanvasEngine`) iterate over hundreds of elements every frame. Calculating Euclidean distances via `Math.sqrt()` inside these nested loops (O(N²) operations) creates a heavy CPU bottleneck and drops frame rates, especially when determining if a connection threshold is met for the vast majority of non-connecting particles.
-**Action:** Instead of `Math.sqrt(dx*dx + dy*dy) < threshold`, use squared distances for evaluation `(dx*dx + dy*dy) < threshold * threshold`. Only invoke `Math.sqrt()` if the check passes and the actual linear distance is required for precise calculations like opacity scaling.
-
-## 2024-05-13 - [Avoid Intermediate Arrays when building Sets]
-**Learning:** In `canvasSlice.ts`, when constructing a `Set` from an array of objects to get unique IDs, the code previously did `new Set(state.objects.map(obj => obj.id))`. This created a large temporary intermediate array just to build the set, introducing memory overhead and unnecessary GC pauses during heavy state reconciliation.
-**Action:** Replace `Array.map` passed directly into `Set` constructor with a simple `for` loop that iterates the array and explicitly calls `.add` on the `Set`, skipping the intermediate array allocation altogether.
-
-## 2024-05-18 - [Isolate High-Frequency State Updates]
-**Learning:** React components containing high-frequency state updates (e.g., driven by `setInterval(..., 100)`) will cause their entire component tree to re-render constantly. In complex views like `SciencePortal.tsx` and `GameHUD.tsx` with many nested elements and `motion.div` animations, this creates a significant main thread bottleneck.
-**Action:** Extract high-frequency state and its rendering logic into isolated "leaf" components (e.g., `<SyncIndicator />`, `<MatrixStream />`). This ensures only the tiny subset of the DOM that actually changes is re-evaluated by React, preserving parent and sibling component performance.
+## 2026-05-19 - [Gemini 404 Fix & Key Setup UX]
+**Learning:** Hardcoded model names in the frontend can lead to breaking changes if the provider (Google Gemini) retires or changes preview model strings. Always ensure fallback or stable model identifiers are used. Corrupted HTML at the end of files (stray braces/scripts) can break entire app execution and Capacitor syncs.
+**Action:** Use stable model identifiers (e.g., `gemini-1.5-flash`) instead of dated previews. Implement automated UX prompts for missing API keys to reduce "Denkprozess Fehler" reports.

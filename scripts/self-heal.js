@@ -70,7 +70,7 @@ function detectDrift() {
     // Checking for outdated lockfile
     try {
         // Test if lockfile matches package.json
-        execSync('pnpm install --frozen-lockfile --dry-run', { cwd: rootDir, encoding: 'utf-8', stdio: 'ignore' });
+        execSync('pnpm install --frozen-lockfile', { cwd: rootDir, encoding: 'utf-8', stdio: 'ignore' });
     } catch (e) {
         drift.push('outdated_lockfile');
     }
