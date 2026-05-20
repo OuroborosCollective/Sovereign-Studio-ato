@@ -21,6 +21,8 @@ export type FabricObjectType =
 export interface CanvasObject {
   id: string;
   type: FabricObjectType | string;
+  x?: number;
+  y?: number;
   left: number;
   top: number;
   width: number;
@@ -38,6 +40,7 @@ export interface CanvasObject {
   originX?: 'left' | 'center' | 'right' | string;
   originY?: 'top' | 'center' | 'bottom' | string;
   zIndex: number;
+  data?: any;
   
   // Text & KI-Text Eigenschaften
   text?: string;
