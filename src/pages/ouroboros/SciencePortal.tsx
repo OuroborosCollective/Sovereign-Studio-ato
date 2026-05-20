@@ -66,9 +66,7 @@ const NeuralGrid: React.FC = () => {
   return <canvas ref={canvasRef} width={800} height={400} className="w-full h-full opacity-30" />;
 };
 
-const SciencePortal: React.FC = () => {
-  const telemetry = useAppSelector((state) => state.ouroboros.telemetry);
-  const resonance = useAppSelector((state) => state.ouroboros.resonance);
+const MatrixStream: React.FC = () => {
   const [matrixData, setMatrixData] = useState<string[]>([]);
 
   useEffect(() => {
@@ -80,6 +78,19 @@ const SciencePortal: React.FC = () => {
     }, 200);
     return () => clearInterval(interval);
   }, []);
+
+  return (
+    <div className="flex-1 fira-code text-[10px] text-marina-blue/20 leading-none break-all overflow-hidden select-none">
+      {matrixData.map((line, i) => (
+        <div key={i} className="mb-1">{line}</div>
+      ))}
+    </div>
+  );
+};
+
+const SciencePortal: React.FC = () => {
+  const telemetry = useAppSelector((state) => state.ouroboros.telemetry);
+  const resonance = useAppSelector((state) => state.ouroboros.resonance);
 
   return (
     <div className="flex h-screen bg-matte-black text-white font-ui overflow-hidden">
@@ -152,11 +163,7 @@ const SciencePortal: React.FC = () => {
              </div>
              <div className="relative z-10 p-4 flex flex-col h-full">
                 <div className="text-[10px] fira-code text-marina-blue/40 uppercase tracking-widest mb-4">Matrix_Stream_Output</div>
-                <div className="flex-1 fira-code text-[10px] text-marina-blue/20 leading-none break-all overflow-hidden select-none">
-                  {matrixData.map((line, i) => (
-                    <div key={i} className="mb-1">{line}</div>
-                  ))}
-                </div>
+                <MatrixStream />
              </div>
              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 pointer-events-none" />
           </div>
