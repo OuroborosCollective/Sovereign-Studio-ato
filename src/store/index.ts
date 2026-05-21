@@ -2,7 +2,6 @@ import { configureStore, Middleware, AnyAction } from '@reduxjs/toolkit';
 import { Preferences } from '@capacitor/preferences';
 import billingReducer from '../features/billing/billingSlice';
 import canvasReducer, { addObject } from '../features/canvas/canvasSlice';
-import ouroborosReducer from '../features/ouroboros/ouroborosSlice';
 
 const PERSISTENCE_KEY = 'sovereign_canvas_state_mirror';
 
@@ -40,7 +39,6 @@ export const store = configureStore({
   reducer: {
     billing: billingReducer,
     canvas: canvasReducer,
-    ouroboros: ouroborosReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(canvasMiddleware, persistenceMiddleware),
