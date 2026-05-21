@@ -11,6 +11,10 @@ const SyncIndicator: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  return <div className="fira-code text-sm text-neon-green neon-string-green">{syncHz.toFixed(2)} Hz</div>;
+};
+
+const GameHUD: React.FC = () => {
   return (
     <div className="absolute top-16 text-center">
       <div className="fira-code text-[10px] text-marina-blue font-bold tracking-widest">SYNC LCK</div>
