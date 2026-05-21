@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { Activity, Shield, Zap, Database, Terminal, LayoutDashboard, Cpu } from 'lucide-react';
 
 const Sparkline: React.FC<{ color: string, res: number }> = ({ color, res }) => {
-  const [points, setPoints] = useState<number[]>(Array(20).fill(50));
+  const [points, setPoints] = useState<number[]>(() => Array(20).fill(50));
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -72,7 +72,10 @@ const MatrixStream: React.FC = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       setMatrixData(prev => {
-        const line = Array(40).fill(0).map(() => Math.random() > 0.5 ? '1' : '0').join('');
+        let line = '';
+        for (let i = 0; i < 40; i++) {
+          line += Math.random() > 0.5 ? '1' : '0';
+        }
         return [line, ...prev.slice(0, 15)];
       });
     }, 200);
