@@ -16,15 +16,6 @@ const SyncIndicator: React.FC = () => {
 
 const GameHUD: React.FC = () => {
   return (
-    <div className="absolute top-16 text-center">
-      <div className="fira-code text-[10px] text-marina-blue font-bold tracking-widest">SYNC LCK</div>
-      <div className="fira-code text-sm text-neon-green neon-string-green">{syncHz.toFixed(2)} Hz</div>
-    </div>
-  );
-};
-
-const GameHUD: React.FC = () => {
-  return (
     <div className="relative h-screen w-full bg-matte-black overflow-hidden select-none cursor-crosshair">
       {/* Background World View Placeholder - screen (1).png */}
       <div className="absolute inset-0 bg-[url('https://lh3.googleusercontent.com/aida/ADBb0ui56DjXlSfP9g31O8-atpU4vhg2kRL8OY1-Q8L3bp8pJSqywDzP-L51eT32V5T0wqxAcaVBYSu--7Jho7GOs0TvE4mFo55eoK8gCL3YF_51ievRXHYRhFo9G3E327Q4pvUDUrbwFJ_iaaaSpY_qNv6j71hW8lkzyGloP8d8wYa6QPnE8O7zzKdYxHl7VhYuLhkNaIjCNYbCtArmEjQ50REiFCWBuAbZert06fN4Csz1dYJgI5aSyfowoHU')] bg-cover bg-center opacity-30" />
