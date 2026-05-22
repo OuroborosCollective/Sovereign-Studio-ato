@@ -40,27 +40,54 @@ const NeuralGrid: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let frame = 0;
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = 'rgba(0, 229, 255, 0.1)';
-      ctx.lineWidth = 1;
+    // ⚡ Bolt: Use an offscreen canvas to pre-render the static grid
+    // This avoids calling strokeRect 380+ times per frame.
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = canvas.width;
+    offscreenCanvas.height = canvas.height;
+    const offCtx = offscreenCanvas.getContext('2d');
+    const size = 30;
 
-      const size = 30;
+    if (offCtx) {
+      offCtx.strokeStyle = 'rgba(0, 229, 255, 0.1)';
+      offCtx.lineWidth = 1;
       for (let x = 0; x < canvas.width; x += size) {
         for (let y = 0; y < canvas.height; y += size) {
-          const noise = Math.sin(x * 0.01 + y * 0.01 + frame * 0.05);
+          offCtx.strokeRect(x, y, size, size);
+        }
+      }
+    }
+
+    let frame = 0;
+    let animationFrameId: number;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // ⚡ Bolt: Draw the static pre-rendered grid in a single call
+      ctx.drawImage(offscreenCanvas, 0, 0);
+
+      // ⚡ Bolt: Calculate only the dynamic noise
+      for (let x = 0; x < canvas.width; x += size) {
+        // ⚡ Bolt: Hoist the x and frame invariant calculation out of the y loop
+        const baseNoise = x * 0.01 + frame * 0.05;
+        for (let y = 0; y < canvas.height; y += size) {
+          const noise = Math.sin(baseNoise + y * 0.01);
           if (noise > 0.8) {
             ctx.fillStyle = `rgba(57, 255, 20, ${noise - 0.5})`;
             ctx.fillRect(x, y, 2, 2);
           }
-          ctx.strokeRect(x, y, size, size);
         }
       }
       frame++;
-      requestAnimationFrame(draw);
+      animationFrameId = requestAnimationFrame(draw);
     };
+
     draw();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
   }, []);
 
   return <canvas ref={canvasRef} width={800} height={400} className="w-full h-full opacity-30" />;
