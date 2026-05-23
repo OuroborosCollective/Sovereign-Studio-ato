@@ -8,3 +8,6 @@
 ## 2026-05-21 - [Optimize GitHub Tree Array Processing]
 **Learning:** Chaining array methods like `.filter().map().slice()` on potentially huge payloads (like full GitHub API repository trees) forces multiple O(N) traversals and creates intermediate array allocations in memory.
 **Action:** Use a single `for` loop with an early break condition (e.g., stopping when reaching the desired slice size) instead of method chains to minimize memory footprint and execution time.
+## 2026-05-23 - [Canvas Optimization: drawImage vs strokeRect]
+**Learning:** Drawing hundreds of primitives (`strokeRect`) inside a `requestAnimationFrame` loop causes severe CPU overhead, even for simple static grids. A single `ctx.drawImage()` call referencing a pre-rendered offscreen canvas is massively more performant.
+**Action:** Pre-render static background elements to an offscreen canvas (`document.createElement('canvas')`) once on mount, and use `drawImage` in the render loop for high-frequency updates.
