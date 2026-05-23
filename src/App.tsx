@@ -127,14 +127,24 @@ const App: React.FC = () => {
 
       const data = await response.json();
 
-      const files: RepoFile[] = (data.tree ?? [])
-        .filter((f: any) => f.type === 'blob' || f.type === 'tree')
-        .map((f: any) => ({
-          path: f.path,
-          type: f.type,
-          size: f.size,
-        }))
-        .slice(0, 250);
+      // ⚡ Bolt: Replaced chained .filter().map().slice() with a single loop
+      // with early exit to avoid multiple O(N) traversals and intermediate arrays
+      const treeData = data.tree ?? [];
+      const files: RepoFile[] = [];
+
+      for (let i = 0; i < treeData.length; i++) {
+        const f = treeData[i];
+        if (f.type === 'blob' || f.type === 'tree') {
+          files.push({
+            path: f.path,
+            type: f.type,
+            size: f.size,
+          });
+          if (files.length === 250) {
+            break;
+          }
+        }
+      }
 
       setRepoFiles(files);
       setRepoStatus(`${files.length} Dateien geladen`);
