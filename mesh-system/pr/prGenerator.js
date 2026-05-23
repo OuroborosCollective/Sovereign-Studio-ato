@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 /**
  * PRGenerator: Core component of the Ghost-Pilot autonomous cycle.
  * Orchestrates file persistence, branch management, and PR metadata generation
- * within the Sovereign Studio hybrid architecture.
+ * within the NOCode Studio hybrid architecture.
  */
 class PRGenerator {
   constructor(config = {}) {
@@ -70,16 +70,16 @@ class PRGenerator {
 ## Overview
 ${description}
 
-## Technical Impact (Sovereign Studio Mesh)
+## Technical Impact (NOCode Studio Mesh)
 ${impacts.map(i => `- ${i}`).join('\n')}
 
 ## AI Generation Metadata
 - **Engine:** ${aiModel}
 - **Stack:** Vite + Capacitor 6
-- **Architecture:** Sovereign Studio Build-to-Deploy
+- **Architecture:** NOCode Studio Build-to-Deploy
 
 ---
-*Generated autonomously by Sovereign Studio Ghost-Pilot.*
+*Generated autonomously by NOCode Studio Ghost-Pilot.*
     `.trim();
   }
 

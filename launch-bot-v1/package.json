@@ -1,7 +1,7 @@
 {
   "name": "launch-bot-v1",
   "version": "1.0.0",
-  "description": "AI-powered deployment orchestrator and workflow automation for Sovereign Studio",
+  "description": "AI-powered deployment orchestrator and workflow automation for NOCode Studio",
   "type": "module",
   "main": "server/index.js",
   "engines": {
@@ -33,6 +33,6 @@
     "ai-orchestrator",
     "capacitor-6"
   ],
-  "author": "Sovereign Studio Design-Coder",
+  "author": "NOCode Studio Design-Coder",
   "license": "MIT"
 }

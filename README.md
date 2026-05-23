@@ -1,4 +1,4 @@
-# 🌌 Sovereign Studio V3: The Autonomous Repository Architect
+# 🌌 NOCode Studio V3: The Autonomous Repository Architect
 
 [![Engine: Vite](https://img.shields.io/badge/Engine-Vite-646CFF?logo=vite)](https://vitejs.dev/)
 [![Bridge: Capacitor 6](https://img.shields.io/badge/Bridge-Capacitor%206-119EFF?logo=capacitor)](https://capacitorjs.com/)
@@ -7,7 +7,7 @@
 
 ## 🏛 Architectural Manifesto
 
-Sovereign Studio V3 is not merely an Integrated Development Environment (IDE); it is a **self-evolving software organism**. By fusing high-performance web technologies with native Android capabilities and a multi-agentic AI mesh, the system achieves a closed-loop development cycle—from issue detection to automated production releases (AAB/APK).
+NOCode Studio V3 is not merely an Integrated Development Environment (IDE); it is a **self-evolving software organism**. By fusing high-performance web technologies with native Android capabilities and a multi-agentic AI mesh, the system achieves a closed-loop development cycle—from issue detection to automated production releases (AAB/APK).
 
 ---
 
@@ -44,7 +44,7 @@ graph TD
 ## 🧩 Core Modules & Responsibilities
 
 ### 1. `ato-v2/` (Autonomous Task Operations)
-The central nervous system of Sovereign Studio. It orchestrates the transformation of abstract requirements into executable code.
+The central nervous system of NOCode Studio. It orchestrates the transformation of abstract requirements into executable code.
 - **`brain/`**: Decision engines and prompt builders tailored for the Gemini Pro model.
 - **`generator/`**: The `patch-engine` applies precise AST (Abstract Syntax Tree) modifications to the codebase.
 - **`signal-hub/`**: Aggregates feedback from GitHub Issues and beta testing analytics to inform the next development cycle.
@@ -71,7 +71,7 @@ The Capacitor 6 implementation that transforms the web core into a sovereign mob
 
 ## ⚡ Autonomous Workflow: "The Ghost Pilot"
 
-Sovereign Studio V3 operates on a **zero-touch development philosophy**:
+NOCode Studio V3 operates on a **zero-touch development philosophy**:
 
 1.  **Issue Analysis**: An GitHub Issue is opened. The `🤖 Issue → Code Agent` workflow triggers.
 2.  **Autonomous Design**: `ato-v2` builds a context-aware prompt; `mesh-system/architect` defines the plan.
@@ -117,10 +117,10 @@ node mesh-system/mesh/runMesh.js
 ---
 
 ## 📜 Metadata & Versioning
-- **Project Name:** Sovereign Studio
+- **Project Name:** NOCode Studio
 - **Version:** 3.0.0 (Autonomous Edition)
 - **Codename:** Gemini-Bridge
-- **Architect:** Sovereign Studio Master-Architekt (AI)
+- **Architect:** NOCode Studio Master-Architekt (AI)
 
 ---
 *This README is a live document, maintained and updated by the `mesh-system/marketer` agent.*

@@ -6,7 +6,7 @@ import { config } from '../config/mesh.config.js';
 
 /**
  * MeshRunner
- * Zentraler Bootstrapper für das Sovereign Studio Mesh-System.
+ * Zentraler Bootstrapper für das NOCode Studio Mesh-System.
  * Orchestriert die Initialisierung von Gemini-Agenten und steuert den autonomen Ghost-Pilot Workflow.
  */
 export class MeshRunner {

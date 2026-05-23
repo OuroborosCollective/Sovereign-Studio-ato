@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 
 /**
- * Sovereign Studio V3: Branch Lifecycle Manager
+ * NOCode Studio V3: Branch Lifecycle Manager
  * Automates branch creation, naming conventions, and cleanup workflows
  * for AI-driven development pipelines.
  */
@@ -46,7 +46,7 @@ export class BranchManager {
   }
 
   /**
-   * Validates if a branch name follows the Sovereign Studio architecture.
+   * Validates if a branch name follows the NOCode Studio architecture.
    */
   public static isValidBranchName(name: string): boolean {
     const validPrefixes = Object.values(this.PREFIXES).join('|');

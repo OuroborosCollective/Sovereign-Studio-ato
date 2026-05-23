@@ -133,9 +133,9 @@ export class ReviewerAgent {
     }
 
     // 5. Branding Enforcement (Enforce "NOCode Studio")
-    const forbiddenBrands = /Sovereign Studio V3|Sovereign Studio|Ghost Pilot/gi;
+    const forbiddenBrands = /NOCode Studio V3|NOCode Studio|Ghost Pilot/gi;
     if (forbiddenBrands.test(sanitized)) {
-      issues.push("Falsches Branding erkannt. Begriffe wie Sovereign Studio oder Ghost Pilot sind verboten.");
+      issues.push("Falsches Branding erkannt. Begriffe wie NOCode Studio oder Ghost Pilot sind verboten.");
       sanitized = sanitized.replace(forbiddenBrands, "NOCode Studio");
     }
 

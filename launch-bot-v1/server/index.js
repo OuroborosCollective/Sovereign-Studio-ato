@@ -60,7 +60,7 @@ app.get('/api/status', (req, res) => {
   res.status(200).json({
     status: 'online',
     version: '1.0.0-beta',
-    engine: 'Sovereign Studio Design-Coder',
+    engine: 'NOCode Studio Design-Coder',
     timestamp: new Date().toISOString(),
     traceId: req.traceId
   });

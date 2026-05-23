@@ -56,7 +56,7 @@ class PostGenerator {
     const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     const generator = new PostGenerator(process.env.GEMINI_API_KEY);
 
-    console.log("🚀 Generating launch posts for Sovereign Studio project...");
+    console.log("🚀 Generating launch posts for NOCode Studio project...");
     const posts = await generator.generatePosts(config);
     console.log(JSON.stringify(posts, null, 2));
   }
@@ -75,6 +75,6 @@ export default PostGenerator;
 /**
  * ARCHITECTURE NOTE:
  * This service leverages the Gemini 1.5 Pro model to ensure high-context awareness 
- * regarding the hybrid Vite/Capacitor architecture of Sovereign Studio. 
+ * regarding the hybrid Vite/Capacitor architecture of NOCode Studio.
  * It avoids regex global replace to maintain compatibility with the core engine standards.
  */

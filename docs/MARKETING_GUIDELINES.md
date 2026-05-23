@@ -2,7 +2,7 @@
 
 ## Core Principles
 
-When communicating about Sovereign Studio in any user-facing or public context (including automated marketing, social media, Play Store descriptions, and beta testing outreach), it must **only** be referred to by its consumer-facing name: **NOCode Studio**.
+When communicating about NOCode Studio in any user-facing or public context (including automated marketing, social media, Play Store descriptions, and beta testing outreach), it must **only** be referred to by its consumer-facing name: **NOCode Studio**.
 
 ### Do's:
 - **Product Name:** Always refer to the product as "NOCode Studio".
@@ -11,7 +11,7 @@ When communicating about Sovereign Studio in any user-facing or public context (
 - **Target Audience:** Address regular users, creators, and entrepreneurs looking to build apps easily.
 
 ### Don'ts:
-- **No Internal Terminology:** Never mention "Sovereign Studio", "Ghost Pilot", "Agents", "Autonomous Repository Architect", or any internal system components.
+- **No Internal Terminology:** Never mention "NOCode Studio", "Ghost Pilot", "Agents", "Autonomous Repository Architect", or any internal system components.
 - **No Technical Complexity:** Never refer to the underlying repository, GitHub Actions, CI/CD pipelines, or how the APK/AAB is generated.
 - **No Developmental Focus:** Do not position it as a developer tool or IDE; it is a user-friendly product.
 

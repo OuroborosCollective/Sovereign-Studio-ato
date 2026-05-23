@@ -1,7 +1,7 @@
 import { createPatch } from 'diff';
 
 /**
- * Sovereign Studio V3 - Patch Engine
+ * NOCode Studio V3 - Patch Engine
  * Transformiert LLM-Generierungen in valide Unified Diff Patches für die Repository-Synchronisation.
  * Optimiert für die hybride Architektur (Vite/Capacitor) und Gemini-API-Workflows.
  * 
@@ -90,7 +90,7 @@ export class PatchEngine {
 
       const firstLine = lines[0].toLowerCase().trim();
       
-      // Validierung gängiger Dateitypen im Sovereign Studio V3 Stack
+      // Validierung gängiger Dateitypen im NOCode Studio V3 Stack
       const languages = [
         'typescript', 'ts', 'tsx', 
         'javascript', 'js', 'json', 

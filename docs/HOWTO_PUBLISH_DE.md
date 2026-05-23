@@ -1,4 +1,4 @@
-# 🚀 Sovereign Studio V3 - Leitfaden zur Veröffentlichung im Google Play Store
+# 🚀 NOCode Studio V3 - Leitfaden zur Veröffentlichung im Google Play Store
 
 Herzlichen Glückwunsch! Die App ist nun bereit für den Release. Dieser Leitfaden erklärt dir Schritt-für-Schritt, wie du die Android App (App Bundle - AAB) und die APK erstellst und diese im Google Play Store veröffentlichst.
 

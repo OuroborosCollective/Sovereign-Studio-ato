@@ -111,4 +111,4 @@ If you insist on using OAuth instead of a Service Account, you would need to:
 
 ---
 
-*Setup guide generated for Sovereign Studio Android release workflow*
+*Setup guide generated for NOCode Studio Android release workflow*

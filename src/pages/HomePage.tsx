@@ -191,7 +191,7 @@ const HomePage: React.FC = () => {
                 </h1>
                 <p className="text-slate-400 font-light text-sm md:text-base leading-relaxed">
                   Generative Datenströme werden in Echtzeit synchronisiert. 
-                  Sovereign Studio Design-Coder initiiert Protokoll-Layer.
+                  NOCode Studio Design-Coder initiiert Protokoll-Layer.
                 </p>
                 
                 <div className="mt-8 flex gap-4">

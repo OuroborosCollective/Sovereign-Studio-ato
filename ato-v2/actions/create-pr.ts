@@ -12,7 +12,7 @@ interface PullRequestOptions {
 }
 
 /**
- * Erstellt einen hochgradig standardisierten Pull Request innerhalb der Sovereign Studio V3 Architektur.
+ * Erstellt einen hochgradig standardisierten Pull Request innerhalb der NOCode Studio V3 Architektur.
  * Integriert Compliance-Checks für Mobile-First Deployments und Capacitor 6 Kompatibilität.
  * 
  * RESOLVES: TS2307 durch Sicherstellung der korrekten Octokit-Typisierung und 
@@ -29,7 +29,7 @@ export async function createPullRequest(options: PullRequestOptions): Promise<nu
   }
   
   if (!token) {
-    throw new Error("[Sovereign Studio] GITHUB_TOKEN ist nicht definiert. Erforderlich für PR-Automation.");
+    throw new Error("[NOCode Studio] GITHUB_TOKEN ist nicht definiert. Erforderlich für PR-Automation.");
   }
 
   // Initialisierung von Octokit mit moderner Konfiguration und WHATWG URL Standard
@@ -49,10 +49,10 @@ export async function createPullRequest(options: PullRequestOptions): Promise<nu
   } = options;
 
   const prTemplate = `
-## 🚀 Sovereign Studio V3 - Automated PR
+## 🚀 NOCode Studio V3 - Automated PR
 
 ### Beschreibung
-${options.body || "Automatisierte Code-Generierung und Architektur-Update durch Sovereign Studio Design-Coder."}
+${options.body || "Automatisierte Code-Generierung und Architektur-Update durch NOCode Studio Design-Coder."}
 
 ### Architektur-Checklist (Sovereign V3 Standards)
 - [x] **Mobile-First**: UI-Komponenten auf Capacitor 6 & native Viewports optimiert.
@@ -67,7 +67,7 @@ ${options.body || "Automatisierte Code-Generierung und Architektur-Update durch 
 - **Compliance**: WHATWG URL API standardisiert
 
 ---
-*Erstellt durch Sovereign Studio V3 Assistant - LLM-driven platform infrastructure.*
+*Erstellt durch NOCode Studio V3 Assistant - LLM-driven platform infrastructure.*
   `.trim();
 
   try {
@@ -105,7 +105,7 @@ ${options.body || "Automatisierte Code-Generierung und Architektur-Update durch 
     return pr.number;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unbekannter API-Fehler";
-    console.error(`[Sovereign Studio] Fehler bei der PR-Erstellung: ${message}`);
+    console.error(`[NOCode Studio] Fehler bei der PR-Erstellung: ${message}`);
     throw error;
   }
 }

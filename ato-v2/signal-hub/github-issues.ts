@@ -89,7 +89,7 @@ export class GitHubIssueHub {
         repo,
         issue_number: issueNumber,
         body: [
-          '### 🤖 Sovereign Studio Autonomous Update',
+          '### 🤖 NOCode Studio Autonomous Update',
           `Status: **${statusLabel}**`,
           `Time: ${timestamp}`,
         ].join('\n'),

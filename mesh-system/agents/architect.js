@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 /**
  * ArchitectAgent
  * Verantwortlich für die technologische Planung und Dekonstruktion von Anforderungen
- * in ausführbare Implementierungsschritte innerhalb des Sovereign Studio Stacks.
+ * in ausführbare Implementierungsschritte innerhalb des NOCode Studio Stacks.
  */
 export class ArchitectAgent {
   constructor(apiKey) {
@@ -18,7 +18,7 @@ export class ArchitectAgent {
    */
   async planFeature(issue, context) {
     const systemPrompt = `
-      Du bist der Sovereign Studio ArchitectAgent. Deine Aufgabe ist es, präzise technische Blueprints 
+      Du bist der NOCode Studio ArchitectAgent. Deine Aufgabe ist es, präzise technische Blueprints
       für einen hybriden Vite + Capacitor 6 Stack zu erstellen.
       
       ARCHITEKTUR-FOKUS:

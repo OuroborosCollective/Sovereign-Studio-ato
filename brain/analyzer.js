@@ -1,5 +1,5 @@
 /**
- * Sovereign Studio V3 - Brain Signal Analyzer
+ * NOCode Studio V3 - Brain Signal Analyzer
  * Converts GitHub issues into actionable metadata for LLM-driven workflows.
  */
 
@@ -7,7 +7,7 @@ export class SignalAnalyzer {
   /**
    * Processes raw GitHub issue data into structured signals.
    * @param {Object} issue - The GitHub issue payload.
-   * @returns {Object} Actionable metadata for the Sovereign Studio engine.
+   * @returns {Object} Actionable metadata for the NOCode Studio engine.
    */
   static analyze(issue) {
     const title = issue.title || "";
@@ -58,7 +58,7 @@ export class SignalAnalyzer {
   }
 
   /**
-   * Maps the issue to specific architectural domains of Sovereign Studio V3.
+   * Maps the issue to specific architectural domains of NOCode Studio V3.
    */
   static mapToDomain(labels, text) {
     if (text.includes("capacitor") || text.includes("android") || text.includes("ios") || text.includes("native")) return "NATIVE_BRIDGE";

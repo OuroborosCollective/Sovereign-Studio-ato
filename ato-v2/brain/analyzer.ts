@@ -54,7 +54,7 @@ export class BrainAnalyzer {
       : "";
 
     const prompt = `
-      Analyze the following signal for Sovereign Studio V3 Repository Assistant.
+      Analyze the following signal for NOCode Studio V3 Repository Assistant.
       
       Signal Content: "${signal.content}"
       Source: "${normalizedSource}"

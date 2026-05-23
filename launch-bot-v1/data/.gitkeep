@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
   "metadata": {
-    "provider": "Sovereign Studio Design-Coder",
-    "description": "User database for Sovereign Studio AI Repo-Editor"
+    "provider": "NOCode Studio Design-Coder",
+    "description": "User database for NOCode Studio AI Repo-Editor"
   },
   "users": [
     {

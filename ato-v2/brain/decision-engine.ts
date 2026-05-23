@@ -5,7 +5,7 @@ import {
 } from './types';
 
 /**
- * Sovereign Studio V3 - Action Type Definition
+ * NOCode Studio V3 - Action Type Definition
  * Defined as Enum for strict architectural type safety across Vite/Capacitor boundaries.
  */
 export enum ActionType {
@@ -54,7 +54,7 @@ export interface DecisionContext {
 }
 
 /**
- * Sovereign Studio V3 - Decision Engine
+ * NOCode Studio V3 - Decision Engine
  * Maps analyzed signals to high-performance architectural or content actions.
  * Optimized for Gemini API integration and Capacitor 6 hybrid workflows.
  */
@@ -85,7 +85,7 @@ export class DecisionEngine {
   }
 
   /**
-   * Core mapping logic for Sovereign Studio V3 hybrid architecture.
+   * Core mapping logic for NOCode Studio V3 hybrid architecture.
    * Resolves TS2367 by using defined SignalType constants.
    */
   private mapSignalToAction(signal: SystemSignal): ArchitecturalAction {

@@ -31,7 +31,7 @@ on:
 
 jobs:
   launch-orchestrator:
-    name: Sovereign Studio Asset & Release Pipeline
+    name: NOCode Studio Asset & Release Pipeline
     runs-on: ubuntu-latest
     permissions:
       contents: write

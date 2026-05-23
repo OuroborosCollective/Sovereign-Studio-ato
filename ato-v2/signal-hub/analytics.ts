@@ -35,7 +35,7 @@ export interface TaskTrigger {
 
 /**
  * AnalyticsProcessor: Überwacht Performance und UX-Friction autonom.
- * Teil des Sovereign Studio Signal-Hubs zur Selbstoptimierung der Anwendung.
+ * Teil des NOCode Studio Signal-Hubs zur Selbstoptimierung der Anwendung.
  */
 class AnalyticsProcessor {
   private static instance: AnalyticsProcessor;
@@ -183,7 +183,7 @@ class AnalyticsProcessor {
   }
 
   /**
-   * Sendet ein Signal an das Sovereign Studio System-Event-System
+   * Sendet ein Signal an das NOCode Studio System-Event-System
    */
   private emitTaskTrigger(trigger: TaskTrigger): void {
     if (typeof window === 'undefined') return;

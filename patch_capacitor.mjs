@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 
 /**
  * Patches a file by replacing occurrences of a string.
- * Uses split/join instead of regex to comply with Sovereign Studio constraints.
+ * Uses split/join instead of regex to comply with NOCode Studio constraints.
  * 
  * @param {string} filePath 
  * @param {string} search 
@@ -17,7 +17,7 @@ export const patchFile = (filePath, search, replacement) => {
   const fullPath = path.resolve(process.cwd(), filePath);
 
   if (!fs.existsSync(fullPath)) {
-    console.warn(`[Sovereign Studio] File not found: ${fullPath}`);
+    console.warn(`[NOCode Studio] File not found: ${fullPath}`);
     return;
   }
 
@@ -29,12 +29,12 @@ export const patchFile = (filePath, search, replacement) => {
       const updatedContent = originalContent.split(search).join(replacement);
       
       fs.writeFileSync(fullPath, updatedContent, 'utf8');
-      console.log(`[Sovereign Studio] Successfully patched: ${filePath}`);
+      console.log(`[NOCode Studio] Successfully patched: ${filePath}`);
     } else {
-      console.log(`[Sovereign Studio] Search string not found in: ${filePath}`);
+      console.log(`[NOCode Studio] Search string not found in: ${filePath}`);
     }
   } catch (error) {
-    console.error(`[Sovereign Studio] Error patching file ${filePath}:`, error.message);
+    console.error(`[NOCode Studio] Error patching file ${filePath}:`, error.message);
   }
 };
 

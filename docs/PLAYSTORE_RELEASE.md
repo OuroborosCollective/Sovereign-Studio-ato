@@ -1,4 +1,4 @@
-# Sovereign Studio Play Store Release
+# NOCode Studio Play Store Release
 
 This project builds a signed Android release APK and AAB through GitHub Actions.
 

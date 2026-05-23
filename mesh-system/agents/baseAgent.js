@@ -2,7 +2,7 @@ import { EventBus } from '../core/eventBus.js';
 
 /**
  * BaseAgent
- * Zentralisierte Basisklasse für alle Mesh-Agenten innerhalb von Sovereign Studio.
+ * Zentralisierte Basisklasse für alle Mesh-Agenten innerhalb von NOCode Studio.
  * Regelt die Event-Bus-Kommunikation, das standardisierte Logging und Lifecycle-Management.
  */
 export class BaseAgent {
@@ -44,7 +44,7 @@ export class BaseAgent {
   }
 
   /**
-   * Standardisiertes Logging für die Sovereign Studio Umgebung.
+   * Standardisiertes Logging für die NOCode Studio Umgebung.
    * @param {string} message - Log-Nachricht
    * @param {string} level - Log-Level (info, warn, error, debug)
    */

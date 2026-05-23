@@ -15,7 +15,7 @@ export type FabricObjectType =
   | 'activeSelection';
 
 /**
- * Konsolidiertes Interface für Canvas-Objekte innerhalb der Sovereign Studio Architektur.
+ * Konsolidiertes Interface für Canvas-Objekte innerhalb der NOCode Studio Architektur.
  * Dient als Single Source of Truth für UI-Synchronisation und KI-Manipulation.
  */
 export interface CanvasObject {

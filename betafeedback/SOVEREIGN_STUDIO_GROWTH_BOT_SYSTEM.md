@@ -1,8 +1,8 @@
-# Sovereign Studio ATO — Beta Feedback & Growth Bot System
+# NOCode Studio ATO — Beta Feedback & Growth Bot System
 
 ## Projektziel
 
-Der Telegram-Bot soll nicht nur Promo-Keys verteilen, sondern als vollständiges Community-, Growth-, Feedback- und Reward-System für Sovereign Studio / ARE Engine dienen.
+Der Telegram-Bot soll nicht nur Promo-Keys verteilen, sondern als vollständiges Community-, Growth-, Feedback- und Reward-System für NOCode Studio / ARE Engine dienen.
 
 ---
 
@@ -178,4 +178,4 @@ Der Bot soll langfristig zu einem vollständigen:
 - Telegram-Marketing-System
 - Beta-Management-System
 
-für Sovereign Studio und ARE Engine werden.
+für NOCode Studio und ARE Engine werden.

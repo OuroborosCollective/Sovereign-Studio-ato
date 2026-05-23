@@ -31,7 +31,7 @@ const PRICING_TIERS: PricingTier[] = [
     name: 'Free',
     price: '€0',
     credits: 10,
-    description: 'Perfekt für erste Gehversuche im Sovereign Studio.',
+    description: 'Perfekt für erste Gehversuche im NOCode Studio.',
     features: ['10 Design Credits', 'Basis Support', 'Standard Rendering'],
     icon: <Zap className="w-5 h-5 text-slate-400" />
   },

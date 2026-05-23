@@ -8,7 +8,7 @@ const execPromise = promisify(exec);
 /**
  * TesterAgent
  * Verantwortlich für die Validierung von Codeänderungen, Ausführung von Test-Suiten
- * und Verifizierung der Build-Integrität im Sovereign Studio Stack.
+ * und Verifizierung der Build-Integrität im NOCode Studio Stack.
  */
 class TesterAgent {
   constructor(config = {}) {

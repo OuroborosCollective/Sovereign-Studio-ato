@@ -1,7 +1,7 @@
 {
   "name": "sovereign-launch-assets",
   "version": "1.0.0",
-  "description": "Storage manifest for AI-generated Markdown and JSON assets within the Sovereign Studio ecosystem.",
+  "description": "Storage manifest for AI-generated Markdown and JSON assets within the NOCode Studio ecosystem.",
   "structure": {
     "markdown": {
       "path": "launch/docs/",
@@ -15,7 +15,7 @@
     }
   },
   "metadata": {
-    "generator": "Sovereign Studio Design-Coder",
+    "generator": "NOCode Studio Design-Coder",
     "engine": "Gemini-API",
     "workflow": "automated-ci-cd-deployment"
   },

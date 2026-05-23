@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#fafaf9">
     <meta name="color-scheme" content="light">
-    <title>Sovereign Studio v3.4.2 - Strict Fast Flow Edition</title>
+    <title>NOCode Studio v3.4.2 - Strict Fast Flow Edition</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = { darkMode: 'class' };
@@ -304,7 +304,7 @@
             </div>
             <div id="chat-history" class="flex-1 overflow-y-auto p-4 space-y-4 bg-white text-[11px] custom-scrollbar scroll-smooth">
                 <div class="p-3 bg-indigo-50 rounded-xl rounded-tl-none border border-indigo-200 text-indigo-900 shadow-sm">
-                    <strong>🏛️ Sovereign Studio Architekt erwacht (v3.4.2)</strong><br><br>
+                    <strong>🏛️ NOCode Studio Architekt erwacht (v3.4.2)</strong><br><br>
                     Gegrüßt seist du. Ich bin dein <b>Kombinatormeister der Datenarchitektur</b>.<br>
                     - <b>Mass-Fix Protocol:</b> Bei CI-Fehlern forciere ich nun die gleichzeitige Behebung *aller* gefundenen Fehler. Kein iteratives 1-by-1 Stottern mehr!<br>
                     - <b>Empty-Commit Shield:</b> Null-Änderungen werden strikt abgewiesen. Leere Commits blockiere ich, um Endlos-Loops zu sprengen.<br>
@@ -587,7 +587,7 @@
 
 
                 const prompt = 'Analysiere folgende Kern-Dateien dieses Repositories:\n\nPACKAGE.JSON:\n' + (packageJson ? packageJson.substring(0, 1000) : 'N/A') + '\n\nREADME:\n' + (readme ? readme.substring(0, 2000) : 'N/A') + '\n\nDateistruktur (Auszug):\n' + fullTree.slice(0, 50).map(f => f.path).join('\n');
-                const systemPrompt = "Du bist der Sovereign Studio Master-Architekt. Fasse exakt zusammen: Was ist das Ziel dieses Software-Produkts? Welcher Tech-Stack liegt vor? Was ist die Kernarchitektur? Antworte in 2-3 extrem dichten, prägnanten Sätzen. Dies dient als zukünftiges Kern-Bewusstsein (Context) für alle weiteren Operationen.";
+                const systemPrompt = "Du bist der NOCode Studio Master-Architekt. Fasse exakt zusammen: Was ist das Ziel dieses Software-Produkts? Welcher Tech-Stack liegt vor? Was ist die Kernarchitektur? Antworte in 2-3 extrem dichten, prägnanten Sätzen. Dies dient als zukünftiges Kern-Bewusstsein (Context) für alle weiteren Operationen.";
                 
                 const awarenessResult = await callGeminiAPI(prompt, systemPrompt);
                 repoContext = awarenessResult.trim();
@@ -734,27 +734,27 @@
 
 
         // --- Zuweisungen für die KI Buttons ---
-        document.getElementById('analyze-code-btn').onclick = () => runSingleFileAI('analyze-code-btn', "⏳...", "Review", "Ich bin der Sovereign Studio Master-Architekt. Analysiere den Code scharfsinnig auf Architektur-Fehler und Bugs. Kurzes HTML.", false);
-        document.getElementById('explain-code-btn').onclick = () => runSingleFileAI('explain-code-btn', "⏳...", "Erklären", "Ich bin der Sovereign Studio Master-Architekt. Erkläre die Funktion meisterhaft und präzise. HTML.", false, "idea");
-        document.getElementById('eli5-code-btn').onclick = () => runSingleFileAI('eli5-code-btn', "⏳...", "ELI5", "Ich bin der Sovereign Studio Master-Architekt. Erkläre die Logik als wäre ich 5, nutze einfache Bau-Analogien. HTML.", false, "idea");
-        document.getElementById('a11y-fix-btn').onclick = () => runSingleFileAI('a11y-fix-btn', "⏳...", "A11y Fix", "Ich bin der Sovereign Studio Master-Architekt. Analysiere diesen Code und füge perfekte Accessibility (WCAG) Struktur hinzu. Verändere nicht die Business-Logik. GIB NUR DEN CODE ZURÜCK.", true);
-        document.getElementById('rename-vars-btn').onclick = () => runSingleFileAI('rename-vars-btn', "⏳...", "Clean Names", "Ich bin der Sovereign Studio Master-Architekt. Bringe perfekte Clean-Code Nomenklatur in dieses File. Ändere NICHT die Logik, NUR die Namen. GIB NUR DEN CODE ZURÜCK.", true);
-        document.getElementById('optimize-code-btn').onclick = () => runSingleFileAI('optimize-code-btn', "⏳...", "Optimieren", "Ich bin der Sovereign Studio Master-Architekt. Refactore diesen Code für maximale Performance. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('add-logging-btn').onclick = () => runSingleFileAI('add-logging-btn', "⏳...", "Logging", "Ich bin der Sovereign Studio Master-Architekt. Implementiere ein robustes System-Logging in diese Funktionen. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('generate-docs-btn').onclick = () => runSingleFileAI('generate-docs-btn', "⏳...", "JSDoc", "Ich bin der Sovereign Studio Master-Architekt. Dokumentiere diesen Code meisterhaft mit JSDoc. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('convert-ts-btn').onclick = () => runSingleFileAI('convert-ts-btn', "⏳...", "TS Konvertierung", "Ich bin der Sovereign Studio Master-Architekt. Überführe diesen JavaScript Code in strikt typisiertes TypeScript. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('convert-rust-btn').onclick = () => runNewFileAI('convert-rust-btn', "⏳...", "Rust Konvertierung", "Ich bin der Sovereign Studio Master-Architekt. Konvertiere diesen Code in perfektes, idiomatisches Rust. NUR RUST CODE ZURÜCKGEBEN.", (f) => f.replace(/\.[^/.]+$/, '.rs'));
-        document.getElementById('convert-python-btn').onclick = () => runNewFileAI('convert-python-btn', "⏳...", "Python Konvertierung", "Ich bin der Sovereign Studio Master-Architekt. Überführe diesen Code in elegantes Python 3. NUR PYTHON CODE ZURÜCKGEBEN.", (f) => f.replace(/\.[^/.]+$/, '.py'));
-        document.getElementById('security-audit-btn').onclick = () => runSingleFileAI('security-audit-btn', "⏳...", "Audit", "Ich bin der Sovereign Studio Master-Architekt. Führe ein gnadenloses Security-Audit für diesen Code durch. HTML.", false, "error");
-        document.getElementById('roast-code-btn').onclick = () => runSingleFileAI('roast-code-btn', "⏳...", "Roast", "Ich bin der Sovereign Studio Master-Architekt. Roaste diese Code-Struktur extrem sarkastisch aus der Sicht eines elitären Architekten. HTML.", false, "warning");
-        document.getElementById('ux-review-btn').onclick = () => runSingleFileAI('ux-review-btn', "⏳...", "UX Review", "Ich bin der Sovereign Studio Master-Architekt. Bewerte die UI/UX Struktur dieses Codes kritisch. HTML.", false, "idea");
-        document.getElementById('tailwind-convert-btn').onclick = () => runSingleFileAI('tailwind-convert-btn', "⏳...", "Tailwind CSS", "Ich bin der Sovereign Studio Master-Architekt. Integriere Tailwind CSS utility classes nahtlos in dieses Markup. NUR CODE ZURÜCKGEBEN.", true);
-        document.getElementById('bug-predict-btn').onclick = () => runSingleFileAI('bug-predict-btn', "⏳...", "Bug Predict", "Ich bin der Sovereign Studio Master-Architekt. Prophezeie mir exakt 3 Laufzeit- oder Logikfehler, die hier auftreten werden. HTML.", false, "error");
-        document.getElementById('calc-complexity-btn').onclick = () => runSingleFileAI('calc-complexity-btn', "⏳...", "Big-O", "Ich bin der Sovereign Studio Master-Architekt. Errechne mir die zyklomatische und asymptotische (Big-O) Komplexität. HTML.", false, "idea");
+        document.getElementById('analyze-code-btn').onclick = () => runSingleFileAI('analyze-code-btn', "⏳...", "Review", "Ich bin der NOCode Studio Master-Architekt. Analysiere den Code scharfsinnig auf Architektur-Fehler und Bugs. Kurzes HTML.", false);
+        document.getElementById('explain-code-btn').onclick = () => runSingleFileAI('explain-code-btn', "⏳...", "Erklären", "Ich bin der NOCode Studio Master-Architekt. Erkläre die Funktion meisterhaft und präzise. HTML.", false, "idea");
+        document.getElementById('eli5-code-btn').onclick = () => runSingleFileAI('eli5-code-btn', "⏳...", "ELI5", "Ich bin der NOCode Studio Master-Architekt. Erkläre die Logik als wäre ich 5, nutze einfache Bau-Analogien. HTML.", false, "idea");
+        document.getElementById('a11y-fix-btn').onclick = () => runSingleFileAI('a11y-fix-btn', "⏳...", "A11y Fix", "Ich bin der NOCode Studio Master-Architekt. Analysiere diesen Code und füge perfekte Accessibility (WCAG) Struktur hinzu. Verändere nicht die Business-Logik. GIB NUR DEN CODE ZURÜCK.", true);
+        document.getElementById('rename-vars-btn').onclick = () => runSingleFileAI('rename-vars-btn', "⏳...", "Clean Names", "Ich bin der NOCode Studio Master-Architekt. Bringe perfekte Clean-Code Nomenklatur in dieses File. Ändere NICHT die Logik, NUR die Namen. GIB NUR DEN CODE ZURÜCK.", true);
+        document.getElementById('optimize-code-btn').onclick = () => runSingleFileAI('optimize-code-btn', "⏳...", "Optimieren", "Ich bin der NOCode Studio Master-Architekt. Refactore diesen Code für maximale Performance. NUR CODE ZURÜCKGEBEN.", true);
+        document.getElementById('add-logging-btn').onclick = () => runSingleFileAI('add-logging-btn', "⏳...", "Logging", "Ich bin der NOCode Studio Master-Architekt. Implementiere ein robustes System-Logging in diese Funktionen. NUR CODE ZURÜCKGEBEN.", true);
+        document.getElementById('generate-docs-btn').onclick = () => runSingleFileAI('generate-docs-btn', "⏳...", "JSDoc", "Ich bin der NOCode Studio Master-Architekt. Dokumentiere diesen Code meisterhaft mit JSDoc. NUR CODE ZURÜCKGEBEN.", true);
+        document.getElementById('convert-ts-btn').onclick = () => runSingleFileAI('convert-ts-btn', "⏳...", "TS Konvertierung", "Ich bin der NOCode Studio Master-Architekt. Überführe diesen JavaScript Code in strikt typisiertes TypeScript. NUR CODE ZURÜCKGEBEN.", true);
+        document.getElementById('convert-rust-btn').onclick = () => runNewFileAI('convert-rust-btn', "⏳...", "Rust Konvertierung", "Ich bin der NOCode Studio Master-Architekt. Konvertiere diesen Code in perfektes, idiomatisches Rust. NUR RUST CODE ZURÜCKGEBEN.", (f) => f.replace(/\.[^/.]+$/, '.rs'));
+        document.getElementById('convert-python-btn').onclick = () => runNewFileAI('convert-python-btn', "⏳...", "Python Konvertierung", "Ich bin der NOCode Studio Master-Architekt. Überführe diesen Code in elegantes Python 3. NUR PYTHON CODE ZURÜCKGEBEN.", (f) => f.replace(/\.[^/.]+$/, '.py'));
+        document.getElementById('security-audit-btn').onclick = () => runSingleFileAI('security-audit-btn', "⏳...", "Audit", "Ich bin der NOCode Studio Master-Architekt. Führe ein gnadenloses Security-Audit für diesen Code durch. HTML.", false, "error");
+        document.getElementById('roast-code-btn').onclick = () => runSingleFileAI('roast-code-btn', "⏳...", "Roast", "Ich bin der NOCode Studio Master-Architekt. Roaste diese Code-Struktur extrem sarkastisch aus der Sicht eines elitären Architekten. HTML.", false, "warning");
+        document.getElementById('ux-review-btn').onclick = () => runSingleFileAI('ux-review-btn', "⏳...", "UX Review", "Ich bin der NOCode Studio Master-Architekt. Bewerte die UI/UX Struktur dieses Codes kritisch. HTML.", false, "idea");
+        document.getElementById('tailwind-convert-btn').onclick = () => runSingleFileAI('tailwind-convert-btn', "⏳...", "Tailwind CSS", "Ich bin der NOCode Studio Master-Architekt. Integriere Tailwind CSS utility classes nahtlos in dieses Markup. NUR CODE ZURÜCKGEBEN.", true);
+        document.getElementById('bug-predict-btn').onclick = () => runSingleFileAI('bug-predict-btn', "⏳...", "Bug Predict", "Ich bin der NOCode Studio Master-Architekt. Prophezeie mir exakt 3 Laufzeit- oder Logikfehler, die hier auftreten werden. HTML.", false, "error");
+        document.getElementById('calc-complexity-btn').onclick = () => runSingleFileAI('calc-complexity-btn', "⏳...", "Big-O", "Ich bin der NOCode Studio Master-Architekt. Errechne mir die zyklomatische und asymptotische (Big-O) Komplexität. HTML.", false, "idea");
 
 
-        document.getElementById('file-diagram-btn').onclick = () => runSingleFileAI('file-diagram-btn', "⏳...", "Flowchart", "Ich bin der Sovereign Studio Master-Architekt. Generiere ein detailliertes Mermaid.js Flowchart (graph TD) exakt für die Logik dieser Datei. GIB NUR DEN MERMAID CODE ZURÜCK.", false, "idea");
-        document.getElementById('explain-pm-btn').onclick = () => runSingleFileAI('explain-pm-btn', "⏳...", "PM Explain", "Ich bin der Sovereign Studio Master-Architekt. Erkläre den strategischen Zweck dieser Datei für Nicht-Techniker (PMs). Betone den Business Value unter Berücksichtigung des Global Project Awareness. HTML.", false, "idea");
+        document.getElementById('file-diagram-btn').onclick = () => runSingleFileAI('file-diagram-btn', "⏳...", "Flowchart", "Ich bin der NOCode Studio Master-Architekt. Generiere ein detailliertes Mermaid.js Flowchart (graph TD) exakt für die Logik dieser Datei. GIB NUR DEN MERMAID CODE ZURÜCK.", false, "idea");
+        document.getElementById('explain-pm-btn').onclick = () => runSingleFileAI('explain-pm-btn', "⏳...", "PM Explain", "Ich bin der NOCode Studio Master-Architekt. Erkläre den strategischen Zweck dieser Datei für Nicht-Techniker (PMs). Betone den Business Value unter Berücksichtigung des Global Project Awareness. HTML.", false, "idea");
 
 
         document.getElementById('audio-review-btn').onclick = async () => {
@@ -765,7 +765,7 @@
             window.logToSystem('<b>Audio Review:</b> Architekt formuliert Sprach-Analyse für <code>' + filename + '</code>...', "info");
             
             try {
-                const prompt = 'Du bist der Sovereign Studio Master-Architekt. Gib ein extrem kurzes, prägnantes Audio-Urteil (max. 3 Sätze) über diesen Code ab, basierend auf dem Global Awareness Context: \n\nDatei: ' + filename + '\nCode:\n' + currentFileContent.substring(0, 1000);
+                const prompt = 'Du bist der NOCode Studio Master-Architekt. Gib ein extrem kurzes, prägnantes Audio-Urteil (max. 3 Sätze) über diesen Code ab, basierend auf dem Global Awareness Context: \n\nDatei: ' + filename + '\nCode:\n' + currentFileContent.substring(0, 1000);
                 const inlineData = await callGeminiTTSAPI(prompt);
                 
                 const sampleRateMatch = inlineData.mimeType.match(/rate=(\d+)/);
@@ -782,37 +782,37 @@
         };
 
 
-        document.getElementById('generate-tests-btn').onclick = () => runNewFileAI('generate-tests-btn', "⏳...", "Tests", "Ich bin der Sovereign Studio Master-Architekt. Schreibe kugelsichere Jest/Vitest Tests für diesen Code. NUR CODE ZURÜCK.", (f) => f.replace(/\.(ts|js|tsx|jsx)$/, '.test.$1'));
-        document.getElementById('generate-sql-btn').onclick = () => runNewFileAI('generate-sql-btn', "⏳...", "SQL Generierung", "Ich bin der Sovereign Studio Master-Architekt. Generiere passend zu dieser Datei ein absolut robustes PostgreSQL Schema. GIB NUR DEN SQL CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.schema.sql'));
-        document.getElementById('openapi-gen-btn').onclick = () => runNewFileAI('openapi-gen-btn', "⏳...", "OpenAPI Spec", "Ich bin der Sovereign Studio Master-Architekt. Generiere eine OpenAPI 3.0 YAML Spezifikation basierend auf diesen Endpunkten. GIB NUR DEN YAML CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.openapi.yaml'));
-        document.getElementById('generate-mock-btn').onclick = () => runNewFileAI('generate-mock-btn', "⏳...", "Mock", "Ich bin der Sovereign Studio Master-Architekt. Erschaffe strukturierte Mock-Daten (JSON) für diese Logik. NUR JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.mock.json'));
-        document.getElementById('generate-storybook-btn').onclick = () => runNewFileAI('generate-storybook-btn', "⏳...", "Storybook", "Ich bin der Sovereign Studio Master-Architekt. Erstelle eine perfekte Storybook CSF 3.0 Definition für diese Komponente. NUR CODE ZURÜCK.", (f) => f.replace(/\.(ts|js|tsx|jsx)$/, '.stories.$1'));
-        document.getElementById('extract-i18n-btn').onclick = () => runNewFileAI('extract-i18n-btn', "⏳...", "i18n", "Ich bin der Sovereign Studio Master-Architekt. Extrahiere alle harten Strings in eine saubere i18n JSON Struktur. NUR JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.i18n.json'));
-        document.getElementById('generate-zod-btn').onclick = () => runNewFileAI('generate-zod-btn', "⏳...", "Zod", "Ich bin der Sovereign Studio Master-Architekt. Validiere die Datenstrukturen hiermit, indem du ein sauberes Zod-Schema erzeugst. NUR CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.schema.ts'));
-        document.getElementById('extract-types-btn').onclick = () => runNewFileAI('extract-types-btn', "⏳...", "TS Types", "Ich bin der Sovereign Studio Master-Architekt. Analysiere diese Datei und generiere exakte TypeScript Interfaces. GIB NUR DEN TYPESCRIPT CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.types.ts'));
-        document.getElementById('db-seeder-btn').onclick = () => runNewFileAI('db-seeder-btn', "⏳...", "DB Seeder", "Ich bin der Sovereign Studio Master-Architekt. Generiere basierend auf diesem Modell ein realistisches Datenbank-Seeder-Skript. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.seed.js'));
-        document.getElementById('translate-comments-btn').onclick = () => runSingleFileAI('translate-comments-btn', "⏳...", "Übersetzen", "Ich bin der Sovereign Studio Master-Architekt. Übersetze alle Code-Kommentare in dieser Datei ins Deutsche. Verändere absolut keinen ausführbaren Code, nur die Kommentare. GIB NUR DEN CODE ZURÜCK.", true);
-        document.getElementById('generate-issue-btn').onclick = () => runNewFileAI('generate-issue-btn', "⏳...", "GitHub Issue", "Ich bin der Sovereign Studio Master-Architekt. Analysiere diese Datei (insbesondere TODOs oder problematische Stellen) und schreibe ein detailliertes GitHub Issue im Markdown Format. GIB NUR DAS MARKDOWN ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.issue.md'));
-        document.getElementById('bdd-gen-btn').onclick = () => runNewFileAI('bdd-gen-btn', "⏳...", "BDD Szenarien", "Ich bin der Sovereign Studio Master-Architekt. Generiere fachliche Gherkin/BDD Szenarien (Feature, Scenario, Given, When, Then) basierend auf der Logik dieser Datei. GIB NUR DEN TEXT ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.feature'));
-        document.getElementById('regex-explainer-btn').onclick = () => runSingleFileAI('regex-explainer-btn', "⏳...", "Regex Analyse", "Ich bin der Sovereign Studio Master-Architekt. Extrahiere alle Regular Expressions (RegEx) aus dieser Datei und erkläre präzise, was jede einzelne davon tut. Wenn es keine gibt, teile das kurz mit. Antworte in HTML.", false, "idea");
-        document.getElementById('convert-react-btn').onclick = () => runNewFileAI('convert-react-btn', "⏳...", "Zu React Konvertieren", "Ich bin der Sovereign Studio Master-Architekt. Konvertiere diesen HTML/JS Code in eine funktionale React-Komponente (TypeScript) mit TailwindCSS. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.tsx'));
-        document.getElementById('perf-check-btn').onclick = () => runSingleFileAI('perf-check-btn', "⏳...", "Perf Check", "Ich bin der Sovereign Studio Master-Architekt. Finde Performance-Flaschenhälse (O(N^2) Loops, Memory Leaks, unnötige Renders) in diesem Code. Antworte in kurzem, prägnantem HTML.", false, "warning");
-        document.getElementById('iam-rules-btn').onclick = () => runNewFileAI('iam-rules-btn', "⏳...", "Security Rules", "Ich bin der Sovereign Studio Master-Architekt. Analysiere das Datenmodell und generiere granulare, hochsichere Firebase/Firestore Security Rules. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.rules'));
-        document.getElementById('k8s-manifest-btn').onclick = () => runNewFileAI('k8s-manifest-btn', "⏳...", "K8s Manifest", "Ich bin der Sovereign Studio Master-Architekt. Erstelle ein Kubernetes Deployment und Service Manifest (YAML) für diesen Code. GIB NUR DEN YAML CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.k8s.yaml'));
-        document.getElementById('solid-check-btn').onclick = () => runSingleFileAI('solid-check-btn', "⏳...", "SOLID Check", "Ich bin der Sovereign Studio Master-Architekt. Analysiere diesen Code gnadenlos auf Verletzungen der SOLID-Prinzipien. Erkläre die Probleme prägnant in HTML.", false, "warning");
-        document.getElementById('seo-meta-btn').onclick = () => runSingleFileAI('seo-meta-btn', "⏳...", "SEO Meta", "Ich bin der Sovereign Studio Master-Architekt. Extrahiere den Kontext und generiere perfekte, hoch-konvertierende SEO Meta-Tags (Title, Description, Keywords, OpenGraph) als HTML-Snippet für dieses Modul. HTML-Format.", false, "idea");
-        document.getElementById('curl-gen-btn').onclick = () => runNewFileAI('curl-gen-btn', "⏳...", "API Requests", "Ich bin der Sovereign Studio Master-Architekt. Analysiere diesen Code auf API-Endpunkte und generiere eine vollständige requests.http Datei (REST Client Format) mit Beispieldaten zum Testen. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.http'));
-        document.getElementById('design-tokens-btn').onclick = () => runNewFileAI('design-tokens-btn', "⏳...", "Design Tokens", "Ich bin der Sovereign Studio Master-Architekt. Analysiere die CSS/Tailwind-Klassen oder Styling-Objekte in dieser Datei und extrahiere eine strukturierte design-tokens.json mit Farben, Spacings und Typografie. GIB NUR DAS JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.tokens.json'));
-        document.getElementById('db-migration-btn').onclick = () => runNewFileAI('db-migration-btn', "⏳...", "DB Migration", "Ich bin der Sovereign Studio Master-Architekt. Erstelle ein Datenbank-Migrationsskript (SQL) (UP und DOWN) für dieses Modell/Schema. GIB NUR DEN SQL CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.migration.sql'));
-        document.getElementById('add-animations-btn').onclick = () => runSingleFileAI('add-animations-btn', "⏳...", "UI Animationen", "Ich bin der Sovereign Studio Master-Architekt. Analysiere diese UI-Komponente und füge moderne, flüssige Tailwind CSS Animationen und Transitions (z.B. hover, focus, animate-pulse, transition-all) hinzu, um die UX zu verbessern. GIB NUR DEN VERBESSERTEN CODE ZURÜCK.", true);
-        document.getElementById('er-diagram-btn').onclick = () => runSingleFileAI('er-diagram-btn', "⏳...", "ER Diagramm", "Ich bin der Sovereign Studio Master-Architekt. Analysiere diese Datenbank-Schema/Model-Datei und generiere ein Mermaid.js Entity-Relationship (ER) Diagramm (erDiagram). GIB NUR DEN MERMAID CODE ZURÜCK.", false, "idea");
+        document.getElementById('generate-tests-btn').onclick = () => runNewFileAI('generate-tests-btn', "⏳...", "Tests", "Ich bin der NOCode Studio Master-Architekt. Schreibe kugelsichere Jest/Vitest Tests für diesen Code. NUR CODE ZURÜCK.", (f) => f.replace(/\.(ts|js|tsx|jsx)$/, '.test.$1'));
+        document.getElementById('generate-sql-btn').onclick = () => runNewFileAI('generate-sql-btn', "⏳...", "SQL Generierung", "Ich bin der NOCode Studio Master-Architekt. Generiere passend zu dieser Datei ein absolut robustes PostgreSQL Schema. GIB NUR DEN SQL CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.schema.sql'));
+        document.getElementById('openapi-gen-btn').onclick = () => runNewFileAI('openapi-gen-btn', "⏳...", "OpenAPI Spec", "Ich bin der NOCode Studio Master-Architekt. Generiere eine OpenAPI 3.0 YAML Spezifikation basierend auf diesen Endpunkten. GIB NUR DEN YAML CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.openapi.yaml'));
+        document.getElementById('generate-mock-btn').onclick = () => runNewFileAI('generate-mock-btn', "⏳...", "Mock", "Ich bin der NOCode Studio Master-Architekt. Erschaffe strukturierte Mock-Daten (JSON) für diese Logik. NUR JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.mock.json'));
+        document.getElementById('generate-storybook-btn').onclick = () => runNewFileAI('generate-storybook-btn', "⏳...", "Storybook", "Ich bin der NOCode Studio Master-Architekt. Erstelle eine perfekte Storybook CSF 3.0 Definition für diese Komponente. NUR CODE ZURÜCK.", (f) => f.replace(/\.(ts|js|tsx|jsx)$/, '.stories.$1'));
+        document.getElementById('extract-i18n-btn').onclick = () => runNewFileAI('extract-i18n-btn', "⏳...", "i18n", "Ich bin der NOCode Studio Master-Architekt. Extrahiere alle harten Strings in eine saubere i18n JSON Struktur. NUR JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.i18n.json'));
+        document.getElementById('generate-zod-btn').onclick = () => runNewFileAI('generate-zod-btn', "⏳...", "Zod", "Ich bin der NOCode Studio Master-Architekt. Validiere die Datenstrukturen hiermit, indem du ein sauberes Zod-Schema erzeugst. NUR CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.schema.ts'));
+        document.getElementById('extract-types-btn').onclick = () => runNewFileAI('extract-types-btn', "⏳...", "TS Types", "Ich bin der NOCode Studio Master-Architekt. Analysiere diese Datei und generiere exakte TypeScript Interfaces. GIB NUR DEN TYPESCRIPT CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.types.ts'));
+        document.getElementById('db-seeder-btn').onclick = () => runNewFileAI('db-seeder-btn', "⏳...", "DB Seeder", "Ich bin der NOCode Studio Master-Architekt. Generiere basierend auf diesem Modell ein realistisches Datenbank-Seeder-Skript. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.seed.js'));
+        document.getElementById('translate-comments-btn').onclick = () => runSingleFileAI('translate-comments-btn', "⏳...", "Übersetzen", "Ich bin der NOCode Studio Master-Architekt. Übersetze alle Code-Kommentare in dieser Datei ins Deutsche. Verändere absolut keinen ausführbaren Code, nur die Kommentare. GIB NUR DEN CODE ZURÜCK.", true);
+        document.getElementById('generate-issue-btn').onclick = () => runNewFileAI('generate-issue-btn', "⏳...", "GitHub Issue", "Ich bin der NOCode Studio Master-Architekt. Analysiere diese Datei (insbesondere TODOs oder problematische Stellen) und schreibe ein detailliertes GitHub Issue im Markdown Format. GIB NUR DAS MARKDOWN ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.issue.md'));
+        document.getElementById('bdd-gen-btn').onclick = () => runNewFileAI('bdd-gen-btn', "⏳...", "BDD Szenarien", "Ich bin der NOCode Studio Master-Architekt. Generiere fachliche Gherkin/BDD Szenarien (Feature, Scenario, Given, When, Then) basierend auf der Logik dieser Datei. GIB NUR DEN TEXT ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.feature'));
+        document.getElementById('regex-explainer-btn').onclick = () => runSingleFileAI('regex-explainer-btn', "⏳...", "Regex Analyse", "Ich bin der NOCode Studio Master-Architekt. Extrahiere alle Regular Expressions (RegEx) aus dieser Datei und erkläre präzise, was jede einzelne davon tut. Wenn es keine gibt, teile das kurz mit. Antworte in HTML.", false, "idea");
+        document.getElementById('convert-react-btn').onclick = () => runNewFileAI('convert-react-btn', "⏳...", "Zu React Konvertieren", "Ich bin der NOCode Studio Master-Architekt. Konvertiere diesen HTML/JS Code in eine funktionale React-Komponente (TypeScript) mit TailwindCSS. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.tsx'));
+        document.getElementById('perf-check-btn').onclick = () => runSingleFileAI('perf-check-btn', "⏳...", "Perf Check", "Ich bin der NOCode Studio Master-Architekt. Finde Performance-Flaschenhälse (O(N^2) Loops, Memory Leaks, unnötige Renders) in diesem Code. Antworte in kurzem, prägnantem HTML.", false, "warning");
+        document.getElementById('iam-rules-btn').onclick = () => runNewFileAI('iam-rules-btn', "⏳...", "Security Rules", "Ich bin der NOCode Studio Master-Architekt. Analysiere das Datenmodell und generiere granulare, hochsichere Firebase/Firestore Security Rules. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.rules'));
+        document.getElementById('k8s-manifest-btn').onclick = () => runNewFileAI('k8s-manifest-btn', "⏳...", "K8s Manifest", "Ich bin der NOCode Studio Master-Architekt. Erstelle ein Kubernetes Deployment und Service Manifest (YAML) für diesen Code. GIB NUR DEN YAML CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.k8s.yaml'));
+        document.getElementById('solid-check-btn').onclick = () => runSingleFileAI('solid-check-btn', "⏳...", "SOLID Check", "Ich bin der NOCode Studio Master-Architekt. Analysiere diesen Code gnadenlos auf Verletzungen der SOLID-Prinzipien. Erkläre die Probleme prägnant in HTML.", false, "warning");
+        document.getElementById('seo-meta-btn').onclick = () => runSingleFileAI('seo-meta-btn', "⏳...", "SEO Meta", "Ich bin der NOCode Studio Master-Architekt. Extrahiere den Kontext und generiere perfekte, hoch-konvertierende SEO Meta-Tags (Title, Description, Keywords, OpenGraph) als HTML-Snippet für dieses Modul. HTML-Format.", false, "idea");
+        document.getElementById('curl-gen-btn').onclick = () => runNewFileAI('curl-gen-btn', "⏳...", "API Requests", "Ich bin der NOCode Studio Master-Architekt. Analysiere diesen Code auf API-Endpunkte und generiere eine vollständige requests.http Datei (REST Client Format) mit Beispieldaten zum Testen. GIB NUR DEN CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.http'));
+        document.getElementById('design-tokens-btn').onclick = () => runNewFileAI('design-tokens-btn', "⏳...", "Design Tokens", "Ich bin der NOCode Studio Master-Architekt. Analysiere die CSS/Tailwind-Klassen oder Styling-Objekte in dieser Datei und extrahiere eine strukturierte design-tokens.json mit Farben, Spacings und Typografie. GIB NUR DAS JSON ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.tokens.json'));
+        document.getElementById('db-migration-btn').onclick = () => runNewFileAI('db-migration-btn', "⏳...", "DB Migration", "Ich bin der NOCode Studio Master-Architekt. Erstelle ein Datenbank-Migrationsskript (SQL) (UP und DOWN) für dieses Modell/Schema. GIB NUR DEN SQL CODE ZURÜCK.", (f) => f.replace(/\.[^/.]+$/, '.migration.sql'));
+        document.getElementById('add-animations-btn').onclick = () => runSingleFileAI('add-animations-btn', "⏳...", "UI Animationen", "Ich bin der NOCode Studio Master-Architekt. Analysiere diese UI-Komponente und füge moderne, flüssige Tailwind CSS Animationen und Transitions (z.B. hover, focus, animate-pulse, transition-all) hinzu, um die UX zu verbessern. GIB NUR DEN VERBESSERTEN CODE ZURÜCK.", true);
+        document.getElementById('er-diagram-btn').onclick = () => runSingleFileAI('er-diagram-btn', "⏳...", "ER Diagramm", "Ich bin der NOCode Studio Master-Architekt. Analysiere diese Datenbank-Schema/Model-Datei und generiere ein Mermaid.js Entity-Relationship (ER) Diagramm (erDiagram). GIB NUR DEN MERMAID CODE ZURÜCK.", false, "idea");
 
 
         document.getElementById('auto-readme-btn').onclick = async () => {
             if (fullTree.length === 0) return;
             const btn = document.getElementById('auto-readme-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Generiere eine fundamentale, extrem hochwertige README.md Architektur-Übersicht unter Berücksichtigung des Projekt-Kontexts. NUR CODE ZURÜCK."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Generiere eine fundamentale, extrem hochwertige README.md Architektur-Übersicht unter Berücksichtigung des Projekt-Kontexts. NUR CODE ZURÜCK."));
                 batchFiles.push({ path: 'README.md', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = 'README.md'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
                 window.logToSystem('🏛️ <b>Architektur-Manifest (README.md) intelligent generiert.</b>', "success");
@@ -823,7 +823,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('dockerize-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Isoliere die Umgebung in ein produktionsreifes Dockerfile. NUR CODE ZURÜCK."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Isoliere die Umgebung in ein produktionsreifes Dockerfile. NUR CODE ZURÜCK."));
                 batchFiles.push({ path: 'Dockerfile', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = 'Dockerfile'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
                 window.logToSystem('🏛️ <b>Container-Fundament (Dockerfile) generiert.</b>', "success");
@@ -834,7 +834,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('ci-cd-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Erschaffe eine kugelsichere GitHub Actions Pipeline (.github/workflows/ci.yml). NUR YAML CODE ZURÜCK."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Erschaffe eine kugelsichere GitHub Actions Pipeline (.github/workflows/ci.yml). NUR YAML CODE ZURÜCK."));
                 batchFiles.push({ path: '.github/workflows/ci.yml', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = '.github/workflows/ci.yml'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
                 window.logToSystem('🏛️ <b>Automatisierungs-Pipeline generiert.</b>', "success");
@@ -845,7 +845,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('repo-onboarding-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('Repository Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Konstruiere einen elitären 'Developer Onboarding Guide' (ONBOARDING.md) für mein Entwickler-Team, der die Architektur perfekt darlegt. Integriere unser Awareness-Wissen. NUR MARKDOWN ZURÜCKGEBEN."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('Repository Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Konstruiere einen elitären 'Developer Onboarding Guide' (ONBOARDING.md) für mein Entwickler-Team, der die Architektur perfekt darlegt. Integriere unser Awareness-Wissen. NUR MARKDOWN ZURÜCKGEBEN."));
                 batchFiles.push({ path: 'ONBOARDING.md', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = 'ONBOARDING.md'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
                 window.logToSystem('🏛️ <b>Onboarding-Leitfaden für Entwickler aufgestellt.</b>', "success");
@@ -856,7 +856,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('tech-stack-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = await callGeminiAPI('Repository Struktur:\n' + fullTree.slice(0, 500).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Führe eine präzise Tech-Stack Analyse dieser Basis durch. Präsentiere mir einen visuell hochwertigen HTML-Bericht (ohne Backticks), der Frameworks, Datenbanken und meine architektonischen Schwachstellen auflistet.");
+                let res = await callGeminiAPI('Repository Struktur:\n' + fullTree.slice(0, 500).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Führe eine präzise Tech-Stack Analyse dieser Basis durch. Präsentiere mir einen visuell hochwertigen HTML-Bericht (ohne Backticks), der Frameworks, Datenbanken und meine architektonischen Schwachstellen auflistet.");
                 window.logToSystem('🏛️ <b>Architektonische Stack-Analyse:</b><br><div class="mt-2 text-[11px] bg-white text-stone-800 p-3 rounded shadow-inner max-h-80 overflow-y-auto">' + res + '</div>', "idea");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -872,7 +872,7 @@
                 const commitsData = await commitsRes.json();
                 const commitMessages = commitsData.map(c => '- ' + c.commit.message).join('\n');
 
-                let res = await callGeminiAPI('Letzte Commits:\n' + commitMessages, "Ich bin der Sovereign Studio Master-Architekt. Fasse den Fortschritt meiner Konstruktion (Git Commits) in elitären, glasklaren Release Notes zusammen. Antworte in brillantem HTML (Listen, h3, keine Markdown-Backticks).");
+                let res = await callGeminiAPI('Letzte Commits:\n' + commitMessages, "Ich bin der NOCode Studio Master-Architekt. Fasse den Fortschritt meiner Konstruktion (Git Commits) in elitären, glasklaren Release Notes zusammen. Antworte in brillantem HTML (Listen, h3, keine Markdown-Backticks).");
                 window.logToSystem('🏛️ <b>Sovereign Release Notes:</b><br><div class="mt-2 text-[12px] bg-indigo-50 text-indigo-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto font-sans">' + res + '</div>', "idea");
                 switchTab('chat');
             } catch(e) { window.logToSystem('Fehler: ' + e.message, "error"); } finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -882,7 +882,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('threat-model-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = await callGeminiAPI('Repository Struktur:\n' + fullTree.slice(0, 400).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt und Cybersecurity-Meister. Unterziehe meine Baupläne einer strengen STRIDE Threat Modeling Analyse (Spoofing, Tampering etc.). Liefere mir den Report als HTML (keine Backticks).");
+                let res = await callGeminiAPI('Repository Struktur:\n' + fullTree.slice(0, 400).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt und Cybersecurity-Meister. Unterziehe meine Baupläne einer strengen STRIDE Threat Modeling Analyse (Spoofing, Tampering etc.). Liefere mir den Report als HTML (keine Backticks).");
                 window.logToSystem('🛡️ <b>Sovereign Threat Model (STRIDE):</b><br><div class="mt-2 text-[11px] bg-red-50 text-red-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">' + res + '</div>', "error");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -893,7 +893,7 @@
             if (!promptStr) return;
             const btn = document.getElementById('ui-wizard-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('User Request: ' + promptStr, "Ich bin der Sovereign Studio Master-Architekt. Erschaffe eine atemberaubende, responsive React-Komponente (TypeScript) mit Tailwind CSS basierend auf der Anfrage. Verwende lucide-react für Icons. GIB NUR DEN REINEN CODE ZURÜCK."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('User Request: ' + promptStr, "Ich bin der NOCode Studio Master-Architekt. Erschaffe eine atemberaubende, responsive React-Komponente (TypeScript) mit Tailwind CSS basierend auf der Anfrage. Verwende lucide-react für Icons. GIB NUR DEN REINEN CODE ZURÜCK."));
                 const filename = 'GeneratedUI_' + Date.now() + '.tsx';
                 batchFiles.push({ path: filename, content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = filename; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
@@ -905,7 +905,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('marketing-copy-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 100).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt und Lead-Marketer. Verfasse eine hoch-konvertierende Landing-Page-Copy (Hero, Features, CTA) für dieses Projekt. Nutze ansprechendes HTML (ohne Markdown Backticks).");
+                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 100).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt und Lead-Marketer. Verfasse eine hoch-konvertierende Landing-Page-Copy (Hero, Features, CTA) für dieses Projekt. Nutze ansprechendes HTML (ohne Markdown Backticks).");
                 window.logToSystem('📈 <b>Marketing Copy entworfen:</b><br><div class="mt-2 text-[11px] bg-yellow-50 text-yellow-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">' + res + '</div>', "idea");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -915,7 +915,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('mermaid-diagram-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Skizziere mir die Architektur dieses Projekts als perfektes Mermaid.js Diagramm. NUR MERMAID CODE ZURÜCK."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Skizziere mir die Architektur dieses Projekts als perfektes Mermaid.js Diagramm. NUR MERMAID CODE ZURÜCK."));
                 window.logToSystem('🏛️ <b>Architektur-Skizze:</b><br><div class="mt-2 text-[10px] bg-teal-50 p-3 rounded shadow-inner font-mono whitespace-pre overflow-x-auto">' + res.replace(/</g, '&lt;') + '</div>', "success");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -925,7 +925,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('project-names-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 50).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Branding-Experte. Generiere 5 kreative, moderne, einprägsame Namen für dieses Projekt basierend auf dem Architektur-Kontext. Erkläre kurz, warum jeder Name passt. Antworte in HTML.");
+                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 50).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Branding-Experte. Generiere 5 kreative, moderne, einprägsame Namen für dieses Projekt basierend auf dem Architektur-Kontext. Erkläre kurz, warum jeder Name passt. Antworte in HTML.");
                 window.logToSystem('✨ <b>Projekt-Namensideen:</b><br><div class="mt-2 text-[11px] bg-violet-50 text-violet-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">' + res + '</div>', "idea");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -935,7 +935,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('epics-gen-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 100).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt und Agile Product Owner. Erstelle basierend auf dem Projekt 3 epische User Stories mit je 3 konkreten Tasks (Tickets) im Markdown-Format. GIB NUR DAS MARKDOWN ZURÜCK."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 100).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt und Agile Product Owner. Erstelle basierend auf dem Projekt 3 epische User Stories mit je 3 konkreten Tasks (Tickets) im Markdown-Format. GIB NUR DAS MARKDOWN ZURÜCK."));
                 batchFiles.push({ path: 'EPICS.md', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = 'EPICS.md'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
                 window.logToSystem('🏛️ <b>Agile Epics & Tickets generiert.</b>', "success");
@@ -946,7 +946,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('pricing-strategy-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 100).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt und Business Stratege. Entwerfe basierend auf dem Kontext ein 3-stufiges SaaS Pricing-Modell (Basic, Pro, Enterprise) für dieses Projekt. Antworte in einer visuell ansprechenden HTML-Tabelle mit Preisen und Features (ohne Markdown Backticks).");
+                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 100).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt und Business Stratege. Entwerfe basierend auf dem Kontext ein 3-stufiges SaaS Pricing-Modell (Basic, Pro, Enterprise) für dieses Projekt. Antworte in einer visuell ansprechenden HTML-Tabelle mit Preisen und Features (ohne Markdown Backticks).");
                 window.logToSystem('💰 <b>Pricing Modell generiert:</b><br><div class="mt-2 text-[11px] bg-indigo-50 text-indigo-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">' + res + '</div>', "idea");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -956,7 +956,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('dev-quiz-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 150).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Erstelle ein kurzes, knackiges Multiple-Choice Onboarding-Quiz (3 Fragen) für neue Entwickler, um ihr Verständnis der Projektarchitektur zu testen. Liefere die Antworten als Spoiler/versteckt. Antworte in gut formatiertem HTML (ohne Markdown).");
+                let res = await callGeminiAPI('Projekt Kontext:\n' + repoContext + '\nStruktur:\n' + fullTree.slice(0, 150).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Erstelle ein kurzes, knackiges Multiple-Choice Onboarding-Quiz (3 Fragen) für neue Entwickler, um ihr Verständnis der Projektarchitektur zu testen. Liefere die Antworten als Spoiler/versteckt. Antworte in gut formatiertem HTML (ohne Markdown).");
                 window.logToSystem('🎓 <b>Onboarding Dev-Quiz:</b><br><div class="mt-2 text-[11px] bg-rose-50 text-rose-900 p-4 rounded shadow-inner max-h-80 overflow-y-auto">' + res + '</div>', "idea");
                 switchTab('chat');
             } catch(e) {} finally { btn.innerHTML = orig; setButtonsState(false); }
@@ -966,7 +966,7 @@
             if (fullTree.length === 0) return;
             const btn = document.getElementById('gitignore-gen-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; setButtonsState(true);
             try {
-                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Generiere ein umfassendes, perfektes .gitignore File basierend auf den erkannten Frameworks und Sprachen in diesem Projekt. GIB NUR DEN CODE ZURÜCK."));
+                let res = sanitizeGeneratedCode(await callGeminiAPI('Struktur:\n' + fullTree.slice(0, 300).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Generiere ein umfassendes, perfektes .gitignore File basierend auf den erkannten Frameworks und Sprachen in diesem Projekt. GIB NUR DEN CODE ZURÜCK."));
                 batchFiles.push({ path: '.gitignore', content: res }); updateBatchUI();
                 document.getElementById('editor-filename').textContent = '.gitignore'; currentFileContent = res; switchTab('editor'); renderCodeToEditor(res);
                 window.logToSystem('🏛️ <b>.gitignore Datei generiert.</b>', "success");
@@ -977,7 +977,7 @@
             if (batchFiles.length === 0) return;
             const btn = document.getElementById('auto-commit-msg-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; btn.disabled = true;
             try {
-                let res = await callGeminiAPI('Änderungen:\n' + batchFiles.map(f => (f.isDelete ? 'DEL' : 'MOD') + ': ' + f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Formuliere die perfekte, extrem prägnante Conventional Commit Message (1 Zeile) für diese Umbauten.");
+                let res = await callGeminiAPI('Änderungen:\n' + batchFiles.map(f => (f.isDelete ? 'DEL' : 'MOD') + ': ' + f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Formuliere die perfekte, extrem prägnante Conventional Commit Message (1 Zeile) für diese Umbauten.");
                 document.getElementById('commit-msg-input').value = res.replace(/`/g, '').trim();
             } catch(e) {} finally { btn.innerHTML = orig; btn.disabled = false; }
         };
@@ -987,7 +987,7 @@
             const btn = document.getElementById('draft-pr-desc-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; btn.disabled = true;
             try {
                 const diffContext = batchFiles.map(f => '--- ' + f.path + ' (' + (f.isDelete ? 'DELETED' : 'MODIFIED') + ') ---\n' + (f.content ? f.content.substring(0, 500) + '...' : '')).join('\n\n');
-                let res = await callGeminiAPI('Änderungen:\n' + diffContext, "Ich bin der Sovereign Studio Master-Architekt. Verfasse eine dominante, detailreiche Pull Request Description (Markdown) für meine Änderungen an der Code-Basis. Antworte in Markdown (HTML-sicher).");
+                let res = await callGeminiAPI('Änderungen:\n' + diffContext, "Ich bin der NOCode Studio Master-Architekt. Verfasse eine dominante, detailreiche Pull Request Description (Markdown) für meine Änderungen an der Code-Basis. Antworte in Markdown (HTML-sicher).");
                 window.logToSystem('🏛️ <b>PR Description Draft generiert:</b><br><div class="mt-2 text-[10px] bg-purple-50 text-purple-900 p-3 rounded shadow-inner font-mono whitespace-pre-wrap overflow-x-auto">' + res.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>', "idea");
                 switchTab('chat');
             } catch(e) {
@@ -1000,7 +1000,7 @@
             const btn = document.getElementById('pr-review-btn'); const orig = btn.innerHTML; btn.innerHTML = "⏳..."; btn.disabled = true;
             try {
                 const diffContext = batchFiles.map(f => '--- ' + f.path + ' (' + (f.isDelete ? 'DELETED' : 'MODIFIED') + ') ---\n' + (f.content ? f.content.substring(0, 1000) + '...' : '')).join('\n\n');
-                let res = await callGeminiAPI('Anstehende Änderungen:\n' + diffContext, "Ich bin der Sovereign Studio Master-Architekt. Bevor diese Änderungen in meine Hauptstruktur übergehen, unterziehe ich sie einem extrem strengen Pre-Flight Review basierend auf dem System-Kontext. Antworte in HTML.");
+                let res = await callGeminiAPI('Anstehende Änderungen:\n' + diffContext, "Ich bin der NOCode Studio Master-Architekt. Bevor diese Änderungen in meine Hauptstruktur übergehen, unterziehe ich sie einem extrem strengen Pre-Flight Review basierend auf dem System-Kontext. Antworte in HTML.");
                 window.logToSystem('🛡️ <b>Architect Pre-Flight Review:</b><br><div class="mt-2 text-[11px] bg-rose-50 text-rose-900 p-3 rounded shadow-inner max-h-80 overflow-y-auto">' + res + '</div>', "error");
                 switchTab('chat');
             } catch(e) {
@@ -1020,7 +1020,7 @@
 
             try {
                 // NEU: Mass-Fix Direktive im Prompt
-                const architectSys = "Ich bin der Sovereign Studio Master-Architekt. Mein Ziel ist fehlerfreie Architektur. WICHTIG: Wenn die Aufgabe aus einem Error-Log besteht, das MEHRERE FEHLER enthält, MUSST du ALLE diese Fehler analysieren und Lösungsbefehle für JEDEN EINZELNEN Fehler in das Array aufnehmen! GIB MIR NUR DIESES JSON ARRAY ZURÜCK: [ { \"path\": \"pfad.ts\", \"task\": \"exakter Architektur-Befehl (MUSS alle Fehler für diese Datei adressieren)\", \"action\": \"modify\" | \"delete\" } ]\nStruktur:\n" + fullTree.slice(0, 400).map(f => f.path).join('\n');
+                const architectSys = "Ich bin der NOCode Studio Master-Architekt. Mein Ziel ist fehlerfreie Architektur. WICHTIG: Wenn die Aufgabe aus einem Error-Log besteht, das MEHRERE FEHLER enthält, MUSST du ALLE diese Fehler analysieren und Lösungsbefehle für JEDEN EINZELNEN Fehler in das Array aufnehmen! GIB MIR NUR DIESES JSON ARRAY ZURÜCK: [ { \"path\": \"pfad.ts\", \"task\": \"exakter Architektur-Befehl (MUSS alle Fehler für diese Datei adressieren)\", \"action\": \"modify\" | \"delete\" } ]\nStruktur:\n" + fullTree.slice(0, 400).map(f => f.path).join('\n');
                 
                 let cleanPlan = (await callGeminiAPI(inputTask, architectSys)).replace(/^```[a-z]*\n/gi, '').replace(/\n```$/gi, '').replace(/```/g, '').trim();
                 cleanPlan = cleanPlan.replace(/,\s*]/g, ']').replace(/,\s*}/g, '}');
@@ -1040,7 +1040,7 @@
                     editorBody.innerHTML = '<div class="text-indigo-300 p-4 font-mono text-[11px]">Architekt modifiziert: ' + step.path + '</div>';
                     const existingCode = await fetchFileContent(step.path, activePR.branch || defaultBranch);
                     
-                    const compilerSys = "Ich bin der Sovereign Studio Design-Coder. WICHTIG: Behebe ALLE spezifizierten Fehler in dieser Datei vollständig. Ersetze nichts durch Platzhalter. LIEFere MIR NUR DEN REINEN CODE.";
+                    const compilerSys = "Ich bin der NOCode Studio Design-Coder. WICHTIG: Behebe ALLE spezifizierten Fehler in dieser Datei vollständig. Ersetze nichts durch Platzhalter. LIEFere MIR NUR DEN REINEN CODE.";
                     let newCode = sanitizeGeneratedCode(await callGeminiAPI('Datei: ' + step.path + '\nBisheriger Code:\n' + existingCode + '\n\nArchitektur-Vorgabe: ' + step.task + '\nImplementiere ALLE Fixes auf einmal.', compilerSys));
                     
                     // NEU: Empty-Commit Shield
@@ -1077,7 +1077,7 @@
             if (!query || fullTree.length === 0) return;
             const btn = document.getElementById('smart-search-btn'); btn.innerHTML = "⏳..."; btn.disabled = true;
             try {
-                let bestMatch = (await callGeminiAPI('Suchanfrage: "' + query + '"\nDateien:\n' + fullTree.slice(0, 400).map(f => f.path).join('\n'), "Ich bin der Sovereign Studio Master-Architekt. Ich kenne jeden Baustein. Nenne mir exakt den Dateipfad, der gesucht wird. NUR PFAD ZURÜCK.")).replace(/`/g, '').trim();
+                let bestMatch = (await callGeminiAPI('Suchanfrage: "' + query + '"\nDateien:\n' + fullTree.slice(0, 400).map(f => f.path).join('\n'), "Ich bin der NOCode Studio Master-Architekt. Ich kenne jeden Baustein. Nenne mir exakt den Dateipfad, der gesucht wird. NUR PFAD ZURÜCK.")).replace(/`/g, '').trim();
                 if (fullTree.some(f => f.path === bestMatch)) {
                     document.getElementById('editor-filename').textContent = bestMatch;
                     currentFileContent = await fetchFileContent(bestMatch, activePR.branch || defaultBranch);
@@ -1094,7 +1094,7 @@
             if (!query || filename === "Keine Datei gewählt") return;
             chatBtn.innerHTML = "⏳..."; chatBtn.disabled = true; switchTab('chat');
             try {
-                const answer = await callGeminiAPI('Kontext: ' + filename + '\nCode:\n' + currentFileContent + '\n\nFrage: ' + query, "Ich bin der Sovereign Studio Master-Architekt. Ich agiere als dein dominanter Pair Programmer und erkläre dir meine Architektur basierend auf dem Produktbewusstsein. Antworte in HTML.");
+                const answer = await callGeminiAPI('Kontext: ' + filename + '\nCode:\n' + currentFileContent + '\n\nFrage: ' + query, "Ich bin der NOCode Studio Master-Architekt. Ich agiere als dein dominanter Pair Programmer und erkläre dir meine Architektur basierend auf dem Produktbewusstsein. Antworte in HTML.");
                 window.logToSystem('🏛️ <b>Master-Architekt:</b><br><div class="mt-2 text-stone-700 text-[11px] bg-white p-3 rounded shadow-sm">' + answer + '</div>', "idea");
                 chatInput.value = "";
             } catch (e) {} finally { chatBtn.innerHTML = "✨ FRAGEN"; chatBtn.disabled = false; }
@@ -1120,11 +1120,11 @@
 
 
             if (userContext) {
-                systemMsg = 'Ich bin der Sovereign Studio Kombinatormeister. Der User will: "' + userContext + '". Generiere 3 hochintelligente, visionäre Lösungsansätze, wie ich das perfekt in die Architektur einfüge. Beziehe das Produktbewusstsein zwingend ein. Antworte in sattem HTML (Listen, starke Hervorhebungen).';
+                systemMsg = 'Ich bin der NOCode Studio Kombinatormeister. Der User will: "' + userContext + '". Generiere 3 hochintelligente, visionäre Lösungsansätze, wie ich das perfekt in die Architektur einfüge. Beziehe das Produktbewusstsein zwingend ein. Antworte in sattem HTML (Listen, starke Hervorhebungen).';
             } else if (activeFile !== "Keine Datei gewählt") {
-                systemMsg = 'Ich bin der Sovereign Studio Master-Architekt. Analysiere diese Komponente und präsentiere mir 3 elitäre Architektur-Upgrades passend zur Produkt-Vision, um diesen Code auf das höchste Level zu heben. Antworte in HTML.';
+                systemMsg = 'Ich bin der NOCode Studio Master-Architekt. Analysiere diese Komponente und präsentiere mir 3 elitäre Architektur-Upgrades passend zur Produkt-Vision, um diesen Code auf das höchste Level zu heben. Antworte in HTML.';
             } else {
-                systemMsg = 'Ich bin dein Sovereign Studio Tech-Lead. Betrachte meine Basis und das Projekt-Bewusstsein. Nenne mir 3 geniale, disruptive Features, die wir sofort in diese Architektur einbauen müssen. HTML.';
+                systemMsg = 'Ich bin dein NOCode Studio Tech-Lead. Betrachte meine Basis und das Projekt-Bewusstsein. Nenne mir 3 geniale, disruptive Features, die wir sofort in diese Architektur einbauen müssen. HTML.';
             }
 
 
@@ -1527,7 +1527,7 @@
     <div id="key-setup-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-stone-200 animate-in fade-in zoom-in duration-300">
             <div class="p-6 bg-gradient-to-br from-indigo-600 to-violet-700 text-white">
-                <h2 class="text-xl font-bold mb-1">Willkommen bei Sovereign Studio</h2>
+                <h2 class="text-xl font-bold mb-1">Willkommen bei NOCode Studio</h2>
                 <p class="text-indigo-100 text-sm">Konfiguriere deinen Workspace, um zu starten.</p>
             </div>
             <div class="p-6 space-y-6">
@@ -1550,7 +1550,7 @@
                     </div>
                     <p class="text-stone-600 text-sm leading-relaxed">
                         Um Code zu pushen oder PRs zu erstellen, benötigst du einen
-                        <a href="https://github.com/settings/tokens" target="_blank" class="text-indigo-600 font-bold hover:underline">GitHub PAT (Personal Access Token)</a>.
+                        <a href="https://github.com/settings/tokens/new" target="_blank" class="text-indigo-600 font-bold hover:underline">GitHub PAT (Personal Access Token)</a>.
                     </p>
                 </div>
 

@@ -37,7 +37,7 @@ export class PostEngine {
 
   private buildPrompt(input: PostInput): string {
     return `
-      Act as the Sovereign Studio V3 Release Manager. 
+      Act as the NOCode Studio V3 Release Manager.
       Generate automated updates based on the following version data:
       Version: ${input.version}
       Features: ${input.features.join(", ")}

@@ -1,11 +1,11 @@
 import { execSync } from 'child_process';
 
 /**
- * Sovereign Studio V3 - Keystore Generation Utility
+ * NOCode Studio V3 - Keystore Generation Utility
  * Architecture: Migrated to standard URL constructor for build-pipeline compliance.
  */
 try {
-  console.log("Sovereign Studio V3: Initializing Keystore Generation...");
+  console.log("NOCode Studio V3: Initializing Keystore Generation...");
 
   // Integration of URL constructor for environment validation (Standard Compliance)
   const buildContext = process.env.BUILD_URL || "https://studio.sovereign.internal";

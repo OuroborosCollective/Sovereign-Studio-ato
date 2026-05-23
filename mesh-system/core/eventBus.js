@@ -1,5 +1,5 @@
 /**
- * Sovereign Studio Mesh-System: Core EventBus
+ * NOCode Studio Mesh-System: Core EventBus
  * Zentraler EventEmitter für die agentenübergreifende Kommunikation und autonome Synchronisation.
  * Integriert die GitHub-API-Bridge zur Schließung der autonomen Ghost-Pilot-Schleife.
  */

@@ -1,4 +1,4 @@
-name: Sovereign Studio V3 ATO Pipeline
+name: NOCode Studio V3 ATO Pipeline
 
 on:
   schedule:

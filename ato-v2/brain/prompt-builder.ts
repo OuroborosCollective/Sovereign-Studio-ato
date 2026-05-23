@@ -1,5 +1,5 @@
 /**
- * Sovereign Studio V3 - Prompt Factory
+ * NOCode Studio V3 - Prompt Factory
  * Specialized for Gemini API integration with architectural awareness.
  */
 
@@ -23,7 +23,7 @@ export interface RepositoryContext {
 
 export class PromptBuilder {
   private static readonly BASE_SYSTEM_INSTRUCTION = `
-    You are the Sovereign Studio V3 AI Core. 
+    You are the NOCode Studio V3 AI Core.
     Architecture: Mobile-First, Vite, TypeScript, Capacitor 6.
     Capabilities: Cross-platform LLM-driven development, Biometrics, Push-Notifications.
     Strict Rules:
@@ -70,7 +70,7 @@ export class PromptBuilder {
 
       Response Requirements:
       - Return only valid, production-ready code or precise architectural advice.
-      - Adhere to Sovereign Studio V3 mobile-first design patterns.
+      - Adhere to NOCode Studio V3 mobile-first design patterns.
     `;
 
     return {
