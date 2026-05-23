@@ -457,7 +457,7 @@
             
             for (let i = 0; i <= maxRetries; i++) {
                 try {
-                    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=' + activeApiKey, {
+                    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + activeApiKey, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: finalSystemMsg }] } })
                     });
@@ -482,7 +482,7 @@
             const customKey = document.getElementById('gemini-key').value.trim();
             const activeApiKey = customKey; 
             try {
-                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=' + activeApiKey, {
+                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + activeApiKey, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
@@ -1372,8 +1372,24 @@
         
         async function tryCapacitorGoogleAuth() {
             try {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.GoogleAuth) {
+                    window.GoogleAuth = window.Capacitor.Plugins.GoogleAuth;
+                }
                 if (window.GoogleAuth) {
                     useCapacitorOAuth = true;
+                    try {
+                        const user = await window.GoogleAuth.refresh();
+                        if (user) {
+                            updateAuthUI({
+                                uid: user.uid || user.id,
+                                displayName: user.displayName || user.name,
+                                photoURL: user.imageURL || user.imageUrl
+                            });
+                            return true;
+                        }
+                    } catch(e) {
+                        console.log('No active session found.');
+                    }
                     return true;
                 }
             } catch(e) {}
@@ -1414,6 +1430,8 @@
                     await window.GoogleAuth.signOut();
                 } catch(e) {}
             }
+            localStorage.removeItem('sov_last_uid');
+            localStorage.removeItem('sov_last_user');
             mockLogout();
         };
 
@@ -1436,6 +1454,8 @@
             
             if (user) {
                 currentUserUid = user.uid;
+                localStorage.setItem('sov_last_uid', user.uid);
+                localStorage.setItem('sov_last_user', JSON.stringify(user));
                 loadKeys(user.uid);
                 
                 if(authBtn) authBtn.classList.add('hidden');
@@ -1455,13 +1475,92 @@
             }
         }
 
-        // Load keys on startup
-        loadKeys('default');
-    </script>
+        // Load keys and check for auto-login
+        (function() {
+            const lastUid = localStorage.getItem('sov_last_uid');
+            const lastUser = localStorage.getItem('sov_last_user');
+            if (lastUid && lastUser) {
+                try {
+                    const user = JSON.parse(lastUser);
+                    updateAuthUI(user);
+                } catch(e) {
+                    loadKeys('default');
+                }
+            } else {
+                loadKeys('default');
+            }
+        })();
+
+        // Key Setup Check
+        function checkKeysAndShowModal() {
+            const geminiInput = document.getElementById('gemini-key');
+            const patInput = document.getElementById('gh-pat');
+            const gemini = geminiInput ? geminiInput.value.trim() : '';
+            const pat = patInput ? patInput.value.trim() : '';
+            const modal = document.getElementById('key-setup-modal');
+            const geminiMsg = document.getElementById('gemini-setup-msg');
+            const githubMsg = document.getElementById('github-setup-msg');
+
+            if (!modal) return;
+
+            if (!gemini || !pat) {
+                if (gemini) geminiMsg.classList.add('hidden');
+                else geminiMsg.classList.remove('hidden');
+
+                if (pat) githubMsg.classList.add('hidden');
+                else githubMsg.classList.remove('hidden');
+
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
             }
         }
-        
-        loadKeys('default');
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // First check for auto-login is already done, wait a bit for all initializations
+            setTimeout(checkKeysAndShowModal, 2500);
+        });
     </script>
+
+    <!-- Key Setup Modal -->
+    <div id="key-setup-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-stone-200 animate-in fade-in zoom-in duration-300">
+            <div class="p-6 bg-gradient-to-br from-indigo-600 to-violet-700 text-white">
+                <h2 class="text-xl font-bold mb-1">Willkommen bei Sovereign Studio</h2>
+                <p class="text-indigo-100 text-sm">Konfiguriere deinen Workspace, um zu starten.</p>
+            </div>
+            <div class="p-6 space-y-6">
+                <div id="gemini-setup-msg" class="space-y-2">
+                    <div class="flex items-center gap-2 text-amber-600 font-bold text-sm uppercase tracking-wider">
+                        <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        Gemini API Key fehlt
+                    </div>
+                    <p class="text-stone-600 text-sm leading-relaxed">
+                        Für die Nutzung der App musst du dir einmalig einen kostenlosen Gemini Key aus dem
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-600 font-bold hover:underline">AI Studio</a>
+                        holen. Dort siehst du sofort, wie du diesen Key erhältst.
+                    </p>
+                </div>
+
+                <div id="github-setup-msg" class="space-y-2">
+                    <div class="flex items-center gap-2 text-stone-600 font-bold text-sm uppercase tracking-wider">
+                        <span class="w-2 h-2 rounded-full bg-stone-400"></span>
+                        GitHub Token fehlt (Optional)
+                    </div>
+                    <p class="text-stone-600 text-sm leading-relaxed">
+                        Um Code zu pushen oder PRs zu erstellen, benötigst du einen
+                        <a href="https://github.com/settings/tokens" target="_blank" class="text-indigo-600 font-bold hover:underline">GitHub PAT (Personal Access Token)</a>.
+                    </p>
+                </div>
+
+                <div class="pt-4">
+                    <button onclick="document.getElementById('key-setup-modal').classList.add('hidden')" class="w-full bg-stone-900 text-white font-bold py-3 rounded-xl hover:bg-black transition-all shadow-lg active:scale-95">
+                        VERSTANDEN
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
