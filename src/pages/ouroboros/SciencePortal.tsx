@@ -40,11 +40,31 @@ const NeuralGrid: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // ⚡ Bolt: Pre-render static grid to offscreen canvas
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = canvas.width;
+    offscreenCanvas.height = canvas.height;
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+
+    if (offscreenCtx) {
+      offscreenCtx.strokeStyle = 'rgba(0, 229, 255, 0.1)';
+      offscreenCtx.lineWidth = 1;
+      const size = 30;
+      for (let x = 0; x < canvas.width; x += size) {
+        for (let y = 0; y < canvas.height; y += size) {
+          offscreenCtx.strokeRect(x, y, size, size);
+        }
+      }
+    }
+
     let frame = 0;
+    let animationFrameId: number;
+
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = 'rgba(0, 229, 255, 0.1)';
-      ctx.lineWidth = 1;
+
+      // ⚡ Bolt: Render pre-calculated static grid
+      ctx.drawImage(offscreenCanvas, 0, 0);
 
       const size = 30;
       for (let x = 0; x < canvas.width; x += size) {
@@ -54,13 +74,18 @@ const NeuralGrid: React.FC = () => {
             ctx.fillStyle = `rgba(57, 255, 20, ${noise - 0.5})`;
             ctx.fillRect(x, y, 2, 2);
           }
-          ctx.strokeRect(x, y, size, size);
         }
       }
       frame++;
-      requestAnimationFrame(draw);
+      animationFrameId = requestAnimationFrame(draw);
     };
+
     draw();
+
+    // ⚡ Bolt: Cleanup animation frame to prevent memory leaks
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
   }, []);
 
   return <canvas ref={canvasRef} width={800} height={400} className="w-full h-full opacity-30" />;

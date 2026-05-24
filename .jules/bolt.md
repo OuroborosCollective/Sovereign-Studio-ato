@@ -8,3 +8,6 @@
 ## 2026-05-21 - [Optimize GitHub Tree Array Processing]
 **Learning:** Chaining array methods like `.filter().map().slice()` on potentially huge payloads (like full GitHub API repository trees) forces multiple O(N) traversals and creates intermediate array allocations in memory.
 **Action:** Use a single `for` loop with an early break condition (e.g., stopping when reaching the desired slice size) instead of method chains to minimize memory footprint and execution time.
+## 2026-05-22 - [Optimize High-Frequency Rendering & Fix Canvas Memory Leak]
+**Learning:** Initializing high-frequency static rendering (like drawing grids using multiple `strokeRect` commands) inside a `requestAnimationFrame` loop creates hundreds of unnecessary draw calls per frame, leading to CPU bottlenecks. Additionally, omitting a `cancelAnimationFrame` cleanup function in a `useEffect` that initiates such loops causes severe memory leaks and background processing drain when the component unmounts and remounts.
+**Action:** Pre-render static elements (e.g. grids) into an offscreen canvas (`document.createElement('canvas')`) once during mount, and use `ctx.drawImage` to render the cached result per frame. Always implement a cleanup function returning `cancelAnimationFrame(animationFrameId)` within `useEffect` hooks that handle render loops.
