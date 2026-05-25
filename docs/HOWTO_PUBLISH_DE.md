@@ -6,16 +6,22 @@ Herzlichen Glückwunsch! Die App ist nun bereit für den Release. Dieser Leitfad
 
 Damit Google und deine Nutzer wissen, dass die App wirklich von dir stammt, muss sie kryptografisch signiert werden. Dafür benötigen wir einen **Keystore**.
 
-Wir haben ein Skript vorbereitet, das diesen Keystore automatisch für dich generiert:
+Wir haben ein Skript vorbereitet, das diesen Keystore automatisch für dich generiert. **Aus Sicherheitsgründen sind eigene Passwörter über Umgebungsvariablen nun zwingend erforderlich.**
 
-1. Führe im Hauptverzeichnis des Projekts folgenden Befehl aus:
+1. Setze deine gewünschten Passwörter (oder erstelle eine `.env` Datei):
+   ```bash
+   export ANDROID_KEYSTORE_PASSWORD="dein_starkes_passwort"
+   export ANDROID_KEY_PASSWORD="dein_starkes_key_passwort"
+   ```
+
+2. Führe im Hauptverzeichnis des Projekts folgenden Befehl aus:
    ```bash
    npm run generate-keystore
    ```
 
-2. **WICHTIG:** Dieser Befehl erstellt eine Datei namens `my-release-key.keystore`.
+3. **WICHTIG:** Dieser Befehl erstellt eine Datei namens `my-release-key.keystore`.
    * **Behalte diese Datei sicher!** Wenn du diese Datei verlierst, kannst du keine Updates mehr für deine App im Play Store hochladen.
-   * Lade diese Datei **niemals** in dein öffentliches Git-Repository hoch (sie sollte bereits in der `.gitignore` stehen).
+   * Lade diese Datei **niemals** in dein öffentliches Git-Repository hoch (sie steht bereits in der `.gitignore`).
 
 Das Skript gibt auch einen **Base64-kodierten String** aus. Diesen String benötigst du, wenn du eine CI/CD-Pipeline (wie GitHub Actions) nutzt, um die App automatisch bauen zu lassen.
 
@@ -26,13 +32,11 @@ Der Build-Prozess (`build.gradle`) ist so eingerichtet, dass er die Signatur-Dat
 Setze folgende Variablen in deinem Terminal, bevor du den Build startest:
 
 ```bash
-export ANDROID_KEYSTORE_PATH="/absoluter/pfad/zu/deinem/my-release-key.keystore" # z.B. /app/my-release-key.keystore
-export ANDROID_KEYSTORE_PASSWORD="sovereign123"
+export ANDROID_KEYSTORE_PATH="/absoluter/pfad/zu/deinem/my-release-key.keystore"
+export ANDROID_KEYSTORE_PASSWORD="dein_starkes_passwort"
 export ANDROID_KEY_ALIAS="sovereign_alias"
-export ANDROID_KEY_PASSWORD="sovereign123"
+export ANDROID_KEY_PASSWORD="dein_starkes_key_passwort"
 ```
-
-*(Hinweis: Wenn du die Passwörter oder den Alias im `gen-key.js` Skript geändert hast, passe diese Werte hier entsprechend an.)*
 
 ## 📦 3. App bauen (AAB und APK)
 
