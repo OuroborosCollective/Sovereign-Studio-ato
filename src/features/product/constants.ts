@@ -1,6 +1,6 @@
 import type { Card, FileItem, ProjectSettings } from './types';
 
-export const makeId = () => String(Date.now() + Math.random());
+export const makeId = () => crypto.randomUUID();
 
 export const demoFiles: FileItem[] = [
   { path: 'src/App.tsx', icon: '🟦' },
