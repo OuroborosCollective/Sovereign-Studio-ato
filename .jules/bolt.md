@@ -8,3 +8,7 @@
 ## 2026-05-21 - [Optimize GitHub Tree Array Processing]
 **Learning:** Chaining array methods like `.filter().map().slice()` on potentially huge payloads (like full GitHub API repository trees) forces multiple O(N) traversals and creates intermediate array allocations in memory.
 **Action:** Use a single `for` loop with an early break condition (e.g., stopping when reaching the desired slice size) instead of method chains to minimize memory footprint and execution time.
+
+## 2026-05-26 - [CPU Leak in React Animation Loops]
+**Learning:** Forgetting to return a cleanup function in `useEffect` hooks that call `requestAnimationFrame` leads to orphaned loops running in the background. Every re-mount of the component spawns a new loop, causing a compounding, severe CPU and memory leak.
+**Action:** Always capture the ID returned by `requestAnimationFrame` and call `cancelAnimationFrame(id)` in the `useEffect` cleanup function.
