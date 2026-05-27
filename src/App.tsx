@@ -87,7 +87,6 @@ const App: React.FC = () => {
   const [repoStatus, setRepoStatus] = useState('');
   const [isRepoBusy, setIsRepoBusy] = useState(false);
 
-  const addLog = (msg: string) => console.log(msg);
 
   const updateBoard = (next: BoardState) => {
     setBoard({ ...next, updatedAt: new Date().toISOString() });
@@ -148,7 +147,7 @@ const App: React.FC = () => {
 
       setRepoFiles(files);
       setRepoStatus(`${files.length} Dateien geladen`);
-      addLog(`Repo geladen: ${parsed.owner}/${parsed.repo}`);
+      console.log(`Repo geladen: ${parsed.owner}/${parsed.repo}`);
     } catch (err) {
       console.error(err);
       setRepoStatus('Fehler beim Laden des Repos');
@@ -158,11 +157,11 @@ const App: React.FC = () => {
   };
 
   const generateRepoIdeas = () => {
-    addLog('Ideen generiert');
+    console.log('Ideen generiert');
   };
 
   const generateErrorWorkflow = () => {
-    addLog('Error Workflow erstellt');
+    console.log('Error Workflow erstellt');
   };
 
   const login = () => {
