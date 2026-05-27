@@ -1,8 +1,8 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { MarketerAgent } from './marketer.js';
-import { ReviewerAgent } from './reviewer.js';
+import { MarketerAgent } from '../../mesh-system/agents/marketer.js';
+import { ReviewerAgent } from '../../mesh-system/agents/reviewer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,7 +22,7 @@ async function main() {
   const codesPath = path.join(__dirname, 'promo-codes.txt');
   let codes = [];
   try {
-    const codesContent = fs.readFileSync(codesPath, 'utf8');
+    const codesContent = await fs.readFile(codesPath, 'utf8');
     codes = codesContent.split('\n').map(c => c.trim()).filter(c => c.length > 0);
   } catch (error) {
     console.error('Failed to read promo codes file', error);
@@ -64,10 +64,10 @@ async function main() {
     sanitizedChannels.timestamp = new Date().toISOString();
 
     const outputPath = path.join(__dirname, 'campaign-output.json');
-    fs.writeFileSync(outputPath, JSON.stringify(sanitizedChannels, null, 2), 'utf8');
+    await fs.writeFile(outputPath, JSON.stringify(sanitizedChannels, null, 2), 'utf8');
 
     // Update the promo-codes.txt file with remaining codes
-    fs.writeFileSync(codesPath, remainingCodes.join('\n') + (remainingCodes.length > 0 ? '\n' : ''), 'utf8');
+    await fs.writeFile(codesPath, remainingCodes.join('\n') + (remainingCodes.length > 0 ? '\n' : ''), 'utf8');
     console.log(`Updated promo codes list. ${remainingCodes.length} remaining.`);
     console.log(`Sanitized campaign saved to ${outputPath}`);
   } catch (error) {
