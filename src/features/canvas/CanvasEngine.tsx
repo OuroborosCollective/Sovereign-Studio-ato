@@ -1,5 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
+
+interface ExtendedCanvas extends fabric.Canvas {
+  isDragging?: boolean;
+  lastPosX?: number;
+  lastPosY?: number;
+}
+
+interface ExtendedObject extends fabric.Object {
+  id?: string;
+}
+
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store/index';
 import { 
