@@ -3,7 +3,7 @@ import { useDispatch } from 'react-redux';
 import { addVectors, CanvasObject } from '../../canvas/canvasSlice';
 
 /**
- * Interface für Canvas-Vektorelemente
+ * Interface für Canvas-Vektorelemente (KI-Format)
  */
 export interface CanvasVector {
   id: string;
@@ -40,7 +40,7 @@ const extractVectors = (text: string): CanvasVector[] => {
     if (!jsonMatch) return [];
     
     const parsed = JSON.parse(jsonMatch[0]);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? (parsed as CanvasVector[]) : [];
   } catch (err) {
     console.error("Fehler bei der Vektor-Transformation:", err);
     return [];
@@ -49,10 +49,11 @@ const extractVectors = (text: string): CanvasVector[] => {
 
 /**
  * Transformiert CanvasVector (KI-Format) in CanvasObject (App-Format)
+ * Löst TS2345 durch explizite Erfüllung des CanvasObject-Interfaces.
  */
 const mapVectorToCanvasObject = (vector: CanvasVector): CanvasObject => {
   return {
-    id: vector.id,
+    id: vector.id || `ai-${Math.random().toString(36).substr(2, 9)}`,
     type: vector.type === 'text' ? 'ai-text' : vector.type,
     x: vector.data?.x ?? 0,
     y: vector.data?.y ?? 0,
@@ -150,7 +151,8 @@ export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
     
     if (vectors.length > 0) {
       // Transform vectors to CanvasObject structure to satisfy TypeScript and Redux
-      const canvasObjects = vectors.map(mapVectorToCanvasObject);
+      // Explicitly typed as CanvasObject[] to ensure compatibility with addVectors action
+      const canvasObjects: CanvasObject[] = vectors.map(mapVectorToCanvasObject);
       dispatch(addVectors(canvasObjects));
       
       if (options.onVectorGenerated) {
