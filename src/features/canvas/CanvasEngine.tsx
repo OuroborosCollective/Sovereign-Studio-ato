@@ -1,5 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
+
+interface ExtendedCanvas extends fabric.Canvas {
+  isDragging?: boolean;
+  lastPosX?: number;
+  lastPosY?: number;
+}
+
+interface ExtendedObject extends fabric.Object {
+  id?: string;
+}
+
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store/index';
 import { 
@@ -12,6 +23,22 @@ interface CanvasEngineProps {
   className?: string;
 }
 
+/**
+ * Extended Fabric Canvas interface to include custom properties for panning/dragging.
+ */
+interface ExtendedCanvas extends fabric.Canvas {
+  isDragging?: boolean;
+  lastPosX?: number;
+  lastPosY?: number;
+}
+
+/**
+ * Extended Fabric Object interface to include custom properties like ID.
+ */
+interface ExtendedObject extends fabric.Object {
+  id?: string;
+}
+
 const HW_ACCELERATION_STYLE: React.CSSProperties = {
   transform: 'translateZ(0)',
   backfaceVisibility: 'hidden',
@@ -22,7 +49,7 @@ const HW_ACCELERATION_STYLE: React.CSSProperties = {
 
 export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
+  const fabricCanvasRef = useRef<ExtendedCanvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dispatch = useDispatch();
   
@@ -46,7 +73,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       backgroundColor: '#f8fafc',
       preserveObjectStacking: true,
       renderOnAddRemove: false,
-    });
+    }) as ExtendedCanvas;
 
     fabricCanvasRef.current = fabricCanvas;
 
@@ -68,42 +95,42 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     fabricCanvas.on('mouse:down', (opt) => {
       const evt = opt.e;
       if (evt.altKey === true) {
-        (fabricCanvas as any).isDragging = true;
+        fabricCanvas.isDragging = true;
         fabricCanvas.selection = false;
-        (fabricCanvas as any).lastPosX = evt.clientX;
-        (fabricCanvas as any).lastPosY = evt.clientY;
+        fabricCanvas.lastPosX = evt.clientX;
+        fabricCanvas.lastPosY = evt.clientY;
       }
     });
 
     fabricCanvas.on('mouse:move', (opt) => {
-      if ((fabricCanvas as any).isDragging) {
+      if (fabricCanvas.isDragging) {
         const e = opt.e;
         const vpt = fabricCanvas.viewportTransform;
         if (vpt) {
-          vpt[4] += e.clientX - (fabricCanvas as any).lastPosX;
-          vpt[5] += e.clientY - (fabricCanvas as any).lastPosY;
+          vpt[4] += e.clientX - fabricCanvas.lastPosX;
+          vpt[5] += e.clientY - fabricCanvas.lastPosY;
           fabricCanvas.requestRenderAll();
-          (fabricCanvas as any).lastPosX = e.clientX;
-          (fabricCanvas as any).lastPosY = e.clientY;
+          fabricCanvas.lastPosX = e.clientX;
+          fabricCanvas.lastPosY = e.clientY;
         }
       }
     });
 
     fabricCanvas.on('mouse:up', () => {
       fabricCanvas.setViewportTransform(fabricCanvas.viewportTransform || [1, 0, 0, 1, 0, 0]);
-      (fabricCanvas as any).isDragging = false;
+      fabricCanvas.isDragging = false;
       fabricCanvas.selection = true;
     });
 
     fabricCanvas.on('selection:created', (e) => {
-      const activeObject = e.selected?.[0] as any;
+      const activeObject = e.selected?.[0] as ExtendedObject;
       if (activeObject?.id) {
         dispatch(selectObjects([activeObject.id]));
       }
     });
 
     fabricCanvas.on('selection:updated', (e) => {
-      const activeObject = e.selected?.[0] as any;
+      const activeObject = e.selected?.[0] as ExtendedObject;
       if (activeObject?.id) {
         dispatch(selectObjects([activeObject.id]));
       }
@@ -115,10 +142,10 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     const handleModified = (e: fabric.IEvent) => {
       const obj = e.target;
-      if (!obj || !(obj as any).id) return;
+      if (!obj || !(obj as ExtendedObject).id) return;
 
       dispatch(updateObject({
-        id: (obj as any).id,
+        id: (obj as ExtendedObject).id,
         x: obj.left || 0,
         y: obj.top || 0,
         width: (obj.width || 0) * (obj.scaleX || 1),
@@ -153,12 +180,9 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const currentFabricObjects = canvas.getObjects();
     let hasChanges = false;
     
-    // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups and high-performance for loops
-    const fabricObjectsMap = fabricObjectsMapRef.current;
-    fabricObjectsMap.clear();
-
-    for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as any;
+    // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups
+    const existingFabricObjectsMap = new Map<string, fabric.Object>();
+    currentFabricObjects.forEach((fObj: ExtendedObject) => {
       if (fObj.id) {
         fabricObjectsMap.set(fObj.id, fObj);
       }
@@ -176,7 +200,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         const needsUpdate = 
           existingObj.left !== objData.x || 
           existingObj.top !== objData.y || 
-          (canvas.item(index) as any) !== existingObj;
+          (canvas.item(index) as unknown as ExtendedObject) !== existingObj;
 
         if (needsUpdate) {
           existingObj.set({ left: objData.x, top: objData.y });
@@ -206,7 +230,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
           });
         }
 
-        (newObj as any).id = objData.id;
+        (newObj as ExtendedObject).id = objData.id;
         canvas.add(newObj);
         canvas.moveTo(newObj, index);
 
@@ -216,8 +240,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       }
     }
 
-    for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as any;
+    currentFabricObjects.forEach((fObj: ExtendedObject) => {
       if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
         fabricObjectsMap.delete(fObj.id);
@@ -234,12 +257,11 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    const activeObj = canvas.getActiveObject() as any;
+    const activeObj = canvas.getActiveObject() as ExtendedObject;
     
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        // ⚡ Bolt: O(1) lookup using persisted map ref
-        const target = fabricObjectsMapRef.current.get(primarySelectedId);
+        const target = canvas.getObjects().find((o: ExtendedObject) => o.id === primarySelectedId);
         if (target) {
           canvas.setActiveObject(target);
           canvas.requestRenderAll();
