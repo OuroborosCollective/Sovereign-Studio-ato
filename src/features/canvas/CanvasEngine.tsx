@@ -182,11 +182,12 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     
     // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups
     const existingFabricObjectsMap = new Map<string, fabric.Object>();
+    const fabricObjectsMap = fabricObjectsMapRef.current;
     currentFabricObjects.forEach((fObj: ExtendedObject) => {
       if (fObj.id) {
         fabricObjectsMap.set(fObj.id, fObj);
       }
-    }
+    });
 
     const reduxObjectIdsSet = new Set<string>();
 
@@ -246,7 +247,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         fabricObjectsMap.delete(fObj.id);
         hasChanges = true;
       }
-    }
+    });
 
     if (hasChanges) {
       canvas.requestRenderAll();
