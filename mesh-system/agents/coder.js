@@ -19,21 +19,19 @@ export class CoderAgent {
    * @returns {Promise<Array>} - Liste der generierten Dateien und deren Inhalt.
    */
   async executePlan(plan) {
-    const results = [];
-    
-    for (const task of plan.tasks) {
-      const prompt = this._buildGenerationPrompt(task, plan.context);
-      const response = await this.model.generateContent(prompt);
-      const code = this._extractCode(response.response.text());
-      
-      results.push({
-        filePath: task.filePath,
-        content: code,
-        action: task.action // 'create', 'update', 'patch'
-      });
-    }
+    return Promise.all(
+      plan.tasks.map(async (task) => {
+        const prompt = this._buildGenerationPrompt(task, plan.context);
+        const response = await this.model.generateContent(prompt);
+        const code = this._extractCode(response.response.text());
 
-    return results;
+        return {
+          filePath: task.filePath,
+          content: code,
+          action: task.action // 'create', 'update', 'patch'
+        };
+      })
+    );
   }
 
   /**
@@ -82,7 +80,7 @@ export class CoderAgent {
     let inBlock = false;
 
     for (const line of lines) {
-      if (line.startsWith("")) {
+      if (line.startsWith("```")) {
         inBlock = !inBlock;
         continue;
       }
@@ -99,13 +97,15 @@ export class CoderAgent {
    * Schreibt die generierten Daten in das Repository-Dateisystem.
    */
   async commitToFilesystem(baseDir, files) {
-    for (const file of files) {
-      const fullPath = path.join(baseDir, file.filePath);
-      const dir = path.dirname(fullPath);
-      
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(fullPath, file.content, "utf8");
-    }
+    await Promise.all(
+      files.map(async (file) => {
+        const fullPath = path.join(baseDir, file.filePath);
+        const dir = path.dirname(fullPath);
+
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(fullPath, file.content, "utf8");
+      })
+    );
   }
 }
 

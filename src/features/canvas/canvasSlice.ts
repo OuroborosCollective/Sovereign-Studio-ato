@@ -136,14 +136,44 @@ export const canvasSlice = createSlice({
     },
 
     removeObject: (state, action: PayloadAction<string>) => {
-      state.objects = state.objects.filter((obj) => obj.id !== action.payload);
-      state.selectedIds = state.selectedIds.filter((id) => id !== action.payload);
+      // ⚡ Bolt: Optimized loop to avoid multiple allocations from .filter()
+      const idToRemove = action.payload;
+      const newObjects = [];
+      for (const obj of state.objects) {
+        if (obj.id !== idToRemove) {
+          newObjects.push(obj);
+        }
+      }
+      state.objects = newObjects;
+
+      const newSelectedIds = [];
+      for (const id of state.selectedIds) {
+        if (id !== idToRemove) {
+          newSelectedIds.push(id);
+        }
+      }
+      state.selectedIds = newSelectedIds;
     },
 
     removeObjects: (state, action: PayloadAction<string[]>) => {
+      // ⚡ Bolt: Optimized loop to avoid multiple allocations from .filter()
       const idsToRemove = new Set(action.payload);
-      state.objects = state.objects.filter((obj) => !idsToRemove.has(obj.id));
-      state.selectedIds = state.selectedIds.filter((id) => !idsToRemove.has(id));
+
+      const newObjects = [];
+      for (const obj of state.objects) {
+        if (!idsToRemove.has(obj.id)) {
+          newObjects.push(obj);
+        }
+      }
+      state.objects = newObjects;
+
+      const newSelectedIds = [];
+      for (const id of state.selectedIds) {
+        if (!idsToRemove.has(id)) {
+          newSelectedIds.push(id);
+        }
+      }
+      state.selectedIds = newSelectedIds;
     },
 
     selectObjects: (state, action: PayloadAction<string[]>) => {
