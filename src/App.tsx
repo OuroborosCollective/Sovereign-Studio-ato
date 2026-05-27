@@ -56,7 +56,7 @@ interface ParsedRepo {
 const STORAGE_KEY = 'sovereign_canvas_tool_board_v1';
 const COLORS: BoardCard['color'][] = ['amber', 'indigo', 'emerald', 'rose', 'sky'];
 
-const makeId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const makeId = () => crypto.randomUUID();
 
 const defaultBoard = (): BoardState => ({
   title: 'GitHub Auto-Fix Demo Workflow',
