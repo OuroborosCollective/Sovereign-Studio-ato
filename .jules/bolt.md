@@ -12,3 +12,6 @@
 ## 2026-05-26 - [CPU Leak in React Animation Loops]
 **Learning:** Forgetting to return a cleanup function in `useEffect` hooks that call `requestAnimationFrame` leads to orphaned loops running in the background. Every re-mount of the component spawns a new loop, causing a compounding, severe CPU and memory leak.
 **Action:** Always capture the ID returned by `requestAnimationFrame` and call `cancelAnimationFrame(id)` in the `useEffect` cleanup function.
+## 2025-05-14 - [Security Fix: Insecure Randomness]
+**Learning:** Using `Math.random()` and `Date.now()` for ID generation is insecure and can lead to collisions or predictability in sensitive contexts (like user sessions or trace IDs).
+**Action:** Always prefer `crypto.randomUUID()` for generating unique identifiers in both browser and Node.js environments.
