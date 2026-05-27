@@ -45,7 +45,7 @@ app.use((req, res, next) => {
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
     const fullUrl = new URL(req.originalUrl || req.url, `${protocol}://${req.get('host')}`);
     
-    const traceId = req.headers['x-sovereign-trace-id'] || Math.random().toString(36).substring(7);
+    const traceId = req.headers['x-sovereign-trace-id'] || crypto.randomUUID();
     req.traceId = traceId;
     req.sovereignUrl = fullUrl;
 
