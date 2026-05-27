@@ -97,13 +97,15 @@ export class CoderAgent {
    * Schreibt die generierten Daten in das Repository-Dateisystem.
    */
   async commitToFilesystem(baseDir, files) {
-    for (const file of files) {
-      const fullPath = path.join(baseDir, file.filePath);
-      const dir = path.dirname(fullPath);
-      
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(fullPath, file.content, "utf8");
-    }
+    await Promise.all(
+      files.map(async (file) => {
+        const fullPath = path.join(baseDir, file.filePath);
+        const dir = path.dirname(fullPath);
+
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(fullPath, file.content, "utf8");
+      })
+    );
   }
 }
 
