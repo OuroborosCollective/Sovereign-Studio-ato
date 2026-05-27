@@ -23,6 +23,22 @@ interface CanvasEngineProps {
   className?: string;
 }
 
+/**
+ * Extended Fabric Canvas interface to include custom properties for panning/dragging.
+ */
+interface ExtendedCanvas extends fabric.Canvas {
+  isDragging?: boolean;
+  lastPosX?: number;
+  lastPosY?: number;
+}
+
+/**
+ * Extended Fabric Object interface to include custom properties like ID.
+ */
+interface ExtendedObject extends fabric.Object {
+  id?: string;
+}
+
 const HW_ACCELERATION_STYLE: React.CSSProperties = {
   transform: 'translateZ(0)',
   backfaceVisibility: 'hidden',
@@ -88,8 +104,8 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         const e = opt.e;
         const vpt = fabricCanvas.viewportTransform;
         if (vpt) {
-          vpt[4] += e.clientX - fabricCanvas.lastPosX!;
-          vpt[5] += e.clientY - fabricCanvas.lastPosY!;
+          vpt[4] += e.clientX - fabricCanvas.lastPosX;
+          vpt[5] += e.clientY - fabricCanvas.lastPosY;
           fabricCanvas.requestRenderAll();
           fabricCanvas.lastPosX = e.clientX;
           fabricCanvas.lastPosY = e.clientY;
@@ -126,7 +142,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       if (!obj || !(obj as ExtendedObject).id) return;
 
       dispatch(updateObject({
-        id: (obj as ExtendedObject).id!,
+        id: (obj as ExtendedObject).id,
         x: obj.left || 0,
         y: obj.top || 0,
         width: (obj.width || 0) * (obj.scaleX || 1),
