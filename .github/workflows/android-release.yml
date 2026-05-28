@@ -30,14 +30,19 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: pnpm
 
       - name: 📦 Install Dependencies
-        run: npm install
+        run: pnpm install
 
       - name: 🏷️ Determine Versioning
         id: vars
@@ -73,7 +78,7 @@ jobs:
           fi
 
       - name: 🏗️ Build Web Application
-        run: npm run build
+        run: pnpm run build
 
       - name: 🔄 Sync Capacitor Android
         run: npx cap sync android
@@ -168,12 +173,11 @@ jobs:
             }
 
       - name: 🚀 Google Play Release
-        if: always()
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
           packageName: com.arestudio.nocode.aab
-          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          releaseFiles: release-bundle/SovereignStudio-release.aab
           tracks: production
           status: completed
 
