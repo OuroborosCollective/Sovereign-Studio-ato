@@ -53,7 +53,7 @@ class PostGenerator {
     }
 
     const configPath = path.resolve(args[0]);
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const config = JSON.parse(await fs.promises.readFile(configPath, "utf-8"));
     const generator = new PostGenerator(process.env.GEMINI_API_KEY);
 
     console.log("🚀 Generating launch posts for Sovereign Studio project...");
