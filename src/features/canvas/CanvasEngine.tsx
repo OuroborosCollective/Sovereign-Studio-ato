@@ -1,20 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
-
-interface ExtendedCanvas extends fabric.Canvas {
-  isDragging?: boolean;
-  lastPosX?: number;
-  lastPosY?: number;
-}
-
-interface ExtendedObject extends fabric.Object {
-  id?: string;
-}
-
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../../store/index';
 import { 
-  CanvasObject, 
   updateObject, 
   selectObjects 
 } from './canvasSlice';
@@ -184,16 +172,18 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const existingFabricObjectsMap = new Map<string, fabric.Object>();
     currentFabricObjects.forEach((fObj: ExtendedObject) => {
       if (fObj.id) {
-        fabricObjectsMap.set(fObj.id, fObj);
+        existingFabricObjectsMap.set(fObj.id, fObj);
+        // Sync with our long-lived ref map
+        fabricObjectsMapRef.current.set(fObj.id, fObj);
       }
-    }
+    });
 
     const reduxObjectIdsSet = new Set<string>();
 
     for (let index = 0; index < objects.length; index++) {
       const objData = objects[index];
       reduxObjectIdsSet.add(objData.id);
-      const existingObj = fabricObjectsMap.get(objData.id);
+      const existingObj = existingFabricObjectsMap.get(objData.id);
 
       if (existingObj) {
         // ⚡ Bolt: Replace O(N²) nested loop indexOf with O(1) item access
@@ -234,8 +224,9 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         canvas.add(newObj);
         canvas.moveTo(newObj, index);
 
-        // Add to map for immediate selection lookup if needed
-        fabricObjectsMap.set(objData.id, newObj);
+        // Add to maps for immediate selection lookup
+        existingFabricObjectsMap.set(objData.id, newObj);
+        fabricObjectsMapRef.current.set(objData.id, newObj);
         hasChanges = true;
       }
     }
@@ -243,10 +234,11 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     currentFabricObjects.forEach((fObj: ExtendedObject) => {
       if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
-        fabricObjectsMap.delete(fObj.id);
+        existingFabricObjectsMap.delete(fObj.id);
+        fabricObjectsMapRef.current.delete(fObj.id);
         hasChanges = true;
       }
-    }
+    });
 
     if (hasChanges) {
       canvas.requestRenderAll();
@@ -261,7 +253,8 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        const target = canvas.getObjects().find((o: ExtendedObject) => o.id === primarySelectedId);
+        // ⚡ Bolt: Use O(1) lookup from ref map instead of O(N) find
+        const target = fabricObjectsMapRef.current.get(primarySelectedId);
         if (target) {
           canvas.setActiveObject(target);
           canvas.requestRenderAll();
