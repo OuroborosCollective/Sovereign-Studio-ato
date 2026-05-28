@@ -7,24 +7,18 @@ import {
   selectObjects 
 } from './canvasSlice';
 
-interface CanvasEngineProps {
-  className?: string;
-}
-
-/**
- * Extended Fabric Canvas interface to include custom properties for panning/dragging.
- */
 interface ExtendedCanvas extends fabric.Canvas {
   isDragging?: boolean;
   lastPosX?: number;
   lastPosY?: number;
 }
 
-/**
- * Extended Fabric Object interface to include custom properties like ID.
- */
 interface ExtendedObject extends fabric.Object {
   id?: string;
+}
+
+interface CanvasEngineProps {
+  className?: string;
 }
 
 const HW_ACCELERATION_STYLE: React.CSSProperties = {
@@ -94,7 +88,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       if (fabricCanvas.isDragging) {
         const e = opt.e;
         const vpt = fabricCanvas.viewportTransform;
-        if (vpt) {
+        if (vpt && fabricCanvas.lastPosX !== undefined && fabricCanvas.lastPosY !== undefined) {
           vpt[4] += e.clientX - fabricCanvas.lastPosX;
           vpt[5] += e.clientY - fabricCanvas.lastPosY;
           fabricCanvas.requestRenderAll();
@@ -133,7 +127,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       if (!obj || !(obj as ExtendedObject).id) return;
 
       dispatch(updateObject({
-        id: (obj as ExtendedObject).id,
+        id: (obj as ExtendedObject).id!,
         x: obj.left || 0,
         y: obj.top || 0,
         width: (obj.width || 0) * (obj.scaleX || 1),
@@ -169,11 +163,8 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     let hasChanges = false;
     
     // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups
-    const existingFabricObjectsMap = new Map<string, fabric.Object>();
     currentFabricObjects.forEach((fObj: ExtendedObject) => {
       if (fObj.id) {
-        existingFabricObjectsMap.set(fObj.id, fObj);
-        // Sync with our long-lived ref map
         fabricObjectsMapRef.current.set(fObj.id, fObj);
       }
     });
@@ -183,7 +174,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     for (let index = 0; index < objects.length; index++) {
       const objData = objects[index];
       reduxObjectIdsSet.add(objData.id);
-      const existingObj = existingFabricObjectsMap.get(objData.id);
+      const existingObj = fabricObjectsMapRef.current.get(objData.id);
 
       if (existingObj) {
         // ⚡ Bolt: Replace O(N²) nested loop indexOf with O(1) item access
@@ -202,7 +193,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         let newObj: fabric.Object;
 
         if (objData.type === 'ai-text') {
-          newObj = new fabric.IText(objData.data.text || '', {
+          newObj = new fabric.IText((objData.data as any).text || '', {
             left: objData.x,
             top: objData.y,
             fontSize: 16,
@@ -214,7 +205,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
             top: objData.y,
             width: objData.width,
             height: objData.height,
-            fill: objData.data.color || '#94a3b8',
+            fill: (objData.data as any).color || '#94a3b8',
             rx: 4,
             ry: 4,
           });
@@ -224,8 +215,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         canvas.add(newObj);
         canvas.moveTo(newObj, index);
 
-        // Add to maps for immediate selection lookup
-        existingFabricObjectsMap.set(objData.id, newObj);
+        // Add to map for immediate selection lookup if needed
         fabricObjectsMapRef.current.set(objData.id, newObj);
         hasChanges = true;
       }
@@ -234,7 +224,6 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     currentFabricObjects.forEach((fObj: ExtendedObject) => {
       if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
-        existingFabricObjectsMap.delete(fObj.id);
         fabricObjectsMapRef.current.delete(fObj.id);
         hasChanges = true;
       }
