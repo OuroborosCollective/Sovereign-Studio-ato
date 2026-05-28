@@ -1,4 +1,4 @@
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MarketerAgent } from '../../mesh-system/agents/marketer.js';
