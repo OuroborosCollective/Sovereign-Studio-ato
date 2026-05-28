@@ -125,10 +125,25 @@ jobs:
             -PversionCode=${{ steps.vars.outputs.version_code }} \
             -PversionName=${{ steps.vars.outputs.version_name }}
 
+      - name: 📦 Build Release APK (Universal)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
+            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -PversionCode=${{ steps.vars.outputs.version_code }} \
+            -PversionName=${{ steps.vars.outputs.version_name }}
+
       - name: 📁 Prepare Production Artifacts
         run: |
           mkdir -p release-bundle
           cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
+          fi
           if [ -f android/app/build/outputs/mapping/release/mapping.txt ]; then
             cp android/app/build/outputs/mapping/release/mapping.txt release-bundle/SovereignStudio-proguard-mapping.txt
           fi
