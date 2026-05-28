@@ -242,7 +242,8 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        const target = canvas.getObjects().find((o: ExtendedObject) => o.id === primarySelectedId);
+        // ⚡ Bolt: Use O(1) lookup from ref map instead of O(N) find
+        const target = fabricObjectsMapRef.current.get(primarySelectedId);
         if (target) {
           canvas.setActiveObject(target);
           canvas.requestRenderAll();
