@@ -154,8 +154,8 @@ const HomePage: React.FC = () => {
       headerProps={{
         loadingTree: false,
         setShowPrivacy,
-        handleCleanup: () => console.log('Cleanup...'),
-        fetchRepoTree: () => console.log('Fetching Repo Tree...')
+        handleCleanup: () => {},
+        fetchRepoTree: () => {}
       }}
       mobileNavProps={{
         activeTab,
