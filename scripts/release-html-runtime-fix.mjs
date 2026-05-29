@@ -22,20 +22,25 @@ function safeReplaceAll(from, to, label) {
 }
 
 // Emergency-safe Phase 1 patch:
-// Do not rewrite JavaScript function bodies in dist/index.html.
-// The previous aggressive regex patch could corrupt the monolithic app script
-// and break all buttons/menus when a pattern matched too much or too little.
-// This file now only performs literal text/model replacements that cannot
-// alter brace structure or event handler wiring.
+// Do not rewrite large JavaScript function bodies in dist/index.html.
+// Only literal single-line/small-block replacements are allowed here.
 safeReplaceAll('gemini-1.5-flash', 'gemini-2.0-flash', 'legacy Gemini model name');
 safeReplaceAll(
   'API Fehler 404 - Bitte GitHub PAT und/oder Gemini Key eingeben!',
   'Gemini/API Fehler 404 - Modell, API-Zugriff oder Key prüfen.',
   'ambiguous legacy 404 message',
 );
+safeReplaceAll(
+  "throw new Error('API Fehler ' + response.status + ' - Bitte GitHub PAT und/oder Gemini Key eingeben!');",
+  "if (response.status === 429) throw new Error('Gemini 429: Rate-Limit oder Kontingent erreicht. Bitte später erneut versuchen oder einen Gemini API Key mit freiem Kontingent nutzen.');\n                        if (response.status === 404) throw new Error('Gemini 404: Modell nicht verfügbar. App-Build nutzt ein veraltetes oder nicht freigeschaltetes Gemini-Modell.');\n                        throw new Error('Gemini API Fehler ' + response.status + ' - Key, Modell, API-Freigabe oder Kontingent prüfen.');",
+  'Gemini non-401 error handling',
+);
+safeReplaceAll(
+  "                } catch (err) {\n                    if (i === maxRetries) throw err;\n                    await new Promise(resolve => setTimeout(resolve, delays[i]));\n                }",
+  "                } catch (err) {\n                    const message = String(err && err.message ? err.message : err);\n                    if (message.includes('Gemini 429') || message.includes('401 Unauthorized')) throw err;\n                    if (i === maxRetries) throw err;\n                    await new Promise(resolve => setTimeout(resolve, delays[i]));\n                }",
+  'stop retrying quota/auth failures',
+);
 safeReplaceAll('Canvas Auto-Auth aktiv', 'Eigener Gemini API Key', 'Gemini input placeholder');
-safeReplaceAll('GitHub PAT:', 'GitHub PAT:', 'keep GitHub label stable');
-safeReplaceAll('Gemini Key:', 'Gemini Key:', 'keep Gemini label stable');
 
 if (changed) {
   writeFileSync(distIndexPath, html, 'utf8');
