@@ -4,35 +4,35 @@ import { resolve } from 'node:path';
 const distIndexPath = resolve('dist/index.html');
 
 if (!existsSync(distIndexPath)) {
-  console.warn('[release-html-runtime-fix] dist/index.html not found. Skipping runtime auth hotfix.');
+  console.warn('[release-html-runtime-fix] dist/index.html not found. Skipping.');
   process.exit(0);
 }
 
 let html = readFileSync(distIndexPath, 'utf8');
 let changed = false;
 
-const replaceOnce = (from, to, label) => {
-  if (html.includes(from)) {
-    html = html.replace(from, to);
-    changed = true;
-    console.log(`[release-html-runtime-fix] patched ${label}`);
-  } else {
-    console.warn(`[release-html-runtime-fix] pattern not found for ${label}`);
+function replaceAllText(from, to, label) {
+  if (!html.includes(from)) {
+    console.warn(`[release-html-runtime-fix] text not found: ${label}`);
+    return;
   }
-};
+  html = html.split(from).join(to);
+  changed = true;
+  console.log(`[release-html-runtime-fix] patched ${label}`);
+}
 
-const replaceAll = (from, to, label) => {
-  if (html.includes(from)) {
-    html = html.split(from).join(to);
-    changed = true;
-    console.log(`[release-html-runtime-fix] patched ${label}`);
-  } else {
-    console.warn(`[release-html-runtime-fix] pattern not found for ${label}`);
+function replaceRegex(pattern, to, label) {
+  if (!pattern.test(html)) {
+    console.warn(`[release-html-runtime-fix] pattern not found: ${label}`);
+    return;
   }
-};
+  html = html.replace(pattern, to);
+  changed = true;
+  console.log(`[release-html-runtime-fix] patched ${label}`);
+}
 
 const runtimeHelpers = `
-        // --- Release Runtime Auth Fixes ---
+        // --- Phase 1 Release Runtime: local user-owned credentials ---
         const GEMINI_TEXT_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
         const GEMINI_TTS_MODELS = ['gemini-2.5-flash-preview-tts'];
 
@@ -75,7 +75,7 @@ const runtimeHelpers = `
         function githubHeaders(accept) {
             const pat = getGitHubPAT();
             const headers = {
-                'Accept': accept || 'application/vnd.github.v3+json',
+                Accept: accept || 'application/vnd.github.v3+json',
                 'X-GitHub-Api-Version': '2022-11-28'
             };
             if (pat) headers.Authorization = 'Bearer ' + pat;
@@ -113,7 +113,7 @@ const runtimeHelpers = `
         }
 `;
 
-const callGeminiAPIFunction = `        async function callGeminiAPI(prompt, system) {
+const callGeminiAPI = `        async function callGeminiAPI(prompt, system) {
             const activeApiKey = getGeminiKey();
             if (!activeApiKey) throw new Error('Gemini API Key fehlt. Bitte eigenen Key eintragen und erneut synchronisieren.');
 
@@ -129,19 +129,14 @@ const callGeminiAPIFunction = `        async function callGeminiAPI(prompt, syst
                 try {
                     const response = await fetch(geminiUrl(model), {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-goog-api-key': activeApiKey
-                        },
+                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeApiKey },
                         body
                     });
-
                     if (!response.ok) {
                         lastError = new Error(await geminiErrorMessage(response, model));
                         if ([400, 401, 403, 429].includes(response.status)) throw lastError;
                         continue;
                     }
-
                     const data = await response.json();
                     const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
                     if (!text) throw new Error('Gemini lieferte keine Text-Antwort.');
@@ -151,11 +146,10 @@ const callGeminiAPIFunction = `        async function callGeminiAPI(prompt, syst
                     if (String(err?.message || '').includes('Gemini 401') || String(err?.message || '').includes('Gemini 403')) break;
                 }
             }
-
             throw lastError || new Error('Gemini API konnte kein verfügbares Modell erreichen.');
         }`;
 
-const callGeminiTTSFunction = `        async function callGeminiTTSAPI(prompt) {
+const callGeminiTTSAPI = `        async function callGeminiTTSAPI(prompt) {
             const activeApiKey = getGeminiKey();
             if (!activeApiKey) throw new Error('Gemini API Key fehlt.');
 
@@ -164,10 +158,7 @@ const callGeminiTTSFunction = `        async function callGeminiTTSAPI(prompt) {
                 try {
                     const response = await fetch(geminiUrl(model), {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-goog-api-key': activeApiKey
-                        },
+                        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': activeApiKey },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: prompt }] }],
                             generationConfig: {
@@ -176,12 +167,10 @@ const callGeminiTTSFunction = `        async function callGeminiTTSAPI(prompt) {
                             }
                         })
                     });
-
                     if (!response.ok) {
                         lastError = new Error(await geminiErrorMessage(response, model));
                         continue;
                     }
-
                     const data = await response.json();
                     const inlineData = data?.candidates?.[0]?.content?.parts?.find(part => part.inlineData)?.inlineData;
                     if (inlineData) return inlineData;
@@ -190,162 +179,88 @@ const callGeminiTTSFunction = `        async function callGeminiTTSAPI(prompt) {
                     lastError = err;
                 }
             }
-
             throw lastError || new Error('Gemini TTS konnte kein verfügbares Audio-Modell erreichen.');
         }`;
 
-replaceOnce(
-`        // --- API & Tree ---
-        function changeRepository() {`,
-`        // --- API & Tree ---
-${runtimeHelpers}
-        function changeRepository() {`,
-'credential and Gemini helper injection',
-);
-
-replaceOnce(
-`        async function callGeminiAPI(prompt, system) {
-            const maxRetries = 4;
-            const delays = [1000, 2000, 4000, 8000];
-            const customKey = document.getElementById('gemini-key').value.trim();
-            const activeApiKey = customKey; 
-            
-            const awarenessInjection = repoContext ? '\n\n[GLOBAL PROJECT AWARENESS: ' + repoContext + ']\nBerücksichtige dieses Wissen bei jeder Architekturentscheidung und Code-Generierung.' : '';
-            const finalSystemMsg = system + awarenessInjection;
-            
-            for (let i = 0; i <= maxRetries; i++) {
-                try {
-                    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + activeApiKey, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: finalSystemMsg }] } })
-                    });
-                    if (!response.ok) {
-                        if (response.status === 401) throw new Error("401 Unauthorized - Ungültiger oder fehlender Gemini API Key! Trage oben rechts einen validen Key ein.");
-                        throw new Error('API Fehler ' + response.status + ' - Bitte GitHub PAT und/oder Gemini Key eingeben!');
-                    }
-                    const data = await response.json();
-                    if (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
-                        return data.candidates[0].content.parts[0].text || "";
-                    }
-                    return "";
-                } catch (err) {
-                    if (i === maxRetries) throw err;
-                    await new Promise(resolve => setTimeout(resolve, delays[i]));
-                }
-            }
-        }`,
-callGeminiAPIFunction,
-'Gemini text API model fallback',
-);
-
-replaceOnce(
-`        async function callGeminiTTSAPI(prompt) {
-            const customKey = document.getElementById('gemini-key').value.trim();
-            const activeApiKey = customKey; 
-            try {
-                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + activeApiKey, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: {
-                            responseModalities: ["AUDIO"],
-                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
-                        }
-                    })
-                });
-                if (!response.ok) {
-                    if (response.status === 401) throw new Error("401 Unauthorized - Ungültiger oder fehlender Gemini API Key!");
-                    throw new Error('TTS API Fehler ' + response.status);
-                }
-                const data = await response.json();
-                if (data.candidates && data.candidates[0].content.parts[0].inlineData) {
-                    return data.candidates[0].content.parts[0].inlineData;
-                }
-                throw new Error("Keine Audio-Daten erhalten");
-            } catch (err) {
-                throw err;
-            }
-        }`,
-callGeminiTTSFunction,
-'Gemini TTS API model fallback',
-);
-
-replaceOnce(
-`                const patInput = document.getElementById('gh-pat');
-                const pat = patInput ? patInput.value.trim() : '';
-                const headers = pat ? { 'Authorization': 'Bearer ' + pat, 'Accept': 'application/vnd.github.v3+json' } : {};
-                
-                const repoRes = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName, { headers });
-                if (!repoRes.ok) throw new Error('Kein Zugriff auf das Repository. Status: ' + repoRes.status + '. Hast du einen PAT hinterlegt?');`,
-`                const headers = githubHeaders();
-                const repoRes = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName, { headers });
-                if (!repoRes.ok) throw new Error(await githubErrorMessage(repoRes, 'Kein Zugriff auf das Repository.'));`,
-'GitHub tree auth headers',
-);
-
-replaceOnce(
-`        async function fetchFileContent(path, branch) {
-            branch = branch || 'main';
-            try {
-                let response = await fetch('https://raw.githubusercontent.com/' + repoOwner + '/' + repoName + '/' + branch + '/' + path);
-                if (!response.ok) {
-                    const pat = document.getElementById('gh-pat').value.trim();
-                    const headers = pat ? { 'Authorization': 'Bearer ' + pat, 'Accept': 'application/vnd.github.v3.raw' } : {};
-                    response = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName + '/contents/' + path + '?ref=' + branch, { headers });
-                    if (!response.ok) return "";
-                }
-                return await response.text();
-            } catch { return ""; }
-        }`,
-`        async function fetchFileContent(path, branch) {
+const fetchFileContent = `        async function fetchFileContent(path, branch) {
             branch = branch || 'main';
             const safePath = path.split('/').map(encodeURIComponent).join('/');
             const safeBranch = encodeURIComponent(branch);
             try {
                 const headers = githubHeaders('application/vnd.github.raw+json');
-                let response = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName + '/contents/' + safePath + '?ref=' + safeBranch, { headers });
+                const response = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName + '/contents/' + safePath + '?ref=' + safeBranch, { headers });
                 if (response.ok) return await response.text();
 
                 const rawResponse = await fetch('https://raw.githubusercontent.com/' + repoOwner + '/' + repoName + '/' + safeBranch + '/' + safePath);
                 if (rawResponse.ok) return await rawResponse.text();
 
                 window.logToSystem('⚠️ <b>Datei konnte nicht geladen werden:</b> <code>' + path + '</code><br>' + await githubErrorMessage(response, 'GitHub Datei-Fehler'), 'warning');
-                return "";
+                return '';
             } catch (err) {
                 window.logToSystem('⚠️ <b>Datei-Ladefehler:</b> <code>' + path + '</code><br>' + err.message, 'warning');
-                return "";
+                return '';
             }
-        }`,
-'authenticated file loading',
-);
+        }`;
 
-replaceOnce(
-`        document.getElementById('autofix-pr-btn').onclick = () => runArchitectWorkflow('Behebe folgenden Bruch in meiner Matrix:\\n\\n' + activePR.lastErrorLog, true);
-        document.addEventListener('DOMContentLoaded', function() { fetchRepoTree(); if (window.innerWidth < 1024) switchTab('explorer'); });`,
-`        document.getElementById('autofix-pr-btn').onclick = () => runArchitectWorkflow('Behebe folgenden Bruch in meiner Matrix:\\n\\n' + activePR.lastErrorLog, true);
-        document.addEventListener('DOMContentLoaded', function() {
+const phaseOneHelpers = `
+        // --- Phase 1: credential UX ---
+        window.saveKeys = saveKeys;
+        window.loadKeys = loadKeys;
+        window.testPhaseOneCredentials = async function() {
+            try {
+                saveKeys();
+                const pat = getGitHubPAT();
+                const gemini = getGeminiKey();
+                if (!pat) {
+                    window.logToSystem('⚠️ <b>GitHub PAT fehlt.</b><br>Öffentliche Repo-Reads können funktionieren, aber private Repos, Push und PRs brauchen einen User-PAT.', 'warning');
+                } else {
+                    const ghRes = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName, { headers: githubHeaders() });
+                    if (!ghRes.ok) throw new Error(await githubErrorMessage(ghRes, 'GitHub Verbindung fehlgeschlagen.'));
+                    window.logToSystem('✅ <b>GitHub PAT funktioniert.</b><br><code>' + repoOwner + '/' + repoName + '</code> ist erreichbar.', 'success');
+                }
+                if (!gemini) {
+                    window.logToSystem('⚠️ <b>Gemini Key fehlt.</b><br>Awareness Sync und KI-Funktionen brauchen in Phase 1 einen eigenen Gemini API Key.', 'warning');
+                } else {
+                    const answer = await callGeminiAPI('Antworte exakt mit: OK', 'Du bist ein minimaler API-Verbindungstest. Antworte nur mit OK.');
+                    window.logToSystem('✅ <b>Gemini Key funktioniert.</b><br>Antwort: <code>' + String(answer).replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 80) + '</code>', 'success');
+                }
+            } catch (err) {
+                window.logToSystem('❌ <b>Phase-1 Credential-Test fehlgeschlagen:</b><br>' + (err?.message || err), 'error');
+            }
+        };
+`;
+
+replaceRegex(/\s*\/\/ --- API & Tree ---\s*function changeRepository\(\) \{/, `
+        // --- API & Tree ---
+${runtimeHelpers}
+        function changeRepository() {`, 'runtime helpers');
+
+replaceRegex(/\s*async function callGeminiAPI\(prompt, system\) \{[\s\S]*?\n\s*\}\s*\n\s*async function callGeminiTTSAPI\(prompt\) \{/, `
+${callGeminiAPI}
+
+        async function callGeminiTTSAPI(prompt) {`, 'callGeminiAPI');
+
+replaceRegex(/\s*async function callGeminiTTSAPI\(prompt\) \{[\s\S]*?\n\s*\}\s*\n\s*function playWavFromPcm\(/, `
+${callGeminiTTSAPI}
+
+        function playWavFromPcm(`, 'callGeminiTTSAPI');
+
+replaceRegex(/const patInput = document\.getElementById\('gh-pat'\);[\s\S]*?if \(!repoRes\.ok\) throw new Error\('Kein Zugriff auf das Repository\. Status: ' \+ repoRes\.status \+ '\. Hast du einen PAT hinterlegt\?'\);/, `const headers = githubHeaders();
+                const repoRes = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName, { headers });
+                if (!repoRes.ok) throw new Error(await githubErrorMessage(repoRes, 'Kein Zugriff auf das Repository.'));`, 'repo tree auth');
+
+replaceRegex(/\s*async function fetchFileContent\(path, branch\) \{[\s\S]*?\n\s*\}\s*\n\s*function updateBatchUI\(\)/, `
+${fetchFileContent}
+
+        function updateBatchUI()`, 'fetchFileContent');
+
+replaceRegex(/document\.addEventListener\('DOMContentLoaded', function\(\) \{ fetchRepoTree\(\); if \(window\.innerWidth < 1024\) switchTab\('explorer'\); \}\);/, `document.addEventListener('DOMContentLoaded', function() {
             if (typeof loadKeys === 'function') loadKeys((typeof currentUserUid !== 'undefined' && currentUserUid) ? currentUserUid : 'default');
             setTimeout(fetchRepoTree, 50);
             if (window.innerWidth < 1024) switchTab('explorer');
-        });`,
-'startup key load order',
-);
+        });`, 'startup key load order');
 
-replaceOnce(
-`        function saveKeys() {
-            const pat = document.getElementById('gh-pat')?.value || '';
-            const gemini = document.getElementById('gemini-key')?.value || '';
-            localStorage.setItem('sov_pat_' + currentUserUid, pat);
-            localStorage.setItem('sov_gemini_' + currentUserUid, gemini);
-        }
-
-        function loadKeys(uid) {
-            const patEl = document.getElementById('gh-pat');
-            const geminiEl = document.getElementById('gemini-key');
-            if (patEl) patEl.value = localStorage.getItem('sov_pat_' + uid) || '';
-            if (geminiEl) geminiEl.value = localStorage.getItem('sov_gemini_' + uid) || '';
-        }`,
-`        function saveKeys() {
+replaceRegex(/function saveKeys\(\) \{[\s\S]*?\n\s*function loadKeys\(uid\) \{[\s\S]*?\n\s*\}/, `function saveKeys() {
             const uid = currentUserUid || 'default';
             const pat = document.getElementById('gh-pat')?.value || '';
             const gemini = document.getElementById('gemini-key')?.value || '';
@@ -361,93 +276,70 @@ replaceOnce(
             const effectiveUid = uid || 'default';
             const patEl = document.getElementById('gh-pat');
             const geminiEl = document.getElementById('gemini-key');
-            const pat = getStoredCredential('sov_pat', effectiveUid);
-            const gemini = getStoredCredential('sov_gemini', effectiveUid);
+            const pat = typeof getStoredCredential === 'function' ? getStoredCredential('sov_pat', effectiveUid) : (localStorage.getItem('sov_pat_' + effectiveUid) || localStorage.getItem('sov_pat_default') || '');
+            const gemini = typeof getStoredCredential === 'function' ? getStoredCredential('sov_gemini', effectiveUid) : (localStorage.getItem('sov_gemini_' + effectiveUid) || localStorage.getItem('sov_gemini_default') || '');
             if (patEl && pat) patEl.value = pat;
             if (geminiEl && gemini) geminiEl.value = gemini;
-        }`,
-'scoped key fallback storage',
-);
+        }`, 'key storage');
 
-replaceOnce(
-`                if (window.GoogleAuth) {
-                    useCapacitorOAuth = true;
-                    return true;
-                }`,
-`                const plugin = window.GoogleAuth || window.Capacitor?.Plugins?.GoogleAuth;
+replaceRegex(/if \(window\.GoogleAuth\) \{\s*useCapacitorOAuth = true;\s*return true;\s*\}/, `const plugin = window.GoogleAuth || window.Capacitor?.Plugins?.GoogleAuth;
                 if (plugin) {
                     window.GoogleAuth = plugin;
                     useCapacitorOAuth = true;
                     return true;
-                }`,
-'Capacitor GoogleAuth detection',
-);
+                }`, 'GoogleAuth detection');
 
-replaceOnce(
-`                    const result = await window.GoogleAuth.signIn();
-                    updateAuthUI({
-                        uid: result.user.uid,
-                        displayName: result.user.displayName,
-                        photoURL: result.user.imageURL
-                    });`,
-`                    const result = await window.GoogleAuth.signIn();
+replaceRegex(/const result = await window\.GoogleAuth\.signIn\(\);\s*updateAuthUI\(\{[\s\S]*?photoURL: result\.user\.imageURL\s*\}\);/, `const result = await window.GoogleAuth.signIn();
                     const rawUser = result?.user || result || {};
                     updateAuthUI({
                         uid: rawUser.uid || rawUser.id || rawUser.email || 'google_user',
                         displayName: rawUser.displayName || rawUser.name || rawUser.email || 'Google User',
                         photoURL: rawUser.photoURL || rawUser.imageURL || rawUser.imageUrl || rawUser.picture || ''
-                    });`,
-'GoogleAuth result normalization',
-);
+                    });`, 'GoogleAuth result normalization');
 
-replaceOnce(
-`                } catch(e) {
-                    window.logToSystem('⚠️ <b>OAuth Fehler:</b> ' + e.message, 'error');
-                    mockLogin();
-                }`,
-`                } catch(e) {
+replaceRegex(/catch\(e\) \{\s*window\.logToSystem\('⚠️ <b>OAuth Fehler:<\/b> ' \+ e\.message, 'error'\);\s*mockLogin\(\);\s*\}/, `catch(e) {
                     window.logToSystem('⚠️ <b>OAuth Fehler:</b> ' + e.message + '<br>Google Login ist optional. Deine lokal eingetragenen GitHub/Gemini Keys bleiben aktiv.', 'error');
                     return;
-                }`,
-'no mock login after OAuth failure',
-);
+                }`, 'no mock login after OAuth failure');
 
-replaceOnce(
-`            } else {
-                // Fallback to mock for web
-                window.logToSystem('⚠️ <b>OAuth Demo-Modus:</b> Capacitor nicht verfügbar. Verwende Mock-Modus.', 'warning');
-                mockLogin();
-            }`,
-`            } else {
-                window.logToSystem('⚠️ <b>Google OAuth nicht verfügbar:</b> Die App läuft weiter mit lokal gespeicherten User-Keys.', 'warning');
-            }`,
-'no mock login fallback',
-);
+replaceRegex(/\/\/ Fallback to mock for web\s*window\.logToSystem\('⚠️ <b>OAuth Demo-Modus:<\/b> Capacitor nicht verfügbar\. Verwende Mock-Modus\.', 'warning'\);\s*mockLogin\(\);/, `window.logToSystem('⚠️ <b>Google OAuth nicht verfügbar:</b> Die App läuft weiter mit lokal gespeicherten User-Keys.', 'warning');`, 'no mock login fallback');
 
-replaceOnce(
-`            if (user) {
-                currentUserUid = user.uid;
-                loadKeys(user.uid);`,
-`            if (user) {
+replaceRegex(/function mockLogin\(\) \{[\s\S]*?\n\s*function mockLogout\(\)/, `function mockLogin() {
+            window.logToSystem('⚠️ <b>Mock-Login ist in Phase 1 deaktiviert.</b><br>Bitte GitHub PAT und Gemini Key lokal eintragen und mit 🧪 TEST prüfen.', 'warning');
+        }
+
+        function mockLogout()`, 'disable mock login body');
+
+replaceRegex(/if \(user\) \{\s*currentUserUid = user\.uid;\s*loadKeys\(user\.uid\);/, `if (user) {
                 saveKeys();
                 currentUserUid = user.uid || 'default';
-                loadKeys(currentUserUid);`,
-'preserve keys on Google user switch',
-);
+                loadKeys(currentUserUid);`, 'preserve keys on login');
 
-replaceOnce(
-`            } else {
-                currentUserUid = 'default';
-                loadKeys('default');`,
-`            } else {
+replaceRegex(/\} else \{\s*currentUserUid = 'default';\s*loadKeys\('default'\);/, `} else {
                 saveKeys();
                 currentUserUid = 'default';
-                loadKeys('default');`,
-'preserve keys on logout',
-);
+                loadKeys('default');`, 'preserve keys on logout');
 
-replaceAll('API Fehler 404 - Bitte GitHub PAT und/oder Gemini Key eingeben!', 'Gemini 404: Modell oder API-Zugriff nicht verfügbar.', 'legacy 404 error text');
-replaceAll('gemini-1.5-flash', 'gemini-2.5-flash', 'legacy Gemini model string');
+replaceRegex(/\/\/ Load keys on startup\s*loadKeys\('default'\);/, `${phaseOneHelpers}
+        // Load keys on startup
+        loadKeys('default');`, 'Phase 1 test helper');
+
+replaceAllText('GitHub PAT:', 'GitHub PAT (User):', 'GitHub PAT label');
+replaceAllText('Gemini Key:', 'Gemini Key (User):', 'Gemini Key label');
+replaceAllText('Canvas Auto-Auth aktiv', 'Eigener Gemini API Key', 'Gemini placeholder');
+replaceAllText('</svg> Login', '</svg> Google optional', 'Google button label');
+replaceAllText('GitHub Token fehlt (Optional)', 'GitHub PAT fehlt', 'setup modal GitHub title');
+replaceAllText('Um Code zu pushen oder PRs zu erstellen, benötigst du einen', 'Für private Repos, Push und PRs trägt jeder User seinen eigenen', 'setup modal GitHub copy');
+replaceAllText('Der Architekt hat deinen persönlichen Workspace & Keys geladen.', 'Der Architekt nutzt deine lokal gespeicherten Workspace-Keys.', 'workspace key copy');
+replaceAllText('API Fehler 404 - Bitte GitHub PAT und/oder Gemini Key eingeben!', 'Gemini 404: Modell oder API-Zugriff nicht verfügbar.', 'legacy ambiguous 404 text');
+replaceAllText('gemini-1.5-flash', 'gemini-2.5-flash', 'legacy Gemini model string');
+replaceAllText('Angemeldet als Privat', 'Lokaler Workspace aktiv', 'legacy private mock login text');
+
+if (!html.includes('testPhaseOneCredentials()')) {
+  replaceRegex(/<input type="password" id="gemini-key"([^>]+)>/, `<input type="password" id="gemini-key"$1>
+                <button onclick="saveKeys(); window.logToSystem('🔐 <b>Keys lokal gespeichert.</b><br>Keine Tokens werden in die App eingebettet oder an Sovereign Studio übertragen.', 'success')" class="px-2 py-1 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded text-[10px] font-bold hover:bg-emerald-200 transition-colors">💾 SPEICHERN</button>
+                <button onclick="testPhaseOneCredentials()" class="px-2 py-1 bg-sky-100 border border-sky-300 text-sky-800 rounded text-[10px] font-bold hover:bg-sky-200 transition-colors">🧪 TEST</button>`, 'save/test controls');
+}
 
 if (changed) {
   writeFileSync(distIndexPath, html, 'utf8');
@@ -456,12 +348,19 @@ if (changed) {
   console.warn('[release-html-runtime-fix] no changes applied');
 }
 
-if (html.includes('API Fehler 404 - Bitte GitHub PAT und/oder Gemini Key eingeben!')) {
-  console.error('[release-html-runtime-fix] legacy ambiguous 404 message still present after patch.');
-  process.exit(1);
+const forbidden = [
+  'API Fehler 404 - Bitte GitHub PAT und/oder Gemini Key eingeben!',
+  'gemini-1.5-flash',
+  'Angemeldet als Privat',
+  'OAuth Demo-Modus: Capacitor nicht verfügbar. Verwende Mock-Modus.',
+  'mockLogin();',
+];
+
+for (const marker of forbidden) {
+  if (html.includes(marker)) {
+    console.error(`[release-html-runtime-fix] forbidden legacy marker still present: ${marker}`);
+    process.exit(1);
+  }
 }
 
-if (html.includes('gemini-1.5-flash')) {
-  console.error('[release-html-runtime-fix] legacy Gemini 1.5 model string still present after patch.');
-  process.exit(1);
-}
+console.log('[release-html-runtime-fix] Phase 1 release checks passed.');
