@@ -54,8 +54,8 @@ const mockCanvas = {
 
 // Mock Fabric.js v7 named exports
 vi.mock('fabric', () => {
-  class MockFabricObject {
-    static prototype: Record<string, unknown> = {};
+  function MockFabricObject() {
+    // FabricObject is used as a value only for its prototype defaults in CanvasEngine.
   }
 
   return {
