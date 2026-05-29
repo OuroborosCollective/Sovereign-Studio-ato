@@ -1,4 +1,4 @@
-name: 🚀 Android Production Release
+name: 🚀 Android Artifact Release
 
 on:
   push:
@@ -17,7 +17,7 @@ on:
 
 jobs:
   build:
-    name: 🏗️ Build & Release Android
+    name: 🏗️ Build Android Artifacts
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -51,12 +51,12 @@ jobs:
           if [ -z "$INPUT_NAME" ]; then
             INPUT_NAME=$(node -p "require('./package.json').version")
           fi
-          
+
           INPUT_CODE="${{ github.event.inputs.version_code }}"
           if [ -z "$INPUT_CODE" ]; then
             INPUT_CODE="${{ github.run_number }}"
           fi
-          
+
           echo "version_name=$INPUT_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
           echo "Building with Version Name: $INPUT_NAME, Version Code: $INPUT_CODE"
@@ -91,7 +91,7 @@ jobs:
           fi
           mkdir -p android/app/keystore
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
-          
+
           if [ ! -s android/app/keystore/release.jks ]; then
             echo "Error: Failed to decode keystore."
             exit 1
@@ -121,7 +121,7 @@ jobs:
             -PversionCode=${{ steps.vars.outputs.version_code }} \
             -PversionName=${{ steps.vars.outputs.version_name }}
 
-      - name: 📁 Prepare Production Artifacts
+      - name: 📁 Prepare Manual Play Store Artifacts
         run: |
           mkdir -p release-bundle
           cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
@@ -133,6 +133,7 @@ jobs:
           fi
           echo "Version: ${{ steps.vars.outputs.version_name }}" > release-bundle/version.txt
           echo "Build: ${{ steps.vars.outputs.version_code }}" >> release-bundle/version.txt
+          echo "Upload mode: manual Play Console upload" >> release-bundle/version.txt
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
 
       - name: 📤 Upload Release Artifact
@@ -153,17 +154,14 @@ jobs:
               "campaign_mode": "initial_spark",
               "version": "${{ steps.vars.outputs.version_name }}",
               "build_number": "${{ steps.vars.outputs.version_code }}",
-              "platform": "android"
+              "platform": "android",
+              "upload_mode": "manual_play_console"
             }
 
-      - name: 🚀 Google Play Release
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
-          packageName: com.arestudio.nocode.aab
-          releaseFiles: release-bundle/SovereignStudio-release.aab
-          tracks: production
-          status: completed
+      - name: ✅ Manual Play Upload Notice
+        run: |
+          echo "Google Play API upload is intentionally disabled."
+          echo "Download the SovereignStudio-PlayStore-Release artifact and upload the AAB manually in Play Console."
 
       - name: 🏷️ Create Git Tag
         if: github.ref == 'refs/heads/main'
@@ -182,17 +180,10 @@ jobs:
           fi
 
 # ============================================================
-# 📋 PLAY STORE CONFIGURATION REQUIRED
+# Manual Play Store upload workflow
 # ============================================================
-# To enable Google Play publishing, you need a Service Account:
-#
-# 1. Go to Google Play Console → Settings → Developer Account → API Access
-# 2. Create a new Service Account with "Release Manager" role
-# 3. Download the JSON key file
-# 4. Add the JSON content as a GitHub Secret named PLAY_STORE_JSON_KEY
-#
-# The OAuth client ID you provided is for user authorization and cannot
-# be used for automated Play Store publishing. A Service Account is required.
-#
-# For help: https://developers.google.com/play/android-publish/quickstart#service-account
+# This workflow intentionally does not call the Google Play API.
+# It builds signed AAB/APK artifacts and uploads them as a GitHub
+# Actions artifact. Upload release-bundle/SovereignStudio-release.aab
+# manually through the Google Play Console.
 # ============================================================
