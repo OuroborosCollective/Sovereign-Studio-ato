@@ -21,8 +21,21 @@ const replaceOnce = (from, to, label) => {
   }
 };
 
+const replaceAll = (from, to, label) => {
+  if (html.includes(from)) {
+    html = html.split(from).join(to);
+    changed = true;
+    console.log(`[release-html-runtime-fix] patched ${label}`);
+  } else {
+    console.warn(`[release-html-runtime-fix] pattern not found for ${label}`);
+  }
+};
+
 const runtimeHelpers = `
         // --- Release Runtime Auth Fixes ---
+        const GEMINI_TEXT_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+        const GEMINI_TTS_MODELS = ['gemini-2.5-flash-preview-tts'];
+
         function getStoredCredential(prefix, uid) {
             try {
                 const scoped = localStorage.getItem(prefix + '_' + uid) || '';
@@ -80,7 +93,106 @@ const runtimeHelpers = `
             if (response.status === 404) return 'GitHub 404: Repository, Branch oder Datei nicht gefunden. Bei privaten Repos braucht der PAT mindestens repo/contents Zugriff.' + detail;
             return (fallback || 'GitHub API Fehler') + ' Status: ' + response.status + detail;
         }
+
+        function geminiUrl(model) {
+            return 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+        }
+
+        async function geminiErrorMessage(response, model) {
+            let detail = '';
+            try {
+                const data = await response.clone().json();
+                detail = data?.error?.message || data?.message || '';
+            } catch (_) {}
+            if (response.status === 400) return 'Gemini 400: Anfrage ungültig für Modell ' + model + (detail ? ' - ' + detail : '');
+            if (response.status === 401) return 'Gemini 401: API Key fehlt oder ist ungültig.' + (detail ? ' - ' + detail : '');
+            if (response.status === 403) return 'Gemini 403: API Key hat keine Berechtigung, ist eingeschränkt oder die API ist im Google-Projekt nicht aktiviert.' + (detail ? ' - ' + detail : '');
+            if (response.status === 404) return 'Gemini 404: Modell ' + model + ' ist für diesen Key/Standort nicht verfügbar oder veraltet.' + (detail ? ' - ' + detail : '');
+            if (response.status === 429) return 'Gemini 429: Rate Limit oder Kontingent erschöpft.' + (detail ? ' - ' + detail : '');
+            return 'Gemini API Fehler ' + response.status + ' bei Modell ' + model + (detail ? ' - ' + detail : '');
+        }
 `;
+
+const callGeminiAPIFunction = `        async function callGeminiAPI(prompt, system) {
+            const activeApiKey = getGeminiKey();
+            if (!activeApiKey) throw new Error('Gemini API Key fehlt. Bitte eigenen Key eintragen und erneut synchronisieren.');
+
+            const awarenessInjection = repoContext ? '\n\n[GLOBAL PROJECT AWARENESS: ' + repoContext + ']\nBerücksichtige dieses Wissen bei jeder Architekturentscheidung und Code-Generierung.' : '';
+            const finalSystemMsg = system + awarenessInjection;
+            const body = JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: finalSystemMsg }] }
+            });
+
+            let lastError = null;
+            for (const model of GEMINI_TEXT_MODELS) {
+                try {
+                    const response = await fetch(geminiUrl(model), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': activeApiKey
+                        },
+                        body
+                    });
+
+                    if (!response.ok) {
+                        lastError = new Error(await geminiErrorMessage(response, model));
+                        if ([400, 401, 403, 429].includes(response.status)) throw lastError;
+                        continue;
+                    }
+
+                    const data = await response.json();
+                    const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('') || '';
+                    if (!text) throw new Error('Gemini lieferte keine Text-Antwort.');
+                    return text;
+                } catch (err) {
+                    lastError = err;
+                    if (String(err?.message || '').includes('Gemini 401') || String(err?.message || '').includes('Gemini 403')) break;
+                }
+            }
+
+            throw lastError || new Error('Gemini API konnte kein verfügbares Modell erreichen.');
+        }`;
+
+const callGeminiTTSFunction = `        async function callGeminiTTSAPI(prompt) {
+            const activeApiKey = getGeminiKey();
+            if (!activeApiKey) throw new Error('Gemini API Key fehlt.');
+
+            let lastError = null;
+            for (const model of GEMINI_TTS_MODELS) {
+                try {
+                    const response = await fetch(geminiUrl(model), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': activeApiKey
+                        },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: {
+                                responseModalities: ['AUDIO'],
+                                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } }
+                            }
+                        })
+                    });
+
+                    if (!response.ok) {
+                        lastError = new Error(await geminiErrorMessage(response, model));
+                        continue;
+                    }
+
+                    const data = await response.json();
+                    const inlineData = data?.candidates?.[0]?.content?.parts?.find(part => part.inlineData)?.inlineData;
+                    if (inlineData) return inlineData;
+                    throw new Error('Keine Audio-Daten erhalten.');
+                } catch (err) {
+                    lastError = err;
+                }
+            }
+
+            throw lastError || new Error('Gemini TTS konnte kein verfügbares Audio-Modell erreichen.');
+        }`;
 
 replaceOnce(
 `        // --- API & Tree ---
@@ -88,23 +200,74 @@ replaceOnce(
 `        // --- API & Tree ---
 ${runtimeHelpers}
         function changeRepository() {`,
-'credential helper injection',
+'credential and Gemini helper injection',
 );
 
 replaceOnce(
-`            const customKey = document.getElementById('gemini-key').value.trim();
-            const activeApiKey = customKey;`,
-`            const activeApiKey = getGeminiKey();
-            if (!activeApiKey) throw new Error('Gemini API Key fehlt. Bitte Key eintragen und erneut synchronisieren.');`,
-'Gemini key loading',
+`        async function callGeminiAPI(prompt, system) {
+            const maxRetries = 4;
+            const delays = [1000, 2000, 4000, 8000];
+            const customKey = document.getElementById('gemini-key').value.trim();
+            const activeApiKey = customKey; 
+            
+            const awarenessInjection = repoContext ? '\n\n[GLOBAL PROJECT AWARENESS: ' + repoContext + ']\nBerücksichtige dieses Wissen bei jeder Architekturentscheidung und Code-Generierung.' : '';
+            const finalSystemMsg = system + awarenessInjection;
+            
+            for (let i = 0; i <= maxRetries; i++) {
+                try {
+                    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + activeApiKey, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: finalSystemMsg }] } })
+                    });
+                    if (!response.ok) {
+                        if (response.status === 401) throw new Error("401 Unauthorized - Ungültiger oder fehlender Gemini API Key! Trage oben rechts einen validen Key ein.");
+                        throw new Error('API Fehler ' + response.status + ' - Bitte GitHub PAT und/oder Gemini Key eingeben!');
+                    }
+                    const data = await response.json();
+                    if (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
+                        return data.candidates[0].content.parts[0].text || "";
+                    }
+                    return "";
+                } catch (err) {
+                    if (i === maxRetries) throw err;
+                    await new Promise(resolve => setTimeout(resolve, delays[i]));
+                }
+            }
+        }`,
+callGeminiAPIFunction,
+'Gemini text API model fallback',
 );
 
 replaceOnce(
-`            const customKey = document.getElementById('gemini-key').value.trim();
-            const activeApiKey = customKey;`,
-`            const activeApiKey = getGeminiKey();
-            if (!activeApiKey) throw new Error('Gemini API Key fehlt.');`,
-'Gemini TTS key loading',
+`        async function callGeminiTTSAPI(prompt) {
+            const customKey = document.getElementById('gemini-key').value.trim();
+            const activeApiKey = customKey; 
+            try {
+                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + activeApiKey, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
+                        }
+                    })
+                });
+                if (!response.ok) {
+                    if (response.status === 401) throw new Error("401 Unauthorized - Ungültiger oder fehlender Gemini API Key!");
+                    throw new Error('TTS API Fehler ' + response.status);
+                }
+                const data = await response.json();
+                if (data.candidates && data.candidates[0].content.parts[0].inlineData) {
+                    return data.candidates[0].content.parts[0].inlineData;
+                }
+                throw new Error("Keine Audio-Daten erhalten");
+            } catch (err) {
+                throw err;
+            }
+        }`,
+callGeminiTTSFunction,
+'Gemini TTS API model fallback',
 );
 
 replaceOnce(
@@ -118,14 +281,6 @@ replaceOnce(
                 const repoRes = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName, { headers });
                 if (!repoRes.ok) throw new Error(await githubErrorMessage(repoRes, 'Kein Zugriff auf das Repository.'));`,
 'GitHub tree auth headers',
-);
-
-replaceOnce(
-`                const treeRes = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName + '/git/trees/' + defaultBranch + '?recursive=1', { headers });
-                if (!treeRes.ok) throw new Error('Konnte den Tree für Branch \' + defaultBranch + '\' nicht laden.');`,
-`                const treeRes = await fetch('https://api.github.com/repos/' + repoOwner + '/' + repoName + '/git/trees/' + encodeURIComponent(defaultBranch) + '?recursive=1', { headers });
-                if (!treeRes.ok) throw new Error(await githubErrorMessage(treeRes, 'Konnte den Tree für Branch ' + defaultBranch + ' nicht laden.'));`,
-'GitHub tree error detail',
 );
 
 replaceOnce(
@@ -246,6 +401,30 @@ replaceOnce(
 );
 
 replaceOnce(
+`                } catch(e) {
+                    window.logToSystem('⚠️ <b>OAuth Fehler:</b> ' + e.message, 'error');
+                    mockLogin();
+                }`,
+`                } catch(e) {
+                    window.logToSystem('⚠️ <b>OAuth Fehler:</b> ' + e.message + '<br>Google Login ist optional. Deine lokal eingetragenen GitHub/Gemini Keys bleiben aktiv.', 'error');
+                    return;
+                }`,
+'no mock login after OAuth failure',
+);
+
+replaceOnce(
+`            } else {
+                // Fallback to mock for web
+                window.logToSystem('⚠️ <b>OAuth Demo-Modus:</b> Capacitor nicht verfügbar. Verwende Mock-Modus.', 'warning');
+                mockLogin();
+            }`,
+`            } else {
+                window.logToSystem('⚠️ <b>Google OAuth nicht verfügbar:</b> Die App läuft weiter mit lokal gespeicherten User-Keys.', 'warning');
+            }`,
+'no mock login fallback',
+);
+
+replaceOnce(
 `            if (user) {
                 currentUserUid = user.uid;
                 loadKeys(user.uid);`,
@@ -267,9 +446,22 @@ replaceOnce(
 'preserve keys on logout',
 );
 
+replaceAll('API Fehler 404 - Bitte GitHub PAT und/oder Gemini Key eingeben!', 'Gemini 404: Modell oder API-Zugriff nicht verfügbar.', 'legacy 404 error text');
+replaceAll('gemini-1.5-flash', 'gemini-2.5-flash', 'legacy Gemini model string');
+
 if (changed) {
   writeFileSync(distIndexPath, html, 'utf8');
   console.log('[release-html-runtime-fix] dist/index.html updated');
 } else {
   console.warn('[release-html-runtime-fix] no changes applied');
+}
+
+if (html.includes('API Fehler 404 - Bitte GitHub PAT und/oder Gemini Key eingeben!')) {
+  console.error('[release-html-runtime-fix] legacy ambiguous 404 message still present after patch.');
+  process.exit(1);
+}
+
+if (html.includes('gemini-1.5-flash')) {
+  console.error('[release-html-runtime-fix] legacy Gemini 1.5 model string still present after patch.');
+  process.exit(1);
 }
