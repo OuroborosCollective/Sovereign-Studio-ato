@@ -1408,6 +1408,11 @@
             localStorage.setItem('sov_pat_' + currentUserUid, pat);
             localStorage.setItem('sov_gemini_' + currentUserUid, gemini);
             updateKeyIndicators();
+            
+            // Show confirmation when valid key is entered
+            if (gemini && gemini.length > 10) {
+                window.logToSystem('✅ <b>Gemini API Key erkannt!</b> (' + gemini.substring(0, 8) + '...) Der Architekt ist bereit.', 'success');
+            }
         }
 
         function loadKeys(uid) {
@@ -1527,6 +1532,15 @@
 
         // Key Setup Check
         function checkKeysAndShowModal() {
+            // First restore from localStorage if input is empty
+            const keyInput = document.getElementById('gemini-key');
+            if (keyInput && !keyInput.value.trim()) {
+                const storedGemini = localStorage.getItem('sov_gemini_' + currentUserUid);
+                if (storedGemini) {
+                    keyInput.value = storedGemini;
+                }
+            }
+            
             const gemini = document.getElementById('gemini-key')?.value.trim();
             const pat = document.getElementById('gh-pat')?.value.trim();
             const modal = document.getElementById('key-setup-modal');
@@ -1539,6 +1553,7 @@
                 if (modal) modal.classList.remove('hidden');
             } else {
                 if (geminiMsg) geminiMsg.classList.add('hidden');
+                if (modal) modal.classList.add('hidden');
                 // Show GitHub message as info only (not blocking) since PAT is optional
                 if (githubMsg && !pat) {
                     githubMsg.classList.remove('hidden');
@@ -1546,6 +1561,9 @@
                     githubMsg.querySelector('span').textContent = '';
                 }
             }
+            
+            // Update status indicators
+            updateKeyIndicators();
         }
 
         // Debug helper to check current key status
