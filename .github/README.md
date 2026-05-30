@@ -1,19 +1,19 @@
 # 🚀 GitHub Actions - Android CI/CD
 
-Diese GitHub Action baut automatisch APK und AAB für Play Store.
+Diese App nutzt bereits den bestehenden **android-release.yml** Workflow.
 
 ## Workflows
 
-### Android Build (`.github/workflows/android-build.yml`)
+### Android Release (`.github/workflows/android-release.yml`)
 
 **Trigger:**
-- Push auf `main`, `fix/*`, `feat/*` branches
-- Manuell via `workflow_dispatch`
+- Push auf `main` branch
+- Manuell via `workflow_dispatch` (mit optionaler version_name und version_code)
 
 **Output:**
-- `*.apk` - Debug und Release APKs
-- `*.aab` - Play Store ready AAB
-- GitHub Release mit Artefakten
+- `*.aab` - Play Store ready Android App Bundle
+- `*.apk` - Universal APK
+- `SovereignStudio-PlayStore-Release.zip` - Alle Artefakte in einem Archiv
 
 ## Setup
 
@@ -25,75 +25,58 @@ Füge folgende Secrets hinzu:
 
 | Secret Name | Beschreibung | Beispiel |
 |------------|--------------|----------|
-| `ANDROID_KEYSTORE_BASE64` | Base64 encoded keystore | `$(base64 -w0 my-keystore.jks)` |
-| `ANDROID_KEYSTORE_PASSWORD` | Keystore Passwort | `mein_geheimes_pass` |
-| `ANDROID_KEY_ALIAS` | Key Alias | `sovereign_studio` |
-| `ANDROID_KEY_PASSWORD` | Key Passwort | `key_geheimes_pass` |
+| `ANDROID_KEYSTORE_BASE64` | Base64 encoded keystore | `$(base64 -w0 keystore.jks)` |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore und Key Passwort | `mein_geheimes_pass` |
+| `ANDROID_KEY_ALIAS` | Key Alias | `release` |
 
 ### 2. Keystore generieren (falls noch nicht vorhanden)
 
 ```bash
 # Keystore erstellen
-keytool -genkey -v -keystore sovereign-studio-release.keystore \
-  -alias sovereign_studio \
+keytool -genkey -v -keystore sovereign-studio.jks \
+  -alias release \
   -keyalg RSA -keysize 2048 -validity 10000
 
 # Base64 für GitHub (einzeilig)
-base64 -w0 sovereign-studio-release.keystore
-```
-
-### 3. Keystore in GitHub Secrets speichern
-
-```bash
-# Im Terminal:
-# Den Base64 output kopieren und als ANDROID_KEYSTORE_BASE64 speichern
+base64 -w0 sovereign-studio.jks
 ```
 
 ## Build manuell triggern
 
 1. GitHub Repository → **Actions** Tab
-2. "Build Android APK & AAB" auswählen
+2. "🚀 Android Artifact Release" auswählen
 3. "Run workflow" klicken
-4. Build type wählen (release/debug)
-
-## Workflow Jobs
-
-| Job | Beschreibung |
-|-----|--------------|
-| `build-android` | Java/Android setup, APK & AAB builds |
-| `build-web` | Web build für Preview |
-| `create-release` | GitHub Release mit APK/AAB |
-| `notify` | Build summary |
+4. Optional: Version Name und Version Code eingeben
 
 ## Output Artefakte
 
-Nach erfolgreichem Build findest du:
+Nach erfolgreichem Build findest du im Actions Tab:
 
-- **APK**: `android/app/build/outputs/apk/release/*.apk`
-- **AAB**: `android/app/build/outputs/bundle/release/*.aab`
+- **SovereignStudio-PlayStore-Release.zip** - Alle Builds
+- **AAB**: `release-bundle/SovereignStudio-release.aab`
+- **APK**: `release-bundle/SovereignStudio-release.apk`
 
-Download im **Actions** Tab unter "Artifacts".
+## Workflow Details
+
+Der Workflow:
+1. Dekodiert den Base64 Keystore
+2. Baut Release AAB und APK
+3. Erstellt ein ZIP Archiv
+4. Git Tag mit Version (z.B. v1.0.0)
+5. Optional: Marketing Loop Trigger
 
 ## Troubleshooting
 
 ### Build schlägt fehl wegen Signing
 
-```bash
-# Prüfe ob Secrets korrekt gesetzt sind
-# Format muss stimmen:
-# - ANDROID_KEYSTORE_PATH: /pfad/zu/datei.keystore
-# - ANDROID_KEYSTORE_PASSWORD: text
-# - ANDROID_KEY_ALIAS: alias_name
-# - ANDROID_KEY_PASSWORD: text
-```
+Stelle sicher dass alle Secrets korrekt gesetzt sind:
+- `ANDROID_KEYSTORE_BASE64` muss das komplette Base64 des Keystores sein
+- `ANDROID_KEYSTORE_PASSWORD` muss mit dem Passwort beim Erstellen übereinstimmen
+- `ANDROID_KEY_ALIAS` muss mit dem Alias beim Erstellen übereinstimmen
 
 ### Gradle Fehler
 
+Lokal testen:
 ```bash
-# Lokal testen
-cd android && ./gradlew clean && ./gradlew assembleRelease
+cd android && chmod +x gradlew && ./gradlew clean assembleRelease
 ```
-
-### APK nicht signiert
-
-Stelle sicher dass `ANDROID_KEYSTORE_BASE64` gesetzt ist und korrekt decodiert wird.
