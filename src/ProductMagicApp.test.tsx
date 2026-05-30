@@ -278,4 +278,25 @@ describe('ProductMagicApp — Awareness Sync provider-unavailable banner', () =>
       expect(screen.queryByText(BANNER_HEADING)).not.toBeInTheDocument();
     });
   });
+
+  it('focuses the Gemini input when the CTA is clicked after an Awareness Sync no-key failure', async () => {
+    renderApp();
+    await flushMount();
+
+    await loadRepo();
+
+    // Trigger the no-key banner via the Awareness Sync path.
+    fireEvent.click(screen.getByRole('button', { name: /Awareness Sync/i }));
+
+    const heading = await screen.findByText(BANNER_HEADING);
+    const banner = heading.closest('div.bg-red-50') as HTMLElement;
+    expect(banner).not.toBeNull();
+
+    // The CTA inside the banner should focus the Gemini key input.
+    const ctaButton = within(banner).getByRole('button', { name: /API-Key eintragen/i });
+    const geminiInput = screen.getByPlaceholderText('AIza...') as HTMLInputElement;
+
+    fireEvent.click(ctaButton);
+    expect(document.activeElement).toBe(geminiInput);
+  });
 });
