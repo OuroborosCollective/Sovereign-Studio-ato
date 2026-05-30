@@ -431,11 +431,12 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
 
   const buildProduct = () => {
     log('🏗️ Produkt wird gebaut...');
-    if (geminiKey.trim()) {
+    const hasAnyKey = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
+    if (hasAnyKey) {
       generateCodeWithGemini('Implementiere alle Blueprint-Module als vollständige TypeScript-Klassen.');
     } else {
       generateCodeLocally();
-      log('✨ Produkt gebaut (ohne Gemini — Key eintragen für KI-Generierung).');
+      log('✨ Produkt gebaut (lokal — AI Key eintragen für KI-Generierung).');
     }
   };
 

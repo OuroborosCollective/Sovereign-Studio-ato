@@ -1,5 +1,5 @@
 import { geminiService } from "./geminiService";
-import { callGroq, callHuggingFace, callTogether, type ProviderType } from "./providerManager";
+import { callGroq, callHuggingFace, callTogether, callOpenRouter, type ProviderType } from "./providerManager";
 
 export interface RepoFile {
   path: string;
@@ -143,10 +143,25 @@ VERBESSERUNGSVORSCHLÄGE:
         onProviderSwitch?.('together', 'openrouter', err?.message || String(err));
       }
     }
+
+    // Try OpenRouter
+    if (!rawText && fallbackProviders.openrouterKey?.trim()) {
+      try {
+        const response = await callOpenRouter(fallbackProviders.openrouterKey, model, prompt, {
+          temperature: 0.3,
+          maxOutputTokens: 1024,
+        });
+        rawText = response.text;
+        usedProvider = 'openrouter';
+      } catch (err: any) {
+        // All providers exhausted — error thrown below
+        void err;
+      }
+    }
   }
 
   if (!rawText) {
-    throw new Error("Alle AI-Provider sind fehlgeschlagen. Bitte API-Keys für Gemini, Groq, HuggingFace oder Together AI eintragen.");
+    throw new Error("Alle AI-Provider sind fehlgeschlagen. Bitte API-Keys für Gemini, Groq, HuggingFace, Together AI oder OpenRouter eintragen.");
   }
 
   const summary = extractSection(rawText, "ZUSAMMENFASSUNG");
