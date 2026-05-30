@@ -755,6 +755,16 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
                 className="text-xs px-2 py-1 border border-stone-300 rounded w-20 focus:outline-none focus:border-indigo-500 bg-white"
               />
             </label>
+            <label className="flex items-center gap-2">
+              <span className="font-bold text-stone-400 uppercase text-[9px]">OpenRouter:</span>
+              <input
+                value={openrouterKey}
+                onChange={(e) => setOpenrouterKey(e.target.value)}
+                type="password"
+                placeholder="sk-or-..."
+                className="text-xs px-2 py-1 border border-stone-300 rounded w-24 focus:outline-none focus:border-indigo-500 bg-white"
+              />
+            </label>
             <a
               href="https://console.groq.com/keys"
               target="_blank"
