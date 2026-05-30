@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { FileItem, Card, WorkView, PipelineState, ProjectSettings } from './features/product/types';
 import { makeId, demoFiles, starterCards, defaultSettings } from './features/product/constants';
 import { runAwarenessSync, type AwarenessSyncResult, type RepoFile } from './features/ai/awarenessSync';
@@ -6,6 +7,8 @@ import { geminiService } from './features/ai/geminiService';
 import { useProviderFallback, PROVIDER_INFO, ProviderType } from './features/ai/hooks/useProviderFallback';
 import { providerManager } from './features/ai/providerManager';
 import { keyStorage } from './features/ai/keyStorage';
+import CanvasEngine from './features/canvas/CanvasEngine';
+import { addVectors, clearCanvas, type CanvasObject } from './features/canvas/canvasSlice';
 import {
   AlertTriangle,
   Bot,
@@ -76,6 +79,8 @@ async function fetchRepoTree(
 
 // --- Main App ---
 export default function ProductMagicApp() {
+  const dispatch = useDispatch();
+
   // Keys (persisted via Capacitor Preferences on Android, localStorage fallback on web)
   const [geminiKey, setGeminiKeyState] = useState('');
   const [accessKey, setAccessKeyState] = useState('');
@@ -450,6 +455,90 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
     generateCodeWithGemini(msg);
   };
 
+  // --- AI Canvas Generation ---
+  const generateCanvasFromAI = useCallback(async () => {
+    const hasAnyKey = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
+    if (!hasAnyKey) {
+      log('⚠️ Kein AI Key — Canvas Demo-Layout wird geladen.');
+      dispatch(clearCanvas());
+      const demoObjs: CanvasObject[] = [
+        { id: 'demo-1', type: 'rect', left: 40, top: 60, x: 40, y: 60, width: 200, height: 90, fill: '#6366f1', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 0, data: { color: '#6366f1' } },
+        { id: 'demo-2', type: 'ai-text', left: 60, top: 88, x: 60, y: 88, width: 160, height: 30, fill: '#ffffff', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 1, data: { text: 'GitHub Loader' } },
+        { id: 'demo-3', type: 'rect', left: 280, top: 60, x: 280, y: 60, width: 200, height: 90, fill: '#8b5cf6', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 2, data: { color: '#8b5cf6' } },
+        { id: 'demo-4', type: 'ai-text', left: 300, top: 88, x: 300, y: 88, width: 160, height: 30, fill: '#ffffff', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 3, data: { text: 'AI Analyzer' } },
+        { id: 'demo-5', type: 'rect', left: 160, top: 200, x: 160, y: 200, width: 200, height: 90, fill: '#0ea5e9', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 4, data: { color: '#0ea5e9' } },
+        { id: 'demo-6', type: 'ai-text', left: 180, top: 228, x: 180, y: 228, width: 160, height: 30, fill: '#ffffff', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 5, data: { text: 'Monaco Editor' } },
+      ];
+      dispatch(addVectors(demoObjs));
+      setWorkView('canvas');
+      return;
+    }
+
+    setIsGenerating(true);
+    log('🎨 Generiere Canvas-Architektur-Layout mit AI...');
+    setWorkView('canvas');
+
+    const canvasPrompt = `Du bist ein UI-Architektur-Visualisierer. Generiere ein JSON-Array mit Canvas-Objekten für das Sovereign Studio.
+
+Blueprint: ${blueprint}
+${syncResult ? `Technologien: ${syncResult.technologies.slice(0, 6).join(', ')}` : ''}
+
+Antworte NUR mit einem gültigen JSON-Array (kein Prosa, kein Markdown):
+[
+  { "id": "r1", "type": "rect", "left": 40, "top": 40, "width": 180, "height": 80, "fill": "#6366f1" },
+  { "id": "t1", "type": "ai-text", "left": 55, "top": 65, "width": 150, "height": 30, "text": "Komponentenname" }
+]
+
+Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verteile sie gleichmäßig, keine Überschneidungen. Nutze Indigo/Violet/Sky für Fill-Farben.`;
+
+    try {
+      let jsonText = '';
+      if (geminiKey.trim()) {
+        jsonText = await geminiService.generateText(geminiKey, canvasPrompt, { model: 'gemini-1.5-flash', temperature: 0.4, maxOutputTokens: 1024 });
+      } else if (groqKey.trim()) {
+        const { callGroq } = await import('./features/ai/providerManager');
+        jsonText = (await callGroq(groqKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+      } else if (hfKey.trim()) {
+        const { callHuggingFace } = await import('./features/ai/providerManager');
+        jsonText = (await callHuggingFace(hfKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+      } else if (togetherKey.trim()) {
+        const { callTogether } = await import('./features/ai/providerManager');
+        jsonText = (await callTogether(togetherKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+      } else if (openrouterKey.trim()) {
+        const { callOpenRouter } = await import('./features/ai/providerManager');
+        jsonText = (await callOpenRouter(openrouterKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+      }
+
+      const jsonMatch = jsonText.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        const parsed: any[] = JSON.parse(jsonMatch[0]);
+        const canvasObjects: CanvasObject[] = parsed.map((obj: any, i: number) => ({
+          id: obj.id || `ai-${i}`,
+          type: obj.type || 'rect',
+          left: obj.left ?? 40 + (i % 3) * 220,
+          top: obj.top ?? 40 + Math.floor(i / 3) * 130,
+          x: obj.left ?? 40,
+          y: obj.top ?? 40,
+          width: obj.width ?? 180,
+          height: obj.height ?? 80,
+          fill: obj.fill ?? '#6366f1',
+          scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false,
+          opacity: 1, visible: true, zIndex: i,
+          data: { color: obj.fill ?? '#6366f1', text: obj.text ?? '', label: obj.text ?? '' },
+        }));
+        dispatch(clearCanvas());
+        dispatch(addVectors(canvasObjects));
+        log(`🎨 Canvas: ${canvasObjects.length} Architektur-Objekte generiert.`);
+      } else {
+        log('⚠️ AI: Kein gültiges JSON für Canvas. Demo-Layout behalten.');
+      }
+    } catch (err: any) {
+      log(`❌ Canvas-Generierung Fehler: ${err?.message || err}`);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [geminiKey, groqKey, hfKey, togetherKey, openrouterKey, blueprint, syncResult, dispatch]);
+
   const downloadPackage = () => {
     const blob = new Blob([generatedPackage], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -698,13 +787,24 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           <div className="h-10 bg-stone-50 border-b border-stone-200 flex items-center gap-2 px-2 shrink-0 overflow-x-auto">
             <button onClick={() => setWorkView('editor')} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'editor' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}><Code2 size={11} className="inline mr-1"/>EDITOR</button>
             <button onClick={() => setWorkView('pipeline')} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'pipeline' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}><RefreshCw size={11} className="inline mr-1"/>PUBLISH LOOP</button>
+            <button onClick={generateCanvasFromAI} disabled={isGenerating} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'canvas' ? 'bg-violet-700 text-white' : 'bg-violet-100 text-violet-700'} disabled:opacity-50`}><Sparkles size={11} className="inline mr-1"/>CANVAS</button>
             <span className="text-[11px] font-mono text-stone-600 italic truncate px-2 max-w-[220px]">{selectedFile.path}</span>
             {['REVIEW','TESTS','DOCS','CI/CD','README','AUTOLINT'].map((label) => (
               <button key={label} onClick={() => { log(`✨ ${label} vorbereitet.`); generateCodeWithGemini(`Erstelle ${label} für das Projekt.`); }} className="px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200">✨ {label}</button>
             ))}
           </div>
 
-          {workView === 'editor' ? (
+          {workView === 'canvas' ? (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="h-8 bg-violet-50 border-b border-violet-200 flex items-center gap-2 px-3 text-[10px] text-violet-700 shrink-0">
+                <Sparkles size={11}/> <span className="font-bold">Canvas Workspace</span>
+                <span className="text-violet-500">· Alt+Drag zum Panning · Scroll zum Zoomen · Objekte sind interaktiv</span>
+                <button onClick={() => { dispatch(clearCanvas()); log('🗑️ Canvas geleert.'); }} className="ml-auto px-2 py-0.5 bg-violet-200 text-violet-800 rounded text-[9px] font-bold hover:bg-violet-300"><Trash2 size={9} className="inline mr-0.5"/>Leeren</button>
+                <button onClick={generateCanvasFromAI} disabled={isGenerating} className="px-2 py-0.5 bg-violet-600 text-white rounded text-[9px] font-bold hover:bg-violet-700 disabled:opacity-50 flex items-center gap-1">{isGenerating ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>} AI neu generieren</button>
+              </div>
+              <CanvasEngine className="flex-1" />
+            </div>
+          ) : workView === 'editor' ? (
             <div className="flex-1 bg-stone-100/30 p-4 overflow-hidden flex flex-col">
               <div className="flex-1 rounded-xl shadow-inner relative overflow-hidden flex flex-col bg-stone-950 font-mono border border-stone-800">
                 <div className="h-8 bg-stone-900 border-b border-stone-800 flex items-center gap-2 px-3 text-[10px] text-stone-400">
