@@ -205,40 +205,61 @@ export default function ProductMagicApp() {
 
   // --- Awareness Sync ---
   const runSync = useCallback(async () => {
-    if (!geminiKey.trim()) {
-      log('❌ Fehler beim Awareness Sync: Kein Gemini API-Key eingetragen. Bitte Key aus AI Studio eintragen.');
-      setRepoStatus('❌ Gemini API-Key fehlt');
+    const hasAnyKey = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
+    
+    if (!hasAnyKey) {
+      log('❌ Fehler beim Awareness Sync: Kein API-Key konfiguriert.');
+      log('💡 Bitte mindestens einen Key eintragen: Gemini, Groq, HuggingFace oder Together AI.');
+      setRepoStatus('❌ Kein API-Key konfiguriert');
       return;
     }
+    
     if (!repoLoaded || repoFiles.length === 0) {
       log('⚠️ Zuerst ein Repo laden, dann Awareness Sync starten.');
       return;
     }
 
     setIsSyncing(true);
-    log('🧠 Awareness Sync gestartet — Gemini analysiert das Repository...');
+    log('🧠 Awareness Sync gestartet — AI analysiert das Repository...');
 
     try {
-      const result = await runAwarenessSync(geminiKey, repoFiles, repoUrl);
+      let usedProvider = 'gemini';
+      
+      const result = await runAwarenessSync(
+        geminiKey,
+        repoFiles,
+        repoUrl,
+        {
+          groqKey: groqKey,
+          hfKey: hfKey,
+          togetherKey: togetherKey,
+          openrouterKey: openrouterKey,
+        },
+        'gemini-1.5-flash',
+        (from, to, error) => {
+          usedProvider = to;
+          log(`🔄 Fallback: ${from.toUpperCase()} → ${to.toUpperCase()}: ${error}`);
+        }
+      );
+      
       setSyncResult(result);
-      log(`✅ Awareness Sync abgeschlossen. Technologien: ${result.technologies.slice(0, 5).join(', ')}`);
+      log(`✅ Awareness Sync abgeschlossen (${usedProvider.toUpperCase()}).`);
+      log(`📊 Technologien: ${result.technologies.slice(0, 5).join(', ')}`);
       log(`📋 Zusammenfassung: ${result.summary.slice(0, 120)}...`);
       setWorkView('editor');
     } catch (err: any) {
       const msg: string = err?.message ?? 'Unbekannter Fehler';
-      const is429 = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED');
-      if (is429) {
-        log('❌ Fehler beim Awareness Sync: Gemini Rate-Limit erreicht. Bitte kurz warten und erneut versuchen, oder einen Key mit freiem Kontingent nutzen.');
-        log('💡 Tipp: Auf https://aistudio.google.com/app/apikey kannst du einen kostenlosen Key erstellen.');
-      } else if (msg.includes('API-Key')) {
-        log(`❌ Fehler beim Awareness Sync: ${msg}`);
-      } else {
-        log(`❌ Fehler beim Awareness Sync: ${msg}`);
+      log(`❌ Awareness Sync Fehler: ${msg}`);
+      
+      if (msg.includes('401') || msg.includes('authentication')) {
+        log('💡 Tipp: API-Key ungültig oder abgelaufen. Bitte Key in den Einstellungen prüfen.');
+      } else if (msg.includes('429') || msg.includes('quota')) {
+        log('💡 Tipp: Rate-Limit erreicht. Kurz warten oder kostenlosen Key holen (Groq, HF, Together).');
       }
     } finally {
       setIsSyncing(false);
     }
-  }, [geminiKey, repoFiles, repoLoaded, repoUrl]);
+  }, [geminiKey, groqKey, hfKey, togetherKey, openrouterKey, repoFiles, repoLoaded, repoUrl]);
 
   // --- Generate Code with Gemini + Auto-Fallback ---
   const generateCodeWithGemini = useCallback(async (userPrompt: string) => {
