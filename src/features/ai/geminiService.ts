@@ -1,5 +1,8 @@
 import { GoogleGenerativeAI, Part, GenerationConfig } from "@google/generative-ai";
 
+// Default model - updated to gemini-2.0-flash
+const DEFAULT_MODEL = "gemini-2.0-flash";
+
 export interface GeminiRequestOptions {
   model?: string;
   temperature?: number;
@@ -40,7 +43,7 @@ export const geminiService = {
       stopSequences: options.stopSequences,
     };
     const model = genAI.getGenerativeModel({
-      model: options.model || "gemini-1.5-flash",
+      model: options.model || DEFAULT_MODEL,
       generationConfig: config,
     });
     return withRetry(async () => {
@@ -53,7 +56,7 @@ export const geminiService = {
   async generateFromMedia(apiKey: string, prompt: string, parts: Part[], options: GeminiRequestOptions = {}) {
     const genAI = createClient(apiKey);
     const model = genAI.getGenerativeModel({
-      model: options.model || "gemini-1.5-flash",
+      model: options.model || DEFAULT_MODEL,
     });
     return withRetry(async () => {
       const result = await model.generateContent([prompt, ...parts]);
@@ -65,7 +68,7 @@ export const geminiService = {
   async *streamText(apiKey: string, prompt: string, options: GeminiRequestOptions = {}) {
     const genAI = createClient(apiKey);
     const model = genAI.getGenerativeModel({
-      model: options.model || "gemini-1.5-flash",
+      model: options.model || DEFAULT_MODEL,
     });
     const result = await model.generateContentStream(prompt);
     for await (const chunk of result.stream) {

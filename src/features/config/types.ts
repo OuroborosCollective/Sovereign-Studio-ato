@@ -38,7 +38,7 @@ export interface AppConfig {
     temperature: number;
     topP: number;
     maxTokens: number;
-    model: 'gemini-1.5-pro' | 'gemini-1.5-flash';
+    model: 'gemini-1.5-pro' | 'gemini-2.0-flash';
   };
   [key: string]: any;
 }

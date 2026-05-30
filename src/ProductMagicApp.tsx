@@ -297,7 +297,7 @@ export default function ProductMagicApp() {
           togetherKey: togetherKey,
           openrouterKey: openrouterKey,
         },
-        'gemini-1.5-flash',
+        'gemini-2.0-flash',
         (from, to, error) => {
           usedProvider = to;
           log(`🔄 Fallback: ${from.toUpperCase()} → ${to.toUpperCase()}: ${error}`);
@@ -356,7 +356,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🤖 Generiere mit Gemini...');
         try {
           const code = await geminiService.generateText(geminiKey, prompt, {
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.0-flash',
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -390,7 +390,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🔄 Versuche Groq...');
         try {
           const { callGroq } = await import('./features/ai/providerManager');
-          const response = await callGroq(groqKey, 'gemini-1.5-flash', prompt, {
+          const response = await callGroq(groqKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -410,7 +410,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🔄 Versuche HuggingFace...');
         try {
           const { callHuggingFace } = await import('./features/ai/providerManager');
-          const response = await callHuggingFace(hfKey, 'gemini-1.5-flash', prompt, {
+          const response = await callHuggingFace(hfKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -430,7 +430,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🔄 Versuche Together AI...');
         try {
           const { callTogether } = await import('./features/ai/providerManager');
-          const response = await callTogether(togetherKey, 'gemini-1.5-flash', prompt, {
+          const response = await callTogether(togetherKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -450,7 +450,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🔄 Versuche OpenRouter...');
         try {
           const { callOpenRouter } = await import('./features/ai/providerManager');
-          const response = await callOpenRouter(openrouterKey, 'gemini-1.5-flash', prompt, {
+          const response = await callOpenRouter(openrouterKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -552,19 +552,19 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
     try {
       let jsonText = '';
       if (geminiKey.trim()) {
-        jsonText = await geminiService.generateText(geminiKey, canvasPrompt, { model: 'gemini-1.5-flash', temperature: 0.4, maxOutputTokens: 1024 });
+        jsonText = await geminiService.generateText(geminiKey, canvasPrompt, { model: 'gemini-2.0-flash', temperature: 0.4, maxOutputTokens: 1024 });
       } else if (groqKey.trim()) {
         const { callGroq } = await import('./features/ai/providerManager');
-        jsonText = (await callGroq(groqKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+        jsonText = (await callGroq(groqKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
       } else if (hfKey.trim()) {
         const { callHuggingFace } = await import('./features/ai/providerManager');
-        jsonText = (await callHuggingFace(hfKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+        jsonText = (await callHuggingFace(hfKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
       } else if (togetherKey.trim()) {
         const { callTogether } = await import('./features/ai/providerManager');
-        jsonText = (await callTogether(togetherKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+        jsonText = (await callTogether(togetherKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
       } else if (openrouterKey.trim()) {
         const { callOpenRouter } = await import('./features/ai/providerManager');
-        jsonText = (await callOpenRouter(openrouterKey, 'gemini-1.5-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+        jsonText = (await callOpenRouter(openrouterKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
       }
 
       const jsonMatch = jsonText.match(/\[[\s\S]*?\]/);

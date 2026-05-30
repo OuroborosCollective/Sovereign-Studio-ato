@@ -1,5 +1,8 @@
 import { geminiService } from "./geminiService";
-import { callGroq, callHuggingFace, callTogether, callOpenRouter, type ProviderType } from "./providerManager";
+import { callPuter, callGroq, callHuggingFace, callTogether, callOpenRouter, type ProviderType } from "./providerManager";
+
+// Default model - updated to gemini-2.0-flash
+const DEFAULT_MODEL = "gemini-2.0-flash";
 
 export interface RepoFile {
   path: string;
@@ -17,7 +20,11 @@ export interface AwarenessSyncResult {
 
 /**
  * Runs awareness sync with automatic provider fallback
- * Tries Gemini first, then falls back to free providers if needed
+ * 
+ * FIXED LOGIC:
+ * - No key OR any error → ALWAYS fallback to free providers
+ * - Uses gemini-2.0-flash as default model
+ * - OpenRouter is primary free fallback (has :free models)
  */
 export async function runAwarenessSync(
   geminiApiKey: string,
@@ -29,15 +36,15 @@ export async function runAwarenessSync(
     togetherKey?: string;
     openrouterKey?: string;
   } = {},
-  model: string = "gemini-1.5-flash",
+  model: string = DEFAULT_MODEL,
   onProviderSwitch?: (from: ProviderType, to: ProviderType, error: string) => void
 ): Promise<AwarenessSyncResult> {
-  if (!geminiApiKey || !geminiApiKey.trim()) {
-    if (!fallbackProviders.groqKey && !fallbackProviders.hfKey && !fallbackProviders.togetherKey && !fallbackProviders.openrouterKey) {
-      throw new Error("Kein API-Key konfiguriert. Bitte Gemini, Groq, HuggingFace oder Together AI Key eintragen.");
-    }
-    // Will try fallback providers
+  // FIXED: If no API keys at all, throw immediately
+  if (!geminiApiKey?.trim() && !fallbackProviders.groqKey?.trim() && !fallbackProviders.hfKey?.trim() && !fallbackProviders.togetherKey?.trim() && !fallbackProviders.openrouterKey?.trim()) {
+    throw new Error("Kein API-Key konfiguriert. Bitte Gemini, Groq, HuggingFace, Together AI oder OpenRouter Key eintragen.");
   }
+
+  const effectiveModel = model || DEFAULT_MODEL;
 
   const filePaths = repoFiles
     .filter((f) => f.type === "blob")
@@ -71,97 +78,63 @@ VERBESSERUNGSVORSCHLÄGE:
   let rawText: string = '';
   let usedProvider: ProviderType = 'gemini';
 
-  // Try Gemini first
+  // Try Gemini first if key provided
   if (geminiApiKey?.trim()) {
     try {
       rawText = await geminiService.generateText(geminiApiKey, prompt, {
-        model,
+        model: effectiveModel,
         temperature: 0.3,
         maxOutputTokens: 1024,
       });
       usedProvider = 'gemini';
     } catch (geminiError: any) {
+      // FIXED: ANY error → fallback to free providers (no more retryable check)
       const errorMsg = geminiError?.message || String(geminiError);
-      const isRetryable = 
-        errorMsg.includes('429') || 
-        errorMsg.includes('quota') || 
-        errorMsg.includes('RESOURCE_EXHAUSTED') ||
-        errorMsg.includes('authentication') ||
-        errorMsg.includes('api key') ||
-        geminiError?.status === 401 || 
-        geminiError?.status === 403;
-
-      if (isRetryable) {
-        onProviderSwitch?.('gemini', 'groq', errorMsg);
-      } else {
-        throw geminiError;
-      }
+      console.log(`🔄 Gemini failed: ${errorMsg} → falling back to free providers`);
+      onProviderSwitch?.('gemini', 'groq', errorMsg);
+      // Continue to fallback providers - don't throw
     }
+  } else {
+    // No key → immediate fallback
+    console.log('🔄 No Gemini API key → using free providers');
+    onProviderSwitch?.('gemini', 'puter', 'No API key provided');
   }
 
-  // If Gemini failed or no key, try fallback providers
+  // FIXED: If Gemini failed or no key, try fallback providers (ALL errors now trigger fallback)
   if (!rawText) {
-    // Try Groq
-    if (fallbackProviders.groqKey?.trim()) {
+    // Priority: Puter.js (KEYLESS!) → Groq → OpenRouter → HuggingFace → Together
+    const providerOrder: Array<{ key: string; fn: (k: string, m: string, p: string, o: any) => Promise<any>; name: ProviderType; next: ProviderType; requiresKey: boolean }> = [
+      { key: '', fn: callPuter, name: 'puter', next: 'groq', requiresKey: false },  // KEYLESS!
+      { key: fallbackProviders.groqKey || '', fn: callGroq, name: 'groq', next: 'openrouter', requiresKey: true },
+      { key: fallbackProviders.openrouterKey || '', fn: callOpenRouter, name: 'openrouter', next: 'huggingface', requiresKey: true },
+      { key: fallbackProviders.hfKey || '', fn: callHuggingFace, name: 'huggingface', next: 'together', requiresKey: true },
+      { key: fallbackProviders.togetherKey || '', fn: callTogether, name: 'together', next: 'puter', requiresKey: true },
+    ];
+
+    for (const provider of providerOrder) {
+      // Skip if API key is required but not provided
+      if (provider.requiresKey && !provider.key?.trim()) continue;
+      
       try {
-        const response = await callGroq(fallbackProviders.groqKey, model, prompt, {
+        const response = await provider.fn(provider.key || '', effectiveModel, prompt, {
           temperature: 0.3,
           maxOutputTokens: 1024,
         });
         rawText = response.text;
-        usedProvider = 'groq';
+        usedProvider = provider.name;
+        console.log(`✅ Success with ${provider.name}`);
+        break;
       } catch (err: any) {
-        onProviderSwitch?.('groq', 'huggingface', err?.message || String(err));
+        const errMsg = err?.message || String(err);
+        console.log(`❌ ${provider.name} failed: ${errMsg}`);
+        onProviderSwitch?.(provider.name, provider.next, errMsg);
         // Continue to next provider
       }
     }
-
-    // Try HuggingFace
-    if (!rawText && fallbackProviders.hfKey?.trim()) {
-      try {
-        const response = await callHuggingFace(fallbackProviders.hfKey, model, prompt, {
-          temperature: 0.3,
-          maxOutputTokens: 1024,
-        });
-        rawText = response.text;
-        usedProvider = 'huggingface';
-      } catch (err: any) {
-        onProviderSwitch?.('huggingface', 'together', err?.message || String(err));
-      }
-    }
-
-    // Try Together AI
-    if (!rawText && fallbackProviders.togetherKey?.trim()) {
-      try {
-        const response = await callTogether(fallbackProviders.togetherKey, model, prompt, {
-          temperature: 0.3,
-          maxOutputTokens: 1024,
-        });
-        rawText = response.text;
-        usedProvider = 'together';
-      } catch (err: any) {
-        onProviderSwitch?.('together', 'openrouter', err?.message || String(err));
-      }
-    }
-
-    // Try OpenRouter
-    if (!rawText && fallbackProviders.openrouterKey?.trim()) {
-      try {
-        const response = await callOpenRouter(fallbackProviders.openrouterKey, model, prompt, {
-          temperature: 0.3,
-          maxOutputTokens: 1024,
-        });
-        rawText = response.text;
-        usedProvider = 'openrouter';
-      } catch (err: any) {
-        // All providers exhausted — error thrown below
-        void err;
-      }
-    }
   }
 
   if (!rawText) {
-    throw new Error("Alle AI-Provider sind fehlgeschlagen. Bitte API-Keys für Gemini, Groq, HuggingFace, Together AI oder OpenRouter eintragen.");
+    throw new Error("Alle AI-Provider sind fehlgeschlagen. Bitte API-Keys für Puter.js (kein Key nötig!), Groq, HuggingFace, Together AI oder OpenRouter eintragen.");
   }
 
   const summary = extractSection(rawText, "ZUSAMMENFASSUNG");

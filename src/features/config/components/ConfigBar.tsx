@@ -137,7 +137,7 @@ export const ConfigBar: React.FC = () => {
                   className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
                 >
                   <option value="gemini-1.5-pro">Gemini 1.5 Pro (Precision)</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Speed)</option>
+                  <option value="gemini-2.0-flash">Gemini 1.5 Flash (Speed)</option>
                 </select>
               </div>
 
