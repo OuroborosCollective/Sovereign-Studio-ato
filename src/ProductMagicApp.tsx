@@ -99,6 +99,7 @@ export default function ProductMagicApp() {
 
   const setGeminiKey = (v: string) => {
     setGeminiKeyState(v);
+    if (v.trim()) setProvidersError(null);
     void keyStorage.set(STORAGE_GEMINI_KEY, v).then(() => { if (v.trim()) showSavedToast('Gemini Key'); });
   };
   const setAccessKey = (v: string) => {
@@ -134,6 +135,21 @@ export default function ProductMagicApp() {
   const [generatedCode, setGeneratedCode] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // All-providers-unavailable error state (shown as a recovery banner with CTA)
+  const [providersError, setProvidersError] = useState<string | null>(null);
+  const geminiInputRef = useRef<HTMLInputElement>(null);
+
+  // Bring the user straight to the API key inputs in one tap
+  const focusKeyInput = useCallback(() => {
+    setProvidersError(null);
+    setShowSettings(false);
+    const input = geminiInputRef.current;
+    if (input) {
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input.focus();
+    }
+  }, []);
+
   // Free provider API keys
   const [groqKey, setGroqKeyState] = useState('');
   const [hfKey, setHfKeyState] = useState('');
@@ -142,18 +158,22 @@ export default function ProductMagicApp() {
 
   const setGroqKey = (v: string) => {
     setGroqKeyState(v);
+    if (v.trim()) setProvidersError(null);
     void keyStorage.set('sovereign_groq_api_key', v).then(() => { if (v.trim()) showSavedToast('Groq Key'); });
   };
   const setHfKey = (v: string) => {
     setHfKeyState(v);
+    if (v.trim()) setProvidersError(null);
     void keyStorage.set('sovereign_huggingface_api_key', v).then(() => { if (v.trim()) showSavedToast('HuggingFace Key'); });
   };
   const setTogetherKey = (v: string) => {
     setTogetherKeyState(v);
+    if (v.trim()) setProvidersError(null);
     void keyStorage.set('sovereign_together_api_key', v).then(() => { if (v.trim()) showSavedToast('Together Key'); });
   };
   const setOpenrouterKey = (v: string) => {
     setOpenrouterKeyState(v);
+    if (v.trim()) setProvidersError(null);
     void keyStorage.set('sovereign_openrouter_api_key', v).then(() => { if (v.trim()) showSavedToast('OpenRouter Key'); });
   };
 
@@ -250,9 +270,12 @@ export default function ProductMagicApp() {
       log('❌ Fehler beim Awareness Sync: Kein API-Key konfiguriert.');
       log('💡 Bitte mindestens einen Key eintragen: Gemini, Groq, HuggingFace oder Together AI.');
       setRepoStatus('❌ Kein API-Key konfiguriert');
+      setProvidersError('Kein API-Key konfiguriert. Trage einen Key für Gemini, Groq, HuggingFace, Together AI oder OpenRouter ein, um den Awareness Sync zu nutzen.');
       return;
     }
-    
+
+    setProvidersError(null);
+
     if (!repoLoaded || repoFiles.length === 0) {
       log('⚠️ Zuerst ein Repo laden, dann Awareness Sync starten.');
       return;
@@ -289,12 +312,13 @@ export default function ProductMagicApp() {
     } catch (err: any) {
       const msg: string = err?.message ?? 'Unbekannter Fehler';
       log(`❌ Awareness Sync Fehler: ${msg}`);
-      
+
       if (msg.includes('401') || msg.includes('authentication')) {
         log('💡 Tipp: API-Key ungültig oder abgelaufen. Bitte Key in den Einstellungen prüfen.');
       } else if (msg.includes('429') || msg.includes('quota')) {
         log('💡 Tipp: Rate-Limit erreicht. Kurz warten oder kostenlosen Key holen (Groq, HF, Together).');
       }
+      setProvidersError(`Alle AI-Provider sind fehlgeschlagen: ${msg} Bitte einen gültigen API-Key eintragen oder einen anderen Provider hinzufügen.`);
     } finally {
       setIsSyncing(false);
     }
@@ -307,10 +331,12 @@ export default function ProductMagicApp() {
     
     if (!hasProvider) {
       log('⚠️ Kein API-Key konfiguriert. Nutze lokalen Generator.');
+      setProvidersError('Kein API-Key konfiguriert — die KI-Generierung ist nicht verfügbar. Es wurde ein lokales Gerüst erzeugt. Trage einen API-Key ein, um echte KI-Generierung zu nutzen.');
       generateCodeLocally();
       return;
     }
 
+    setProvidersError(null);
     setIsGenerating(true);
 
     const context = syncResult
@@ -441,10 +467,12 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
 
       if (!fallbackSuccess) {
         log('⚠️ Alle Provider fehlgeschlagen. Nutze lokalen Generator.');
+        setProvidersError('Alle AI-Provider sind fehlgeschlagen. Es wurde ein lokales Gerüst erzeugt. Bitte einen gültigen API-Key eintragen oder einen anderen Provider hinzufügen.');
         generateCodeLocally();
       }
     } catch (err: any) {
       log(`❌ Unerwarteter Fehler: ${err?.message || err}. Nutze lokalen Generator.`);
+      setProvidersError(`Alle AI-Provider sind fehlgeschlagen: ${err?.message || err}. Es wurde ein lokales Gerüst erzeugt. Bitte einen gültigen API-Key eintragen.`);
       generateCodeLocally();
     } finally {
       setIsGenerating(false);
@@ -471,6 +499,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
     } else {
       generateCodeLocally();
       log('✨ Produkt gebaut (lokal — AI Key eintragen für KI-Generierung).');
+      setProvidersError('Kein API-Key konfiguriert — die KI-Generierung ist nicht verfügbar. Es wurde ein lokales Gerüst erzeugt. Trage einen API-Key ein, um echte KI-Generierung zu nutzen.');
     }
   };
 
@@ -688,6 +717,7 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
             <label className="flex items-center gap-2">
               <span className="font-bold text-stone-500 uppercase text-[10px] flex items-center gap-1"><Zap size={10} className="text-amber-500"/> Gemini:</span>
               <input
+                ref={geminiInputRef}
                 value={geminiKey}
                 onChange={(e) => setGeminiKey(e.target.value)}
                 type="password"
@@ -758,6 +788,30 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
           <label className="font-bold text-stone-600 uppercase">Linter<select value={settings.linter} onChange={(e) => setSettings({ ...settings, linter: e.target.value as ProjectSettings['linter'] })} className="mt-1 w-full border rounded p-1 bg-stone-50"><option value="auto">Auto</option><option value="eslint">ESLint</option><option value="biome">Biome</option><option value="prettier-eslint">Prettier + ESLint</option></select></label>
           <label className="font-bold text-stone-600 uppercase">Fix Loops<input value={settings.maxFixLoops} onChange={(e) => setSettings({ ...settings, maxFixLoops: Number(e.target.value) || 1 })} type="number" min={1} max={8} className="mt-1 w-full border rounded p-1 bg-stone-50" /></label>
           <label className="font-bold text-stone-600 uppercase">Spezialisierung<input value={settings.specialization} onChange={(e) => setSettings({ ...settings, specialization: e.target.value })} className="mt-1 w-full border rounded p-1 bg-stone-50" /></label>
+        </div>
+      )}
+
+      {/* All-providers-unavailable error banner */}
+      {providersError && (
+        <div className="bg-red-50 border-b border-red-300 px-4 py-3 flex items-center gap-3 shrink-0 shadow-sm">
+          <AlertTriangle size={20} className="text-red-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-black text-red-800 uppercase tracking-wide">Alle AI-Provider nicht verfügbar</div>
+            <div className="text-[11px] text-red-700 leading-snug">{providersError}</div>
+          </div>
+          <button
+            onClick={focusKeyInput}
+            className="shrink-0 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 shadow-sm"
+          >
+            <KeyRound size={13} /> API-Key eintragen
+          </button>
+          <button
+            onClick={() => setProvidersError(null)}
+            className="shrink-0 text-red-400 hover:text-red-700 text-base font-bold px-1.5 leading-none"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
         </div>
       )}
 
