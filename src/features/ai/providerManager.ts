@@ -9,6 +9,7 @@
  * - OpenRouter (aggregator with free models)
  */
 
+import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { GeminiRequestOptions } from './geminiService';
 
 // Provider Types
@@ -113,7 +114,7 @@ function isRetryableError(error: ProviderError): boolean {
  */
 function mapModelForProvider(model: string, targetProvider: ProviderType): string {
   // Model mapping for compatibility
-  const modelMap: Record<string, Record<ProviderType, string>> = {
+  const modelMap: Partial<Record<string, Partial<Record<ProviderType, string>>>> = {
     'gemini-1.5-flash': {
       groq: 'llama-3.1-8b-instant',
       huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
@@ -134,7 +135,7 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
   }
   
   // For unknown models, return a sensible default for the provider
-  const defaults: Record<ProviderType, string> = {
+  const defaults: Partial<Record<ProviderType, string>> = {
     gemini: model,
     groq: 'llama-3.1-8b-instant',
     huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
@@ -142,7 +143,7 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
     openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
   };
   
-  return defaults[targetProvider];
+  return defaults[targetProvider] || 'llama-3.1-8b-instant';
 }
 
 // Provider implementation functions
@@ -354,9 +355,6 @@ export class ProviderManager {
 
     // Add primary provider with user's key
     if (primaryApiKey && primaryProvider === 'gemini') {
-      // For Gemini, use existing geminiService directly
-      const { GoogleGenerativeAI, GenerationConfig } = await import('@google/generative-ai');
-      
       try {
         const genAI = new GoogleGenerativeAI(primaryApiKey.trim());
         const config: GenerationConfig = {

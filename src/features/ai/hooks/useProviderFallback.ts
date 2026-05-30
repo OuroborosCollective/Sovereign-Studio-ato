@@ -4,8 +4,11 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { providerManager, ProviderType, ProviderResponse } from './providerManager';
-import { geminiService } from './geminiService';
+import { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError } from '../providerManager';
+import { geminiService } from '../geminiService';
+
+// Re-export for convenience
+export { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError };
 
 export interface ProviderFallbackOptions {
   model?: string;
