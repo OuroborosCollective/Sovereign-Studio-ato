@@ -27,6 +27,7 @@ vi.mock('./features/ai/geminiService', () => ({
 const callGroqMock = vi.fn();
 const callHuggingFaceMock = vi.fn();
 const callTogetherMock = vi.fn();
+const callPuterMock = vi.fn();
 const callOpenRouterMock = vi.fn();
 vi.mock('./features/ai/providerManager', () => ({
   FREE_PROVIDERS: [],
@@ -38,6 +39,7 @@ vi.mock('./features/ai/providerManager', () => ({
   callGroq: (...args: unknown[]) => callGroqMock(...args),
   callHuggingFace: (...args: unknown[]) => callHuggingFaceMock(...args),
   callTogether: (...args: unknown[]) => callTogetherMock(...args),
+  callPuter: (...args: unknown[]) => callPuterMock(...args),
   callOpenRouter: (...args: unknown[]) => callOpenRouterMock(...args),
 }));
 
@@ -118,6 +120,7 @@ describe('ProductMagicApp — all AI providers unavailable banner', () => {
     // Force every provider to fail. Gemini throws a retryable (quota) error so the
     // fallback chain runs, and each free provider rejects too.
     generateTextMock.mockRejectedValue(new Error('429 quota exceeded'));
+    callPuterMock.mockRejectedValue(new Error('puter down'));
     callGroqMock.mockRejectedValue(new Error('groq down'));
     callHuggingFaceMock.mockRejectedValue(new Error('hf down'));
     callTogetherMock.mockRejectedValue(new Error('together down'));
@@ -192,6 +195,7 @@ describe('ProductMagicApp — Awareness Sync provider-unavailable banner', () =>
     // Force every provider to fail. Gemini throws a retryable (quota) error so the
     // fallback chain runs, and each free provider rejects too.
     generateTextMock.mockRejectedValue(new Error('429 quota exceeded'));
+    callPuterMock.mockRejectedValue(new Error('puter down'));
     callGroqMock.mockRejectedValue(new Error('groq down'));
     callHuggingFaceMock.mockRejectedValue(new Error('hf down'));
     callTogetherMock.mockRejectedValue(new Error('together down'));

@@ -91,7 +91,8 @@ VERBESSERUNGSVORSCHLÄGE:
       // FIXED: ANY error → fallback to free providers (no more retryable check)
       const errorMsg = geminiError?.message || String(geminiError);
       console.log(`🔄 Gemini failed: ${errorMsg} → falling back to free providers`);
-      onProviderSwitch?.('gemini', 'groq', errorMsg);
+      // Report fallback to first free provider (puter)
+      onProviderSwitch?.('gemini', 'puter', errorMsg);
       // Continue to fallback providers - don't throw
     }
   } else {
