@@ -7,6 +7,7 @@ import { geminiService } from './features/ai/geminiService';
 import { useProviderFallback, PROVIDER_INFO, ProviderType } from './features/ai/hooks/useProviderFallback';
 import { providerManager } from './features/ai/providerManager';
 import { keyStorage } from './features/ai/keyStorage';
+import KeySavedToast from './features/ai/KeySavedToast';
 import CanvasEngine from './features/canvas/CanvasEngine';
 import { addVectors, clearCanvas, type CanvasObject } from './features/canvas/canvasSlice';
 import {
@@ -950,6 +951,7 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
           </div>
         </section>
       </main>
+      <KeySavedToast />
     </div>
   );
 }

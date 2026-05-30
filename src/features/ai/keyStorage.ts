@@ -1,5 +1,30 @@
 import { Preferences } from '@capacitor/preferences';
 
+type SavedListener = (key: string) => void;
+const savedListeners = new Set<SavedListener>();
+
+/**
+ * Subscribe to successful key-persist events. The listener fires whenever a
+ * non-empty value is persisted via `set()` (web localStorage or Capacitor
+ * Preferences). Returns an unsubscribe function.
+ */
+function onSaved(listener: SavedListener): () => void {
+  savedListeners.add(listener);
+  return () => {
+    savedListeners.delete(listener);
+  };
+}
+
+function notifySaved(key: string): void {
+  savedListeners.forEach((listener) => {
+    try {
+      listener(key);
+    } catch {
+      // ignore listener errors so persistence is never affected
+    }
+  });
+}
+
 async function get(key: string, fallback = ''): Promise<string> {
   try {
     const { value } = await Preferences.get({ key });
@@ -20,18 +45,21 @@ async function get(key: string, fallback = ''): Promise<string> {
 }
 
 async function set(key: string, value: string): Promise<void> {
+  const hasValue = !!value.trim();
   try {
-    if (value.trim()) {
+    if (hasValue) {
       await Preferences.set({ key, value: value.trim() });
       localStorage.setItem(key, value.trim());
     } else {
       await Preferences.remove({ key });
       localStorage.removeItem(key);
     }
+    if (hasValue) notifySaved(key);
   } catch {
     try {
-      if (value.trim()) {
+      if (hasValue) {
         localStorage.setItem(key, value.trim());
+        notifySaved(key);
       } else {
         localStorage.removeItem(key);
       }
@@ -50,4 +78,4 @@ async function remove(key: string): Promise<void> {
   }
 }
 
-export const keyStorage = { get, set, remove };
+export const keyStorage = { get, set, remove, onSaved };
