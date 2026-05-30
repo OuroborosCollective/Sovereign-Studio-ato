@@ -3,7 +3,8 @@ import { FileItem, Card, WorkView, PipelineState, ProjectSettings } from './feat
 import { makeId, demoFiles, starterCards, defaultSettings } from './features/product/constants';
 import { runAwarenessSync, type AwarenessSyncResult, type RepoFile } from './features/ai/awarenessSync';
 import { geminiService } from './features/ai/geminiService';
-import { useProviderFallback, PROVIDER_INFO, ProviderType, providerManager } from './features/ai/hooks/useProviderFallback';
+import { useProviderFallback, PROVIDER_INFO, ProviderType } from './features/ai/hooks/useProviderFallback';
+import { providerManager } from './features/ai/providerManager';
 import {
   AlertTriangle,
   Bot,
