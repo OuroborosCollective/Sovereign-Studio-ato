@@ -42,7 +42,7 @@ describe('GeminiService', () => {
 
     expect(result).toBe(mockResponseText);
     expect(mockGetGenerativeModel).toHaveBeenCalledWith(expect.objectContaining({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash',
     }));
     expect(mockGenerateContent).toHaveBeenCalledWith('Hello Gemini');
   });

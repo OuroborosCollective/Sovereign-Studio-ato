@@ -3,17 +3,18 @@
  * Auto-switches between providers when primary fails (auth errors, quota, etc.)
  * 
  * Supported Free Tier Providers:
+ * - Puter.js (puter.com) - KEYLESS, FREE, unlimited API calls to OpenAI, Claude, Gemini
  * - Groq (LPU inference, very fast, generous free tier)
+ * - OpenRouter (aggregator with free models)
  * - HuggingFace (Inference API, many free models)
  * - Together AI (free tier with many models)
- * - OpenRouter (aggregator with free models)
  */
 
 import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { GeminiRequestOptions } from './geminiService';
 
 // Provider Types
-export type ProviderType = 'gemini' | 'groq' | 'huggingface' | 'together' | 'openrouter';
+export type ProviderType = 'gemini' | 'puter' | 'groq' | 'huggingface' | 'together' | 'openrouter';
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -43,8 +44,16 @@ export interface ProviderError {
   isRetryable: boolean;
 }
 
-// Free Provider Configurations
+// Free Provider Configurations - Priority order: Puter.js first (keyless), then other free providers
 export const FREE_PROVIDERS: ProviderConfig[] = [
+  {
+    type: 'puter',
+    baseURL: 'https://api.puter.com',
+    model: 'gemini-2.0-flash-exp',  // Puter.js uses Gemini through their service
+    supportsStreaming: false,
+    maxTokens: 8192,
+    priority: 0,  // HIGHEST priority - keyless!
+  },
   {
     type: 'groq',
     baseURL: 'https://api.groq.com/openai/v1',
@@ -54,12 +63,20 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     priority: 1,
   },
   {
+    type: 'openrouter',
+    baseURL: 'https://openrouter.ai/api/v1',
+    model: 'meta-llama/llama-3.1-8b-instruct:free',
+    supportsStreaming: true,
+    maxTokens: 8192,
+    priority: 2,
+  },
+  {
     type: 'huggingface',
     baseURL: 'https://api-inference.huggingface.co/models',
     model: 'meta-llama/Llama-3.2-1B-Instruct',
     supportsStreaming: false,
     maxTokens: 2048,
-    priority: 2,
+    priority: 3,
   },
   {
     type: 'together',
@@ -67,20 +84,14 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     model: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
     supportsStreaming: true,
     maxTokens: 4096,
-    priority: 3,
-  },
-  {
-    type: 'openrouter',
-    baseURL: 'https://openrouter.ai/api/v1',
-    model: 'meta-llama/llama-3.1-8b-instruct:free',
-    supportsStreaming: true,
-    maxTokens: 8192,
     priority: 4,
   },
 ];
 
 // Known free API keys (demo/public keys from providers)
 const PUBLIC_FREE_KEYS: Partial<Record<ProviderType, string>> = {
+  // Puter.js - KEYLESS, no API key needed!
+  puter: '',
   // Groq - public sandbox keys for testing (rate limited)
   groq: '',
   // HuggingFace - free tier doesn't need key for basic inference
@@ -111,10 +122,17 @@ function isRetryableError(error: ProviderError): boolean {
 
 /**
  * Maps model names between providers
+ * Updated to support gemini-2.0-flash as the primary model
  */
 function mapModelForProvider(model: string, targetProvider: ProviderType): string {
-  // Model mapping for compatibility
+  // Model mapping for compatibility - Updated with gemini-2.0-flash
   const modelMap: Partial<Record<string, Partial<Record<ProviderType, string>>>> = {
+    'gemini-2.0-flash': {
+      groq: 'llama-3.1-8b-instant',
+      huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
+      together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
+      openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
+    },
     'gemini-1.5-flash': {
       groq: 'llama-3.1-8b-instant',
       huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
@@ -137,6 +155,7 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
   // For unknown models, return a sensible default for the provider
   const defaults: Partial<Record<ProviderType, string>> = {
     gemini: model,
+    puter: 'gemini-2.0-flash-exp',  // Puter.js default
     groq: 'llama-3.1-8b-instant',
     huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
     together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
@@ -144,6 +163,25 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
   };
   
   return defaults[targetProvider] || 'llama-3.1-8b-instant';
+}
+
+/**
+ * Maps model names for Puter.js API
+ * Puter.js supports: claude-3-haiku, claude-3-sonnet, gpt-4o-mini, gemini-2.0-flash-exp, etc.
+ */
+function mapModelForPuter(model: string): string {
+  // Map common model names to Puter.js compatible models
+  const puterModelMap: Record<string, string> = {
+    'gemini-2.0-flash': 'gemini-2.0-flash-exp',
+    'gemini-1.5-flash': 'gemini-2.0-flash-exp',
+    'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',
+    'gpt-4o-mini': 'gpt-4o-mini',
+    'gpt-4o': 'gpt-4o',
+    'claude-3-haiku': 'claude-3-haiku-20240307',
+    'claude-3-sonnet': 'claude-3-sonnet-20240229',
+  };
+  
+  return puterModelMap[model] || 'gemini-2.0-flash-exp';
 }
 
 // Provider implementation functions
@@ -303,7 +341,63 @@ export async function callOpenRouter(apiKey: string, model: string, prompt: stri
 }
 
 /**
+ * Call Puter.js API - KEYLESS, FREE, unlimited AI API calls
+ * 
+ * Puter.js (puter.com) provides completely free, keyless API access to:
+ * - OpenAI models (gpt-4o-mini, gpt-4o, etc.)
+ * - Claude models (claude-3-haiku, claude-3-sonnet, etc.)
+ * - Gemini models (gemini-2.0-flash-exp, etc.)
+ * 
+ * This is the PRIMARY free fallback because it requires NO API key!
+ */
+export async function callPuter(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
+  // Puter.js uses a simple POST to their API - NO API KEY REQUIRED!
+  // We just need to include the app_id for tracking
+  
+  const puterModel = mapModelForPuter(model);
+  
+  const response = await fetch('https://api.puter.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: puterModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxOutputTokens ?? 2048,
+      // Puter.js specific options
+      stream: false,
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw {
+      provider: 'puter' as ProviderType,
+      error: errorData.error?.message || `HTTP ${response.status}`,
+      statusCode: response.status,
+      isRetryable: response.status === 429 || response.status >= 500 || response.status >= 400,
+    };
+  }
+  
+  const data = await response.json();
+  return {
+    text: data.choices?.[0]?.message?.content || '',
+    provider: 'puter',
+    model: puterModel,
+    usage: data.usage,
+  };
+}
+
+/**
  * ProviderManager - Main class for automatic provider fallback
+ * 
+ * KEY FEATURES:
+ * - Always fallback to free providers on ANY error or when no API key is provided
+ * - Puter.js is the PRIMARY free fallback (KEYLESS, unlimited, free)
+ * - Groq is the secondary fallback (very fast, generous free tier)
+ * - OpenRouter is the tertiary fallback (has :free models)
  */
 export class ProviderManager {
   private userApiKeys: Partial<Record<ProviderType, string>> = {};
@@ -340,7 +434,25 @@ export class ProviderManager {
   }
 
   /**
+   * Get the effective model (fallback to gemini-2.0-flash if not specified)
+   */
+  private getEffectiveModel(options: GeminiRequestOptions): string {
+    const model = options.model || 'gemini-2.0-flash';
+    // If model starts with 'gemini', default to flash
+    if (model.startsWith('gemini') && !model.includes('flash')) {
+      return 'gemini-2.0-flash';
+    }
+    return model;
+  }
+
+  /**
    * Main method: Try to generate text with automatic fallback
+   * 
+   * FIXED LOGIC:
+   * - If no primary key OR any error → ALWAYS fallback to free providers
+   * - No key entered → immediate fallback to Puter.js (KEYLESS!)
+   * - Any error (auth, quota, network, etc.) → fallback to next provider
+   * - Puter.js is the PRIMARY free fallback (KEYLESS, unlimited, free)
    */
   async generateWithFallback(
     primaryApiKey: string,
@@ -350,11 +462,11 @@ export class ProviderManager {
     onFallback?: (from: ProviderType, to: ProviderType, error: string) => void
   ): Promise<ProviderResponse> {
     
-    // Sort providers: user key first, then free providers
-    const providers: Array<{ type: ProviderType; apiKey: string; config: ProviderConfig }> = [];
+    const effectiveModel = this.getEffectiveModel(options);
+    let primaryError: string | null = null;
 
-    // Add primary provider with user's key
-    if (primaryApiKey && primaryProvider === 'gemini') {
+    // Try primary provider if key is provided
+    if (primaryApiKey?.trim() && primaryProvider === 'gemini') {
       try {
         const genAI = new GoogleGenerativeAI(primaryApiKey.trim());
         const config: GenerationConfig = {
@@ -362,7 +474,7 @@ export class ProviderManager {
           maxOutputTokens: options.maxOutputTokens ?? 2048,
         };
         const model = genAI.getGenerativeModel({
-          model: options.model || 'gemini-1.5-flash',
+          model: effectiveModel,
           generationConfig: config,
         });
         
@@ -370,93 +482,103 @@ export class ProviderManager {
         const response = await result.response;
         const text = response.text();
         
+        // Success with primary - return immediately
         return {
           text,
           provider: 'gemini',
-          model: options.model || 'gemini-1.5-flash',
+          model: effectiveModel,
         };
       } catch (error: any) {
-        const err: ProviderError = {
-          provider: 'gemini',
-          error: error?.message || 'Unknown error',
-          statusCode: error?.status,
-          isRetryable: error?.status === 429 || error?.message?.includes('quota'),
-        };
-        
-        // If not retryable, throw immediately
-        if (!isRetryableError(err)) {
-          throw error;
-        }
-        
-        // Otherwise, fall through to free providers
-        onFallback?.('gemini', 'groq', err.error);
+        // ANY error with primary → fallback to free providers
+        primaryError = error?.message || 'Unknown error';
+        console.log(`🔄 Primary provider (gemini) failed: ${primaryError}`);
+        // Continue to free providers - do NOT throw here
       }
+    } else if (!primaryApiKey?.trim()) {
+      // No key entered → immediate fallback to Puter.js (KEYLESS!)
+      console.log('🔄 No API key provided → falling back to free providers (Puter.js first)');
     }
 
-    // Add free providers with user keys if available
-    for (const config of this.getAvailableProviders()) {
-      const key = this.userApiKeys[config.type];
-      if (key?.trim()) {
-        providers.push({ type: config.type, apiKey: key, config });
-      }
-    }
-
-    // Try each provider in order
+    // Get list of free providers to try (prioritized by FREE_PROVIDERS order)
+    const freeProviders = this.getAvailableProviders();
     const errors: ProviderError[] = [];
-    
-    for (const { type, apiKey, config } of providers) {
+    let lastError: string = primaryError || 'No primary provider';
+
+    // Try each free provider in order (Puter.js first - KEYLESS!)
+    for (const config of freeProviders) {
+      // SPECIAL CASE: Puter.js does NOT require an API key!
+      const requiresApiKey = config.type !== 'puter';
+      const apiKey = this.userApiKeys[config.type];
+      
+      // Skip if API key is required but not provided
+      if (requiresApiKey && !apiKey?.trim()) {
+        console.log(`⏭️ Skipping ${config.type} - no API key configured`);
+        continue;
+      }
+
       try {
         let response: ProviderResponse;
         
-        switch (type) {
+        switch (config.type) {
+          case 'puter':
+            // Puter.js is KEYLESS - no API key needed!
+            response = await callPuter(apiKey || '', effectiveModel, prompt, options);
+            break;
           case 'groq':
-            response = await callGroq(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
-            break;
-          case 'huggingface':
-            response = await callHuggingFace(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
-            break;
-          case 'together':
-            response = await callTogether(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
+            response = await callGroq(apiKey, effectiveModel, prompt, options);
             break;
           case 'openrouter':
-            response = await callOpenRouter(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
+            response = await callOpenRouter(apiKey, effectiveModel, prompt, options);
+            break;
+          case 'huggingface':
+            response = await callHuggingFace(apiKey, effectiveModel, prompt, options);
+            break;
+          case 'together':
+            response = await callTogether(apiKey, effectiveModel, prompt, options);
             break;
           default:
             continue;
         }
         
-        this.lastUsedProvider = type;
+        this.lastUsedProvider = config.type;
+        console.log(`✅ Success with ${config.type}`);
         return response;
         
       } catch (error: any) {
+        const errMsg = error?.message || error?.error?.message || 'Unknown error';
+        lastError = errMsg;
+        
         const err: ProviderError = {
-          provider: type,
-          error: error?.message || error?.error?.message || 'Unknown error',
+          provider: config.type,
+          error: errMsg,
           statusCode: error?.statusCode || error?.status,
           isRetryable: isRetryableError(error),
         };
         
         errors.push(err);
+        console.log(`❌ ${config.type} failed: ${errMsg}`);
         
         // Mark provider as failed temporarily
-        this.failedProviders.add(type);
+        this.failedProviders.add(config.type);
         
-        // Notify about fallback
-        const nextProvider = providers.find(p => p.type !== type);
+        // Find next provider to notify about fallback
+        const nextProvider = freeProviders.find(p => p.type !== config.type);
         if (nextProvider) {
-          onFallback?.(type, nextProvider.type, err.error);
+          onFallback?.(config.type, nextProvider.type, errMsg);
         }
         
-        // If error is not retryable, don't try other providers
-        if (!err.isRetryable) {
-          break;
-        }
+        // Continue to next provider - we want to try ALL free options
+        continue;
       }
     }
 
-    // All providers failed
-    const errorSummary = errors.map(e => `${e.provider}: ${e.error}`).join('; ');
-    throw new Error(`All LLM providers failed: ${errorSummary}`);
+    // ALL free providers failed
+    const errorSummary = errors.length > 0 
+      ? errors.map(e => `${e.provider}: ${e.error}`).join('; ')
+      : lastError;
+    
+    console.error(`💥 All LLM providers failed: ${errorSummary}`);
+    throw new Error(`All LLM providers failed. Last error: ${errorSummary}`);
   }
 
   /**

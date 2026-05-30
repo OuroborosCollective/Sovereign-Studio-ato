@@ -1,12 +1,20 @@
 /**
  * useProviderFallback Hook
  * Provides automatic fallback to free LLM providers when primary fails
+ * 
+ * FIXED LOGIC:
+ * - No key OR any error → ALWAYS fallback to free providers
+ * - Uses gemini-2.0-flash as default model
+ * - Puter.js is the PRIMARY free fallback (KEYLESS, unlimited, free)
  */
 
 import { useState, useCallback, useEffect } from 'react';
 import { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError } from '../providerManager';
 import { geminiService } from '../geminiService';
 import { keyStorage } from '../keyStorage';
+
+// Default model - updated to gemini-2.0-flash
+const DEFAULT_MODEL = 'gemini-2.0-flash';
 
 // Re-export for convenience
 export { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError };
@@ -20,7 +28,7 @@ export interface ProviderFallbackOptions {
 }
 
 export interface ProviderFallbackResult {
-  generateContent: (prompt: string, apiKey: string) => Promise<string>;
+  generateContent: (prompt: string, apiKey?: string) => Promise<string>;
   isLoading: boolean;
   error: string | null;
   currentProvider: ProviderType;
@@ -30,6 +38,12 @@ export interface ProviderFallbackResult {
 
 /**
  * Hook for generating content with automatic provider fallback
+ * 
+ * FIXED FALLBACK LOGIC:
+ * 1. If no API key → immediate fallback to Puter.js (KEYLESS!)
+ * 2. If API key provided → try Gemini first
+ * 3. On ANY error (quota, auth, network, etc.) → fallback to free providers
+ * 4. Free provider chain: Puter.js → Groq → OpenRouter → HuggingFace → Together
  */
 export function useProviderFallback(options: ProviderFallbackOptions = {}): ProviderFallbackResult {
   const [isLoading, setIsLoading] = useState(false);
@@ -64,38 +78,43 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
     void keyStorage.set(`sovereign_${provider}_api_key`, key);
   }, []);
 
+  /**
+   * FIXED: generateContent - handles all cases of no key or errors
+   * 
+   * Logic:
+   * - If NO key provided → skip Gemini, go straight to free providers
+   * - If key provided → try Gemini first
+   * - On ANY error from Gemini → fallback to free providers
+   */
   const generateContent = useCallback(async (prompt: string, geminiApiKey?: string): Promise<string> => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // Try Gemini first if key is available
-      if (geminiApiKey?.trim()) {
+      // FIXED: Determine effective model
+      const effectiveModel = options.model || DEFAULT_MODEL;
+      
+      // FIXED: If no API key → skip to free providers immediately
+      if (!geminiApiKey?.trim()) {
+        console.log('🔄 No Gemini API key → using free providers');
+        handleFallback('gemini', 'openrouter', 'No API key provided');
+      } else {
+        // Try Gemini first if key is available
         try {
           const result = await geminiService.generateText(geminiApiKey, prompt, {
-            model: options.model || 'gemini-1.5-flash',
+            model: effectiveModel,
             temperature: options.temperature,
             maxOutputTokens: options.maxOutputTokens,
           });
           setCurrentProvider('gemini');
           return result;
         } catch (err: any) {
+          // FIXED: ANY error → fallback to free providers
+          // Don't check for retryable errors - just fallback on everything
           const errorMsg = err?.message || String(err);
-          const isRetryable = 
-            errorMsg.includes('429') || 
-            errorMsg.includes('quota') || 
-            errorMsg.includes('RESOURCE_EXHAUSTED') ||
-            errorMsg.includes('authentication') ||
-            errorMsg.includes('api key') ||
-            err?.status === 401 || 
-            err?.status === 403;
-
-          if (!isRetryable) {
-            throw err;
-          }
-
-          // Fall through to free providers
-          handleFallback('gemini', 'groq', errorMsg);
+          console.log(`🔄 Gemini failed: ${errorMsg} → falling back to free providers`);
+          handleFallback('gemini', 'openrouter', errorMsg);
+          // Continue to free providers - don't throw
         }
       }
 
@@ -105,7 +124,7 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
         'gemini',
         prompt,
         {
-          model: options.model || 'gemini-1.5-flash',
+          model: effectiveModel,
           temperature: options.temperature,
           maxOutputTokens: options.maxOutputTokens,
         },
@@ -151,10 +170,18 @@ export const PROVIDER_INFO: ProviderStatus[] = [
   {
     type: 'gemini',
     name: 'Google Gemini',
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.0-flash',
     hasKey: false,
     isFree: false,
     description: 'Primary provider. Requires Google AI API key.',
+  },
+  {
+    type: 'puter',
+    name: 'Puter.js',
+    model: 'gemini-2.0-flash-exp',
+    hasKey: false,  // KEYLESS!
+    isFree: true,
+    description: '⭐ KEYLESS FREE! Puter.js provides unlimited free AI calls (OpenAI, Claude, Gemini). No API key needed!',
   },
   {
     type: 'groq',
@@ -163,6 +190,14 @@ export const PROVIDER_INFO: ProviderStatus[] = [
     hasKey: false,
     isFree: true,
     description: 'Ultra-fast LPU inference. Free tier: 14,400 requests/day.',
+  },
+  {
+    type: 'openrouter',
+    name: 'OpenRouter',
+    model: 'llama-3.1-8b-instruct:free',
+    hasKey: false,
+    isFree: true,
+    description: 'Aggregates many providers with free models.',
   },
   {
     type: 'huggingface',
@@ -179,14 +214,6 @@ export const PROVIDER_INFO: ProviderStatus[] = [
     hasKey: false,
     isFree: true,
     description: 'Many open models. Free tier available.',
-  },
-  {
-    type: 'openrouter',
-    name: 'OpenRouter',
-    model: 'llama-3.1-8b-instruct:free',
-    hasKey: false,
-    isFree: true,
-    description: 'Aggregates many providers. Has free models.',
   },
 ];
 

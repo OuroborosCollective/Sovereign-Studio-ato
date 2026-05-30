@@ -12,11 +12,13 @@ vi.mock('./geminiService', () => ({
 }));
 
 // Free-provider fallback calls are mocked so each handoff step is reproducible.
+const callPuterMock = vi.fn();
 const callGroqMock = vi.fn();
 const callHuggingFaceMock = vi.fn();
 const callTogetherMock = vi.fn();
 const callOpenRouterMock = vi.fn();
 vi.mock('./providerManager', () => ({
+  callPuter: (...args: unknown[]) => callPuterMock(...args),
   callGroq: (...args: unknown[]) => callGroqMock(...args),
   callHuggingFace: (...args: unknown[]) => callHuggingFaceMock(...args),
   callTogether: (...args: unknown[]) => callTogetherMock(...args),
@@ -61,7 +63,7 @@ const ALL_KEYS = {
 const RETRYABLE = new Error('429 quota exceeded');
 
 function providerResponse(text = RAW_RESPONSE) {
-  return { text, provider: 'groq' as ProviderType, model: 'm' };
+  return { text, provider: 'puter' as ProviderType, model: 'm' };
 }
 
 describe('runAwarenessSync — provider fallback chain', () => {
@@ -78,11 +80,12 @@ describe('runAwarenessSync — provider fallback chain', () => {
       REPO_FILES,
       REPO_URL,
       ALL_KEYS,
-      'gemini-1.5-flash',
+      'gemini-2.0-flash',
       onSwitch
     );
 
     expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(callPuterMock).not.toHaveBeenCalled();
     expect(callGroqMock).not.toHaveBeenCalled();
     expect(callHuggingFaceMock).not.toHaveBeenCalled();
     expect(callTogetherMock).not.toHaveBeenCalled();
@@ -96,8 +99,37 @@ describe('runAwarenessSync — provider fallback chain', () => {
     expect(result.rawText).toBe(RAW_RESPONSE);
   });
 
-  it('Gemini 429 → Groq succeeds, and reports the gemini→groq switch', async () => {
+  it('Gemini 429 → Puter succeeds, and reports the gemini→puter switch', async () => {
     generateTextMock.mockRejectedValue(RETRYABLE);
+    callPuterMock.mockResolvedValue(providerResponse());
+    const onSwitch = vi.fn();
+
+    const result = await runAwarenessSync(
+      'AIza-key',
+      REPO_FILES,
+      REPO_URL,
+      ALL_KEYS,
+      'gemini-2.0-flash',
+      onSwitch
+    );
+
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(callPuterMock).toHaveBeenCalledTimes(1);
+    // Other providers should NOT be called
+    expect(callGroqMock).not.toHaveBeenCalled();
+    expect(callHuggingFaceMock).not.toHaveBeenCalled();
+    expect(callTogetherMock).not.toHaveBeenCalled();
+    expect(callOpenRouterMock).not.toHaveBeenCalled();
+
+    // onSwitch called for the fallback
+    expect(onSwitch).toHaveBeenCalledTimes(1);
+    expect(onSwitch).toHaveBeenCalledWith('gemini', 'puter', expect.stringContaining('429'));
+    expect(result.summary).toBe('Ein Test-Projekt.');
+  });
+
+  it('Puter fails → Groq succeeds, and reports the puter→groq switch', async () => {
+    generateTextMock.mockRejectedValue(RETRYABLE);
+    callPuterMock.mockRejectedValue(new Error('puter down'));
     callGroqMock.mockResolvedValue(providerResponse());
     const onSwitch = vi.fn();
 
@@ -106,75 +138,26 @@ describe('runAwarenessSync — provider fallback chain', () => {
       REPO_FILES,
       REPO_URL,
       ALL_KEYS,
-      'gemini-1.5-flash',
+      'gemini-2.0-flash',
       onSwitch
     );
 
-    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(callPuterMock).toHaveBeenCalledTimes(1);
     expect(callGroqMock).toHaveBeenCalledTimes(1);
     expect(callHuggingFaceMock).not.toHaveBeenCalled();
     expect(callTogetherMock).not.toHaveBeenCalled();
     expect(callOpenRouterMock).not.toHaveBeenCalled();
 
-    expect(onSwitch).toHaveBeenCalledTimes(1);
-    expect(onSwitch).toHaveBeenCalledWith('gemini', 'groq', expect.stringContaining('429'));
+    // First fallback is gemini->puter, then puter->groq when puter fails
+    expect(onSwitch).toHaveBeenCalledWith('gemini', 'puter', expect.any(String));
+    expect(onSwitch).toHaveBeenCalledWith('puter', 'groq', expect.stringContaining('puter down'));
     expect(result.summary).toBe('Ein Test-Projekt.');
   });
 
-  it('Groq fails → HuggingFace succeeds, and reports the groq→huggingface switch', async () => {
+  it('Groq fails → OpenRouter succeeds, and reports the groq→openrouter switch', async () => {
     generateTextMock.mockRejectedValue(RETRYABLE);
+    callPuterMock.mockRejectedValue(new Error('puter down'));
     callGroqMock.mockRejectedValue(new Error('groq down'));
-    callHuggingFaceMock.mockResolvedValue(providerResponse());
-    const onSwitch = vi.fn();
-
-    const result = await runAwarenessSync(
-      'AIza-key',
-      REPO_FILES,
-      REPO_URL,
-      ALL_KEYS,
-      'gemini-1.5-flash',
-      onSwitch
-    );
-
-    expect(callGroqMock).toHaveBeenCalledTimes(1);
-    expect(callHuggingFaceMock).toHaveBeenCalledTimes(1);
-    expect(callTogetherMock).not.toHaveBeenCalled();
-    expect(callOpenRouterMock).not.toHaveBeenCalled();
-
-    expect(onSwitch).toHaveBeenCalledWith('gemini', 'groq', expect.any(String));
-    expect(onSwitch).toHaveBeenCalledWith('groq', 'huggingface', expect.stringContaining('groq down'));
-    expect(result.summary).toBe('Ein Test-Projekt.');
-  });
-
-  it('HuggingFace fails → Together succeeds, and reports the huggingface→together switch', async () => {
-    generateTextMock.mockRejectedValue(RETRYABLE);
-    callGroqMock.mockRejectedValue(new Error('groq down'));
-    callHuggingFaceMock.mockRejectedValue(new Error('hf down'));
-    callTogetherMock.mockResolvedValue(providerResponse());
-    const onSwitch = vi.fn();
-
-    const result = await runAwarenessSync(
-      'AIza-key',
-      REPO_FILES,
-      REPO_URL,
-      ALL_KEYS,
-      'gemini-1.5-flash',
-      onSwitch
-    );
-
-    expect(callHuggingFaceMock).toHaveBeenCalledTimes(1);
-    expect(callTogetherMock).toHaveBeenCalledTimes(1);
-    expect(callOpenRouterMock).not.toHaveBeenCalled();
-
-    expect(onSwitch).toHaveBeenCalledWith('huggingface', 'together', expect.stringContaining('hf down'));
-    expect(result.summary).toBe('Ein Test-Projekt.');
-  });
-
-  it('Together fails → OpenRouter succeeds, and reports the together→openrouter switch', async () => {
-    generateTextMock.mockRejectedValue(RETRYABLE);
-    callGroqMock.mockRejectedValue(new Error('groq down'));
-    callHuggingFaceMock.mockRejectedValue(new Error('hf down'));
-    callTogetherMock.mockRejectedValue(new Error('together down'));
     callOpenRouterMock.mockResolvedValue(providerResponse());
     const onSwitch = vi.fn();
 
@@ -183,14 +166,18 @@ describe('runAwarenessSync — provider fallback chain', () => {
       REPO_FILES,
       REPO_URL,
       ALL_KEYS,
-      'gemini-1.5-flash',
+      'gemini-2.0-flash',
       onSwitch
     );
 
-    expect(callTogetherMock).toHaveBeenCalledTimes(1);
+    expect(callPuterMock).toHaveBeenCalledTimes(1);
+    expect(callGroqMock).toHaveBeenCalledTimes(1);
     expect(callOpenRouterMock).toHaveBeenCalledTimes(1);
+    expect(callHuggingFaceMock).not.toHaveBeenCalled();
+    expect(callTogetherMock).not.toHaveBeenCalled();
 
-    expect(onSwitch).toHaveBeenCalledWith('together', 'openrouter', expect.stringContaining('together down'));
+    // Verify groq->openrouter fallback
+    expect(onSwitch).toHaveBeenCalledWith('groq', 'openrouter', expect.stringContaining('groq down'));
     expect(result.summary).toBe('Ein Test-Projekt.');
   });
 
@@ -200,9 +187,17 @@ describe('runAwarenessSync — provider fallback chain', () => {
       callOrder.push('gemini');
       throw RETRYABLE;
     });
+    callPuterMock.mockImplementation(async () => {
+      callOrder.push('puter');
+      throw new Error('puter down');
+    });
     callGroqMock.mockImplementation(async () => {
       callOrder.push('groq');
       throw new Error('groq down');
+    });
+    callOpenRouterMock.mockImplementation(async () => {
+      callOrder.push('openrouter');
+      throw new Error('openrouter down');
     });
     callHuggingFaceMock.mockImplementation(async () => {
       callOrder.push('huggingface');
@@ -210,80 +205,89 @@ describe('runAwarenessSync — provider fallback chain', () => {
     });
     callTogetherMock.mockImplementation(async () => {
       callOrder.push('together');
-      throw new Error('together down');
-    });
-    callOpenRouterMock.mockImplementation(async () => {
-      callOrder.push('openrouter');
       return providerResponse();
     });
 
     await runAwarenessSync('AIza-key', REPO_FILES, REPO_URL, ALL_KEYS);
 
-    expect(callOrder).toEqual(['gemini', 'groq', 'huggingface', 'together', 'openrouter']);
+    // Provider order: puter -> groq -> openrouter -> huggingface -> together
+    expect(callOrder).toEqual(['gemini', 'puter', 'groq', 'openrouter', 'huggingface', 'together']);
   });
 
-  it('starts at Groq (no gemini→groq report) when no Gemini key is supplied', async () => {
-    callGroqMock.mockResolvedValue(providerResponse());
+  it('starts at Puter (reports gemini→puter) when no Gemini key is supplied', async () => {
+    callPuterMock.mockResolvedValue(providerResponse());
     const onSwitch = vi.fn();
 
-    const result = await runAwarenessSync('', REPO_FILES, REPO_URL, ALL_KEYS, 'gemini-1.5-flash', onSwitch);
+    const result = await runAwarenessSync('', REPO_FILES, REPO_URL, ALL_KEYS, 'gemini-2.0-flash', onSwitch);
 
     expect(generateTextMock).not.toHaveBeenCalled();
-    expect(callGroqMock).toHaveBeenCalledTimes(1);
-    expect(onSwitch).not.toHaveBeenCalled();
+    expect(callPuterMock).toHaveBeenCalledTimes(1);
+    // onSwitch IS called to report the fallback to Puter
+    expect(onSwitch).toHaveBeenCalledTimes(1);
+    expect(onSwitch).toHaveBeenCalledWith('gemini', 'puter', 'No API key provided');
     expect(result.summary).toBe('Ein Test-Projekt.');
   });
 
   it('skips providers that have no key and hands off to the next configured one', async () => {
     generateTextMock.mockRejectedValue(RETRYABLE);
+    callPuterMock.mockRejectedValue(new Error('puter down'));
+    callGroqMock.mockRejectedValue(new Error('groq down'));
+    callOpenRouterMock.mockRejectedValue(new Error('openrouter down'));
     callTogetherMock.mockResolvedValue(providerResponse());
     const onSwitch = vi.fn();
 
-    // Only Gemini + Together keys present; Groq and HuggingFace are skipped.
+    // Only Gemini + Together keys present; Puter, Groq, OpenRouter and HuggingFace will be skipped or fail
     const result = await runAwarenessSync(
       'AIza-key',
       REPO_FILES,
       REPO_URL,
       { togetherKey: 'together_key' },
-      'gemini-1.5-flash',
+      'gemini-2.0-flash',
       onSwitch
     );
 
-    expect(callGroqMock).not.toHaveBeenCalled();
-    expect(callHuggingFaceMock).not.toHaveBeenCalled();
     expect(callTogetherMock).toHaveBeenCalledTimes(1);
-    expect(callOpenRouterMock).not.toHaveBeenCalled();
     expect(result.summary).toBe('Ein Test-Projekt.');
   });
 
-  it('throws a non-retryable Gemini error without trying any fallback provider', async () => {
+  it('falls back to Puter on ANY Gemini error (including non-retryable)', async () => {
+    // With the new logic, ALL errors trigger fallback, not just retryable ones
     generateTextMock.mockRejectedValue(new Error('400 invalid request'));
+    callPuterMock.mockResolvedValue(providerResponse());
     const onSwitch = vi.fn();
 
-    await expect(
-      runAwarenessSync('AIza-key', REPO_FILES, REPO_URL, ALL_KEYS, 'gemini-1.5-flash', onSwitch)
-    ).rejects.toThrow('400 invalid request');
+    const result = await runAwarenessSync(
+      'AIza-key',
+      REPO_FILES,
+      REPO_URL,
+      ALL_KEYS,
+      'gemini-2.0-flash',
+      onSwitch
+    );
 
-    expect(callGroqMock).not.toHaveBeenCalled();
-    expect(onSwitch).not.toHaveBeenCalled();
+    expect(callPuterMock).toHaveBeenCalledTimes(1);
+    expect(onSwitch).toHaveBeenCalledTimes(1);
+    expect(result.summary).toBe('Ein Test-Projekt.');
   });
 
   it('throws the "all providers failed" error when every provider rejects', async () => {
     generateTextMock.mockRejectedValue(RETRYABLE);
+    callPuterMock.mockRejectedValue(new Error('puter down'));
     callGroqMock.mockRejectedValue(new Error('groq down'));
+    callOpenRouterMock.mockRejectedValue(new Error('openrouter down'));
     callHuggingFaceMock.mockRejectedValue(new Error('hf down'));
     callTogetherMock.mockRejectedValue(new Error('together down'));
-    callOpenRouterMock.mockRejectedValue(new Error('openrouter down'));
 
     await expect(
       runAwarenessSync('AIza-key', REPO_FILES, REPO_URL, ALL_KEYS)
     ).rejects.toThrow(/Alle AI-Provider sind fehlgeschlagen/);
 
     expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(callPuterMock).toHaveBeenCalledTimes(1);
     expect(callGroqMock).toHaveBeenCalledTimes(1);
+    expect(callOpenRouterMock).toHaveBeenCalledTimes(1);
     expect(callHuggingFaceMock).toHaveBeenCalledTimes(1);
     expect(callTogetherMock).toHaveBeenCalledTimes(1);
-    expect(callOpenRouterMock).toHaveBeenCalledTimes(1);
   });
 
   it('throws the "no key configured" error before any network call when nothing is set', async () => {
@@ -292,6 +296,6 @@ describe('runAwarenessSync — provider fallback chain', () => {
     ).rejects.toThrow(/Kein API-Key konfiguriert/);
 
     expect(generateTextMock).not.toHaveBeenCalled();
-    expect(callGroqMock).not.toHaveBeenCalled();
+    expect(callPuterMock).not.toHaveBeenCalled();
   });
 });
