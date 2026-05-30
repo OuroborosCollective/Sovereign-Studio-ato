@@ -1,0 +1,482 @@
+/**
+ * Provider Manager - Free LLM API Fallback System
+ * Auto-switches between providers when primary fails (auth errors, quota, etc.)
+ * 
+ * Supported Free Tier Providers:
+ * - Groq (LPU inference, very fast, generous free tier)
+ * - HuggingFace (Inference API, many free models)
+ * - Together AI (free tier with many models)
+ * - OpenRouter (aggregator with free models)
+ */
+
+import { GeminiRequestOptions } from './geminiService';
+
+// Provider Types
+export type ProviderType = 'gemini' | 'groq' | 'huggingface' | 'together' | 'openrouter';
+
+export interface ProviderConfig {
+  type: ProviderType;
+  apiKey?: string;
+  baseURL: string;
+  model: string;
+  supportsStreaming?: boolean;
+  maxTokens?: number;
+  priority: number;
+}
+
+export interface ProviderResponse {
+  text: string;
+  provider: ProviderType;
+  model: string;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
+}
+
+export interface ProviderError {
+  provider: ProviderType;
+  error: string;
+  statusCode?: number;
+  isRetryable: boolean;
+}
+
+// Free Provider Configurations
+export const FREE_PROVIDERS: ProviderConfig[] = [
+  {
+    type: 'groq',
+    baseURL: 'https://api.groq.com/openai/v1',
+    model: 'llama-3.1-8b-instant',
+    supportsStreaming: true,
+    maxTokens: 8192,
+    priority: 1,
+  },
+  {
+    type: 'huggingface',
+    baseURL: 'https://api-inference.huggingface.co/models',
+    model: 'meta-llama/Llama-3.2-1B-Instruct',
+    supportsStreaming: false,
+    maxTokens: 2048,
+    priority: 2,
+  },
+  {
+    type: 'together',
+    baseURL: 'https://api.together.xyz/v1',
+    model: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
+    supportsStreaming: true,
+    maxTokens: 4096,
+    priority: 3,
+  },
+  {
+    type: 'openrouter',
+    baseURL: 'https://openrouter.ai/api/v1',
+    model: 'meta-llama/llama-3.1-8b-instruct:free',
+    supportsStreaming: true,
+    maxTokens: 8192,
+    priority: 4,
+  },
+];
+
+// Known free API keys (demo/public keys from providers)
+const PUBLIC_FREE_KEYS: Partial<Record<ProviderType, string>> = {
+  // Groq - public sandbox keys for testing (rate limited)
+  groq: '',
+  // HuggingFace - free tier doesn't need key for basic inference
+  huggingface: '',
+  // Together AI - requires key
+  together: '',
+  // OpenRouter - requires key
+  openrouter: '',
+};
+
+/**
+ * Checks if error is retryable (auth issues, quota)
+ */
+function isRetryableError(error: ProviderError): boolean {
+  const retryableCodes = [401, 403, 429, 500, 502, 503, 504];
+  const retryableMessages = [
+    'quota', 'rate limit', 'RESOURCE_EXHAUSTED', 'context_length',
+    'authentication', 'api key', 'invalid', 'unauthorized',
+    'rate_limit_exceeded', 'too many requests'
+  ];
+  
+  if (error.statusCode && retryableCodes.includes(error.statusCode)) return true;
+  if (error.isRetryable) return true;
+  
+  const msg = error.error.toLowerCase();
+  return retryableMessages.some(m => msg.includes(m));
+}
+
+/**
+ * Maps model names between providers
+ */
+function mapModelForProvider(model: string, targetProvider: ProviderType): string {
+  // Model mapping for compatibility
+  const modelMap: Record<string, Record<ProviderType, string>> = {
+    'gemini-1.5-flash': {
+      groq: 'llama-3.1-8b-instant',
+      huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
+      together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
+      openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
+    },
+    'gemini-1.5-pro': {
+      groq: 'llama-3.1-70b-versatile',
+      huggingface: 'meta-llama/Llama-3.2-3B-Instruct',
+      together: 'meta-llama/Llama-3.2-70B-Instruct-Turbo',
+      openrouter: 'meta-llama/llama-3.1-70b-instruct:free',
+    },
+  };
+  
+  // Try direct mapping first
+  if (modelMap[model]?.[targetProvider]) {
+    return modelMap[model][targetProvider];
+  }
+  
+  // For unknown models, return a sensible default for the provider
+  const defaults: Record<ProviderType, string> = {
+    gemini: model,
+    groq: 'llama-3.1-8b-instant',
+    huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
+    together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
+    openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
+  };
+  
+  return defaults[targetProvider];
+}
+
+// Provider implementation functions
+export async function callGroq(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, 'groq');
+  
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: mappedModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxOutputTokens ?? 2048,
+      stream: false,
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw {
+      provider: 'groq' as ProviderType,
+      error: errorData.error?.message || `HTTP ${response.status}`,
+      statusCode: response.status,
+      isRetryable: response.status === 429 || response.status >= 500,
+    };
+  }
+  
+  const data = await response.json();
+  return {
+    text: data.choices?.[0]?.message?.content || '',
+    provider: 'groq',
+    model: mappedModel,
+    usage: data.usage,
+  };
+}
+
+export async function callHuggingFace(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, 'huggingface');
+  const url = `https://api-inference.huggingface.co/models/${mappedModel}`;
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      inputs: prompt,
+      parameters: {
+        temperature: options.temperature ?? 0.7,
+        max_new_tokens: options.maxOutputTokens ?? 2048,
+      },
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw {
+      provider: 'huggingface' as ProviderType,
+      error: Array.isArray(errorData) ? errorData[0]?.error || `HTTP ${response.status}` : errorData.error || `HTTP ${response.status}`,
+      statusCode: response.status,
+      isRetryable: response.status === 429 || response.status >= 500,
+    };
+  }
+  
+  const data = await response.json();
+  // HuggingFace returns array of generated texts
+  const text = Array.isArray(data) ? data[0]?.generated_text || '' : data.generated_text || '';
+  
+  return {
+    text,
+    provider: 'huggingface',
+    model: mappedModel,
+  };
+}
+
+export async function callTogether(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, 'together');
+  
+  const response = await fetch('https://api.together.xyz/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: mappedModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxOutputTokens ?? 2048,
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw {
+      provider: 'together' as ProviderType,
+      error: errorData.error?.message || `HTTP ${response.status}`,
+      statusCode: response.status,
+      isRetryable: response.status === 429 || response.status >= 500,
+    };
+  }
+  
+  const data = await response.json();
+  return {
+    text: data.choices?.[0]?.message?.content || '',
+    provider: 'together',
+    model: mappedModel,
+    usage: data.usage,
+  };
+}
+
+export async function callOpenRouter(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, 'openrouter');
+  
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://sovereign-studio.app',
+      'X-Title': 'Sovereign Studio',
+    },
+    body: JSON.stringify({
+      model: mappedModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxOutputTokens ?? 2048,
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw {
+      provider: 'openrouter' as ProviderType,
+      error: errorData.error?.message || `HTTP ${response.status}`,
+      statusCode: response.status,
+      isRetryable: response.status === 429 || response.status >= 500,
+    };
+  }
+  
+  const data = await response.json();
+  return {
+    text: data.choices?.[0]?.message?.content || '',
+    provider: 'openrouter',
+    model: mappedModel,
+    usage: data.usage,
+  };
+}
+
+/**
+ * ProviderManager - Main class for automatic provider fallback
+ */
+export class ProviderManager {
+  private userApiKeys: Partial<Record<ProviderType, string>> = {};
+  private lastUsedProvider: ProviderType | null = null;
+  private failedProviders: Set<ProviderType> = new Set();
+
+  constructor() {
+    // Initialize with empty keys - user can set them later
+    this.userApiKeys = {};
+  }
+
+  /**
+   * Set API key for a specific provider
+   */
+  setApiKey(provider: ProviderType, key: string): void {
+    this.userApiKeys[provider] = key;
+    this.failedProviders.delete(provider);
+  }
+
+  /**
+   * Clear failed provider status (e.g., after cooldown)
+   */
+  resetFailedProviders(): void {
+    this.failedProviders.clear();
+  }
+
+  /**
+   * Get available providers sorted by priority
+   */
+  getAvailableProviders(): ProviderConfig[] {
+    return FREE_PROVIDERS
+      .filter(p => !this.failedProviders.has(p.type))
+      .sort((a, b) => a.priority - b.priority);
+  }
+
+  /**
+   * Main method: Try to generate text with automatic fallback
+   */
+  async generateWithFallback(
+    primaryApiKey: string,
+    primaryProvider: ProviderType = 'gemini',
+    prompt: string,
+    options: GeminiRequestOptions = {},
+    onFallback?: (from: ProviderType, to: ProviderType, error: string) => void
+  ): Promise<ProviderResponse> {
+    
+    // Sort providers: user key first, then free providers
+    const providers: Array<{ type: ProviderType; apiKey: string; config: ProviderConfig }> = [];
+
+    // Add primary provider with user's key
+    if (primaryApiKey && primaryProvider === 'gemini') {
+      // For Gemini, use existing geminiService directly
+      const { GoogleGenerativeAI, GenerationConfig } = await import('@google/generative-ai');
+      
+      try {
+        const genAI = new GoogleGenerativeAI(primaryApiKey.trim());
+        const config: GenerationConfig = {
+          temperature: options.temperature ?? 0.7,
+          maxOutputTokens: options.maxOutputTokens ?? 2048,
+        };
+        const model = genAI.getGenerativeModel({
+          model: options.model || 'gemini-1.5-flash',
+          generationConfig: config,
+        });
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        return {
+          text,
+          provider: 'gemini',
+          model: options.model || 'gemini-1.5-flash',
+        };
+      } catch (error: any) {
+        const err: ProviderError = {
+          provider: 'gemini',
+          error: error?.message || 'Unknown error',
+          statusCode: error?.status,
+          isRetryable: error?.status === 429 || error?.message?.includes('quota'),
+        };
+        
+        // If not retryable, throw immediately
+        if (!isRetryableError(err)) {
+          throw error;
+        }
+        
+        // Otherwise, fall through to free providers
+        onFallback?.('gemini', 'groq', err.error);
+      }
+    }
+
+    // Add free providers with user keys if available
+    for (const config of this.getAvailableProviders()) {
+      const key = this.userApiKeys[config.type];
+      if (key?.trim()) {
+        providers.push({ type: config.type, apiKey: key, config });
+      }
+    }
+
+    // Try each provider in order
+    const errors: ProviderError[] = [];
+    
+    for (const { type, apiKey, config } of providers) {
+      try {
+        let response: ProviderResponse;
+        
+        switch (type) {
+          case 'groq':
+            response = await callGroq(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
+            break;
+          case 'huggingface':
+            response = await callHuggingFace(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
+            break;
+          case 'together':
+            response = await callTogether(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
+            break;
+          case 'openrouter':
+            response = await callOpenRouter(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
+            break;
+          default:
+            continue;
+        }
+        
+        this.lastUsedProvider = type;
+        return response;
+        
+      } catch (error: any) {
+        const err: ProviderError = {
+          provider: type,
+          error: error?.message || error?.error?.message || 'Unknown error',
+          statusCode: error?.statusCode || error?.status,
+          isRetryable: isRetryableError(error),
+        };
+        
+        errors.push(err);
+        
+        // Mark provider as failed temporarily
+        this.failedProviders.add(type);
+        
+        // Notify about fallback
+        const nextProvider = providers.find(p => p.type !== type);
+        if (nextProvider) {
+          onFallback?.(type, nextProvider.type, err.error);
+        }
+        
+        // If error is not retryable, don't try other providers
+        if (!err.isRetryable) {
+          break;
+        }
+      }
+    }
+
+    // All providers failed
+    const errorSummary = errors.map(e => `${e.provider}: ${e.error}`).join('; ');
+    throw new Error(`All LLM providers failed: ${errorSummary}`);
+  }
+
+  /**
+   * Get last successful provider
+   */
+  getLastProvider(): ProviderType | null {
+    return this.lastUsedProvider;
+  }
+
+  /**
+   * Check which providers have valid keys configured
+   */
+  getConfiguredProviders(): ProviderType[] {
+    return Object.entries(this.userApiKeys)
+      .filter(([, key]) => key?.trim())
+      .map(([type]) => type as ProviderType);
+  }
+}
+
+// Singleton instance
+export const providerManager = new ProviderManager();

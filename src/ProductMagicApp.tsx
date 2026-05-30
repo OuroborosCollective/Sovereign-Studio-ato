@@ -3,6 +3,7 @@ import { FileItem, Card, WorkView, PipelineState, ProjectSettings } from './feat
 import { makeId, demoFiles, starterCards, defaultSettings } from './features/product/constants';
 import { runAwarenessSync, type AwarenessSyncResult, type RepoFile } from './features/ai/awarenessSync';
 import { geminiService } from './features/ai/geminiService';
+import { useProviderFallback, PROVIDER_INFO, ProviderType, providerManager } from './features/ai/hooks/useProviderFallback';
 import {
   AlertTriangle,
   Bot,
@@ -128,6 +129,35 @@ export default function ProductMagicApp() {
   const [generatedCode, setGeneratedCode] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Free provider API keys
+  const [groqKey, setGroqKeyState] = useState(() => loadFromStorage('sovereign_groq_api_key'));
+  const [hfKey, setHfKeyState] = useState(() => loadFromStorage('sovereign_huggingface_api_key'));
+  const [togetherKey, setTogetherKeyState] = useState(() => loadFromStorage('sovereign_together_api_key'));
+  const [openrouterKey, setOpenrouterKeyState] = useState(() => loadFromStorage('sovereign_openrouter_api_key'));
+
+  const setGroqKey = (v: string) => { setGroqKeyState(v); saveToStorage('sovereign_groq_api_key', v); };
+  const setHfKey = (v: string) => { setHfKeyState(v); saveToStorage('sovereign_huggingface_api_key', v); };
+  const setTogetherKey = (v: string) => { setTogetherKeyState(v); saveToStorage('sovereign_together_api_key', v); };
+  const setOpenrouterKey = (v: string) => { setOpenrouterKeyState(v); saveToStorage('sovereign_openrouter_api_key', v); };
+
+  // Provider fallback hook
+  const { currentProvider, setProviderApiKey, configuredProviders } = useProviderFallback({
+    onFallback: (from: ProviderType, to: ProviderType, error: string) => {
+      log(`🔄 Fallback: ${from} → ${to}: ${error}`);
+    },
+    onProviderChanged: (provider: ProviderType) => {
+      log(`✅ Provider gewechselt zu: ${provider.toUpperCase()}`);
+    },
+  });
+
+  // Initialize provider keys
+  useEffect(() => {
+    if (groqKey.trim()) setProviderApiKey('groq', groqKey);
+    if (hfKey.trim()) setProviderApiKey('huggingface', hfKey);
+    if (togetherKey.trim()) setProviderApiKey('together', togetherKey);
+    if (openrouterKey.trim()) setProviderApiKey('openrouter', openrouterKey);
+  }, [groqKey, hfKey, togetherKey, openrouterKey, setProviderApiKey]);
+
   const currentCode = generatedCode || `// ${selectedFile.path}\n// Sovereign Auto-Resolver Preview\n\nconst blueprint = ${JSON.stringify(blueprint, null, 2)};\n\nexport const generatedProduct = {\n  mode: 'living-preview',\n  repo: '${repoUrl}',\n  modules: ${cards.length},\n  repoMode: '${settings.repoMode}',\n  packageManager: '${settings.packageManager}',\n  linter: '${settings.linter}',\n  ready: ${built}\n};`;
 
   const generatedPackage = useMemo(
@@ -209,16 +239,18 @@ export default function ProductMagicApp() {
     }
   }, [geminiKey, repoFiles, repoLoaded, repoUrl]);
 
-  // --- Generate Code with Gemini ---
+  // --- Generate Code with Gemini + Auto-Fallback ---
   const generateCodeWithGemini = useCallback(async (userPrompt: string) => {
-    if (!geminiKey.trim()) {
-      log('❌ Kein Gemini API-Key. Bitte Key eintragen.');
+    // Check if any provider is available
+    const hasProvider = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
+    
+    if (!hasProvider) {
+      log('⚠️ Kein API-Key konfiguriert. Nutze lokalen Generator.');
       generateCodeLocally();
       return;
     }
 
     setIsGenerating(true);
-    log('🤖 Gemini generiert Code...');
 
     const context = syncResult
       ? `Kontext:\n- Technologien: ${syncResult.technologies.join(', ')}\n- Struktur: ${syncResult.structure}\n`
@@ -232,29 +264,131 @@ Aufgabe: ${userPrompt}
 Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mit dem Code.`;
 
     try {
-      const code = await geminiService.generateText(geminiKey, prompt, {
-        model: 'gemini-1.5-flash',
-        temperature: 0.3,
-        maxOutputTokens: 2048,
-      });
-      setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
-      setGeneratedCode(`// Generiert von Sovereign Studio + Gemini\n// ${new Date().toLocaleString('de-DE')}\n\n${code}`);
-      setBuilt(true);
-      setWorkView('editor');
-      log('💻 Gemini hat Code sichtbar in den Editor geschrieben.');
-    } catch (err: any) {
-      const msg: string = err?.message ?? 'Fehler';
-      const is429 = msg.includes('429') || msg.includes('quota');
-      if (is429) {
-        log('⚠️ Gemini Rate-Limit. Fallback auf lokalen Code-Generator.');
-      } else {
-        log(`⚠️ Gemini Fehler: ${msg}. Fallback auf lokalen Generator.`);
+      // Try Gemini first if key is available
+      if (geminiKey.trim()) {
+        log('🤖 Generiere mit Gemini...');
+        try {
+          const code = await geminiService.generateText(geminiKey, prompt, {
+            model: 'gemini-1.5-flash',
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          });
+          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+          setGeneratedCode(`// Generiert von Sovereign Studio + Gemini\n// ${new Date().toLocaleString('de-DE')}\n\n${code}`);
+          setBuilt(true);
+          setWorkView('editor');
+          log('💻 Gemini hat Code generiert.');
+          return;
+        } catch (err: any) {
+          const msg: string = err?.message ?? 'Fehler';
+          const isRetryable = 
+            msg.includes('429') || msg.includes('quota') || 
+            msg.includes('RESOURCE_EXHAUSTED') ||
+            msg.includes('authentication') || msg.includes('api key') ||
+            err?.status === 401 || err?.status === 403;
+          
+          if (!isRetryable) {
+            throw err;
+          }
+          
+          log(`⚠️ Gemini Fehler: ${msg}. Versuche Fallback...`);
+        }
       }
+
+      // Fallback: Try configured free providers
+      let fallbackSuccess = false;
+      
+      // Groq fallback
+      if (groqKey.trim()) {
+        log('🔄 Versuche Groq...');
+        try {
+          const { callGroq } = await import('./features/ai/providerManager');
+          const response = await callGroq(groqKey, 'gemini-1.5-flash', prompt, {
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          });
+          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+          setGeneratedCode(`// Generiert von Sovereign Studio + Groq\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+          setBuilt(true);
+          setWorkView('editor');
+          log('💻 Groq hat Code generiert.');
+          fallbackSuccess = true;
+        } catch (err) {
+          log(`⚠️ Groq Fehler, versuche nächsten Provider...`);
+        }
+      }
+
+      // HuggingFace fallback
+      if (!fallbackSuccess && hfKey.trim()) {
+        log('🔄 Versuche HuggingFace...');
+        try {
+          const { callHuggingFace } = await import('./features/ai/providerManager');
+          const response = await callHuggingFace(hfKey, 'gemini-1.5-flash', prompt, {
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          });
+          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+          setGeneratedCode(`// Generiert von Sovereign Studio + HuggingFace\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+          setBuilt(true);
+          setWorkView('editor');
+          log('💻 HuggingFace hat Code generiert.');
+          fallbackSuccess = true;
+        } catch (err) {
+          log(`⚠️ HuggingFace Fehler, versuche nächsten Provider...`);
+        }
+      }
+
+      // Together AI fallback
+      if (!fallbackSuccess && togetherKey.trim()) {
+        log('🔄 Versuche Together AI...');
+        try {
+          const { callTogether } = await import('./features/ai/providerManager');
+          const response = await callTogether(togetherKey, 'gemini-1.5-flash', prompt, {
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          });
+          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+          setGeneratedCode(`// Generiert von Sovereign Studio + Together AI\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+          setBuilt(true);
+          setWorkView('editor');
+          log('💻 Together AI hat Code generiert.');
+          fallbackSuccess = true;
+        } catch (err) {
+          log(`⚠️ Together AI Fehler...`);
+        }
+      }
+
+      // OpenRouter fallback
+      if (!fallbackSuccess && openrouterKey.trim()) {
+        log('🔄 Versuche OpenRouter...');
+        try {
+          const { callOpenRouter } = await import('./features/ai/providerManager');
+          const response = await callOpenRouter(openrouterKey, 'gemini-1.5-flash', prompt, {
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          });
+          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+          setGeneratedCode(`// Generiert von Sovereign Studio + OpenRouter\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+          setBuilt(true);
+          setWorkView('editor');
+          log('💻 OpenRouter hat Code generiert.');
+          fallbackSuccess = true;
+        } catch (err) {
+          log(`⚠️ OpenRouter Fehler...`);
+        }
+      }
+
+      if (!fallbackSuccess) {
+        log('⚠️ Alle Provider fehlgeschlagen. Nutze lokalen Generator.');
+        generateCodeLocally();
+      }
+    } catch (err: any) {
+      log(`❌ Unerwarteter Fehler: ${err?.message || err}. Nutze lokalen Generator.`);
       generateCodeLocally();
     } finally {
       setIsGenerating(false);
     }
-  }, [geminiKey, blueprint, syncResult]);
+  }, [geminiKey, groqKey, hfKey, togetherKey, openrouterKey, blueprint, syncResult]);
 
   const generateCodeLocally = () => {
     const pm = settings.packageManager === 'auto' ? 'detected-package-manager' : settings.packageManager;
@@ -400,21 +534,52 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
               />
             </label>
             <label className="flex items-center gap-2">
-              <span className="font-bold text-stone-500 uppercase text-[10px] flex items-center gap-1"><Zap size={10} className="text-amber-500"/> Gemini Key:</span>
+              <span className="font-bold text-stone-500 uppercase text-[10px] flex items-center gap-1"><Zap size={10} className="text-amber-500"/> Gemini:</span>
               <input
                 value={geminiKey}
                 onChange={(e) => setGeminiKey(e.target.value)}
                 type="password"
                 placeholder="AIza..."
-                className="text-xs px-2 py-1 border border-stone-300 rounded w-44 focus:outline-none focus:border-indigo-500 bg-white"
+                className="text-xs px-2 py-1 border border-stone-300 rounded w-32 focus:outline-none focus:border-indigo-500 bg-white"
               />
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] px-2 py-1 bg-amber-100 border border-amber-300 text-amber-800 rounded hover:bg-amber-200 font-bold"
-              >🌐 AI Studio</a>
             </label>
+            <label className="flex items-center gap-2">
+              <span className="font-bold text-stone-400 uppercase text-[9px]">Groq:</span>
+              <input
+                value={groqKey}
+                onChange={(e) => setGroqKey(e.target.value)}
+                type="password"
+                placeholder="gsk_..."
+                className="text-xs px-2 py-1 border border-stone-300 rounded w-24 focus:outline-none focus:border-indigo-500 bg-white"
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="font-bold text-stone-400 uppercase text-[9px]">HF:</span>
+              <input
+                value={hfKey}
+                onChange={(e) => setHfKey(e.target.value)}
+                type="password"
+                placeholder="hf_..."
+                className="text-xs px-2 py-1 border border-stone-300 rounded w-20 focus:outline-none focus:border-indigo-500 bg-white"
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="font-bold text-stone-400 uppercase text-[9px]">Together:</span>
+              <input
+                value={togetherKey}
+                onChange={(e) => setTogetherKey(e.target.value)}
+                type="password"
+                placeholder="..."
+                className="text-xs px-2 py-1 border border-stone-300 rounded w-20 focus:outline-none focus:border-indigo-500 bg-white"
+              />
+            </label>
+            <a
+              href="https://console.groq.com/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[9px] px-2 py-1 bg-emerald-100 border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-200 font-bold"
+              title="Groq, HuggingFace, Together - Free tier available"
+            >🔓 FREE</a>
           </div>
         </div>
 
@@ -575,15 +740,24 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           </div>
 
           {/* Key status indicators */}
-          <div className="px-3 py-2 border-b border-stone-100 flex gap-3 text-[9px] font-bold">
-            <span className={`flex items-center gap-1 ${geminiKey.trim() ? 'text-green-700' : 'text-red-600'}`}>
-              <Zap size={9}/> Gemini: {geminiKey.trim() ? 'OK' : 'Fehlt'}
+          <div className="px-3 py-2 border-b border-stone-100 grid grid-cols-3 gap-1 text-[9px] font-bold">
+            <span className={`flex items-center gap-1 ${geminiKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
+              <Zap size={9}/> Gemini {geminiKey.trim() ? '✓' : '–'}
+            </span>
+            <span className={`flex items-center gap-1 ${groqKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
+              <Zap size={9}/> Groq {groqKey.trim() ? '✓' : '–'}
+            </span>
+            <span className={`flex items-center gap-1 ${hfKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
+              <Zap size={9}/> HF {hfKey.trim() ? '✓' : '–'}
+            </span>
+            <span className={`flex items-center gap-1 ${togetherKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
+              <Zap size={9}/> Togthr {togetherKey.trim() ? '✓' : '–'}
+            </span>
+            <span className={`flex items-center gap-1 ${currentProvider ? 'text-indigo-600' : 'text-stone-400'}`}>
+              <Bot size={9}/> Active: {currentProvider.toUpperCase()}
             </span>
             <span className={`flex items-center gap-1 ${accessKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
-              <KeyRound size={9}/> GitHub PAT: {accessKey.trim() ? 'OK' : 'Optional'}
-            </span>
-            <span className={`flex items-center gap-1 ${repoLoaded ? 'text-green-700' : 'text-stone-400'}`}>
-              <FolderTree size={9}/> Repo: {repoLoaded ? `${repoFiles.length} Files` : 'Nicht geladen'}
+              <KeyRound size={9}/> GH {accessKey.trim() ? '✓' : '–'}
             </span>
           </div>
 
