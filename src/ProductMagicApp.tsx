@@ -81,13 +81,29 @@ async function fetchRepoTree(
 export default function ProductMagicApp() {
   const dispatch = useDispatch();
 
+  // Toast notification for "Key saved" confirmation
+  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSavedToast = (label: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setSavedToast(label);
+    toastTimerRef.current = setTimeout(() => setSavedToast(null), 2500);
+  };
+
   // Keys (persisted via Capacitor Preferences on Android, localStorage fallback on web)
   const [geminiKey, setGeminiKeyState] = useState('');
   const [accessKey, setAccessKeyState] = useState('');
   const [repoUrl, setRepoUrlState] = useState(DEFAULT_REPO_URL);
 
-  const setGeminiKey = (v: string) => { setGeminiKeyState(v); void keyStorage.set(STORAGE_GEMINI_KEY, v); };
-  const setAccessKey = (v: string) => { setAccessKeyState(v); void keyStorage.set(STORAGE_GITHUB_TOKEN, v); };
+  const setGeminiKey = (v: string) => {
+    setGeminiKeyState(v);
+    void keyStorage.set(STORAGE_GEMINI_KEY, v).then(() => { if (v.trim()) showSavedToast('Gemini Key'); });
+  };
+  const setAccessKey = (v: string) => {
+    setAccessKeyState(v);
+    void keyStorage.set(STORAGE_GITHUB_TOKEN, v).then(() => { if (v.trim()) showSavedToast('GitHub PAT'); });
+  };
   const setRepoUrl = (v: string) => { setRepoUrlState(v); void keyStorage.set(STORAGE_REPO_URL, v); };
 
   const [repoBranch] = useState('main');
@@ -123,10 +139,22 @@ export default function ProductMagicApp() {
   const [togetherKey, setTogetherKeyState] = useState('');
   const [openrouterKey, setOpenrouterKeyState] = useState('');
 
-  const setGroqKey = (v: string) => { setGroqKeyState(v); void keyStorage.set('sovereign_groq_api_key', v); };
-  const setHfKey = (v: string) => { setHfKeyState(v); void keyStorage.set('sovereign_huggingface_api_key', v); };
-  const setTogetherKey = (v: string) => { setTogetherKeyState(v); void keyStorage.set('sovereign_together_api_key', v); };
-  const setOpenrouterKey = (v: string) => { setOpenrouterKeyState(v); void keyStorage.set('sovereign_openrouter_api_key', v); };
+  const setGroqKey = (v: string) => {
+    setGroqKeyState(v);
+    void keyStorage.set('sovereign_groq_api_key', v).then(() => { if (v.trim()) showSavedToast('Groq Key'); });
+  };
+  const setHfKey = (v: string) => {
+    setHfKeyState(v);
+    void keyStorage.set('sovereign_huggingface_api_key', v).then(() => { if (v.trim()) showSavedToast('HuggingFace Key'); });
+  };
+  const setTogetherKey = (v: string) => {
+    setTogetherKeyState(v);
+    void keyStorage.set('sovereign_together_api_key', v).then(() => { if (v.trim()) showSavedToast('Together Key'); });
+  };
+  const setOpenrouterKey = (v: string) => {
+    setOpenrouterKeyState(v);
+    void keyStorage.set('sovereign_openrouter_api_key', v).then(() => { if (v.trim()) showSavedToast('OpenRouter Key'); });
+  };
 
   // Provider fallback hook
   const { currentProvider, setProviderApiKey, configuredProviders } = useProviderFallback({
@@ -604,6 +632,12 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
 
   return (
     <div className="h-screen overflow-hidden bg-stone-50 text-stone-900 font-sans flex flex-col">
+      {/* Keys saved toast */}
+      {savedToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white text-[12px] font-bold rounded-xl shadow-lg pointer-events-none animate-fade-in">
+          <CheckCircle size={14}/> {savedToast} gespeichert ✓
+        </div>
+      )}
       {/* Header */}
       <header className="h-14 bg-white border-b border-stone-200 flex items-center justify-between px-4 shrink-0 shadow-sm z-50">
         <div>
