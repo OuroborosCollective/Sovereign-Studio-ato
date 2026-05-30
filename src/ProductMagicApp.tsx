@@ -367,26 +367,35 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           log('💻 Gemini hat Code generiert.');
           return;
         } catch (err: any) {
+          // FIXED: ANY error triggers fallback - no retryable check needed
           const msg: string = err?.message ?? 'Fehler';
-          const isRetryable = 
-            msg.includes('429') || msg.includes('quota') || 
-            msg.includes('RESOURCE_EXHAUSTED') ||
-            msg.includes('authentication') || msg.includes('api key') ||
-            err?.status === 401 || err?.status === 403;
-          
-          if (!isRetryable) {
-            throw err;
-          }
-          
           log(`⚠️ Gemini Fehler: ${msg}. Versuche Fallback...`);
         }
       }
 
-      // Fallback: Try configured free providers
+      // Fallback: Try free providers - Puter.js FIRST (KEYLESS!)
       let fallbackSuccess = false;
       
+      // Puter.js fallback (KEYLESS - no API key needed!)
+      log('🔄 Versuche Puter.js (KEYLESS FREE)...');
+      try {
+        const { callPuter } = await import('./features/ai/providerManager');
+        const response = await callPuter('', 'gemini-2.0-flash', prompt, {
+          temperature: 0.3,
+          maxOutputTokens: 2048,
+        });
+        setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+        setGeneratedCode(`// Generiert von Sovereign Studio + Puter.js (FREE)\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+        setBuilt(true);
+        setWorkView('editor');
+        log('💻 Puter.js hat Code generiert (KOSTENLOS!)');
+        fallbackSuccess = true;
+      } catch (err) {
+        log(`⚠️ Puter.js Fehler, versuche nächsten Provider...`);
+      }
+
       // Groq fallback
-      if (groqKey.trim()) {
+      if (!fallbackSuccess && groqKey.trim()) {
         log('🔄 Versuche Groq...');
         try {
           const { callGroq } = await import('./features/ai/providerManager');
@@ -467,7 +476,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
 
       if (!fallbackSuccess) {
         log('⚠️ Alle Provider fehlgeschlagen. Nutze lokalen Generator.');
-        setProvidersError('Alle AI-Provider sind fehlgeschlagen. Es wurde ein lokales Gerüst erzeugt. Bitte einen gültigen API-Key eintragen oder einen anderen Provider hinzufügen.');
+        setProvidersError('Alle AI-Provider sind fehlgeschlagen. Es wurde ein lokales Gerüst erzeugt.');
         generateCodeLocally();
       }
     } catch (err: any) {
@@ -553,18 +562,27 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
       let jsonText = '';
       if (geminiKey.trim()) {
         jsonText = await geminiService.generateText(geminiKey, canvasPrompt, { model: 'gemini-2.0-flash', temperature: 0.4, maxOutputTokens: 1024 });
-      } else if (groqKey.trim()) {
-        const { callGroq } = await import('./features/ai/providerManager');
-        jsonText = (await callGroq(groqKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
-      } else if (hfKey.trim()) {
-        const { callHuggingFace } = await import('./features/ai/providerManager');
-        jsonText = (await callHuggingFace(hfKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
-      } else if (togetherKey.trim()) {
-        const { callTogether } = await import('./features/ai/providerManager');
-        jsonText = (await callTogether(togetherKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
-      } else if (openrouterKey.trim()) {
-        const { callOpenRouter } = await import('./features/ai/providerManager');
-        jsonText = (await callOpenRouter(openrouterKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+      } else {
+        // Try Puter.js FIRST (KEYLESS!) as fallback
+        try {
+          const { callPuter } = await import('./features/ai/providerManager');
+          jsonText = (await callPuter('', 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+        } catch {
+          // Try other providers if Puter.js fails
+          if (groqKey.trim()) {
+            const { callGroq } = await import('./features/ai/providerManager');
+            jsonText = (await callGroq(groqKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          } else if (hfKey.trim()) {
+            const { callHuggingFace } = await import('./features/ai/providerManager');
+            jsonText = (await callHuggingFace(hfKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          } else if (togetherKey.trim()) {
+            const { callTogether } = await import('./features/ai/providerManager');
+            jsonText = (await callTogether(togetherKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          } else if (openrouterKey.trim()) {
+            const { callOpenRouter } = await import('./features/ai/providerManager');
+            jsonText = (await callOpenRouter(openrouterKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          }
+        }
       }
 
       const jsonMatch = jsonText.match(/\[[\s\S]*?\]/);
@@ -971,16 +989,16 @@ Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verte
             <span className={`flex items-center gap-1 ${geminiKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
               <Zap size={9}/> Gemini {geminiKey.trim() ? '✓' : '–'}
             </span>
+            <span className="flex items-center gap-1 text-green-700">
+              <Zap size={9}/> Puter.js FREE ✓
+            </span>
             <span className={`flex items-center gap-1 ${groqKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
               <Zap size={9}/> Groq {groqKey.trim() ? '✓' : '–'}
             </span>
             <span className={`flex items-center gap-1 ${hfKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
               <Zap size={9}/> HF {hfKey.trim() ? '✓' : '–'}
             </span>
-            <span className={`flex items-center gap-1 ${togetherKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
-              <Zap size={9}/> Togthr {togetherKey.trim() ? '✓' : '–'}
-            </span>
-            <span className={`flex items-center gap-1 ${currentProvider ? 'text-indigo-600' : 'text-stone-400'}`}>
+            <span className={`flex items-center gap-1 ${currentProvider ? 'text-indigo-600 font-bold' : 'text-stone-400'}`}>
               <Bot size={9}/> Active: {currentProvider.toUpperCase()}
             </span>
             <span className={`flex items-center gap-1 ${accessKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
