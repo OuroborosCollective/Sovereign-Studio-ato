@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react';
 import { Provider } from 'react-redux';
 
 // --- Mocks -----------------------------------------------------------------
@@ -148,5 +148,110 @@ describe('ProductMagicApp — all AI providers unavailable banner', () => {
       expect(callTogetherMock).toHaveBeenCalled();
       expect(callOpenRouterMock).toHaveBeenCalled();
     });
+  });
+});
+
+describe('ProductMagicApp — Awareness Sync provider-unavailable banner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // jsdom does not implement scrollIntoView (used by focusKeyInput).
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  // The Awareness Sync button is disabled until a repo is loaded. Mock the GitHub
+  // tree fetch so loadRepoTree succeeds, flips repoLoaded to true, and enables the
+  // "Awareness Sync" button.
+  async function loadRepo() {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        tree: [
+          { path: 'src/index.ts', type: 'blob', size: 100 },
+          { path: 'package.json', type: 'blob', size: 50 },
+          { path: 'src', type: 'tree' },
+        ],
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    fireEvent.click(screen.getByRole('button', { name: /Laden/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /Awareness Sync/i })
+      ).not.toBeDisabled();
+    });
+  }
+
+  it('shows the red banner when Awareness Sync runs and all providers throw', async () => {
+    // Force every provider to fail. Gemini throws a retryable (quota) error so the
+    // fallback chain runs, and each free provider rejects too.
+    generateTextMock.mockRejectedValue(new Error('429 quota exceeded'));
+    callGroqMock.mockRejectedValue(new Error('groq down'));
+    callHuggingFaceMock.mockRejectedValue(new Error('hf down'));
+    callTogetherMock.mockRejectedValue(new Error('together down'));
+    callOpenRouterMock.mockRejectedValue(new Error('openrouter down'));
+
+    renderApp();
+    await flushMount();
+
+    await loadRepo();
+
+    // Configure every provider with a key so the full fallback chain is exercised.
+    fireEvent.change(screen.getByPlaceholderText('AIza...'), { target: { value: 'AIza-key' } });
+    fireEvent.change(screen.getByPlaceholderText('gsk_...'), { target: { value: 'gsk_key' } });
+    fireEvent.change(screen.getByPlaceholderText('hf_...'), { target: { value: 'hf_key' } });
+    fireEvent.change(screen.getByPlaceholderText('...'), { target: { value: 'together_key' } });
+    fireEvent.change(screen.getByPlaceholderText('sk-or-...'), { target: { value: 'sk-or-key' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Awareness Sync/i }));
+
+    // Scope the message assertion to the banner — the same text also appears in
+    // the activity log, so a top-level query would match multiple elements.
+    const heading = await screen.findByText(BANNER_HEADING);
+    const banner = heading.closest('div.bg-red-50') as HTMLElement;
+    expect(banner).not.toBeNull();
+    expect(
+      within(banner).getByText(/Alle AI-Provider sind fehlgeschlagen/i)
+    ).toBeInTheDocument();
+
+    // Confirm the fallback chain was actually walked end-to-end.
+    await waitFor(() => {
+      expect(generateTextMock).toHaveBeenCalled();
+      expect(callGroqMock).toHaveBeenCalled();
+      expect(callHuggingFaceMock).toHaveBeenCalled();
+      expect(callTogetherMock).toHaveBeenCalled();
+      expect(callOpenRouterMock).toHaveBeenCalled();
+    });
+  });
+
+  it('shows the banner with the no-key message when Awareness Sync runs with no keys', async () => {
+    renderApp();
+    await flushMount();
+
+    await loadRepo();
+
+    // No banner before the user does anything.
+    expect(screen.queryByText(BANNER_HEADING)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Awareness Sync/i }));
+
+    // Scope the message assertion to the banner — the same text also appears in
+    // the repo status line, so a top-level query would match multiple elements.
+    const heading = await screen.findByText(BANNER_HEADING);
+    const banner = heading.closest('div.bg-red-50') as HTMLElement;
+    expect(banner).not.toBeNull();
+    expect(
+      within(banner).getByText(/Kein API-Key konfiguriert/i)
+    ).toBeInTheDocument();
+
+    // No provider should have been called since there was no key to try.
+    expect(generateTextMock).not.toHaveBeenCalled();
+    expect(callGroqMock).not.toHaveBeenCalled();
   });
 });
