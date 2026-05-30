@@ -348,46 +348,49 @@ export async function callOpenRouter(apiKey: string, model: string, prompt: stri
  * - Claude models (claude-3-haiku, claude-3-sonnet, etc.)
  * - Gemini models (gemini-2.0-flash-exp, etc.)
  * 
- * This is the PRIMARY free fallback because it requires NO API key!
+ * This uses the browser-based Puter.js library (loaded via script tag)
+ * which handles the API calls internally.
  */
 export async function callPuter(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
-  // Puter.js uses a simple POST to their API - NO API KEY REQUIRED!
-  // We just need to include the app_id for tracking
+  // Puter.js uses the browser's global 'puter' object
+  // We need to check if it's available (loaded via index.html script tag)
   
   const puterModel = mapModelForPuter(model);
   
-  const response = await fetch('https://api.puter.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: puterModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxOutputTokens ?? 2048,
-      // Puter.js specific options
-      stream: false,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
+  // Check if puter is available in the browser
+  if (typeof (window as any).puter === 'undefined') {
     throw {
       provider: 'puter' as ProviderType,
-      error: errorData.error?.message || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500 || response.status >= 400,
+      error: 'Puter.js not loaded. Please refresh the page.',
+      statusCode: 0,
+      isRetryable: true,
     };
   }
   
-  const data = await response.json();
-  return {
-    text: data.choices?.[0]?.message?.content || '',
-    provider: 'puter',
-    model: puterModel,
-    usage: data.usage,
-  };
+  try {
+    // Use puter.ai.chat() which returns a Promise
+    const response: any = await (window as any).puter.ai.chat(prompt, {
+      model: puterModel,
+      temperature: options.temperature ?? 0.7,
+    });
+    
+    // Extract the text from the response
+    // Puter.js response structure: { message: { content: '...' } }
+    const text = response?.message?.content || response?.text || '';
+    
+    return {
+      text: text,
+      provider: 'puter',
+      model: puterModel,
+    };
+  } catch (error: any) {
+    throw {
+      provider: 'puter' as ProviderType,
+      error: error?.message || 'Puter.js call failed',
+      statusCode: 0,
+      isRetryable: true,
+    };
+  }
 }
 
 /**
