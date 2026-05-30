@@ -6,6 +6,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError } from '../providerManager';
 import { geminiService } from '../geminiService';
+import { keyStorage } from '../keyStorage';
 
 // Re-export for convenience
 export { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError };
@@ -35,18 +36,21 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
   const [error, setError] = useState<string | null>(null);
   const [currentProvider, setCurrentProvider] = useState<ProviderType>('gemini');
 
-  // Set API keys from storage on mount
+  // Set API keys from persistent storage on mount
   useEffect(() => {
-    // Load user-configured API keys
-    const groqKey = localStorage.getItem('sovereign_groq_api_key');
-    const hfKey = localStorage.getItem('sovereign_huggingface_api_key');
-    const togetherKey = localStorage.getItem('sovereign_together_api_key');
-    const openrouterKey = localStorage.getItem('sovereign_openrouter_api_key');
-
-    if (groqKey) providerManager.setApiKey('groq', groqKey);
-    if (hfKey) providerManager.setApiKey('huggingface', hfKey);
-    if (togetherKey) providerManager.setApiKey('together', togetherKey);
-    if (openrouterKey) providerManager.setApiKey('openrouter', openrouterKey);
+    const loadKeys = async () => {
+      const [groqKey, hfKey, togetherKey, openrouterKey] = await Promise.all([
+        keyStorage.get('sovereign_groq_api_key'),
+        keyStorage.get('sovereign_huggingface_api_key'),
+        keyStorage.get('sovereign_together_api_key'),
+        keyStorage.get('sovereign_openrouter_api_key'),
+      ]);
+      if (groqKey) providerManager.setApiKey('groq', groqKey);
+      if (hfKey) providerManager.setApiKey('huggingface', hfKey);
+      if (togetherKey) providerManager.setApiKey('together', togetherKey);
+      if (openrouterKey) providerManager.setApiKey('openrouter', openrouterKey);
+    };
+    loadKeys();
   }, []);
 
   const handleFallback = useCallback((from: ProviderType, to: ProviderType, errorMsg: string) => {
@@ -57,13 +61,7 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
 
   const setProviderApiKey = useCallback((provider: ProviderType, key: string) => {
     providerManager.setApiKey(provider, key);
-    // Persist to storage
-    const storageKey = `sovereign_${provider}_api_key`;
-    if (key.trim()) {
-      localStorage.setItem(storageKey, key.trim());
-    } else {
-      localStorage.removeItem(storageKey);
-    }
+    void keyStorage.set(`sovereign_${provider}_api_key`, key);
   }, []);
 
   const generateContent = useCallback(async (prompt: string, geminiApiKey?: string): Promise<string> => {

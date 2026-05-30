@@ -68,7 +68,7 @@ VERBESSERUNGSVORSCHLÄGE:
 - [Vorschlag 2]
 - [Vorschlag 3]`;
 
-  let rawText: string;
+  let rawText: string = '';
   let usedProvider: ProviderType = 'gemini';
 
   // Try Gemini first

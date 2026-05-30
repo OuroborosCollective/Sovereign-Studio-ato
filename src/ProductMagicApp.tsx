@@ -5,6 +5,7 @@ import { runAwarenessSync, type AwarenessSyncResult, type RepoFile } from './fea
 import { geminiService } from './features/ai/geminiService';
 import { useProviderFallback, PROVIDER_INFO, ProviderType } from './features/ai/hooks/useProviderFallback';
 import { providerManager } from './features/ai/providerManager';
+import { keyStorage } from './features/ai/keyStorage';
 import {
   AlertTriangle,
   Bot,
@@ -27,30 +28,11 @@ import {
   Zap,
 } from 'lucide-react';
 
-// --- Persistence helpers ---
+// --- Storage keys ---
 const STORAGE_GEMINI_KEY = 'sovereign_gemini_api_key';
 const STORAGE_GITHUB_TOKEN = 'sovereign_github_pat';
 const STORAGE_REPO_URL = 'sovereign_repo_url';
-
-function loadFromStorage(key: string, fallback = ''): string {
-  try {
-    return localStorage.getItem(key) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveToStorage(key: string, value: string) {
-  try {
-    if (value.trim()) {
-      localStorage.setItem(key, value.trim());
-    } else {
-      localStorage.removeItem(key);
-    }
-  } catch {
-    // ignore
-  }
-}
+const DEFAULT_REPO_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
 
 // --- GitHub helpers ---
 const parseGithubRepoUrl = (value: string): { owner: string; repo: string } | null => {
@@ -94,14 +76,14 @@ async function fetchRepoTree(
 
 // --- Main App ---
 export default function ProductMagicApp() {
-  // Keys (persisted)
-  const [geminiKey, setGeminiKeyState] = useState(() => loadFromStorage(STORAGE_GEMINI_KEY));
-  const [accessKey, setAccessKeyState] = useState(() => loadFromStorage(STORAGE_GITHUB_TOKEN));
-  const [repoUrl, setRepoUrlState] = useState(() => loadFromStorage(STORAGE_REPO_URL, 'https://github.com/OuroborosCollective/Sovereign-Studio-ato'));
+  // Keys (persisted via Capacitor Preferences on Android, localStorage fallback on web)
+  const [geminiKey, setGeminiKeyState] = useState('');
+  const [accessKey, setAccessKeyState] = useState('');
+  const [repoUrl, setRepoUrlState] = useState(DEFAULT_REPO_URL);
 
-  const setGeminiKey = (v: string) => { setGeminiKeyState(v); saveToStorage(STORAGE_GEMINI_KEY, v); };
-  const setAccessKey = (v: string) => { setAccessKeyState(v); saveToStorage(STORAGE_GITHUB_TOKEN, v); };
-  const setRepoUrl = (v: string) => { setRepoUrlState(v); saveToStorage(STORAGE_REPO_URL, v); };
+  const setGeminiKey = (v: string) => { setGeminiKeyState(v); void keyStorage.set(STORAGE_GEMINI_KEY, v); };
+  const setAccessKey = (v: string) => { setAccessKeyState(v); void keyStorage.set(STORAGE_GITHUB_TOKEN, v); };
+  const setRepoUrl = (v: string) => { setRepoUrlState(v); void keyStorage.set(STORAGE_REPO_URL, v); };
 
   const [repoBranch] = useState('main');
 
@@ -131,15 +113,15 @@ export default function ProductMagicApp() {
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Free provider API keys
-  const [groqKey, setGroqKeyState] = useState(() => loadFromStorage('sovereign_groq_api_key'));
-  const [hfKey, setHfKeyState] = useState(() => loadFromStorage('sovereign_huggingface_api_key'));
-  const [togetherKey, setTogetherKeyState] = useState(() => loadFromStorage('sovereign_together_api_key'));
-  const [openrouterKey, setOpenrouterKeyState] = useState(() => loadFromStorage('sovereign_openrouter_api_key'));
+  const [groqKey, setGroqKeyState] = useState('');
+  const [hfKey, setHfKeyState] = useState('');
+  const [togetherKey, setTogetherKeyState] = useState('');
+  const [openrouterKey, setOpenrouterKeyState] = useState('');
 
-  const setGroqKey = (v: string) => { setGroqKeyState(v); saveToStorage('sovereign_groq_api_key', v); };
-  const setHfKey = (v: string) => { setHfKeyState(v); saveToStorage('sovereign_huggingface_api_key', v); };
-  const setTogetherKey = (v: string) => { setTogetherKeyState(v); saveToStorage('sovereign_together_api_key', v); };
-  const setOpenrouterKey = (v: string) => { setOpenrouterKeyState(v); saveToStorage('sovereign_openrouter_api_key', v); };
+  const setGroqKey = (v: string) => { setGroqKeyState(v); void keyStorage.set('sovereign_groq_api_key', v); };
+  const setHfKey = (v: string) => { setHfKeyState(v); void keyStorage.set('sovereign_huggingface_api_key', v); };
+  const setTogetherKey = (v: string) => { setTogetherKeyState(v); void keyStorage.set('sovereign_together_api_key', v); };
+  const setOpenrouterKey = (v: string) => { setOpenrouterKeyState(v); void keyStorage.set('sovereign_openrouter_api_key', v); };
 
   // Provider fallback hook
   const { currentProvider, setProviderApiKey, configuredProviders } = useProviderFallback({
@@ -151,7 +133,30 @@ export default function ProductMagicApp() {
     },
   });
 
-  // Initialize provider keys
+  // Load all persisted keys from native storage on app mount
+  useEffect(() => {
+    const loadPersistedKeys = async () => {
+      const [gKey, ghToken, url, gqKey, hKey, tKey, orKey] = await Promise.all([
+        keyStorage.get(STORAGE_GEMINI_KEY),
+        keyStorage.get(STORAGE_GITHUB_TOKEN),
+        keyStorage.get(STORAGE_REPO_URL, DEFAULT_REPO_URL),
+        keyStorage.get('sovereign_groq_api_key'),
+        keyStorage.get('sovereign_huggingface_api_key'),
+        keyStorage.get('sovereign_together_api_key'),
+        keyStorage.get('sovereign_openrouter_api_key'),
+      ]);
+      if (gKey) setGeminiKeyState(gKey);
+      if (ghToken) setAccessKeyState(ghToken);
+      if (url) setRepoUrlState(url);
+      if (gqKey) setGroqKeyState(gqKey);
+      if (hKey) setHfKeyState(hKey);
+      if (tKey) setTogetherKeyState(tKey);
+      if (orKey) setOpenrouterKeyState(orKey);
+    };
+    loadPersistedKeys();
+  }, []);
+
+  // Initialize provider manager with free provider keys whenever they change
   useEffect(() => {
     if (groqKey.trim()) setProviderApiKey('groq', groqKey);
     if (hfKey.trim()) setProviderApiKey('huggingface', hfKey);
