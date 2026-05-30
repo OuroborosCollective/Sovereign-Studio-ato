@@ -1,0 +1,1 @@
+- [Capacitor Android build env](capacitor-android-build.md) — cap sync/build:aab need Node>=22; signed gradle build + on-device test only run in GH Actions CI, not this container.
