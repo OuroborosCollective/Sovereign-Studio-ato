@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { FileItem, Card, WorkView, PipelineState, ProjectSettings } from './features/product/types';
 import { makeId, demoFiles, starterCards, defaultSettings } from './features/product/constants';
 import { runAwarenessSync, type AwarenessSyncResult, type RepoFile } from './features/ai/awarenessSync';
 import { geminiService } from './features/ai/geminiService';
 import { useProviderFallback, PROVIDER_INFO, ProviderType } from './features/ai/hooks/useProviderFallback';
 import { providerManager } from './features/ai/providerManager';
+import { keyStorage } from './features/ai/keyStorage';
+import KeySavedToast from './features/ai/KeySavedToast';
+import CanvasEngine from './features/canvas/CanvasEngine';
+import { addVectors, clearCanvas, type CanvasObject } from './features/canvas/canvasSlice';
 import {
   AlertTriangle,
   Bot,
@@ -27,30 +32,11 @@ import {
   Zap,
 } from 'lucide-react';
 
-// --- Persistence helpers ---
+// --- Storage keys ---
 const STORAGE_GEMINI_KEY = 'sovereign_gemini_api_key';
 const STORAGE_GITHUB_TOKEN = 'sovereign_github_pat';
 const STORAGE_REPO_URL = 'sovereign_repo_url';
-
-function loadFromStorage(key: string, fallback = ''): string {
-  try {
-    return localStorage.getItem(key) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveToStorage(key: string, value: string) {
-  try {
-    if (value.trim()) {
-      localStorage.setItem(key, value.trim());
-    } else {
-      localStorage.removeItem(key);
-    }
-  } catch {
-    // ignore
-  }
-}
+const DEFAULT_REPO_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
 
 // --- GitHub helpers ---
 const parseGithubRepoUrl = (value: string): { owner: string; repo: string } | null => {
@@ -94,14 +80,33 @@ async function fetchRepoTree(
 
 // --- Main App ---
 export default function ProductMagicApp() {
-  // Keys (persisted)
-  const [geminiKey, setGeminiKeyState] = useState(() => loadFromStorage(STORAGE_GEMINI_KEY));
-  const [accessKey, setAccessKeyState] = useState(() => loadFromStorage(STORAGE_GITHUB_TOKEN));
-  const [repoUrl, setRepoUrlState] = useState(() => loadFromStorage(STORAGE_REPO_URL, 'https://github.com/OuroborosCollective/Sovereign-Studio-ato'));
+  const dispatch = useDispatch();
 
-  const setGeminiKey = (v: string) => { setGeminiKeyState(v); saveToStorage(STORAGE_GEMINI_KEY, v); };
-  const setAccessKey = (v: string) => { setAccessKeyState(v); saveToStorage(STORAGE_GITHUB_TOKEN, v); };
-  const setRepoUrl = (v: string) => { setRepoUrlState(v); saveToStorage(STORAGE_REPO_URL, v); };
+  // Toast notification for "Key saved" confirmation
+  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSavedToast = (label: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setSavedToast(label);
+    toastTimerRef.current = setTimeout(() => setSavedToast(null), 2500);
+  };
+
+  // Keys (persisted via Capacitor Preferences on Android, localStorage fallback on web)
+  const [geminiKey, setGeminiKeyState] = useState('');
+  const [accessKey, setAccessKeyState] = useState('');
+  const [repoUrl, setRepoUrlState] = useState(DEFAULT_REPO_URL);
+
+  const setGeminiKey = (v: string) => {
+    setGeminiKeyState(v);
+    if (v.trim()) setProvidersError(null);
+    void keyStorage.set(STORAGE_GEMINI_KEY, v).then(() => { if (v.trim()) showSavedToast('Gemini Key'); });
+  };
+  const setAccessKey = (v: string) => {
+    setAccessKeyState(v);
+    void keyStorage.set(STORAGE_GITHUB_TOKEN, v).then(() => { if (v.trim()) showSavedToast('GitHub PAT'); });
+  };
+  const setRepoUrl = (v: string) => { setRepoUrlState(v); void keyStorage.set(STORAGE_REPO_URL, v); };
 
   const [repoBranch] = useState('main');
 
@@ -130,16 +135,47 @@ export default function ProductMagicApp() {
   const [generatedCode, setGeneratedCode] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Free provider API keys
-  const [groqKey, setGroqKeyState] = useState(() => loadFromStorage('sovereign_groq_api_key'));
-  const [hfKey, setHfKeyState] = useState(() => loadFromStorage('sovereign_huggingface_api_key'));
-  const [togetherKey, setTogetherKeyState] = useState(() => loadFromStorage('sovereign_together_api_key'));
-  const [openrouterKey, setOpenrouterKeyState] = useState(() => loadFromStorage('sovereign_openrouter_api_key'));
+  // All-providers-unavailable error state (shown as a recovery banner with CTA)
+  const [providersError, setProvidersError] = useState<string | null>(null);
+  const geminiInputRef = useRef<HTMLInputElement>(null);
 
-  const setGroqKey = (v: string) => { setGroqKeyState(v); saveToStorage('sovereign_groq_api_key', v); };
-  const setHfKey = (v: string) => { setHfKeyState(v); saveToStorage('sovereign_huggingface_api_key', v); };
-  const setTogetherKey = (v: string) => { setTogetherKeyState(v); saveToStorage('sovereign_together_api_key', v); };
-  const setOpenrouterKey = (v: string) => { setOpenrouterKeyState(v); saveToStorage('sovereign_openrouter_api_key', v); };
+  // Bring the user straight to the API key inputs in one tap
+  const focusKeyInput = useCallback(() => {
+    setProvidersError(null);
+    setShowSettings(false);
+    const input = geminiInputRef.current;
+    if (input) {
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input.focus();
+    }
+  }, []);
+
+  // Free provider API keys
+  const [groqKey, setGroqKeyState] = useState('');
+  const [hfKey, setHfKeyState] = useState('');
+  const [togetherKey, setTogetherKeyState] = useState('');
+  const [openrouterKey, setOpenrouterKeyState] = useState('');
+
+  const setGroqKey = (v: string) => {
+    setGroqKeyState(v);
+    if (v.trim()) setProvidersError(null);
+    void keyStorage.set('sovereign_groq_api_key', v).then(() => { if (v.trim()) showSavedToast('Groq Key'); });
+  };
+  const setHfKey = (v: string) => {
+    setHfKeyState(v);
+    if (v.trim()) setProvidersError(null);
+    void keyStorage.set('sovereign_huggingface_api_key', v).then(() => { if (v.trim()) showSavedToast('HuggingFace Key'); });
+  };
+  const setTogetherKey = (v: string) => {
+    setTogetherKeyState(v);
+    if (v.trim()) setProvidersError(null);
+    void keyStorage.set('sovereign_together_api_key', v).then(() => { if (v.trim()) showSavedToast('Together Key'); });
+  };
+  const setOpenrouterKey = (v: string) => {
+    setOpenrouterKeyState(v);
+    if (v.trim()) setProvidersError(null);
+    void keyStorage.set('sovereign_openrouter_api_key', v).then(() => { if (v.trim()) showSavedToast('OpenRouter Key'); });
+  };
 
   // Provider fallback hook
   const { currentProvider, setProviderApiKey, configuredProviders } = useProviderFallback({
@@ -151,7 +187,30 @@ export default function ProductMagicApp() {
     },
   });
 
-  // Initialize provider keys
+  // Load all persisted keys from native storage on app mount
+  useEffect(() => {
+    const loadPersistedKeys = async () => {
+      const [gKey, ghToken, url, gqKey, hKey, tKey, orKey] = await Promise.all([
+        keyStorage.get(STORAGE_GEMINI_KEY),
+        keyStorage.get(STORAGE_GITHUB_TOKEN),
+        keyStorage.get(STORAGE_REPO_URL, DEFAULT_REPO_URL),
+        keyStorage.get('sovereign_groq_api_key'),
+        keyStorage.get('sovereign_huggingface_api_key'),
+        keyStorage.get('sovereign_together_api_key'),
+        keyStorage.get('sovereign_openrouter_api_key'),
+      ]);
+      if (gKey) setGeminiKeyState(gKey);
+      if (ghToken) setAccessKeyState(ghToken);
+      if (url) setRepoUrlState(url);
+      if (gqKey) setGroqKeyState(gqKey);
+      if (hKey) setHfKeyState(hKey);
+      if (tKey) setTogetherKeyState(tKey);
+      if (orKey) setOpenrouterKeyState(orKey);
+    };
+    loadPersistedKeys();
+  }, []);
+
+  // Initialize provider manager with free provider keys whenever they change
   useEffect(() => {
     if (groqKey.trim()) setProviderApiKey('groq', groqKey);
     if (hfKey.trim()) setProviderApiKey('huggingface', hfKey);
@@ -211,9 +270,12 @@ export default function ProductMagicApp() {
       log('❌ Fehler beim Awareness Sync: Kein API-Key konfiguriert.');
       log('💡 Bitte mindestens einen Key eintragen: Gemini, Groq, HuggingFace oder Together AI.');
       setRepoStatus('❌ Kein API-Key konfiguriert');
+      setProvidersError('Kein API-Key konfiguriert. Trage einen Key für Gemini, Groq, HuggingFace, Together AI oder OpenRouter ein, um den Awareness Sync zu nutzen.');
       return;
     }
-    
+
+    setProvidersError(null);
+
     if (!repoLoaded || repoFiles.length === 0) {
       log('⚠️ Zuerst ein Repo laden, dann Awareness Sync starten.');
       return;
@@ -235,7 +297,7 @@ export default function ProductMagicApp() {
           togetherKey: togetherKey,
           openrouterKey: openrouterKey,
         },
-        'gemini-1.5-flash',
+        'gemini-2.0-flash',
         (from, to, error) => {
           usedProvider = to;
           log(`🔄 Fallback: ${from.toUpperCase()} → ${to.toUpperCase()}: ${error}`);
@@ -250,12 +312,13 @@ export default function ProductMagicApp() {
     } catch (err: any) {
       const msg: string = err?.message ?? 'Unbekannter Fehler';
       log(`❌ Awareness Sync Fehler: ${msg}`);
-      
+
       if (msg.includes('401') || msg.includes('authentication')) {
         log('💡 Tipp: API-Key ungültig oder abgelaufen. Bitte Key in den Einstellungen prüfen.');
       } else if (msg.includes('429') || msg.includes('quota')) {
         log('💡 Tipp: Rate-Limit erreicht. Kurz warten oder kostenlosen Key holen (Groq, HF, Together).');
       }
+      setProvidersError(`Alle AI-Provider sind fehlgeschlagen: ${msg} Bitte einen gültigen API-Key eintragen oder einen anderen Provider hinzufügen.`);
     } finally {
       setIsSyncing(false);
     }
@@ -268,10 +331,12 @@ export default function ProductMagicApp() {
     
     if (!hasProvider) {
       log('⚠️ Kein API-Key konfiguriert. Nutze lokalen Generator.');
+      setProvidersError('Kein API-Key konfiguriert — die KI-Generierung ist nicht verfügbar. Es wurde ein lokales Gerüst erzeugt. Trage einen API-Key ein, um echte KI-Generierung zu nutzen.');
       generateCodeLocally();
       return;
     }
 
+    setProvidersError(null);
     setIsGenerating(true);
 
     const context = syncResult
@@ -309,7 +374,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🤖 Generiere mit Gemini...');
         try {
           const code = await geminiService.generateText(geminiKey, prompt, {
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.0-flash',
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -320,30 +385,39 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           log('💻 Gemini hat Code generiert.');
           return;
         } catch (err: any) {
+          // FIXED: ANY error triggers fallback - no retryable check needed
           const msg: string = err?.message ?? 'Fehler';
-          const isRetryable = 
-            msg.includes('429') || msg.includes('quota') || 
-            msg.includes('RESOURCE_EXHAUSTED') ||
-            msg.includes('authentication') || msg.includes('api key') ||
-            err?.status === 401 || err?.status === 403;
-          
-          if (!isRetryable) {
-            throw err;
-          }
-          
           log(`⚠️ Gemini Fehler: ${msg}. Versuche Fallback...`);
         }
       }
 
-      // Fallback: Try configured free providers
+      // Fallback: Try free providers - Puter.js FIRST (KEYLESS!)
       let fallbackSuccess = false;
       
+      // Puter.js fallback (KEYLESS - no API key needed!)
+      log('🔄 Versuche Puter.js (KEYLESS FREE)...');
+      try {
+        const { callPuter } = await import('./features/ai/providerManager');
+        const response = await callPuter('', 'gemini-2.0-flash', prompt, {
+          temperature: 0.3,
+          maxOutputTokens: 2048,
+        });
+        setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+        setGeneratedCode(`// Generiert von Sovereign Studio + Puter.js (FREE)\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+        setBuilt(true);
+        setWorkView('editor');
+        log('💻 Puter.js hat Code generiert (KOSTENLOS!)');
+        fallbackSuccess = true;
+      } catch (err) {
+        log(`⚠️ Puter.js Fehler, versuche nächsten Provider...`);
+      }
+
       // Groq fallback
-      if (groqKey.trim()) {
+      if (!fallbackSuccess && groqKey.trim()) {
         log('🔄 Versuche Groq...');
         try {
           const { callGroq } = await import('./features/ai/providerManager');
-          const response = await callGroq(groqKey, 'gemini-1.5-flash', prompt, {
+          const response = await callGroq(groqKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -363,7 +437,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🔄 Versuche HuggingFace...');
         try {
           const { callHuggingFace } = await import('./features/ai/providerManager');
-          const response = await callHuggingFace(hfKey, 'gemini-1.5-flash', prompt, {
+          const response = await callHuggingFace(hfKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -383,7 +457,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🔄 Versuche Together AI...');
         try {
           const { callTogether } = await import('./features/ai/providerManager');
-          const response = await callTogether(togetherKey, 'gemini-1.5-flash', prompt, {
+          const response = await callTogether(togetherKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -403,7 +477,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
         log('🔄 Versuche OpenRouter...');
         try {
           const { callOpenRouter } = await import('./features/ai/providerManager');
-          const response = await callOpenRouter(openrouterKey, 'gemini-1.5-flash', prompt, {
+          const response = await callOpenRouter(openrouterKey, 'gemini-2.0-flash', prompt, {
             temperature: 0.3,
             maxOutputTokens: 2048,
           });
@@ -420,10 +494,12 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
 
       if (!fallbackSuccess) {
         log('⚠️ Alle Provider fehlgeschlagen. Nutze lokalen Generator.');
+        setProvidersError('Alle AI-Provider sind fehlgeschlagen. Es wurde ein lokales Gerüst erzeugt.');
         generateCodeLocally();
       }
     } catch (err: any) {
       log(`❌ Unerwarteter Fehler: ${err?.message || err}. Nutze lokalen Generator.`);
+      setProvidersError(`Alle AI-Provider sind fehlgeschlagen: ${err?.message || err}. Es wurde ein lokales Gerüst erzeugt. Bitte einen gültigen API-Key eintragen.`);
       generateCodeLocally();
     } finally {
       setIsGenerating(false);
@@ -444,11 +520,13 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
 
   const buildProduct = () => {
     log('🏗️ Produkt wird gebaut...');
-    if (geminiKey.trim()) {
+    const hasAnyKey = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
+    if (hasAnyKey) {
       generateCodeWithGemini('Implementiere alle Blueprint-Module als vollständige TypeScript-Klassen.');
     } else {
       generateCodeLocally();
-      log('✨ Produkt gebaut (ohne Gemini — Key eintragen für KI-Generierung).');
+      log('✨ Produkt gebaut (lokal — AI Key eintragen für KI-Generierung).');
+      setProvidersError('Kein API-Key konfiguriert — die KI-Generierung ist nicht verfügbar. Es wurde ein lokales Gerüst erzeugt. Trage einen API-Key ein, um echte KI-Generierung zu nutzen.');
     }
   };
 
@@ -461,6 +539,99 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
     log(`🤖 Auftrag: ${msg}`);
     generateCodeWithGemini(msg);
   };
+
+  // --- AI Canvas Generation ---
+  const generateCanvasFromAI = useCallback(async () => {
+    const hasAnyKey = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
+    if (!hasAnyKey) {
+      log('⚠️ Kein AI Key — Canvas Demo-Layout wird geladen.');
+      dispatch(clearCanvas());
+      const demoObjs: CanvasObject[] = [
+        { id: 'demo-1', type: 'rect', left: 40, top: 60, x: 40, y: 60, width: 200, height: 90, fill: '#6366f1', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 0, data: { color: '#6366f1' } },
+        { id: 'demo-2', type: 'ai-text', left: 60, top: 88, x: 60, y: 88, width: 160, height: 30, fill: '#ffffff', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 1, data: { text: 'GitHub Loader' } },
+        { id: 'demo-3', type: 'rect', left: 280, top: 60, x: 280, y: 60, width: 200, height: 90, fill: '#8b5cf6', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 2, data: { color: '#8b5cf6' } },
+        { id: 'demo-4', type: 'ai-text', left: 300, top: 88, x: 300, y: 88, width: 160, height: 30, fill: '#ffffff', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 3, data: { text: 'AI Analyzer' } },
+        { id: 'demo-5', type: 'rect', left: 160, top: 200, x: 160, y: 200, width: 200, height: 90, fill: '#0ea5e9', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 4, data: { color: '#0ea5e9' } },
+        { id: 'demo-6', type: 'ai-text', left: 180, top: 228, x: 180, y: 228, width: 160, height: 30, fill: '#ffffff', scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false, opacity: 1, visible: true, zIndex: 5, data: { text: 'Monaco Editor' } },
+      ];
+      dispatch(addVectors(demoObjs));
+      setWorkView('canvas');
+      return;
+    }
+
+    setIsGenerating(true);
+    log('🎨 Generiere Canvas-Architektur-Layout mit AI...');
+    setWorkView('canvas');
+
+    const canvasPrompt = `Du bist ein UI-Architektur-Visualisierer. Generiere ein JSON-Array mit Canvas-Objekten für das Sovereign Studio.
+
+Blueprint: ${blueprint}
+${syncResult ? `Technologien: ${syncResult.technologies.slice(0, 6).join(', ')}` : ''}
+
+Antworte NUR mit einem gültigen JSON-Array (kein Prosa, kein Markdown):
+[
+  { "id": "r1", "type": "rect", "left": 40, "top": 40, "width": 180, "height": 80, "fill": "#6366f1" },
+  { "id": "t1", "type": "ai-text", "left": 55, "top": 65, "width": 150, "height": 30, "text": "Komponentenname" }
+]
+
+Erstelle 6–10 Objekte (rect + ai-text Paare) als Architektur-Übersicht. Verteile sie gleichmäßig, keine Überschneidungen. Nutze Indigo/Violet/Sky für Fill-Farben.`;
+
+    try {
+      let jsonText = '';
+      if (geminiKey.trim()) {
+        jsonText = await geminiService.generateText(geminiKey, canvasPrompt, { model: 'gemini-2.0-flash', temperature: 0.4, maxOutputTokens: 1024 });
+      } else {
+        // Try Puter.js FIRST (KEYLESS!) as fallback
+        try {
+          const { callPuter } = await import('./features/ai/providerManager');
+          jsonText = (await callPuter('', 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+        } catch {
+          // Try other providers if Puter.js fails
+          if (groqKey.trim()) {
+            const { callGroq } = await import('./features/ai/providerManager');
+            jsonText = (await callGroq(groqKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          } else if (hfKey.trim()) {
+            const { callHuggingFace } = await import('./features/ai/providerManager');
+            jsonText = (await callHuggingFace(hfKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          } else if (togetherKey.trim()) {
+            const { callTogether } = await import('./features/ai/providerManager');
+            jsonText = (await callTogether(togetherKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          } else if (openrouterKey.trim()) {
+            const { callOpenRouter } = await import('./features/ai/providerManager');
+            jsonText = (await callOpenRouter(openrouterKey, 'gemini-2.0-flash', canvasPrompt, { temperature: 0.4, maxOutputTokens: 1024 })).text;
+          }
+        }
+      }
+
+      const jsonMatch = jsonText.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        const parsed: any[] = JSON.parse(jsonMatch[0]);
+        const canvasObjects: CanvasObject[] = parsed.map((obj: any, i: number) => ({
+          id: obj.id || `ai-${i}`,
+          type: obj.type || 'rect',
+          left: obj.left ?? 40 + (i % 3) * 220,
+          top: obj.top ?? 40 + Math.floor(i / 3) * 130,
+          x: obj.left ?? 40,
+          y: obj.top ?? 40,
+          width: obj.width ?? 180,
+          height: obj.height ?? 80,
+          fill: obj.fill ?? '#6366f1',
+          scaleX: 1, scaleY: 1, angle: 0, flipX: false, flipY: false,
+          opacity: 1, visible: true, zIndex: i,
+          data: { color: obj.fill ?? '#6366f1', text: obj.text ?? '', label: obj.text ?? '' },
+        }));
+        dispatch(clearCanvas());
+        dispatch(addVectors(canvasObjects));
+        log(`🎨 Canvas: ${canvasObjects.length} Architektur-Objekte generiert.`);
+      } else {
+        log('⚠️ AI: Kein gültiges JSON für Canvas. Demo-Layout behalten.');
+      }
+    } catch (err: any) {
+      log(`❌ Canvas-Generierung Fehler: ${err?.message || err}`);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [geminiKey, groqKey, hfKey, togetherKey, openrouterKey, blueprint, syncResult, dispatch]);
 
   const downloadPackage = () => {
     const blob = new Blob([generatedPackage], { type: 'application/json' });
@@ -527,6 +698,12 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
 
   return (
     <div className="h-screen overflow-hidden bg-stone-50 text-stone-900 font-sans flex flex-col">
+      {/* Keys saved toast */}
+      {savedToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white text-[12px] font-bold rounded-xl shadow-lg pointer-events-none animate-fade-in">
+          <CheckCircle size={14}/> {savedToast} gespeichert ✓
+        </div>
+      )}
       {/* Header */}
       <header className="h-14 bg-white border-b border-stone-200 flex items-center justify-between px-4 shrink-0 shadow-sm z-50">
         <div>
@@ -576,6 +753,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
             <label className="flex items-center gap-2">
               <span className="font-bold text-stone-500 uppercase text-[10px] flex items-center gap-1"><Zap size={10} className="text-amber-500"/> Gemini:</span>
               <input
+                ref={geminiInputRef}
                 value={geminiKey}
                 onChange={(e) => setGeminiKey(e.target.value)}
                 type="password"
@@ -613,6 +791,16 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
                 className="text-xs px-2 py-1 border border-stone-300 rounded w-20 focus:outline-none focus:border-indigo-500 bg-white"
               />
             </label>
+            <label className="flex items-center gap-2">
+              <span className="font-bold text-stone-400 uppercase text-[9px]">OpenRouter:</span>
+              <input
+                value={openrouterKey}
+                onChange={(e) => setOpenrouterKey(e.target.value)}
+                type="password"
+                placeholder="sk-or-..."
+                className="text-xs px-2 py-1 border border-stone-300 rounded w-24 focus:outline-none focus:border-indigo-500 bg-white"
+              />
+            </label>
             <a
               href="https://console.groq.com/keys"
               target="_blank"
@@ -646,6 +834,30 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           <label className="font-bold text-stone-600 uppercase">Linter<select value={settings.linter} onChange={(e) => setSettings({ ...settings, linter: e.target.value as ProjectSettings['linter'] })} className="mt-1 w-full border rounded p-1 bg-stone-50"><option value="auto">Auto</option><option value="eslint">ESLint</option><option value="biome">Biome</option><option value="prettier-eslint">Prettier + ESLint</option></select></label>
           <label className="font-bold text-stone-600 uppercase">Fix Loops<input value={settings.maxFixLoops} onChange={(e) => setSettings({ ...settings, maxFixLoops: Number(e.target.value) || 1 })} type="number" min={1} max={8} className="mt-1 w-full border rounded p-1 bg-stone-50" /></label>
           <label className="font-bold text-stone-600 uppercase">Spezialisierung<input value={settings.specialization} onChange={(e) => setSettings({ ...settings, specialization: e.target.value })} className="mt-1 w-full border rounded p-1 bg-stone-50" /></label>
+        </div>
+      )}
+
+      {/* All-providers-unavailable error banner */}
+      {providersError && (
+        <div className="bg-red-50 border-b border-red-300 px-4 py-3 flex items-center gap-3 shrink-0 shadow-sm">
+          <AlertTriangle size={20} className="text-red-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-black text-red-800 uppercase tracking-wide">Alle AI-Provider nicht verfügbar</div>
+            <div className="text-[11px] text-red-700 leading-snug">{providersError}</div>
+          </div>
+          <button
+            onClick={focusKeyInput}
+            className="shrink-0 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 shadow-sm"
+          >
+            <KeyRound size={13} /> API-Key eintragen
+          </button>
+          <button
+            onClick={() => setProvidersError(null)}
+            className="shrink-0 text-red-400 hover:text-red-700 text-base font-bold px-1.5 leading-none"
+            aria-label="Schließen"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -741,49 +953,34 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           </div>
         </section>
 
-        {/* Center: Matrix-style AI Terminal Interface */}
-        <section className="flex-1 min-w-0 flex flex-col bg-black relative">
-          
-          {/* Matrix Rain Background Effect */}
-          <div className="absolute inset-0 opacity-10 pointer-events-none overflow-hidden">
-            <div className="matrix-rain absolute w-full h-full"></div>
+        {/* Center: editor / pipeline */}
+        <section className="flex-1 min-w-0 flex flex-col bg-stone-50">
+          <div className="h-10 bg-stone-50 border-b border-stone-200 flex items-center gap-2 px-2 shrink-0 overflow-x-auto">
+            <button onClick={() => setWorkView('editor')} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'editor' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}><Code2 size={11} className="inline mr-1"/>EDITOR</button>
+            <button onClick={() => setWorkView('pipeline')} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'pipeline' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}><RefreshCw size={11} className="inline mr-1"/>PUBLISH LOOP</button>
+            <button onClick={generateCanvasFromAI} disabled={isGenerating} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'canvas' ? 'bg-violet-700 text-white' : 'bg-violet-100 text-violet-700'} disabled:opacity-50`}><Sparkles size={11} className="inline mr-1"/>CANVAS</button>
+            <span className="text-[11px] font-mono text-stone-600 italic truncate px-2 max-w-[220px]">{selectedFile.path}</span>
+            {['REVIEW','TESTS','DOCS','CI/CD','README','AUTOLINT'].map((label) => (
+              <button key={label} onClick={() => { log(`✨ ${label} vorbereitet.`); generateCodeWithGemini(`Erstelle ${label} für das Projekt.`); }} className="px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200">✨ {label}</button>
+            ))}
           </div>
 
-          {/* Terminal Header */}
-          <div className="bg-black/90 border-b border-emerald-900 px-4 py-3 shrink-0 relative z-10">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="text-emerald-400 font-mono text-sm font-bold tracking-wider flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-                  SOVEREIGN_AI
-                </span>
-                <span className="text-emerald-700">│</span>
-                <span className="text-emerald-500/60 text-xs font-mono">
-                  MLVOCA + Gemini + Groq Fallback System
-                </span>
+          {workView === 'canvas' ? (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="h-8 bg-violet-50 border-b border-violet-200 flex items-center gap-2 px-3 text-[10px] text-violet-700 shrink-0">
+                <Sparkles size={11}/> <span className="font-bold">Canvas Workspace</span>
+                <span className="text-violet-500">· Alt+Drag zum Panning · Scroll zum Zoomen · Objekte sind interaktiv</span>
+                <button onClick={() => { dispatch(clearCanvas()); log('🗑️ Canvas geleert.'); }} className="ml-auto px-2 py-0.5 bg-violet-200 text-violet-800 rounded text-[9px] font-bold hover:bg-violet-300"><Trash2 size={9} className="inline mr-0.5"/>Leeren</button>
+                <button onClick={generateCanvasFromAI} disabled={isGenerating} className="px-2 py-0.5 bg-violet-600 text-white rounded text-[9px] font-bold hover:bg-violet-700 disabled:opacity-50 flex items-center gap-1">{isGenerating ? <Loader2 size={9} className="animate-spin"/> : <Sparkles size={9}/>} AI neu generieren</button>
               </div>
-              <div className="flex items-center gap-3 text-xs font-mono">
-                <span className="text-emerald-600">STATUS:</span>
-                <span className={`px-2 py-0.5 rounded ${isGenerating ? 'bg-emerald-500 text-black' : 'bg-emerald-900 text-emerald-400'}`}>
-                  {isGenerating ? 'PROCESSING' : 'READY'}
-                </span>
-                <span className="text-emerald-600">│</span>
-                <span className="text-emerald-400">{currentProvider.toUpperCase()}</span>
-              </div>
+              <CanvasEngine className="flex-1" />
             </div>
-          </div>
-
-          {/* Main Chat/Output Area */}
-          <div className="flex-1 overflow-hidden flex flex-col relative z-10">
-            
-            {/* Output Display - Scrollable */}
-            <div className="flex-1 overflow-y-auto p-6 font-mono text-sm">
-              
-              {/* System Initialization */}
-              <div className="mb-6 border border-emerald-900/50 rounded-lg p-4 bg-emerald-950/20">
-                <div className="text-emerald-600 text-xs mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                  SYSTEM INITIALIZATION
+          ) : workView === 'editor' ? (
+            <div className="flex-1 bg-stone-100/30 p-4 overflow-hidden flex flex-col">
+              <div className="flex-1 rounded-xl shadow-inner relative overflow-hidden flex flex-col bg-stone-950 font-mono border border-stone-800">
+                <div className="h-8 bg-stone-900 border-b border-stone-800 flex items-center gap-2 px-3 text-[10px] text-stone-400">
+                  <span className="w-2 h-2 rounded-full bg-red-500"/><span className="w-2 h-2 rounded-full bg-yellow-500"/><span className="w-2 h-2 rounded-full bg-green-500"/>
+                  <span className="ml-2">Monaco-style Editor · {geminiKey.trim() ? '🤖 Gemini aktiv' : '⚠️ Kein Gemini Key'}</span>
                 </div>
                 <div className="text-emerald-500/80 text-xs space-y-1">
                   <p>› AI Provider: <span className="text-emerald-400">{currentProvider.toUpperCase()}</span></p>
@@ -944,16 +1141,16 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
             <span className={`flex items-center gap-1 ${geminiKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
               <Zap size={9}/> Gemini {geminiKey.trim() ? '✓' : '–'}
             </span>
+            <span className="flex items-center gap-1 text-green-700">
+              <Zap size={9}/> Puter.js FREE ✓
+            </span>
             <span className={`flex items-center gap-1 ${groqKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
               <Zap size={9}/> Groq {groqKey.trim() ? '✓' : '–'}
             </span>
             <span className={`flex items-center gap-1 ${hfKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
               <Zap size={9}/> HF {hfKey.trim() ? '✓' : '–'}
             </span>
-            <span className={`flex items-center gap-1 ${togetherKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
-              <Zap size={9}/> Togthr {togetherKey.trim() ? '✓' : '–'}
-            </span>
-            <span className={`flex items-center gap-1 ${currentProvider ? 'text-indigo-600' : 'text-stone-400'}`}>
+            <span className={`flex items-center gap-1 ${currentProvider ? 'text-indigo-600 font-bold' : 'text-stone-400'}`}>
               <Bot size={9}/> Active: {currentProvider.toUpperCase()}
             </span>
             <span className={`flex items-center gap-1 ${accessKey.trim() ? 'text-green-700' : 'text-stone-400'}`}>
@@ -987,8 +1184,8 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
             <button onClick={downloadPackage} className="w-full bg-stone-900 text-white py-2 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2"><Download size={13}/> Produktpaket sichern</button>
           </div>
         </section>
-        </div>{/* Close flex-1 */}
-        </main>
+      </main>
+      <KeySavedToast />
     </div>
   );
 }

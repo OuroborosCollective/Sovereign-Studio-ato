@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
 import { addVectors, CanvasObject } from '../../canvas/canvasSlice';
 
+// Default model - updated to gemini-2.0-flash
+const DEFAULT_MODEL = 'gemini-2.0-flash';
+
 /**
  * Interface für Canvas-Vektorelemente (KI-Format)
  */
@@ -117,7 +120,7 @@ export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          model: options.model || 'gemini-1.5-flash',
+          model: options.model || DEFAULT_MODEL,
         }),
       });
 

@@ -1,9 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Provider } from 'react-redux';
 import posthog from 'posthog-js';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import ProductMagicApp from './ProductMagicApp';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { store } from './store/index';
 import './index.css';
 
 /**
@@ -61,9 +63,11 @@ const initAndRender = async () => {
     // Any rendering errors are handled by the ErrorBoundary component.
     root.render(
       <StrictMode>
-        <ErrorBoundary>
-          <ProductMagicApp />
-        </ErrorBoundary>
+        <Provider store={store}>
+          <ErrorBoundary>
+            <ProductMagicApp />
+          </ErrorBoundary>
+        </Provider>
       </StrictMode>
     );
   }
