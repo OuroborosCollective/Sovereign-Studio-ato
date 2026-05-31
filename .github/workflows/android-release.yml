@@ -92,7 +92,7 @@ jobs:
 
       - name: 🔄 Expo Prebuild
         if: steps.check_rn.outputs.rn_exists == 'true'
-        run: pnpm prebuild
+        run: CI=1 npx expo prebuild --platform android --clean
 
       - name: 🏗️ Build Web App
         if: steps.check_rn.outputs.rn_exists == 'false'
