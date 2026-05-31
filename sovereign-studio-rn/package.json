@@ -1,0 +1,47 @@
+{
+  "name": "sovereign-studio-rn",
+  "version": "3.0.0",
+  "description": "Sovereign Studio V3 - AI-Powered Product Builder for Android",
+  "author": "Ouroboros Collective",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "build:web": "expo export --platform web",
+    "prebuild": "expo prebuild",
+    "build:android": "eas build -p android --profile preview",
+    "build:android:release": "eas build -p android --profile production"
+  },
+  "dependencies": {
+    "@react-navigation/native": "^7.1.0",
+    "@react-navigation/native-stack": "^7.3.0",
+    "@reduxjs/toolkit": "^2.5.1",
+    "expo": "~52.0.0",
+    "expo-secure-store": "~14.0.1",
+    "expo-splash-screen": "~0.29.0",
+    "expo-status-bar": "~2.0.0",
+    "expo-constants": "~17.0.0",
+    "@expo/vector-icons": "^14.1.0",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-safe-area-context": "^5.2.0",
+    "react-native-screens": "~4.5.0",
+    "react-native-gesture-handler": "~2.23.0",
+    "react-native-reanimated": "~3.16.7",
+    "@google/generative-ai": "^0.24.1",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@types/react": "~18.3.12",
+    "typescript": "~5.7.2",
+    "@react-native/metro-config": "^0.76.0"
+  },
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  }
+}
