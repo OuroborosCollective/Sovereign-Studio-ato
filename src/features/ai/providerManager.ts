@@ -2,18 +2,20 @@
  * Provider Manager - Free LLM API Fallback System
  * Auto-switches between providers when primary fails (auth errors, quota, etc.)
  * 
- * Supported Free Tier Providers:
+ * Supported Free Tier Providers (Priority Order):
+ * - mlvoca.com (NO API key required, default)
  * - Groq (LPU inference, very fast, generous free tier)
  * - HuggingFace (Inference API, many free models)
  * - Together AI (free tier with many models)
  * - OpenRouter (aggregator with free models)
+ * - Google Gemini (requires API key)
  */
 
 import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { GeminiRequestOptions } from './geminiService';
 
 // Provider Types
-export type ProviderType = 'gemini' | 'groq' | 'huggingface' | 'together' | 'openrouter';
+export type ProviderType = 'mlvoca' | 'groq' | 'huggingface' | 'together' | 'openrouter' | 'gemini';
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -43,8 +45,16 @@ export interface ProviderError {
   isRetryable: boolean;
 }
 
-// Free Provider Configurations
+// Free Provider Configurations (Priority Order - mlvoca first as default no-key)
 export const FREE_PROVIDERS: ProviderConfig[] = [
+  {
+    type: 'mlvoca',
+    baseURL: 'https://mlvoca.com',
+    model: 'deepseek-r1:1.5b',
+    supportsStreaming: true,
+    maxTokens: 2048,
+    priority: 0, // Default - no API key needed!
+  },
   {
     type: 'groq',
     baseURL: 'https://api.groq.com/openai/v1',
@@ -137,16 +147,59 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
   // For unknown models, return a sensible default for the provider
   const defaults: Partial<Record<ProviderType, string>> = {
     gemini: model,
+    mlvoca: 'deepseek-r1:1.5b',
     groq: 'llama-3.1-8b-instant',
     huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
     together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
     openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
   };
   
-  return defaults[targetProvider] || 'llama-3.1-8b-instant';
+  return defaults[targetProvider] || 'deepseek-r1:1.5b';
 }
 
-// Provider implementation functions
+// ============================================================
+// MLVOCA - Free No-Key API (Default Provider)
+// ============================================================
+export async function callMlvoCa(model: string, prompt: string, options: GeminiRequestOptions = {}): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, 'mlvoca');
+  
+  const response = await fetch('https://mlvoca.com/api/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: mappedModel,
+      prompt: prompt,
+      stream: false, // For simplicity, use non-streaming
+      options: {
+        temperature: options.temperature ?? 0.7,
+      },
+      keep_alive: '5m',
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => `HTTP ${response.status}`);
+    throw {
+      provider: 'mlvoca' as ProviderType,
+      error: errorText || `HTTP ${response.status}`,
+      statusCode: response.status,
+      isRetryable: response.status >= 500 || response.status === 429,
+    };
+  }
+  
+  const data = await response.json();
+  return {
+    text: data.response || '',
+    provider: 'mlvoca',
+    model: mappedModel,
+  };
+}
+
+// ============================================================
+// Groq - Free Tier
+// ============================================================
 export async function callGroq(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
   const mappedModel = mapModelForProvider(model, 'groq');
   

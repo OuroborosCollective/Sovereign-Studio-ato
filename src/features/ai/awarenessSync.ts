@@ -1,5 +1,5 @@
 import { geminiService } from "./geminiService";
-import { callGroq, callHuggingFace, callTogether, type ProviderType } from "./providerManager";
+import { callMlvoCa, callGroq, callHuggingFace, callTogether, type ProviderType } from "./providerManager";
 
 export interface RepoFile {
   path: string;
@@ -17,7 +17,7 @@ export interface AwarenessSyncResult {
 
 /**
  * Runs awareness sync with automatic provider fallback
- * Tries Gemini first, then falls back to free providers if needed
+ * Uses mlvoca (free, no key) by default, then falls back to other providers
  */
 export async function runAwarenessSync(
   geminiApiKey: string,
@@ -32,13 +32,6 @@ export async function runAwarenessSync(
   model: string = "gemini-1.5-flash",
   onProviderSwitch?: (from: ProviderType, to: ProviderType, error: string) => void
 ): Promise<AwarenessSyncResult> {
-  if (!geminiApiKey || !geminiApiKey.trim()) {
-    if (!fallbackProviders.groqKey && !fallbackProviders.hfKey && !fallbackProviders.togetherKey && !fallbackProviders.openrouterKey) {
-      throw new Error("Kein API-Key konfiguriert. Bitte Gemini, Groq, HuggingFace oder Together AI Key eintragen.");
-    }
-    // Will try fallback providers
-  }
-
   const filePaths = repoFiles
     .filter((f) => f.type === "blob")
     .slice(0, 80)
@@ -69,10 +62,23 @@ VERBESSERUNGSVORSCHLÄGE:
 - [Vorschlag 3]`;
 
   let rawText: string;
-  let usedProvider: ProviderType = 'gemini';
+  let usedProvider: ProviderType = 'mlvoca';
 
-  // Try Gemini first
-  if (geminiApiKey?.trim()) {
+  // Priority 1: Try mlvoca (free, no API key required!)
+  try {
+    const response = await callMlvoCa(model, prompt, {
+      temperature: 0.3,
+      maxOutputTokens: 1024,
+    });
+    rawText = response.text;
+    usedProvider = 'mlvoca';
+  } catch (mlvocaError: any) {
+    const errorMsg = mlvocaError?.message || String(mlvocaError);
+    onProviderSwitch?.('mlvoca', 'gemini', errorMsg);
+  }
+
+  // Priority 2: Try Gemini if key is provided
+  if (!rawText && geminiApiKey?.trim()) {
     try {
       rawText = await geminiService.generateText(geminiApiKey, prompt, {
         model,
@@ -82,71 +88,54 @@ VERBESSERUNGSVORSCHLÄGE:
       usedProvider = 'gemini';
     } catch (geminiError: any) {
       const errorMsg = geminiError?.message || String(geminiError);
-      const isRetryable = 
-        errorMsg.includes('429') || 
-        errorMsg.includes('quota') || 
-        errorMsg.includes('RESOURCE_EXHAUSTED') ||
-        errorMsg.includes('authentication') ||
-        errorMsg.includes('api key') ||
-        geminiError?.status === 401 || 
-        geminiError?.status === 403;
-
-      if (isRetryable) {
-        onProviderSwitch?.('gemini', 'groq', errorMsg);
-      } else {
-        throw geminiError;
-      }
+      onProviderSwitch?.('gemini', 'groq', errorMsg);
     }
   }
 
-  // If Gemini failed or no key, try fallback providers
-  if (!rawText) {
-    // Try Groq
-    if (fallbackProviders.groqKey?.trim()) {
-      try {
-        const response = await callGroq(fallbackProviders.groqKey, model, prompt, {
-          temperature: 0.3,
-          maxOutputTokens: 1024,
-        });
-        rawText = response.text;
-        usedProvider = 'groq';
-      } catch (err: any) {
-        onProviderSwitch?.('groq', 'huggingface', err?.message || String(err));
-        // Continue to next provider
-      }
+  // Priority 3: Try Groq
+  if (!rawText && fallbackProviders.groqKey?.trim()) {
+    try {
+      const response = await callGroq(fallbackProviders.groqKey, model, prompt, {
+        temperature: 0.3,
+        maxOutputTokens: 1024,
+      });
+      rawText = response.text;
+      usedProvider = 'groq';
+    } catch (err: any) {
+      onProviderSwitch?.('groq', 'huggingface', err?.message || String(err));
     }
+  }
 
-    // Try HuggingFace
-    if (!rawText && fallbackProviders.hfKey?.trim()) {
-      try {
-        const response = await callHuggingFace(fallbackProviders.hfKey, model, prompt, {
-          temperature: 0.3,
-          maxOutputTokens: 1024,
-        });
-        rawText = response.text;
-        usedProvider = 'huggingface';
-      } catch (err: any) {
-        onProviderSwitch?.('huggingface', 'together', err?.message || String(err));
-      }
+  // Priority 4: Try HuggingFace
+  if (!rawText && fallbackProviders.hfKey?.trim()) {
+    try {
+      const response = await callHuggingFace(fallbackProviders.hfKey, model, prompt, {
+        temperature: 0.3,
+        maxOutputTokens: 1024,
+      });
+      rawText = response.text;
+      usedProvider = 'huggingface';
+    } catch (err: any) {
+      onProviderSwitch?.('huggingface', 'together', err?.message || String(err));
     }
+  }
 
-    // Try Together AI
-    if (!rawText && fallbackProviders.togetherKey?.trim()) {
-      try {
-        const response = await callTogether(fallbackProviders.togetherKey, model, prompt, {
-          temperature: 0.3,
-          maxOutputTokens: 1024,
-        });
-        rawText = response.text;
-        usedProvider = 'together';
-      } catch (err: any) {
-        onProviderSwitch?.('together', 'openrouter', err?.message || String(err));
-      }
+  // Priority 5: Try Together AI
+  if (!rawText && fallbackProviders.togetherKey?.trim()) {
+    try {
+      const response = await callTogether(fallbackProviders.togetherKey, model, prompt, {
+        temperature: 0.3,
+        maxOutputTokens: 1024,
+      });
+      rawText = response.text;
+      usedProvider = 'together';
+    } catch (err: any) {
+      onProviderSwitch?.('together', 'mlvoca', err?.message || String(err));
     }
   }
 
   if (!rawText) {
-    throw new Error("Alle AI-Provider sind fehlgeschlagen. Bitte API-Keys für Gemini, Groq, HuggingFace oder Together AI eintragen.");
+    throw new Error("Alle AI-Provider sind fehlgeschlagen. Bitte versuche es später erneut.");
   }
 
   const summary = extractSection(rawText, "ZUSAMMENFASSUNG");

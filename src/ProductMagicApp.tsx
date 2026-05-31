@@ -286,7 +286,25 @@ Aufgabe: ${userPrompt}
 Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mit dem Code.`;
 
     try {
-      // Try Gemini first if key is available
+      // Priority 1: Try mlvoca (free, no API key required!)
+      log('🔮 Generiere mit MLVOCA (kostenlos)...');
+      try {
+        const { callMlvoCa } = await import('./features/ai/providerManager');
+        const response = await callMlvoCa('gemini-1.5-flash', prompt, {
+          temperature: 0.3,
+          maxOutputTokens: 2048,
+        });
+        setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+        setGeneratedCode(`// Generiert von Sovereign Studio + MLVOCA\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+        setBuilt(true);
+        setWorkView('editor');
+        log('💻 MLVOCA hat Code generiert (kostenlos!).');
+        return;
+      } catch (mlvocaErr) {
+        log('🔄 MLVOCA nicht verfügbar, versuche anderen Provider...');
+      }
+
+      // Priority 2: Try Gemini if key is available
       if (geminiKey.trim()) {
         log('🤖 Generiere mit Gemini...');
         try {
@@ -632,8 +650,44 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
       )}
 
       {/* Main layout */}
-      <main className="flex-1 flex overflow-hidden relative">
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        
+        {/* Persistent AI Status Banner */}
+        <div className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 px-4 py-2 flex items-center justify-between text-white text-[10px] shrink-0 shadow-lg">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+              <span className="font-bold">AI STATUS</span>
+            </span>
+            <span className="opacity-80">|</span>
+            <span className="font-mono">
+              Active: <span className="font-bold bg-white/20 px-1.5 py-0.5 rounded">{currentProvider.toUpperCase()}</span>
+            </span>
+            {syncResult && (
+              <span className="opacity-90">
+                | Sync: <span className="font-bold">{syncResult.technologies.slice(0, 3).join(', ')}</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {geminiKey.trim() && (
+              <span className="flex items-center gap-1 bg-amber-500/30 px-2 py-0.5 rounded">
+                <Zap size={10}/> Gemini
+              </span>
+            )}
+            {groqKey.trim() && (
+              <span className="flex items-center gap-1 bg-emerald-500/30 px-2 py-0.5 rounded">
+                <Zap size={10}/> Groq
+              </span>
+            )}
+            <span className="flex items-center gap-1 bg-white/10 px-2 py-0.5 rounded">
+              <Sparkles size={10}/> MLVOCA (Free)
+            </span>
+          </div>
+        </div>
+
         {/* Left panel: file tree + pipeline controls */}
+        <div className="flex-1 flex overflow-hidden">
         <section className="flex flex-col w-[300px] shrink-0 border-r border-stone-200 bg-white">
           <div className="p-3 bg-indigo-50 border-b border-indigo-200 shrink-0 shadow-sm">
             <h3 className="text-[11px] font-black text-indigo-800 mb-1 flex justify-between items-center">
@@ -809,7 +863,8 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
             <button onClick={downloadPackage} className="w-full bg-stone-900 text-white py-2 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2"><Download size={13}/> Produktpaket sichern</button>
           </div>
         </section>
-      </main>
+        </div>{/* Close flex-1 */}
+        </main>
     </div>
   );
 }
