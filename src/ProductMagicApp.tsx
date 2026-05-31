@@ -205,15 +205,9 @@ export default function ProductMagicApp() {
 
   // --- Awareness Sync ---
   const runSync = useCallback(async () => {
-    const hasAnyKey = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
-    
-    if (!hasAnyKey) {
-      log('❌ Fehler beim Awareness Sync: Kein API-Key konfiguriert.');
-      log('💡 Bitte mindestens einen Key eintragen: Gemini, Groq, HuggingFace oder Together AI.');
-      setRepoStatus('❌ Kein API-Key konfiguriert');
-      return;
-    }
-    
+    // MLVOCA is always available (no API key required) — no early guard needed.
+    // The hasAnyKey check was removed so no-key users can reach MLVOCA sync.
+
     if (!repoLoaded || repoFiles.length === 0) {
       log('⚠️ Zuerst ein Repo laden, dann Awareness Sync starten.');
       return;
@@ -263,15 +257,9 @@ export default function ProductMagicApp() {
 
   // --- Generate Code with Gemini + Auto-Fallback ---
   const generateCodeWithGemini = useCallback(async (userPrompt: string) => {
-    // Check if any provider is available
-    const hasProvider = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
+    // MLVOCA is always available (no API key required) — no early guard needed.
+    // The hasProvider check was removed so no-key users can reach MLVOCA generation.
     
-    if (!hasProvider) {
-      log('⚠️ Kein API-Key konfiguriert. Nutze lokalen Generator.');
-      generateCodeLocally();
-      return;
-    }
-
     setIsGenerating(true);
 
     const context = syncResult
