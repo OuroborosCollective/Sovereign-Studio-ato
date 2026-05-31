@@ -86,6 +86,9 @@ jobs:
           cp sovereign-studio-rn/babel.config.js ./babel.config.js 2>/dev/null || true
           cp -r sovereign-studio-rn/src ./src
           cp -r sovereign-studio-rn/assets ./assets 2>/dev/null || true
+          cp sovereign-studio-rn/tsconfig.json ./tsconfig.json 2>/dev/null || true
+          cp sovereign-studio-rn/index.js ./index.js 2>/dev/null || true
+          cp sovereign-studio-rn/metro.config.js ./metro.config.js 2>/dev/null || true
 
       - name: 🔄 Expo Prebuild
         if: steps.check_rn.outputs.rn_exists == 'true'
