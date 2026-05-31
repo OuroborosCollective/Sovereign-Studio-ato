@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version_code:
-        description: 'Optional: Version Code (must be higher than previous Play uploads)'
+        description: 'Optional: Version Code'
         required: false
         type: string
       version_name:
@@ -60,43 +60,42 @@ jobs:
       - name: 🔄 Check React Native App
         id: check_rn
         run: |
-          if [ -d "sovereign-studio-rn" ]; then
+          if [ -d "sovereign-studio-rn" ] && [ -f "sovereign-studio-rn/app.json" ]; then
             echo "rn_exists=true" >> $GITHUB_OUTPUT
-            echo "Using sovereign-studio-rn/"
+            echo "Found sovereign-studio-rn/"
           else
             echo "rn_exists=false" >> $GITHUB_OUTPUT
             echo "Using root app"
           fi
 
+      - name: 📦 Install RN Dependencies
+        if: steps.check_rn.outputs.rn_exists == 'true'
+        run: |
+          cd sovereign-studio-rn
+          pnpm install --no-frozen-lockfile
+
       - name: 📦 Install Root Dependencies
         if: steps.check_rn.outputs.rn_exists == 'false'
         run: pnpm install --no-frozen-lockfile
 
-      - name: 📦 Install RN Dependencies
-        if: steps.check_rn.outputs.rn_exists == 'true'
-        run: cd sovereign-studio-rn && pnpm install --no-frozen-lockfile
-
-      - name: 🔄 Copy RN App
+      - name: 🔄 Copy RN App Files
         if: steps.check_rn.outputs.rn_exists == 'true'
         run: |
           cp sovereign-studio-rn/package.json ./package.json
           cp sovereign-studio-rn/app.json ./app.json
-          cp sovereign-studio-rn/tsconfig.json ./tsconfig.json || true
-          cp sovereign-studio-rn/babel.config.js ./babel.config.js || true
+          cp sovereign-studio-rn/babel.config.js ./babel.config.js 2>/dev/null || true
+          cp -r sovereign-studio-rn/src ./src
+          cp -r sovereign-studio-rn/assets ./assets 2>/dev/null || true
 
-      - name: 🏗️ Build Web App (Vite)
+      - name: 🔄 Expo Prebuild
+        if: steps.check_rn.outputs.rn_exists == 'true'
+        run: npx expo prebuild --platform android --clean --non-interactive
+
+      - name: 🏗️ Build Web App
         if: steps.check_rn.outputs.rn_exists == 'false'
         run: pnpm run build
 
-      - name: 📦 Copy RN Source Files
-        if: steps.check_rn.outputs.rn_exists == 'true'
-        run: cp -r sovereign-studio-rn/src ./src
-
-      - name: 🔄 Expo Prebuild (RN)
-        if: steps.check_rn.outputs.rn_exists == 'true'
-        run: pnpm prebuild --platform android --clean
-
-      - name: 🔄 Sync Capacitor Android (Web)
+      - name: 🔄 Sync Capacitor
         if: steps.check_rn.outputs.rn_exists == 'false'
         run: npx cap sync android
 
