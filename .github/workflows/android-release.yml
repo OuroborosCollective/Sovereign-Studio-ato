@@ -61,10 +61,34 @@ jobs:
           echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
           echo "Building with Version Name: $INPUT_NAME, Version Code: $INPUT_CODE"
 
-      - name: 🏗️ Build Web Application
+      - name: 🔄 Check if React Native App exists
+        id: check_rn
+        run: |
+          if [ -d "sovereign-studio-rn" ]; then
+            echo "rn_exists=true" >> $GITHUB_OUTPUT
+            echo "Using React Native app from sovereign-studio-rn/"
+          else
+            echo "rn_exists=false" >> $GITHUB_OUTPUT
+            echo "Using web app from root"
+          fi
+
+      - name: 📦 Copy React Native App (if exists)
+        if: steps.check_rn.outputs.rn_exists == 'true'
+        run: |
+          cp -r sovereign-studio-rn/* .
+          cp sovereign-studio-rn/package.json ./package.json
+          cp sovereign-studio-rn/app.json ./app.json
+
+      - name: 🔄 Expo Prebuild (Generate Android)
+        if: steps.check_rn.outputs.rn_exists == 'true'
+        run: pnpm prebuild --platform android --clean
+
+      - name: 🏗️ Build Web Application (Original)
+        if: steps.check_rn.outputs.rn_exists == 'false'
         run: pnpm run build
 
-      - name: 🔄 Sync Capacitor Android
+      - name: 🔄 Sync Capacitor Android (Original)
+        if: steps.check_rn.outputs.rn_exists == 'false'
         run: npx cap sync android
 
       - name: ☕ Setup Java
@@ -124,7 +148,7 @@ jobs:
       - name: 📁 Prepare Manual Play Store Artifacts
         run: |
           mkdir -p release-bundle
-          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
+          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab || true
           if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
             cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
           fi
@@ -142,26 +166,6 @@ jobs:
           name: SovereignStudio-PlayStore-Release
           path: SovereignStudio-PlayStore-Release.zip
           retention-days: 14
-
-      - name: 🔥 Ignite Marketing Loop
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: marketing_ignition_trigger
-          client-payload: |
-            {
-              "vouchers": 66,
-              "campaign_mode": "initial_spark",
-              "version": "${{ steps.vars.outputs.version_name }}",
-              "build_number": "${{ steps.vars.outputs.version_code }}",
-              "platform": "android",
-              "upload_mode": "manual_play_console"
-            }
-
-      - name: ✅ Manual Play Upload Notice
-        run: |
-          echo "Google Play API upload is intentionally disabled."
-          echo "Download the SovereignStudio-PlayStore-Release artifact and upload the AAB manually in Play Console."
 
       - name: 🏷️ Create Git Tag
         if: github.ref == 'refs/heads/main'
@@ -182,8 +186,7 @@ jobs:
 # ============================================================
 # Manual Play Store upload workflow
 # ============================================================
-# This workflow intentionally does not call the Google Play API.
-# It builds signed AAB/APK artifacts and uploads them as a GitHub
+# This workflow builds signed AAB/APK artifacts and uploads them as a GitHub
 # Actions artifact. Upload release-bundle/SovereignStudio-release.aab
 # manually through the Google Play Console.
 # ============================================================
