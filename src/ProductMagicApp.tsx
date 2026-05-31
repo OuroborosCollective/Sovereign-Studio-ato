@@ -741,70 +741,194 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           </div>
         </section>
 
-        {/* Center: editor / pipeline */}
-        <section className="flex-1 min-w-0 flex flex-col bg-stone-50">
-          <div className="h-10 bg-stone-50 border-b border-stone-200 flex items-center gap-2 px-2 shrink-0 overflow-x-auto">
-            <button onClick={() => setWorkView('editor')} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'editor' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}><Code2 size={11} className="inline mr-1"/>EDITOR</button>
-            <button onClick={() => setWorkView('pipeline')} className={`px-2 py-1 text-[9px] font-bold rounded ${workView === 'pipeline' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}><RefreshCw size={11} className="inline mr-1"/>PUBLISH LOOP</button>
-            <span className="text-[11px] font-mono text-stone-600 italic truncate px-2 max-w-[220px]">{selectedFile.path}</span>
-            {['REVIEW','TESTS','DOCS','CI/CD','README','AUTOLINT'].map((label) => (
-              <button key={label} onClick={() => { log(`✨ ${label} vorbereitet.`); generateCodeWithGemini(`Erstelle ${label} für das Projekt.`); }} className="px-2 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded hover:bg-indigo-200">✨ {label}</button>
-            ))}
+        {/* Center: Matrix-style AI Terminal Interface */}
+        <section className="flex-1 min-w-0 flex flex-col bg-black relative">
+          
+          {/* Matrix Rain Background Effect */}
+          <div className="absolute inset-0 opacity-10 pointer-events-none overflow-hidden">
+            <div className="matrix-rain absolute w-full h-full"></div>
           </div>
 
-          {workView === 'editor' ? (
-            <div className="flex-1 bg-stone-100/30 p-4 overflow-hidden flex flex-col">
-              <div className="flex-1 rounded-xl shadow-inner relative overflow-hidden flex flex-col bg-stone-950 font-mono border border-stone-800">
-                <div className="h-8 bg-stone-900 border-b border-stone-800 flex items-center gap-2 px-3 text-[10px] text-stone-400">
-                  <span className="w-2 h-2 rounded-full bg-red-500"/><span className="w-2 h-2 rounded-full bg-yellow-500"/><span className="w-2 h-2 rounded-full bg-green-500"/>
-                  <span className="ml-2">Monaco-style Editor · {geminiKey.trim() ? '🤖 Gemini aktiv' : '⚠️ Kein Gemini Key'}</span>
-                </div>
-                <div className="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre leading-relaxed">
-                  {currentCode.split('\n').map((line, index) => `${String(index + 1).padStart(3, ' ')} │ ${line}`).join('\n')}
-                </div>
+          {/* Terminal Header */}
+          <div className="bg-black/90 border-b border-emerald-900 px-4 py-3 shrink-0 relative z-10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <span className="text-emerald-400 font-mono text-sm font-bold tracking-wider flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                  SOVEREIGN_AI
+                </span>
+                <span className="text-emerald-700">│</span>
+                <span className="text-emerald-500/60 text-xs font-mono">
+                  MLVOCA + Gemini + Groq Fallback System
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-xs font-mono">
+                <span className="text-emerald-600">STATUS:</span>
+                <span className={`px-2 py-0.5 rounded ${isGenerating ? 'bg-emerald-500 text-black' : 'bg-emerald-900 text-emerald-400'}`}>
+                  {isGenerating ? 'PROCESSING' : 'READY'}
+                </span>
+                <span className="text-emerald-600">│</span>
+                <span className="text-emerald-400">{currentProvider.toUpperCase()}</span>
               </div>
             </div>
-          ) : (
-            <div className="flex-1 bg-stone-100/30 p-4 overflow-y-auto">
-              <div className="bg-white border border-stone-200 rounded-xl shadow-sm p-4">
-                <h3 className="text-sm font-black text-stone-900 mb-2">Publish · Validate · Patch Loop</h3>
-                <p className="text-xs text-stone-500 mb-4">Code erzeugen → Publish/PR → Workflows prüfen → bei Fehler patchen → erneut validieren.</p>
-                <div className="grid grid-cols-4 gap-2 mb-4">
-                  {[['publishing','1 Publish'], ['validating','2 Validate'], ['failed','3 Fehler'], ['green','4 Grün']].map(([state, label]) => (
-                    <div key={state} className={`p-3 rounded-xl border text-center text-[10px] font-black ${pipelineState === state ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-stone-50 text-stone-500 border-stone-200'}`}>{label}</div>
+          </div>
+
+          {/* Main Chat/Output Area */}
+          <div className="flex-1 overflow-hidden flex flex-col relative z-10">
+            
+            {/* Output Display - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-6 font-mono text-sm">
+              
+              {/* System Initialization */}
+              <div className="mb-6 border border-emerald-900/50 rounded-lg p-4 bg-emerald-950/20">
+                <div className="text-emerald-600 text-xs mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                  SYSTEM INITIALIZATION
+                </div>
+                <div className="text-emerald-500/80 text-xs space-y-1">
+                  <p>› AI Provider: <span className="text-emerald-400">{currentProvider.toUpperCase()}</span></p>
+                  <p>› Free Tier: <span className="text-emerald-400">MLVOCA (ACTIVE)</span></p>
+                  <p>› Models: deepseek-r1:1.5b | llama-3.1-8b-instant</p>
+                  <p>› Status: <span className="text-emerald-400">ONLINE</span></p>
+                </div>
+              </div>
+
+              {/* AI Response Messages */}
+              {logs.map((entry, index) => (
+                <div key={index} className={`mb-4 ${
+                  entry.startsWith('💻') ? 'text-cyan-400' : 
+                  entry.startsWith('🤖') ? 'text-emerald-400' :
+                  entry.startsWith('❌') ? 'text-red-400' :
+                  entry.startsWith('✅') ? 'text-emerald-400' :
+                  entry.startsWith('⚠️') ? 'text-yellow-400' :
+                  entry.startsWith('🔮') ? 'text-purple-400' :
+                  'text-emerald-500/70'
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-emerald-800 text-xs">[{index + 1}]</span>
+                    <span className="text-emerald-600 text-xs">
+                      {entry.startsWith('💻') ? '▸ CODE' : 
+                       entry.startsWith('🤖') ? '▸ AI' :
+                       entry.startsWith('❌') ? '▸ ERROR' :
+                       entry.startsWith('✅') ? '▸ SUCCESS' :
+                       entry.startsWith('⚠️') ? '▸ WARNING' :
+                       '▸ LOG'}
+                    </span>
+                  </div>
+                  <div className="pl-4 whitespace-pre-wrap leading-relaxed text-xs">
+                    {entry.replace(/^[🤖💻❌✅⚠️🔮]\s*/, '')}
+                  </div>
+                </div>
+              ))}
+
+              {/* Generated Code Display */}
+              {generatedCode && (
+                <div className="mt-6 border border-cyan-900/50 rounded-lg overflow-hidden bg-black/50">
+                  <div className="bg-cyan-950/50 px-4 py-2 border-b border-cyan-900/50 flex items-center justify-between">
+                    <span className="text-cyan-500 text-xs font-mono flex items-center gap-2">
+                      <span className="w-2 h-2 bg-cyan-500 rounded-full"></span>
+                      GENERATED_CODE_OUTPUT
+                    </span>
+                    <span className="text-cyan-700 text-xs">{generatedCode.split('\n').length} lines</span>
+                  </div>
+                  <pre className="p-4 text-cyan-400 text-xs overflow-x-auto font-mono">
+                    {generatedCode.split('\n').map((line, i) => (
+                      <div key={i} className="flex hover:bg-cyan-950/30">
+                        <span className="text-cyan-900 w-12 shrink-0 text-right pr-4 select-none">{i + 1}</span>
+                        <span className="whitespace-pre">{line || ' '}</span>
+                      </div>
+                    ))}
+                  </pre>
+                </div>
+              )}
+
+              {/* Suggestions Panel */}
+              <div className="mt-6 border border-emerald-900/30 rounded-lg p-4 bg-emerald-950/10">
+                <div className="text-emerald-600 text-xs mb-3 font-mono">▸ SUGGESTED ACTIONS</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Create README', prompt: 'Erstelle eine vollständige README.md für dieses Projekt' },
+                    { label: 'Write Tests', prompt: 'Schreibe Jest/React Tests für die Hauptkomponenten' },
+                    { label: 'Build Feature', prompt: 'Implementiere ein neues Feature nach meiner Beschreibung' },
+                    { label: 'Fix Bugs', prompt: 'Analysiere und behebe mögliche Bugs im Code' },
+                  ].map((item) => (
+                    <button 
+                      key={item.label}
+                      onClick={() => generateCodeWithGemini(item.prompt)}
+                      className="text-left px-3 py-2 bg-emerald-950/50 hover:bg-emerald-900/30 border border-emerald-900/30 rounded text-emerald-400 text-xs font-mono transition-colors"
+                    >
+                      ✦ {item.label}
+                    </button>
                   ))}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={publishAndValidate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase">🚀 Publish & Validate</button>
-                  <button onClick={patchFromPipeline} className="px-4 py-2 bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-black uppercase">🛠️ Fehler patchen</button>
-                  <button onClick={mergeWhenGreen} className="px-4 py-2 bg-green-600 text-white rounded-lg text-[10px] font-black uppercase">✅ Merge/Patch</button>
-                </div>
-                {pipelineState === 'failed' && <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs"><AlertTriangle size={14} className="inline mr-1"/> Fehler gefunden. Agent springt zurück in den Editor.</div>}
-                {pipelineState === 'green' && <div className="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl text-xs"><CheckCircle size={14} className="inline mr-1"/> Alle Workflows grün. Merge freigegeben.</div>}
               </div>
             </div>
-          )}
 
-          {/* Chat bar */}
-          <div className="h-12 bg-white border-t border-stone-200 flex items-center px-4 gap-3 shrink-0">
-            <span className="text-lg">🤖</span>
-            <input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }}
-              placeholder={geminiKey.trim() ? 'Frag Gemini: was soll generiert werden?' : 'Gemini Key eintragen um KI-Chat zu nutzen...'}
-              className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 bg-stone-50"
-            />
-            <button onClick={sendChat} disabled={isGenerating} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase shadow-sm disabled:opacity-50"><Send size={13}/></button>
+            {/* Command Input Area */}
+            <div className="border-t border-emerald-900/50 bg-black/90 p-4 shrink-0">
+              <div className="flex gap-3">
+                <div className="flex-1 relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 font-mono">›</span>
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }}
+                    placeholder="Enter command or describe what you want to build..."
+                    className="w-full bg-emerald-950/30 border border-emerald-900/50 text-emerald-400 placeholder-emerald-800 
+                               px-4 py-3 pl-8 rounded-lg font-mono text-sm focus:outline-none focus:border-emerald-600
+                               focus:shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+                  />
+                </div>
+                <button 
+                  onClick={sendChat}
+                  disabled={isGenerating}
+                  className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 disabled:text-emerald-600 
+                           text-black font-mono font-bold px-6 py-3 rounded-lg transition-all flex items-center gap-2
+                           disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin"/>
+                      PROCESSING
+                    </>
+                  ) : (
+                    <>
+                      <Send size={16}/>
+                      EXECUTE
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs font-mono">
+                <span className="text-emerald-700">Press Enter to execute • Auto-fallback active</span>
+                <div className="flex items-center gap-4">
+                  {geminiKey.trim() && <span className="text-amber-500">● Gemini</span>}
+                  {groqKey.trim() && <span className="text-emerald-500">● Groq</span>}
+                  <span className="text-purple-400">● MLVOCA</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Bottom publish bar */}
-          <div className="h-16 border-t border-indigo-200 px-4 flex items-center justify-between bg-indigo-50 shrink-0 gap-3">
-            <div className="flex-1 min-w-0">
-              <h4 className="text-[10px] font-black text-indigo-800 uppercase">PR-Queue: <span>{cards.length}</span> Module · Fixloop {fixLoops}/{settings.maxFixLoops}</h4>
-              <input value={built ? 'feat: sovereign studio product workspace' : ''} readOnly placeholder="Commit Nachricht..." className="w-full text-[10px] p-1 border border-indigo-200 rounded bg-white" />
+          {/* Bottom Status Bar */}
+          <div className="h-10 border-t border-emerald-900/50 px-4 flex items-center justify-between bg-black/50 shrink-0 relative z-10">
+            <div className="flex items-center gap-6 text-xs font-mono text-emerald-700">
+              <span>PR_QUEUE: <span className="text-emerald-400">{cards.length}</span></span>
+              <span>│</span>
+              <span>FIX_LOOP: <span className="text-emerald-400">{fixLoops}/{settings.maxFixLoops}</span></span>
+              <span>│</span>
+              <span>REPO: <span className={repoLoaded ? 'text-emerald-400' : 'text-yellow-500'}>{repoLoaded ? `${repoFiles.length} files` : 'not loaded'}</span></span>
             </div>
-            <button onClick={publishAndValidate} className="shrink-0 px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold text-[10px] uppercase shadow-sm">🛡️ PUBLISH & VALIDATE</button>
+            <div className="flex items-center gap-2">
+              <button onClick={buildProduct} disabled={isGenerating} className="px-3 py-1 bg-emerald-900/50 hover:bg-emerald-900 border border-emerald-800 text-emerald-400 text-xs font-mono rounded flex items-center gap-1">
+                {isGenerating ? <Loader2 size={12} className="animate-spin"/> : <Rocket size={12}/>}
+                BUILD
+              </button>
+              <button onClick={publishAndValidate} className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-black text-xs font-mono rounded font-bold">
+                🛡️ PUBLISH
+              </button>
+            </div>
           </div>
         </section>
 
