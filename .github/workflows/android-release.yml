@@ -41,9 +41,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: 📦 Install Dependencies
-        run: pnpm install --no-frozen-lockfile
-
       - name: 🏷️ Determine Versioning
         id: vars
         run: |
@@ -59,35 +56,47 @@ jobs:
 
           echo "version_name=$INPUT_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
-          echo "Building with Version Name: $INPUT_NAME, Version Code: $INPUT_CODE"
 
-      - name: 🔄 Check if React Native App exists
+      - name: 🔄 Check React Native App
         id: check_rn
         run: |
           if [ -d "sovereign-studio-rn" ]; then
             echo "rn_exists=true" >> $GITHUB_OUTPUT
-            echo "Using React Native app from sovereign-studio-rn/"
+            echo "Using sovereign-studio-rn/"
           else
             echo "rn_exists=false" >> $GITHUB_OUTPUT
-            echo "Using web app from root"
+            echo "Using root app"
           fi
 
-      - name: 📦 Copy React Native App (if exists)
+      - name: 📦 Install Root Dependencies
+        if: steps.check_rn.outputs.rn_exists == 'false'
+        run: pnpm install --no-frozen-lockfile
+
+      - name: 📦 Install RN Dependencies
+        if: steps.check_rn.outputs.rn_exists == 'true'
+        run: cd sovereign-studio-rn && pnpm install --no-frozen-lockfile
+
+      - name: 🔄 Copy RN App
         if: steps.check_rn.outputs.rn_exists == 'true'
         run: |
-          cp -r sovereign-studio-rn/* .
           cp sovereign-studio-rn/package.json ./package.json
           cp sovereign-studio-rn/app.json ./app.json
+          cp sovereign-studio-rn/tsconfig.json ./tsconfig.json || true
+          cp sovereign-studio-rn/babel.config.js ./babel.config.js || true
 
-      - name: 🔄 Expo Prebuild (Generate Android)
-        if: steps.check_rn.outputs.rn_exists == 'true'
-        run: pnpm prebuild --platform android --clean
-
-      - name: 🏗️ Build Web Application (Original)
+      - name: 🏗️ Build Web App (Vite)
         if: steps.check_rn.outputs.rn_exists == 'false'
         run: pnpm run build
 
-      - name: 🔄 Sync Capacitor Android (Original)
+      - name: 📦 Copy RN Source Files
+        if: steps.check_rn.outputs.rn_exists == 'true'
+        run: cp -r sovereign-studio-rn/src ./src
+
+      - name: 🔄 Expo Prebuild (RN)
+        if: steps.check_rn.outputs.rn_exists == 'true'
+        run: pnpm prebuild --platform android --clean
+
+      - name: 🔄 Sync Capacitor Android (Web)
         if: steps.check_rn.outputs.rn_exists == 'false'
         run: npx cap sync android
 
@@ -104,8 +113,6 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}
-          restore-keys: |
-            gradle-${{ runner.os }}
 
       - name: 🔐 Decode Android Keystore
         run: |
@@ -121,7 +128,7 @@ jobs:
             exit 1
           fi
 
-      - name: 📦 Build Release AAB (Android App Bundle)
+      - name: 📦 Build Release AAB
         run: |
           cd android
           chmod +x gradlew
@@ -133,7 +140,7 @@ jobs:
             -PversionCode=${{ steps.vars.outputs.version_code }} \
             -PversionName=${{ steps.vars.outputs.version_name }}
 
-      - name: 📦 Build Release APK (Universal)
+      - name: 📦 Build Release APK
         run: |
           cd android
           chmod +x gradlew
@@ -145,22 +152,16 @@ jobs:
             -PversionCode=${{ steps.vars.outputs.version_code }} \
             -PversionName=${{ steps.vars.outputs.version_name }}
 
-      - name: 📁 Prepare Manual Play Store Artifacts
+      - name: 📁 Prepare Artifacts
         run: |
           mkdir -p release-bundle
           cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab || true
           if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
             cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
           fi
-          if [ -f android/app/build/outputs/mapping/release/mapping.txt ]; then
-            cp android/app/build/outputs/mapping/release/mapping.txt release-bundle/SovereignStudio-proguard-mapping.txt
-          fi
-          echo "Version: ${{ steps.vars.outputs.version_name }}" > release-bundle/version.txt
-          echo "Build: ${{ steps.vars.outputs.version_code }}" >> release-bundle/version.txt
-          echo "Upload mode: manual Play Console upload" >> release-bundle/version.txt
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
 
-      - name: 📤 Upload Release Artifact
+      - name: 📤 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SovereignStudio-PlayStore-Release
@@ -182,11 +183,3 @@ jobs:
             git tag $TAG
             git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
           fi
-
-# ============================================================
-# Manual Play Store upload workflow
-# ============================================================
-# This workflow builds signed AAB/APK artifacts and uploads them as a GitHub
-# Actions artifact. Upload release-bundle/SovereignStudio-release.aab
-# manually through the Google Play Console.
-# ============================================================
