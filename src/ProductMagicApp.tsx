@@ -264,15 +264,8 @@ export default function ProductMagicApp() {
 
   // --- Awareness Sync ---
   const runSync = useCallback(async () => {
-    const hasAnyKey = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
-    
-    if (!hasAnyKey) {
-      log('❌ Fehler beim Awareness Sync: Kein API-Key konfiguriert.');
-      log('💡 Bitte mindestens einen Key eintragen: Gemini, Groq, HuggingFace oder Together AI.');
-      setRepoStatus('❌ Kein API-Key konfiguriert');
-      setProvidersError('Kein API-Key konfiguriert. Trage einen Key für Gemini, Groq, HuggingFace, Together AI oder OpenRouter ein, um den Awareness Sync zu nutzen.');
-      return;
-    }
+    // MLVOCA is always available (no API key required) — no early guard needed.
+    // The hasAnyKey check was removed so no-key users can reach MLVOCA sync.
 
     setProvidersError(null);
 
@@ -326,19 +319,12 @@ export default function ProductMagicApp() {
 
   // --- Generate Code with Gemini + Auto-Fallback ---
   const generateCodeWithGemini = useCallback(async (userPrompt: string) => {
-    // Check if any provider is available
-    const hasProvider = geminiKey.trim() || groqKey.trim() || hfKey.trim() || togetherKey.trim() || openrouterKey.trim();
-    
-    if (!hasProvider) {
-      log('⚠️ Kein API-Key konfiguriert. Nutze lokalen Generator.');
-      setProvidersError('Kein API-Key konfiguriert — die KI-Generierung ist nicht verfügbar. Es wurde ein lokales Gerüst erzeugt. Trage einen API-Key ein, um echte KI-Generierung zu nutzen.');
-      generateCodeLocally();
-      return;
-    }
+    // MLVOCA is always available (no API key required) — no early guard needed.
+    // The hasProvider check was removed so no-key users can reach MLVOCA generation.
+
 
     setProvidersError(null);
     setIsGenerating(true);
-
     const context = syncResult
       ? `Kontext:\n- Technologien: ${syncResult.technologies.join(', ')}\n- Struktur: ${syncResult.structure}\n`
       : '';
