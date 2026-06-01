@@ -16,29 +16,30 @@
     "build:android:release": "eas build -p android --profile production"
   },
   "dependencies": {
+    "@expo/vector-icons": "^14.1.0",
+    "@google/generative-ai": "^0.24.1",
+    "@octokit/rest": "^22.0.1",
     "@react-navigation/native": "^7.1.0",
     "@react-navigation/native-stack": "^7.3.0",
     "@reduxjs/toolkit": "^2.5.1",
     "expo": "~52.0.0",
+    "expo-constants": "~17.0.0",
     "expo-secure-store": "~14.0.1",
     "expo-splash-screen": "~0.29.0",
     "expo-status-bar": "~2.0.0",
-    "expo-constants": "~17.0.0",
-    "@expo/vector-icons": "^14.1.0",
     "react": "18.3.1",
     "react-native": "0.76.9",
-    "react-native-safe-area-context": "^5.2.0",
-    "react-native-screens": "~4.5.0",
     "react-native-gesture-handler": "~2.23.0",
     "react-native-reanimated": "~3.16.7",
-    "@google/generative-ai": "^0.24.1",
+    "react-native-safe-area-context": "^5.2.0",
+    "react-native-screens": "~4.5.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@react-native/metro-config": "^0.76.0",
     "@types/react": "~18.3.12",
-    "typescript": "~5.7.2",
-    "@react-native/metro-config": "^0.76.0"
+    "typescript": "~5.7.2"
   },
   "engines": {
     "node": ">=22",

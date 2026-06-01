@@ -212,6 +212,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               <Text style={styles.actionTitle}>{isSyncing ? 'Sync...' : 'Awareness'}</Text>
               <Text style={styles.actionSubtitle}>Repo Analyse</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionCard}
+              onPress={() => navigation.navigate('CodeRefactor')}
+            >
+              <Ionicons name="code-slash" size={28} color="#38BDF8" />
+              <Text style={styles.actionTitle}>Refactor</Text>
+              <Text style={styles.actionSubtitle}>Code Modifier</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
