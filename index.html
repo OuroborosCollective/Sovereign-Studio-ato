@@ -2,12 +2,48 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#1c1917" />
     <title>Sovereign Studio - Refactor Edition</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #1c1917;
+        min-height: 100vh;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #root {
+        min-height: 100vh;
+        background-color: #1c1917;
+      }
+      .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        color: #f5f5f4;
+        font-size: 18px;
+      }
+      .loading::after {
+        content: '';
+        width: 20px;
+        height: 20px;
+        margin-left: 12px;
+        border: 2px solid #f5f5f4;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="loading">Loading Refactor</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
