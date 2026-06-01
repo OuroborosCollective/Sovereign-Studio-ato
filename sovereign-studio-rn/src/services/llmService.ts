@@ -4,7 +4,7 @@ export interface LLMResponse {
 }
 
 // Nutzt den Groq API für kostenlose LLM-Inferenz (free tier verfügbar)
-// Fallbacks: mlvoca.com (Ollama) und Zhipu AI (BigModel)
+// Fallbacks: pawan.krd (keyless), mlvoca.com (Ollama) und Zhipu AI (BigModel)
 export async function askRefactorLLM(
   currentCode: string,
   instruction: string,
@@ -55,7 +55,36 @@ WICHTIG: Gib NUR den modifizierten Code zurück. Keine Erklärungen, kein Markdo
     content = content.replace(/^```typescript\n?/, "").replace(/\n?```$/, "");
     return content.trim();
   } catch (error: any) {
-    // Fallback 1: mlvoca.com (Ollama kompatibel)
+    // Fallback 1: Pawan.krd - Schlüsselloser Free Proxy
+    try {
+      const pawanResponse = await fetch("https://pawan.krd/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer pk-free-anonymous-drive" // Dummy für schlüssellosen Proxy
+        },
+        body: JSON.stringify({
+          model: "llama-3-8b-instruct",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt }
+          ],
+          temperature: 0.3,
+          stream: false,
+        }),
+      });
+
+      if (pawanResponse.ok) {
+        const pawanData = await pawanResponse.json();
+        let content = pawanData.choices?.[0]?.message?.content || "";
+        content = content.replace(/^```typescript\n?/, "").replace(/\n?```$/, "");
+        return content.trim();
+      }
+    } catch (pawanError) {
+      // Pawan ebenfalls fehlgeschlagen
+    }
+
+    // Fallback 2: mlvoca.com (Ollama kompatibel)
     try {
       const mlvocaResponse = await fetch("https://mlvoca.com/api/generate", {
         method: "POST",
@@ -78,7 +107,7 @@ WICHTIG: Gib NUR den modifizierten Code zurück. Keine Erklärungen, kein Markdo
       // mlvoca ebenfalls fehlgeschlagen
     }
 
-    // Fallback 2: Zhipu AI (BigModel) - kostenlos mit unbegrenzten Tokens
+    // Fallback 3: Zhipu AI (BigModel) - kostenlos mit unbegrenzten Tokens
     try {
       const zhipuResponse = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
         method: "POST",
