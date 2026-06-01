@@ -2,13 +2,17 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
-import ProductMagicApp from './ProductMagicApp';
+import { RefactorProvider } from './features/ai/RefactorContext';
+import { RefactorPanel } from './features/ai/RefactorPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
 /**
- * Global Polyfills and Performance Optimizations
- * Target: WebView performance and stable canvas interactions.
+ * Sovereign Studio v3 - Refactor Edition
+ * 
+ * Main feature: AI-powered code refactoring
+ * Optional API keys for enhanced capabilities
+ * Works for free with mlvoca (no key needed)
  */
 if (typeof window !== 'undefined') {
   (window as any).global = window;
@@ -57,12 +61,12 @@ const initAndRender = async () => {
 
   if (container) {
     const root = createRoot(container);
-    // Note: root.render() returns void and cannot be followed by .catch().
-    // Any rendering errors are handled by the ErrorBoundary component.
     root.render(
       <StrictMode>
         <ErrorBoundary>
-          <ProductMagicApp />
+          <RefactorProvider>
+            <RefactorPanel />
+          </RefactorProvider>
         </ErrorBoundary>
       </StrictMode>
     );
