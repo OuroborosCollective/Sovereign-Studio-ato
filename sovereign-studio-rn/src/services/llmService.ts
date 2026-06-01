@@ -4,7 +4,7 @@ export interface LLMResponse {
 }
 
 // Nutzt den Groq API für kostenlose LLM-Inferenz (free tier verfügbar)
-// Alternativ: mlvoca.com/api/generate (Ollama kompatibel)
+// Fallbacks: mlvoca.com (Ollama) und Zhipu AI (BigModel)
 export async function askRefactorLLM(
   currentCode: string,
   instruction: string,
@@ -55,9 +55,9 @@ WICHTIG: Gib NUR den modifizierten Code zurück. Keine Erklärungen, kein Markdo
     content = content.replace(/^```typescript\n?/, "").replace(/\n?```$/, "");
     return content.trim();
   } catch (error: any) {
-    // Fallback: Versuche mlvoca.com (Ollama kompatibel)
+    // Fallback 1: mlvoca.com (Ollama kompatibel)
     try {
-      const fallbackResponse = await fetch("https://mlvoca.com/api/generate", {
+      const mlvocaResponse = await fetch("https://mlvoca.com/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -67,17 +67,45 @@ WICHTIG: Gib NUR den modifizierten Code zurück. Keine Erklärungen, kein Markdo
         }),
       });
 
-      if (fallbackResponse.ok) {
-        const fallbackData = await fallbackResponse.json();
-        let content = fallbackData.response || "";
-        //  Blöcke entfernen
+      if (mlvocaResponse.ok) {
+        const mlvocaData = await mlvocaResponse.json();
+        let content = mlvocaData.response || "";
         content = content.replace(/[\s\S]*?<\/think>/gi, "");
         content = content.replace(/^```typescript\n?/, "").replace(/\n?```$/, "");
         return content.trim();
       }
-    } catch (fallbackError) {
-      // Fallback ebenfalls fehlgeschlagen
+    } catch (mlvocaError) {
+      // mlvoca ebenfalls fehlgeschlagen
     }
+
+    // Fallback 2: Zhipu AI (BigModel) - kostenlos mit unbegrenzten Tokens
+    try {
+      const zhipuResponse = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer demo_key_replace_with_real" // Placeholder
+        },
+        body: JSON.stringify({
+          model: "glm-4-flash", // Kostenloses Flash-Modell
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt }
+          ],
+          stream: false,
+        }),
+      });
+
+      if (zhipuResponse.ok) {
+        const zhipuData = await zhipuResponse.json();
+        let content = zhipuData.choices?.[0]?.message?.content || "";
+        content = content.replace(/^```typescript\n?/, "").replace(/\n?```$/, "");
+        return content.trim();
+      }
+    } catch (zhipuError) {
+      // Zhipu ebenfalls fehlgeschlagen
+    }
+
     throw new Error(`LLM-Anfrage fehlgeschlagen: ${error.message}`);
   }
 }
