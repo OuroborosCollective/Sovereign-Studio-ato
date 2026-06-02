@@ -1,4 +1,4 @@
-name: 🔄 Auto-Run Until Real Success
+name: 🔄 Auto-Run Until Green
 
 on:
   push:
@@ -16,9 +16,6 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  # ============================================
-  # REAL APP VERIFICATION - The only true test
-  # ============================================
   app-verification:
     name: 🧪 App Verification (Real Test)
     runs-on: ubuntu-latest
@@ -45,9 +42,6 @@ jobs:
           cd sovereign-studio-rn
           npm ci
 
-      # ============================================
-      # RUN APP VERIFICATION - The REAL test
-      # ============================================
       - name: 🧪 Run App Verification
         id: verify
         env:
@@ -86,9 +80,6 @@ jobs:
             echo "APP_SUCCESS=false" >> $GITHUB_ENV
           fi
 
-      # ============================================
-      # E2E TESTS (but not the main criteria)
-      # ============================================
       - name: 🧪 Run E2E Tests
         if: always()
         run: |
@@ -101,38 +92,7 @@ jobs:
           
           # Run tests
           npm run e2e:all || true
-          
-          # Check results
-          if grep -q "passed\|PASS\|All tests passed" /tmp/e2e-results.log 2>/dev/null; then
-            echo "E2E_TESTS_PASSED=true" >> $GITHUB_ENV
-          else
-            echo "E2E_TESTS_PASSED=false" >> $GITHUB_ENV
-          fi
 
-      - name: 📊 Show Final Status
-        run: |
-          echo ""
-          echo "========================================"
-          echo "📊 FINAL STATUS"
-          echo "========================================"
-          echo "   App Can Generate Code: ${APP_SUCCESS:-false}"
-          echo "   E2E Tests Passed: ${E2E_TESTS_PASSED:-false}"
-          echo ""
-          
-          # The APP is the primary test - tests are secondary
-          if [ "${APP_SUCCESS}" == "true" ]; then
-            echo "✅ APP VERIFICATION: PASSED"
-            echo "   Sovereign Studio can generate and push code!"
-            echo ""
-          else
-            echo "❌ APP VERIFICATION: FAILED"
-            echo "   Sovereign Studio cannot produce output!"
-            echo ""
-          fi
-
-  # ============================================
-  # AUTO-FIX IF APP VERIFICATION FAILED
-  # ============================================
   auto-fix:
     name: 🔧 Auto-Fix (if verification failed)
     needs: app-verification
@@ -208,22 +168,6 @@ Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
             echo "✅ Pushed fixes"
           fi
 
-      - name: 🔄 Trigger Re-Run
-        run: |
-          echo "========================================"
-          echo "🔄 TRIGGERING RE-RUN"
-          echo "========================================"
-          echo ""
-          echo "Push committed. Workflow will restart automatically."
-          echo "This creates a loop: Fix → Push → Test → Fix → ..."
-          echo ""
-          echo "⏱️ The workflow will continue until:"
-          echo "   1. App can generate and push code ✅"
-          echo "   2. Or max iterations (100) reached"
-
-  # ============================================
-  # SUCCESS - APP CAN WORK
-  # ============================================
   success:
     name: ✅ App Verified - Working!
     needs: app-verification
@@ -292,9 +236,6 @@ The Sovereign Studio app has been verified to work correctly.
           git commit -m "✅ Mark verification success"
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:feature/e2e-self-learning-workflow || true
 
-  # ============================================
-  # FAILURE - APP CANNOT WORK
-  # ============================================
   failure:
     name: ❌ App Failed - Needs Fix
     needs: app-verification
