@@ -16,7 +16,7 @@ env:
 
 jobs:
   # ============================================
-  # SINGLE JOB - Verification + Auto-Fix
+  # SINGLE JOB - Verification + Auto-Fix Loop
   # ============================================
   verify-and-fix:
     name: 🔄 Verify & Auto-Fix
@@ -151,8 +151,3 @@ Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
           echo "Workflow will retry automatically."
           echo ""
           echo "⏱️ Waiting for next iteration..."
-
-  # ============================================
-  # NOTE: No success/failure jobs - everything in one job
-  # The workflow restarts on push, no need for separate jobs
-  # ============================================
