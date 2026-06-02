@@ -94,6 +94,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     if: contains(needs.setup.outputs.matrix, 'detox') || needs.setup.outputs.matrix == '["all"]'
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -135,31 +136,39 @@ jobs:
       - name: Build Detox Android
         run: |
           cd sovereign-studio-rn/android
-          ./gradlew assembleDebug assembleAndroidTest
+          ./gradlew assembleDebug assembleAndroidTest --stacktrace
+
+      - name: Create Android Virtual Device
+        run: |
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager create avd \
+            -n test-avd -k "system-images;android-35;default;x86_64" --force
+          echo "hw.ramSize=2048" >> ~/.android/avd/test-avd/config.ini
 
       - name: Wait for emulator
         run: |
-          # Start emulator in background
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/emulator -avd test-avd -no-window -no-audio &
-          echo "Waiting for emulator to boot..."
-          adb wait-for-device
-          adb shell getprop sys.boot_completed
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/emulator -avd test-avd \
+            -no-window -no-audio -wipe-data &
+          timeout 120 bash -c 'until adb shell getprop sys.boot_completed | grep -q 1; do sleep 2; done'
+          adb shell "input keyevent 82"
+          adb shell "am start -a android.intent.action.MAIN -n com.android.systemui/.SystemUIApplication"
 
       - name: Run Detox Tests
-        run: |
-          cd sovereign-studio-rn
-          npx detox test --configuration android.debug --loglevel verbose
-        continue-on-error: ${{ inputs.auto_fix == 'true' }}
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_wait_seconds: 10
+          command: |
+            cd sovereign-studio-rn
+            npx detox test --configuration android.debug --loglevel verbose --cleanup
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: detox-test-results
-          path: |
-            sovereign-studio-rn/e2e/detox/*.spec.ts
-            sovereign-studio-rn/e2e/detox/screenshots/
-            sovereign-studio-rn/e2e/detox/logs/
+          path: sovereign-studio-rn/e2e/detox/test-results.json
+          retention-days: 7
 
       - name: Generate report
         if: always()
@@ -282,10 +291,10 @@ jobs:
 
   auto-fix:
     name: 🤖 Auto-Fix Loop (Validiert)
-    needs: [detox-e2e, api-fallback-tests, self-healing-tests, self-learning]
+    needs: [detox-e2e, api-fallback-tests, self-healing-tests]
     if: inputs.auto_fix == 'true' && failure()
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -307,41 +316,40 @@ jobs:
         with:
           name: self-learning-data
           path: sovereign-studio-rn/e2e/self-learn/data/
+        continue-on-error: true
 
       - name: Run Auto-Fix with Learned Patterns
         run: |
           cd sovereign-studio-rn
-          npx ts-node e2e/auto-fix/auto-fix-loop.ts --max=5 --verbose --use-patterns
-        continue-on-error: true
+          npx ts-node e2e/auto-fix/auto-fix-loop.ts --max=5 --verbose --use-patterns || true
 
       - name: Run File Creation Validation Tests
         id: file-validation
         run: |
           cd sovereign-studio-rn
           npx jest --config e2e/validation/file-creation.test.js --verbose --json --outputFile=file-validation-results.json
-        continue-on-error: false
 
       - name: Run Full Test Suite
         id: full-tests
         run: |
           cd sovereign-studio-rn
           npm test -- --verbose --json --outputFile=full-test-results.json
-        continue-on-error: false
 
       - name: Validate Test Results
         id: validate-results
         run: |
           cd sovereign-studio-rn
-          if [ -f file-validation-results.json ]; then
-            VALIDATION_PASSED=$(jq '.success' file-validation-results.json)
-            if [ "$VALIDATION_PASSED" != "true" ]; then
-              echo "❌ File validation failed"
-              exit 1
-            fi
-            echo "✅ File validation passed"
-            echo "validation_passed=true" >> $GITHUB_OUTPUT
+          if [ ! -f file-validation-results.json ]; then
+            echo "❌ Validation test did not run"
+            exit 1
           fi
-        continue-on-error: false
+          PASSED=$(jq -r '.success' file-validation-results.json)
+          if [ "$PASSED" != "true" ]; then
+            echo "❌ File validation failed"
+            exit 1
+          fi
+          echo "✅ File validation passed"
+          echo "validation_passed=true" >> $GITHUB_OUTPUT
 
       - name: Upload validation results
         if: always()
@@ -351,6 +359,7 @@ jobs:
           path: |
             sovereign-studio-rn/file-validation-results.json
             sovereign-studio-rn/full-test-results.json
+          retention-days: 7
 
       - name: Create Fix PR
         if: steps.validate-results.outputs.validation_passed == 'true'
@@ -380,6 +389,18 @@ jobs:
             Co-authored-by: auto-fix-bot <auto-fix@sovereign-studio.dev>
           branch: auto-fix/e2e-fixes-${{ github.run_id }}
           commit-message: "🤖 Auto-fix: E2E test fixes (vollständig validiert)"
+
+      - name: Notify on auto-fix failure
+        if: steps.validate-results.outputs.validation_passed != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Auto-fix validation failed. Review logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            })
 
       - name: Validation Failed
         if: steps.validate-results.outputs.validation_passed != 'true'
