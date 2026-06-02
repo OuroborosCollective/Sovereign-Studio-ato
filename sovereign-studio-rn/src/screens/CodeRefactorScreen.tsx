@@ -10,10 +10,13 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from "react-native";
 import { runRefactorPipeline, LogItem } from "../agents/orchestrator";
 import { pushUpdatedCodeToGitHub } from "../services/githubService";
 import { Colors, FontSize, Spacing, BorderRadius } from "../utils/theme";
+
+const GROQ_API_URL = "https://console.groq.com/keys";
 
 export function CodeRefactorScreen() {
   // Config States
@@ -31,6 +34,11 @@ export function CodeRefactorScreen() {
   const [inReview, setInReview] = useState(false);
 
   const termScroll = useRef<ScrollView>(null);
+
+  // Open Groq API Key registration page
+  const openGroqConsole = () => {
+    Linking.openURL(GROQ_API_URL);
+  };
 
   const addLog = (text: string, type: LogItem["type"] = "info") => {
     setLogs((prev) => [
@@ -106,14 +114,29 @@ export function CodeRefactorScreen() {
             style={styles.form}
             keyboardShouldPersistTaps="handled"
           >
-            <TextInput
-              style={styles.input}
-              placeholder="GitHub PAT Token"
-              secureTextEntry
-              value={patToken}
-              onChangeText={setPatToken}
-              placeholderTextColor="#666"
-            />
+            {/* Groq API Key Section */}
+            <View style={styles.apiKeySection}>
+              <TextInput
+                style={styles.input}
+                placeholder="Groq API Key (für AI Refactoring)"
+                secureTextEntry
+                value={patToken}
+                onChangeText={setPatToken}
+                placeholderTextColor="#666"
+              />
+              <TouchableOpacity
+                style={styles.helpBtn}
+                onPress={openGroqConsole}
+              >
+                <Text style={styles.helpBtnText}>🔑 Kostenlosen Key holen</Text>
+              </TouchableOpacity>
+              <Text style={styles.helpHint}>
+                Kostenloser Key: 30 Anfragen/Min, keine Kreditkarte nötig.
+                {"\n"}Tippe auf "Kostenlosen Key holen" für die Anleitung.
+              </Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>📦 GitHub Konfiguration</Text>
             <View style={styles.row}>
               <TextInput
                 style={[styles.input, { flex: 1, marginRight: 5 }]}
@@ -242,6 +265,38 @@ const styles = StyleSheet.create({
   },
   form: {
     flex: 1,
+  },
+  apiKeySection: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  sectionTitle: {
+    color: Colors.primary,
+    fontSize: FontSize.sm,
+    fontWeight: "600",
+    marginBottom: Spacing.sm,
+  },
+  helpBtn: {
+    backgroundColor: Colors.primary,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    marginTop: Spacing.xs,
+  },
+  helpBtnText: {
+    color: Colors.background,
+    fontWeight: "bold",
+    fontSize: FontSize.sm,
+  },
+  helpHint: {
+    color: Colors.textMuted,
+    fontSize: FontSize.xs,
+    marginTop: Spacing.xs,
+    textAlign: "center",
   },
   row: {
     flexDirection: "row",
