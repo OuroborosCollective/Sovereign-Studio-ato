@@ -13,7 +13,24 @@
     "build:web": "expo export --platform web",
     "prebuild": "expo prebuild",
     "build:android": "eas build -p android --profile preview",
-    "build:android:release": "eas build -p android --profile production"
+    "build:android:release": "eas build -p android --profile production",
+    "e2e": "node scripts/run-e2e.js",
+    "e2e:all": "node scripts/run-e2e.js all",
+    "e2e:detox": "node scripts/run-e2e.js detox",
+    "e2e:api-fallback": "node scripts/run-e2e.js api",
+    "e2e:self-healing": "node scripts/run-e2e.js healing",
+    "e2e:auto-fix": "node scripts/run-e2e.js fix",
+    "e2e:ci": "node scripts/run-e2e.js ci",
+    "workflow:execute": "node scripts/workflow-executor.js",
+    "workflow:e2e-trigger": "node scripts/workflow-executor.js e2e-test-trigger",
+    "workflow:auto-fix": "node scripts/workflow-executor.js auto-fix-loop",
+    "workflow:github": "node scripts/workflow-executor.js github-integration",
+    "self-learn": "npx ts-node e2e/self-learn/self-learning-orchestrator.ts",
+    "self-learn:run": "npx ts-node e2e/self-learn/self-learning-orchestrator.ts run",
+    "self-learn:status": "npx ts-node e2e/self-learn/self-learning-orchestrator.ts status",
+    "self-learn:export": "npx ts-node e2e/self-learn/self-learning-orchestrator.ts export",
+    "self-learn:patterns": "npx ts-node e2e/self-learn/patterns/pattern-engine.ts",
+    "self-learn:routines": "npx ts-node e2e/self-learn/routines/routine-engine.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
@@ -38,7 +55,9 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@react-native/metro-config": "^0.76.0",
+    "@types/node": "^25.9.1",
     "@types/react": "~18.3.12",
+    "tsx": "^4.22.4",
     "typescript": "~5.7.2"
   },
   "engines": {

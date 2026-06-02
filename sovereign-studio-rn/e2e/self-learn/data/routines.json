@@ -1,0 +1,163 @@
+{
+  "e2e-test-routine": {
+    "id": "e2e-test-routine",
+    "name": "E2E Test Routine",
+    "description": "Self-improving E2E testing routine",
+    "enabled": true,
+    "autoOptimize": true,
+    "steps": [
+      {
+        "name": "setup",
+        "onSuccess": "run-tests",
+        "retryCount": 2,
+        "timeout": 60000
+      },
+      {
+        "name": "run-tests",
+        "onSuccess": "analyze-results",
+        "onFailure": "retry-tests",
+        "retryCount": 0,
+        "timeout": 300000
+      },
+      {
+        "name": "retry-tests",
+        "onSuccess": "analyze-results",
+        "onFailure": "generate-fix",
+        "retryCount": 3,
+        "timeout": 300000
+      },
+      {
+        "name": "analyze-results",
+        "onSuccess": "learn",
+        "onFailure": "generate-fix",
+        "retryCount": 0,
+        "timeout": 30000
+      },
+      {
+        "name": "generate-fix",
+        "onSuccess": "apply-fix",
+        "retryCount": 1,
+        "timeout": 60000
+      },
+      {
+        "name": "apply-fix",
+        "onSuccess": "run-tests",
+        "onFailure": "learn",
+        "retryCount": 0,
+        "timeout": 30000
+      },
+      {
+        "name": "learn",
+        "retryCount": 0,
+        "timeout": 10000
+      }
+    ],
+    "metrics": {
+      "totalRuns": 0,
+      "successfulRuns": 0,
+      "avgDuration": 0,
+      "lastRun": 0
+    }
+  },
+  "api-fallback-routine": {
+    "id": "api-fallback-routine",
+    "name": "API Fallback Routine",
+    "description": "Self-improving API fallback testing",
+    "enabled": true,
+    "autoOptimize": true,
+    "steps": [
+      {
+        "name": "test-mlvoca",
+        "onSuccess": "test-p8lination",
+        "onFailure": "test-p8lination",
+        "retryCount": 2,
+        "timeout": 30000
+      },
+      {
+        "name": "test-p8lination",
+        "onSuccess": "test-gemini",
+        "onFailure": "test-gemini",
+        "retryCount": 2,
+        "timeout": 30000
+      },
+      {
+        "name": "test-gemini",
+        "onSuccess": "test-groq",
+        "onFailure": "test-groq",
+        "retryCount": 2,
+        "timeout": 30000
+      },
+      {
+        "name": "test-groq",
+        "onSuccess": "optimize-fallback",
+        "onFailure": "optimize-fallback",
+        "retryCount": 2,
+        "timeout": 30000
+      },
+      {
+        "name": "optimize-fallback",
+        "retryCount": 0,
+        "timeout": 10000
+      }
+    ],
+    "metrics": {
+      "totalRuns": 0,
+      "successfulRuns": 0,
+      "avgDuration": 0,
+      "lastRun": 0
+    }
+  },
+  "self-healing-routine": {
+    "id": "self-healing-routine",
+    "name": "Self-Healing Routine",
+    "description": "Self-improving error recovery",
+    "enabled": true,
+    "autoOptimize": true,
+    "steps": [
+      {
+        "name": "detect-error",
+        "onSuccess": "classify-error",
+        "onFailure": "classify-error",
+        "retryCount": 0,
+        "timeout": 5000
+      },
+      {
+        "name": "classify-error",
+        "onSuccess": "select-strategy",
+        "retryCount": 0,
+        "timeout": 5000
+      },
+      {
+        "name": "select-strategy",
+        "onSuccess": "execute-recovery",
+        "retryCount": 0,
+        "timeout": 5000
+      },
+      {
+        "name": "execute-recovery",
+        "onSuccess": "verify-recovery",
+        "onFailure": "select-strategy",
+        "retryCount": 5,
+        "timeout": 60000
+      },
+      {
+        "name": "verify-recovery",
+        "onSuccess": "learn",
+        "onFailure": "select-strategy",
+        "retryCount": 1,
+        "timeout": 30000
+      },
+      {
+        "name": "learn",
+        "retryCount": 0,
+        "timeout": 10000
+      }
+    ],
+    "metrics": {
+      "totalRuns": 0,
+      "successfulRuns": 0,
+      "avgDuration": 0,
+      "lastRun": 0
+    }
+  }
+}
