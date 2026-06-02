@@ -76,7 +76,10 @@ jobs:
         if: steps.check_rn.outputs.rn_exists == 'true'
         run: |
           cd sovereign-studio-rn
-          CI=1 npx expo prebuild --platform android --clean
+          pnpm add expo
+          CI=1 pnpm exec expo prebuild --platform android --clean
+          echo "Prebuild completed. Checking android directory..."
+          ls -la android/ || echo "Android directory not found"
 
       - name: 🏗️ Build Web App
         if: steps.check_rn.outputs.rn_exists == 'false'
