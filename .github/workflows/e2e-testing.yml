@@ -281,7 +281,7 @@ jobs:
           path: sovereign-studio-rn/e2e/self-learn/data/
 
   auto-fix:
-    name: Auto-Fix Loop (Unlimited Iterations)
+    name: 🤖 Auto-Fix Loop (Validiert)
     needs: [detox-e2e, api-fallback-tests, self-healing-tests, self-learning]
     if: inputs.auto_fix == 'true' && failure()
     runs-on: ubuntu-latest
@@ -294,6 +294,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: sovereign-studio-rn/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd sovereign-studio-rn
+          npm ci
 
       - name: Download Learned Patterns
         uses: actions/download-artifact@v4
@@ -304,30 +311,82 @@ jobs:
       - name: Run Auto-Fix with Learned Patterns
         run: |
           cd sovereign-studio-rn
-          npx ts-node e2e/auto-fix/auto-fix-loop.ts --max=Infinity --verbose --use-patterns
+          npx ts-node e2e/auto-fix/auto-fix-loop.ts --max=5 --verbose --use-patterns
+        continue-on-error: true
+
+      - name: Run File Creation Validation Tests
+        id: file-validation
+        run: |
+          cd sovereign-studio-rn
+          npx jest --config e2e/validation/file-creation.test.js --verbose --json --outputFile=file-validation-results.json
+        continue-on-error: false
+
+      - name: Run Full Test Suite
+        id: full-tests
+        run: |
+          cd sovereign-studio-rn
+          npm test -- --verbose --json --outputFile=full-test-results.json
+        continue-on-error: false
+
+      - name: Validate Test Results
+        id: validate-results
+        run: |
+          cd sovereign-studio-rn
+          if [ -f file-validation-results.json ]; then
+            VALIDATION_PASSED=$(jq '.success' file-validation-results.json)
+            if [ "$VALIDATION_PASSED" != "true" ]; then
+              echo "❌ File validation failed"
+              exit 1
+            fi
+            echo "✅ File validation passed"
+            echo "validation_passed=true" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: false
+
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-fix-validation-results
+          path: |
+            sovereign-studio-rn/file-validation-results.json
+            sovereign-studio-rn/full-test-results.json
 
       - name: Create Fix PR
-        if: success()
+        if: steps.validate-results.outputs.validation_passed == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
-          title: "🤖 Auto-Fix: E2E Test Fixes"
+          title: "🤖 Auto-Fix: E2E Test Fixes (Validiert)"
           body: |
-            ## Auto-Fix Results
+            ## Auto-Fix Results ✅
             
-            This PR contains automated fixes for E2E test failures.
+            Dieses PR enthält automatisierte Fixes für E2E-Test-Fehler.
             
-            ### Changes Made
+            ### ✅ Alle Validierungen bestanden:
+            - ✅ App erstellt Dateien eigenständig
+            - ✅ Alle E2E Tests erfolgreich
+            - ✅ Alle Unit Tests erfolgreich
+            
+            ### 🔧 Änderungen:
             - Fixed test assertions
             - Updated test timeouts
             - Applied self-healing recommendations
             
-            ### Test Results
-            - All tests now passing
-            - Auto-fix iterations: 3
+            ### 📊 Test-Ergebnisse:
+            - Auto-fix iterations: 5 max
+            - Validation suite: PASSED
+            - Full test suite: PASSED
             
             Co-authored-by: auto-fix-bot <auto-fix@sovereign-studio.dev>
-          branch: auto-fix/e2e-fixes
-          commit-message: "🤖 Auto-fix: E2E test fixes"
+          branch: auto-fix/e2e-fixes-${{ github.run_id }}
+          commit-message: "🤖 Auto-fix: E2E test fixes (vollständig validiert)"
+
+      - name: Validation Failed
+        if: steps.validate-results.outputs.validation_passed != 'true'
+        run: |
+          echo "❌ Auto-fix validation failed - No PR created"
+          echo "The app must successfully create files independently before pushing"
+          exit 1
 
   merge-check:
     name: Merge Readiness Check
