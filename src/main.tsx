@@ -1,9 +1,5 @@
-import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
-import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
-import { RefactorProvider } from './features/ai/RefactorContext';
-import { RefactorPanel } from './features/ai/RefactorPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
@@ -14,6 +10,8 @@ import './index.css';
  * Optional API keys for enhanced capabilities
  * Works for free with mlvoca (no key needed)
  */
+
+// Polyfills for older browsers/compatibility
 if (typeof window !== 'undefined') {
   (window as any).global = window;
 
@@ -27,50 +25,61 @@ if (typeof window !== 'undefined') {
     }, 1);
   });
 
+  // Performance optimization
   const style = document.createElement('style');
   style.innerHTML = 'canvas { will-change: transform; transform: translateZ(0); } .ai-stream-container { contain: content; }';
   document.head.appendChild(style);
 }
 
+// Initialize PostHog if key is provided
 const posthogKey = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
 const posthogHost = (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ?? 'https://eu.i.posthog.com';
 
 if (posthogKey) {
-  posthog.init(posthogKey, {
-    api_host: posthogHost,
-    person_profiles: 'identified_only',
-  });
+  try {
+    posthog.init(posthogKey, {
+      api_host: posthogHost,
+      person_profiles: 'identified_only',
+    });
+  } catch (e) {
+    console.warn('PostHog init failed:', e);
+  }
 }
 
+// Initialize Google Auth if configured (non-blocking)
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+if (googleClientId) {
+  import('@codetrix-studio/capacitor-google-auth')
+    .then(({ GoogleAuth }) => {
+      try {
+        GoogleAuth.initialize({
+          clientId: googleClientId,
+          scopes: ['profile', 'email'],
+          grantOfflineAccess: true,
+        });
+      } catch (err: unknown) {
+        console.warn('GoogleAuth init failed:', err);
+      }
+    })
+    .catch(() => {
+      // Ignore - Google Auth is optional
+    });
+}
 
-const initAndRender = async () => {
-  if (googleClientId) {
-    try {
-      await GoogleAuth.initialize({
-        clientId: googleClientId,
-        scopes: ['profile', 'email'],
-        grantOfflineAccess: true,
-      });
-    } catch (error) {
-      console.error('GoogleAuth initialization failed', error);
-    }
-  }
+// Render app
+const container = document.getElementById('root');
 
-  const container = document.getElementById('root');
-
-  if (container) {
+if (container) {
+  // Dynamic import App to ensure all dependencies are loaded
+  import('./App').then(({ default: App }) => {
     const root = createRoot(container);
     root.render(
-      <StrictMode>
-        <ErrorBoundary>
-          <RefactorProvider>
-            <RefactorPanel />
-          </RefactorProvider>
-        </ErrorBoundary>
-      </StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     );
-  }
-};
-
-initAndRender();
+  }).catch((err) => {
+    console.error('Failed to load App:', err);
+    container.innerHTML = '<div style="color:white;padding:20px;">Failed to load application. Please refresh.</div>';
+  });
+}
