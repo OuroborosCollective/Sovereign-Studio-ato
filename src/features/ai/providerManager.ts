@@ -489,10 +489,7 @@ export class ProviderManager {
     onFallback?: (from: ProviderType, to: ProviderType, error: string) => void
   ): Promise<ProviderResponse> {
     
-    // Sort providers: user key first, then free providers
-    const providers: Array<{ type: ProviderType; apiKey: string; config: ProviderConfig }> = [];
-
-    // Add primary provider with user's key
+    // Try primary provider (Gemini) with user's key
     if (primaryApiKey && primaryProvider === 'gemini') {
       try {
         const genAI = new GoogleGenerativeAI(primaryApiKey.trim());
@@ -528,12 +525,25 @@ export class ProviderManager {
         }
         
         // Otherwise, fall through to free providers
-        onFallback?.('gemini', 'groq', err.error);
+        onFallback?.('gemini', 'pollinations', err.error);
       }
     }
 
-    // Add free providers with user keys if available
-    for (const config of this.getAvailableProviders()) {
+    // Build the fallback chain: free providers without keys first, then providers with keys
+    const availableProviders = this.getAvailableProviders();
+    const providers: Array<{ type: ProviderType; apiKey: string; config: ProviderConfig }> = [];
+    
+    // 1. Add free no-key providers first (mlvoca, pollinations)
+    for (const config of availableProviders) {
+      const key = this.userApiKeys[config.type];
+      // Include free providers even without a key
+      if (!key?.trim() && (config.type === 'mlvoca' || config.type === 'pollinations')) {
+        providers.push({ type: config.type, apiKey: '', config });
+      }
+    }
+    
+    // 2. Add providers with user-configured API keys
+    for (const config of availableProviders) {
       const key = this.userApiKeys[config.type];
       if (key?.trim()) {
         providers.push({ type: config.type, apiKey: key, config });
@@ -548,6 +558,12 @@ export class ProviderManager {
         let response: ProviderResponse;
         
         switch (type) {
+          case 'mlvoca':
+            response = await callMlvoCa(config.model, prompt, options);
+            break;
+          case 'pollinations':
+            response = await callPollinations(config.model, prompt, options, apiKey);
+            break;
           case 'groq':
             response = await callGroq(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
             break;
