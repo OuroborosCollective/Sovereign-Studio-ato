@@ -55,7 +55,9 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@react-native/metro-config": "^0.76.0",
+    "@types/node": "^25.9.1",
     "@types/react": "~18.3.12",
+    "tsx": "^4.22.4",
     "typescript": "~5.7.2"
   },
   "engines": {
