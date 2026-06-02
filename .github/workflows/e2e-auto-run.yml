@@ -15,9 +15,6 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  # ============================================
-  # SINGLE JOB - Verification + Auto-Fix Loop
-  # ============================================
   verify-and-fix:
     name: 🔄 Verify & Auto-Fix
     runs-on: ubuntu-latest
@@ -26,9 +23,6 @@ jobs:
       success: ${{ steps.main.outputs.success }}
       verification_id: ${{ steps.main.outputs.verification_id }}
     steps:
-      # ============================================
-      # STEP 1: VERIFY APP CAN WORK
-      # ============================================
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -47,107 +41,61 @@ jobs:
           cd sovereign-studio-rn
           npm ci
 
-      - name: 🧪 Run App Verification
+      - name: Run App Verification
         id: main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
-          
           echo "========================================"
-          echo "🧪 SOVEREIGN STUDIO APP VERIFICATION"
+          echo "SOVEREIGN STUDIO APP VERIFICATION"
           echo "========================================"
-          
-          # Run verification
           node scripts/verify-app.js
-          
-          # Check if verification file was created
           if ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1 | grep -q verify; then
             echo "success=true" >> $GITHUB_OUTPUT
             VERIFICATION_ID=$(ls e2e/app-verify/verify_*.ts | head -1 | xargs basename | sed 's/.ts//')
             echo "verification_id=$VERIFICATION_ID" >> $GITHUB_OUTPUT
-            echo "✅ VERIFICATION PASSED"
+            echo "VERIFICATION PASSED"
             echo "APP_STATUS=PASSED" >> $GITHUB_ENV
           else
             echo "success=false" >> $GITHUB_OUTPUT
             echo "verification_id=none" >> $GITHUB_OUTPUT
-            echo "❌ VERIFICATION FAILED"
+            echo "VERIFICATION FAILED"
             echo "APP_STATUS=FAILED" >> $GITHUB_ENV
           fi
 
-      # ============================================
-      # STEP 2: IF VERIFICATION FAILED - AUTO-FIX
-      # ============================================
-      - name: 🔧 Auto-Fix (if verification failed)
+      - name: Auto-Fix if failed
         if: steps.main.outputs.success == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
-          
-          echo "========================================"
-          echo "🔧 AUTO-FIX MODE"
-          echo "========================================"
-          echo ""
-          echo "App cannot produce output. Running fixes..."
-          echo ""
-          
-          # Run self-learning to get fixes
+          echo "AUTO-FIX MODE"
           npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
-          
-          # Run auto-fix loop
           npx tsx e2e/auto-fix/auto-fix-loop.ts --max=Infinity --verbose || true
-          
-          # Commit and push
           git config --local user.email "auto-fix@sovereign-studio.dev"
           git config --local user.name "Auto-Fix Bot"
           git add -A
-          
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "🔧 Auto-fix: Iterative improvements
-
-- Self-learning applied
-- Auto-fix completed
-
-Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
-            
+            git commit -m "Auto-fix: Iterative improvements"
             BRANCH_NAME=${GITHUB_REF##refs/heads/}
-            git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME
-            echo ""
-            echo "✅ Fixes pushed - workflow will restart automatically"
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
           fi
 
-      # ============================================
-      # STEP 3: SUCCESS REPORT (only if verification passed)
-      # ============================================
-      - name: 🎉 Verification Success
+      - name: Verification Success
         if: steps.main.outputs.success == 'true'
         run: |
           echo "========================================"
-          echo "🎉 APP VERIFICATION SUCCESSFUL!"
+          echo "APP VERIFICATION SUCCESSFUL"
           echo "========================================"
-          echo ""
-          echo "✅ Sovereign Studio CAN:"
-          echo "   - Generate code"
-          echo "   - Create files"
-          echo "   - Push to GitHub"
-          echo ""
-          echo "🟢 THE APP IS WORKING!"
+          echo "Sovereign Studio CAN generate code and push to GitHub"
 
-      # ============================================
-      # STEP 4: FAILURE REPORT (only if still failing after fix)
-      # ============================================
-      - name: ❌ Verification Still Failing
+      - name: Verification Failed
         if: always() && steps.main.outputs.success == 'false'
         run: |
           echo "========================================"
-          echo "❌ APP VERIFICATION FAILED"
+          echo "APP VERIFICATION FAILED"
           echo "========================================"
-          echo ""
-          echo "The app still cannot produce output."
-          echo "Fixes have been pushed."
-          echo "Workflow will retry automatically."
-          echo ""
-          echo "⏱️ Waiting for next iteration..."
+          echo "Fixes pushed. Workflow will retry on next push."
