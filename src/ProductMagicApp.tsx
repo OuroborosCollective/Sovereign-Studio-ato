@@ -276,22 +276,27 @@ Aufgabe: ${userPrompt}
 Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mit dem Code.`;
 
     try {
-      // Priority 1: Try mlvoca (free, no API key required!)
+      // Priority 1: Try mlvoca (free, no API key required!) with 10s timeout
       log('🔮 Generiere mit MLVOCA (kostenlos)...');
       try {
         const { callMlvoCa } = await import('./features/ai/providerManager');
-        const response = await callMlvoCa('gemini-1.5-flash', prompt, {
+        // Add timeout wrapper for mlvoca call
+        const mlvocaPromise = callMlvoCa('gemini-1.5-flash', prompt, {
           temperature: 0.3,
           maxOutputTokens: 2048,
         });
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('MLVOCA timeout (10s) - falling back to Pollinations')), 10000)
+        );
+        const response = await Promise.race([mlvocaPromise, timeoutPromise]);
         setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
         setGeneratedCode(`// Generiert von Sovereign Studio + MLVOCA\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
         setBuilt(true);
         setWorkView('editor');
         log('💻 MLVOCA hat Code generiert (kostenlos!).');
         return;
-      } catch (mlvocaErr) {
-        log('🔄 MLVOCA nicht verfügbar, versuche anderen Provider...');
+      } catch (mlvocaErr: any) {
+        log(`🔄 MLVOCA nicht verfügbar (${mlvocaErr?.message || 'timeout/error'}), versuche Pollinations...`);
       }
 
       // Priority 2: Try Gemini if key is available
@@ -405,6 +410,26 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           fallbackSuccess = true;
         } catch (err) {
           log(`⚠️ OpenRouter Fehler...`);
+        }
+      }
+
+      // Pollinations AI fallback (free, no API key needed!)
+      if (!fallbackSuccess) {
+        log('🌸 Versuche Pollinations AI (kostenlos, kein Key nötig)...');
+        try {
+          const { callPollinations } = await import('./features/ai/providerManager');
+          const response = await callPollinations('gemini-1.5-flash', prompt, {
+            temperature: 0.3,
+            maxOutputTokens: 4096,
+          });
+          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+          setGeneratedCode(`// Generiert von Sovereign Studio + Pollinations AI\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+          setBuilt(true);
+          setWorkView('editor');
+          log('💻 Pollinations AI hat Code generiert (kostenlos!).');
+          return;
+        } catch (pollErr: any) {
+          log(`⚠️ Pollinations Fehler: ${pollErr?.message || 'unreachable'}`);
         }
       }
 

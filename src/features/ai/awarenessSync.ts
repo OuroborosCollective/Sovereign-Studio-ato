@@ -1,5 +1,5 @@
 import { geminiService } from "./geminiService";
-import { callMlvoCa, callGroq, callHuggingFace, callTogether, type ProviderType } from "./providerManager";
+import { callMlvoCa, callGroq, callHuggingFace, callTogether, callPollinations, type ProviderType } from "./providerManager";
 
 export interface RepoFile {
   path: string;
@@ -64,20 +64,38 @@ VERBESSERUNGSVORSCHLÄGE:
   let rawText: string;
   let usedProvider: ProviderType = 'mlvoca';
 
-  // Priority 1: Try mlvoca (free, no API key required!)
+  // Priority 1: Try mlvoca (free, no API key required!) with 10s timeout
   try {
-    const response = await callMlvoCa(model, prompt, {
+    const mlvocaPromise = callMlvoCa(model, prompt, {
       temperature: 0.3,
       maxOutputTokens: 1024,
     });
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('MLVOCA timeout (10s)')), 10000)
+    );
+    const response = await Promise.race([mlvocaPromise, timeoutPromise]);
     rawText = response.text;
     usedProvider = 'mlvoca';
   } catch (mlvocaError: any) {
     const errorMsg = mlvocaError?.message || String(mlvocaError);
-    onProviderSwitch?.('mlvoca', 'gemini', errorMsg);
+    onProviderSwitch?.('mlvoca', 'pollinations', errorMsg);
   }
 
-  // Priority 2: Try Gemini if key is provided
+  // Priority 2: Try Pollinations AI (free, no API key required)
+  if (!rawText) {
+    try {
+      const response = await callPollinations(model, prompt, {
+        temperature: 0.3,
+        maxOutputTokens: 2048,
+      });
+      rawText = response.text;
+      usedProvider = 'pollinations';
+    } catch (pollErr: any) {
+      onProviderSwitch?.('pollinations', 'gemini', pollErr?.message || String(pollErr));
+    }
+  }
+
+  // Priority 3: Try Gemini if key is provided
   if (!rawText && geminiApiKey?.trim()) {
     try {
       rawText = await geminiService.generateText(geminiApiKey, prompt, {
@@ -92,7 +110,7 @@ VERBESSERUNGSVORSCHLÄGE:
     }
   }
 
-  // Priority 3: Try Groq
+  // Priority 4: Try Groq
   if (!rawText && fallbackProviders.groqKey?.trim()) {
     try {
       const response = await callGroq(fallbackProviders.groqKey, model, prompt, {
@@ -106,7 +124,7 @@ VERBESSERUNGSVORSCHLÄGE:
     }
   }
 
-  // Priority 4: Try HuggingFace
+  // Priority 5: Try HuggingFace
   if (!rawText && fallbackProviders.hfKey?.trim()) {
     try {
       const response = await callHuggingFace(fallbackProviders.hfKey, model, prompt, {
@@ -120,7 +138,7 @@ VERBESSERUNGSVORSCHLÄGE:
     }
   }
 
-  // Priority 5: Try Together AI
+  // Priority 6: Try Together AI
   if (!rawText && fallbackProviders.togetherKey?.trim()) {
     try {
       const response = await callTogether(fallbackProviders.togetherKey, model, prompt, {
