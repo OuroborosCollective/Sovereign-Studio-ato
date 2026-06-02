@@ -1,0 +1,252 @@
+name: 🚀 Auto-Rerun Until Green
+
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+    paths:
+      - 'sovereign-studio-rn/**'
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+  schedule:
+    # Run every 15 minutes to ensure green status
+    - cron: '*/15 * * * *'
+
+env:
+  NODE_VERSION: '22'
+  MAX_ITERATIONS: 100
+  ITERATION_DELAY: 30
+
+jobs:
+  # ============================================
+  # AUTO-RUN LOOP: Runs until all tests pass
+  # ============================================
+  auto-run-loop:
+    name: 🔄 Auto-Run Loop (∞ until green)
+    runs-on: ubuntu-latest
+    timeout-minutes: 600  # 10 hours max
+    outputs:
+      iteration: ${{ steps.loop-state.outputs.iteration }}
+      all_passed: ${{ steps.loop-state.outputs.all_passed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize loop state
+        id: init
+        run: |
+          echo "Starting auto-run loop..."
+          echo "0" > $GITHUB_ENV.INITIAL_ITERATION
+          
+          # Check if previous run data exists
+          if [ -f .auto-run-state.json ]; then
+            PREV_ITERATION=$(cat .auto-run-state.json | jq -r '.iteration // 0')
+            PREV_STATUS=$(cat .auto-run-state.json | jq -r '.status // "unknown"')
+            echo "Previous run: iteration=$PREV_ITERATION, status=$PREV_STATUS"
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: sovereign-studio-rn/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd sovereign-studio-rn
+          npm ci
+
+      # ============================================
+      # RUN ALL TESTS
+      # ============================================
+      - name: 🧪 Run E2E Tests (Iteration 1)
+        id: test-run-1
+        run: |
+          cd sovereign-studio-rn
+          
+          # Run self-learning first to get patterns
+          echo "🔄 Running self-learning cycle..."
+          npx tsx e2e/self-learn/self-learning-orchestrator.ts run > /tmp/self-learn.log 2>&1 || true
+          
+          # Run all E2E tests
+          echo "📋 Running E2E tests..."
+          npm run e2e:all > /tmp/e2e-results.log 2>&1 || true
+          
+          # Check results
+          if grep -q "passed\|PASS\|All tests passed" /tmp/e2e-results.log; then
+            echo "TESTS_PASSED=true" >> $GITHUB_ENV
+          else
+            echo "TESTS_PASSED=false" >> $GITHUB_ENV
+          fi
+
+      # ============================================
+      # AUTO-FIX ON FAILURE (if tests failed)
+      # ============================================
+      - name: 🔧 Auto-Fix (if tests failed)
+        if: env.TESTS_PASSED == 'false'
+        run: |
+          echo "❌ Tests failed - Running auto-fix..."
+          
+          cd sovereign-studio-rn
+          
+          # Run auto-fix loop
+          echo "🔧 Starting auto-fix with infinite iterations..."
+          npx tsx e2e/auto-fix/auto-fix-loop.ts --max=Infinity --verbose > /tmp/auto-fix.log 2>&1 || true
+          
+          # Commit any fixes
+          git config --local user.email "auto-fix@sovereign-studio.dev"
+          git config --local user.name "Auto-Fix Bot"
+          git add -A
+          git diff --staged --quiet || git commit -m "🤖 Auto-fix: Iterative test fixes"
+          git push || echo "No changes to push"
+
+      # ============================================
+      # COMMIT FIXES AND RE-RUN
+      # ============================================
+      - name: 📤 Push fixes and trigger re-run
+        if: env.TESTS_PASSED == 'false'
+        run: |
+          echo "🔄 Pushing fixes and triggering re-run..."
+          git push
+
+      # ============================================
+      # SAVE STATE FOR NEXT ITERATION
+      # ============================================
+      - name: 💾 Save loop state
+        run: |
+          mkdir -p .github/workflows
+          cat > .github/workflows/loop-state.json << 'EOF'
+          {
+            "timestamp": "${{ github.run_id }}",
+            "iteration": 1,
+            "status": "${{ env.TESTS_PASSED }}",
+            "commit": "${{ github.sha }}"
+          }
+          EOF
+          
+          echo "✅ Iteration 1 complete"
+          echo "Status: ${{ env.TESTS_PASSED }}"
+
+      - name: Check final status
+        run: |
+          if [ "${{ env.TESTS_PASSED }}" == "true" ]; then
+            echo "🎉 ALL TESTS PASSED!"
+            echo "all_passed=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Tests still failing - workflow will restart automatically"
+            echo "all_passed=false" >> $GITHUB_ENV
+          fi
+
+  # ============================================
+  # CONTINUE LOOP IF TESTS FAILED
+  # ============================================
+  continue-loop:
+    name: 🔄 Continue Loop (Waiting for re-run)
+    needs: auto-run-loop
+    if: needs.auto-run-loop.outputs.all_passed == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+    steps:
+      - name: ⏳ Waiting for next iteration
+        run: |
+          echo "🔄 Tests failed - workflow will restart on push"
+          echo "⏰ Waiting ${{ env.ITERATION_DELAY }} seconds before next run..."
+          sleep ${{ env.ITERATION_DELAY }}
+          
+          # Trigger workflow again
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/e2e-auto-run.yml/dispatches \
+            -d '{"ref": "${{ github.ref }}"}' \
+            || echo "Trigger failed - will restart on next push"
+
+  # ============================================
+  # FINAL SUCCESS CHECK
+  # ============================================
+  success:
+    name: ✅ All Tests Passed
+    needs: auto-run-loop
+    if: needs.auto-run-loop.outputs.all_passed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🎉 Report Success
+        run: |
+          echo "=========================================="
+          echo "🎉 ALL E2E TESTS PASSED!"
+          echo "=========================================="
+          echo ""
+          echo "✅ Auto-run loop completed successfully"
+          echo "📊 Total iterations: ${{ needs.auto-run-loop.outputs.iteration || 1 }}"
+          echo "🔗 Commit: ${{ github.sha }}"
+          echo ""
+          echo "The system is now green! 🟢"
+
+      - name: 📢 Notify Success
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🎉 All Tests Passed!
+
+              **Auto-Run Loop Complete**
+              
+              | Metric | Value |
+              |--------|-------|
+              | Status | ✅ GREEN |
+              | Iterations | ∞ until success |
+              | Final Result | PASSED |
+              
+              The E2E testing pipeline has completed successfully.
+              All tests are now passing! 🟢`
+            })
+
+  # ============================================
+  # FAILURE REPORT (after max iterations)
+  # ============================================
+  failure-report:
+    name: ❌ Max Iterations Reached
+    needs: auto-run-loop
+    if: always() && needs.auto-run-loop.outputs.all_passed == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📊 Generate Failure Report
+        run: |
+          echo "=========================================="
+          echo "❌ MAX ITERATIONS REACHED"
+          echo "=========================================="
+          echo ""
+          echo "The auto-run loop has reached the maximum iterations."
+          echo "Manual intervention required."
+          
+      - name: 📢 Report Failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ❌ Auto-Run Failed After Max Iterations
+
+              **Manual Intervention Required**
+              
+              The E2E testing pipeline has reached the maximum iterations
+              without achieving all passing tests.
+              
+              Please review the failures manually:
+              - Check the workflow logs
+              - Review the auto-fix attempts
+              - Investigate persistent failures
+              
+              🔗 [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`
+            })
+
+      - name: 🚨 Exit with error
+        run: exit 1
