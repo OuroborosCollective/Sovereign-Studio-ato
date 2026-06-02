@@ -15,7 +15,7 @@ import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { GeminiRequestOptions } from './geminiService';
 
 // Provider Types
-export type ProviderType = 'mlvoca' | 'groq' | 'huggingface' | 'together' | 'openrouter' | 'gemini';
+export type ProviderType = 'mlvoca' | 'groq' | 'huggingface' | 'together' | 'openrouter' | 'gemini' | 'pollinations';
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -56,12 +56,20 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     priority: 0, // Default - no API key needed!
   },
   {
+    type: 'pollinations',
+    baseURL: 'https://gen.pollinations.ai',
+    model: 'openai',
+    supportsStreaming: true,
+    maxTokens: 4096,
+    priority: 1, // Second fallback - no API key needed!
+  },
+  {
     type: 'groq',
     baseURL: 'https://api.groq.com/openai/v1',
     model: 'llama-3.1-8b-instant',
     supportsStreaming: true,
     maxTokens: 8192,
-    priority: 1,
+    priority: 2,
   },
   {
     type: 'huggingface',
@@ -69,7 +77,7 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     model: 'meta-llama/Llama-3.2-1B-Instruct',
     supportsStreaming: false,
     maxTokens: 2048,
-    priority: 2,
+    priority: 3,
   },
   {
     type: 'together',
@@ -77,7 +85,7 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     model: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
     supportsStreaming: true,
     maxTokens: 4096,
-    priority: 3,
+    priority: 4,
   },
   {
     type: 'openrouter',
@@ -85,7 +93,7 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     model: 'meta-llama/llama-3.1-8b-instruct:free',
     supportsStreaming: true,
     maxTokens: 8192,
-    priority: 4,
+    priority: 5,
   },
 ];
 
@@ -130,12 +138,14 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
       huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
       together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
       openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
+      pollinations: 'openai',
     },
     'gemini-1.5-pro': {
       groq: 'llama-3.1-70b-versatile',
       huggingface: 'meta-llama/Llama-3.2-3B-Instruct',
       together: 'meta-llama/Llama-3.2-70B-Instruct-Turbo',
       openrouter: 'meta-llama/llama-3.1-70b-instruct:free',
+      pollinations: 'openai-large',
     },
   };
   
@@ -148,13 +158,14 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
   const defaults: Partial<Record<ProviderType, string>> = {
     gemini: model,
     mlvoca: 'deepseek-r1:1.5b',
+    pollinations: 'openai',
     groq: 'llama-3.1-8b-instant',
     huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
     together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
     openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
   };
   
-  return defaults[targetProvider] || 'deepseek-r1:1.5b';
+  return defaults[targetProvider] || 'openai';
 }
 
 // ============================================================
@@ -163,7 +174,16 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
 export async function callMlvoCa(model: string, prompt: string, options: GeminiRequestOptions = {}): Promise<ProviderResponse> {
   const mappedModel = mapModelForProvider(model, 'mlvoca');
   
-  const response = await fetch('https://mlvoca.com/api/generate', {
+  // Timeout wrapper to prevent endless loading (10 second timeout)
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject({
+      provider: 'mlvoca' as ProviderType,
+      error: 'MLVOCA request timed out after 10 seconds',
+      isRetryable: true,
+    }), 10000);
+  });
+  
+  const fetchPromise = fetch('https://mlvoca.com/api/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -178,6 +198,14 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
       keep_alive: '5m',
     }),
   });
+  
+  let response: Response;
+  try {
+    response = await Promise.race([fetchPromise, timeoutPromise]);
+  } catch (error) {
+    // If timeout wins, the error is already thrown
+    throw error;
+  }
   
   if (!response.ok) {
     const errorText = await response.text().catch(() => `HTTP ${response.status}`);
@@ -353,6 +381,64 @@ export async function callOpenRouter(apiKey: string, model: string, prompt: stri
     model: mappedModel,
     usage: data.usage,
   };
+}
+
+// ============================================================
+// Pollinations - Free API with Optional Key (Ultimate Fallback)
+// ============================================================
+export async function callPollinations(model: string, prompt: string, options: GeminiRequestOptions = {}, apiKey?: string): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, 'pollinations');
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  
+  // Optional API key for BYOP support
+  if (apiKey?.trim()) {
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  }
+  
+  try {
+    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: mappedModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: options.temperature ?? 0.7,
+        max_tokens: options.maxOutputTokens ?? 4096,
+        stream: false,
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => `HTTP ${response.status}`);
+      throw {
+        provider: 'pollinations' as ProviderType,
+        error: errorText || `HTTP ${response.status}`,
+        statusCode: response.status,
+        isRetryable: response.status === 429 || response.status >= 500,
+      };
+    }
+    
+    const data = await response.json();
+    return {
+      text: data.choices?.[0]?.message?.content || '',
+      provider: 'pollinations',
+      model: mappedModel,
+      usage: data.usage,
+    };
+  } catch (error: any) {
+    // Handle network errors
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw {
+        provider: 'pollinations' as ProviderType,
+        error: 'Network error - Pollinations server unreachable',
+        isRetryable: true,
+      };
+    }
+    throw error;
+  }
 }
 
 /**

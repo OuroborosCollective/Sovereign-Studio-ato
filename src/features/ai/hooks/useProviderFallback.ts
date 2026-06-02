@@ -159,6 +159,14 @@ export const PROVIDER_INFO: ProviderStatus[] = [
     description: 'Primary provider. Requires Google AI API key.',
   },
   {
+    type: 'pollinations',
+    name: 'Pollinations AI',
+    model: 'openai',
+    hasKey: false,
+    isFree: true,
+    description: 'Free OpenAI-compatible API. No key needed! Fast, reliable fallback.',
+  },
+  {
     type: 'groq',
     name: 'Groq',
     model: 'llama-3.1-8b-instant',

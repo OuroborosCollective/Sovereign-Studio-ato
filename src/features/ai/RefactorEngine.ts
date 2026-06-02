@@ -10,7 +10,7 @@
  * - Single unified interface for all AI operations
  */
 
-import { callMlvoCa, callGroq, callHuggingFace, callTogether, callOpenRouter, type ProviderType } from './providerManager';
+import { callMlvoCa, callGroq, callHuggingFace, callTogether, callOpenRouter, callPollinations, type ProviderType } from './providerManager';
 import { geminiService } from './geminiService';
 
 // ============================================================
@@ -72,6 +72,7 @@ export class RefactorEngine {
   private hfKey: string;
   private togetherKey: string;
   private openrouterKey: string;
+  private pollinationsKey: string;
   private currentProvider: ProviderType = 'mlvoca';
   private context: RefactorContext | null = null;
   private history: RefactorPlan[] = [];
@@ -82,6 +83,7 @@ export class RefactorEngine {
     this.hfKey = '';
     this.togetherKey = '';
     this.openrouterKey = '';
+    this.pollinationsKey = '';
   }
 
   // ============================================================
@@ -94,12 +96,14 @@ export class RefactorEngine {
     huggingface?: string;
     together?: string;
     openrouter?: string;
+    pollinations?: string;
   }) {
     if (keys.gemini) this.geminiKey = keys.gemini;
     if (keys.groq) this.groqKey = keys.groq;
     if (keys.huggingface) this.hfKey = keys.huggingface;
     if (keys.together) this.togetherKey = keys.together;
     if (keys.openrouter) this.openrouterKey = keys.openrouter;
+    if (keys.pollinations) this.pollinationsKey = keys.pollinations;
   }
 
   setContext(context: RefactorContext) {
@@ -146,27 +150,34 @@ export class RefactorEngine {
       model: this.mapModel(model, 'mlvoca'),
     });
 
-    // 2. Gemini if key provided
+    // 2. Pollinations (free, optional key, fast CORS support) - second fallback
+    chain.push({
+      type: 'pollinations',
+      apiKey: this.pollinationsKey || '',
+      model: this.mapModel(model, 'pollinations'),
+    });
+
+    // 3. Gemini if key provided
     if (this.geminiKey?.trim()) {
       chain.push({ type: 'gemini', apiKey: this.geminiKey, model });
     }
 
-    // 3. Groq if key provided
+    // 4. Groq if key provided
     if (this.groqKey?.trim()) {
       chain.push({ type: 'groq', apiKey: this.groqKey, model: this.mapModel(model, 'groq') });
     }
 
-    // 4. HuggingFace if key provided
+    // 5. HuggingFace if key provided
     if (this.hfKey?.trim()) {
       chain.push({ type: 'huggingface', apiKey: this.hfKey, model: this.mapModel(model, 'huggingface') });
     }
 
-    // 5. Together if key provided
+    // 6. Together if key provided
     if (this.togetherKey?.trim()) {
       chain.push({ type: 'together', apiKey: this.togetherKey, model: this.mapModel(model, 'together') });
     }
 
-    // 6. OpenRouter if key provided
+    // 7. OpenRouter if key provided
     if (this.openrouterKey?.trim()) {
       chain.push({ type: 'openrouter', apiKey: this.openrouterKey, model: this.mapModel(model, 'openrouter') });
     }
@@ -182,6 +193,7 @@ export class RefactorEngine {
         together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
         openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
         mlvoca: 'deepseek-r1:1.5b',
+        pollinations: 'openai',
         gemini: model,
       },
       'gemini-1.5-pro': {
@@ -190,11 +202,12 @@ export class RefactorEngine {
         together: 'meta-llama/Llama-3.2-70B-Instruct-Turbo',
         openrouter: 'meta-llama/llama-3.1-70b-instruct:free',
         mlvoca: 'deepseek-r1:1.5b',
+        pollinations: 'openai-large',
         gemini: model,
       },
     };
 
-    return maps[model]?.[provider] || model;
+    return maps[model]?.[provider] || (provider === 'pollinations' ? 'openai' : model);
   }
 
   private async callProvider(provider: { type: ProviderType; apiKey: string; model: string }, prompt: string, options: RefactorOptions): Promise<string> {
@@ -207,6 +220,10 @@ export class RefactorEngine {
       case 'mlvoca':
         const mlvoca = await callMlvoCa(provider.model, prompt, opts);
         return mlvoca.text;
+
+      case 'pollinations':
+        const pollinations = await callPollinations(provider.model, prompt, opts, provider.apiKey);
+        return pollinations.text;
 
       case 'gemini':
         return await geminiService.generateText(provider.apiKey, prompt, {

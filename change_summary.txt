@@ -1,1 +1,17 @@
 Added tests for Ouroboros Redux slice in src/features/ouroboros/ouroborosSlice.test.ts. Also fixed a syntax error in src/features/canvas/CanvasEngine.tsx that was causing test failures.
+
+INTEGRATED POLLINATIONS AI AS FREE FALLBACK PROVIDER:
+- Added 'pollinations' to ProviderType enum in providerManager.ts
+- Added Pollinations to FREE_PROVIDERS array with priority 1 (after mlvoca)
+- Added callPollinations() function for OpenAI-compatible API calls
+- Updated model mapping for pollinations ('openai' for flash, 'openai-large' for pro)
+- Integrated pollinations into RefactorEngine's provider chain as second fallback
+- Added pollinationsKey support to RefactorEngine setKeys and constructor
+- Added pollinations case to callProvider switch statement
+- Added pollinations to PROVIDER_INFO in useProviderFallback hook
+- Added API key support (optional) for BYOP functionality
+
+FIXED ENDLESS REFACTOR LOADING:
+- Added 10-second timeout to mlvoca API calls using Promise.race
+- When mlvoca times out, the system will now automatically fall back to Pollinations
+- This ensures the UI never gets stuck in a loading state when mlvoca is unavailable
