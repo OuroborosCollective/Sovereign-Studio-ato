@@ -106,13 +106,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "🔧 Auto-fix: Iterative improvements
-
-- Self-learning applied
-- Auto-fix completed
-
-Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
-            
+            git commit -m "Auto-fix: Iterative improvements" --allow-empty
             BRANCH_NAME=${GITHUB_REF##refs/heads/}
             git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME
             echo ""
