@@ -11,13 +11,13 @@
  */
 
 const { execSync } = require('child_process');
-const { writeFileSync, existsSync } = require('fs');
+const { writeFileSync, readFileSync, existsSync } = require('fs');
 const { join } = require('path');
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const OWNER = 'OuroborosCollective';
 const REPO = 'Sovereign-Studio-ato';
-const BRANCH = process.env.GITHUB_REF_NAME || 'feature/app-verification';
+const BRANCH = 'feature/e2e-self-learning-workflow';
 
 let pushSuccess = false;
 
