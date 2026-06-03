@@ -18,15 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 600
     outputs:
-      success: ${{ steps.check-verification.outputs.success }}
-      verification_id: ${{ steps.check-verification.outputs.verification_id }}
-      auto_fix_triggered: ${{ steps.check-verification.outputs.auto_fix_triggered }}
+      success: ${{ steps.check.outputs.success }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          fetch-depth: 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -47,12 +42,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
-
           echo "========================================"
           echo "SOVEREIGN STUDIO APP VERIFICATION"
           echo "========================================"
 
-          # Run verification script
           set +e
           node scripts/verify-app.js
           EXIT_CODE=$?
@@ -60,7 +53,6 @@ jobs:
 
           echo "Verification script exited with code: $EXIT_CODE"
 
-          # Check for verification files
           VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
           if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
             echo "VERIFICATION_PASSED=true" >> $GITHUB_ENV
@@ -72,25 +64,19 @@ jobs:
 
           exit 0
 
-      - name: Auto-Fix if verification failed
-        id: auto-fix
+      - name: Auto-Fix
         if: env.VERIFICATION_PASSED == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
-
           echo "========================================"
           echo "🔧 AUTO-FIX MODE ACTIVATED"
           echo "========================================"
 
-          # Run self-learning
           npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
-
-          # Run auto-fix loop
           npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || true
 
-          # Commit and push
           git config --local user.email "auto-fix@sovereign-studio.dev"
           git config --local user.name "Auto-Fix Bot"
           git add -A
@@ -107,10 +93,10 @@ Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
             git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
           fi
 
-          echo "AUTO_FIX_COMPLETE=true" >> $GITHUB_ENV
+          echo "AUTO_FIX_DONE=true" >> $GITHUB_ENV
 
-      - name: Check verification results
-        id: check-verification
+      - name: Check Results
+        id: check
         run: |
           VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
 
@@ -122,21 +108,15 @@ Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
             echo "❌ VERIFICATION FAILED"
           fi
 
-          if [ "${{ env.AUTO_FIX_COMPLETE }}" == "true" ]; then
-            echo "auto_fix_triggered=true" >> $GITHUB_OUTPUT
-          else
-            echo "auto_fix_triggered=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Success
-        if: steps.check-verification.outputs.success == 'true'
+      - name: Summary Success
+        if: success()
         run: |
           echo "========================================"
           echo "✅ APP VERIFICATION SUCCESSFUL"
           echo "========================================"
 
-      - name: Failed
-        if: steps.check-verification.outputs.success == 'false'
+      - name: Summary Failed
+        if: failure()
         run: |
           echo "========================================"
           echo "❌ APP VERIFICATION FAILED"
