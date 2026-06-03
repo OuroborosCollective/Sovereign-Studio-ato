@@ -1,201 +1,488 @@
 #!/usr/bin/env node
+
 /**
- * App Verification Runner
- * Verifies that Sovereign Studio can:
- * 1. Generate code
- * 2. Create files
- * 3. Commit to GitHub
- * 
- * This is the REAL test - not just passing tests,
- * but actually producing working output!
+ * Sovereign Studio — Real App Verification
+ *
+ * Purpose:
+ * - Verify that the app repository is structurally usable.
+ * - Confirm package.json exists and can be parsed.
+ * - Confirm important scripts are present or report missing ones.
+ * - Create a deterministic-ish verification artifact file.
+ * - Produce machine-readable and human-readable reports.
+ *
+ * This script is CI-safe:
+ * - It does not require external APIs.
+ * - It does not mutate production code.
+ * - It exits with 0 when verification artifact was created.
+ * - It exits with 1 only on hard structural failure.
  */
 
-const { execSync } = require('child_process');
-const { writeFileSync, readFileSync, existsSync } = require('fs');
-const { join } = require('path');
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const childProcess = require("child_process");
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const OWNER = 'OuroborosCollective';
-const REPO = 'Sovereign-Studio-ato';
-const BRANCH = 'feature/e2e-self-learning-workflow';
+const ROOT = process.cwd();
 
-let pushSuccess = false;
+const VERIFY_DIR = path.join(ROOT, "e2e", "app-verify");
+const REPORT_DIR = path.join(ROOT, "e2e", "app-verify", "reports");
 
-console.log('\n🧪 SOVEREIGN STUDIO APP VERIFICATION');
-console.log('========================================\n');
+const PACKAGE_JSON_PATH = path.join(ROOT, "package.json");
 
-// Generate verification timestamp
-const timestamp = Date.now();
-const verificationId = `verify_${timestamp}`;
+const REQUIRED_DIRS = [
+  "scripts",
+  "e2e",
+];
 
-// Create verification file with generated content
-const verificationContent = `/**
- * Sovereign Studio Verification File
- * Generated: ${new Date().toISOString()}
- * Verification ID: ${verificationId}
- * 
- * This file proves that Sovereign Studio can:
- * - Generate code ✅
- * - Create files ✅
- * - Push to GitHub ✅
- * - Self-learn and improve ✅
- */
+const IMPORTANT_SCRIPTS = [
+  "build",
+  "test",
+  "lint",
+  "typecheck",
+  "e2e:all",
+];
 
-// App Status
-export const appStatus = {
-  name: 'Sovereign Studio',
-  version: '3.0.0',
-  timestamp: ${timestamp},
-  verificationId: '${verificationId}',
-  status: 'OPERATIONAL',
-  
-  // Capabilities
-  capabilities: {
-    reactNative: true,
-    expo: true,
-    aiIntegration: true,
-    githubIntegration: true,
-    selfLearning: true,
-    autoFix: true,
-    codeGeneration: true,
-    fileCreation: true,
-    apiFallback: true
-  },
-  
-  // Test Results
-  tests: {
-    detoxE2E: 'PASSED',
-    apiFallback: 'PASSED',
-    selfHealing: 'PASSED',
-    appVerification: 'PASSED'
-  }
-};
-
-export default appStatus;
-`;
-
-// Write the verification file
-const verifyDir = join(__dirname, '..', 'e2e', 'app-verify');
-const verifyFile = join(verifyDir, `${verificationId}.ts`);
-
-try {
-  // Ensure directory exists
-  execSync(`mkdir -p "${verifyDir}"`, { stdio: 'ignore' });
-  
-  // Write verification file
-  writeFileSync(verifyFile, verificationContent);
-  console.log(`✅ Created verification file: ${verifyFile}`);
-  
-} catch (error) {
-  console.error(`❌ Failed to create verification file: ${error}`);
-  process.exit(1);
+function nowIso() {
+  return new Date().toISOString();
 }
 
-// Create README update proof
-const readmeUpdate = `# ✅ Sovereign Studio - Verification Complete
+function safeMkdir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
 
-## Verified: ${new Date().toISOString()}
+function readJson(filePath) {
+  const raw = fs.readFileSync(filePath, "utf8");
+  return JSON.parse(raw);
+}
 
-### App Status: **OPERATIONAL** 🟢
+function exists(relativePath) {
+  return fs.existsSync(path.join(ROOT, relativePath));
+}
 
-| Capability | Status |
-|------------|--------|
-| React Native + Expo | ✅ |
-| AI Integration (MLVoca, Gemini, etc.) | ✅ |
-| GitHub Integration | ✅ |
-| Self-Learning System | ✅ |
-| Auto-Fix Loop (∞) | ✅ |
-| Code Generation | ✅ |
-| File Creation | ✅ |
-| API Fallback Chain | ✅ |
-
-### Test Results
-
-| Test Suite | Status |
-|------------|--------|
-| Detox E2E | ✅ PASSED |
-| API Fallback | ✅ PASSED |
-| Self-Healing | ✅ PASSED |
-| App Verification | ✅ PASSED |
-
-### Verification ID
-\`\`\`
-${verificationId}
-\`\`\`
-
----
-*This file was auto-generated and verified by Sovereign Studio*
-`;
-
-const readmeFile = join(verifyDir, 'VERIFICATION.md');
-writeFileSync(readmeFile, readmeUpdate);
-console.log(`✅ Created verification report: ${readmeFile}`);
-
-// Commit and push
-if (GITHUB_TOKEN) {
-  console.log('\n🚀 Pushing verification files to GitHub...');
-  
+function run(command, args = []) {
   try {
-    // Configure git
-    execSync('git config --local user.email "verification@sovereign-studio.dev"', { stdio: 'ignore' });
-    execSync('git config --local user.name "Sovereign Studio"', { stdio: 'ignore' });
-    
-    // Stage files
-    execSync('git add e2e/app-verify/', { stdio: 'ignore' });
-    
-    // Commit
-    execSync(`git commit -m "✅ App Verification ${verificationId}
-
-- Generated code successfully
-- Created verification file
-- Proved app can produce output
-- All capabilities operational
-
-Co-authored-by: Sovereign Studio Bot <bot@sovereign-studio.dev>"`, { stdio: 'ignore' });
-    
-    // Push
-    const pushUrl = `https://x-access-token:${GITHUB_TOKEN}@github.com/${OWNER}/${REPO}.git`;
-    execSync(`git push ${pushUrl} HEAD:${BRANCH}`, { 
-      stdio: 'inherit',
-      timeout: 30000 
+    const output = childProcess.execFileSync(command, args, {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    
-    console.log('\n✅ Verification files pushed to GitHub!');
-    console.log(`   Branch: ${BRANCH}`);
-    console.log(`   Commit: ${verificationId}`);
-    pushSuccess = true;
-    
+
+    return {
+      ok: true,
+      output: output.trim(),
+      error: "",
+    };
   } catch (error) {
-    console.log('\n⚠️ Push failed');
-    console.log('   Error:', error.message || error);
-    console.log('   Files created locally.');
-    pushSuccess = false;
+    return {
+      ok: false,
+      output: error.stdout ? String(error.stdout).trim() : "",
+      error: error.stderr ? String(error.stderr).trim() : String(error.message || error),
+    };
   }
-} else {
-  console.log('\n⚠️ No GitHub token - files created locally only');
 }
 
-// Final verification summary
-console.log('\n========================================');
-console.log('📊 VERIFICATION SUMMARY');
-console.log('========================================');
-console.log(`   Verification ID: ${verificationId}`);
-console.log(`   Timestamp: ${new Date().toISOString()}`);
-console.log(`   Files Created: 2`);
-console.log(`   Push to GitHub: ${pushSuccess ? '✅ SUCCESS' : '⚠️ SKIPPED OR FAILED'}`);
-console.log(`   Status: ${pushSuccess ? 'OPERATIONAL ✅' : 'PARTIAL ⚠️'}`);
-console.log('\n========================================');
-
-if (pushSuccess) {
-  console.log('✅ APP VERIFICATION COMPLETE');
-  console.log('   Sovereign Studio can generate code and push to GitHub!');
-} else if (!GITHUB_TOKEN) {
-  console.log('⚠️ APP VERIFICATION (LOCAL ONLY)');
-  console.log('   GitHub token not available - files created locally.');
-} else {
-  console.log('⚠️ APP VERIFICATION PARTIAL');
-  console.log('   Local files created, but GitHub push failed.');
+function stableHash(input) {
+  return crypto.createHash("sha256").update(input).digest("hex");
 }
-console.log('========================================\n');
 
-module.exports = { verificationId, timestamp, success: pushSuccess };
+function slug(input) {
+  return String(input)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
+function getGitInfo() {
+  const commit = run("git", ["rev-parse", "HEAD"]);
+  const branch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const status = run("git", ["status", "--short"]);
+  const lastCommit = run("git", ["log", "-1", "--oneline"]);
+
+  return {
+    commit: commit.ok ? commit.output : "unknown",
+    branch: branch.ok ? branch.output : "unknown",
+    status: status.ok ? status.output : "",
+    lastCommit: lastCommit.ok ? lastCommit.output : "unknown",
+  };
+}
+
+function getNodeInfo() {
+  const nodeVersion = run("node", ["--version"]);
+  const npmVersion = run("npm", ["--version"]);
+
+  return {
+    node: nodeVersion.ok ? nodeVersion.output : process.version,
+    npm: npmVersion.ok ? npmVersion.output : "unknown",
+  };
+}
+
+function collectFiles(dir, options = {}) {
+  const {
+    maxFiles = 300,
+    ignore = [
+      "node_modules",
+      ".git",
+      "dist",
+      "build",
+      ".next",
+      ".expo",
+      "coverage",
+      ".turbo",
+      ".cache",
+    ],
+  } = options;
+
+  const results = [];
+
+  function walk(currentDir) {
+    if (results.length >= maxFiles) return;
+
+    let entries = [];
+
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (results.length >= maxFiles) return;
+      if (ignore.includes(entry.name)) continue;
+
+      const absolute = path.join(currentDir, entry.name);
+      const relative = path.relative(ROOT, absolute).replace(/\\/g, "/");
+
+      if (entry.isDirectory()) {
+        walk(absolute);
+      } else if (entry.isFile()) {
+        results.push(relative);
+      }
+    }
+  }
+
+  walk(dir);
+
+  return results.sort();
+}
+
+function validatePackageJson(pkg) {
+  const findings = [];
+  const scripts = pkg.scripts || {};
+
+  if (!pkg.name) {
+    findings.push({
+      level: "warning",
+      code: "PACKAGE_NAME_MISSING",
+      message: "package.json has no name field.",
+    });
+  }
+
+  if (!pkg.version) {
+    findings.push({
+      level: "warning",
+      code: "PACKAGE_VERSION_MISSING",
+      message: "package.json has no version field.",
+    });
+  }
+
+  for (const scriptName of IMPORTANT_SCRIPTS) {
+    if (!scripts[scriptName]) {
+      findings.push({
+        level: "info",
+        code: "SCRIPT_MISSING",
+        message: `Optional script missing: ${scriptName}`,
+      });
+    } else {
+      findings.push({
+        level: "ok",
+        code: "SCRIPT_PRESENT",
+        message: `Script present: ${scriptName}`,
+      });
+    }
+  }
+
+  return findings;
+}
+
+function validateStructure() {
+  const findings = [];
+
+  for (const dir of REQUIRED_DIRS) {
+    if (exists(dir)) {
+      findings.push({
+        level: "ok",
+        code: "DIR_PRESENT",
+        message: `Directory present: ${dir}`,
+      });
+    } else {
+      findings.push({
+        level: "warning",
+        code: "DIR_MISSING",
+        message: `Recommended directory missing: ${dir}`,
+      });
+    }
+  }
+
+  const commonSourceDirs = ["src", "app", "components", "pages"];
+
+  const hasSourceDir = commonSourceDirs.some((dir) => exists(dir));
+
+  if (hasSourceDir) {
+    findings.push({
+      level: "ok",
+      code: "SOURCE_DIR_FOUND",
+      message: `Source directory found: ${commonSourceDirs.filter((dir) => exists(dir)).join(", ")}`,
+    });
+  } else {
+    findings.push({
+      level: "warning",
+      code: "SOURCE_DIR_NOT_FOUND",
+      message: "No common source directory found: src, app, components, pages.",
+    });
+  }
+
+  return findings;
+}
+
+function createVerificationFile(report) {
+  safeMkdir(VERIFY_DIR);
+
+  const shortHash = report.verification.hash.slice(0, 12);
+  const cleanName = slug(report.package.name || "sovereign_studio");
+  const fileName = `verify_${cleanName}_${shortHash}.ts`;
+  const filePath = path.join(VERIFY_DIR, fileName);
+
+  const content = `/**
+ * Auto-generated verification artifact.
+ *
+ * Generated by: scripts/verify-app.js
+ * Generated at: ${report.verification.createdAt}
+ * Verification ID: ${report.verification.id}
+ * Hash: ${report.verification.hash}
+ *
+ * This file proves the app verification pipeline can:
+ * - run Node.js
+ * - read project metadata
+ * - inspect repository structure
+ * - generate files
+ * - produce deterministic verification output
+ */
+
+export const sovereignStudioVerification = {
+  ok: true,
+  id: ${JSON.stringify(report.verification.id)},
+  hash: ${JSON.stringify(report.verification.hash)},
+  createdAt: ${JSON.stringify(report.verification.createdAt)},
+  packageName: ${JSON.stringify(report.package.name || null)},
+  packageVersion: ${JSON.stringify(report.package.version || null)},
+  node: ${JSON.stringify(report.environment.node)},
+  npm: ${JSON.stringify(report.environment.npm)},
+  gitCommit: ${JSON.stringify(report.git.commit)},
+  gitBranch: ${JSON.stringify(report.git.branch)},
+  findings: ${JSON.stringify(report.findings, null, 2)}
+} as const;
+
+export type SovereignStudioVerification = typeof sovereignStudioVerification;
+`;
+
+  fs.writeFileSync(filePath, content, "utf8");
+
+  return {
+    fileName,
+    filePath,
+    relativePath: path.relative(ROOT, filePath).replace(/\\/g, "/"),
+  };
+}
+
+function writeReports(report) {
+  safeMkdir(REPORT_DIR);
+
+  const jsonPath = path.join(REPORT_DIR, "verification-report.json");
+  const mdPath = path.join(REPORT_DIR, "verification-report.md");
+
+  fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2), "utf8");
+
+  const okCount = report.findings.filter((item) => item.level === "ok").length;
+  const warningCount = report.findings.filter((item) => item.level === "warning").length;
+  const infoCount = report.findings.filter((item) => item.level === "info").length;
+  const errorCount = report.findings.filter((item) => item.level === "error").length;
+
+  const markdown = [
+    "# Sovereign Studio Verification Report",
+    "",
+    `Generated: ${report.verification.createdAt}`,
+    "",
+    "## Result",
+    "",
+    `- Success: ${report.success ? "yes" : "no"}`,
+    `- Verification ID: ${report.verification.id}`,
+    `- Verification file: ${report.verification.file || "none"}`,
+    "",
+    "## Package",
+    "",
+    `- Name: ${report.package.name || "unknown"}`,
+    `- Version: ${report.package.version || "unknown"}`,
+    "",
+    "## Environment",
+    "",
+    `- Node: ${report.environment.node}`,
+    `- npm: ${report.environment.npm}`,
+    "",
+    "## Git",
+    "",
+    `- Branch: ${report.git.branch}`,
+    `- Commit: ${report.git.commit}`,
+    `- Last commit: ${report.git.lastCommit}`,
+    "",
+    "## Findings",
+    "",
+    `- OK: ${okCount}`,
+    `- Info: ${infoCount}`,
+    `- Warnings: ${warningCount}`,
+    `- Errors: ${errorCount}`,
+    "",
+    ...report.findings.map((finding) => {
+      const icon =
+        finding.level === "ok"
+          ? "✅"
+          : finding.level === "warning"
+            ? "⚠️"
+            : finding.level === "error"
+              ? "❌"
+              : "ℹ️";
+
+      return `- ${icon} **${finding.code}** — ${finding.message}`;
+    }),
+    "",
+    "## Sample Files",
+    "",
+    ...report.files.slice(0, 80).map((file) => `- \`${file}\``),
+    "",
+  ].join("\n");
+
+  fs.writeFileSync(mdPath, markdown, "utf8");
+
+  return {
+    json: path.relative(ROOT, jsonPath).replace(/\\/g, "/"),
+    markdown: path.relative(ROOT, mdPath).replace(/\\/g, "/"),
+  };
+}
+
+function main() {
+  console.log("========================================");
+  console.log("🧪 SOVEREIGN STUDIO REAL APP VERIFICATION");
+  console.log("========================================");
+  console.log(`Root: ${ROOT}`);
+  console.log(`Time: ${nowIso()}`);
+  console.log("");
+
+  safeMkdir(VERIFY_DIR);
+  safeMkdir(REPORT_DIR);
+
+  if (!fs.existsSync(PACKAGE_JSON_PATH)) {
+    console.error("❌ Hard failure: package.json not found.");
+    console.error(`Expected: ${PACKAGE_JSON_PATH}`);
+    process.exit(1);
+  }
+
+  let pkg;
+
+  try {
+    pkg = readJson(PACKAGE_JSON_PATH);
+  } catch (error) {
+    console.error("❌ Hard failure: package.json could not be parsed.");
+    console.error(error);
+    process.exit(1);
+  }
+
+  const git = getGitInfo();
+  const environment = getNodeInfo();
+
+  const files = collectFiles(ROOT);
+  const packageFindings = validatePackageJson(pkg);
+  const structureFindings = validateStructure();
+
+  const seed = JSON.stringify({
+    packageName: pkg.name || "unknown",
+    packageVersion: pkg.version || "unknown",
+    gitCommit: git.commit,
+    node: environment.node,
+    files: files.slice(0, 200),
+  });
+
+  const hash = stableHash(seed);
+  const verificationId = `verify_${hash.slice(0, 16)}`;
+
+  const report = {
+    success: false,
+    verification: {
+      id: verificationId,
+      hash,
+      createdAt: nowIso(),
+      file: null,
+    },
+    package: {
+      name: pkg.name || null,
+      version: pkg.version || null,
+      scripts: pkg.scripts || {},
+      dependencies: Object.keys(pkg.dependencies || {}).sort(),
+      devDependencies: Object.keys(pkg.devDependencies || {}).sort(),
+    },
+    environment,
+    git,
+    findings: [
+      {
+        level: "ok",
+        code: "PACKAGE_JSON_PARSED",
+        message: "package.json parsed successfully.",
+      },
+      {
+        level: "ok",
+        code: "NODE_AVAILABLE",
+        message: `Node.js available: ${environment.node}`,
+      },
+      {
+        level: "ok",
+        code: "NPM_AVAILABLE",
+        message: `npm available: ${environment.npm}`,
+      },
+      ...packageFindings,
+      ...structureFindings,
+    ],
+    files,
+    reports: {},
+  };
+
+  const verificationFile = createVerificationFile(report);
+
+  report.success = true;
+  report.verification.file = verificationFile.relativePath;
+
+  report.findings.push({
+    level: "ok",
+    code: "VERIFICATION_FILE_CREATED",
+    message: `Verification file created: ${verificationFile.relativePath}`,
+  });
+
+  report.reports = writeReports(report);
+
+  console.log("✅ Verification artifact created:");
+  console.log(`   ${verificationFile.relativePath}`);
+  console.log("");
+  console.log("✅ Reports written:");
+  console.log(`   ${report.reports.json}`);
+  console.log(`   ${report.reports.markdown}`);
+  console.log("");
+  console.log("📌 Verification ID:");
+  console.log(`   ${report.verification.id}`);
+  console.log("");
+  console.log("📌 Hash:");
+  console.log(`   ${report.verification.hash}`);
+  console.log("");
+  console.log("✅ Real app verification completed.");
+
+  process.exit(0);
+}
+
+main();
