@@ -3,8 +3,6 @@ name: 🔄 Auto-Run Until Green
 on:
   push:
     branches: [main, develop, 'feature/**']
-    paths:
-      - 'sovereign-studio-rn/**'
   pull_request:
   workflow_dispatch:
   schedule:
@@ -49,19 +47,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
+
           echo "========================================"
           echo "SOVEREIGN STUDIO APP VERIFICATION"
           echo "========================================"
-          
-          # Run verification script - don't fail the step if it exits non-zero
+
+          # Run verification script
           set +e
           node scripts/verify-app.js
           EXIT_CODE=$?
           set -e
-          
+
           echo "Verification script exited with code: $EXIT_CODE"
-          
-          # Always check for verification files regardless of exit code
+
+          # Check for verification files
           VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
           if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
             echo "VERIFICATION_PASSED=true" >> $GITHUB_ENV
@@ -70,8 +69,7 @@ jobs:
             echo "VERIFICATION_PASSED=false" >> $GITHUB_ENV
             echo "VERIFICATION_STATUS=FAIL"
           fi
-          
-          # Exit with success so we can continue to check outputs
+
           exit 0
 
       - name: Auto-Fix if verification failed
@@ -81,93 +79,66 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
+
           echo "========================================"
           echo "🔧 AUTO-FIX MODE ACTIVATED"
           echo "========================================"
-          echo "Verification failed. Running self-learning and auto-fix..."
-          
-          # Run self-learning orchestrator
-          echo "Running self-learning system..."
-          npx tsx e2e/self-learn/self-learning-orchestrator.ts run || echo "Self-learn completed with warnings"
-          
+
+          # Run self-learning
+          npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
+
           # Run auto-fix loop
-          echo "Running auto-fix loop..."
-          npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || echo "Auto-fix completed with warnings"
-          
-          # Configure git and commit fixes
+          npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || true
+
+          # Commit and push
           git config --local user.email "auto-fix@sovereign-studio.dev"
           git config --local user.name "Auto-Fix Bot"
-          
-          # Add all changes including generated files
           git add -A
-          
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            echo "Committing auto-fix changes..."
-            git commit -m "Auto-fix: Self-healing after verification failure [skip ci]
+
+          if ! git diff --staged --quiet; then
+            git commit -m "Auto-fix: Self-healing [skip ci]
 
 - Ran self-learning orchestrator
 - Applied auto-fix improvements
-- Self-healing active
-            
+
 Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
-            
+
             BRANCH_NAME=${GITHUB_REF##refs/heads/}
-            echo "Pushing to branch: $BRANCH_NAME"
-            git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || echo "Push failed (may be expected)"
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
           fi
-          
+
           echo "AUTO_FIX_COMPLETE=true" >> $GITHUB_ENV
 
-      - name: Check verification results and set outputs
+      - name: Check verification results
         id: check-verification
         run: |
-          # Always write outputs based on actual verification state
           VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
-          
+
           if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
             echo "success=true" >> $GITHUB_OUTPUT
-            VERIFICATION_ID=$(echo "$VERIFY_FILE" | xargs basename | sed 's/.ts//')
-            echo "verification_id=$VERIFICATION_ID" >> $GITHUB_OUTPUT
             echo "✅ VERIFICATION PASSED"
           else
             echo "success=false" >> $GITHUB_OUTPUT
-            echo "verification_id=none" >> $GITHUB_OUTPUT
             echo "❌ VERIFICATION FAILED"
           fi
-          
-          # Track if auto-fix was triggered
+
           if [ "${{ env.AUTO_FIX_COMPLETE }}" == "true" ]; then
             echo "auto_fix_triggered=true" >> $GITHUB_OUTPUT
           else
             echo "auto_fix_triggered=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Trigger Retry if Auto-Fix ran
-        if: steps.check-verification.outputs.auto_fix_triggered == 'true'
-        run: |
-          echo "========================================"
-          echo "🔄 AUTO-FIX COMPLETE - RETRYING VERIFICATION"
-          echo "========================================"
-          echo "Self-healing applied. Workflow will run again on next commit or can be retriggered."
-          echo "To force immediate retry, push an empty commit:"
-          echo "  git commit --allow-empty -m 'retry' && git push"
-          
-      - name: Verification Success Summary
+      - name: Success
         if: steps.check-verification.outputs.success == 'true'
         run: |
           echo "========================================"
           echo "✅ APP VERIFICATION SUCCESSFUL"
           echo "========================================"
-          echo "Sovereign Studio CAN generate code and push to GitHub"
-          echo "All systems operational! 🎉"
 
-      - name: Verification Failed Summary
+      - name: Failed
         if: steps.check-verification.outputs.success == 'false'
         run: |
           echo "========================================"
           echo "❌ APP VERIFICATION FAILED"
           echo "========================================"
-          echo "Fixes have been pushed. Workflow will retry automatically."
-          echo "Manual trigger available via workflow_dispatch."
+          echo "Fixes pushed. Workflow will retry on next push."
