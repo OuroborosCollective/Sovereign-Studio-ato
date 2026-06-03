@@ -1,4 +1,4 @@
-name: 🔄 Auto-Run Until Green
+name: RETRY Auto-Run Until Green
 
 on:
   push:
@@ -14,7 +14,7 @@ env:
 
 jobs:
   verify-and-fix:
-    name: 🔄 Verify & Auto-Fix
+    name: RETRY Verify & Auto-Fix
     runs-on: ubuntu-latest
     timeout-minutes: 600
     outputs:
@@ -42,9 +42,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
-          echo "========================================"
+          echo "===================="
           echo "SOVEREIGN STUDIO APP VERIFICATION"
-          echo "========================================"
+          echo "===================="
 
           set +e
           node scripts/verify-app.js
@@ -70,9 +70,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd sovereign-studio-rn
-          echo "========================================"
-          echo "🔧 AUTO-FIX MODE ACTIVATED"
-          echo "========================================"
+          echo "===================="
+          echo "AUTO AUTO-FIX MODE ACTIVATED"
+          echo "===================="
 
           npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
           npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || true
@@ -97,23 +97,24 @@ jobs:
 
           if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
             echo "success=true" >> $GITHUB_OUTPUT
-            echo "✅ VERIFICATION PASSED"
+            echo "PASS VERIFICATION PASSED"
           else
             echo "success=false" >> $GITHUB_OUTPUT
-            echo "❌ VERIFICATION FAILED"
+            echo "FAIL VERIFICATION FAILED"
           fi
 
       - name: Summary Success
         if: success()
         run: |
-          echo "========================================"
-          echo "✅ APP VERIFICATION SUCCESSFUL"
-          echo "========================================"
+          echo "===================="
+          echo "PASS APP VERIFICATION SUCCESSFUL"
+          echo "===================="
 
       - name: Summary Failed
         if: failure()
         run: |
-          echo "========================================"
-          echo "❌ APP VERIFICATION FAILED"
-          echo "========================================"
+          echo "===================="
+          echo "FAIL APP VERIFICATION FAILED"
+          echo "===================="
           echo "Fixes pushed. Workflow will retry on next push."
+# Auto-trigger workflow
