@@ -79,6 +79,9 @@ jobs:
             echo "success=false" >> $GITHUB_OUTPUT
             echo "APP_SUCCESS=false" >> $GITHUB_ENV
           fi
+          
+          # Exit with success so we can continue to check outputs
+          exit 0
 
       - name: 🧪 Run E2E Tests
         if: always()
