@@ -29,7 +29,9 @@
     "self-learn": "npx tsx e2e/self-learn/self-learning-orchestrator.ts",
     "self-learn:run": "npx tsx e2e/self-learn/self-learning-orchestrator.ts run",
     "self-learn:status": "npx tsx e2e/self-learn/self-learning-orchestrator.ts status",
-    "self-learn:export": "npx tsx e2e/self-learn/self-learning-orchestrator.ts export"
+    "self-learn:export": "npx tsx e2e/self-learn/self-learning-orchestrator.ts export",
+    "self-learn:patterns": "npx tsx e2e/self-learn/patterns/pattern-engine.ts",
+    "self-learn:routines": "npx tsx e2e/self-learn/routines/routine-engine.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
