@@ -19,6 +19,8 @@ const OWNER = 'OuroborosCollective';
 const REPO = 'Sovereign-Studio-ato';
 const BRANCH = 'feature/e2e-self-learning-workflow';
 
+let pushSuccess = false;
+
 console.log('\n🧪 SOVEREIGN STUDIO APP VERIFICATION');
 console.log('========================================\n');
 
@@ -161,10 +163,13 @@ Co-authored-by: Sovereign Studio Bot <bot@sovereign-studio.dev>"`, { stdio: 'ign
     console.log('\n✅ Verification files pushed to GitHub!');
     console.log(`   Branch: ${BRANCH}`);
     console.log(`   Commit: ${verificationId}`);
+    pushSuccess = true;
     
   } catch (error) {
-    console.log('\n⚠️ Push failed (may be expected in some environments)');
-    console.log('   Files created locally, verification file exists.');
+    console.log('\n⚠️ Push failed');
+    console.log('   Error:', error.message || error);
+    console.log('   Files created locally.');
+    pushSuccess = false;
   }
 } else {
   console.log('\n⚠️ No GitHub token - files created locally only');
@@ -177,10 +182,20 @@ console.log('========================================');
 console.log(`   Verification ID: ${verificationId}`);
 console.log(`   Timestamp: ${new Date().toISOString()}`);
 console.log(`   Files Created: 2`);
-console.log(`   Status: OPERATIONAL ✅`);
+console.log(`   Push to GitHub: ${pushSuccess ? '✅ SUCCESS' : '⚠️ SKIPPED OR FAILED'}`);
+console.log(`   Status: ${pushSuccess ? 'OPERATIONAL ✅' : 'PARTIAL ⚠️'}`);
 console.log('\n========================================');
-console.log('✅ APP VERIFICATION COMPLETE');
-console.log('   Sovereign Studio can generate code and create files!');
+
+if (pushSuccess) {
+  console.log('✅ APP VERIFICATION COMPLETE');
+  console.log('   Sovereign Studio can generate code and push to GitHub!');
+} else if (!GITHUB_TOKEN) {
+  console.log('⚠️ APP VERIFICATION (LOCAL ONLY)');
+  console.log('   GitHub token not available - files created locally.');
+} else {
+  console.log('⚠️ APP VERIFICATION PARTIAL');
+  console.log('   Local files created, but GitHub push failed.');
+}
 console.log('========================================\n');
 
-module.exports = { verificationId, timestamp, success: true };
+module.exports = { verificationId, timestamp, success: pushSuccess };
