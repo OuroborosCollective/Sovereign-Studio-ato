@@ -2,184 +2,331 @@ name: Auto-Run Until Green
 
 on:
   push:
-    branches: [main, develop, 'feature/**']
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+
   pull_request:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
+
   workflow_dispatch:
+    inputs:
+      app_dir:
+        description: 'App directory'
+        required: false
+        default: 'sovereign-studio-rn'
+      max_fix_rounds:
+        description: 'Maximum auto-fix loop rounds'
+        required: false
+        default: '10'
+      run_e2e:
+        description: 'Run E2E tests after verification'
+        required: false
+        default: 'true'
+      push_fixes:
+        description: 'Commit and push auto-fixes'
+        required: false
+        default: 'true'
+
   schedule:
     - cron: '*/15 * * * *'
 
+permissions:
+  contents: write
+  pull-requests: read
+  actions: read
+  checks: write
+
+concurrency:
+  group: auto-run-until-green-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: '22'
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  APP_DIR: ${{ inputs.app_dir || 'sovereign-studio-rn' }}
+  MAX_FIX_ROUNDS: ${{ inputs.max_fix_rounds || '10' }}
+  RUN_E2E: ${{ inputs.run_e2e || 'true' }}
+  PUSH_FIXES: ${{ inputs.push_fixes || 'true' }}
 
 jobs:
-  verify-and-fix:
-    name: Verify and Auto-Fix
-    runs-on: ubuntu-latest
-    timeout-minutes: 600
-    outputs:
-      success: ${{ steps.check.outputs.success }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
   app-verification:
-    name: 🧪 App Verification (Real Test)
+    name: 🧪 Verify App
     runs-on: ubuntu-latest
-    timeout-minutes: 600
+    timeout-minutes: 120
+
     outputs:
-      verification_id: ${{ steps.verify.outputs.verification_id }}
       success: ${{ steps.verify.outputs.success }}
+      verification_id: ${{ steps.verify.outputs.verification_id }}
+      app_dir: ${{ steps.meta.outputs.app_dir }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: true
           fetch-depth: 0
+
+      - name: Resolve metadata
+        id: meta
+        shell: bash
+        run: |
+          echo "app_dir=${APP_DIR}" >> "${GITHUB_OUTPUT}"
+          echo "Repository: ${GITHUB_REPOSITORY}"
+          echo "Ref: ${GITHUB_REF}"
+          echo "Ref name: ${GITHUB_REF_NAME}"
+          echo "Event: ${GITHUB_EVENT_NAME}"
+          echo "App dir: ${APP_DIR}"
+          echo "Max fix rounds: ${MAX_FIX_ROUNDS}"
+          echo "Run E2E: ${RUN_E2E}"
+          echo "Push fixes: ${PUSH_FIXES}"
+
+      - name: Validate app directory
+        shell: bash
+        run: |
+          if [ ! -d "${APP_DIR}" ]; then
+            echo "❌ App directory does not exist: ${APP_DIR}"
+            echo ""
+            echo "Repository root:"
+            ls -la
+            exit 1
+          fi
+
+          if [ ! -f "${APP_DIR}/package.json" ]; then
+            echo "❌ package.json missing inside: ${APP_DIR}"
+            echo ""
+            echo "Directory content:"
+            ls -la "${APP_DIR}"
+            exit 1
+          fi
+
+          echo "✅ App directory valid: ${APP_DIR}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: sovereign-studio-rn/package-lock.json
+          cache: npm
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
+
+      - name: Print environment diagnostics
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "🧭 ENVIRONMENT DIAGNOSTICS"
+          echo "========================================"
+          node --version
+          npm --version
+          git --version
+          echo ""
+          echo "Current commit:"
+          git log -1 --oneline || true
+          echo ""
+          echo "Workspace:"
+          pwd
+          echo ""
+          echo "App package:"
+          node -e "const p=require('./${APP_DIR}/package.json'); console.log({name:p.name, version:p.version, scripts:Object.keys(p.scripts||{})})"
 
       - name: Install dependencies
+        shell: bash
         run: |
-          cd sovereign-studio-rn
-          npm ci
+          cd "${APP_DIR}"
 
-      - name: 🧪 Run App Verification
+          echo "========================================"
+          echo "📦 INSTALL DEPENDENCIES"
+          echo "========================================"
+
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "⚠️ package-lock.json not found. Falling back to npm install."
+            npm install
+          fi
+
+      - name: Preflight scripts
+        shell: bash
+        run: |
+          cd "${APP_DIR}"
+
+          echo "========================================"
+          echo "🔎 PREFLIGHT"
+          echo "========================================"
+
+          node - <<'NODE'
+          const fs = require("fs");
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const scripts = pkg.scripts || {};
+          const wanted = ["lint", "typecheck", "test", "build", "e2e:all"];
+
+          console.log("Available scripts:");
+          for (const key of Object.keys(scripts).sort()) {
+            console.log(`- ${key}: ${scripts[key]}`);
+          }
+
+          console.log("");
+          console.log("Expected/optional scripts:");
+          for (const key of wanted) {
+            console.log(`${scripts[key] ? "✅" : "⚠️"} ${key}`);
+          }
+          NODE
+
+      - name: Lint if available
+        shell: bash
+        run: |
+          cd "${APP_DIR}"
+
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.lint?0:1)"; then
+            echo "========================================"
+            echo "🧹 RUN LINT"
+            echo "========================================"
+            npm run lint
+          else
+            echo "⚠️ No lint script. Skipping."
+          fi
+
+      - name: Typecheck if available
+        shell: bash
+        run: |
+          cd "${APP_DIR}"
+
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.typecheck?0:1)"; then
+            echo "========================================"
+            echo "🧠 RUN TYPECHECK"
+            echo "========================================"
+            npm run typecheck
+          else
+            echo "⚠️ No typecheck script. Skipping."
+          fi
+
+      - name: Unit tests if available
+        shell: bash
+        run: |
+          cd "${APP_DIR}"
+
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.test?0:1)"; then
+            echo "========================================"
+            echo "🧪 RUN UNIT TESTS"
+            echo "========================================"
+            npm test -- --watch=false || npm test
+          else
+            echo "⚠️ No test script. Skipping."
+          fi
+
+      - name: Build if available
+        shell: bash
+        run: |
+          cd "${APP_DIR}"
+
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.build?0:1)"; then
+            echo "========================================"
+            echo "🏗️ RUN BUILD"
+            echo "========================================"
+            npm run build
+          else
+            echo "⚠️ No build script. Skipping."
+          fi
+
+      - name: 🧪 Run Real App Verification
         id: verify
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd sovereign-studio-rn
-          echo "===================="
-          echo "SOVEREIGN STUDIO APP VERIFICATION"
-          echo "===================="
-          set +e
-          node scripts/verify-app.js
-          EXIT_CODE=$?
-          set -e
-          echo "Verification script exited with code: $EXIT_CODE"
-          VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
-          if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
-            echo "VERIFICATION_PASSED=true" >> $GITHUB_ENV
-            echo "VERIFICATION_STATUS=PASS"
-          
+          cd "${APP_DIR}"
+
           echo "========================================"
           echo "🧪 SOVEREIGN STUDIO APP VERIFICATION"
           echo "========================================"
           echo ""
-          echo "This is the REAL test - not just unit tests."
-          echo "We verify that the app can ACTUALLY WORK:"
-          echo "  1. Generate code ✅"
-          echo "  2. Create files ✅"
-          echo "  3. Push to GitHub ✅"
+          echo "This is the real verification layer:"
+          echo "  1. Generate code"
+          echo "  2. Create verification files"
+          echo "  3. Validate app behavior"
           echo ""
-          
-          # Run app verification
+
+          mkdir -p e2e/app-verify
+          rm -f e2e/app-verify/verify_*.ts 2>/dev/null || true
+
+          if [ ! -f scripts/verify-app.js ]; then
+            echo "❌ Missing scripts/verify-app.js"
+            echo "verification_id=none" >> "${GITHUB_OUTPUT}"
+            echo "success=false" >> "${GITHUB_OUTPUT}"
+            echo "APP_SUCCESS=false" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+
+          set +e
           node scripts/verify-app.js
-          
-          # Check if files were created
-          VERIFICATION_ID=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1 | sed 's/.ts$//' | xargs basename 2>/dev/null || echo "")
-          
-          if [ -n "$VERIFICATION_ID" ]; then
+          EXIT_CODE=$?
+          set -e
+
+          echo "Verification script exited with code: ${EXIT_CODE}"
+
+          VERIFY_FILE="$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1 || true)"
+
+          if [ -n "${VERIFY_FILE}" ]; then
+            VERIFICATION_ID="$(basename "${VERIFY_FILE}" .ts)"
+
             echo ""
-            echo "✅ Verification file created: $VERIFICATION_ID"
-            echo "verification_id=$VERIFICATION_ID" >> $GITHUB_OUTPUT
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "APP_SUCCESS=true" >> $GITHUB_ENV
+            echo "✅ Verification file created: ${VERIFICATION_ID}"
+            echo "verification_id=${VERIFICATION_ID}" >> "${GITHUB_OUTPUT}"
+            echo "success=true" >> "${GITHUB_OUTPUT}"
+            echo "APP_SUCCESS=true" >> "${GITHUB_ENV}"
           else
             echo ""
             echo "❌ Verification file NOT created"
-            echo "verification_id=none" >> $GITHUB_OUTPUT
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "APP_SUCCESS=false" >> $GITHUB_ENV
+            echo "verification_id=none" >> "${GITHUB_OUTPUT}"
+            echo "success=false" >> "${GITHUB_OUTPUT}"
+            echo "APP_SUCCESS=false" >> "${GITHUB_ENV}"
           fi
+
           exit 0
 
-      - name: Auto-Fix
-        if: env.VERIFICATION_PASSED == 'false'
-      - name: 🧪 Run E2E Tests
-        if: always()
+      - name: 🧪 Run E2E Tests Secondary
+        if: always() && env.RUN_E2E == 'true'
+        shell: bash
         run: |
-          cd sovereign-studio-rn
-          
-          echo ""
+          cd "${APP_DIR}"
+
           echo "========================================"
-          echo "📋 Running E2E Tests (Secondary)"
+          echo "📋 RUN E2E TESTS SECONDARY"
           echo "========================================"
-          
-          # Run tests
-          npm run e2e:all || true
 
-  auto-fix:
-    name: 🔧 Auto-Fix (if verification failed)
-    needs: app-verification
-    if: needs.app-verification.outputs.success == 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 480
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          cd sovereign-studio-rn
-          npm ci
-
-      - name: 🔧 Run Self-Learning Auto-Fix
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd sovereign-studio-rn
-          echo "===================="
-          echo "AUTO-FIX MODE ACTIVATED"
-          echo "===================="
-          npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
-          npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || true
-          git config --local user.email "auto-fix@sovereign-studio.dev"
-          git config --local user.name "Auto-Fix Bot"
-          git add -A
-          if ! git diff --staged --quiet; then
-            git commit -m "Auto-fix: Self-healing [skip ci]"
-          fi
-          BRANCH_NAME=${GITHUB_REF##refs/heads/}
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
-          echo "AUTO_FIX_DONE=true" >> $GITHUB_ENV
-
-      - name: Check Results
-        id: check
-        run: |
-          VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
-          if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "VERIFICATION PASSED"
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s['e2e:all']?0:1)"; then
+            npm run e2e:all || true
           else
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "VERIFICATION FAILED"
+            echo "⚠️ No e2e:all script. Skipping."
           fi
 
-      - name: Summary Success
-        if: success()
+      - name: Collect verification diagnostics
+        if: always()
+        shell: bash
         run: |
-          echo "===================="
-          echo "APP VERIFICATION SUCCESSFUL"
-          echo "===================="
+          cd "${APP_DIR}"
 
-      - name: Summary Failed
-        if: failure()
-        run: |
-          echo "===================="
-          echo "APP VERIFICATION FAILED"
-          echo "===================="
-          echo "Fixes pushed. Workflow will retry on next push."
+          mkdir -p ../workflow-artifacts
+
+          {
+            echo "APP_DIR=${APP_DIR}"
+            echo "APP_SUCCESS=${APP_SUCCESS:-unknown}"
+            echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME}"
+            echo "GITHUB_REF=${GITHUB_REF}"
+            echo "GITHUB_REF_NAME=${GITHUB_REF_NAME}"
+            echo "COMMIT=$(git rev-parse HEAD || true)"
+            echo ""
+            echo "Verification files:"
+            ls -la e2e/app-verify 2>/dev/null || true
+            echo ""
+            echo "Git status:"
+            git status --short || true
+          } > ../workflow-artifacts/verification-summary.txt
+
+      - name: Upload verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-artifacts-${{ github.run_id }}
+          path: |
