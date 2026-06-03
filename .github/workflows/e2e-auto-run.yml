@@ -1,4 +1,4 @@
-name: RETRY Auto-Run Until Green
+name: Auto-Run Until Green
 
 on:
   push:
@@ -14,7 +14,7 @@ env:
 
 jobs:
   verify-and-fix:
-    name: RETRY Verify & Auto-Fix
+    name: Verify and Auto-Fix
     runs-on: ubuntu-latest
     timeout-minutes: 600
     outputs:
@@ -45,14 +45,11 @@ jobs:
           echo "===================="
           echo "SOVEREIGN STUDIO APP VERIFICATION"
           echo "===================="
-
           set +e
           node scripts/verify-app.js
           EXIT_CODE=$?
           set -e
-
           echo "Verification script exited with code: $EXIT_CODE"
-
           VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
           if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
             echo "VERIFICATION_PASSED=true" >> $GITHUB_ENV
@@ -61,7 +58,6 @@ jobs:
             echo "VERIFICATION_PASSED=false" >> $GITHUB_ENV
             echo "VERIFICATION_STATUS=FAIL"
           fi
-
           exit 0
 
       - name: Auto-Fix
@@ -71,50 +67,43 @@ jobs:
         run: |
           cd sovereign-studio-rn
           echo "===================="
-          echo "AUTO AUTO-FIX MODE ACTIVATED"
+          echo "AUTO-FIX MODE ACTIVATED"
           echo "===================="
-
           npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
           npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || true
-
           git config --local user.email "auto-fix@sovereign-studio.dev"
           git config --local user.name "Auto-Fix Bot"
           git add -A
-
           if ! git diff --staged --quiet; then
-            git commit -m "Auto-fix: Self-healing [skip ci] - Ran self-learning and auto-fix improvements"
+            git commit -m "Auto-fix: Self-healing [skip ci]"
           fi
-
           BRANCH_NAME=${GITHUB_REF##refs/heads/}
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
-
           echo "AUTO_FIX_DONE=true" >> $GITHUB_ENV
 
       - name: Check Results
         id: check
         run: |
           VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
-
           if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
             echo "success=true" >> $GITHUB_OUTPUT
-            echo "PASS VERIFICATION PASSED"
+            echo "VERIFICATION PASSED"
           else
             echo "success=false" >> $GITHUB_OUTPUT
-            echo "FAIL VERIFICATION FAILED"
+            echo "VERIFICATION FAILED"
           fi
 
       - name: Summary Success
         if: success()
         run: |
           echo "===================="
-          echo "PASS APP VERIFICATION SUCCESSFUL"
+          echo "APP VERIFICATION SUCCESSFUL"
           echo "===================="
 
       - name: Summary Failed
         if: failure()
         run: |
           echo "===================="
-          echo "FAIL APP VERIFICATION FAILED"
+          echo "APP VERIFICATION FAILED"
           echo "===================="
           echo "Fixes pushed. Workflow will retry on next push."
-# Auto-trigger workflow
