@@ -82,16 +82,11 @@ jobs:
           git add -A
 
           if ! git diff --staged --quiet; then
-            git commit -m "Auto-fix: Self-healing [skip ci]
-
-- Ran self-learning orchestrator
-- Applied auto-fix improvements
-
-Co-authored-by: Auto-Fix Bot <auto-fix@sovereign-studio.dev>"
-
-            BRANCH_NAME=${GITHUB_REF##refs/heads/}
-            git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
+            git commit -m "Auto-fix: Self-healing [skip ci] - Ran self-learning and auto-fix improvements"
           fi
+
+          BRANCH_NAME=${GITHUB_REF##refs/heads/}
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
 
           echo "AUTO_FIX_DONE=true" >> $GITHUB_ENV
 
