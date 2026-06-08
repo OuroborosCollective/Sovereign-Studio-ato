@@ -5,7 +5,7 @@ import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import canvasReducer, { addObject, selectObjects } from './canvasSlice';
 import { CanvasEngine } from './CanvasEngine';
-import { fabric } from 'fabric';
+import { Canvas } from 'fabric';
 
 // Mock ResizeObserver
 global.ResizeObserver = vi.fn().mockImplementation(() => ({
@@ -23,6 +23,10 @@ const createMockFabricObject = (opts: any = {}) => ({
   dispose: vi.fn(),
   left: 0,
   top: 0,
+  width: opts.width || 0,
+  height: opts.height || 0,
+  scaleX: 1,
+  scaleY: 1,
   ...opts,
 });
 
@@ -32,6 +36,7 @@ const mockCanvas = {
   off: vi.fn(),
   add: vi.fn(),
   remove: vi.fn(),
+  moveObjectTo: vi.fn(),
   moveTo: vi.fn(),
   getObjects: vi.fn(() => []),
   item: vi.fn(),
@@ -47,17 +52,18 @@ const mockCanvas = {
   viewportTransform: [1, 0, 0, 1, 0, 0],
 };
 
-// Mock Fabric.js Canvas
+// Mock Fabric.js v7 named exports
 vi.mock('fabric', () => {
+  function MockFabricObject() {
+    // FabricObject is used as a value only for its prototype defaults in CanvasEngine.
+  }
+
   return {
-    fabric: {
-      Canvas: vi.fn(() => mockCanvas),
-      Rect: vi.fn((opts: any) => createMockFabricObject(opts)),
-      IText: vi.fn((text: string, opts: any) => createMockFabricObject({ ...opts, text })),
-      Object: {
-        prototype: {},
-      },
-    },
+    Canvas: vi.fn(() => mockCanvas),
+    FabricObject: MockFabricObject,
+    Point: vi.fn((x: number, y: number) => ({ x, y })),
+    Rect: vi.fn((opts: any) => createMockFabricObject(opts)),
+    IText: vi.fn((text: string, opts: any) => createMockFabricObject({ ...opts, text })),
   };
 });
 
@@ -82,7 +88,7 @@ describe('CanvasEngine', () => {
     const { container } = render(
       <Provider store={store}>
         <CanvasEngine />
-      </Provider>
+      </Provider>,
     );
     expect(container.querySelector('canvas')).toBeDefined();
   });
@@ -91,16 +97,16 @@ describe('CanvasEngine', () => {
     render(
       <Provider store={store}>
         <CanvasEngine />
-      </Provider>
+      </Provider>,
     );
-    expect(fabric.Canvas).toHaveBeenCalled();
+    expect(Canvas).toHaveBeenCalled();
   });
 
   it('adds objects to fabric canvas when redux state changes', async () => {
     const { rerender } = render(
       <Provider store={store}>
         <CanvasEngine />
-      </Provider>
+      </Provider>,
     );
 
     const newObject = {
@@ -118,7 +124,7 @@ describe('CanvasEngine', () => {
       opacity: 1,
       visible: true,
       zIndex: 0,
-      data: { color: '#ff0000' }
+      data: { color: '#ff0000' },
     };
 
     await act(async () => {
@@ -128,7 +134,7 @@ describe('CanvasEngine', () => {
     rerender(
       <Provider store={store}>
         <CanvasEngine />
-      </Provider>
+      </Provider>,
     );
 
     expect(mockCanvas.add).toHaveBeenCalled();
@@ -151,7 +157,7 @@ describe('CanvasEngine', () => {
       opacity: 1,
       visible: true,
       zIndex: 0,
-      data: { color: '#00ff00' }
+      data: { color: '#00ff00' },
     };
 
     const fabricObj = createMockFabricObject({ id: 'test-select', left: 10, top: 10 });
@@ -161,7 +167,7 @@ describe('CanvasEngine', () => {
     const { rerender } = render(
       <Provider store={store}>
         <CanvasEngine />
-      </Provider>
+      </Provider>,
     );
 
     await act(async () => {
@@ -175,7 +181,7 @@ describe('CanvasEngine', () => {
     rerender(
       <Provider store={store}>
         <CanvasEngine />
-      </Provider>
+      </Provider>,
     );
 
     expect(mockCanvas.setActiveObject).toHaveBeenCalledWith(fabricObj);

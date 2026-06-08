@@ -136,9 +136,10 @@ const updateAccessState = (state: BillingState, subscription: Subscription | nul
 
   state.subscription = subscription;
   state.tier = subscription.tier || 'free';
-  state.isSubscribed = ['active', 'trialing'].includes(subscription.status);
+  const isSubscribed = subscription.status === 'active' || subscription.status === 'trialing';
+  state.isSubscribed = isSubscribed;
   state.isTrialing = subscription.status === 'trialing';
-  state.isPaywallActive = !['active', 'trialing'].includes(subscription.status) || subscription.tier === 'free';
+  state.isPaywallActive = !isSubscribed || subscription.tier === 'free';
 };
 
 const billingSlice = createSlice({

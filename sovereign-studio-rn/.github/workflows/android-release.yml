@@ -1,0 +1,166 @@
+name: 🚀 Android Release Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: 'Optional: Version Code'
+        required: false
+        type: string
+      version_name:
+        description: 'Optional: Version Name (e.g., 1.1.1)'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  # ============================================================
+  # CI Pipeline: Install & Prebuild
+  # ============================================================
+  ci:
+    name: 🧪 CI Pipeline
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🧾 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: 📦 Install Dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: 🔄 Expo Prebuild (Generate Android)
+        run: pnpm prebuild --platform android --clean
+
+  # ============================================================
+  # Android Build
+  # ============================================================
+  build:
+    name: 🏗️ Build Android AAB/APK
+    runs-on: ubuntu-latest
+    needs: ci
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: 🧾 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: 📦 Install Dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: 🔄 Expo Prebuild
+        run: pnpm prebuild --platform android --clean
+
+      - name: 🏷️ Determine Versioning
+        id: vars
+        run: |
+          INPUT_NAME="${{ github.event.inputs.version_name }}"
+          if [ -z "$INPUT_NAME" ]; then
+            INPUT_NAME=$(node -p "require('./package.json').version")
+          fi
+
+          INPUT_CODE="${{ github.event.inputs.version_code }}"
+          if [ -z "$INPUT_CODE" ]; then
+            INPUT_CODE="${{ github.run_number }}"
+          fi
+
+          echo "version_name=$INPUT_NAME" >> $GITHUB_OUTPUT
+          echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
+
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: ⚡ Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}
+
+      - name: 🔐 Decode Android Keystore
+        run: |
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Error: ANDROID_KEYSTORE_BASE64 is missing."
+            exit 1
+          fi
+          mkdir -p android/app/keystore
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
+
+      - name: 📦 Build Release AAB
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
+            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -PversionCode=${{ steps.vars.outputs.version_code }} \
+            -PversionName=${{ steps.vars.outputs.version_name }}
+
+      - name: 📦 Build Release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
+            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -PversionCode=${{ steps.vars.outputs.version_code }} \
+            -PversionName=${{ steps.vars.outputs.version_name }}
+
+      - name: 📁 Prepare Artifacts
+        run: |
+          mkdir -p release-bundle
+          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab || true
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
+          fi
+          zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
+
+      - name: 📤 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-PlayStore-Release
+          path: SovereignStudio-PlayStore-Release.zip
+          retention-days: 14

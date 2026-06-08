@@ -56,22 +56,32 @@ router.post('/signup', async (req, res) => {
       });
     }
 
-    let referralCode = createUniqueCode();
-    
-    // Sicherstellen, dass der Code eindeutig ist
-    let isDuplicate = await BetaUser.findOne({ referralCode });
-    while (isDuplicate) {
-      referralCode = createUniqueCode();
-      isDuplicate = await BetaUser.findOne({ referralCode });
+    let newUser;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10;
+
+    while (attempts < MAX_ATTEMPTS) {
+      try {
+        const referralCode = createUniqueCode();
+        newUser = new BetaUser({
+          email,
+          referralCode,
+          referredBy: ref || null
+        });
+        await newUser.save();
+        break;
+      } catch (error) {
+        // Handle duplicate referralCode (MongoDB error 11000)
+        if (error.code === 11000 && error.keyPattern?.referralCode) {
+          attempts++;
+          if (attempts === MAX_ATTEMPTS) {
+            throw new Error('Referral-Code konnte nach mehreren Versuchen nicht generiert werden.');
+          }
+          continue;
+        }
+        throw error; // Re-throw other errors
+      }
     }
-
-    const newUser = new BetaUser({
-      email,
-      referralCode,
-      referredBy: ref || null
-    });
-
-    await newUser.save();
 
     return res.status(201).json({
       success: true,
