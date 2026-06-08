@@ -9,18 +9,14 @@ on:
     paths-ignore:
       - "**/*.md"
       - "docs/**"
-
   pull_request:
-
   workflow_dispatch:
     inputs:
       max_fix_rounds:
         description: "Maximum auto-fix rounds"
         required: false
         default: "3"
-
   schedule:
-    # Nicht alle 15 Minuten ballern. Das kann dich unnötig Actions-Minuten kosten.
     - cron: "0 */6 * * *"
 
 permissions:
@@ -36,6 +32,7 @@ env:
   NODE_VERSION: "22"
   APP_DIR: "sovereign-studio-rn"
   CI: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   AUTO_FIX_AUTHOR_NAME: "Auto-Fix Bot"
   AUTO_FIX_AUTHOR_EMAIL: "auto-fix@sovereign-studio.dev"
 
@@ -45,7 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
-    # Verhindert Endlos-Loops durch eigene Bot-Commits
     if: |
       github.actor != 'github-actions[bot]' &&
       !contains(github.event.head_commit.message, '[auto-fix]') &&
@@ -58,13 +54,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -153,6 +149,7 @@ jobs:
             fi
 
             echo "Re-running verification after round ${ROUND}..."
+
             set +e
             node scripts/verify-app.js
             VERIFY_EXIT=$?
@@ -223,7 +220,7 @@ jobs:
 
       - name: Upload verification artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: app-verification-artifacts
           path: |
