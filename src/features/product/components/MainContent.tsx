@@ -43,7 +43,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   const derivedWorking = isWorking ?? (pipelineState === 'validating' || pipelineState === 'planning' || pipelineState === 'generating' || pipelineState === 'fixing' || pipelineState === 'revalidating');
   const canApprove = green && !derivedWorking && !approvalConfirmed;
   const derivedMessage = approvalConfirmed
-    ? 'Freigabe bestaetigt. Fertig - du musst nichts mehr suchen oder senden.'
+    ? 'Freigabe bestaetigt. Bitte pruefe den Repository-Zielstatus.'
     : agentMessage ?? ({
       idle: 'Bereit. Starte links den Auftrag.',
       planning: 'Auftrag uebernommen. Ich plane und schreibe den Code-Entwurf.',
@@ -91,7 +91,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 <div className={`h-full transition-all duration-700 ${derivedWorking ? 'animate-pulse bg-indigo-600' : approvalConfirmed ? 'bg-emerald-600' : 'bg-stone-400'}`} style={{ width: `${Math.max(4, Math.min(100, derivedProgress))}%` }} />
               </div>
               <div className="mt-1 text-[10px] font-bold text-indigo-700">
-                {approvalConfirmed ? 'Freigabe bestaetigt. Vorgang abgeschlossen.' : derivedWorking ? 'Ich arbeite aktiv an deinem Auftrag. Bitte warten.' : green ? 'Jetzt den grossen Freigabe-Button druecken.' : 'Ein Schritt nach dem anderen. Kein Auto-Endloslauf.'}
+                {approvalConfirmed ? 'Freigabe bestaetigt. Repository-Zielstatus pruefen.' : derivedWorking ? 'Ich arbeite aktiv an deinem Auftrag. Bitte warten.' : green ? 'Jetzt den grossen Freigabe-Button druecken.' : 'Ein Schritt nach dem anderen. Kein Auto-Endloslauf.'}
               </div>
             </div>
           </div>
@@ -121,8 +121,8 @@ export const MainContent: React.FC<MainContentProps> = ({
                 <h3 className="text-lg font-black text-stone-950 leading-tight">{approvalConfirmed ? 'Freigabe bestaetigt' : 'Freigabe bestaetigen'}</h3>
                 <p className="text-xs text-stone-600 mt-1">
                   {approvalConfirmed
-                    ? 'Alles erledigt. Du musst nicht nochmal auf Senden, Frei oder Pruefen druecken.'
-                    : 'Druecke diesen grossen Button. Das blaue Senden-Symbol ist hierfuer nicht noetig.'}
+                    ? 'Freigabe wurde bestaetigt. Bitte pruefe jetzt, ob der Zielstatus wirklich angekommen ist.'
+                    : 'Druecke diesen grossen Button. Wenn danach kein Ziel-Link im Log erscheint, ist der Vorgang nicht extern abgeschlossen.'}
                 </p>
               </div>
               <button
@@ -159,13 +159,13 @@ export const MainContent: React.FC<MainContentProps> = ({
           value={chatInput}
           onChange={(event) => setChatInput(event.target.value)}
           onKeyDown={(event) => { if (event.key === 'Enter') handleChatSubmit(); }}
-          placeholder={green ? 'Freigabe oben bestaetigen - Senden ist nicht noetig' : 'Idee, Auftrag oder Frage eingeben'}
+          placeholder={green ? 'Freigabe oben bestaetigen' : 'Idee, Auftrag oder Frage eingeben'}
           className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded bg-stone-50"
         />
         <button
           disabled={(derivedWorking && !green) || approvalConfirmed}
           onClick={handleChatSubmit}
-          title={green ? 'Auch dieses Symbol bestaetigt jetzt die Freigabe' : 'Nachricht senden'}
+          title={green ? 'Dieses Symbol bestaetigt ebenfalls die Freigabe' : 'Nachricht senden'}
           className="bg-indigo-600 disabled:bg-stone-300 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase shadow-sm"
         >
           <Send size={13}/>
