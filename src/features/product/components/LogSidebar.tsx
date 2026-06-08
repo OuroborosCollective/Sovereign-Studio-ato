@@ -13,7 +13,7 @@ interface LogSidebarProps {
 
 export const LogSidebar: React.FC<LogSidebarProps> = ({ logs, setLogs, downloadPackage }) => {
   return (
-    <section className="w-[350px] shrink-0 border-l border-stone-200 bg-white flex flex-col">
+    <section className="w-full md:w-[350px] shrink-0 border-l border-stone-200 bg-white flex flex-col">
       <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-800 flex items-center justify-between shrink-0">
         <div>Log</div>
         <button onClick={() => setLogs([])} className="text-[9px] text-stone-400 hover:text-stone-600">Leeren</button>
