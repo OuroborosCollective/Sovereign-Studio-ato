@@ -192,7 +192,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     for (let i = 0; i < currentFabricObjects.length; i++) {
       const fObj = currentFabricObjects[i] as any;
       if (fObj.id) {
-        existingFabricObjectsMap.set(fObj.id, fObj);
+        existingFabricObjectsMapRef.current.set(fObj.id, fObj);
       }
     }
 
@@ -202,7 +202,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     for (let index = 0; index < objects.length; index++) {
       const objData = objects[index];
       reduxObjectIdsSet.add(objData.id);
-      const existingObj = fabricObjectsMapRef.current.get(objData.id);
+      const existingObj = existingFabricObjectsMapRef.current.get(objData.id);
 
       if (existingObj) {
         // ⚡ Bolt: Use the current object array instead of deprecated canvas.item lookups.
@@ -244,7 +244,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         moveObjectToLayer(canvas, newObj, index);
 
         // Add to map for immediate selection lookup if needed
-        fabricObjectsMapRef.current.set(objData.id, newObj);
+        existingFabricObjectsMapRef.current.set(objData.id, newObj);
         hasChanges = true;
       }
     }
@@ -254,7 +254,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       const fObj = currentFabricObjects[i] as any;
       if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
-        fabricObjectsMapRef.current.delete(objectId);
+        existingFabricObjectsMapRef.current.delete(fObj.id);
         hasChanges = true;
       }
     }

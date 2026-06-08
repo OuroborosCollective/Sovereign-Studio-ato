@@ -1,49 +1,14 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#1c1917" />
-    <title>Sovereign Studio - Refactor Edition</title>
-    <style>
-      body {
-        margin: 0;
-        padding: 0;
-        background-color: #1c1917;
-        min-height: 100vh;
-        font-family: system-ui, -apple-system, sans-serif;
-      }
-      #root {
-        min-height: 100vh;
-        background-color: #1c1917;
-      }
-      .loading {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        color: #f5f5f4;
-        font-size: 18px;
-      }
-      .loading::after {
-        content: '';
-        width: 20px;
-        height: 20px;
-        margin-left: 12px;
-        border: 2px solid #f5f5f4;
-        border-top-color: transparent;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
-    </style>
+    <meta name="theme-color" content="#fafaf9" />
+    <title>Sovereign Studio V3</title>
   </head>
   <body>
-    <div id="root">
-      <div class="loading">Loading Refactor</div>
-    </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
