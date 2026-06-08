@@ -94,8 +94,10 @@ const CanvasEngine: React.FC = () => {
           const distSq = dx * dx + dy * dy;
 
           if (distSq < connectionDistanceSq) {
-            const dist = Math.sqrt(distSq);
-            const alpha = 0.2 * (1 - dist / connectionDistance);
+            // ⚡ Bolt: Replaced expensive Math.sqrt with squared distance ratio
+            // This changes the falloff from linear to quadratic, which looks virtually identical
+            // but saves a sqrt calculation inside the O(N^2) inner loop
+            const alpha = 0.2 * (1 - distSq / connectionDistanceSq);
             ctx.beginPath();
             ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
             ctx.moveTo(p1.x, p1.y);
