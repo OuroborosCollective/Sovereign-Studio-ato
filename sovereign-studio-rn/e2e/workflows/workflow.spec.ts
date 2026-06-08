@@ -98,7 +98,7 @@ describe('Workflow Tests', () => {
       expect(retestNode).toBeDefined();
       
       // Check that failure leads back to analyze
-      const connections = workflow?.connections['retest'];
+      const connections = workflow?.connections['retest'] as any;
       expect(connections).toBeDefined();
       
       if (typeof connections === 'object' && !Array.isArray(connections)) {
@@ -154,7 +154,7 @@ describe('Workflow Tests', () => {
     });
 
     it('should retry on validation failure', () => {
-      const connections = workflow?.connections['validate'];
+      const connections = workflow?.connections['validate'] as any;
       expect(connections).toBeDefined();
       
       if (typeof connections === 'object' && !Array.isArray(connections)) {

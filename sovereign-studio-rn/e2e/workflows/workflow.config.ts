@@ -348,6 +348,14 @@ export const WORKFLOW_DEFINITIONS: Workflow[] = [
         },
       },
       {
+        id: 'final-success',
+        type: 'output',
+        name: 'Success Response',
+        config: {
+          format: 'json',
+        },
+      },
+      {
         id: 'final-error',
         type: 'output',
         name: 'Error Response',

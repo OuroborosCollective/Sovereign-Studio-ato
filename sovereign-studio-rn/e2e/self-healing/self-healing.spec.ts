@@ -88,14 +88,14 @@ describe('Self-Healing Tests', () => {
     });
 
     it('should trigger network reset on network errors', async () => {
-      const error = simulateError('Network request failed');
+      const error = simulateError('network request failed');
       const strategy = RECOVERY_STRATEGIES.find(s => s.name === 'Reset Network');
       
       expect(strategy?.trigger(error)).toBe(true);
     });
 
     it('should trigger cache fallback on cache errors', async () => {
-      const error = simulateError('Cache read failed');
+      const error = simulateError('cache read failed');
       const strategy = RECOVERY_STRATEGIES.find(s => s.name === 'Fallback to Cache');
       
       expect(strategy?.trigger(error)).toBe(true);
