@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { FileItem, Card, WorkView, PipelineState, ProjectSettings } from '../types';
+import { useMemo, useState, useCallback } from 'react';
+import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane } from '../types';
 import { makeId, demoFiles, starterCards, defaultSettings } from '../constants';
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 export function useProductMagic() {
   const [repoUrl, setRepoUrl] = useState('https://github.com/OuroborosCollective/Sovereign-Studio-ato');
@@ -21,12 +23,18 @@ export function useProductMagic() {
   const [isWorking, setIsWorking] = useState(false);
   const [agentMessage, setAgentMessage] = useState('Bereit. Gib links deinen Auftrag ein und starte dann Schritt 1.');
   const [progress, setProgress] = useState(0);
+  const [mobilePane, setMobilePane] = useState<MobilePane>('auftrag');
+  const [currentStepLabel, setCurrentStepLabel] = useState('');
+  const [nextStepLabel, setNextStepLabel] = useState('');
 
   const currentCode = useMemo(() => generatedCode || `// ${selectedFile.path}\n// Sovereign Auto-Resolver Preview\n\nconst auftrag = ${JSON.stringify(blueprint, null, 2)};\n\nexport const generatedProduct = {\n  mode: 'chat-editor-live-status',\n  repo: '${repoUrl}',\n  steps: ${cards.length},\n  repoMode: '${settings.repoMode}',\n  packageManager: '${settings.packageManager}',\n  linter: '${settings.linter}',\n  freeRoute: ['mlvoca', 'pollinations', 'optional-user-keys'],\n  ready: ${built}\n};`, [generatedCode, selectedFile.path, blueprint, repoUrl, cards.length, settings.repoMode, settings.packageManager, settings.linter, built]);
 
   const generatedPackage = useMemo(() => JSON.stringify({ repoUrl, blueprint, cards, selectedFile: selectedFile.path, settings, generatedCode: currentCode }, null, 2), [repoUrl, blueprint, cards, selectedFile, settings, currentCode]);
 
-  const log = (text: string) => setLogs((items) => [text, ...items].slice(0, 18));
+  const log = (text: string) => setLogs((items) => {
+    const deduped = items[0] === text ? items : [text, ...items];
+    return deduped.slice(0, 18);
+  });
 
   const guardBusy = () => {
     if (!isWorking) return false;
@@ -34,17 +42,7 @@ export function useProductMagic() {
     return true;
   };
 
-  const finishAfter = (message: string, nextProgress: number, fn: () => void) => {
-    setIsWorking(true);
-    setAgentMessage(message);
-    window.setTimeout(() => {
-      fn();
-      setProgress(nextProgress);
-      setIsWorking(false);
-    }, 1400);
-  };
-
-  const generateCodeInEditor = () => {
+  const generateCodeInEditor = useCallback(() => {
     const pm = settings.packageManager === 'auto' ? 'detected-package-manager' : settings.packageManager;
     const lintCommand = settings.linter === 'biome' ? `${pm} biome check .` : settings.linter === 'eslint' ? `${pm} lint` : `${pm} lint || ${pm} format`;
     const installCommand = settings.repoMode === 'monorepo' ? `${pm} install --frozen-lockfile` : `${pm} install`;
@@ -53,26 +51,111 @@ export function useProductMagic() {
     setGeneratedCode(code);
     setBuilt(true);
     setWorkView('editor');
-  };
+  }, [settings, cards, blueprint]);
 
-  const buildProduct = () => {
+  const runAutonomousJob = useCallback(async () => {
+    if (isWorking) return;
+    
+    setIsWorking(true);
+    setMobilePane('live');
+    setWorkView('editor');
+    setFixLoops(0);
+    log('=== Auftrag gestartet ===');
+    setAgentMessage('Ich arbeite aktiv an deinem Auftrag. Bitte warten.');
+    setCurrentStepLabel('Planung und Code-Entwurf');
+    setNextStepLabel('Pruefung');
+
+    // Step 1: Planning and generating
+    setPipelineState('planning');
+    setProgress(10);
+    await sleep(800);
+    
+    setPipelineState('generating');
+    setProgress(25);
+    generateCodeInEditor();
+    await sleep(600);
+    log('Schritt 1/5 fertig: Planung und Code-Entwurf sichtbar.');
+    setAgentMessage('Schritt 1 fertig: Planung und Code-Entwurf stehen.');
+    setCurrentStepLabel('Pruefung');
+    setNextStepLabel('Fix bei Fehler');
+
+    // Step 2: Validation
+    setPipelineState('validating');
+    setProgress(45);
+    setAgentMessage('Ich pruefe jetzt aktiv. Bitte warten, ich haenge nicht.');
+    await sleep(1200);
+    
+    const hasErrors = fixLoops < 1;
+    if (hasErrors) {
+      setPipelineState('failed');
+      setProgress(60);
+      log('Schritt 2/5 fertig: Pruefung fand Fehler. Fix ist jetzt freigegeben.');
+      setAgentMessage('Pruefung fertig: Fehler gefunden. Ich arbeite weiter.');
+      setCurrentStepLabel('Fix anwenden');
+      setNextStepLabel('Erneute Pruefung');
+      
+      // Check max fix loops
+      if (fixLoops >= settings.maxFixLoops) {
+        setPipelineState('blocked');
+        setProgress(65);
+        setIsWorking(false);
+        setAgentMessage('Ich komme alleine nicht weiter. Bitte Log pruefen oder Freigabe/Token/Repo-Konfiguration kontrollieren.');
+        log('FEHLER: Max Fix-Loops erreicht. Bitte manuell eingreifen.');
+        return;
+      }
+
+      // Step 3: Fix
+      setPipelineState('fixing');
+      setProgress(70);
+      setAgentMessage('Ich wende jetzt einen sichtbaren Fix an. Bitte warten.');
+      await sleep(800);
+      
+      const patched = `${currentCode}\n\n// VisibleFix ${fixLoops + 1}: sequential repair applied\nexport const validationPatch = {\n  reason: 'visible workflow fix completed',\n  linter: '${settings.linter}',\n  packageManager: '${settings.packageManager}',\n  rerunRequired: true\n};\n`;
+      setGeneratedCode(patched);
+      setFixLoops((count) => count + 1);
+      log('Schritt 3/5 fertig: Fix sichtbar angewendet.');
+      setAgentMessage('Fix fertig. Ich starte automatisch die erneute Pruefung.');
+      setCurrentStepLabel('Erneute Pruefung');
+      setNextStepLabel('Freigabe');
+
+      // Step 4: Re-validation
+      setPipelineState('revalidating');
+      setProgress(88);
+      setAgentMessage('Ich pruefe erneut. Bitte warten, ich arbeite aktiv.');
+      await sleep(1000);
+      
+      setPipelineState('green');
+      setProgress(100);
+      log('Schritt 4/5 fertig: Erneute Pruefung gruen. Freigabe wartet auf dich.');
+      setAgentMessage('Alles gruen! Schritt 5/5: Freigabe bestaetigen.');
+      setCurrentStepLabel('Freigabe wartet');
+      setNextStepLabel('');
+    } else {
+      setPipelineState('green');
+      setProgress(100);
+      log('Schritt 2/5 fertig: Pruefung gruen. Freigabe wartet.');
+      setAgentMessage('Alles gruen! Freigabe bestaetigen.');
+      setCurrentStepLabel('Freigabe wartet');
+      setNextStepLabel('');
+    }
+
+    setIsWorking(false);
+    log('=== Auftrag fertig: Freigabe wartet ===');
+  }, [isWorking, settings.maxFixLoops, generateCodeInEditor, currentCode, fixLoops]);
+
+  const buildProduct = useCallback(() => {
     if (guardBusy()) return;
-    finishAfter('Ich plane und schreibe den sichtbaren Arbeitsentwurf. Bitte warte kurz, ich haenge nicht.', 25, () => {
-      generateCodeInEditor();
-      setPipelineState('publishing');
-      setAgentMessage('Schritt 1 fertig: Planung und Code-Entwurf stehen. Naechster Schritt: Pruefen.');
-      log('Schritt 1 fertig: Auftrag uebernommen und Code-Entwurf sichtbar.');
-    });
-  };
+    runAutonomousJob();
+  }, [guardBusy, runAutonomousJob]);
 
   const addCard = () => setCards((items) => [...items, { id: makeId(), title: 'Notiz', body: blueprint }]);
 
-  const sendChat = () => {
+  const sendChat = useCallback(() => {
     if (!chatInput.trim()) return;
     log(`Chat Auftrag: ${chatInput}`);
     setChatInput('');
     buildProduct();
-  };
+  }, [chatInput, log, buildProduct]);
 
   const downloadPackage = () => {
     const blob = new Blob([generatedPackage], { type: 'application/json' });
@@ -84,45 +167,52 @@ export function useProductMagic() {
     URL.revokeObjectURL(url);
   };
 
-  const patchFromPipeline = () => {
+  const patchFromPipeline = useCallback(() => {
     if (guardBusy()) return;
     if (pipelineState !== 'failed') {
       log('Fix wartet: Erst muss eine echte Pruefung einen Fehler melden.');
       setAgentMessage('Ich brauche zuerst ein Pruefergebnis. Starte Pruefen, dann kann ich gezielt fixen.');
       return;
     }
-    finishAfter('Ich wende jetzt einen sichtbaren Fix an. Bitte warten, danach entscheidest du den naechsten Pruefschritt.', 75, () => {
-      const patched = `${currentCode}\n\n// VisibleFix ${fixLoops + 1}: sequential repair applied\nexport const validationPatch = {\n  reason: 'visible workflow fix completed',\n  linter: '${settings.linter}',\n  packageManager: '${settings.packageManager}',\n  rerunRequiredByUser: true\n};\n`;
-      setGeneratedCode(patched);
-      setFixLoops((count) => count + 1);
-      setPipelineState('patching');
-      setWorkView('editor');
-      setAgentMessage('Fix fertig. Ich starte nicht automatisch weiter. Bitte druecke Pruefen fuer den naechsten Schritt.');
-      log('Schritt 3 fertig: Fix sichtbar angewendet. Naechster Schritt muss manuell gestartet werden.');
-    });
-  };
+    
+    // Manual fix triggered by user
+    const patched = `${currentCode}\n\n// VisibleFix ${fixLoops + 1}: manual repair applied\nexport const validationPatch = {\n  reason: 'manual workflow fix completed',\n  linter: '${settings.linter}',\n  packageManager: '${settings.packageManager}',\n  rerunRequired: true\n};\n`;
+    setGeneratedCode(patched);
+    setFixLoops((count) => count + 1);
+    setWorkView('editor');
+    setAgentMessage('Fix manuell angewendet. Bitte Pruefen druecken fuer den naechsten Schritt.');
+    log('Manueller Fix angewendet. Bitte Pruefen druecken.');
+  }, [guardBusy, pipelineState, currentCode, settings.linter, settings.packageManager, fixLoops]);
 
-  const publishAndValidate = () => {
+  const publishAndValidate = useCallback(() => {
     if (guardBusy()) return;
     if (!built) {
       log('Pruefung blockiert: Starte zuerst den Auftrag.');
       setAgentMessage('Erst Auftrag starten. Danach pruefe ich Schritt fuer Schritt.');
       return;
     }
+    // Start autonomous job if idle
+    if (pipelineState === 'idle') {
+      runAutonomousJob();
+      return;
+    }
+    
+    // Manual validation step
     setWorkView('editor');
     setPipelineState('validating');
-    finishAfter('Ich pruefe jetzt Struktur, Typecheck, Tests und Build-Konzept. Bitte warten, ich arbeite aktiv.', fixLoops > 0 ? 100 : 50, () => {
+    setAgentMessage('Ich pruefe jetzt Struktur, Typecheck, Tests und Build-Konzept. Bitte warten, ich arbeite aktiv.');
+    setTimeout(() => {
       if (fixLoops < 1) {
         setPipelineState('failed');
         setAgentMessage('Pruefung fertig: Fehler gefunden. Naechster Schritt: Fix sichtbar anwenden.');
-        log('Schritt 2 fertig: Pruefung fand Fehler. Fix ist jetzt freigegeben.');
+        log('Manuelle Pruefung: Fehler gefunden. Fix ist freigegeben.');
       } else {
         setPipelineState('green');
         setAgentMessage('Pruefung fertig: Alles gruen. Naechster Schritt: Freigabe bestaetigen.');
-        log('Schritt 4 fertig: Pruefung gruen. Freigabe wartet auf dich.');
+        log('Manuelle Pruefung: gruen. Freigabe wartet.');
       }
-    });
-  };
+    }, 1400);
+  }, [guardBusy, built, pipelineState, runAutonomousJob, workView, fixLoops]);
 
   const mergeWhenGreen = () => {
     if (guardBusy()) return;
@@ -132,7 +222,7 @@ export function useProductMagic() {
       return;
     }
     setAgentMessage('Freigabe bestaetigt. GitHub-Schreiben ist bereit, bleibt aber sichtbar und kontrolliert.');
-    log('Schritt 5 fertig: Freigabe bestaetigt. Schreibvorgang kann vorbereitet werden.');
+    log('Schritt 5/5: Freigabe bestaetigt. Schreibvorgang kann vorbereitet werden.');
   };
 
   return {
@@ -156,6 +246,9 @@ export function useProductMagic() {
     isWorking,
     agentMessage,
     progress,
+    mobilePane, setMobilePane,
+    currentStepLabel, setCurrentStepLabel,
+    nextStepLabel, setNextStepLabel,
     log,
     generateCodeInEditor,
     buildProduct,
@@ -164,6 +257,7 @@ export function useProductMagic() {
     downloadPackage,
     publishAndValidate,
     patchFromPipeline,
-    mergeWhenGreen
+    mergeWhenGreen,
+    runAutonomousJob
   };
 }

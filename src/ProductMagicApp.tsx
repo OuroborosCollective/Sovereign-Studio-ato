@@ -71,6 +71,25 @@ export async function fetchRepoTree(
   return files;
 }
 
+function MobileTabs({ mobilePane, setMobilePane, isWorking }: { mobilePane: string; setMobilePane: (pane: 'auftrag' | 'live' | 'log') => void; isWorking: boolean }) {
+  return (
+    <nav className="fixed bottom-2 left-2 right-2 z-50 grid grid-cols-3 gap-1 p-1.5 bg-black/90 rounded-2xl shadow-2xl md:hidden" style={{ display: 'none' }}>
+      {(['auftrag', 'live', 'log'] as const).map((pane) => (
+        <button
+          key={pane}
+          onClick={() => setMobilePane(pane)}
+          disabled={isWorking && pane !== mobilePane}
+          className={`py-2.5 px-2 rounded-xl text-[11px] font-black uppercase transition-colors ${
+            mobilePane === pane ? 'bg-indigo-600 text-white' : 'bg-stone-700 text-stone-300'
+          }`}
+        >
+          {pane === 'auftrag' ? 'Auftrag' : pane === 'live' ? 'Live' : 'Log'}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 export default function ProductMagicApp() {
   const {
     repoUrl, setRepoUrl,
@@ -95,7 +114,13 @@ export default function ProductMagicApp() {
     downloadPackage,
     publishAndValidate,
     patchFromPipeline,
-    mergeWhenGreen
+    mergeWhenGreen,
+    isWorking,
+    agentMessage,
+    progress,
+    mobilePane, setMobilePane,
+    currentStepLabel,
+    nextStepLabel
   } = useProductMagic();
 
   return (
@@ -125,45 +150,63 @@ export default function ProductMagicApp() {
         />
       )}
 
+      {/* Mobile Tabs */}
+      <MobileTabs mobilePane={mobilePane} setMobilePane={setMobilePane} isWorking={isWorking} />
+
       <main className="flex-1 flex overflow-hidden">
-        <Sidebar
-          settings={settings}
-          buildProduct={buildProduct}
-          blueprint={blueprint}
-          setBlueprint={setBlueprint}
-          addCard={addCard}
-          log={log}
-          selectedFile={selectedFile}
-          setSelectedFile={setSelectedFile}
-          setWorkView={setWorkView}
-        />
+        {/* Left: Sidebar - visible on 'auftrag' in mobile, always on md+ */}
+        <div className={`${mobilePane === 'auftrag' ? 'flex' : 'hidden'} md:flex`}>
+          <Sidebar
+            settings={settings}
+            buildProduct={buildProduct}
+            blueprint={blueprint}
+            setBlueprint={setBlueprint}
+            addCard={addCard}
+            log={log}
+            selectedFile={selectedFile}
+            setSelectedFile={setSelectedFile}
+            setWorkView={setWorkView}
+            repoUrl={repoUrl}
+            setRepoUrl={setRepoUrl}
+            setShowSettings={setShowSettings}
+            isWorking={isWorking}
+          />
+        </div>
 
-        <MainContent
-          workView={workView}
-          setWorkView={setWorkView}
-          selectedFile={selectedFile}
-          currentCode={currentCode}
-          pipelineState={pipelineState}
-          settings={settings}
-          publishAndValidate={publishAndValidate}
-          patchFromPipeline={patchFromPipeline}
-          mergeWhenGreen={mergeWhenGreen}
-          chatInput={chatInput}
-          setChatInput={setChatInput}
-          sendChat={sendChat}
-          log={log}
-          cardsCount={cards.length}
-          fixLoops={fixLoops}
-        />
+        {/* Center: MainContent - visible on 'live' in mobile, always on md+ */}
+        <div className={`flex-1 min-w-0 flex flex-col ${mobilePane === 'live' ? 'flex' : 'hidden'} md:flex`}>
+          <MainContent
+            workView={workView}
+            setWorkView={setWorkView}
+            selectedFile={selectedFile}
+            currentCode={currentCode}
+            pipelineState={pipelineState}
+            settings={settings}
+            publishAndValidate={publishAndValidate}
+            patchFromPipeline={patchFromPipeline}
+            mergeWhenGreen={mergeWhenGreen}
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            sendChat={sendChat}
+            log={log}
+            cardsCount={cards.length}
+            fixLoops={fixLoops}
+            isWorking={isWorking}
+            agentMessage={agentMessage}
+            progress={progress}
+            currentStepLabel={currentStepLabel}
+            nextStepLabel={nextStepLabel}
+          />
+        </div>
 
-        <LogSidebar
-          built={built}
-          cards={cards}
-          log={log}
-          logs={logs}
-          setLogs={setLogs}
-          downloadPackage={downloadPackage}
-        />
+        {/* Right: LogSidebar - visible on 'log' in mobile, always on md+ */}
+        <div className={`${mobilePane === 'log' ? 'flex' : 'hidden'} md:flex`}>
+          <LogSidebar
+            logs={logs}
+            setLogs={setLogs}
+            downloadPackage={downloadPackage}
+          />
+        </div>
       </main>
     </div>
   );
