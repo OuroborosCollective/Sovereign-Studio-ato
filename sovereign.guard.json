@@ -1,0 +1,18 @@
+{
+  "name": "sovereign-guard",
+  "greenRequires": [
+    "audit:sovereign",
+    "type-check",
+    "test:run",
+    "build"
+  ],
+  "architecture": [
+    "free-first",
+    "left-repo-tree",
+    "center-chat-editor-status",
+    "right-history-analysis",
+    "visible-fix-loop",
+    "confirm-before-write"
+  ],
+  "automationRule": "fix-complete-current-repository-before-green"
+}
