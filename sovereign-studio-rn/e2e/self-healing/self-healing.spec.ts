@@ -135,7 +135,7 @@ describe('Self-Healing Tests', () => {
     });
 
     it('should track recovery history', async () => {
-      const error = simulateError('network failure');
+      const error = simulateError('js error');
       await performHealing(error);
       
       expect(healingState.recoveryHistory.length).toBeGreaterThan(0);
@@ -147,7 +147,7 @@ describe('Self-Healing Tests', () => {
 
   describe('⏱️ Timing Tests', () => {
     it('should apply exponential backoff', async () => {
-      const error = simulateError('Test error');
+      const error = simulateError('js error');
       
       const delays: number[] = [];
       for (let i = 0; i < 3; i++) {

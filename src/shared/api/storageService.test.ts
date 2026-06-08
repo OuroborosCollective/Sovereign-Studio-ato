@@ -162,6 +162,45 @@ describe('StorageService', () => {
       const service = new StorageService();
       expect(service.getItem('malformed')).toBeNull();
     });
+
+    it('should handle localStorage.setItem errors gracefully', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const storageError = new Error('Quota exceeded');
+      vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+        throw storageError;
+      });
+
+      storageService.setItem('key', 'value');
+
+      expect(consoleSpy).toHaveBeenCalledWith('Error saving to localStorage', storageError);
+      consoleSpy.mockRestore();
+    });
+
+    it('should handle localStorage.removeItem errors gracefully', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const storageError = new Error('Remove error');
+      vi.spyOn(window.localStorage, 'removeItem').mockImplementation(() => {
+        throw storageError;
+      });
+
+      storageService.removeItem('key');
+
+      expect(consoleSpy).toHaveBeenCalledWith('Error removing from localStorage', storageError);
+      consoleSpy.mockRestore();
+    });
+
+    it('should handle localStorage.clear errors gracefully', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const storageError = new Error('Clear error');
+      vi.spyOn(window.localStorage, 'clear').mockImplementation(() => {
+        throw storageError;
+      });
+
+      storageService.clear();
+
+      expect(consoleSpy).toHaveBeenCalledWith('Error clearing localStorage', storageError);
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('instance methods', () => {

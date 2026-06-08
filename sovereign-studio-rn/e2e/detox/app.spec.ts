@@ -1,3 +1,4 @@
+import { device, element, by, waitFor, detox } from 'detox';
 import { describe, beforeAll, beforeEach, it, expect } from '@jest/globals';
 
 // Test Configuration
@@ -102,3 +103,17 @@ describe('Sovereign Studio RN - E2E Tests', () => {
     });
   });
 });
+
+// Self-Healing Hooks
+afterEach(async () => {
+  if (false) { // placeholder for failed test check
+    await device.takeScreenshot();
+    await autoHeal();
+  }
+});
+
+async function autoHeal() {
+  console.log('🔄 Attempting self-healing...');
+  await device.reloadReactNative();
+  await waitFor(element(by.id('homeScreen'))).toBeVisible({ timeout: 30000 });
+}

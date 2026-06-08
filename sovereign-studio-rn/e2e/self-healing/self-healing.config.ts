@@ -40,7 +40,7 @@ export const DEFAULT_HEALING_CONFIG: SelfHealingConfig = {
 export const RECOVERY_STRATEGIES: RecoveryStrategy[] = [
   {
     name: 'Reload React Native',
-    trigger: (error: Error) => error.message.includes('JS error') || error.message.includes('undefined'),
+    trigger: (error: Error) => error.message.toLowerCase().includes('js error') || error.message.toLowerCase().includes('undefined'),
     action: async () => {
       // In Detox: await device.reloadReactNative();
       console.log('🔄 Reloading React Native...');
@@ -50,7 +50,7 @@ export const RECOVERY_STRATEGIES: RecoveryStrategy[] = [
   },
   {
     name: 'Clear App State',
-    trigger: (error: Error) => error.message.includes('state') || error.message.includes('redux'),
+    trigger: (error: Error) => error.message.toLowerCase().includes('state') || error.message.toLowerCase().includes('redux'),
     action: async () => {
       // Clear Redux/Zustand state
       console.log('🧹 Clearing app state...');
@@ -60,7 +60,7 @@ export const RECOVERY_STRATEGIES: RecoveryStrategy[] = [
   },
   {
     name: 'Reset Network',
-    trigger: (error: Error) => error.message.includes('network') || error.message.includes('fetch'),
+    trigger: (error: Error) => error.message.toLowerCase().includes('network') || error.message.toLowerCase().includes('fetch'),
     action: async () => {
       console.log('🌐 Resetting network connection...');
       return true;
@@ -69,7 +69,7 @@ export const RECOVERY_STRATEGIES: RecoveryStrategy[] = [
   },
   {
     name: 'Fallback to Cache',
-    trigger: (error: Error) => error.message.includes('cache') || error.message.includes('storage'),
+    trigger: (error: Error) => error.message.toLowerCase().includes('cache') || error.message.toLowerCase().includes('storage'),
     action: async () => {
       console.log('💾 Falling back to cached data...');
       return true;
@@ -78,7 +78,7 @@ export const RECOVERY_STRATEGIES: RecoveryStrategy[] = [
   },
   {
     name: 'Restart App',
-    trigger: (error: Error) => error.message.includes('crash') || error.message.includes('fatal'),
+    trigger: (error: Error) => error.message.toLowerCase().includes('crash') || error.message.toLowerCase().includes('fatal'),
     action: async () => {
       console.log('🔃 Restarting app...');
       // In Detox: await device.launchApp({ newInstance: true });
@@ -88,7 +88,7 @@ export const RECOVERY_STRATEGIES: RecoveryStrategy[] = [
   },
   {
     name: 'Send to Background',
-    trigger: (error: Error) => error.message.includes('UI') || error.message.includes('render'),
+    trigger: (error: Error) => error.message.toLowerCase().includes('UI') || error.message.toLowerCase().includes('render'),
     action: async () => {
       console.log('⏸️ Sending app to background...');
       // In Detox: await device.sendToHome();
@@ -98,7 +98,7 @@ export const RECOVERY_STRATEGIES: RecoveryStrategy[] = [
   },
   {
     name: 'Factory Reset',
-    trigger: (error: Error) => error.message.includes('memory') || error.message.includes('heap'),
+    trigger: (error: Error) => error.message.toLowerCase().includes('memory') || error.message.toLowerCase().includes('heap'),
     action: async () => {
       console.log('⚠️ Performing factory reset...');
       return true;

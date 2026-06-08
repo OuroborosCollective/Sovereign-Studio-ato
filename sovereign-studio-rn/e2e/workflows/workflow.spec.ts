@@ -38,13 +38,13 @@ describe('Workflow Tests', () => {
             });
           } else {
             // Branching connection
-            Object.values(toNodes).forEach(nodeIdOrArray => {
-              if (Array.isArray(nodeIdOrArray)) {
-                nodeIdOrArray.forEach(nodeId => {
+            Object.values(toNodes).forEach(nodeList => {
+              if (Array.isArray(nodeList)) {
+                nodeList.forEach(nodeId => {
                   expect(nodeIds).toContain(nodeId);
                 });
               } else {
-                expect(nodeIds).toContain(nodeIdOrArray);
+                expect(nodeIds).toContain(nodeList);
               }
             });
           }
