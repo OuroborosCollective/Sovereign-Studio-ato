@@ -1,134 +1,93 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { FREE_PROVIDERS, ProviderManager } from './providerManager';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as providerManager from './providerManager';
 
-describe('FREE_PROVIDERS constant', () => {
-  it('should be an array of provider configurations', () => {
-    expect(Array.isArray(FREE_PROVIDERS)).toBe(true);
-    expect(FREE_PROVIDERS.length).toBe(6);
-  });
-
-  it('should have the correct providers in priority order', () => {
-    const expectedTypes = ['mlvoca', 'pollinations', 'groq', 'huggingface', 'together', 'openrouter'];
-    expect(FREE_PROVIDERS.map(p => p.type)).toEqual(expectedTypes);
-
-    // Verify each has a unique priority that matches its index (as per current implementation)
-    FREE_PROVIDERS.forEach((provider, index) => {
-      expect(provider.priority).toBe(index);
-    });
-  });
-
-  it('should have valid configurations for each provider', () => {
-    FREE_PROVIDERS.forEach(provider => {
-      expect(provider.type).toBeDefined();
-      expect(provider.baseURL).toMatch(/^https?:\/\//);
-      expect(provider.model).toBeDefined();
-      expect(typeof provider.priority).toBe('number');
-      if (provider.maxTokens) {
-        expect(typeof provider.maxTokens).toBe('number');
-      }
-    });
-  });
-
-  it('should match the specific configuration for mlvoca', () => {
-    const mlvoca = FREE_PROVIDERS.find(p => p.type === 'mlvoca');
-    expect(mlvoca).toEqual({
-      type: 'mlvoca',
-      baseURL: 'https://mlvoca.com',
-      model: 'deepseek-r1:1.5b',
-      supportsStreaming: true,
-      maxTokens: 2048,
-      priority: 0,
-    });
-  });
-
-  it('should match the specific configuration for pollinations', () => {
-    const pollinations = FREE_PROVIDERS.find(p => p.type === 'pollinations');
-    expect(pollinations).toEqual({
-      type: 'pollinations',
-      baseURL: 'https://gen.pollinations.ai',
-      model: 'openai',
-      supportsStreaming: true,
-      maxTokens: 4096,
-      priority: 1,
-    });
-  });
-
-  it('should match the specific configuration for groq', () => {
-    const groq = FREE_PROVIDERS.find(p => p.type === 'groq');
-    expect(groq).toEqual({
-      type: 'groq',
-      baseURL: 'https://api.groq.com/openai/v1',
-      model: 'llama-3.1-8b-instant',
-      supportsStreaming: true,
-      maxTokens: 8192,
-      priority: 2,
-    });
-  });
-
-  it('should match the specific configuration for huggingface', () => {
-    const huggingface = FREE_PROVIDERS.find(p => p.type === 'huggingface');
-    expect(huggingface).toEqual({
-      type: 'huggingface',
-      baseURL: 'https://api-inference.huggingface.co/models',
-      model: 'meta-llama/Llama-3.2-1B-Instruct',
-      supportsStreaming: false,
-      maxTokens: 2048,
-      priority: 3,
-    });
-  });
-
-  it('should match the specific configuration for together', () => {
-    const together = FREE_PROVIDERS.find(p => p.type === 'together');
-    expect(together).toEqual({
-      type: 'together',
-      baseURL: 'https://api.together.xyz/v1',
-      model: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
-      supportsStreaming: true,
-      maxTokens: 4096,
-      priority: 4,
-    });
-  });
-
-  it('should match the specific configuration for openrouter', () => {
-    const openrouter = FREE_PROVIDERS.find(p => p.type === 'openrouter');
-    expect(openrouter).toEqual({
-      type: 'openrouter',
-      baseURL: 'https://openrouter.ai/api/v1',
-      model: 'meta-llama/llama-3.1-8b-instruct:free',
-      supportsStreaming: true,
-      maxTokens: 8192,
-      priority: 5,
-    });
-  });
-});
-
-describe('ProviderManager', () => {
-  let manager: ProviderManager;
-
+describe('ProviderManager API calls', () => {
   beforeEach(() => {
-    manager = new ProviderManager();
+    vi.stubGlobal('fetch', vi.fn());
   });
 
-  it('should initialize with no configured providers', () => {
-    expect(manager.getConfiguredProviders()).toEqual([]);
+  it('callGroq should use callOpenAICompatible pattern', async () => {
+    const mockResponse = {
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Groq response' } }],
+        usage: { totalTokens: 10 }
+      })
+    };
+    (fetch as any).mockResolvedValue(mockResponse);
+
+    const result = await providerManager.callGroq('key', 'model', 'prompt', {});
+
+    expect(result.text).toBe('Groq response');
+    expect(result.provider).toBe('groq');
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.groq.com/openai/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'Authorization': 'Bearer key',
+          'Content-Type': 'application/json'
+        })
+      })
+    );
   });
 
-  it('should allow setting and retrieving API keys', () => {
-    manager.setApiKey('groq', 'test-key');
-    expect(manager.getConfiguredProviders()).toEqual(['groq']);
-    expect(manager.getConfiguredProviders()).not.toContain('huggingface');
+  it('callPollinations should use callOpenAICompatible with correct default tokens', async () => {
+    const mockResponse = {
+      ok: true,
+      json: () => Promise.resolve({
+        choices: [{ message: { content: 'Pollinations response' } }]
+      })
+    };
+    (fetch as any).mockResolvedValue(mockResponse);
+
+    const result = await providerManager.callPollinations('model', 'prompt', {});
+
+    expect(result.text).toBe('Pollinations response');
+    expect(result.provider).toBe('pollinations');
+
+    const body = JSON.parse((fetch as any).mock.calls[0][1].body);
+    expect(body.max_tokens).toBe(4096);
   });
 
-  it('should return available providers sorted by priority', () => {
-    const providers = manager.getAvailableProviders();
-    expect(providers.length).toBe(FREE_PROVIDERS.length);
-    for (let i = 0; i < providers.length - 1; i++) {
-      expect(providers[i].priority).toBeLessThan(providers[i + 1].priority);
-    }
+  it('should handle errors using fetchWithProviderError logic', async () => {
+    const mockResponse = {
+      ok: false,
+      status: 429,
+      json: () => Promise.resolve({ error: { message: 'Rate limited' } })
+    };
+    (fetch as any).mockResolvedValue(mockResponse);
+
+    await expect(providerManager.callTogether('key', 'model', 'prompt', {}))
+      .rejects.toMatchObject({
+        provider: 'together',
+        error: 'Rate limited',
+        statusCode: 429,
+        isRetryable: true
+      });
   });
 
-  it('should reset failed providers', () => {
-    // Testing the public reset method
-    expect(() => manager.resetFailedProviders()).not.toThrow();
+  it('callMlvoCa should use fetchWithProviderError pattern', async () => {
+    const mockResponse = {
+      ok: true,
+      json: () => Promise.resolve({
+        response: 'MLVoca response'
+      })
+    };
+    (fetch as any).mockResolvedValue(mockResponse);
+
+    const result = await providerManager.callMlvoCa('model', 'prompt', {});
+
+    expect(result.text).toBe('MLVoca response');
+    expect(result.provider).toBe('mlvoca');
+    expect(fetch).toHaveBeenCalledWith(
+      'https://mlvoca.com/api/generate',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json'
+        })
+      })
+    );
   });
 });

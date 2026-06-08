@@ -168,6 +168,96 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
   return defaults[targetProvider] || 'openai';
 }
 
+/**
+ * Generic helper for provider API calls with error handling
+ */
+async function fetchWithProviderError(
+  url: string,
+  options: RequestInit,
+  provider: ProviderType
+): Promise<Response> {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      let errorMsg: string;
+
+      if (errorData?.error?.message) {
+        errorMsg = errorData.error.message;
+      } else if (errorData?.error) {
+        errorMsg = typeof errorData.error === 'string' ? errorData.error : JSON.stringify(errorData.error);
+      } else if (Array.isArray(errorData) && errorData[0]?.error) {
+        errorMsg = errorData[0].error;
+      } else {
+        errorMsg = await response.text().catch(() => `HTTP ${response.status}`) || `HTTP ${response.status}`;
+      }
+
+      throw {
+        provider,
+        error: errorMsg,
+        statusCode: response.status,
+        isRetryable: response.status === 429 || response.status >= 500,
+      };
+    }
+    return response;
+  } catch (error: any) {
+    if (error.provider) throw error; // Already formatted
+
+    // Handle network errors
+    const isNetworkError = error.name === 'TypeError' && (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network'));
+    throw {
+      provider,
+      error: error.message || 'Network error',
+      isRetryable: isNetworkError || error.status === 429 || error.status >= 500,
+    };
+  }
+}
+
+/**
+ * Helper for OpenAI-compatible chat completion APIs
+ */
+async function callOpenAICompatible(
+  provider: ProviderType,
+  url: string,
+  apiKey: string | undefined,
+  model: string,
+  prompt: string,
+  options: GeminiRequestOptions,
+  extraHeaders: Record<string, string> = {},
+  defaultMaxTokens: number = 2048
+): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, provider);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+
+  if (apiKey?.trim()) {
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  }
+
+  const response = await fetchWithProviderError(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: mappedModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxOutputTokens ?? defaultMaxTokens,
+      stream: false,
+    }),
+  }, provider);
+
+  const data = await response.json();
+  return {
+    text: data.choices?.[0]?.message?.content || '',
+    provider,
+    model: mappedModel,
+    usage: data.usage,
+  };
+}
+
 // ============================================================
 // MLVOCA - Free No-Key API (Default Provider)
 // ============================================================
@@ -183,7 +273,7 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
     }), 10000);
   });
   
-  const fetchPromise = fetch('https://mlvoca.com/api/generate', {
+  const fetchPromise = fetchWithProviderError('https://mlvoca.com/api/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -197,7 +287,7 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
       },
       keep_alive: '5m',
     }),
-  });
+  }, 'mlvoca');
   
   let response: Response;
   try {
@@ -205,16 +295,6 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
   } catch (error) {
     // If timeout wins, the error is already thrown
     throw error;
-  }
-  
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => `HTTP ${response.status}`);
-    throw {
-      provider: 'mlvoca' as ProviderType,
-      error: errorText || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status >= 500 || response.status === 429,
-    };
   }
   
   const data = await response.json();
@@ -229,42 +309,19 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
 // Groq - Free Tier
 // ============================================================
 export async function callGroq(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
-  const mappedModel = mapModelForProvider(model, 'groq');
-  
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: mappedModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxOutputTokens ?? 2048,
-      stream: false,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'groq' as ProviderType,
-      error: errorData.error?.message || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
-  
-  const data = await response.json();
-  return {
-    text: data.choices?.[0]?.message?.content || '',
-    provider: 'groq',
-    model: mappedModel,
-    usage: data.usage,
-  };
+  return callOpenAICompatible(
+    'groq',
+    'https://api.groq.com/openai/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options
+  );
 }
 
+// ============================================================
+// HuggingFace - Inference API
+// ============================================================
 export async function callHuggingFace(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
   const mappedModel = mapModelForProvider(model, 'huggingface');
   const url = `https://api-inference.huggingface.co/models/${mappedModel}`;
@@ -272,11 +329,11 @@ export async function callHuggingFace(apiKey: string, model: string, prompt: str
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
+  if (apiKey?.trim()) {
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
   }
   
-  const response = await fetch(url, {
+  const response = await fetchWithProviderError(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -286,20 +343,9 @@ export async function callHuggingFace(apiKey: string, model: string, prompt: str
         max_new_tokens: options.maxOutputTokens ?? 2048,
       },
     }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'huggingface' as ProviderType,
-      error: Array.isArray(errorData) ? errorData[0]?.error || `HTTP ${response.status}` : errorData.error || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
+  }, 'huggingface');
   
   const data = await response.json();
-  // HuggingFace returns array of generated texts
   const text = Array.isArray(data) ? data[0]?.generated_text || '' : data.generated_text || '';
   
   return {
@@ -309,141 +355,54 @@ export async function callHuggingFace(apiKey: string, model: string, prompt: str
   };
 }
 
+// ============================================================
+// Together AI - Free Tier
+// ============================================================
 export async function callTogether(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
-  const mappedModel = mapModelForProvider(model, 'together');
-  
-  const response = await fetch('https://api.together.xyz/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: mappedModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxOutputTokens ?? 2048,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'together' as ProviderType,
-      error: errorData.error?.message || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
-  
-  const data = await response.json();
-  return {
-    text: data.choices?.[0]?.message?.content || '',
-    provider: 'together',
-    model: mappedModel,
-    usage: data.usage,
-  };
+  return callOpenAICompatible(
+    'together',
+    'https://api.together.xyz/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options
+  );
 }
 
+// ============================================================
+// OpenRouter - Free Models
+// ============================================================
 export async function callOpenRouter(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
-  const mappedModel = mapModelForProvider(model, 'openrouter');
-  
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  return callOpenAICompatible(
+    'openrouter',
+    'https://openrouter.ai/api/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options,
+    {
       'HTTP-Referer': 'https://sovereign-studio.app',
       'X-Title': 'Sovereign Studio',
-    },
-    body: JSON.stringify({
-      model: mappedModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxOutputTokens ?? 2048,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'openrouter' as ProviderType,
-      error: errorData.error?.message || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
-  
-  const data = await response.json();
-  return {
-    text: data.choices?.[0]?.message?.content || '',
-    provider: 'openrouter',
-    model: mappedModel,
-    usage: data.usage,
-  };
+    }
+  );
 }
 
 // ============================================================
 // Pollinations - Free API with Optional Key (Ultimate Fallback)
 // ============================================================
 export async function callPollinations(model: string, prompt: string, options: GeminiRequestOptions = {}, apiKey?: string): Promise<ProviderResponse> {
-  const mappedModel = mapModelForProvider(model, 'pollinations');
-  
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  
-  // Optional API key for BYOP support
-  if (apiKey?.trim()) {
-    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
-  }
-  
-  try {
-    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: mappedModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.maxOutputTokens ?? 4096,
-        stream: false,
-      }),
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => `HTTP ${response.status}`);
-      throw {
-        provider: 'pollinations' as ProviderType,
-        error: errorText || `HTTP ${response.status}`,
-        statusCode: response.status,
-        isRetryable: response.status === 429 || response.status >= 500,
-      };
-    }
-    
-    const data = await response.json();
-    return {
-      text: data.choices?.[0]?.message?.content || '',
-      provider: 'pollinations',
-      model: mappedModel,
-      usage: data.usage,
-    };
-  } catch (error: any) {
-    // Handle network errors
-    if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw {
-        provider: 'pollinations' as ProviderType,
-        error: 'Network error - Pollinations server unreachable',
-        isRetryable: true,
-      };
-    }
-    throw error;
-  }
+  return callOpenAICompatible(
+    'pollinations',
+    'https://gen.pollinations.ai/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options,
+    {},
+    4096
+  );
 }
 
-/**
- * ProviderManager - Main class for automatic provider fallback
- */
 export class ProviderManager {
   private userApiKeys: Partial<Record<ProviderType, string>> = {};
   private lastUsedProvider: ProviderType | null = null;
