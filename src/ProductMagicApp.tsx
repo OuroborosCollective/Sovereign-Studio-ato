@@ -32,7 +32,7 @@ const STORAGE_GEMINI_KEY = 'sovereign_gemini_api_key';
 const STORAGE_GITHUB_TOKEN = 'sovereign_github_pat';
 const STORAGE_REPO_URL = 'sovereign_repo_url';
 
-function loadFromStorage(key: string, fallback = ''): string {
+export function loadFromStorage(key: string, fallback = ''): string {
   try {
     return localStorage.getItem(key) ?? fallback;
   } catch {
@@ -40,7 +40,7 @@ function loadFromStorage(key: string, fallback = ''): string {
   }
 }
 
-function saveToStorage(key: string, value: string) {
+export function saveToStorage(key: string, value: string) {
   try {
     if (value.trim()) {
       localStorage.setItem(key, value.trim());
@@ -53,13 +53,13 @@ function saveToStorage(key: string, value: string) {
 }
 
 // --- GitHub helpers ---
-const parseGithubRepoUrl = (value: string): { owner: string; repo: string } | null => {
+export const parseGithubRepoUrl = (value: string): { owner: string; repo: string } | null => {
   const match = value.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
   if (!match) return null;
   return { owner: match[1], repo: match[2].replace(/\.git$/, '') };
 };
 
-async function fetchRepoTree(
+export async function fetchRepoTree(
   owner: string,
   repo: string,
   branch: string,
