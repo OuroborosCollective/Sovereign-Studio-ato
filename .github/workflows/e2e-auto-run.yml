@@ -2,109 +2,253 @@ name: Auto-Run Until Green
 
 on:
   push:
-    branches: [main, develop, 'feature/**']
+    branches:
+      - main
+      - develop
+      - "feature/**"
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+
   pull_request:
+
   workflow_dispatch:
+    inputs:
+      max_fix_rounds:
+        description: "Maximum auto-fix rounds"
+        required: false
+        default: "3"
+
   schedule:
-    - cron: '*/15 * * * *'
+    # Nicht alle 15 Minuten ballern. Das kann dich unnötig Actions-Minuten kosten.
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: write
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: auto-run-until-green-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22'
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  NODE_VERSION: "22"
+  APP_DIR: "sovereign-studio-rn"
+  CI: "true"
+  AUTO_FIX_AUTHOR_NAME: "Auto-Fix Bot"
+  AUTO_FIX_AUTHOR_EMAIL: "auto-fix@sovereign-studio.dev"
 
 jobs:
   verify-and-fix:
     name: Verify and Auto-Fix
     runs-on: ubuntu-latest
-    timeout-minutes: 600
-    outputs:
-      success: ${{ steps.check.outputs.success }}
+    timeout-minutes: 90
+
+    # Verhindert Endlos-Loops durch eigene Bot-Commits
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      !contains(github.event.head_commit.message, '[auto-fix]') &&
+      !contains(github.event.head_commit.message, '[skip auto-fix]')
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.APP_DIR }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: sovereign-studio-rn/package-lock.json
+          cache: "npm"
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
+
+      - name: Validate project layout
+        working-directory: .
+        run: |
+          set -euo pipefail
+
+          if [ ! -d "${APP_DIR}" ]; then
+            echo "::error::App directory '${APP_DIR}' does not exist."
+            exit 1
+          fi
+
+          if [ ! -f "${APP_DIR}/package.json" ]; then
+            echo "::error::Missing ${APP_DIR}/package.json"
+            exit 1
+          fi
+
+          if [ ! -f "${APP_DIR}/package-lock.json" ]; then
+            echo "::error::Missing ${APP_DIR}/package-lock.json. npm ci requires a lockfile."
+            exit 1
+          fi
 
       - name: Install dependencies
         run: |
-          cd sovereign-studio-rn
+          set -euo pipefail
           npm ci
 
-      - name: Run App Verification
-        id: verify
+      - name: Run initial verification
+        id: initial_verify
         continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd sovereign-studio-rn
+          set +e
+
           echo "===================="
           echo "SOVEREIGN STUDIO APP VERIFICATION"
           echo "===================="
-          set +e
+
           node scripts/verify-app.js
           EXIT_CODE=$?
-          set -e
-          echo "Verification script exited with code: $EXIT_CODE"
-          VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
-          if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
-            echo "VERIFICATION_PASSED=true" >> $GITHUB_ENV
+
+          echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
             echo "VERIFICATION_STATUS=PASS"
           else
-            echo "VERIFICATION_PASSED=false" >> $GITHUB_ENV
+            echo "passed=false" >> "$GITHUB_OUTPUT"
             echo "VERIFICATION_STATUS=FAIL"
           fi
+
           exit 0
 
-      - name: Auto-Fix
-        if: env.VERIFICATION_PASSED == 'false'
+      - name: Run deterministic auto-fix rounds
+        id: autofix
+        if: steps.initial_verify.outputs.passed != 'true' && github.event_name != 'pull_request'
+        env:
+          MAX_FIX_ROUNDS: ${{ github.event.inputs.max_fix_rounds || '3' }}
+        run: |
+          set -euo pipefail
+
+          echo "===================="
+          echo "AUTO-FIX MODE ACTIVATED"
+          echo "Max rounds: ${MAX_FIX_ROUNDS}"
+          echo "===================="
+
+          PASSED="false"
+
+          for ROUND in $(seq 1 "${MAX_FIX_ROUNDS}"); do
+            echo "===================="
+            echo "AUTO-FIX ROUND ${ROUND}"
+            echo "===================="
+
+            if [ -f "e2e/self-learn/self-learning-orchestrator.ts" ]; then
+              npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
+            else
+              echo "No self-learning orchestrator found. Skipping."
+            fi
+
+            if [ -f "e2e/auto-fix/auto-fix-loop.ts" ]; then
+              npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || true
+            else
+              echo "No auto-fix loop found. Skipping."
+            fi
+
+            echo "Re-running verification after round ${ROUND}..."
+            set +e
+            node scripts/verify-app.js
+            VERIFY_EXIT=$?
+            set -e
+
+            if [ "$VERIFY_EXIT" -eq 0 ]; then
+              PASSED="true"
+              echo "Verification passed after round ${ROUND}."
+              break
+            fi
+
+            echo "Verification still failing after round ${ROUND}."
+          done
+
+          echo "passed=${PASSED}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push auto-fixes
+        if: |
+          github.event_name != 'pull_request' &&
+          steps.initial_verify.outputs.passed != 'true'
+        working-directory: .
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd sovereign-studio-rn
-          echo "===================="
-          echo "AUTO-FIX MODE ACTIVATED"
-          echo "===================="
-          npx tsx e2e/self-learn/self-learning-orchestrator.ts run || true
-          npx tsx e2e/auto-fix/auto-fix-loop.ts --max=10 --verbose || true
-          git config --local user.email "auto-fix@sovereign-studio.dev"
-          git config --local user.name "Auto-Fix Bot"
+          set -euo pipefail
+
+          git config --local user.email "${AUTO_FIX_AUTHOR_EMAIL}"
+          git config --local user.name "${AUTO_FIX_AUTHOR_NAME}"
+
           git add -A
-          if ! git diff --staged --quiet; then
-            git commit -m "Auto-fix: Self-healing [skip ci]"
-          fi
-          BRANCH_NAME=${GITHUB_REF##refs/heads/}
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/OuroborosCollective/Sovereign-Studio-ato.git HEAD:$BRANCH_NAME || true
-          echo "AUTO_FIX_DONE=true" >> $GITHUB_ENV
 
-      - name: Check Results
-        id: check
+          if git diff --staged --quiet; then
+            echo "No auto-fix changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore(auto-fix): self-healing repair pass [auto-fix]"
+
+          CURRENT_BRANCH="${GITHUB_REF_NAME}"
+
+          echo "Pushing auto-fix commit to ${CURRENT_BRANCH}..."
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${CURRENT_BRANCH}"
+
+      - name: Final verification
+        id: final_verify
+        continue-on-error: true
         run: |
-          VERIFY_FILE=$(ls e2e/app-verify/verify_*.ts 2>/dev/null | head -1)
-          if [ -n "$VERIFY_FILE" ] && echo "$VERIFY_FILE" | grep -q verify; then
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "VERIFICATION PASSED"
+          set +e
+
+          echo "===================="
+          echo "FINAL VERIFICATION"
+          echo "===================="
+
+          node scripts/verify-app.js
+          EXIT_CODE=$?
+
+          echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+            echo "FINAL_STATUS=PASS"
           else
-            echo "success=false" >> $GITHUB_OUTPUT
-            echo "VERIFICATION FAILED"
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            echo "FINAL_STATUS=FAIL"
           fi
 
-      - name: Summary Success
-        if: success()
-        run: |
-          echo "===================="
-          echo "APP VERIFICATION SUCCESSFUL"
-          echo "===================="
+          exit 0
 
-      - name: Summary Failed
-        if: failure()
+      - name: Upload verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-verification-artifacts
+          path: |
+            ${{ env.APP_DIR }}/e2e/app-verify/**
+            ${{ env.APP_DIR }}/test-results/**
+            ${{ env.APP_DIR }}/playwright-report/**
+            ${{ env.APP_DIR }}/coverage/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Fail if still red
+        if: steps.final_verify.outputs.passed != 'true'
+        working-directory: .
         run: |
           echo "===================="
           echo "APP VERIFICATION FAILED"
           echo "===================="
-          echo "Fixes pushed. Workflow will retry on next push."
+          echo "Auto-fix was attempted, but the app is still red."
+          echo "Check uploaded artifacts and logs."
+          exit 1
+
+      - name: Summary success
+        if: steps.final_verify.outputs.passed == 'true'
+        working-directory: .
+        run: |
+          echo "===================="
+          echo "APP VERIFICATION SUCCESSFUL"
+          echo "===================="
