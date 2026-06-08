@@ -19,7 +19,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   settings, buildProduct, blueprint, setBlueprint, addCard, log, selectedFile, setSelectedFile, setWorkView
 }) => {
   return (
-    <section className="w-64 shrink-0 border-r border-stone-200 bg-white flex flex-col">
+    <section className="w-full md:w-64 shrink-0 border-r border-stone-200 bg-white flex flex-col">
       <div className="p-4 bg-indigo-50 border-b border-indigo-100 shrink-0">
         <h2 className="text-[11px] font-black text-indigo-900 mb-1 uppercase tracking-tighter">GitHub und Auftrag</h2>
         <p className="text-[10px] text-indigo-700 mb-2">Profil: <span className="font-mono font-bold">{settings.repoMode}/{settings.packageManager}/{settings.linter}</span></p>
