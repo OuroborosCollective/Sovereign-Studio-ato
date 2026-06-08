@@ -7,6 +7,10 @@ const required = [
   'src/features/product/freeFirstPlan.ts',
   'src/features/product/visiblePatch.ts',
   'src/features/product/githubWriteGuard.ts',
+  'src/features/product/userFlow.ts',
+  'src/features/product/flowMessages.ts',
+  'src/features/product/autoModePolicy.ts',
+  'src/features/product/workflowAnalysis.ts',
   'docs/FREE_FIRST_WORKFLOW.md',
   'android/app/src/main/assets/public/index.html',
 ];
