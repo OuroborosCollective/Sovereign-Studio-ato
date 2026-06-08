@@ -6,6 +6,7 @@ const required = [
   'src/ProductMagicApp.tsx',
   'src/features/product/freeFirstPlan.ts',
   'src/features/product/visiblePatch.ts',
+  'src/features/product/githubWriteGuard.ts',
   'docs/FREE_FIRST_WORKFLOW.md',
   'android/app/src/main/assets/public/index.html',
 ];
