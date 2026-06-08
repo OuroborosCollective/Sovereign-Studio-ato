@@ -1,5 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
+import ProductMagicApp from './ProductMagicApp';
+import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
@@ -74,9 +77,11 @@ if (container) {
   import('./App').then(({ default: App }) => {
     const root = createRoot(container);
     root.render(
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
+      <StrictMode>
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+      </StrictMode>
     );
   }).catch((err) => {
     console.error('Failed to load App:', err);

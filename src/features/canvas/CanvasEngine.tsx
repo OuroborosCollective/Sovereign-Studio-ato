@@ -58,7 +58,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const primarySelectedId = selectedIds.length > 0 ? selectedIds[0] : null;
 
   // ⚡ Bolt: Persist mapping for O(1) lookups across effects
-  const fabricObjectsMapRef = useRef<Map<string, FabricObject>>(new Map());
+  const fabricObjectsMapRef = useRef<Map<string, fabric.Object>>(new Map());
 
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
