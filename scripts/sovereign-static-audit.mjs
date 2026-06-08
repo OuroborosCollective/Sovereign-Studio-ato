@@ -5,6 +5,7 @@ const required = [
   'vite.config.ts',
   'src/ProductMagicApp.tsx',
   'src/features/product/freeFirstPlan.ts',
+  'src/features/product/visiblePatch.ts',
   'docs/FREE_FIRST_WORKFLOW.md',
   'android/app/src/main/assets/public/index.html',
 ];
