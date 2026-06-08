@@ -1,3 +1,4 @@
+import './runtime-adapter';
 import React, { useState } from 'react';
 import { BoardState } from './features/canvas/types';
 import { defaultBoard } from './features/canvas/utils';
