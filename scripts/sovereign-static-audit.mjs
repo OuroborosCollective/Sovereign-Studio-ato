@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 const required = [
   'package.json',
   'vite.config.ts',
+  'sovereign.guard.json',
   'src/ProductMagicApp.tsx',
   'src/features/product/freeFirstPlan.ts',
   'src/features/product/visiblePatch.ts',
