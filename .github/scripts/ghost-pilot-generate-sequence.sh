@@ -106,7 +106,7 @@ else
       | sed 's/```bash//g' \
       | sed 's/```//g' \
       | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-      | grep -E '^adb shell input (tap|text|keyevent|swipe)\b' \
+      | grep -E '^adb shell input (tap [0-9]+ [0-9]+|swipe [0-9]+ [0-9]+ [0-9]+ [0-9]+( [0-9]+)?|keyevent [A-Za-z0-9_]+|text [A-Za-z0-9._%:/?=&+-]+)$' \
       || true)
 
     {
