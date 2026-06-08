@@ -14,6 +14,8 @@ This workflow intentionally treats AI-generated test scripts as untrusted input.
 - Added a quality gate so scripts with only `HOME` / `BACK` or too few commands are rejected.
 - Whitelisted generated commands to `adb shell input ...` only.
 - Changed crash scan to fail on app runtime fatal errors while avoiding false positives from unrelated `SystemUI` ANRs.
+- Runs the repository green gate before the emulator phase.
+- Builds and installs the debug APK before running the ADB sequence.
 
 ## Configuration
 
@@ -23,13 +25,29 @@ Optional repository variable:
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Optional workflow env overrides:
+Workflow env defaults:
 
 ```text
-GHOST_PILOT_APP_PACKAGE=com.arestudio
+GHOST_PILOT_APP_PACKAGE=com.arestudio.nocode.aab
 GHOST_PILOT_MIN_COMMANDS=8
 GHOST_PILOT_MIN_MEANINGFUL_COMMANDS=4
 ```
+
+The Android package follows `android/app/build.gradle` and must stay aligned with the app `applicationId`.
+
+## Sovereign guard alignment
+
+The workflow runs the repository green gate before the emulator test:
+
+```bash
+node scripts/check-guard-config.mjs
+pnpm run audit:sovereign
+pnpm run type-check
+pnpm run test:run
+pnpm run build
+```
+
+This keeps the workflow aligned with `AGENTS.md` and `sovereign.guard.json`.
 
 ## Artifact interpretation
 
