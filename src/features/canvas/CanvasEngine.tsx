@@ -57,8 +57,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const selectedIds = useSelector((state: RootState) => state.canvas.selectedIds);
   const primarySelectedId = selectedIds.length > 0 ? selectedIds[0] : null;
 
-  // ⚡ Bolt: Persist mapping for O(1) lookups across effects
-  const fabricObjectsMapRef = useRef<Map<string, fabric.Object>>(new Map());
+  const fabricObjectsMapRef = useRef<Map<string, FabricObject>>(new Map());
 
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
@@ -185,27 +184,24 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const currentFabricObjects = canvas.getObjects();
     let hasChanges = false;
 
-    // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups
-    const existingFabricObjectsMap = new Map<string, fabric.Object>();
+    const existingFabricObjectsMap = fabricObjectsMapRef.current;
+    existingFabricObjectsMap.clear();
 
-    // ⚡ Bolt: High-performance for loop instead of .forEach to reduce closure overhead
     for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as any;
+      const fObj = currentFabricObjects[i] as ExtendedObject;
       if (fObj.id) {
-        existingFabricObjectsMapRef.current.set(fObj.id, fObj);
+        existingFabricObjectsMap.set(fObj.id, fObj);
       }
     }
 
     const reduxObjectIdsSet = new Set<string>();
 
-    // ⚡ Bolt: High-performance for loop instead of .forEach
     for (let index = 0; index < objects.length; index++) {
       const objData = objects[index];
       reduxObjectIdsSet.add(objData.id);
-      const existingObj = existingFabricObjectsMapRef.current.get(objData.id);
+      const existingObj = existingFabricObjectsMap.get(objData.id);
 
       if (existingObj) {
-        // ⚡ Bolt: Use the current object array instead of deprecated canvas.item lookups.
         const needsUpdate =
           existingObj.left !== objData.x ||
           existingObj.top !== objData.y ||
@@ -243,18 +239,16 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         canvas.add(newObj);
         moveObjectToLayer(canvas, newObj, index);
 
-        // Add to map for immediate selection lookup if needed
-        existingFabricObjectsMapRef.current.set(objData.id, newObj);
+        existingFabricObjectsMap.set(objData.id, newObj);
         hasChanges = true;
       }
     }
 
-    // ⚡ Bolt: High-performance for loop instead of .forEach
     for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as any;
+      const fObj = currentFabricObjects[i] as ExtendedObject;
       if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
-        existingFabricObjectsMapRef.current.delete(fObj.id);
+        existingFabricObjectsMap.delete(fObj.id);
         hasChanges = true;
       }
     }
@@ -272,11 +266,10 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        // ⚡ Bolt: Replace O(N) array method with simple for loop for performance
         const objs = canvas.getObjects();
         let target = undefined;
         for (let i = 0; i < objs.length; i++) {
-          if ((objs[i] as any).id === primarySelectedId) {
+          if ((objs[i] as ExtendedObject).id === primarySelectedId) {
             target = objs[i];
             break;
           }
