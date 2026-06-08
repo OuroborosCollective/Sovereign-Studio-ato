@@ -73,7 +73,7 @@ export async function fetchRepoTree(
 
 function MobileTabs({ mobilePane, setMobilePane, isWorking }: { mobilePane: string; setMobilePane: (pane: 'auftrag' | 'live' | 'log') => void; isWorking: boolean }) {
   return (
-    <nav className="fixed bottom-2 left-2 right-2 z-50 grid grid-cols-3 gap-1 p-1.5 bg-black/90 rounded-2xl shadow-2xl md:hidden" style={{ display: 'none' }}>
+    <nav className="fixed bottom-2 left-2 right-2 z-50 grid grid-cols-3 gap-1 p-1.5 bg-black/90 rounded-2xl shadow-2xl md:hidden">
       {(['auftrag', 'live', 'log'] as const).map((pane) => (
         <button
           key={pane}
@@ -120,7 +120,8 @@ export default function ProductMagicApp() {
     progress,
     mobilePane, setMobilePane,
     currentStepLabel,
-    nextStepLabel
+    nextStepLabel,
+    approvalConfirmed
   } = useProductMagic();
 
   return (
@@ -150,11 +151,9 @@ export default function ProductMagicApp() {
         />
       )}
 
-      {/* Mobile Tabs */}
       <MobileTabs mobilePane={mobilePane} setMobilePane={setMobilePane} isWorking={isWorking} />
 
-      <main className="flex-1 flex overflow-hidden">
-        {/* Left: Sidebar - visible on 'auftrag' in mobile, always on md+ */}
+      <main className="flex-1 flex overflow-hidden pb-16 md:pb-0">
         <div className={`${mobilePane === 'auftrag' ? 'flex' : 'hidden'} md:flex`}>
           <Sidebar
             settings={settings}
@@ -173,7 +172,6 @@ export default function ProductMagicApp() {
           />
         </div>
 
-        {/* Center: MainContent - visible on 'live' in mobile, always on md+ */}
         <div className={`flex-1 min-w-0 flex flex-col ${mobilePane === 'live' ? 'flex' : 'hidden'} md:flex`}>
           <MainContent
             workView={workView}
@@ -196,10 +194,10 @@ export default function ProductMagicApp() {
             progress={progress}
             currentStepLabel={currentStepLabel}
             nextStepLabel={nextStepLabel}
+            approvalConfirmed={approvalConfirmed}
           />
         </div>
 
-        {/* Right: LogSidebar - visible on 'log' in mobile, always on md+ */}
         <div className={`${mobilePane === 'log' ? 'flex' : 'hidden'} md:flex`}>
           <LogSidebar
             logs={logs}
