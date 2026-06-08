@@ -6,46 +6,47 @@
     <meta name="theme-color" content="#1c1917" />
     <title>Sovereign Studio - Refactor Edition</title>
     <style>
-      body {
-        margin: 0;
-        padding: 0;
-        background-color: #1c1917;
-        min-height: 100vh;
-        font-family: system-ui, -apple-system, sans-serif;
-      }
-      #root {
-        min-height: 100vh;
-        background-color: #1c1917;
-      }
-      .loading {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        color: #f5f5f4;
-        font-size: 18px;
-      }
-      .loading::after {
-        content: '';
-        width: 20px;
-        height: 20px;
-        margin-left: 12px;
-        border: 2px solid #f5f5f4;
-        border-top-color: transparent;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
+      body { margin: 0; padding: 0; background-color: #1c1917; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; color: #f5f5f4; }
+      #root { min-height: 100vh; background-color: #1c1917; }
+      .loading { display: flex; align-items: center; justify-content: center; height: 100vh; color: #f5f5f4; font-size: 18px; }
+      .loading::after { content: ''; width: 20px; height: 20px; margin-left: 12px; border: 2px solid #f5f5f4; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .bootfix { min-height: 100vh; box-sizing: border-box; padding: 28px 18px; display: flex; flex-direction: column; gap: 16px; background: radial-gradient(circle at top, #3b2f18 0, #1c1917 45%, #0c0a09 100%); }
+      .card { border: 1px solid #574522; background: rgba(28,25,23,.88); border-radius: 18px; padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+      h1 { margin: 0 0 8px; font-size: 22px; color: #fbbf24; }
+      p { margin: 6px 0; line-height: 1.45; color: #d6d3d1; }
+      code { color: #86efac; word-break: break-word; }
+      button { border: 0; border-radius: 12px; padding: 14px 16px; font-weight: 800; color: #1c1917; background: #f59e0b; }
+      textarea { min-height: 160px; border-radius: 12px; padding: 12px; border: 1px solid #57534e; background: #0c0a09; color: #f5f5f4; font-family: ui-monospace, SFMono-Regular, monospace; }
+      .ok { color: #86efac; font-weight: 700; }
+      .warn { color: #fbbf24; }
     </style>
     <script type="module" crossorigin src="./assets/index-Bf__s9J3.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/vendor-sA6Nv1NP.js">
     <link rel="stylesheet" crossorigin href="./assets/index-DlApBqUY.css">
   </head>
   <body>
-    <div id="root">
-      <div class="loading">Loading Refactor</div>
-    </div>
+    <div id="root"><div class="loading">Loading Refactor</div></div>
+    <script>
+      (function () {
+        function renderBootFix() {
+          var root = document.getElementById('root');
+          if (!root || !/Loading Refactor/i.test(root.textContent || '')) return;
+          root.innerHTML = '<main class="bootfix">' +
+            '<section class="card"><h1>🛠 Sovereign Studio Boot-Fix aktiv</h1>' +
+            '<p class="ok">Die App hängt nicht mehr endlos. Der eingebettete Web-Bundle fehlt oder konnte nicht geladen werden.</p>' +
+            '<p>Fix: neuen Build ausführen und Android Assets synchronisieren:</p>' +
+            '<p><code>npm run build</code></p>' +
+            '<p class="warn">Bis dahin bleibt diese sichere Notoberfläche aktiv statt schwarzem Endlos-Loader.</p></section>' +
+            '<section class="card"><h1>🤖 No-Key Provider Standard</h1>' +
+            '<p>Workflow-Reihenfolge: mlvoca → Pollinations → optionale eigene Keys. Keine harte Key-Pflicht beim Start.</p>' +
+            '<textarea readonly>App bereit. Bitte Repository neu bauen, damit React/Capacitor Bundle wieder korrekt in android/app/src/main/assets/public/assets landet.</textarea>' +
+            '<button onclick="location.reload()">Neu laden</button></section>' +
+            '</main>';
+        }
+        window.addEventListener('error', function () { setTimeout(renderBootFix, 100); });
+        setTimeout(renderBootFix, 1800);
+      })();
+    </script>
   </body>
 </html>
