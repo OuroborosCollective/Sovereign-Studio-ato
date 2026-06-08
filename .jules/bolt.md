@@ -8,3 +8,7 @@
 ## 2026-05-21 - [Optimize GitHub Tree Array Processing]
 **Learning:** Chaining array methods like `.filter().map().slice()` on potentially huge payloads (like full GitHub API repository trees) forces multiple O(N) traversals and creates intermediate array allocations in memory.
 **Action:** Use a single `for` loop with an early break condition (e.g., stopping when reaching the desired slice size) instead of method chains to minimize memory footprint and execution time.
+
+## 2026-05-23 - [Canvas Component Stateful vs Stateless Map Bottleneck]
+**Learning:** When attempting to replace an O(N) internal Map generation inside a canvas reconciliation hook with a cached `useRef` Map (`fabricObjectsMapRef`), it led to a desynchronization state. The canvas instance acts as a source of truth, and if objects are manipulated natively via Fabric.js (outside the hook), the ref Map drops out of sync and leads to UI duplication logic errors.
+**Action:** For reconciliation loops tied to an external state engine (like Fabric.js canvas), avoid keeping persistent references unless strictly synchronized via event listeners. Instead, prefer high-performance stateless rebuilds (e.g., using `for` loops instead of `.forEach` closures) to get performance wins without risking state rot.

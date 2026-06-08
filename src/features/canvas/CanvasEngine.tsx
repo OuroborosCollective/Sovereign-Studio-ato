@@ -152,15 +152,20 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     
     // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups
     const existingFabricObjectsMap = new Map<string, fabric.Object>();
-    currentFabricObjects.forEach((fObj: any) => {
+
+    // ⚡ Bolt: High-performance for loop instead of .forEach to reduce closure overhead
+    for (let i = 0; i < currentFabricObjects.length; i++) {
+      const fObj = currentFabricObjects[i] as any;
       if (fObj.id) {
         existingFabricObjectsMap.set(fObj.id, fObj);
       }
-    });
+    }
 
     const reduxObjectIdsSet = new Set<string>();
 
-    objects.forEach((objData, index) => {
+    // ⚡ Bolt: High-performance for loop instead of .forEach
+    for (let index = 0; index < objects.length; index++) {
+      const objData = objects[index];
       reduxObjectIdsSet.add(objData.id);
       const existingObj = existingFabricObjectsMap.get(objData.id);
 
@@ -204,14 +209,16 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
         canvas.moveTo(newObj, index);
         hasChanges = true;
       }
-    });
+    }
 
-    currentFabricObjects.forEach((fObj: any) => {
+    // ⚡ Bolt: High-performance for loop instead of .forEach
+    for (let i = 0; i < currentFabricObjects.length; i++) {
+      const fObj = currentFabricObjects[i] as any;
       if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
         hasChanges = true;
       }
-    });
+    }
 
     if (hasChanges) {
       canvas.requestRenderAll();
@@ -226,7 +233,15 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        const target = canvas.getObjects().find((o: any) => o.id === primarySelectedId);
+        // ⚡ Bolt: Replace O(N) array method with simple for loop for performance
+        const objs = canvas.getObjects();
+        let target = undefined;
+        for (let i = 0; i < objs.length; i++) {
+          if ((objs[i] as any).id === primarySelectedId) {
+            target = objs[i];
+            break;
+          }
+        }
         if (target) {
           canvas.setActiveObject(target);
           canvas.requestRenderAll();
