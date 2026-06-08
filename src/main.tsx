@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import ProductMagicApp from './ProductMagicApp';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import './runtime-adapter';
 import './index.css';
 
 if (typeof window !== 'undefined') {
