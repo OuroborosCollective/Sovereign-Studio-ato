@@ -28,6 +28,7 @@ export interface RefactorContext {
 export interface RefactorFile {
   path: string;
   content?: string;
+  sha?: string;
   type: 'blob' | 'tree';
   size?: number;
   language?: string;
@@ -316,6 +317,49 @@ Generiere den verbesserten Code. Antworte NUR mit dem Code, keine Erklärung.`;
   /**
    * Explain code
    */
+
+  /**
+   * Apply code changes to GitHub repository
+   */
+  async applyFileChange(
+    owner: string,
+    repo: string,
+    path: string,
+    content: string,
+    sha: string | undefined,
+    branch: string,
+    token: string
+  ): Promise<any> {
+    if (!token) throw new Error('GitHub PAT is required to apply changes.');
+
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+    // Standard GitHub commit payload
+    const body = {
+      message: `AI Refactor: ${path}`,
+      content: btoa(unescape(encodeURIComponent(content))), // Handle UTF-8
+      sha,
+      branch,
+    };
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `GitHub API error: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
   async explainCode(code: string): Promise<string> {
     const prompt = `Erkläre folgenden Code auf Deutsch:
 
