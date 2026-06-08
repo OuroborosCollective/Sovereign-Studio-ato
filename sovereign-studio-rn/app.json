@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Sovereign Studio",
+    "slug": "sovereign-studio",
+    "version": "3.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "android": {
+      "package": "com.arestudio.nocode.aab",
+      "versionCode": 1
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.arestudio.nocode.aab"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "sovereign-studio"
+      }
+    }
+  }
+}

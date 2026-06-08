@@ -8,10 +8,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "tsc && vite build && cap sync android",
+    "build": "tsc && vite build && node scripts/release-html-runtime-fix.mjs && cap sync android",
     "build:android": "npm run build",
-    "build:apk": "npm run build && cd android && ./gradlew assembleRelease",
-    "build:aab": "npm run build && cd android && ./gradlew bundleRelease",
+    "build:apk": "npm run build && cd android && ./gradlew assembleRelease -Pandroid.injected.signing.store.file=$ANDROID_KEYSTORE_PATH -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD",
+    "build:aab": "npm run build && cd android && ./gradlew bundleRelease -Pandroid.injected.signing.store.file=$ANDROID_KEYSTORE_PATH -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD",
     "generate-keystore": "node gen-key.js",
     "preview": "vite preview",
     "clean": "rimraf dist",
@@ -45,8 +45,8 @@
     "diff": "^9.0.0",
     "dotenv": "^17.2.3",
     "express": "^4.22.2",
-    "fabric": "5.3.0",
-    "lucide-react": "^0.546.0",
+    "fabric": "^7.4.0",
+    "lucide-react": "^0.469.0",
     "motion": "^12.23.24",
     "octokit": "^4.1.4",
     "posthog-js": "^1.372.6",
@@ -70,7 +70,7 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "4.3.4",
-    "@vitest/ui": "^3.0.5",
+    "@vitest/ui": "^3.2.4",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.20.1",
     "jsdom": "^26.0.0",
@@ -78,8 +78,8 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "5.4.21",
-    "vitest": "^2.1.9"
+    "vite": "6.4.2",
+    "vitest": "^3.2.4"
   },
   "overrides": {
     "@codetrix-studio/capacitor-google-auth": {

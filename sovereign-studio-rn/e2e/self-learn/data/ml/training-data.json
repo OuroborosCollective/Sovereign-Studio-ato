@@ -1,0 +1,22 @@
+[
+  {
+    "inputs": {
+      "isHomeScreen": 0,
+      "isCanvas": 0,
+      "isChat": 0,
+      "isSettings": 0,
+      "isExplorer": 0,
+      "hasTimeout": 0,
+      "hasUndefined": 0,
+      "hasNull": 0,
+      "hasNetwork": 0,
+      "hasVisibility": 0,
+      "isSlowTest": 0,
+      "hasRetries": 0,
+      "hourOfDay": 19,
+      "dayOfWeek": 2
+    },
+    "output": 0,
+    "timestamp": 1780428137810
+  }
+]

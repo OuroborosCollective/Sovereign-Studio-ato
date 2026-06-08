@@ -1,0 +1,65 @@
+name: 🔥 Marketing Ignition Pack
+
+on:
+  repository_dispatch:
+    types:
+      - marketing_ignition_trigger
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. 3.0.0'
+        required: false
+        type: string
+      build_number:
+        description: 'Release build number'
+        required: false
+        type: string
+      platform:
+        description: 'Target platform'
+        required: false
+        default: android
+        type: string
+      vouchers:
+        description: 'Number of voucher placeholders'
+        required: false
+        default: '66'
+        type: string
+
+jobs:
+  marketing_pack:
+    name: Generate unified patchnotes and marketing pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE_VERSION: ${{ github.event.client_payload.version || github.event.inputs.version || '0.0.0' }}
+      RELEASE_BUILD: ${{ github.event.client_payload.build_number || github.event.inputs.build_number || github.run_number }}
+      RELEASE_PLATFORM: ${{ github.event.client_payload.platform || github.event.inputs.platform || 'android' }}
+      RELEASE_VOUCHERS: ${{ github.event.client_payload.vouchers || github.event.inputs.vouchers || '66' }}
+      MARKETING_OUT_DIR: marketing-pack
+    steps:
+      - name: 🧾 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+          fetch-tags: true
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 🧠 Generate Unisono Patchnotes & Marketing Pack
+        run: node scripts/generate-release-marketing-pack.mjs
+
+      - name: 📦 Bundle Marketing Pack
+        run: |
+          zip -r SovereignStudio-Marketing-Pack-v${RELEASE_VERSION}-b${RELEASE_BUILD}.zip marketing-pack/
+
+      - name: 📤 Upload Marketing Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-Marketing-Pack-v${{ env.RELEASE_VERSION }}-b${{ env.RELEASE_BUILD }}
+          path: SovereignStudio-Marketing-Pack-v${{ env.RELEASE_VERSION }}-b${{ env.RELEASE_BUILD }}.zip
+          retention-days: 30

@@ -6,6 +6,59 @@ import { Sidebar } from './features/product/components/Sidebar';
 import { MainContent } from './features/product/components/MainContent';
 import { LogSidebar } from './features/product/components/LogSidebar';
 
+export function saveToStorage(key: string, value: string) {
+  try {
+    if (value.trim()) {
+      localStorage.setItem(key, value.trim());
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+// --- GitHub helpers ---
+export const parseGithubRepoUrl = (value: string): { owner: string; repo: string } | null => {
+  const match = value.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2].replace(/\.git$/, '') };
+};
+
+export async function fetchRepoTree(
+  owner: string,
+  repo: string,
+  branch: string,
+  token: string
+): Promise<RepoFile[]> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
+  if (token.trim()) headers.Authorization = `Bearer ${token.trim()}`;
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+    { headers }
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`GitHub API ${response.status}: ${text || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const treeData: any[] = data.tree ?? [];
+  const files: RepoFile[] = [];
+
+  for (const f of treeData) {
+    if (f.type === 'blob' || f.type === 'tree') {
+      files.push({ path: f.path, type: f.type, size: f.size });
+      if (files.length >= 250) break;
+    }
+  }
+
+  return files;
+}
+
+// --- Main App ---
 export default function ProductMagicApp() {
   const {
     repoUrl, setRepoUrl,
@@ -32,6 +85,38 @@ export default function ProductMagicApp() {
     patchFromPipeline,
     mergeWhenGreen
   } = useProductMagic();
+
+  // ⚡ Bolt: Use useMemo with a single loop to compute display files and count
+  // 🎯 Why: Avoids chaining multiple array allocations (.filter, .slice, .map) and redundant .filter calls in render
+  // 📊 Impact: O(N) single pass vs O(N) multi-pass, less memory churn
+  const { displayFiles, blobFilesCount } = useMemo(() => {
+    if (!repoLoaded || repoFiles.length === 0) {
+      return { displayFiles: demoFiles, blobFilesCount: 0 };
+    }
+
+    const items: FileItem[] = [];
+    let count = 0;
+
+    for (let i = 0; i < repoFiles.length; i++) {
+      const f = repoFiles[i];
+      if (f.type === 'blob') {
+        count++;
+        if (items.length < 30) {
+          items.push({
+            path: f.path,
+            icon: f.path.endsWith('.ts') || f.path.endsWith('.tsx') ? '🟦'
+              : f.path.endsWith('.json') ? '📦'
+              : f.path.endsWith('.yml') || f.path.endsWith('.yaml') ? '⚙️'
+              : f.path.endsWith('.md') ? '📝'
+              : f.path.includes('android') ? '🤖'
+              : '📄',
+          });
+        }
+      }
+    }
+
+    return { displayFiles: items, blobFilesCount: count };
+  }, [repoLoaded, repoFiles]);
 
   return (
     <div className="flex flex-col h-screen bg-stone-100 text-stone-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
