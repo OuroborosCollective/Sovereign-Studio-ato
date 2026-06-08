@@ -1,4 +1,5 @@
 export type FileItem = { path: string; icon: string };
+export type RepoFile = { path: string; type: 'blob' | 'tree'; size?: number };
 export type Card = { id: string; title: string; body: string };
 export type WorkView = 'editor' | 'pipeline';
 export type PipelineState = 'idle' | 'publishing' | 'validating' | 'failed' | 'patching' | 'green';
