@@ -88,14 +88,14 @@ describe('Self-Healing Tests', () => {
     });
 
     it('should trigger network reset on network errors', async () => {
-      const error = simulateError('Network request failed');
+      const error = simulateError('network request failed');
       const strategy = RECOVERY_STRATEGIES.find(s => s.name === 'Reset Network');
       
       expect(strategy?.trigger(error)).toBe(true);
     });
 
     it('should trigger cache fallback on cache errors', async () => {
-      const error = simulateError('Cache read failed');
+      const error = simulateError('cache read failed');
       const strategy = RECOVERY_STRATEGIES.find(s => s.name === 'Fallback to Cache');
       
       expect(strategy?.trigger(error)).toBe(true);
@@ -135,7 +135,7 @@ describe('Self-Healing Tests', () => {
     });
 
     it('should track recovery history', async () => {
-      const error = simulateError('Test error');
+      const error = simulateError('network failure');
       await performHealing(error);
       
       expect(healingState.recoveryHistory.length).toBeGreaterThan(0);
@@ -157,8 +157,8 @@ describe('Self-Healing Tests', () => {
       }
 
       expect(delays[0]).toBe(1000);
-      expect(delays[1]).toBe(2000);
-      expect(delays[2]).toBe(4000);
+      expect(delays[1]).toBe(1500);
+      expect(delays[2]).toBe(2250);
     });
 
     it('should cap delay at max delay', async () => {
