@@ -38,8 +38,14 @@ describe('Workflow Tests', () => {
             });
           } else {
             // Branching connection
-            Object.values(toNodes).forEach(nodeId => {
-              expect(nodeIds).toContain(nodeId);
+            Object.values(toNodes).forEach(nodeIdOrArray => {
+              if (Array.isArray(nodeIdOrArray)) {
+                nodeIdOrArray.forEach(nodeId => {
+                  expect(nodeIds).toContain(nodeId);
+                });
+              } else {
+                expect(nodeIds).toContain(nodeIdOrArray);
+              }
             });
           }
         });
@@ -92,11 +98,16 @@ describe('Workflow Tests', () => {
       expect(retestNode).toBeDefined();
       
       // Check that failure leads back to analyze
-      const connections = workflow?.connections['retest'];
+      const connections = workflow?.connections['retest'] as any;
       expect(connections).toBeDefined();
       
       if (typeof connections === 'object' && !Array.isArray(connections)) {
-        expect(connections.failure).toBe('analyze');
+        const failureTarget = connections.failure;
+        if (Array.isArray(failureTarget)) {
+          expect(failureTarget).toContain('analyze');
+        } else {
+          expect(failureTarget).toBe('analyze');
+        }
       }
     });
 
@@ -143,11 +154,16 @@ describe('Workflow Tests', () => {
     });
 
     it('should retry on validation failure', () => {
-      const connections = workflow?.connections['validate'];
+      const connections = workflow?.connections['validate'] as any;
       expect(connections).toBeDefined();
       
       if (typeof connections === 'object' && !Array.isArray(connections)) {
-        expect(connections.fail).toBe('generate');
+        const failTarget = connections.fail;
+        if (Array.isArray(failTarget)) {
+          expect(failTarget).toContain('generate');
+        } else {
+          expect(failTarget).toBe('generate');
+        }
       }
     });
   });

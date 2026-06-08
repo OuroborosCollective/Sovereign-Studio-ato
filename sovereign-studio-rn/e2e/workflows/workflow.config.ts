@@ -92,7 +92,7 @@ export const WORKFLOW_DEFINITIONS: Workflow[] = [
     nodes: [
       {
         id: 'trigger',
-        type: 'action',
+        type: 'trigger',
         name: 'Test Failure Trigger',
         config: {
           events: ['test_failed'],
@@ -345,6 +345,14 @@ export const WORKFLOW_DEFINITIONS: Workflow[] = [
         name: 'Cache Fallback',
         config: {
           action: 'use-cached-response',
+        },
+      },
+      {
+        id: 'final-success',
+        type: 'output',
+        name: 'Success Response',
+        config: {
+          format: 'json',
         },
       },
       {
