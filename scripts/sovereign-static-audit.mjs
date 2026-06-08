@@ -4,6 +4,8 @@ const required = [
   'package.json',
   'vite.config.ts',
   'src/ProductMagicApp.tsx',
+  'src/features/product/freeFirstPlan.ts',
+  'docs/FREE_FIRST_WORKFLOW.md',
   'android/app/src/main/assets/public/index.html',
 ];
 
