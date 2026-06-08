@@ -18,6 +18,7 @@ import {
   Trash2,
   Zap,
   GitBranch,
+  KeyRound,
   History,
   Eye,
   Send,
@@ -72,7 +73,7 @@ interface RepoInputProps {
 }
 
 function RepoInput({ onLoad }: RepoInputProps) {
-  const { repoUrl, setRepoUrl } = useRefactor();
+  const { repoUrl, setRepoUrl, githubToken, setGithubToken } = useRefactor();
   const [branch, setBranch] = useState('main');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
@@ -89,9 +90,7 @@ function RepoInput({ onLoad }: RepoInputProps) {
 
     try {
       const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
-      // TODO: Add token support for private repos
-      // const token = localStorage.getItem('sovereign_github_pat');
-      // if (token) headers.Authorization = `Bearer ${token}`;
+      if (githubToken?.trim()) headers.Authorization = `Bearer ${githubToken.trim()}`;
 
       const response = await fetch(
         `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?recursive=1`,
@@ -106,7 +105,7 @@ function RepoInput({ onLoad }: RepoInputProps) {
       const treeData: any[] = data.tree ?? [];
       const files = treeData
         .filter(f => f.type === 'blob' || f.type === 'tree')
-        .map(f => ({ path: f.path, type: f.type, size: f.size }))
+        .map(f => ({ path: f.path, type: f.type, size: f.size, sha: f.sha }))
         .slice(0, 250);
 
       setStatus(`✓ ${files.length} files loaded`);
@@ -140,6 +139,18 @@ function RepoInput({ onLoad }: RepoInputProps) {
           placeholder="main"
           className="w-24 bg-stone-800 border border-stone-700 text-stone-300 placeholder-stone-500 
                      px-3 py-2 rounded-lg font-mono text-sm focus:outline-none focus:border-amber-500"
+        />
+      </div>
+      <div className="relative">
+        <KeyRound size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" />
+        <input
+          type="password"
+          value={githubToken}
+          onChange={e => setGithubToken(e.target.value)}
+          placeholder="GitHub Personal Access Token (PAT) - required to apply changes"
+          className="w-full bg-stone-800 border border-stone-700 text-stone-200 placeholder-stone-500
+                     px-4 py-2 pl-10 rounded-lg font-mono text-sm focus:outline-none
+                     focus:border-amber-500 focus:shadow-[0_0_10px_rgba(245,158,11,0.2)]"
         />
       </div>
       <button
@@ -347,6 +358,7 @@ export function RefactorPanel() {
   const [chatInput, setChatInput] = useState('');
   const [explanation, setExplanation] = useState<string | null>(null);
 
+  const { applyFileChange, repoUrl } = useRefactor();
   const analyze = useAnalyze();
   const generate = useGenerate();
 
@@ -377,11 +389,33 @@ export function RefactorPanel() {
     setCurrentPlan({ ...currentPlan });
   }, [currentPlan, generate, setCurrentPlan]);
 
-  const handleApplyCode = useCallback((code: string) => {
+  const handleApplyCode = useCallback(async (code: string) => {
     // Copy to clipboard
     navigator.clipboard.writeText(code);
-    // TODO: Implement actual file apply via GitHub API
-  }, []);
+
+    if (!selectedTask || !selectedTask.files || selectedTask.files.length === 0) return;
+
+    const parsed = parseGithubRepoUrl(repoUrl);
+    if (!parsed) return;
+
+    const filePath = selectedTask.files[0];
+    const fileObj = files.find(f => f.path === filePath);
+
+    try {
+      await applyFileChange(
+        parsed.owner,
+        parsed.repo,
+        filePath,
+        code,
+        fileObj?.sha,
+        'main' // TODO: make branch dynamic if needed
+      );
+      alert('✅ Code successfully applied to GitHub!');
+    } catch (err: any) {
+      console.error('Apply failed:', err);
+      alert('❌ Failed to apply code: ' + err.message);
+    }
+  }, [selectedTask, repoUrl, files, applyFileChange]);
 
   const handleExplain = useCallback(async () => {
     if (!selectedTask?.generatedCode) return;
