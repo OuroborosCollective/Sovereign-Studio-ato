@@ -10,6 +10,7 @@ import { ChatScreen } from './src/screens/ChatScreen';
 import { ExplorerScreen } from './src/screens/ExplorerScreen';
 import { SettingsScreenWrapper } from './src/screens/SettingsScreenWrapper';
 import { CanvasScreen } from './src/screens/CanvasScreen';
+import { CodeRefactorScreen } from './src/screens/CodeRefactorScreen';
 import { Colors, FontSize, Spacing, BorderRadius } from './src/utils/theme';
 
 // Type definitions for navigation
@@ -19,6 +20,7 @@ type RootStackParamList = {
   Explorer: undefined;
   Settings: undefined;
   Canvas: undefined;
+  CodeRefactor: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -88,6 +90,14 @@ export default function App() {
             component={CanvasScreen}
             options={{
               title: 'CANVAS EDITOR',
+              headerBackTitle: 'Back',
+            }}
+          />
+          <Stack.Screen
+            name="CodeRefactor"
+            component={CodeRefactorScreen}
+            options={{
+              title: 'CODE REFACTOR',
               headerBackTitle: 'Back',
             }}
           />

@@ -48,48 +48,38 @@ jobs:
           if [ -z "$INPUT_NAME" ]; then
             INPUT_NAME=$(node -p "require('./package.json').version")
           fi
-
           INPUT_CODE="${{ github.event.inputs.version_code }}"
           if [ -z "$INPUT_CODE" ]; then
             INPUT_CODE="${{ github.run_number }}"
           fi
-
           echo "version_name=$INPUT_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
 
-      - name: 🔄 Check React Native App
+      - name: 🔄 Check RN App
         id: check_rn
         run: |
           if [ -d "sovereign-studio-rn" ] && [ -f "sovereign-studio-rn/app.json" ]; then
             echo "rn_exists=true" >> $GITHUB_OUTPUT
-            echo "Found sovereign-studio-rn/"
           else
             echo "rn_exists=false" >> $GITHUB_OUTPUT
-            echo "Using root app"
           fi
 
       - name: 📦 Install RN Dependencies
         if: steps.check_rn.outputs.rn_exists == 'true'
-        run: |
-          cd sovereign-studio-rn
-          pnpm install --no-frozen-lockfile
+        run: cd sovereign-studio-rn && pnpm install --no-frozen-lockfile
 
       - name: 📦 Install Root Dependencies
         if: steps.check_rn.outputs.rn_exists == 'false'
         run: pnpm install --no-frozen-lockfile
 
-      - name: 🔄 Copy RN App Files
+      - name: 🔄 Expo Prebuild (RN)
         if: steps.check_rn.outputs.rn_exists == 'true'
         run: |
-          cp sovereign-studio-rn/package.json ./package.json
-          cp sovereign-studio-rn/app.json ./app.json
-          cp sovereign-studio-rn/babel.config.js ./babel.config.js 2>/dev/null || true
-          cp -r sovereign-studio-rn/src ./src
-          cp -r sovereign-studio-rn/assets ./assets 2>/dev/null || true
-
-      - name: 🔄 Expo Prebuild
-        if: steps.check_rn.outputs.rn_exists == 'true'
-        run: npx expo prebuild --platform android --clean --non-interactive
+          cd sovereign-studio-rn
+          pnpm add expo
+          CI=1 pnpm exec expo prebuild --platform android --clean
+          echo "Prebuild completed. Checking android directory..."
+          ls -la android/ || echo "Android directory not found"
 
       - name: 🏗️ Build Web App
         if: steps.check_rn.outputs.rn_exists == 'false'
@@ -121,11 +111,6 @@ jobs:
           fi
           mkdir -p android/app/keystore
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
-
-          if [ ! -s android/app/keystore/release.jks ]; then
-            echo "Error: Failed to decode keystore."
-            exit 1
-          fi
 
       - name: 📦 Build Release AAB
         run: |

@@ -15,7 +15,7 @@ import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { GeminiRequestOptions } from './geminiService';
 
 // Provider Types
-export type ProviderType = 'mlvoca' | 'groq' | 'huggingface' | 'together' | 'openrouter' | 'gemini';
+export type ProviderType = 'mlvoca' | 'groq' | 'huggingface' | 'together' | 'openrouter' | 'gemini' | 'pollinations';
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -56,12 +56,20 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     priority: 0, // Default - no API key needed!
   },
   {
+    type: 'pollinations',
+    baseURL: 'https://gen.pollinations.ai',
+    model: 'openai',
+    supportsStreaming: true,
+    maxTokens: 4096,
+    priority: 1, // Second fallback - no API key needed!
+  },
+  {
     type: 'groq',
     baseURL: 'https://api.groq.com/openai/v1',
     model: 'llama-3.1-8b-instant',
     supportsStreaming: true,
     maxTokens: 8192,
-    priority: 1,
+    priority: 2,
   },
   {
     type: 'huggingface',
@@ -69,7 +77,7 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     model: 'meta-llama/Llama-3.2-1B-Instruct',
     supportsStreaming: false,
     maxTokens: 2048,
-    priority: 2,
+    priority: 3,
   },
   {
     type: 'together',
@@ -77,7 +85,7 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     model: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
     supportsStreaming: true,
     maxTokens: 4096,
-    priority: 3,
+    priority: 4,
   },
   {
     type: 'openrouter',
@@ -85,7 +93,7 @@ export const FREE_PROVIDERS: ProviderConfig[] = [
     model: 'meta-llama/llama-3.1-8b-instruct:free',
     supportsStreaming: true,
     maxTokens: 8192,
-    priority: 4,
+    priority: 5,
   },
 ];
 
@@ -130,12 +138,14 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
       huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
       together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
       openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
+      pollinations: 'openai',
     },
     'gemini-1.5-pro': {
       groq: 'llama-3.1-70b-versatile',
       huggingface: 'meta-llama/Llama-3.2-3B-Instruct',
       together: 'meta-llama/Llama-3.2-70B-Instruct-Turbo',
       openrouter: 'meta-llama/llama-3.1-70b-instruct:free',
+      pollinations: 'openai-large',
     },
   };
   
@@ -148,13 +158,104 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
   const defaults: Partial<Record<ProviderType, string>> = {
     gemini: model,
     mlvoca: 'deepseek-r1:1.5b',
+    pollinations: 'openai',
     groq: 'llama-3.1-8b-instant',
     huggingface: 'meta-llama/Llama-3.2-1B-Instruct',
     together: 'meta-llama/Llama-3.2-1B-Instruct-Turbo',
     openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
   };
   
-  return defaults[targetProvider] || 'deepseek-r1:1.5b';
+  return defaults[targetProvider] || 'openai';
+}
+
+/**
+ * Generic helper for provider API calls with error handling
+ */
+async function fetchWithProviderError(
+  url: string,
+  options: RequestInit,
+  provider: ProviderType
+): Promise<Response> {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      let errorMsg: string;
+
+      if (errorData?.error?.message) {
+        errorMsg = errorData.error.message;
+      } else if (errorData?.error) {
+        errorMsg = typeof errorData.error === 'string' ? errorData.error : JSON.stringify(errorData.error);
+      } else if (Array.isArray(errorData) && errorData[0]?.error) {
+        errorMsg = errorData[0].error;
+      } else {
+        errorMsg = await response.text().catch(() => `HTTP ${response.status}`) || `HTTP ${response.status}`;
+      }
+
+      throw {
+        provider,
+        error: errorMsg,
+        statusCode: response.status,
+        isRetryable: response.status === 429 || response.status >= 500,
+      };
+    }
+    return response;
+  } catch (error: any) {
+    if (error.provider) throw error; // Already formatted
+
+    // Handle network errors
+    const isNetworkError = error.name === 'TypeError' && (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network'));
+    throw {
+      provider,
+      error: error.message || 'Network error',
+      isRetryable: isNetworkError || error.status === 429 || error.status >= 500,
+    };
+  }
+}
+
+/**
+ * Helper for OpenAI-compatible chat completion APIs
+ */
+async function callOpenAICompatible(
+  provider: ProviderType,
+  url: string,
+  apiKey: string | undefined,
+  model: string,
+  prompt: string,
+  options: GeminiRequestOptions,
+  extraHeaders: Record<string, string> = {},
+  defaultMaxTokens: number = 2048
+): Promise<ProviderResponse> {
+  const mappedModel = mapModelForProvider(model, provider);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+
+  if (apiKey?.trim()) {
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+  }
+
+  const response = await fetchWithProviderError(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: mappedModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxOutputTokens ?? defaultMaxTokens,
+      stream: false,
+    }),
+  }, provider);
+
+  const data = await response.json();
+  return {
+    text: data.choices?.[0]?.message?.content || '',
+    provider,
+    model: mappedModel,
+    usage: data.usage,
+  };
 }
 
 // ============================================================
@@ -163,7 +264,16 @@ function mapModelForProvider(model: string, targetProvider: ProviderType): strin
 export async function callMlvoCa(model: string, prompt: string, options: GeminiRequestOptions = {}): Promise<ProviderResponse> {
   const mappedModel = mapModelForProvider(model, 'mlvoca');
   
-  const response = await fetch('https://mlvoca.com/api/generate', {
+  // Timeout wrapper to prevent endless loading (10 second timeout)
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject({
+      provider: 'mlvoca' as ProviderType,
+      error: 'MLVOCA request timed out after 10 seconds',
+      isRetryable: true,
+    }), 10000);
+  });
+  
+  const fetchPromise = fetchWithProviderError('https://mlvoca.com/api/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -177,16 +287,14 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
       },
       keep_alive: '5m',
     }),
-  });
+  }, 'mlvoca');
   
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => `HTTP ${response.status}`);
-    throw {
-      provider: 'mlvoca' as ProviderType,
-      error: errorText || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status >= 500 || response.status === 429,
-    };
+  let response: Response;
+  try {
+    response = await Promise.race([fetchPromise, timeoutPromise]);
+  } catch (error) {
+    // If timeout wins, the error is already thrown
+    throw error;
   }
   
   const data = await response.json();
@@ -201,42 +309,19 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
 // Groq - Free Tier
 // ============================================================
 export async function callGroq(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
-  const mappedModel = mapModelForProvider(model, 'groq');
-  
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: mappedModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxOutputTokens ?? 2048,
-      stream: false,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'groq' as ProviderType,
-      error: errorData.error?.message || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
-  
-  const data = await response.json();
-  return {
-    text: data.choices?.[0]?.message?.content || '',
-    provider: 'groq',
-    model: mappedModel,
-    usage: data.usage,
-  };
+  return callOpenAICompatible(
+    'groq',
+    'https://api.groq.com/openai/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options
+  );
 }
 
+// ============================================================
+// HuggingFace - Inference API
+// ============================================================
 export async function callHuggingFace(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
   const mappedModel = mapModelForProvider(model, 'huggingface');
   const url = `https://api-inference.huggingface.co/models/${mappedModel}`;
@@ -244,11 +329,11 @@ export async function callHuggingFace(apiKey: string, model: string, prompt: str
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
+  if (apiKey?.trim()) {
+    headers['Authorization'] = `Bearer ${apiKey.trim()}`;
   }
   
-  const response = await fetch(url, {
+  const response = await fetchWithProviderError(url, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -258,20 +343,9 @@ export async function callHuggingFace(apiKey: string, model: string, prompt: str
         max_new_tokens: options.maxOutputTokens ?? 2048,
       },
     }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'huggingface' as ProviderType,
-      error: Array.isArray(errorData) ? errorData[0]?.error || `HTTP ${response.status}` : errorData.error || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
+  }, 'huggingface');
   
   const data = await response.json();
-  // HuggingFace returns array of generated texts
   const text = Array.isArray(data) ? data[0]?.generated_text || '' : data.generated_text || '';
   
   return {
@@ -281,83 +355,54 @@ export async function callHuggingFace(apiKey: string, model: string, prompt: str
   };
 }
 
+// ============================================================
+// Together AI - Free Tier
+// ============================================================
 export async function callTogether(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
-  const mappedModel = mapModelForProvider(model, 'together');
-  
-  const response = await fetch('https://api.together.xyz/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: mappedModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxOutputTokens ?? 2048,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'together' as ProviderType,
-      error: errorData.error?.message || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
-  
-  const data = await response.json();
-  return {
-    text: data.choices?.[0]?.message?.content || '',
-    provider: 'together',
-    model: mappedModel,
-    usage: data.usage,
-  };
+  return callOpenAICompatible(
+    'together',
+    'https://api.together.xyz/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options
+  );
 }
 
+// ============================================================
+// OpenRouter - Free Models
+// ============================================================
 export async function callOpenRouter(apiKey: string, model: string, prompt: string, options: GeminiRequestOptions): Promise<ProviderResponse> {
-  const mappedModel = mapModelForProvider(model, 'openrouter');
-  
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  return callOpenAICompatible(
+    'openrouter',
+    'https://openrouter.ai/api/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options,
+    {
       'HTTP-Referer': 'https://sovereign-studio.app',
       'X-Title': 'Sovereign Studio',
-    },
-    body: JSON.stringify({
-      model: mappedModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxOutputTokens ?? 2048,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      provider: 'openrouter' as ProviderType,
-      error: errorData.error?.message || `HTTP ${response.status}`,
-      statusCode: response.status,
-      isRetryable: response.status === 429 || response.status >= 500,
-    };
-  }
-  
-  const data = await response.json();
-  return {
-    text: data.choices?.[0]?.message?.content || '',
-    provider: 'openrouter',
-    model: mappedModel,
-    usage: data.usage,
-  };
+    }
+  );
 }
 
-/**
- * ProviderManager - Main class for automatic provider fallback
- */
+// ============================================================
+// Pollinations - Free API with Optional Key (Ultimate Fallback)
+// ============================================================
+export async function callPollinations(model: string, prompt: string, options: GeminiRequestOptions = {}, apiKey?: string): Promise<ProviderResponse> {
+  return callOpenAICompatible(
+    'pollinations',
+    'https://gen.pollinations.ai/v1/chat/completions',
+    apiKey,
+    model,
+    prompt,
+    options,
+    {},
+    4096
+  );
+}
+
 export class ProviderManager {
   private userApiKeys: Partial<Record<ProviderType, string>> = {};
   private lastUsedProvider: ProviderType | null = null;
@@ -403,10 +448,7 @@ export class ProviderManager {
     onFallback?: (from: ProviderType, to: ProviderType, error: string) => void
   ): Promise<ProviderResponse> {
     
-    // Sort providers: user key first, then free providers
-    const providers: Array<{ type: ProviderType; apiKey: string; config: ProviderConfig }> = [];
-
-    // Add primary provider with user's key
+    // Try primary provider (Gemini) with user's key
     if (primaryApiKey && primaryProvider === 'gemini') {
       try {
         const genAI = new GoogleGenerativeAI(primaryApiKey.trim());
@@ -442,12 +484,25 @@ export class ProviderManager {
         }
         
         // Otherwise, fall through to free providers
-        onFallback?.('gemini', 'groq', err.error);
+        onFallback?.('gemini', 'pollinations', err.error);
       }
     }
 
-    // Add free providers with user keys if available
-    for (const config of this.getAvailableProviders()) {
+    // Build the fallback chain: free providers without keys first, then providers with keys
+    const availableProviders = this.getAvailableProviders();
+    const providers: Array<{ type: ProviderType; apiKey: string; config: ProviderConfig }> = [];
+    
+    // 1. Add free no-key providers first (mlvoca, pollinations)
+    for (const config of availableProviders) {
+      const key = this.userApiKeys[config.type];
+      // Include free providers even without a key
+      if (!key?.trim() && (config.type === 'mlvoca' || config.type === 'pollinations')) {
+        providers.push({ type: config.type, apiKey: '', config });
+      }
+    }
+    
+    // 2. Add providers with user-configured API keys
+    for (const config of availableProviders) {
       const key = this.userApiKeys[config.type];
       if (key?.trim()) {
         providers.push({ type: config.type, apiKey: key, config });
@@ -462,6 +517,12 @@ export class ProviderManager {
         let response: ProviderResponse;
         
         switch (type) {
+          case 'mlvoca':
+            response = await callMlvoCa(config.model, prompt, options);
+            break;
+          case 'pollinations':
+            response = await callPollinations(config.model, prompt, options, apiKey);
+            break;
           case 'groq':
             response = await callGroq(apiKey, options.model || 'gemini-1.5-flash', prompt, options);
             break;

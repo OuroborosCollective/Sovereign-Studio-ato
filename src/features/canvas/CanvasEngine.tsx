@@ -58,7 +58,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
   const primarySelectedId = selectedIds.length > 0 ? selectedIds[0] : null;
 
   // ⚡ Bolt: Persist mapping for O(1) lookups across effects
-  const fabricObjectsMapRef = useRef<Map<string, FabricObject>>(new Map());
+  const fabricObjectsMapRef = useRef<Map<string, fabric.Object>>(new Map());
 
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
@@ -186,15 +186,19 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     let hasChanges = false;
 
     // ⚡ Bolt: Replaced O(N²) nested loops with O(N) Map lookups
-    currentFabricObjects.forEach((fObj: FabricObject) => {
-      const objectId = (fObj as ExtendedObject).id;
-      if (objectId) {
-        fabricObjectsMapRef.current.set(objectId, fObj);
+    const existingFabricObjectsMap = new Map<string, fabric.Object>();
+
+    // ⚡ Bolt: High-performance for loop instead of .forEach to reduce closure overhead
+    for (let i = 0; i < currentFabricObjects.length; i++) {
+      const fObj = currentFabricObjects[i] as any;
+      if (fObj.id) {
+        existingFabricObjectsMap.set(fObj.id, fObj);
       }
-    });
+    }
 
     const reduxObjectIdsSet = new Set<string>();
 
+    // ⚡ Bolt: High-performance for loop instead of .forEach
     for (let index = 0; index < objects.length; index++) {
       const objData = objects[index];
       reduxObjectIdsSet.add(objData.id);
@@ -245,14 +249,15 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       }
     }
 
-    currentFabricObjects.forEach((fObj: FabricObject) => {
-      const objectId = (fObj as ExtendedObject).id;
-      if (objectId && !reduxObjectIdsSet.has(objectId)) {
+    // ⚡ Bolt: High-performance for loop instead of .forEach
+    for (let i = 0; i < currentFabricObjects.length; i++) {
+      const fObj = currentFabricObjects[i] as any;
+      if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
         canvas.remove(fObj);
         fabricObjectsMapRef.current.delete(objectId);
         hasChanges = true;
       }
-    });
+    }
 
     if (hasChanges) {
       canvas.requestRenderAll();
@@ -267,8 +272,15 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        // ⚡ Bolt: Use O(1) lookup from ref map instead of O(N) find
-        const target = fabricObjectsMapRef.current.get(primarySelectedId);
+        // ⚡ Bolt: Replace O(N) array method with simple for loop for performance
+        const objs = canvas.getObjects();
+        let target = undefined;
+        for (let i = 0; i < objs.length; i++) {
+          if ((objs[i] as any).id === primarySelectedId) {
+            target = objs[i];
+            break;
+          }
+        }
         if (target) {
           canvas.setActiveObject(target);
           canvas.requestRenderAll();

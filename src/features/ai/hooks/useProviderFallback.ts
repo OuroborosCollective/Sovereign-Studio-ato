@@ -19,7 +19,7 @@ export interface ProviderFallbackOptions {
 }
 
 export interface ProviderFallbackResult {
-  generateContent: (prompt: string, apiKey: string) => Promise<string>;
+  generateContent: (prompt: string, apiKey: string) => Promise<ProviderResponse>;
   isLoading: boolean;
   error: string | null;
   currentProvider: ProviderType;
@@ -66,7 +66,7 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
     }
   }, []);
 
-  const generateContent = useCallback(async (prompt: string, geminiApiKey?: string): Promise<string> => {
+  const generateContent = useCallback(async (prompt: string, geminiApiKey?: string): Promise<ProviderResponse> => {
     setIsLoading(true);
     setError(null);
 
@@ -74,13 +74,17 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
       // Try Gemini first if key is available
       if (geminiApiKey?.trim()) {
         try {
-          const result = await geminiService.generateText(geminiApiKey, prompt, {
+          const text = await geminiService.generateText(geminiApiKey, prompt, {
             model: options.model || 'gemini-1.5-flash',
             temperature: options.temperature,
             maxOutputTokens: options.maxOutputTokens,
           });
           setCurrentProvider('gemini');
-          return result;
+          return {
+            text,
+            provider: 'gemini',
+            model: options.model || 'gemini-1.5-flash'
+          };
         } catch (err: any) {
           const errorMsg = err?.message || String(err);
           const isRetryable = 
@@ -116,7 +120,7 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
 
       setCurrentProvider(response.provider);
       options.onProviderChanged?.(response.provider);
-      return response.text;
+      return response;
 
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -157,6 +161,14 @@ export const PROVIDER_INFO: ProviderStatus[] = [
     hasKey: false,
     isFree: false,
     description: 'Primary provider. Requires Google AI API key.',
+  },
+  {
+    type: 'pollinations',
+    name: 'Pollinations AI',
+    model: 'openai',
+    hasKey: false,
+    isFree: true,
+    description: 'Free OpenAI-compatible API. No key needed! Fast, reliable fallback.',
   },
   {
     type: 'groq',
