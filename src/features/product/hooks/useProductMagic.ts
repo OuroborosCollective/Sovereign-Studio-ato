@@ -1,12 +1,12 @@
 import { useMemo, useState, useCallback } from 'react';
 import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane } from '../types';
 import { makeId, demoFiles, starterCards, defaultSettings } from '../constants';
+import { syncApproval } from '../services/approvalSyncClient';
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 export function useProductMagic() {
   const [repoUrl, setRepoUrl] = useState('https://github.com/OuroborosCollective/Sovereign-Studio-ato');
-  const [accessKey, setAccessKey] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
   const [blueprint, setBlueprint] = useState('Beschreibe deine Idee oder deinen Auftrag. Ich plane, generiere, pruefe und zeige alle Aenderungen sichtbar.');
   const [cards, setCards] = useState<Card[]>(starterCards());
@@ -204,28 +204,66 @@ export function useProductMagic() {
     }, 1400);
   }, [guardBusy, built, pipelineState, runAutonomousJob, fixLoops]);
 
-  const mergeWhenGreen = useCallback(() => {
+  const mergeWhenGreen = useCallback(async () => {
     if (guardBusy()) return;
+
     if (approvalConfirmed) {
       log('Freigabe war bereits bestaetigt.');
       setAgentMessage('Freigabe ist bereits bestaetigt.');
       return;
     }
+
     if (pipelineState !== 'green') {
       log('Freigabe blockiert: Erst muss die Pruefung gruen sein.');
-      setAgentMessage('Ich darf erst weitermachen, wenn die Pruefung gruen ist.');
+      setAgentMessage('Ich darf erst schreiben, wenn die Pruefung gruen ist.');
       return;
     }
+
+    setIsWorking(true);
     setApprovalConfirmed(false);
-    setCurrentStepLabel('Ziel-Link fehlt');
-    setNextStepLabel('Sync verbinden');
-    setAgentMessage('Noch nicht abgeschlossen: Es fehlt ein externer Ziel-Link im Log.');
-    log('Freigabe gestoppt: Kein externer Ziel-Link vorhanden.');
-  }, [guardBusy, approvalConfirmed, pipelineState, log]);
+    setMobilePane('live');
+    setCurrentStepLabel('Schreibe nach GitHub');
+    setNextStepLabel('Branch und Pull Request');
+    setAgentMessage('Freigabe erhalten. Ich schreibe jetzt Branch, Dateien und Pull Request.');
+
+    try {
+      const result = await syncApproval({
+        repoUrl,
+        workflowCode: currentCode,
+        manifestJson: generatedPackage,
+        blueprint,
+      });
+
+      setApprovalConfirmed(true);
+      setCurrentStepLabel('Freigabe bestaetigt');
+      setNextStepLabel('Fertig');
+      setAgentMessage(`GitHub Sync erledigt: ${result.pullRequestUrl}`);
+      log(`GitHub PR erstellt: ${result.pullRequestUrl}`);
+      log(`GitHub Branch erstellt: ${result.branchName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      setApprovalConfirmed(false);
+      setCurrentStepLabel('Freigabe fehlgeschlagen');
+      setNextStepLabel('Sync pruefen');
+      setAgentMessage(`Noch nicht abgeschlossen: ${message}`);
+      log(`Approval Sync Fehler: ${message}`);
+    } finally {
+      setIsWorking(false);
+    }
+  }, [
+    guardBusy,
+    approvalConfirmed,
+    pipelineState,
+    repoUrl,
+    currentCode,
+    generatedPackage,
+    blueprint,
+    log,
+  ]);
 
   return {
     repoUrl, setRepoUrl,
-    accessKey, setAccessKey,
     geminiKey, setGeminiKey,
     blueprint, setBlueprint,
     cards, setCards,

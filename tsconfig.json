@@ -29,6 +29,7 @@
     ]
   },
   "exclude": [
-    "sovereign-studio-rn"
+    "sovereign-studio-rn",
+    "supabase"
   ]
 }

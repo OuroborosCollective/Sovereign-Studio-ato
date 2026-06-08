@@ -93,7 +93,6 @@ function MobileTabs({ mobilePane, setMobilePane, isWorking }: { mobilePane: stri
 export default function ProductMagicApp() {
   const {
     repoUrl, setRepoUrl,
-    accessKey, setAccessKey,
     geminiKey, setGeminiKey,
     blueprint, setBlueprint,
     cards,
@@ -144,7 +143,6 @@ export default function ProductMagicApp() {
       {showSettings && (
         <SettingsModal
           repoUrl={repoUrl} setRepoUrl={setRepoUrl}
-          accessKey={accessKey} setAccessKey={setAccessKey}
           geminiKey={geminiKey} setGeminiKey={setGeminiKey}
           settings={settings} setSettings={setSettings}
           setShowSettings={setShowSettings}

@@ -5,8 +5,6 @@ import { ProjectSettings } from '../types';
 interface SettingsModalProps {
   repoUrl: string;
   setRepoUrl: (val: string) => void;
-  accessKey: string;
-  setAccessKey: (val: string) => void;
   geminiKey: string;
   setGeminiKey: (val: string) => void;
   settings: ProjectSettings;
@@ -15,8 +13,10 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
-  repoUrl, setRepoUrl, accessKey, setAccessKey, geminiKey, setGeminiKey, settings, setSettings, setShowSettings
+  repoUrl, setRepoUrl, geminiKey, setGeminiKey, settings, setSettings, setShowSettings
 }) => {
+  const approvalSyncUrl = import.meta.env.VITE_APPROVAL_SYNC_URL || '';
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-stone-200">
@@ -31,8 +31,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Schreib-Key optional</label>
-              <input type="password" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="nur fuer private Repos oder Schreiben" />
+              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Approval Sync URL</label>
+              <input readOnly value={approvalSyncUrl} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg bg-stone-50 text-stone-500" placeholder="VITE_APPROVAL_SYNC_URL" />
+              {approvalSyncUrl ? (
+                <span className="text-[10px] text-emerald-600 mt-1 block">Verbunden</span>
+              ) : (
+                <span className="text-[10px] text-amber-600 mt-1 block">Nicht konfiguriert</span>
+              )}
             </div>
             <div>
               <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">AI Key optional</label>
