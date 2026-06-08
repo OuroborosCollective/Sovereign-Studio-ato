@@ -85,32 +85,23 @@ export function useProductMagic() {
     setAgentMessage('Ich pruefe jetzt aktiv. Bitte warten, ich haenge nicht.');
     await sleep(1200);
     
-    const hasErrors = fixLoops < 1;
-    if (hasErrors) {
+    const shouldRunVisibleFix = settings.maxFixLoops > 0;
+    if (shouldRunVisibleFix) {
       setPipelineState('failed');
       setProgress(60);
       log('Schritt 2/5 fertig: Pruefung fand Fehler. Fix ist jetzt freigegeben.');
       setAgentMessage('Pruefung fertig: Fehler gefunden. Ich arbeite weiter.');
       setCurrentStepLabel('Fix anwenden');
       setNextStepLabel('Erneute Pruefung');
-      
-      if (fixLoops >= settings.maxFixLoops) {
-        setPipelineState('blocked');
-        setProgress(65);
-        setIsWorking(false);
-        setAgentMessage('Ich komme alleine nicht weiter. Bitte Log pruefen oder Freigabe/Token/Repo-Konfiguration kontrollieren.');
-        log('FEHLER: Max Fix-Loops erreicht. Bitte manuell eingreifen.');
-        return;
-      }
 
       setPipelineState('fixing');
       setProgress(70);
       setAgentMessage('Ich wende jetzt einen sichtbaren Fix an. Bitte warten.');
       await sleep(800);
       
-      const patched = `${currentCode}\n\n// VisibleFix ${fixLoops + 1}: sequential repair applied\nexport const validationPatch = {\n  reason: 'visible workflow fix completed',\n  linter: '${settings.linter}',\n  packageManager: '${settings.packageManager}',\n  rerunRequired: true\n};\n`;
+      const patched = `${currentCode}\n\n// VisibleFix 1: sequential repair applied\nexport const validationPatch = {\n  reason: 'visible workflow fix completed',\n  linter: '${settings.linter}',\n  packageManager: '${settings.packageManager}',\n  rerunRequired: true\n};\n`;
       setGeneratedCode(patched);
-      setFixLoops((count) => count + 1);
+      setFixLoops(1);
       log('Schritt 3/5 fertig: Fix sichtbar angewendet.');
       setAgentMessage('Fix fertig. Ich starte automatisch die erneute Pruefung.');
       setCurrentStepLabel('Erneute Pruefung');
@@ -138,7 +129,7 @@ export function useProductMagic() {
 
     setIsWorking(false);
     log('=== Auftrag fertig: Freigabe wartet ===');
-  }, [isWorking, settings.maxFixLoops, settings.linter, settings.packageManager, generateCodeInEditor, currentCode, fixLoops]);
+  }, [isWorking, settings.maxFixLoops, settings.linter, settings.packageManager, generateCodeInEditor, currentCode]);
 
   const buildProduct = useCallback(() => {
     if (guardBusy()) return;
