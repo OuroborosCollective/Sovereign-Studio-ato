@@ -3,7 +3,13 @@ name: Ghost Pilot Android Test
 on:
   push:
     branches: [ main ]
+  pull_request:
   workflow_dispatch:
+
+env:
+  GHOST_PILOT_APP_PACKAGE: com.arestudio
+  GHOST_PILOT_MIN_COMMANDS: '8'
+  GHOST_PILOT_MIN_MEANINGFUL_COMMANDS: '4'
 
 jobs:
   ghost-pilot:
@@ -14,7 +20,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -27,15 +33,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Validate Gemini API Key
+        id: gemini_key
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
-            echo "❌ Missing GEMINI_API_KEY"
-            exit 1
+            echo "⚠️ GEMINI_API_KEY missing; deterministic fallback sequence will be used."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Prepare Context
         id: context
+        shell: bash
         run: |
+          set -euo pipefail
           STRINGS_PATH="android/app/src/main/res/values/strings.xml"
           APP_PATH="src/App.tsx"
 
@@ -53,30 +66,123 @@ jobs:
             echo "Empty Code" > app_extracted.txt
           fi
 
-      - name: Generate ADB Sequence via Gemini
+      - name: Generate or Fallback ADB Sequence
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_AVAILABLE: ${{ steps.gemini_key.outputs.available }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          write_fallback_sequence() {
+            local reason="$1"
+            echo "$reason" > ghost_pilot_status.txt
+            cat > test_sequence.sh <<'EOF_SCRIPT'
+          #!/usr/bin/env bash
+          set +e
+
+          APP_PACKAGE="${GHOST_PILOT_APP_PACKAGE:-com.arestudio}"
+          echo "[ghost-pilot] Launching ${APP_PACKAGE}"
+          adb wait-for-device
+          adb shell monkey -p "$APP_PACKAGE" -c android.intent.category.LAUNCHER 1
+          sleep 3
+
+          echo "[ghost-pilot] Deterministic fallback interaction path"
+          adb shell input tap 540 1700
+          sleep 1
+          adb shell input text "ghostpilot"
+          sleep 1
+          adb shell input keyevent 66
+          sleep 1
+          adb shell input tap 540 1480
+          sleep 1
+          adb shell input swipe 540 1600 540 500 600
+          sleep 1
+          adb shell input tap 160 160
+          sleep 1
+          adb shell input tap 540 520
+          sleep 1
+          adb shell input text "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+          sleep 1
+          adb shell input keyevent 66
+          sleep 1
+          adb shell input tap 540 650
+          sleep 1
+          adb shell input tap 200 1820
+          sleep 1
+          adb shell input tap 540 1820
+          sleep 1
+          adb shell input tap 880 1820
+          sleep 1
+          adb shell input swipe 900 1200 120 1200 500
+          sleep 1
+          adb shell input swipe 120 1200 900 1200 500
+          sleep 1
+          adb shell input keyevent 4
+          sleep 1
+          EOF_SCRIPT
+            chmod +x test_sequence.sh
+          }
+
+          validate_sequence() {
+            local file="$1"
+            local min_commands="${GHOST_PILOT_MIN_COMMANDS:-8}"
+            local min_meaningful="${GHOST_PILOT_MIN_MEANINGFUL_COMMANDS:-4}"
+
+            if [ ! -s "$file" ]; then
+              return 1
+            fi
+
+            local command_count
+            command_count=$(grep -Ec '^adb shell input (tap|text|keyevent|swipe)\b' "$file" || true)
+
+            local meaningful_count
+            meaningful_count=$(grep -Ec '^adb shell input (tap|text|swipe)\b' "$file" || true)
+
+            local only_escape_count
+            only_escape_count=$(grep -Ec '^adb shell input keyevent (3|4|HOME|BACK)\b' "$file" || true)
+
+            if [ "$command_count" -lt "$min_commands" ]; then
+              echo "[ghost-pilot] Invalid sequence: only ${command_count} adb input commands."
+              return 1
+            fi
+
+            if [ "$meaningful_count" -lt "$min_meaningful" ]; then
+              echo "[ghost-pilot] Invalid sequence: only ${meaningful_count} meaningful commands."
+              return 1
+            fi
+
+            if [ "$command_count" -eq "$only_escape_count" ]; then
+              echo "[ghost-pilot] Invalid sequence: only HOME/BACK keyevents."
+              return 1
+            fi
+
+            return 0
+          }
 
           STRINGS_ESCAPED=$(jq -Rs . < strings_extracted.txt)
           APP_ESCAPED=$(jq -Rs . < app_extracted.txt)
 
           QUERY="Analyze the following Android strings and React code.
 
-          Generate a robust sequence of adb shell input commands
-          (tap, text, keyevent, swipe).
+          Generate a robust sequence of adb shell input commands only.
 
           Goals:
-          - navigate through the app
+          - launch and navigate through the app
           - stress unusual edge cases
-          - trigger ErrorBoundary states
-          - trigger crashes if possible
-          - abuse forms and navigation
+          - trigger ErrorBoundary states if present
+          - expose runtime failures if present
+          - cover forms and navigation
+          - include taps, text input, enter, back, and swipes
+          - produce at least ${GHOST_PILOT_MIN_COMMANDS:-8} commands
 
-          Return ONLY adb shell commands.
-          One command per line.
-          No markdown formatting.
+          Hard rules:
+          - Return ONLY adb shell input commands.
+          - One command per line.
+          - No markdown formatting.
+          - Do not output destructive commands.
+          - Do not return only HOME/BACK commands.
 
           Strings:
           $STRINGS_ESCAPED
@@ -85,47 +191,81 @@ jobs:
           $APP_ESCAPED"
 
           PAYLOAD=$(jq -n --arg q "$QUERY" '{
-            contents: [
-              {
-                parts: [
-                  {
-                    text: $q
-                  }
-                ]
-              }
-            ]
+            contents: [{ parts: [{ text: $q }] }],
+            generationConfig: {
+              temperature: 0.2,
+              topP: 0.8,
+              maxOutputTokens: 2048
+            }
           }')
 
           echo "$PAYLOAD" > payload.json
+          : > response.json
+          : > model_used.txt
 
-          RESPONSE=$(curl -s -X POST \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d @payload.json)
+          if [ "${GEMINI_AVAILABLE:-false}" != "true" ]; then
+            write_fallback_sequence "DEGRADED_BUT_TESTED: missing GEMINI_API_KEY"
+          else
+            declare -a MODELS=()
+            if [ -n "${GEMINI_MODEL:-}" ]; then
+              MODELS+=("$GEMINI_MODEL")
+            fi
+            MODELS+=("gemini-2.5-flash" "gemini-2.5-flash-lite" "gemini-flash-latest")
 
-          echo "$RESPONSE" > response.json
+            for model in "${MODELS[@]}"; do
+              safe_model=$(echo "$model" | tr '/:' '__')
+              echo "[ghost-pilot] Trying Gemini model: ${model}"
 
-          COMMANDS=$(
-            echo "$RESPONSE" \
-              | jq -r '.candidates[0].content.parts[0].text // empty' \
-              | sed 's/```bash//g' \
-              | sed 's/```//g' \
-              | grep "adb shell" || true
-          )
+              http_code=$(curl -sS -w "%{http_code}" -o "response.${safe_model}.json" -X POST \
+                "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent" \
+                -H "Content-Type: application/json" \
+                -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+                -d @payload.json || true)
 
-          {
-            echo "#!/usr/bin/env bash"
-            echo "set +e"
-            echo "$COMMANDS"
-          } > test_sequence.sh
+              cp "response.${safe_model}.json" response.json
 
-          if ! grep -q "adb shell" test_sequence.sh; then
-            echo "adb shell input keyevent 3" >> test_sequence.sh
+              if [[ "$http_code" != 2* ]]; then
+                echo "[ghost-pilot] Model ${model} failed with HTTP ${http_code}."
+                continue
+              fi
+
+              COMMANDS=$(
+                jq -r '.candidates[0].content.parts[0].text // empty' response.json \
+                  | sed 's/```bash//g' \
+                  | sed 's/```//g' \
+                  | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+                  | grep -E '^adb shell input (tap|text|keyevent|swipe)\b' \
+                  || true
+              )
+
+              {
+                echo "#!/usr/bin/env bash"
+                echo "set +e"
+                echo "APP_PACKAGE=\"\${GHOST_PILOT_APP_PACKAGE:-com.arestudio}\""
+                echo 'adb wait-for-device'
+                echo 'adb shell monkey -p "$APP_PACKAGE" -c android.intent.category.LAUNCHER 1'
+                echo 'sleep 3'
+                echo "$COMMANDS"
+              } > test_sequence.sh
+              chmod +x test_sequence.sh
+
+              if validate_sequence test_sequence.sh; then
+                echo "$model" > model_used.txt
+                echo "AI_GENERATED_AND_VALIDATED: ${model}" > ghost_pilot_status.txt
+                break
+              fi
+            done
+
+            if ! validate_sequence test_sequence.sh; then
+              write_fallback_sequence "DEGRADED_BUT_TESTED: Gemini unavailable or returned weak sequence"
+            fi
           fi
 
-          chmod +x test_sequence.sh
-
-          echo "=== GENERATED COMMANDS ==="
+          echo "=== GHOST PILOT STATUS ==="
+          cat ghost_pilot_status.txt
+          echo "=== MODEL USED ==="
+          cat model_used.txt || true
+          echo "=== FINAL COMMANDS ==="
           cat test_sequence.sh
 
       - name: Run Test on Emulator
@@ -141,38 +281,36 @@ jobs:
             -noaudio
             -no-boot-anim
             -camera-back none
-
           script: |
-            set -e
+            set -euo pipefail
 
             adb wait-for-device
-
             adb logcat -c
 
             adb logcat *:E > emulator_error.log 2>&1 &
             LOGCAT_PID=$!
 
             echo "Starting Ghost Pilot sequence..."
-
             chmod +x test_sequence.sh
-
             bash test_sequence.sh || true
 
             sleep 5
-
-            kill $LOGCAT_PID || true
+            kill "$LOGCAT_PID" || true
 
             echo "=== ERROR SCAN ==="
-
-            if grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR|CRASH" emulator_error.log; then
-              echo "❌ Crash detected"
-
-              grep -Ei "ErrorBoundary|FATAL EXCEPTION|RuntimeError|ANR|CRASH" emulator_error.log | head -n 20
-
+            if grep -Ei "ErrorBoundary|FATAL EXCEPTION|AndroidRuntime|RuntimeError|CRASH|com\.facebook\.react" emulator_error.log; then
+              echo "❌ App fatal runtime error detected"
+              grep -Ei "ErrorBoundary|FATAL EXCEPTION|AndroidRuntime|RuntimeError|CRASH|com\.facebook\.react" emulator_error.log | head -n 40
               exit 1
-            else
-              echo "✅ No critical crash detected"
             fi
+
+            if grep -Ei "ANR in ${GHOST_PILOT_APP_PACKAGE}" emulator_error.log; then
+              echo "❌ App ANR detected"
+              grep -Ei "ANR in ${GHOST_PILOT_APP_PACKAGE}" emulator_error.log | head -n 40
+              exit 1
+            fi
+
+            echo "✅ No critical app crash detected"
 
       - name: Upload Logs
         if: always()
@@ -184,5 +322,8 @@ jobs:
             test_sequence.sh
             payload.json
             response.json
+            response.*.json
+            model_used.txt
+            ghost_pilot_status.txt
             strings_extracted.txt
             app_extracted.txt
