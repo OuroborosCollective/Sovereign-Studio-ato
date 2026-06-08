@@ -41,6 +41,8 @@ const NeuralGrid: React.FC = () => {
     if (!ctx) return;
 
     let frame = 0;
+    let animationFrameId: number;
+
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.strokeStyle = 'rgba(0, 229, 255, 0.1)';
@@ -58,9 +60,14 @@ const NeuralGrid: React.FC = () => {
         }
       }
       frame++;
-      requestAnimationFrame(draw);
+      animationFrameId = requestAnimationFrame(draw);
     };
     draw();
+
+    // ⚡ Bolt: Return cleanup function to cancel the animation loop, preventing severe CPU/Memory leaks on unmount
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
   }, []);
 
   return <canvas ref={canvasRef} width={800} height={400} className="w-full h-full opacity-30" />;

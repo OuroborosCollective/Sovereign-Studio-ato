@@ -13,7 +13,7 @@ Sovereign Studio V3 is not merely an Integrated Development Environment (IDE); i
 
 ## 🏗 High-Level System Topology
 
-mermaid
+```mermaid
 graph TD
     subgraph "The Intelligence Layer (ATO-V2 & Mesh)"
         A[Issue Trigger] --> B{Decision Engine}
@@ -37,32 +37,34 @@ graph TD
         J --> K[Ghost Pilot / Autonomous Cycle]
         K --> L[Launch Bot / Social Distribution]
     end
+```
 
 
 ---
 
 ## 🧩 Core Modules & Responsibilities
 
-### 1. `ato-v2/` (Autonomous Task Operations)
+### 1. [`ato-v2/`](src/ato-v2/) (Autonomous Task Operations)
 The central nervous system of Sovereign Studio. It orchestrates the transformation of abstract requirements into executable code.
 - **`brain/`**: Decision engines and prompt builders tailored for the Gemini Pro model.
 - **`generator/`**: The `patch-engine` applies precise AST (Abstract Syntax Tree) modifications to the codebase.
 - **`signal-hub/`**: Aggregates feedback from GitHub Issues and beta testing analytics to inform the next development cycle.
 
-### 2. `mesh-system/` (Agentic Swarm)
+### 2. [`mesh-system/`](mesh-system/) (Agentic Swarm)
 A distributed network of specialized agents that simulate a full-scale engineering team.
 - **Architect**: Structural planning and dependency mapping.
 - **Coder**: Writing TypeScript/React implementation logic.
 - **Tester/Reviewer**: Automated verification of PRs and code quality enforcement.
 - **Marketer**: Automated generation of release notes and distribution metadata.
 
-### 3. `src/` (The Application Core)
+### 3. [`src/`](src/) (The Application Core)
 A modern React stack optimized for speed and AI interaction.
 - **`features/ai/`**: Deep integration with Google Gemini for real-time repo editing.
+- **`features/ai/RefactorEngine.ts`**: Central AI brain for code transformation with automatic fallback to free LLM providers.
 - **`features/canvas/`**: A high-performance `CanvasEngine` for visual repository mapping.
 - **`store/`**: Centralized state management via Redux Toolkit, handling complex AI-human interaction states.
 
-### 4. `android/` (Native Native Transformation)
+### 4. [`android/`](android/) (Native Transformation)
 The Capacitor 6 implementation that transforms the web core into a sovereign mobile experience.
 - Pre-configured Gradle environment for automated signing and release.
 - Fastlane integration for seamless Play Store deployment.
@@ -73,12 +75,12 @@ The Capacitor 6 implementation that transforms the web core into a sovereign mob
 
 Sovereign Studio V3 operates on a **zero-touch development philosophy**:
 
-1.  **Issue Analysis**: An GitHub Issue is opened. The `🤖 Issue → Code Agent` workflow triggers.
-2.  **Autonomous Design**: `ato-v2` builds a context-aware prompt; `mesh-system/architect` defines the plan.
-3.  **Code Synthesis**: `mesh-system/coder` generates a patch; `vitest` validates the logic.
-4.  **Verification**: `mesh-system/reviewer` approves the PR; `autonomous-cycle.yml` merges it.
-5.  **Native Build**: `android-release.yml` compiles the source into a signed AAB.
-6.  **Deployment**: `launch-bot` notifies the ecosystem and prepares the Play Store rollout.
+1. **Issue Analysis**: A GitHub Issue is opened. The `🤖 Issue → Code Agent` workflow triggers.
+2. **Autonomous Design**: `ato-v2` builds a context-aware prompt; `mesh-system/architect` defines the plan.
+3. **Code Synthesis**: `mesh-system/coder` generates a patch; `vitest` validates the logic.
+4. **Verification**: `mesh-system/reviewer` approves the PR; `autonomous-cycle.yml` merges it.
+5. **Native Build**: `android-release.yml` compiles the source into a signed AAB.
+6. **Deployment**: `launch-bot` notifies the ecosystem and prepares the Play Store rollout.
 
 ---
 
@@ -100,7 +102,7 @@ Sovereign Studio V3 operates on a **zero-touch development philosophy**:
 
 To initiate the Sovereign environment locally:
 
-bash
+```bash
 # Install dependencies
 npm install
 
@@ -112,6 +114,7 @@ npm run dev
 
 # Trigger the Autonomous Mesh (Local Simulation)
 node mesh-system/mesh/runMesh.js
+```
 
 
 ---

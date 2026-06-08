@@ -12,3 +12,9 @@ android/app/build/
 # Keystores
 *.keystoremarketing-output/
 marketing-output/
+
+# React Native build
+sovereign-studio-rn/dist/
+sovereign-studio-rn/android/
+sovereign-studio-rn/ios/
+

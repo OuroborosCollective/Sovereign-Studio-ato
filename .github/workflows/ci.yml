@@ -29,31 +29,39 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
-      - name: Cache Node Modules
-        id: cache-npm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache pnpm modules
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-node-modules-
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install Dependencies
-        if: steps.cache-npm.outputs.cache-hit != 'true'
-        run: npm install
+        run: pnpm install
 
       - name: Type Check
-        run: npm run type-check
+        run: pnpm run type-check
 
       - name: Run Unit Tests
-        run: npm run test:run
+        run: pnpm run test:run
         env:
           CI: true
 
       - name: Build Web Assets
-        run: npm run build
+        run: pnpm run build
 
       - name: Upload Web Build Artifact
         uses: actions/upload-artifact@v4
@@ -77,11 +85,27 @@ jobs:
         with:
           node-version: 22
 
-      - name: Restore Node Modules
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache pnpm modules
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Dependencies
+        run: pnpm install
 
       - name: Download Web Build Artifact
         uses: actions/download-artifact@v4
@@ -89,11 +113,11 @@ jobs:
           name: www-dist
           path: dist/
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
-          distribution: zulu
+          distribution: temurin
           cache: gradle
 
       - name: Capacitor Sync
@@ -120,9 +144,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Run NPM Audit
+      - name: Run audit
         run: |
-          # Only log vulnerabilities but don't fail the build
-          # Many vulnerabilities are in dev dependencies or transitive deps
-          npm audit --audit-level=moderate --omit=dev 2>&1 || true
+          pnpm audit --audit-level=moderate || true
           echo "Security audit completed (warnings above do not block merging)"
