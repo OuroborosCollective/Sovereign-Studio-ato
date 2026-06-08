@@ -38,8 +38,14 @@ describe('Workflow Tests', () => {
             });
           } else {
             // Branching connection
-            Object.values(toNodes).forEach(nodeId => {
-              expect(nodeIds).toContain(nodeId);
+            Object.values(toNodes).forEach(nodeList => {
+              if (Array.isArray(nodeList)) {
+                nodeList.forEach(nodeId => {
+                  expect(nodeIds).toContain(nodeId);
+                });
+              } else {
+                expect(nodeIds).toContain(nodeList);
+              }
             });
           }
         });
@@ -96,7 +102,12 @@ describe('Workflow Tests', () => {
       expect(connections).toBeDefined();
       
       if (typeof connections === 'object' && !Array.isArray(connections)) {
-        expect(connections.failure).toBe('analyze');
+        const failureTarget = connections.failure;
+        if (Array.isArray(failureTarget)) {
+          expect(failureTarget).toContain('analyze');
+        } else {
+          expect(failureTarget).toBe('analyze');
+        }
       }
     });
 
@@ -147,7 +158,12 @@ describe('Workflow Tests', () => {
       expect(connections).toBeDefined();
       
       if (typeof connections === 'object' && !Array.isArray(connections)) {
-        expect(connections.fail).toBe('generate');
+        const failTarget = connections.fail;
+        if (Array.isArray(failTarget)) {
+          expect(failTarget).toContain('generate');
+        } else {
+          expect(failTarget).toBe('generate');
+        }
       }
     });
   });

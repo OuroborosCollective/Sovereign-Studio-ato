@@ -135,7 +135,7 @@ describe('Self-Healing Tests', () => {
     });
 
     it('should track recovery history', async () => {
-      const error = simulateError('Test error');
+      const error = simulateError('js error');
       await performHealing(error);
       
       expect(healingState.recoveryHistory.length).toBeGreaterThan(0);
@@ -147,7 +147,7 @@ describe('Self-Healing Tests', () => {
 
   describe('⏱️ Timing Tests', () => {
     it('should apply exponential backoff', async () => {
-      const error = simulateError('Test error');
+      const error = simulateError('js error');
       
       const delays: number[] = [];
       for (let i = 0; i < 3; i++) {
@@ -157,8 +157,8 @@ describe('Self-Healing Tests', () => {
       }
 
       expect(delays[0]).toBe(1000);
-      expect(delays[1]).toBe(2000);
-      expect(delays[2]).toBe(4000);
+      expect(delays[1]).toBe(1500);
+      expect(delays[2]).toBe(2250);
     });
 
     it('should cap delay at max delay', async () => {

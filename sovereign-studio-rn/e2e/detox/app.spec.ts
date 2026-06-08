@@ -1,4 +1,4 @@
-import { ReactNative detox } from 'detox';
+import { device, element, by, waitFor, detox } from 'detox';
 import { describe, beforeAll, beforeEach, it, expect } from '@jest/globals';
 
 // Configure Detox
@@ -300,7 +300,7 @@ describe('Sovereign Studio RN - E2E Tests', () => {
 
 // Self-Healing Hooks
 afterEach(async () => {
-  if (test failed) {
+  if (false) { // placeholder for failed test check
     await device.takeScreenshot();
     await autoHeal();
   }
