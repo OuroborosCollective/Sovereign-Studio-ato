@@ -1,49 +1,70 @@
-import React, { useEffect, useState } from 'react';
-import { RefactorProvider } from './features/ai/RefactorContext';
-import { RefactorPanel } from './features/ai/RefactorPanel';
-
-/**
- * Sovereign Studio - Main Application
- * 
- * The main feature is AI-powered code refactoring.
- * All operations (repo loading, code generation, awareness) are controlled by the RefactorEngine.
- * 
- * API Keys are optional - works for free with mlvoca (no key needed).
- */
-
-// Simple loading fallback while React initializes
-function LoadingFallback() {
-  return (
-    <div className="min-h-screen bg-stone-950 flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-stone-400 font-mono text-sm">Loading Sovereign Studio...</p>
-      </div>
-    </div>
-  );
-}
+import React, { useState } from 'react';
+import { BoardState } from './features/canvas/types';
+import { defaultBoard } from './features/canvas/utils';
+import { useGithubRepo } from './features/github/hooks/useGithubRepo';
+import { RepoFileList } from './features/github/components/RepoFileList';
+import { UserSession } from './shared/types/user';
+import { makeId } from './shared/utils/crypto';
+import { LoginView } from './components/LoginView';
 
 const App: React.FC = () => {
-  const [isReady, setIsReady] = useState(false);
+  const [user, setUser] = useState<UserSession | null>(null);
+  const [board, setBoard] = useState<BoardState>(() => defaultBoard());
+  const {
+    repoUrl,
+    setRepoUrl,
+    repoStatus,
+    isRepoBusy,
+    repoFiles,
+    loadRepoTree,
+  } = useGithubRepo();
 
-  useEffect(() => {
-    // Small delay to ensure React is fully mounted
-    const timer = setTimeout(() => {
-      setIsReady(true);
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []);
+  const updateBoard = (next: BoardState) => {
+    setBoard({ ...next, updatedAt: new Date().toISOString() });
+  };
 
-  if (!isReady) {
-    return <LoadingFallback />;
+  const generateRepoIdeas = () => {
+    console.log('Ideen generiert');
+  };
+
+  const generateErrorWorkflow = () => {
+    console.log('Error Workflow erstellt');
+  };
+
+  const login = () => {
+    setUser({
+      id: makeId(),
+      email: 'demo@local',
+      name: 'User',
+      imageUrl: '',
+    });
+  };
+
+  if (!user) {
+    return <LoginView onLogin={login} />;
   }
 
   return (
-    <RefactorProvider>
-      <div className="min-h-screen bg-stone-950">
-        <RefactorPanel />
-      </div>
-    </RefactorProvider>
+    <div className="min-h-screen p-4">
+      <h1 className="font-bold">Sovereign Canvas Tool</h1>
+
+      <input
+        value={repoUrl}
+        onChange={(e) => setRepoUrl(e.target.value)}
+        placeholder="GitHub Repo URL"
+      />
+
+      <button onClick={loadRepoTree} disabled={isRepoBusy}>
+        Load Repo
+      </button>
+
+      <p>{repoStatus}</p>
+
+      <RepoFileList files={repoFiles} />
+
+      <button onClick={generateRepoIdeas}>Ideen</button>
+      <button onClick={generateErrorWorkflow}>Fehler</button>
+    </div>
   );
 };
 

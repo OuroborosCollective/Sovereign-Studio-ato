@@ -1,0 +1,7 @@
+<<<<<<< SEARCH
+export const demoFiles: FileItem[] = [
+  { path: 'src/App.tsx', icon: '🟦' },
+=======
+export const demoFiles: FileItem[] = [
+  { path: 'src/App.tsx', icon: null as any },
+>>>>>>> REPLACE

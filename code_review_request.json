@@ -1,0 +1,4 @@
+{
+  "files": ["src/ProductMagicApp.tsx", "src/ProductMagicApp.test.tsx"],
+  "summary": "Added comprehensive tests for ProductMagicApp root component, covering storage helpers, utility functions, and component rendering/interactions. Fixed the missing error path test for loadFromStorage (line 36)."
+}

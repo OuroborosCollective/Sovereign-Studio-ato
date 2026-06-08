@@ -1,5 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
+import ProductMagicApp from './ProductMagicApp';
+import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
@@ -27,7 +30,7 @@ if (typeof window !== 'undefined') {
 
   // Performance optimization
   const style = document.createElement('style');
-  style.innerHTML = 'canvas { will-change: transform; transform: translateZ(0); } .ai-stream-container { contain: content; }';
+  style.textContent = 'canvas { will-change: transform; transform: translateZ(0); } .ai-stream-container { contain: content; }';
   document.head.appendChild(style);
 }
 
@@ -74,12 +77,18 @@ if (container) {
   import('./App').then(({ default: App }) => {
     const root = createRoot(container);
     root.render(
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
+      <StrictMode>
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+      </StrictMode>
     );
   }).catch((err) => {
     console.error('Failed to load App:', err);
-    container.innerHTML = '<div style="color:white;padding:20px;">Failed to load application. Please refresh.</div>';
+    const errorDiv = document.createElement('div');
+    errorDiv.style.color = 'white';
+    errorDiv.style.padding = '20px';
+    errorDiv.textContent = 'Failed to load application. Please refresh.';
+    container.replaceChildren(errorDiv);
   });
 }
