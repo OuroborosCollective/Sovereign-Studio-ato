@@ -11,5 +11,5 @@ export type ProjectSettings = {
   linter: 'auto' | 'eslint' | 'biome' | 'prettier-eslint';
   specialization: string;
   maxFixLoops: number;
-  workMode: WorkMode;
+  workMode?: WorkMode;
 };
