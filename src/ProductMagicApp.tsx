@@ -142,7 +142,7 @@ export default function ProductMagicApp() {
   const setOpenrouterKey = (v: string) => { setOpenrouterKeyState(v); saveToStorage('sovereign_openrouter_api_key', v); };
 
   // Provider fallback hook
-  const { generateContent, setProviderApiKey } = useProviderFallback({
+  const { generateContent, setProviderApiKey, currentProvider, configuredProviders } = useProviderFallback({
     onFallback: (from: ProviderType, to: ProviderType, error: string) => {
       log(`🔄 Fallback: ${from} → ${to}: ${error}`);
     },
