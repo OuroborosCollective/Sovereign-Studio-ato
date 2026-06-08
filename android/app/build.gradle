@@ -12,6 +12,17 @@ def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias')
 def releaseKeyPassword = project.findProperty('android.injected.signing.key.password') ?: System.getenv('ANDROID_KEY_PASSWORD')
 def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
+tasks.register('buildWebAssetsForAndroid', Exec) {
+    workingDir rootProject.projectDir.parentFile
+    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+        commandLine 'cmd', '/c', 'npm', 'run', 'build:web'
+    } else {
+        commandLine 'npm', 'run', 'build:web'
+    }
+}
+
+preBuild.dependsOn buildWebAssetsForAndroid
+
 android {
     namespace "com.arestudio.nocode.aab"
     compileSdk 34
