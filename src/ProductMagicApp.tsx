@@ -142,7 +142,7 @@ export default function ProductMagicApp() {
   const setOpenrouterKey = (v: string) => { setOpenrouterKeyState(v); saveToStorage('sovereign_openrouter_api_key', v); };
 
   // Provider fallback hook
-  const { currentProvider, setProviderApiKey, configuredProviders } = useProviderFallback({
+  const { generateContent, setProviderApiKey } = useProviderFallback({
     onFallback: (from: ProviderType, to: ProviderType, error: string) => {
       log(`🔄 Fallback: ${from} → ${to}: ${error}`);
     },
@@ -257,11 +257,6 @@ export default function ProductMagicApp() {
 
   // --- Generate Code with Gemini + Auto-Fallback ---
   const generateCodeWithGemini = useCallback(async (userPrompt: string) => {
-    // MLVOCA is always available (no API key required) - no early guard needed.
-    // The hasProvider check was removed so no-key users can reach MLVOCA generation.
-
-    // Check if any provider is available
-
     setIsGenerating(true);
 
     const context = syncResult
@@ -276,149 +271,22 @@ Aufgabe: ${userPrompt}
 Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mit dem Code.`;
 
     try {
-      // Priority 1: Try mlvoca (free, no API key required!)
-      log('🔮 Generiere mit MLVOCA (kostenlos)...');
-      try {
-        const { callMlvoCa } = await import('./features/ai/providerManager');
-        const response = await callMlvoCa('gemini-1.5-flash', prompt, {
-          temperature: 0.3,
-          maxOutputTokens: 2048,
-        });
-        setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
-        setGeneratedCode(`// Generiert von Sovereign Studio + MLVOCA\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
-        setBuilt(true);
-        setWorkView('editor');
-        log('💻 MLVOCA hat Code generiert (kostenlos!).');
-        return;
-      } catch (mlvocaErr) {
-        log('🔄 MLVOCA nicht verfügbar, versuche anderen Provider...');
-      }
-
-      // Priority 2: Try Gemini if key is available
-      if (geminiKey.trim()) {
-        log('🤖 Generiere mit Gemini...');
-        try {
-          const code = await geminiService.generateText(geminiKey, prompt, {
-            model: 'gemini-1.5-flash',
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          });
-          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
-          setGeneratedCode(`// Generiert von Sovereign Studio + Gemini\n// ${new Date().toLocaleString('de-DE')}\n\n${code}`);
-          setBuilt(true);
-          setWorkView('editor');
-          log('💻 Gemini hat Code generiert.');
-          return;
-        } catch (err: any) {
-          const msg: string = err?.message ?? 'Fehler';
-          const isRetryable = 
-            msg.includes('429') || msg.includes('quota') || 
-            msg.includes('RESOURCE_EXHAUSTED') ||
-            msg.includes('authentication') || msg.includes('api key') ||
-            err?.status === 401 || err?.status === 403;
-          
-          if (!isRetryable) {
-            throw err;
-          }
-          
-          log(`⚠️ Gemini Fehler: ${msg}. Versuche Fallback...`);
-        }
-      }
-
-      // Fallback: Try configured free providers
-      let fallbackSuccess = false;
+      log('🔮 Generiere Code (mit Auto-Fallback)...');
+      const response = await generateContent(prompt, geminiKey);
       
-      // Groq fallback
-      if (groqKey.trim()) {
-        log('🔄 Versuche Groq...');
-        try {
-          const { callGroq } = await import('./features/ai/providerManager');
-          const response = await callGroq(groqKey, 'gemini-1.5-flash', prompt, {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          });
-          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
-          setGeneratedCode(`// Generiert von Sovereign Studio + Groq\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
-          setBuilt(true);
-          setWorkView('editor');
-          log('💻 Groq hat Code generiert.');
-          fallbackSuccess = true;
-        } catch (err) {
-          log(`⚠️ Groq Fehler, versuche nächsten Provider...`);
-        }
-      }
-
-      // HuggingFace fallback
-      if (!fallbackSuccess && hfKey.trim()) {
-        log('🔄 Versuche HuggingFace...');
-        try {
-          const { callHuggingFace } = await import('./features/ai/providerManager');
-          const response = await callHuggingFace(hfKey, 'gemini-1.5-flash', prompt, {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          });
-          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
-          setGeneratedCode(`// Generiert von Sovereign Studio + HuggingFace\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
-          setBuilt(true);
-          setWorkView('editor');
-          log('💻 HuggingFace hat Code generiert.');
-          fallbackSuccess = true;
-        } catch (err) {
-          log(`⚠️ HuggingFace Fehler, versuche nächsten Provider...`);
-        }
-      }
-
-      // Together AI fallback
-      if (!fallbackSuccess && togetherKey.trim()) {
-        log('🔄 Versuche Together AI...');
-        try {
-          const { callTogether } = await import('./features/ai/providerManager');
-          const response = await callTogether(togetherKey, 'gemini-1.5-flash', prompt, {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          });
-          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
-          setGeneratedCode(`// Generiert von Sovereign Studio + Together AI\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
-          setBuilt(true);
-          setWorkView('editor');
-          log('💻 Together AI hat Code generiert.');
-          fallbackSuccess = true;
-        } catch (err) {
-          log(`⚠️ Together AI Fehler...`);
-        }
-      }
-
-      // OpenRouter fallback
-      if (!fallbackSuccess && openrouterKey.trim()) {
-        log('🔄 Versuche OpenRouter...');
-        try {
-          const { callOpenRouter } = await import('./features/ai/providerManager');
-          const response = await callOpenRouter(openrouterKey, 'gemini-1.5-flash', prompt, {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          });
-          setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
-          setGeneratedCode(`// Generiert von Sovereign Studio + OpenRouter\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
-          setBuilt(true);
-          setWorkView('editor');
-          log('💻 OpenRouter hat Code generiert.');
-          fallbackSuccess = true;
-        } catch (err) {
-          log(`⚠️ OpenRouter Fehler...`);
-        }
-      }
-
-      if (!fallbackSuccess) {
-        log('⚠️ Alle Provider fehlgeschlagen. Nutze lokalen Generator.');
-        generateCodeLocally();
-      }
+      const providerName = response.provider.toUpperCase();
+      setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: '✨' });
+      setGeneratedCode(`// Generiert von Sovereign Studio + ${providerName}\n// ${new Date().toLocaleString('de-DE')}\n\n${response.text}`);
+      setBuilt(true);
+      setWorkView('editor');
+      log(`💻 ${providerName} hat Code generiert.`);
     } catch (err: any) {
-      log(`❌ Unerwarteter Fehler: ${err?.message || err}. Nutze lokalen Generator.`);
+      log(`❌ Fehler bei der Generierung: ${err?.message || err}. Nutze lokalen Generator.`);
       generateCodeLocally();
     } finally {
       setIsGenerating(false);
     }
-  }, [geminiKey, groqKey, hfKey, togetherKey, openrouterKey, blueprint, syncResult]);
+  }, [geminiKey, blueprint, syncResult, generateContent]);
 
   const generateCodeLocally = () => {
     const pm = settings.packageManager === 'auto' ? 'detected-package-manager' : settings.packageManager;
