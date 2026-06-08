@@ -371,22 +371,23 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
     failed: 'Fehler', patching: 'Patching', green: 'Grün',
   }[pipelineState];
 
-  // ⚡ Bolt: Optimized repo files processing
-  // Calculates both displayFiles and blobCount in a single pass without intermediate array allocations
-  const { displayFiles, blobCount } = useMemo(() => {
+  // ⚡ Bolt: Use useMemo with a single loop to compute display files and count
+  // 🎯 Why: Avoids chaining multiple array allocations (.filter, .slice, .map) and redundant .filter calls in render
+  // 📊 Impact: O(N) single pass vs O(N) multi-pass, less memory churn
+  const { displayFiles, blobFilesCount } = useMemo(() => {
     if (!repoLoaded || repoFiles.length === 0) {
-      return { displayFiles: demoFiles, blobCount: 0 };
+      return { displayFiles: demoFiles, blobFilesCount: 0 };
     }
 
-    const files: FileItem[] = [];
+    const items: FileItem[] = [];
     let count = 0;
 
     for (let i = 0; i < repoFiles.length; i++) {
       const f = repoFiles[i];
       if (f.type === 'blob') {
         count++;
-        if (files.length < 30) {
-          files.push({
+        if (items.length < 30) {
+          items.push({
             path: f.path,
             icon: f.path.endsWith('.ts') || f.path.endsWith('.tsx') ? '🟦'
               : f.path.endsWith('.json') ? '📦'
@@ -399,7 +400,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
       }
     }
 
-    return { displayFiles: files, blobCount: count };
+    return { displayFiles: items, blobFilesCount: count };
   }, [repoLoaded, repoFiles]);
 
   return (
@@ -603,7 +604,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           {/* File tree */}
           <div className="flex-1 overflow-y-auto bg-white">
             <div className="px-3 py-1.5 text-[9px] font-bold text-stone-400 uppercase border-b border-stone-100 flex items-center gap-1">
-              <FolderTree size={10}/> {repoLoaded ? `Repo (${blobCount} Dateien)` : 'Demo-Dateien'}
+              <FolderTree size={10}/> {repoLoaded ? `Repo (${blobFilesCount} Dateien)` : 'Demo-Dateien'}
             </div>
             {displayFiles.map((file) => (
               <button
