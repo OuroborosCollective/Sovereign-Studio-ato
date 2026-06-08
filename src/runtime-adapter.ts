@@ -1,5 +1,72 @@
 Object.assign(window, { StrictMode: 'div' });
 
+function setSovereignPane(pane: string) {
+  if (typeof document === 'undefined') return;
+  document.body.dataset.sovereignPane = pane;
+  document.querySelectorAll('#sovereign-mobile-tabs button').forEach((button) => {
+    (button as HTMLButtonElement).dataset.active = (button as HTMLButtonElement).dataset.pane === pane ? 'true' : 'false';
+  });
+}
+
+function findButton(label: string): HTMLButtonElement | null {
+  return Array.from(document.querySelectorAll('button')).find((button) =>
+    (button.textContent || '').trim().toLowerCase() === label.toLowerCase()
+  ) as HTMLButtonElement | null;
+}
+
+function installJobAutoDriver() {
+  if (typeof document === 'undefined') return;
+  if (document.body.dataset.sovereignAutoDriver === 'ready') return;
+  document.body.dataset.sovereignAutoDriver = 'ready';
+
+  document.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest('button') as HTMLButtonElement | null;
+    const text = (button?.textContent || '').trim().toLowerCase();
+    if (text !== 'auftrag starten' && text !== 'uebernehmen') return;
+    if (document.body.dataset.sovereignJobRunning === 'true') return;
+
+    document.body.dataset.sovereignJobRunning = 'true';
+    setSovereignPane('live');
+
+    window.setTimeout(() => findButton('Pruefen')?.click(), 1800);
+    window.setTimeout(() => findButton('Fix')?.click(), 3900);
+    window.setTimeout(() => findButton('Pruefen')?.click(), 6200);
+    window.setTimeout(() => {
+      document.body.dataset.sovereignJobRunning = 'false';
+      setSovereignPane('live');
+    }, 8400);
+  }, true);
+}
+
+function installIdeaFactory() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('sovereign-idea-factory')) return;
+  const textarea = document.querySelector('textarea');
+  if (!textarea) return;
+
+  const box = document.createElement('div');
+  box.id = 'sovereign-idea-factory';
+  box.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;font-size:11px';
+  const ideas = [
+    'README + Update History',
+    'CI Fehleranalyse',
+    'Android Release Check',
+  ];
+  for (const idea of ideas) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.textContent = idea;
+    chip.style.cssText = 'border:1px solid #ddd6fe;border-radius:999px;background:#eef2ff;color:#3730a3;padding:6px 10px;font-weight:800';
+    chip.onclick = () => {
+      textarea.value = idea;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    box.appendChild(chip);
+  }
+  textarea.parentElement?.insertBefore(box, textarea.nextSibling);
+}
+
 function installMobilePaneController() {
   if (typeof document === 'undefined') return;
   if (document.getElementById('sovereign-mobile-tabs')) return;
@@ -35,29 +102,22 @@ function installMobilePaneController() {
     ['log', 'Log'],
   ] as const;
 
-  function setPane(pane: string) {
-    document.body.dataset.sovereignPane = pane;
-    for (const button of Array.from(tabs.querySelectorAll('button'))) {
-      button.dataset.active = button.dataset.pane === pane ? 'true' : 'false';
-    }
-  }
-
   for (const [pane, label] of panes) {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = label;
     button.dataset.pane = pane;
-    button.onclick = () => setPane(pane);
+    button.onclick = () => setSovereignPane(pane);
     tabs.appendChild(button);
   }
 
   document.body.appendChild(tabs);
-  setPane(document.body.dataset.sovereignPane || 'live');
+  setSovereignPane(document.body.dataset.sovereignPane || 'live');
 }
 
 if (typeof window !== 'undefined') {
-  window.setTimeout(installMobilePaneController, 300);
-  window.setTimeout(installMobilePaneController, 1200);
+  window.setTimeout(() => { installMobilePaneController(); installJobAutoDriver(); installIdeaFactory(); }, 300);
+  window.setTimeout(() => { installMobilePaneController(); installJobAutoDriver(); installIdeaFactory(); }, 1200);
 }
 
 export {};
