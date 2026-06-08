@@ -12,6 +12,14 @@ export type RepoFile = {
   size?: number;
 };
 
+export function loadFromStorage(key: string, fallback = ''): string {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function saveToStorage(key: string, value: string) {
   try {
     if (value.trim()) {
