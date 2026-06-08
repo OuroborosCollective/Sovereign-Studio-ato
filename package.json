@@ -8,7 +8,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "tsc && vite build && node scripts/release-html-runtime-fix.mjs && node scripts/sovereign-static-audit.mjs && cap sync android",
+    "build:web": "tsc && vite build && node scripts/release-html-runtime-fix.mjs && node scripts/sovereign-static-audit.mjs",
+    "build": "npm run build:web && cap sync android",
     "build:android": "npm run build",
     "build:apk": "npm run build && cd android && ./gradlew assembleRelease -Pandroid.injected.signing.store.file=$ANDROID_KEYSTORE_PATH -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD",
     "build:aab": "npm run build && cd android && ./gradlew bundleRelease -Pandroid.injected.signing.store.file=$ANDROID_KEYSTORE_PATH -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD -Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD",
