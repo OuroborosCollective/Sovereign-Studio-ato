@@ -1,10 +1,16 @@
 import React from 'react';
-import { Settings, FolderTree, Sparkles, Trash2 } from 'lucide-react';
+import { Settings, FolderTree, Sparkles } from 'lucide-react';
 import { useProductMagic } from './features/product/hooks/useProductMagic';
 import { SettingsModal } from './features/product/components/SettingsModal';
 import { Sidebar } from './features/product/components/Sidebar';
 import { MainContent } from './features/product/components/MainContent';
 import { LogSidebar } from './features/product/components/LogSidebar';
+
+export type RepoFile = {
+  path: string;
+  type: 'blob' | 'tree';
+  size?: number;
+};
 
 export function saveToStorage(key: string, value: string) {
   try {
@@ -14,11 +20,10 @@ export function saveToStorage(key: string, value: string) {
       localStorage.removeItem(key);
     }
   } catch {
-    // ignore
+    // localStorage is optional in embedded/restricted WebViews.
   }
 }
 
-// --- GitHub helpers ---
 export const parseGithubRepoUrl = (value: string): { owner: string; repo: string } | null => {
   const match = value.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
   if (!match) return null;
@@ -58,14 +63,13 @@ export async function fetchRepoTree(
   return files;
 }
 
-// --- Main App ---
 export default function ProductMagicApp() {
   const {
     repoUrl, setRepoUrl,
     accessKey, setAccessKey,
     geminiKey, setGeminiKey,
     blueprint, setBlueprint,
-    cards, setCards,
+    cards,
     selectedFile, setSelectedFile,
     built,
     chatInput, setChatInput,
@@ -85,38 +89,6 @@ export default function ProductMagicApp() {
     patchFromPipeline,
     mergeWhenGreen
   } = useProductMagic();
-
-  // ⚡ Bolt: Use useMemo with a single loop to compute display files and count
-  // 🎯 Why: Avoids chaining multiple array allocations (.filter, .slice, .map) and redundant .filter calls in render
-  // 📊 Impact: O(N) single pass vs O(N) multi-pass, less memory churn
-  const { displayFiles, blobFilesCount } = useMemo(() => {
-    if (!repoLoaded || repoFiles.length === 0) {
-      return { displayFiles: demoFiles, blobFilesCount: 0 };
-    }
-
-    const items: FileItem[] = [];
-    let count = 0;
-
-    for (let i = 0; i < repoFiles.length; i++) {
-      const f = repoFiles[i];
-      if (f.type === 'blob') {
-        count++;
-        if (items.length < 30) {
-          items.push({
-            path: f.path,
-            icon: f.path.endsWith('.ts') || f.path.endsWith('.tsx') ? '🟦'
-              : f.path.endsWith('.json') ? '📦'
-              : f.path.endsWith('.yml') || f.path.endsWith('.yaml') ? '⚙️'
-              : f.path.endsWith('.md') ? '📝'
-              : f.path.includes('android') ? '🤖'
-              : '📄',
-          });
-        }
-      }
-    }
-
-    return { displayFiles: items, blobFilesCount: count };
-  }, [repoLoaded, repoFiles]);
 
   return (
     <div className="flex flex-col h-screen bg-stone-100 text-stone-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
