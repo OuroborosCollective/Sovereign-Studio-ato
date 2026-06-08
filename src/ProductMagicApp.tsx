@@ -503,17 +503,36 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
     failed: 'Fehler', patching: 'Patching', green: 'Grün',
   }[pipelineState];
 
-  const displayFiles: FileItem[] = repoLoaded && repoFiles.length > 0
-    ? repoFiles.filter(f => f.type === 'blob').slice(0, 30).map(f => ({
-        path: f.path,
-        icon: f.path.endsWith('.ts') || f.path.endsWith('.tsx') ? '🟦'
-          : f.path.endsWith('.json') ? '📦'
-          : f.path.endsWith('.yml') || f.path.endsWith('.yaml') ? '⚙️'
-          : f.path.endsWith('.md') ? '📝'
-          : f.path.includes('android') ? '🤖'
-          : '📄',
-      }))
-    : demoFiles;
+  // ⚡ Bolt: Optimized repo files processing
+  // Calculates both displayFiles and blobCount in a single pass without intermediate array allocations
+  const { displayFiles, blobCount } = useMemo(() => {
+    if (!repoLoaded || repoFiles.length === 0) {
+      return { displayFiles: demoFiles, blobCount: 0 };
+    }
+
+    const files: FileItem[] = [];
+    let count = 0;
+
+    for (let i = 0; i < repoFiles.length; i++) {
+      const f = repoFiles[i];
+      if (f.type === 'blob') {
+        count++;
+        if (files.length < 30) {
+          files.push({
+            path: f.path,
+            icon: f.path.endsWith('.ts') || f.path.endsWith('.tsx') ? '🟦'
+              : f.path.endsWith('.json') ? '📦'
+              : f.path.endsWith('.yml') || f.path.endsWith('.yaml') ? '⚙️'
+              : f.path.endsWith('.md') ? '📝'
+              : f.path.includes('android') ? '🤖'
+              : '📄',
+          });
+        }
+      }
+    }
+
+    return { displayFiles: files, blobCount: count };
+  }, [repoLoaded, repoFiles]);
 
   return (
     <div className="h-screen overflow-hidden bg-stone-50 text-stone-900 font-sans flex flex-col">
@@ -716,7 +735,7 @@ Generiere validen TypeScript/React Code. Nur Code, kein Prosa. Beginne direkt mi
           {/* File tree */}
           <div className="flex-1 overflow-y-auto bg-white">
             <div className="px-3 py-1.5 text-[9px] font-bold text-stone-400 uppercase border-b border-stone-100 flex items-center gap-1">
-              <FolderTree size={10}/> {repoLoaded ? `Repo (${repoFiles.filter(f => f.type === 'blob').length} Dateien)` : 'Demo-Dateien'}
+              <FolderTree size={10}/> {repoLoaded ? `Repo (${blobCount} Dateien)` : 'Demo-Dateien'}
             </div>
             {displayFiles.map((file) => (
               <button
