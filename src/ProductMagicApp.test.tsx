@@ -164,24 +164,24 @@ describe('ProductMagicApp Component', () => {
 
     // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
     expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    expect(screen.getByText(/V3.0-CORE/i)).toBeDefined();
 
     // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
+    const settingsButton = screen.getByTitle(/Einstellungen/i);
     fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    expect(screen.getByText(/Projektart/i)).toBeDefined();
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
-    fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
-    expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
+    const chatInput = screen.getByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
+    fireEvent.change(chatInput, { target: { value: 'Build something' } });
+    expect((chatInput as HTMLInputElement).value).toBe('Build something');
 
-    // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    // Test Auftrag starten button
+    const startButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(startButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
+      expect(screen.getByText(/Planung und Code-Entwurf/i)).toBeDefined();
     });
   });
 
@@ -194,12 +194,9 @@ describe('ProductMagicApp Component', () => {
     });
 
     render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
-
-    await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
-    });
+    // Note: In current UI, there is no explicit "Laden" button that triggers fetchRepoTree in ProductMagicApp.tsx
+    // The fetchRepoTree is defined but not used in the main component.
+    // However, we can test that it works as a utility.
+    await expect(fetchRepoTree('owner', 'repo', 'main', 'token')).rejects.toThrow(/GitHub API 401: Bad credentials/i);
   });
 });
