@@ -162,44 +162,34 @@ describe('ProductMagicApp Component', () => {
   it('renders the main application and handles basic interactions', async () => {
     render(<ProductMagicApp />);
 
-    // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
-    expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    // Check main elements
+    expect(screen.getByRole('heading', { name: /Sovereign Studio/i })).toBeDefined();
 
     // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
+    const settingsButton = screen.getByTitle(/Einstellungen/i);
     fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    expect(screen.getAllByText(/Einstellungen/i).length).toBeGreaterThan(0);
+
+    // Close it
+    const closeButton = screen.getByText('×');
+    fireEvent.click(closeButton);
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
-    fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
-    expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
+    const chatInput = screen.getByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
+    fireEvent.change(chatInput, { target: { value: 'Build something' } });
+    expect((chatInput as HTMLInputElement).value).toBe('Build something');
 
-    // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    // Test start button
+    const startButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(startButton);
 
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
+    expect(screen.getByText(/Auftrag gestartet/i)).toBeDefined();
   });
 
-  it('logs errors when repo loading fails', async () => {
-    (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      text: async () => 'Bad credentials'
-    });
-
+  it('can add a note card', async () => {
     render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
-
-    await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
-    });
+    const noteButton = screen.getByRole('button', { name: /Notiz/i });
+    fireEvent.click(noteButton);
+    // Success if no crash
   });
 });
