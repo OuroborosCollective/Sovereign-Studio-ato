@@ -73,7 +73,7 @@ describe('Product Constants', () => {
         packageManager: 'pnpm',
         installStrategy: 'workspace',
         linter: 'auto',
-        specialization: 'React/Vite + Capacitor Android + GitHub Actions Release Pipeline',
+        specialization: 'React Vite Capacitor Android GitHub Actions Free First Router',
         maxFixLoops: 3,
       });
     });

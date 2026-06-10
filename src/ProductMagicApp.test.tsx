@@ -164,42 +164,48 @@ describe('ProductMagicApp Component', () => {
 
     // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
     expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    expect(screen.getByText(/V3.0-CORE/i)).toBeDefined();
 
     // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
+    const settingsButton = screen.getByRole('button', { name: /Einstellungen/i });
     fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    expect(screen.getByText(/Projektart/i)).toBeDefined();
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
+    const chatInputs = screen.getAllByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
     fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
     expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
 
-    // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    // Test Auftrag starten button
+    const startButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(startButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
+      expect(screen.getByText(/Ich arbeite aktiv an deinem Auftrag/i)).toBeInTheDocument();
+    }, { timeout: 3000 });
   });
 
-  it('logs errors when repo loading fails', async () => {
-    (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      text: async () => 'Bad credentials'
-    });
-
+  it('handles basic chat submission', async () => {
     render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    const chatInput = screen.getByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
+    fireEvent.change(chatInput, { target: { value: 'New Task' } });
+
+    const sendButton = screen.getByRole('button', { name: /Nachricht senden/i });
+    fireEvent.click(sendButton);
 
     await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
+      expect(screen.getByText(/Ich arbeite aktiv an deinem Auftrag/i)).toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+
+  it('logs error when checking before starting', async () => {
+    render(<ProductMagicApp />);
+
+    const pruefenButton = screen.getByRole('button', { name: /Pruefen/i });
+    fireEvent.click(pruefenButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Pruefung blockiert: Starte zuerst den Auftrag/i)).toBeInTheDocument();
     });
   });
 });

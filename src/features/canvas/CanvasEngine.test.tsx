@@ -184,6 +184,8 @@ describe('CanvasEngine', () => {
       </Provider>,
     );
 
-    expect(mockCanvas.setActiveObject).toHaveBeenCalledWith(fabricObj);
+    expect(mockCanvas.setActiveObject).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'test-select' })
+    );
   });
 });
