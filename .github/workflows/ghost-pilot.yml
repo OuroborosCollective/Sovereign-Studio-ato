@@ -106,6 +106,7 @@ jobs:
             -no-boot-anim
             -camera-back none
           script: |
+            #!/bin/bash
             set -euo pipefail
 
             adb wait-for-device
