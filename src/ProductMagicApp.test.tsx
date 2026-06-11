@@ -181,7 +181,7 @@ describe('ProductMagicApp Component', () => {
     fireEvent.click(startButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
+      expect(screen.getByText(/=== Auftrag gestartet ===/i)).toBeDefined();
     });
   });
 

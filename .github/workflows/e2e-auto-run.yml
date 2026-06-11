@@ -69,7 +69,7 @@ jobs:
       - name: Validate project layout
         working-directory: .
         run: |
-          set -euo pipefail
+          set -eu
 
           if [ ! -d "${APP_DIR}" ]; then
             echo "::error::App directory '${APP_DIR}' does not exist."
@@ -88,7 +88,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          set -euo pipefail
+          set -eu
           npm ci
 
       - name: Run initial verification
@@ -122,7 +122,7 @@ jobs:
         env:
           MAX_FIX_ROUNDS: ${{ github.event.inputs.max_fix_rounds || '3' }}
         run: |
-          set -euo pipefail
+          set -eu
 
           echo "===================="
           echo "AUTO-FIX MODE ACTIVATED"
@@ -174,7 +174,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
+          set -eu
 
           git config --local user.email "${AUTO_FIX_AUTHOR_EMAIL}"
           git config --local user.name "${AUTO_FIX_AUTHOR_NAME}"

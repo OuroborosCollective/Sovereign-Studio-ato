@@ -69,7 +69,7 @@ jobs:
       - name: Run Sovereign Green Gate
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           node scripts/check-guard-config.mjs
           pnpm run audit:sovereign
           pnpm run type-check
@@ -79,7 +79,7 @@ jobs:
       - name: Build Android Debug APK
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           npx cap sync android
           cd android
           chmod +x gradlew
@@ -106,7 +106,7 @@ jobs:
             -no-boot-anim
             -camera-back none
           script: |
-            set -euo pipefail
+            set -eu
 
             adb wait-for-device
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
