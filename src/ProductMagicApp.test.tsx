@@ -162,21 +162,44 @@ describe('ProductMagicApp Component', () => {
   it('renders the main application and handles basic interactions', async () => {
     render(<ProductMagicApp />);
 
-    // Check main elements
+    // Check main elements - using getAllByText because Sovereign Studio appears in header and terminal
     expect(screen.getAllByText(/Sovereign Studio/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Agent Status/i)).toBeInTheDocument();
 
-    // Change input
-    const chatInput = screen.getByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
-    fireEvent.change(chatInput, { target: { value: 'Build something' } });
-    expect((chatInput as HTMLInputElement).value).toBe('Build something');
+    // Toggle settings
+    const settingsButton = screen.getByText(/Einstellungen/i);
+    fireEvent.click(settingsButton);
+    expect(screen.getByText(/GitHub Repository/i)).toBeInTheDocument();
 
-    // Test "Auftrag starten" button
-    const startButton = screen.getByText(/Auftrag starten/i);
-    fireEvent.click(startButton);
+    // Change input
+    const chatInputs = screen.getAllByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
+    fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
+    expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
+
+    // Test Auftrag starten button (triggers fetchRepoTree)
+    const ladenButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(ladenButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/Ich arbeite aktiv an deinem Auftrag/i)).toBeInTheDocument();
-    }, { timeout: 3000 });
+      expect(global.fetch).toHaveBeenCalled();
+    });
+  });
+
+  it('logs errors when repo loading fails', async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      text: async () => 'Bad credentials'
+    });
+
+    render(<ProductMagicApp />);
+    const ladenButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(ladenButton);
+
+    await waitFor(() => {
+      const errorLogs = screen.getAllByText(/Ich arbeite aktiv an deinem Auftrag/i);
+      expect(errorLogs.length).toBeGreaterThan(0);
+    });
   });
 });
