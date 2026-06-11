@@ -54,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => setShowSettings(true)}
             className="text-indigo-700 hover:text-indigo-900 p-1"
             title="Einstellungen"
+            aria-label="Einstellungen"
           >
             <Settings size={16} />
           </button>
@@ -65,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           onClick={buildProduct}
           disabled={isWorking}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-stone-400 text-white py-2 rounded text-[11px] font-bold uppercase shadow-sm flex items-center justify-center gap-2"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-stone-400 text-white py-2 rounded text-[11px] font-bold uppercase shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
         >
           <Rocket size={14}/> Auftrag starten
         </button>

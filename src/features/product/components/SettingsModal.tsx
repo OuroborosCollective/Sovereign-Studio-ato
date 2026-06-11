@@ -22,7 +22,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-stone-200">
         <div className="p-4 bg-indigo-600 text-white flex items-center justify-between">
           <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2"><Shield size={16}/> Einstellungen</h3>
-          <button onClick={() => setShowSettings(false)} className="text-indigo-200 hover:text-white font-bold text-lg">×</button>
+          <button onClick={() => setShowSettings(false)} className="text-indigo-200 hover:text-white font-bold text-lg" aria-label="Schließen">×</button>
         </div>
         <div className="p-6 space-y-4">
           <div>
