@@ -108,6 +108,33 @@ WICHTIG: Gib NUR den modifizierten Code zurück. Keine Erklärungen, kein Markdo
     // mlvoca ebenfalls fehlgeschlagen
   }
 
+  // Fallback 3: Zhipu AI (BigModel)
+  try {
+    const zhipuResponse = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer demo_key_replace_with_real"
+      },
+      body: JSON.stringify({
+        model: "glm-4-flash",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt }
+        ],
+        stream: false,
+      }),
+    });
+
+    if (zhipuResponse.ok) {
+      const zhipuData = await zhipuResponse.json();
+      let content = zhipuData.choices?.[0]?.message?.content || "";
+      content = content.replace(/^```typescript\n?/, "").replace(/\n?```$/, "");
+      return content.trim();
+    }
+  } catch (zhipuError) {
+    // Zhipu ebenfalls fehlgeschlagen
+  }
 
   throw new Error("Kein LLM-Service verfügbar. Bitte einen Groq API Key eintragen.");
 }
