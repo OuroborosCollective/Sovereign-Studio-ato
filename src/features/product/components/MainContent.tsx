@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Bot, CheckCircle, Loader2, Send, CircleX } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
 
@@ -37,6 +37,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   nextStepLabel,
   approvalConfirmed = false
 }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
   const red = pipelineState === 'failed' || pipelineState === 'blocked';
   const green = pipelineState === 'green';
   const yellow = pipelineState === 'planning' || pipelineState === 'generating' || pipelineState === 'validating' || pipelineState === 'fixing' || pipelineState === 'revalidating';
@@ -157,6 +158,7 @@ export const MainContent: React.FC<MainContentProps> = ({
         <span className="text-lg">Chat</span>
         <div className="flex-1 relative">
           <input
+            ref={inputRef}
             value={chatInput}
             onChange={(event) => setChatInput(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') handleChatSubmit(); }}
@@ -166,8 +168,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           {chatInput && (
             <button
               type="button"
-              onClick={() => setChatInput('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors p-1"
+              onClick={() => { setChatInput(''); inputRef.current?.focus(); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-all active:scale-95 p-1"
               aria-label="Eingabe loeschen"
               title="Eingabe loeschen"
             >
