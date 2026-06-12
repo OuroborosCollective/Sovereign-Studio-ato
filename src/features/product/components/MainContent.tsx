@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, CheckCircle, Loader2, Send } from 'lucide-react';
+import { Bot, CheckCircle, Loader2, Send, CircleX } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
 
 interface MainContentProps {
@@ -155,13 +155,26 @@ export const MainContent: React.FC<MainContentProps> = ({
 
       <div className="h-12 bg-white border-t border-stone-200 flex items-center px-3 sm:px-4 gap-3 shrink-0">
         <span className="text-lg">Chat</span>
-        <input
-          value={chatInput}
-          onChange={(event) => setChatInput(event.target.value)}
-          onKeyDown={(event) => { if (event.key === 'Enter') handleChatSubmit(); }}
-          placeholder={green ? 'Freigabe oben bestaetigen - Senden ist nicht noetig' : 'Idee, Auftrag oder Frage eingeben'}
-          className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded bg-stone-50"
-        />
+        <div className="flex-1 relative">
+          <input
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') handleChatSubmit(); }}
+            placeholder={green ? 'Freigabe oben bestaetigen - Senden ist nicht noetig' : 'Idee, Auftrag oder Frage eingeben'}
+            className="w-full text-[11px] p-1.5 pr-8 border border-stone-300 rounded bg-stone-50 focus:outline-none focus:border-indigo-500 transition-colors"
+          />
+          {chatInput && (
+            <button
+              type="button"
+              onClick={() => setChatInput('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors p-1"
+              aria-label="Eingabe loeschen"
+              title="Eingabe loeschen"
+            >
+              <CircleX size={14} />
+            </button>
+          )}
+        </div>
         <button
           disabled={(derivedWorking && !green) || approvalConfirmed}
           onClick={handleChatSubmit}
