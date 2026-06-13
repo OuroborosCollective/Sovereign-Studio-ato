@@ -137,6 +137,8 @@ jobs:
       - name: Build Detox Android
         run: |
           cd sovereign-studio-rn/android
+          # Fix Kotlin version mismatch: metadata 2.2.0 requires Kotlin compiler 2.0.0+
+          sed -i "s/kotlinVersion = .*/kotlinVersion = '2.0.0'/g" build.gradle
           ./gradlew assembleDebug assembleAndroidTest --stacktrace
 
       - name: Create Android Virtual Device
