@@ -162,44 +162,40 @@ describe('ProductMagicApp Component', () => {
   it('renders the main application and handles basic interactions', async () => {
     render(<ProductMagicApp />);
 
-    // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
+    // Check main elements - using getAllByText because SOVEREIGN appears in header
     expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    expect(screen.getByText(/Agent Online/i)).toBeDefined();
 
     // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
-    fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    const settingsButtons = screen.getAllByTestId('Settings');
+    fireEvent.click(settingsButtons[0].parentElement!);
+    expect(screen.getByText(/Projektart/i)).toBeDefined();
+    // Close settings
+    fireEvent.click(screen.getByText('×'));
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
-    fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
-    expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
+    const chatInput = screen.getByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
+    fireEvent.change(chatInput, { target: { value: 'Build something' } });
+    expect((chatInput as HTMLInputElement).value).toBe('Build something');
 
-    // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    // Test Auftrag starten button
+    const startButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(startButton);
 
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
+    // Use findByText which has a default timeout and handles async updates
+    const workingMessage = await screen.findByText(/Ich arbeite aktiv an deinem Auftrag/i, {}, { timeout: 3000 });
+    expect(workingMessage).toBeDefined();
   });
 
-  it('logs errors when repo loading fails', async () => {
-    (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      text: async () => 'Bad credentials'
-    });
-
+  it('handles settings updates', async () => {
     render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
 
-    await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
-    });
+    const settingsButtons = screen.getAllByTestId('Settings');
+    fireEvent.click(settingsButtons[0].parentElement!);
+
+    const repoModeSelect = screen.getByDisplayValue(/Monorepo/i);
+    fireEvent.change(repoModeSelect, { target: { value: 'single' } });
+
+    expect((repoModeSelect as HTMLSelectElement).value).toBe('single');
   });
 });

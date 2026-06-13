@@ -174,6 +174,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     return () => {
       resizeObserver.disconnect();
       fabricCanvas.dispose();
+      fabricObjectsMapRef.current.clear();
     };
   }, [dispatch]);
 
@@ -185,15 +186,6 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     let hasChanges = false;
 
     const existingFabricObjectsMap = fabricObjectsMapRef.current;
-    existingFabricObjectsMap.clear();
-
-    for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as ExtendedObject;
-      if (fObj.id) {
-        existingFabricObjectsMap.set(fObj.id, fObj);
-      }
-    }
-
     const reduxObjectIdsSet = new Set<string>();
 
     for (let index = 0; index < objects.length; index++) {
@@ -202,15 +194,18 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       const existingObj = existingFabricObjectsMap.get(objData.id);
 
       if (existingObj) {
+        const isAtCorrectIndex = currentFabricObjects[index] === existingObj;
         const needsUpdate =
           existingObj.left !== objData.x ||
           existingObj.top !== objData.y ||
-          currentFabricObjects[index] !== existingObj;
+          !isAtCorrectIndex;
 
         if (needsUpdate) {
           existingObj.set({ left: objData.x, top: objData.y });
           existingObj.setCoords();
-          moveObjectToLayer(canvas, existingObj, index);
+          if (!isAtCorrectIndex) {
+            moveObjectToLayer(canvas, existingObj, index);
+          }
           hasChanges = true;
         }
       } else {
@@ -244,11 +239,11 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
       }
     }
 
-    for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as ExtendedObject;
-      if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
+    // Remove objects that are no longer in the Redux state
+    for (const [id, fObj] of existingFabricObjectsMap.entries()) {
+      if (!reduxObjectIdsSet.has(id)) {
         canvas.remove(fObj);
-        existingFabricObjectsMap.delete(fObj.id);
+        existingFabricObjectsMap.delete(id);
         hasChanges = true;
       }
     }
