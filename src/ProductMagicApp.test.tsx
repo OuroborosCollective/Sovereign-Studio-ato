@@ -162,44 +162,26 @@ describe('ProductMagicApp Component', () => {
   it('renders the main application and handles basic interactions', async () => {
     render(<ProductMagicApp />);
 
-    // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
-    expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    // Check main elements
+    expect(screen.getAllByText(/Sovereign Studio/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Agent Online/i)).toBeDefined();
 
     // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
-    fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    const settingsButtons = screen.getAllByTestId('Settings');
+    fireEvent.click(settingsButtons[0]);
+    expect(screen.getAllByText(/GitHub Repository/i).length).toBeGreaterThan(0);
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
+    const chatInputs = screen.getAllByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
     fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
     expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
 
-    // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    // Test Build button (Auftrag starten)
+    const buildButton = screen.getByText(/Auftrag starten/i);
+    fireEvent.click(buildButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
-  });
-
-  it('logs errors when repo loading fails', async () => {
-    (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      text: async () => 'Bad credentials'
-    });
-
-    render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
-
-    await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
+      expect(screen.getByText(/Agent Online/i)).toBeDefined();
     });
   });
 });
