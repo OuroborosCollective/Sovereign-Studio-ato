@@ -36,7 +36,7 @@ on:
 env:
   NODE_VERSION: '22'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  JAVA_VERSION: '17'
+  JAVA_VERSION: '21'
   ANDROID_SDK_ROOT: /opt/android-sdk
 
 jobs:
@@ -137,8 +137,9 @@ jobs:
       - name: Build Detox Android
         run: |
           cd sovereign-studio-rn/android
-          # Fix Kotlin version mismatch: metadata 2.2.0 requires Kotlin compiler 2.0.0+
-          sed -i "s/kotlinVersion = .*/kotlinVersion = '2.0.0'/g" build.gradle
+          # Fix Kotlin version mismatch: metadata 2.2.0 requires Kotlin compiler 2.1.20+
+          # Forcing Kotlin 2.1.20 to ensure compatibility with 2.2.0 metadata
+          sed -i "s/kotlinVersion = .*/kotlinVersion = '2.1.20'/g" build.gradle
           ./gradlew assembleDebug assembleAndroidTest --stacktrace
 
       - name: Create Android Virtual Device
