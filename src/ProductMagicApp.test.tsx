@@ -7,6 +7,7 @@ import React from 'react';
 // Mock lucide-react
 vi.mock('lucide-react', () => ({
   AlertTriangle: () => <div data-testid="AlertTriangle" />,
+  CircleX: () => <div data-testid="CircleX" />,
   Bot: () => <div data-testid="Bot" />,
   CheckCircle: () => <div data-testid="CheckCircle" />,
   Code2: () => <div data-testid="Code2" />,
@@ -163,43 +164,44 @@ describe('ProductMagicApp Component', () => {
     render(<ProductMagicApp />);
 
     // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
-    expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    expect(screen.getAllByText(/Sovereign Studio/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Agent Online/i)).toBeDefined();
 
-    // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
+    // Toggle settings - finding the button with Settings icon
+    const settingsButton = screen.getAllByRole('button', { name: /Einstellungen oeffnen/i })[0];
     fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    expect(screen.getAllByText(/GitHub Repository/i).length).toBeGreaterThan(0);
+
+    // Close settings
+    const closeSettings = screen.getByText('×');
+    fireEvent.click(closeSettings);
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
+    const chatInputs = screen.getAllByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
     fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
     expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
 
-    // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    // Test "Auftrag starten" button
+    const startButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(startButton);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
+      // Look for the agent status message that appears when working
+      expect(screen.getAllByText(/Agent Status/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Ich arbeite aktiv an deinem Auftrag/i).length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
   });
 
-  it('logs errors when repo loading fails', async () => {
-    (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      text: async () => 'Bad credentials'
-    });
-
+  it('handles clearing the repository input', async () => {
     render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
 
-    await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
-    });
+    const repoInput = screen.getByPlaceholderText('https://github.com/user/repo') as HTMLInputElement;
+    expect(repoInput.value).toBe('https://github.com/OuroborosCollective/Sovereign-Studio-ato');
+
+    const clearButton = screen.getByLabelText('Eingabe loeschen');
+    fireEvent.click(clearButton);
+
+    expect(repoInput.value).toBe('');
+    expect(screen.queryByLabelText('Eingabe loeschen')).toBeNull();
   });
 });

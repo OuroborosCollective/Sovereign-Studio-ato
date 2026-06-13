@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileItem, ProjectSettings } from '../types';
 import { demoFiles } from '../constants';
-import { Rocket, Wand2, Plus, Settings } from 'lucide-react';
+import { Rocket, Wand2, Plus, Settings, CircleX } from 'lucide-react';
 
 interface SidebarProps {
   settings: ProjectSettings;
@@ -41,18 +41,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <section className="w-full md:w-64 shrink-0 border-r border-stone-200 bg-white flex flex-col">
       <div className="p-3 bg-indigo-50 border-b border-indigo-100 shrink-0">
         <h2 className="text-[11px] font-black text-indigo-900 mb-1 uppercase tracking-tighter">GitHub Repository</h2>
-        <input
-          type="text"
-          value={repoUrl}
-          onChange={(e) => setRepoUrl(e.target.value)}
-          placeholder="https://github.com/user/repo"
-          className="w-full p-2 text-[10px] border border-indigo-200 rounded focus:outline-none focus:border-indigo-500 bg-white shadow-inner"
-        />
+        <div className="relative">
+          <input
+            type="text"
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="https://github.com/user/repo"
+            className="w-full p-2 pr-8 text-[10px] border border-indigo-200 rounded focus:outline-none focus:border-indigo-500 bg-white shadow-inner"
+          />
+          {repoUrl && (
+            <button
+              onClick={() => setRepoUrl('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-indigo-400 hover:text-indigo-600 transition-colors"
+              aria-label="Eingabe loeschen"
+            >
+              <CircleX size={14} />
+            </button>
+          )}
+        </div>
         <div className="flex items-center justify-between mt-2">
           <p className="text-[9px] text-indigo-700 flex-1">PAT Token optional in Einstellungen</p>
           <button
             onClick={() => setShowSettings(true)}
             className="text-indigo-700 hover:text-indigo-900 p-1"
+            aria-label="Einstellungen oeffnen"
             title="Einstellungen"
           >
             <Settings size={16} />
