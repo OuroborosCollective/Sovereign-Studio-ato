@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Use environment variable or default
+APP_PACKAGE="${GHOST_PILOT_APP_PACKAGE:-com.arestudio.nocode.aab}"
+
+adb wait-for-device
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb logcat -c
+
+adb logcat *:E > emulator_error.log 2>&1 &
+LOGCAT_PID=$!
+
+echo "Starting Ghost Pilot sequence..."
+chmod +x test_sequence.sh
+bash test_sequence.sh || true
+
+sleep 5
+kill "$LOGCAT_PID" || true
+
+echo "=== ERROR SCAN ==="
+if grep -Ei "ErrorBoundary|FATAL EXCEPTION|AndroidRuntime|RuntimeError|CRASH|com\.facebook\.react" emulator_error.log; then
+  echo "❌ App fatal runtime error detected"
+  grep -Ei "ErrorBoundary|FATAL EXCEPTION|AndroidRuntime|RuntimeError|CRASH|com\.facebook\.react" emulator_error.log | head -n 40
+  exit 1
+fi
+
+if grep -Ei "ANR in ${APP_PACKAGE}" emulator_error.log; then
+  echo "❌ App ANR detected"
+  grep -Ei "ANR in ${APP_PACKAGE}" emulator_error.log | head -n 40
+  exit 1
+fi
+
+echo "✅ No critical app crash detected"
