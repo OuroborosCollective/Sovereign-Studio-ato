@@ -137,7 +137,7 @@ export default function ProductMagicApp() {
             <span className="w-px h-3 bg-stone-200" />
             <span className="flex items-center gap-1.5"><FolderTree size={12} /> {settings.repoMode}</span>
           </div>
-          <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-stone-100 rounded-full transition-colors text-stone-600"><Settings size={18} /></button>
+          <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-stone-100 rounded-full transition-colors text-stone-600 active:scale-95" aria-label="Einstellungen oeffnen"><Settings size={18} /></button>
         </div>
       </header>
 

@@ -166,7 +166,8 @@ export const MainContent: React.FC<MainContentProps> = ({
           disabled={(derivedWorking && !green) || approvalConfirmed}
           onClick={handleChatSubmit}
           title={green ? 'Auch dieses Symbol bestaetigt jetzt die Freigabe' : 'Nachricht senden'}
-          className="bg-indigo-600 disabled:bg-stone-300 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase shadow-sm"
+          aria-label={green ? 'Freigabe bestaetigen' : 'Nachricht senden'}
+          className="bg-indigo-600 disabled:bg-stone-300 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase shadow-sm active:scale-95 transition-all"
         >
           <Send size={13}/>
         </button>
