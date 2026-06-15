@@ -159,6 +159,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     fabricCanvas.on('object:modified', handleModified as any);
 
+    // Incremental map maintenance: update map on add/remove to avoid O(N) rebuilds during sync
     fabricCanvas.on('object:added', (e: any) => {
       const obj = e.target as ExtendedObject;
       if (obj?.id) {
@@ -198,6 +199,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     const currentFabricObjects = canvas.getObjects();
     let hasChanges = false;
+    // O(1) lookups via incrementally maintained map
     const existingFabricObjectsMap = fabricObjectsMapRef.current;
 
     const reduxObjectIdsSet = new Set<string>();
