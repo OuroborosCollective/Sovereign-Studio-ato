@@ -159,6 +159,20 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     fabricCanvas.on('object:modified', handleModified as any);
 
+    fabricCanvas.on('object:added', (e: any) => {
+      const obj = e.target as ExtendedObject;
+      if (obj?.id) {
+        fabricObjectsMapRef.current.set(obj.id, obj);
+      }
+    });
+
+    fabricCanvas.on('object:removed', (e: any) => {
+      const obj = e.target as ExtendedObject;
+      if (obj?.id) {
+        fabricObjectsMapRef.current.delete(obj.id);
+      }
+    });
+
     const resizeObserver = new ResizeObserver(() => {
       if (containerRef.current && fabricCanvasRef.current) {
         const width = containerRef.current.clientWidth;
@@ -174,6 +188,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     return () => {
       resizeObserver.disconnect();
       fabricCanvas.dispose();
+      fabricObjectsMapRef.current.clear();
     };
   }, [dispatch]);
 
@@ -183,16 +198,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     const currentFabricObjects = canvas.getObjects();
     let hasChanges = false;
-
     const existingFabricObjectsMap = fabricObjectsMapRef.current;
-    existingFabricObjectsMap.clear();
-
-    for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as ExtendedObject;
-      if (fObj.id) {
-        existingFabricObjectsMap.set(fObj.id, fObj);
-      }
-    }
 
     const reduxObjectIdsSet = new Set<string>();
 

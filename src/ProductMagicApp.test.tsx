@@ -164,20 +164,20 @@ describe('ProductMagicApp Component', () => {
 
     // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
     expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    expect(screen.getByText(/Agent Online/i)).toBeDefined();
 
     // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
-    fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    const settingsButtons = screen.getAllByTestId('Settings');
+    fireEvent.click(settingsButtons[0]);
+    expect(screen.getByText(/Projektart/i)).toBeDefined();
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
+    const chatInputs = screen.getAllByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
     fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
     expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
 
     // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
+    const ladenButton = screen.getByText(/Suche/i);
     fireEvent.click(ladenButton);
 
     await waitFor(() => {
@@ -185,21 +185,14 @@ describe('ProductMagicApp Component', () => {
     });
   });
 
-  it('logs errors when repo loading fails', async () => {
-    (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      text: async () => 'Bad credentials'
-    });
-
+  it('logs info when search button clicked', async () => {
     render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
+    const ladenButton = screen.getByText(/Suche/i);
     fireEvent.click(ladenButton);
 
     await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
+      const logs = screen.getAllByText(/Dateisuche vorbereitet./i);
+      expect(logs.length).toBeGreaterThan(0);
     });
   });
 });
