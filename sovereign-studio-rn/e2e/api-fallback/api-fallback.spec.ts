@@ -154,23 +154,23 @@ describe('API Fallback Chain Tests', () => {
       const result = await testProvider('mlvoca', 'Health check');
       // Ensure we don't fail if the provider is actually down in this environment
       expect(result).toBeDefined();
-    });
+    }, 30000);
 
     it('should check P8lination health', async () => {
       const result = await testProvider('p8lination', 'Health check');
       // May fail but should not crash
       expect(result).toBeDefined();
-    });
+    }, 30000);
 
     it('should check Gemini health', async () => {
       const result = await testProvider('gemini', 'Health check');
       expect(result).toBeDefined();
-    });
+    }, 30000);
 
     it('should check Groq health', async () => {
       const result = await testProvider('groq', 'Health check');
       expect(result).toBeDefined();
-    });
+    }, 30000);
   });
 
   describe('🔄 Fallback Chain Tests', () => {
