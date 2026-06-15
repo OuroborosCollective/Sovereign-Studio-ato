@@ -133,6 +133,13 @@ jobs:
         run: |
           cd sovereign-studio-rn
           npx expo prebuild --platform android --clean
+          # 🛡️ Sentinel: Fix Kotlin/Gradle incompatibility in generated project.
+          # Expo 52+ defaults to Gradle 9.3 which requires Kotlin 2.2+, but
+          # RN 0.76.x plugins are compiled with Kotlin 2.1.0/2.2.0 metadata
+          # that the default compiler cannot read. Downgrading Gradle
+          # to 8.10.2 ensures compatibility.
+          sed -i 's/gradle-9.3.1-bin.zip/gradle-8.10.2-bin.zip/' android/gradle/wrapper/gradle-wrapper.properties
+          sed -i "s/classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')/classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24')/" android/build.gradle
 
       - name: Build Detox Android
         run: |
