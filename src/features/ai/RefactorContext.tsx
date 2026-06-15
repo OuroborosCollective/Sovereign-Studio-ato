@@ -14,6 +14,7 @@ import {
   type RefactorFile,
   type RefactorOptions,
 } from './RefactorEngine';
+import { maskSecrets } from '../../shared/utils/crypto';
 
 // ============================================================
 // Context Types
@@ -156,7 +157,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       setHistory(prev => [plan, ...prev].slice(0, 20));
       return plan;
     } catch (err: any) {
-      const msg = err?.message || 'Analysis failed';
+      const msg = maskSecrets(err?.message || 'Analysis failed');
       setError(msg);
       throw err;
     } finally {
@@ -172,7 +173,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       setLastResult(result);
       return result;
     } catch (err: any) {
-      const msg = err?.message || 'Generation failed';
+      const msg = maskSecrets(err?.message || 'Generation failed');
       setError(msg);
       throw err;
     } finally {
@@ -188,7 +189,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       setLastResult(code);
       return code;
     } catch (err: any) {
-      const msg = err?.message || 'Code generation failed';
+      const msg = maskSecrets(err?.message || 'Code generation failed');
       setError(msg);
       throw err;
     } finally {
@@ -204,7 +205,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       setLastResult(explanation);
       return explanation;
     } catch (err: any) {
-      const msg = err?.message || 'Explanation failed';
+      const msg = maskSecrets(err?.message || 'Explanation failed');
       setError(msg);
       throw err;
     } finally {
@@ -220,7 +221,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       setLastResult(result);
       return result;
     } catch (err: any) {
-      const msg = err?.message || 'Feature generation failed';
+      const msg = maskSecrets(err?.message || 'Feature generation failed');
       setError(msg);
       throw err;
     } finally {
@@ -236,7 +237,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       setLastResult('File applied successfully');
       return result;
     } catch (err: any) {
-      const msg = err?.message || 'Apply failed';
+      const msg = maskSecrets(err?.message || 'Apply failed');
       setError(msg);
       throw err;
     } finally {

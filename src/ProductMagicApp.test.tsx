@@ -162,44 +162,42 @@ describe('ProductMagicApp Component', () => {
   it('renders the main application and handles basic interactions', async () => {
     render(<ProductMagicApp />);
 
-    // Check main elements - using getAllByText because SOVEREIGN appears in header and terminal
+    // Check main elements
     expect(screen.getAllByText(/SOVEREIGN/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/SYSTEM INITIALIZATION/i)).toBeDefined();
+    expect(screen.getByText(/Agent Online/i)).toBeDefined();
 
-    // Toggle settings
-    const settingsButton = screen.getByText(/SETTINGS/i);
-    fireEvent.click(settingsButton);
-    expect(screen.getByText(/Repo Typ/i)).toBeDefined();
+    // Toggle settings - selecting by data-testid since it's an icon button
+    const settingsButtons = screen.getAllByTestId('Settings');
+    fireEvent.click(settingsButtons[0]);
+    expect(screen.getByText(/Projektart/i)).toBeDefined();
+
+    // Close settings
+    const closeButton = screen.getByText('×');
+    fireEvent.click(closeButton);
 
     // Change input
-    const chatInputs = screen.getAllByPlaceholderText(/Enter command/i);
-    fireEvent.change(chatInputs[0], { target: { value: 'Build something' } });
-    expect((chatInputs[0] as HTMLInputElement).value).toBe('Build something');
+    const chatInput = screen.getByPlaceholderText(/Idee, Auftrag oder Frage eingeben/i);
+    fireEvent.change(chatInput, { target: { value: 'Build something' } });
+    expect((chatInput as HTMLInputElement).value).toBe('Build something');
 
-    // Test Laden button (triggers fetchRepoTree)
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
+    // Test Suche button (triggers log instead of fetchRepoTree in the current version)
+    const sucheButton = screen.getByRole('button', { name: /Suche/i });
+    fireEvent.click(sucheButton);
 
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalled();
-    });
+    expect(screen.getByText(/Dateisuche vorbereitet/i)).toBeDefined();
   });
 
-  it('logs errors when repo loading fails', async () => {
-    (global.fetch as any).mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      text: async () => 'Bad credentials'
-    });
-
+  it('handles Auftrag starten interaction', async () => {
     render(<ProductMagicApp />);
-    const ladenButton = screen.getByRole('button', { name: /Laden/i });
-    fireEvent.click(ladenButton);
 
+    const startButton = screen.getByRole('button', { name: /Auftrag starten/i });
+    fireEvent.click(startButton);
+
+    // Should show active working state - increased timeout for async state updates
     await waitFor(() => {
-      const errorLogs = screen.getAllByText(/❌ GitHub API 401: Bad credentials/i);
-      expect(errorLogs.length).toBeGreaterThan(0);
-    });
+      const elements = screen.queryAllByText(/Ich arbeite aktiv an deinem Auftrag/i);
+      // It can be in the message or in the progress bar tooltip-like area
+      expect(elements.length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
   });
 });

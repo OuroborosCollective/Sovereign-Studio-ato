@@ -1,5 +1,6 @@
 import React, { ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { maskSecrets } from '../shared/utils/crypto';
 
 interface Props {
   children?: ReactNode;
@@ -21,6 +22,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   public static getDerivedStateFromError(error: unknown): State {
     const errorInstance = error instanceof Error ? error : new Error(String(error));
+    // Mask error message before logging or storing in state
+    errorInstance.message = maskSecrets(errorInstance.message);
     console.error('[GHOST_PILOT_FAILURE] UI_CRASH_DETECTED:', errorInstance.message);
     return { hasError: true, error: errorInstance, errorInfo: null };
   }
@@ -44,7 +47,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
           currentLogs = [];
         }
         
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = maskSecrets(rawMessage);
         
         currentLogs.push({ 
           time: new Date().toISOString(), 
