@@ -133,6 +133,8 @@ jobs:
         run: |
           cd sovereign-studio-rn
           npx expo prebuild --platform android --clean
+          cd ..
+          bash .github/scripts/fix-gradle-kotlin.sh
 
       - name: Build Detox Android
         run: |
