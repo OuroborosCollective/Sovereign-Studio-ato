@@ -129,7 +129,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 type="button"
                 onClick={mergeWhenGreen}
                 disabled={!canApprove}
-                className="w-full sm:w-auto min-h-14 px-6 py-3 rounded-2xl bg-emerald-600 disabled:bg-emerald-200 text-white font-black text-sm uppercase shadow-lg shadow-emerald-100 active:scale-[0.98]"
+                className="w-full sm:w-auto min-h-14 px-6 py-3 rounded-2xl bg-emerald-600 disabled:bg-emerald-200 text-white font-black text-sm uppercase shadow-lg shadow-emerald-100 active:scale-[0.98] transition-all"
                 aria-label="Freigabe bestaetigen"
               >
                 {approvalConfirmed ? 'Bestaetigt' : 'Freigabe bestaetigen'}
@@ -166,6 +166,7 @@ export const MainContent: React.FC<MainContentProps> = ({
           disabled={(derivedWorking && !green) || approvalConfirmed}
           onClick={handleChatSubmit}
           title={green ? 'Auch dieses Symbol bestaetigt jetzt die Freigabe' : 'Nachricht senden'}
+          aria-label={green ? 'Freigabe bestaetigen' : 'Nachricht senden'}
           className="bg-indigo-600 disabled:bg-stone-300 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase shadow-sm"
         >
           <Send size={13}/>

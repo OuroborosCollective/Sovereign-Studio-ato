@@ -26,17 +26,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label htmlFor="settings-repo-url" className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Repository</label>
-            <input id="settings-repo-url" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
+            <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Repository</label>
+            <input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="settings-access-key" className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Schreib-Key optional</label>
-              <input id="settings-access-key" type="password" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="nur fuer private Repos oder Schreiben" />
+              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Schreib-Key optional</label>
+              <input type="password" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="nur fuer private Repos oder Schreiben" />
             </div>
             <div>
-              <label htmlFor="settings-ai-key" className="block text-[10px] font-black text-stone-500 uppercase mb-1">AI Key optional</label>
-              <input id="settings-ai-key" type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="leer lassen ist ok" />
+              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">AI Key optional</label>
+              <input type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="leer lassen ist ok" />
             </div>
           </div>
           <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 text-[11px] text-emerald-900">
@@ -44,8 +44,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2">
             <div>
-              <label htmlFor="settings-package-manager" className="block text-[10px] font-black text-stone-500 uppercase mb-1">Package Manager</label>
-              <select id="settings-package-manager" value={settings.packageManager} onChange={(e) => setSettings({ ...settings, packageManager: e.target.value as any })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
+              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Package Manager</label>
+              <select value={settings.packageManager} onChange={(e) => setSettings({ ...settings, packageManager: e.target.value as any })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
                 <option value="auto">Auto-Detect</option>
                 <option value="pnpm">pnpm</option>
                 <option value="npm">npm</option>
@@ -53,16 +53,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </select>
             </div>
             <div>
-              <label htmlFor="settings-repo-mode" className="block text-[10px] font-black text-stone-500 uppercase mb-1">Projektart</label>
-              <select id="settings-repo-mode" value={settings.repoMode} onChange={(e) => setSettings({ ...settings, repoMode: e.target.value as any })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
+              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Projektart</label>
+              <select value={settings.repoMode} onChange={(e) => setSettings({ ...settings, repoMode: e.target.value as any })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
                 <option value="monorepo">Monorepo</option>
                 <option value="single">Single Repo</option>
               </select>
             </div>
           </div>
           <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 mt-2">
-            <label htmlFor="settings-specialization" className="block text-[10px] font-black text-indigo-800 uppercase flex items-center gap-1 mb-1"><Sparkles size={12}/> Arbeitsweise</label>
-            <textarea id="settings-specialization" value={settings.specialization} onChange={(e) => setSettings({ ...settings, specialization: e.target.value })} rows={2} className="w-full p-2 text-[10px] bg-white border border-indigo-200 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none resize-none" />
+            <h4 className="text-[10px] font-black text-indigo-800 uppercase flex items-center gap-1 mb-1"><Sparkles size={12}/> Arbeitsweise</h4>
+            <textarea value={settings.specialization} onChange={(e) => setSettings({ ...settings, specialization: e.target.value })} rows={2} className="w-full p-2 text-[10px] bg-white border border-indigo-200 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none resize-none" />
           </div>
         </div>
         <div className="p-4 bg-stone-50 border-t border-stone-200">
