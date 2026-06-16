@@ -21,3 +21,32 @@ export interface AgentStep {
   state: 'pending' | 'running' | 'done' | 'failed';
   message: string;
 }
+
+// Chat types
+export type ChatRole = 'user' | 'assistant' | 'system';
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  content: string;
+  timestamp: number;
+}
+
+export type SuggestionType = 'feature' | 'error' | 'improvement';
+
+export interface Suggestion {
+  id: string;
+  type: SuggestionType;
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  accepted?: boolean;
+}
+
+export interface ArchitectureAnalysis {
+  summary: string;
+  components: string[];
+  potentialIssues: string[];
+  suggestedFeatures: string[];
+  integrations: string[];
+}

@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
-import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane } from '../types';
+import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane, ChatMessage, Suggestion, ArchitectureAnalysis } from '../types';
 import { makeId, demoFiles, starterCards, defaultSettings } from '../constants';
 import { validateAppState, validateGitHubUrl, runtimeCheck, safeGet } from '../../../shared/utils/runtimeValidation';
 
@@ -106,6 +106,134 @@ export function useProductMagic() {
     return deduped.slice(0, 18);
   });
 
+  // Add chat message
+  const addChatMessage = (role: 'user' | 'assistant', content: string) => {
+    setChatMessages(prev => [...prev, {
+      id: makeId(),
+      role,
+      content,
+      timestamp: Date.now()
+    }]);
+  };
+
+  // Run architecture analysis and generate suggestions
+  const runArchitectureAnalysis = useCallback(async () => {
+    setIsAnalyzing(true);
+    addChatMessage('assistant', '🔍 Analyse der Architektur läuft...');
+
+    await sleep(800);
+
+    const analysis = analyzeArchitecture(blueprint, cards);
+    setArchitectureAnalysis(analysis);
+
+    // Generate suggestions from analysis
+    const newSuggestions: Suggestion[] = [];
+
+    // Add integration suggestion (always first, most important)
+    if (analysis.integrations.length > 0) {
+      newSuggestions.push({
+        id: makeId(),
+        type: 'feature',
+        title: 'Integration: ' + analysis.integrations[0],
+        description: `Basierend auf deiner Anfrage empfehle ich: ${analysis.integrations[0]}. Dies passt zur erkannten Architektur.`,
+        priority: 'high'
+      });
+    }
+
+    // Add suggested features
+    analysis.suggestedFeatures.slice(0, 2).forEach((feature, idx) => {
+      newSuggestions.push({
+        id: makeId(),
+        type: 'feature',
+        title: `Feature ${idx + 1}: ${feature}`,
+        description: `Dieses Feature erweitert die Grundfunktionalität sinnvoll.`,
+        priority: idx === 0 ? 'high' : 'medium'
+      });
+    });
+
+    // Add error/warning suggestions if any
+    analysis.potentialIssues.forEach((issue) => {
+      newSuggestions.push({
+        id: makeId(),
+        type: 'error',
+        title: '⚠️ ' + issue.split(' - ')[0],
+        description: issue.split(' - ')[1] || 'Bitte beachte diesen Punkt.',
+        priority: 'high'
+      });
+    });
+
+    setSuggestions(newSuggestions);
+
+    // Format analysis message for chat
+    let analysisMessage = `## 📊 Architektur-Analyse\n\n`;
+    analysisMessage += `**Zusammenfassung:** ${analysis.summary}\n\n`;
+    
+    if (analysis.components.length > 0) {
+      analysisMessage += `**🔧 Erkannte Komponenten:**\n`;
+      analysis.components.forEach(c => analysisMessage += `- ${c}\n`);
+      analysisMessage += `\n`;
+    }
+
+    if (analysis.integrations.length > 0) {
+      analysisMessage += `**🔗 Empfohlene Integrationen:**\n`;
+      analysis.integrations.forEach(i => analysisMessage += `- ${i}\n`);
+      analysisMessage += `\n`;
+    }
+
+    if (analysis.suggestedFeatures.length > 0) {
+      analysisMessage += `**✨ Vorschläge:**\n`;
+      analysis.suggestedFeatures.forEach(f => analysisMessage += `- ${f}\n`);
+    }
+
+    addChatMessage('assistant', analysisMessage);
+    setIsAnalyzing(false);
+
+    return analysis;
+  }, [blueprint, cards]);
+
+  // Accept a suggestion
+  const acceptSuggestion = useCallback((suggestionId: string) => {
+    setSuggestions(prev => prev.map(s => 
+      s.id === suggestionId ? { ...s, accepted: true } : s
+    ));
+    
+    const suggestion = suggestions.find(s => s.id === suggestionId);
+    if (suggestion) {
+      addChatMessage('assistant', `✅ "${suggestion.title}" wird integriert. Code wird angepasst...`);
+      
+      // Switch to editor view and trigger autonomous mode
+      setWorkView('editor');
+      setMobilePane('live');
+      
+      // Add the suggestion as a new card/task
+      setCards(prev => [...prev, {
+        id: makeId(),
+        title: suggestion.title,
+        body: suggestion.description
+      }]);
+    }
+  }, [suggestions, setWorkView, setMobilePane, setCards]);
+
+  // Send chat message
+  const sendChatMessage = useCallback((message: string) => {
+    if (!message.trim()) return;
+    
+    addChatMessage('user', message);
+    
+    // Simple response based on keywords
+    const lowerMsg = message.toLowerCase();
+    if (lowerMsg.includes('was') && lowerMsg.includes('kannst')) {
+      addChatMessage('assistant', 'Ich kann:\n- Deine Idee analysieren und Architektur vorschlagen\n- Code generieren und validieren\n- Fehler automatisch fixen\n- Vorschläge für Erweiterungen machen\n- Den Code direkt als PR auf GitHub pushen');
+    } else if (lowerMsg.includes('help') || lowerMsg.includes('hilfe')) {
+      addChatMessage('assistant', 'So nutzt du Sovereign Studio:\n1. Beschreibe deine Idee links\n2. Klicke "Prüfen" um die Analyse zu starten\n3. Nach der Analyse siehst du Vorschläge\n4. Klicke auf einen Vorschlag oder schreib direkt\n5. Wenn alles grün ist, klicke "Freigabe bestätigen"');
+    } else if (lowerMsg.includes('verstanden') || lowerMsg.includes('ok') || lowerMsg.includes('weiter')) {
+      addChatMessage('assistant', 'Perfekt! Klicke auf einen der Vorschläge oder beschreibe weitere Wünsche.');
+    } else {
+      // Echo back with acknowledgment
+      addChatMessage('assistant', `Ich habe verstanden: "${message}". Wenn du bereit bist, klicke auf einen Vorschlag oder starte mit "Prüfen" die Code-Generierung.`);
+    }
+  }, []);
+
   const guardBusy = () => {
     if (!isWorking) return false;
     log('Bitte warten: Ich arbeite noch aktiv am aktuellen Schritt.');
@@ -184,21 +312,24 @@ export function useProductMagic() {
       setPipelineState('green');
       setProgress(100);
       log('Schritt 4/5 fertig: Erneute Pruefung gruen. Freigabe wartet auf Ziel-Link.');
-      setAgentMessage('Alles gruen. Freigabe ist erst fertig, wenn ein Ziel-Link im Log steht.');
+      setAgentMessage('Alles gruen. Klicke auf Freigabe bestaetigen oder waehle einen Vorschlag.');
       setCurrentStepLabel('Freigabe wartet');
       setNextStepLabel('Ziel-Link');
     } else {
       setPipelineState('green');
       setProgress(100);
       log('Schritt 2/5 fertig: Pruefung gruen. Freigabe wartet auf Ziel-Link.');
-      setAgentMessage('Alles gruen. Freigabe ist erst fertig, wenn ein Ziel-Link im Log steht.');
+      setAgentMessage('Alles gruen. Klicke auf Freigabe bestaetigen oder waehle einen Vorschlag.');
       setCurrentStepLabel('Freigabe wartet');
       setNextStepLabel('Ziel-Link');
     }
 
+    // Run architecture analysis after code is ready
+    await runArchitectureAnalysis();
+
     setIsWorking(false);
     log('=== Auftrag wartet: Externer Ziel-Link fehlt noch ===');
-  }, [isWorking, settings.maxFixLoops, settings.linter, settings.packageManager, generateCodeInEditor, currentCode]);
+  }, [isWorking, settings.maxFixLoops, settings.linter, settings.packageManager, generateCodeInEditor, currentCode, runArchitectureAnalysis]);
 
   const buildProduct = useCallback(() => {
     if (guardBusy()) return;
@@ -493,6 +624,15 @@ export function useProductMagic() {
     publishAndValidate,
     patchFromPipeline,
     mergeWhenGreen,
-    runAutonomousJob
+    runAutonomousJob,
+    // Chat exports
+    chatMessages,
+    setChatMessages,
+    suggestions,
+    architectureAnalysis,
+    isAnalyzing,
+    acceptSuggestion,
+    sendChatMessage,
+    runArchitectureAnalysis
   };
 }
