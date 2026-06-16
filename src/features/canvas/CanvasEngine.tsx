@@ -185,14 +185,12 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     let hasChanges = false;
 
     const existingFabricObjectsMap = fabricObjectsMapRef.current;
-    existingFabricObjectsMap.clear();
 
-    for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as ExtendedObject;
-      if (fObj.id) {
-        existingFabricObjectsMap.set(fObj.id, fObj);
-      }
-    }
+    // ⚡ Bolt: Optimization - Avoid redundant map clearing and rebuilding.
+    // The map is maintained across renders and kept in sync incrementally:
+    // 1. New objects are added to the map when created.
+    // 2. Existing objects are kept in the map.
+    // 3. Removed objects are deleted from the map at the end of this effect.
 
     const reduxObjectIdsSet = new Set<string>();
 
@@ -266,14 +264,8 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        const objs = canvas.getObjects();
-        let target = undefined;
-        for (let i = 0; i < objs.length; i++) {
-          if ((objs[i] as ExtendedObject).id === primarySelectedId) {
-            target = objs[i];
-            break;
-          }
-        }
+        // ⚡ Bolt: Use O(1) lookup via Map instead of O(N) loop
+        const target = fabricObjectsMapRef.current.get(primarySelectedId);
         if (target) {
           canvas.setActiveObject(target);
           canvas.requestRenderAll();
