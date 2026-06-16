@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildSovereignBranchName, validatePublishableFiles } from '../../github/githubPackagePublisher';
 import {
+  assertGeneratedFileReviewSafe,
+  reviewGeneratedFiles,
+} from './generatedFileReview';
+import {
   analyzeRepoFileIntegrityList,
   summarizeFileIntegrity,
 } from './repoFileIntegrity';
@@ -36,7 +40,7 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, readiness, package guards and publisher validation', () => {
+  it('connects repo snapshot, readiness, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
 
@@ -54,6 +58,10 @@ describe('sovereign runtime structure', () => {
     });
     expect(() => assertGeneratedPackageReady(pkg, repoFiles)).not.toThrow();
     expect(pkg.files.map((file) => file.path)).toContain('docs/LAUNCH_READINESS.md');
+
+    const fileReview = reviewGeneratedFiles(pkg.files);
+    expect(fileReview.totalFiles).toBe(pkg.files.length);
+    expect(() => assertGeneratedFileReviewSafe(fileReview)).not.toThrow();
 
     const memory = createSessionMemorySnapshot({
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
