@@ -10,6 +10,23 @@ export const useGithubRepo = () => {
   const [repoStatus, setRepoStatus] = useState('Noch kein echtes Repo geladen.');
   const [isRepoBusy, setIsRepoBusy] = useState(false);
 
+  const restoreRepoSnapshot = (next: {
+    repoUrl: string;
+    repoBranch: string;
+    repoStatus: string;
+    repoFiles: RepoFile[];
+  }) => {
+    setRepoUrl(next.repoUrl);
+    setRepoBranch(next.repoBranch);
+    setRepoStatus(`${next.repoStatus} [session restored]`);
+    setRepoFiles(next.repoFiles.filter((file) => file.type === 'blob' || file.type === 'tree').slice(0, 500));
+  };
+
+  const clearRepoSnapshot = () => {
+    setRepoFiles([]);
+    setRepoStatus('Noch kein echtes Repo geladen.');
+  };
+
   const loadRepoTree = async () => {
     const parsed = parseGithubRepoUrl(repoUrl);
 
@@ -112,5 +129,7 @@ export const useGithubRepo = () => {
     repoStatus,
     isRepoBusy,
     loadRepoTree,
+    restoreRepoSnapshot,
+    clearRepoSnapshot,
   };
 };
