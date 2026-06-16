@@ -16,101 +16,6 @@ function parseGitHubUrl(url: string): { owner: string; repo: string; branch: str
   };
 }
 
-// Architecture analysis based on blueprint keywords
-function analyzeArchitecture(blueprint: string, cards: Card[]): ArchitectureAnalysis {
-  const lowerBlueprint = blueprint.toLowerCase();
-  const components: string[] = [];
-  const potentialIssues: string[] = [];
-  const suggestedFeatures: string[] = [];
-  const integrations: string[] = [];
-
-  // Detect components based on keywords
-  if (lowerBlueprint.includes('api') || lowerBlueprint.includes('backend') || lowerBlueprint.includes('server')) {
-    components.push('Backend API Server');
-    integrations.push('REST/GraphQL API Integration');
-  }
-  if (lowerBlueprint.includes('dashboard') || lowerBlueprint.includes('admin')) {
-    components.push('Admin Dashboard');
-    suggestedFeatures.push('Real-time statistics with charts');
-  }
-  if (lowerBlueprint.includes('chat') || lowerBlueprint.includes('messaging') || lowerBlueprint.includes('nachricht')) {
-    components.push('Chat/Messaging System');
-    integrations.push('WebSocket für Echtzeit-Kommunikation');
-    suggestedFeatures.push('Typing indicators und Read receipts');
-  }
-  if (lowerBlueprint.includes('auth') || lowerBlueprint.includes('login') || lowerBlueprint.includes('register')) {
-    components.push('Authentication System');
-    integrations.push('OAuth 2.0 / JWT Authentication');
-    suggestedFeatures.push('Two-Factor Authentication (2FA)');
-  }
-  if (lowerBlueprint.includes('payment') || lowerBlueprint.includes('billing') || lowerBlueprint.includes('stripe')) {
-    components.push('Payment Integration');
-    integrations.push('Stripe Payment Gateway');
-    suggestedFeatures.push('Subscription management und Invoice generation');
-  }
-  if (lowerBlueprint.includes('notification') || lowerBlueprint.includes('email') || lowerBlueprint.includes('push')) {
-    components.push('Notification System');
-    integrations.push('Email Service (SendGrid) + Push Notifications');
-  }
-  if (lowerBlueprint.includes('file') || lowerBlueprint.includes('upload') || lowerBlueprint.includes('image')) {
-    components.push('File Upload System');
-    integrations.push('S3/Cloud Storage Integration');
-    suggestedFeatures.push('Image compression und thumbnail generation');
-  }
-  if (lowerBlueprint.includes('analytics') || lowerBlueprint.includes('tracking')) {
-    components.push('Analytics System');
-    integrations.push('PostHog / Google Analytics Integration');
-  }
-  if (lowerBlueprint.includes('ai') || lowerBlueprint.includes('ml') || lowerBlueprint.includes('gpt') || lowerBlueprint.includes('gemini')) {
-    components.push('AI/ML Integration');
-    integrations.push('OpenAI / Gemini API');
-    suggestedFeatures.push('Smart content recommendations');
-  }
-  if (lowerBlueprint.includes('mobile') || lowerBlueprint.includes('react native')) {
-    components.push('Mobile App');
-    integrations.push('Capacitor für Cross-Platform Deployment');
-  }
-  if (lowerBlueprint.includes('database') || lowerBlueprint.includes('db')) {
-    components.push('Database Layer');
-  }
-
-  // Check for common issues
-  if (!components.includes('Authentication System') && (lowerBlueprint.includes('user') || lowerBlueprint.includes('account'))) {
-    potentialIssues.push('User-Management ohne Auth-System - Security-Risk');
-  }
-  if (!components.includes('Database Layer') && components.length > 0) {
-    potentialIssues.push('Keine Datenbank-Schicht definiert - Stateful Features benötigen Storage');
-  }
-  if (components.length > 5) {
-    potentialIssues.push('Viele Komponenten -要考虑 Modularisierung für Wartbarkeit');
-  }
-  if (!integrations.some(i => i.includes('Error Handling'))) {
-    suggestedFeatures.push('Centralized Error Handling und Logging');
-  }
-  if (components.length > 0 && !lowerBlueprint.includes('test')) {
-    suggestedFeatures.push('Unit und Integration Tests für alle Komponenten');
-  }
-
-  // Default suggestions if nothing specific found
-  if (suggestedFeatures.length === 0) {
-    suggestedFeatures.push('Dark Mode Support');
-    suggestedFeatures.push('Responsive Design für Mobile');
-    suggestedFeatures.push('Performance Optimization und Caching');
-  }
-  if (integrations.length === 0) {
-    integrations.push('CI/CD Pipeline Integration');
-    integrations.push('Monitoring und Alerting Setup');
-  }
-
-  return {
-    summary: `Analyse von "${blueprint.slice(0, 50)}...": ${components.length} Hauptkomponenten identifiziert, ${potentialIssues.length} potenzielle Probleme, ${suggestedFeatures.length} Vorschläge.`,
-    components,
-    potentialIssues,
-    suggestedFeatures,
-    integrations
-  };
-}
-
 // Runtime validation on module load
 const VALID_REPO_MODES = ['monorepo', 'single'];
 const VALID_PACKAGE_MANAGERS = ['auto', 'pnpm', 'npm', 'yarn'];
@@ -141,14 +46,6 @@ export function useProductMagic() {
   const [nextStepLabel, setNextStepLabel] = useState('');
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
   const [targetLink, setTargetLink] = useState(''); // External target link (e.g., PR URL)
-  
-  // Chat state
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { id: '1', role: 'assistant', content: 'Willkommen bei Sovereign Studio! Beschreibe deine Idee und ich analysiere die Architektur, generiere Code und schlage passende Erweiterungen vor.', timestamp: Date.now() }
-  ]);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [architectureAnalysis, setArchitectureAnalysis] = useState<ArchitectureAnalysis | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Runtime validation effect - validates state on mount and on changes
   useEffect(() => {
