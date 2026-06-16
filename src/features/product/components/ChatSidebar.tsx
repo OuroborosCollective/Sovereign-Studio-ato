@@ -26,7 +26,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    try {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } catch {
+      // scrollIntoView not supported in test environment
+    }
   }, [chatMessages]);
 
   const handleSubmit = (e: React.FormEvent) => {
