@@ -17,6 +17,15 @@ const settings: ProjectSettings = {
 };
 
 describe('sovereignPackageFromRepoFiles', () => {
+  it('rejects package generation without a real loaded repo snapshot', () => {
+    expect(() => buildSovereignPackageFromRepoFiles({
+      mission: 'README + Update History',
+      cards,
+      settings,
+      repoFiles: [],
+    })).toThrow('Load a real repository tree');
+  });
+
   it('builds brain-gated docs package from loaded repo files', () => {
     const pkg = buildSovereignPackageFromRepoFiles({
       mission: 'README + Update History',
@@ -37,14 +46,16 @@ describe('sovereignPackageFromRepoFiles', () => {
   });
 
   it('summarizes generated package for UI logs', () => {
+    const repoFiles = [{ path: 'README.md', type: 'blob' as const }];
     const pkg = buildSovereignPackageFromRepoFiles({
       mission: 'README + Update History',
       cards,
       settings,
-      repoFiles: [{ path: 'README.md', type: 'blob' }],
+      repoFiles,
     });
 
-    const summary = summarizeSovereignPackage(pkg);
+    const summary = summarizeSovereignPackage(pkg, repoFiles);
+    expect(summary).toContain('Snapshot: 1 entries');
     expect(summary).toContain('Architecture:');
     expect(summary).toContain('Brain:');
     expect(summary).toContain('Files:');
