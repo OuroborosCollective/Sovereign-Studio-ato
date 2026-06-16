@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildSovereignBranchName, validatePublishableFiles } from '../../github/githubPackagePublisher';
 import {
+  buildAutomationRunKey,
+  decideSovereignAutomation,
+} from './sovereignAutomationMode';
+import {
   assertGeneratedFileReviewSafe,
   reviewGeneratedFiles,
 } from './generatedFileReview';
@@ -40,7 +44,7 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, readiness, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, readiness, automation, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
 
@@ -51,6 +55,24 @@ describe('sovereign runtime structure', () => {
 
     const integrity = analyzeRepoFileIntegrityList(repoFiles);
     expect(summarizeFileIntegrity(integrity)).toContain('path-only');
+
+    const automationRunKey = buildAutomationRunKey({
+      mode: 'full-auto-draft-pr',
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      repoBranch: 'main',
+      mission: 'README + Update History',
+      repoFileCount: repoFiles.length,
+    });
+    const automation = decideSovereignAutomation({
+      mode: 'full-auto-draft-pr',
+      repoReady: snapshot.ready,
+      hasMission: true,
+      hasToken: true,
+      isBusy: false,
+      hasPackage: false,
+      nextAutoRunKey: automationRunKey,
+    });
+    expect(automation.shouldPublishDraftPr).toBe(true);
 
     const pkg = buildSovereignPackageFromRepoFiles({
       mission: 'README + Update History',
