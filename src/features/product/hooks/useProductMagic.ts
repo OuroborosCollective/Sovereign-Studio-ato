@@ -262,7 +262,7 @@ export function useProductMagic() {
   const [repoUrl, setRepoUrl] = useState(() => safeLoadStorage(STORAGE_KEYS.REPO_URL, 'https://github.com/OuroborosCollective/Sovereign-Studio-ato'));
   const [accessKey, setAccessKey] = useState(() => safeLoadStorage(STORAGE_KEYS.ACCESS_KEY, ''));
   const [geminiKey, setGeminiKey] = useState(() => safeLoadStorage(STORAGE_KEYS.GEMINI_KEY, ''));
-  const [blueprint, setBlueprint] = useState(() => safeLoadStorage(STORAGE_KEYS.BLUEPRINT, 'Beschreibe deine Idee oder deinen Auftrag. Ich plane, generiere, pruefe und zeige alle Aenderungen sich[...]'));
+  const [blueprint, setBlueprint] = useState(() => safeLoadStorage(STORAGE_KEYS.BLUEPRINT, 'Beschreibe deine Idee oder deinen Auftrag. Ich plane, generiere, pruefe und zeige alle Aenderungen sicher an.'));
   const [cards, setCards] = useState<Card[]>(() => starterCards());
   const [selectedFile, setSelectedFile] = useState<FileItem>(demoFiles[0]);
   const [built, setBuilt] = useState(() => safeLoadStorage(STORAGE_KEYS.BUILT, false));
@@ -345,7 +345,7 @@ export function useProductMagic() {
     });
   }, []);
 
-  const currentCode = useMemo(() => generatedCode || `// ${selectedFile.path}\n// Sovereign Auto-Resolver Preview\n\nconst auftrag = ${JSON.stringify(blueprint, null, 2)};\n\nexport const generat[...]`, [generatedCode, selectedFile.path, blueprint]);
+  const currentCode = useMemo(() => generatedCode || `// ${selectedFile.path}\n// Sovereign Auto-Resolver Preview\n\nconst auftrag = ${JSON.stringify(blueprint, null, 2)};\n\n// Code generation in progress...`, [generatedCode, selectedFile.path, blueprint]);
 
   const generatedPackage = useMemo(() => JSON.stringify({ repoUrl, blueprint, cards, selectedFile: selectedFile.path, settings, generatedCode: currentCode, approvalConfirmed }, null, 2), [repoUrl, blueprint, cards, selectedFile.path, settings, generatedCode, currentCode, approvalConfirmed]);
 
