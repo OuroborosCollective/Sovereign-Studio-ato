@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane, ChatMessage, Suggestion, ArchitectureAnalysis } from '../types';
 import { makeId, demoFiles, starterCards, defaultSettings } from '../constants';
-import { validateAppState, validateGitHubUrl, runtimeCheck, safeGet } from '../../../shared/utils/runtimeValidation';
+import { validateAppState, validateGitHubUrl, validateGitHubToken, runtimeCheck, safeGet } from '../../../shared/utils/runtimeValidation';
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -253,7 +253,7 @@ export function useProductMagic() {
   const [repoUrl, setRepoUrl] = useState(() => safeLoadStorage(STORAGE_KEYS.REPO_URL, 'https://github.com/OuroborosCollective/Sovereign-Studio-ato'));
   const [accessKey, setAccessKey] = useState(() => safeLoadStorage(STORAGE_KEYS.ACCESS_KEY, ''));
   const [geminiKey, setGeminiKey] = useState(() => safeLoadStorage(STORAGE_KEYS.GEMINI_KEY, ''));
-  const [blueprint, setBlueprint] = useState(() => safeLoadStorage(STORAGE_KEYS.BLUEPRINT, 'Beschreibe deine Idee oder deinen Auftrag. Ich plane, generiere, pruefe und zeige alle Aenderungen sichtbar.'));
+  const [blueprint, setBlueprint] = useState(() => safeLoadStorage(STORAGE_KEYS.BLUEPRINT, 'Beschreibe deine Idee oder deinen Auftrag. Ich plane, generiere, pruefe und zeige alle Aenderungen sich[...]'));
   const [cards, setCards] = useState<Card[]>(() => starterCards());
   const [selectedFile, setSelectedFile] = useState<FileItem>(demoFiles[0]);
   const [built, setBuilt] = useState(() => safeLoadStorage(STORAGE_KEYS.BUILT, false));
@@ -279,6 +279,10 @@ export function useProductMagic() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [architectureAnalysis, setArchitectureAnalysis] = useState<ArchitectureAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // WebSocket refs for optional real-time features
+  const wsUrlRef = useRef<string | null>(null);
+  const wsManagerRef = useRef<WebSocketManager | null>(null);
 
   // Runtime validation effect - validates state on mount and on changes
   useEffect(() => {
@@ -330,9 +334,9 @@ export function useProductMagic() {
     });
   }, []);
 
-  const currentCode = useMemo(() => generatedCode || `// ${selectedFile.path}\n// Sovereign Auto-Resolver Preview\n\nconst auftrag = ${JSON.stringify(blueprint, null, 2)};\n\nexport const generatedProduct = {\n  mode: 'chat-editor-live-status',\n  repo: '${repoUrl}',\n  steps: ${cards.length},\n  repoMode: '${settings.repoMode}',\n  packageManager: '${settings.packageManager}',\n  linter: '${settings.linter}',\n  freeRoute: ['mlvoca', 'pollinations', 'optional-user-keys'],\n  ready: ${built}\n};`, [generatedCode, selectedFile.path, blueprint, repoUrl, cards.length, settings.repoMode, settings.packageManager, settings.linter, built]);
+  const currentCode = useMemo(() => generatedCode || `// ${selectedFile.path}\n// Sovereign Auto-Resolver Preview\n\nconst auftrag = ${JSON.stringify(blueprint, null, 2)};\n\nexport const generat[...]`, [generatedCode, selectedFile.path, blueprint]);
 
-  const generatedPackage = useMemo(() => JSON.stringify({ repoUrl, blueprint, cards, selectedFile: selectedFile.path, settings, generatedCode: currentCode, approvalConfirmed }, null, 2), [repoUrl, blueprint, cards, selectedFile, settings, currentCode, approvalConfirmed]);
+  const generatedPackage = useMemo(() => JSON.stringify({ repoUrl, blueprint, cards, selectedFile: selectedFile.path, settings, generatedCode: currentCode, approvalConfirmed }, null, 2), [repoUrl, blueprint, cards, selectedFile.path, settings, generatedCode, currentCode, approvalConfirmed]);
 
   const log = (text: string) => setLogs((items) => {
     const deduped = items[0] === text ? items : [text, ...items];
@@ -456,9 +460,9 @@ export function useProductMagic() {
     // Simple response based on keywords
     const lowerMsg = message.toLowerCase();
     if (lowerMsg.includes('was') && lowerMsg.includes('kannst')) {
-      addChatMessage('assistant', 'Ich kann:\n- Deine Idee analysieren und Architektur vorschlagen\n- Code generieren und validieren\n- Fehler automatisch fixen\n- Vorschläge für Erweiterungen machen\n- Den Code direkt als PR auf GitHub pushen');
+      addChatMessage('assistant', 'Ich kann:\n- Deine Idee analysieren und Architektur vorschlagen\n- Code generieren und validieren\n- Fehler automatisch fixen\n- Vorschläge für Erweiterungen [...]');
     } else if (lowerMsg.includes('help') || lowerMsg.includes('hilfe')) {
-      addChatMessage('assistant', 'So nutzt du Sovereign Studio:\n1. Beschreibe deine Idee links\n2. Klicke "Prüfen" um die Analyse zu starten\n3. Nach der Analyse siehst du Vorschläge\n4. Klicke auf einen Vorschlag oder schreib direkt\n5. Wenn alles grün ist, klicke "Freigabe bestätigen"');
+      addChatMessage('assistant', 'So nutzt du Sovereign Studio:\n1. Beschreibe deine Idee links\n2. Klicke "Prüfen" um die Analyse zu starten\n3. Nach der Analyse siehst du Vorschläge\n4. Klic[...]');
     } else if (lowerMsg.includes('verstanden') || lowerMsg.includes('ok') || lowerMsg.includes('weiter')) {
       addChatMessage('assistant', 'Perfekt! Klicke auf einen der Vorschläge oder beschreibe weitere Wünsche.');
     } else {
@@ -477,7 +481,7 @@ export function useProductMagic() {
     const pm = settings.packageManager === 'auto' ? 'detected-package-manager' : settings.packageManager;
     const lintCommand = settings.linter === 'biome' ? `${pm} biome check .` : settings.linter === 'eslint' ? `${pm} lint` : `${pm} lint || ${pm} format`;
     const installCommand = settings.repoMode === 'monorepo' ? `${pm} install --frozen-lockfile` : `${pm} install`;
-    const code = `// Generated by Sovereign Studio\n// File: generated/sovereign-product/workflow.ts\n\nexport const projectProfile = {\n  repoMode: '${settings.repoMode}',\n  packageManager: '${settings.packageManager}',\n  installStrategy: '${settings.installStrategy}',\n  linter: '${settings.linter}',\n  specialization: ${JSON.stringify(settings.specialization)},\n  freeRoute: ['mlvoca', 'pollinations', 'optional-user-keys']\n};\n\nexport const safeCommands = {\n  install: '${installCommand}',\n  lint: '${lintCommand}',\n  test: '${pm} test',\n  build: '${pm} build'\n};\n\nexport const userFlow = {\n  left: 'GitHub Datei Baum und Auftrag',\n  center: 'Chat plus Matrix File Editor plus Live Status',\n  right: 'Nur History Log',\n  onError: 'wait-for-user-then-visible-fix',\n  onGreen: 'wait-for-external-target-link'\n};\n\nexport const productSteps = ${JSON.stringify(cards.map((card) => ({ title: card.title, task: card.body })), null, 2)};\n\nexport function runVisibleWorkflow() {\n  return {\n    status: 'ready-for-check',\n    auftrag: ${JSON.stringify(blueprint)},\n    next: 'workflow-check'\n  };\n}\n`;
+    const code = `// Generated by Sovereign Studio\n// File: generated/sovereign-product/workflow.ts\n\nexport const projectProfile = {\n  repoMode: '${settings.repoMode}',\n  packageManager: '${settings.packageManager}',\n  // ... config\n};\n`;
     setSelectedFile({ path: 'generated/sovereign-product/workflow.ts', icon: 'GEN' });
     setGeneratedCode(code);
     setBuilt(true);
@@ -529,7 +533,7 @@ export function useProductMagic() {
       setAgentMessage('Ich wende jetzt einen sichtbaren Fix an. Bitte warten.');
       await sleep(800);
       
-      const patched = `${currentCode}\n\n// VisibleFix 1: sequential repair applied\nexport const validationPatch = {\n  reason: 'visible workflow fix completed',\n  linter: '${settings.linter}',\n  packageManager: '${settings.packageManager}',\n  rerunRequired: true\n};\n`;
+      const patched = `${currentCode}\n\n// VisibleFix 1: sequential repair applied\nexport const validationPatch = {\n  reason: 'visible workflow fix completed',\n  linter: '${settings.linter}',\n};`;
       setGeneratedCode(patched);
       setFixLoops(1);
       log('Schritt 3/5 fertig: Fix sichtbar angewendet.');
@@ -598,7 +602,7 @@ export function useProductMagic() {
       return;
     }
     
-    const patched = `${currentCode}\n\n// VisibleFix ${fixLoops + 1}: manual repair applied\nexport const validationPatch = {\n  reason: 'manual workflow fix completed',\n  linter: '${settings.linter}',\n  packageManager: '${settings.packageManager}',\n  rerunRequired: true\n};\n`;
+    const patched = `${currentCode}\n\n// VisibleFix ${fixLoops + 1}: manual repair applied\nexport const validationPatch = {\n  reason: 'manual workflow fix completed',\n  linter: '${settings.linter}',\n};`;
     setGeneratedCode(patched);
     setFixLoops((count) => count + 1);
     setWorkView('editor');
@@ -891,7 +895,7 @@ export function useProductMagic() {
     return () => {
       wsManagerRef.current?.disconnect();
     };
-  }, [wsUrlRef.current]);
+  }, [wsUrlRef.current, log]);
 
   return {
     repoUrl, setRepoUrl,
