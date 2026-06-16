@@ -342,20 +342,20 @@ export function useProductMagic() {
 
   const generatedPackage = useMemo(() => JSON.stringify({ repoUrl, blueprint, cards, selectedFile: selectedFile.path, settings, generatedCode: currentCode, approvalConfirmed }, null, 2), [repoUrl, blueprint, cards, selectedFile.path, settings, generatedCode, currentCode, approvalConfirmed]);
 
-  const log = (text: string) => setLogs((items) => {
+  const log = useCallback((text: string) => setLogs((items) => {
     const deduped = items[0] === text ? items : [text, ...items];
     return deduped.slice(0, 18);
-  });
+  }), []);
 
   // Add chat message
-  const addChatMessage = (role: 'user' | 'assistant', content: string) => {
+  const addChatMessage = useCallback((role: 'user' | 'assistant', content: string) => {
     setChatMessages(prev => [...prev, {
       id: makeId(),
       role,
       content,
       timestamp: Date.now()
     }]);
-  };
+  }, []);
 
   // Run architecture analysis and generate suggestions
   const runArchitectureAnalysis = useCallback(async () => {
@@ -475,11 +475,11 @@ export function useProductMagic() {
     }
   }, []);
 
-  const guardBusy = () => {
+  const guardBusy = useCallback(() => {
     if (!isWorking) return false;
     log('Bitte warten: Ich arbeite noch aktiv am aktuellen Schritt.');
     return true;
-  };
+  }, [isWorking, log]);
 
   const generateCodeInEditor = useCallback(() => {
     const pm = settings.packageManager === 'auto' ? 'detected-package-manager' : settings.packageManager;
@@ -578,7 +578,7 @@ export function useProductMagic() {
     runAutonomousJob();
   }, [guardBusy, runAutonomousJob]);
 
-  const addCard = () => setCards((items) => [...items, { id: makeId(), title: 'Notiz', body: blueprint }]);
+  const addCard = useCallback(() => setCards((items) => [...items, { id: makeId(), title: 'Notiz', body: blueprint }]), [blueprint]);
 
   const sendChat = useCallback(() => {
     if (!chatInput.trim()) return;
@@ -587,7 +587,7 @@ export function useProductMagic() {
     buildProduct();
   }, [chatInput, log, buildProduct]);
 
-  const downloadPackage = () => {
+  const downloadPackage = useCallback(() => {
     const blob = new Blob([generatedPackage], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -595,7 +595,7 @@ export function useProductMagic() {
     link.download = `sovereign-product-${Date.now()}.json`;
     link.click();
     URL.revokeObjectURL(url);
-  };
+  }, [generatedPackage]);
 
   const patchFromPipeline = useCallback(() => {
     if (guardBusy()) return;

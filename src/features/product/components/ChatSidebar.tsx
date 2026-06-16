@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, Lightbulb, Loader2 } from 'lucide-react';
 import { ChatMessage, Suggestion } from '../types';
 
@@ -12,7 +12,7 @@ interface ChatSidebarProps {
   onClearChat: () => void;
 }
 
-export const ChatSidebar: React.FC<ChatSidebarProps> = ({
+export const ChatSidebar: React.FC<ChatSidebarProps> = memo(({
   chatMessages,
   suggestions,
   isAnalyzing,
@@ -175,4 +175,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </div>
     </section>
   );
-};
+});
+
+ChatSidebar.displayName = 'ChatSidebar';

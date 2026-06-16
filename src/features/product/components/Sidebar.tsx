@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { FileItem, ProjectSettings } from '../types';
 import { demoFiles } from '../constants';
 import { Rocket, Wand2, Plus, Settings } from 'lucide-react';
@@ -28,7 +28,7 @@ const IDEA_CHIPS = [
   'Release Notes generieren',
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({
+export const Sidebar: React.FC<SidebarProps> = memo(({
   settings, buildProduct, blueprint, setBlueprint, addCard, log, selectedFile, setSelectedFile, setWorkView,
   repoUrl, setRepoUrl, setShowSettings, isWorking
 }) => {
@@ -132,4 +132,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
     </section>
   );
-};
+});
+
+Sidebar.displayName = 'Sidebar';
