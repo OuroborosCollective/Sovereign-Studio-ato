@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LlmAdapter } from './llmAdapter';
+import type { LlmAdapter, LlmRevolverFailure } from './llmAdapter';
 import { resolveWithLlmRevolver } from './llmRevolver';
 import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 
@@ -66,7 +66,9 @@ describe('llmRevolver', () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.code).toBe('invalid_contract');
+    if (!result.ok) {
+      expect((result as LlmRevolverFailure).failure.code).toBe('invalid_contract');
+    }
   });
 
   it('skips external no-key adapters unless enabled', async () => {

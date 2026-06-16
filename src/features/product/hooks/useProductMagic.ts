@@ -201,13 +201,13 @@ function analyzeArchitecture(blueprint: string, cards: Card[]): ArchitectureAnal
     components.push('Frontend Framework');
   }
   if (lowerBlueprint.includes('api') || lowerBlueprint.includes('backend') || lowerBlueprint.includes('server')) {
-    components.push('Backend API');
+    components.push('Backend API Server');
   }
   if (lowerBlueprint.includes('database') || lowerBlueprint.includes('db') || lowerBlueprint.includes('postgres') || lowerBlueprint.includes('mongodb')) {
     components.push('Database');
   }
   if (lowerBlueprint.includes('auth') || lowerBlueprint.includes('login') || lowerBlueprint.includes('user')) {
-    components.push('Authentication');
+    components.push('Authentication System');
   }
   if (lowerBlueprint.includes('cloud') || lowerBlueprint.includes('aws') || lowerBlueprint.includes('azure') || lowerBlueprint.includes('gcp')) {
     components.push('Cloud Infrastructure');
@@ -238,6 +238,11 @@ function analyzeArchitecture(blueprint: string, cards: Card[]): ArchitectureAnal
   if (cards.length === 0) potentialIssues.push('No cards defined - Add at least one feature card');
   if (cards.length > 10) potentialIssues.push('Many cards detected - Consider prioritizing core features first');
   
+  // Security checks
+  if ((lowerBlueprint.includes('user') || lowerBlueprint.includes('login') || lowerBlueprint.includes('admin')) && !lowerBlueprint.includes('auth')) {
+    potentialIssues.push('Security - Missing explicit Authentication');
+  }
+
   return {
     summary: `Detected ${components.length} component(s) with ${integrations.length} integration(s). ${suggestedFeatures.length} additional features recommended.`,
     components,
@@ -279,7 +284,9 @@ export function useProductMagic() {
   const [targetLink, setTargetLink] = useState(''); // External target link (e.g., PR URL)
   
   // Chat and analysis state
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => [
+    { id: '1', role: 'assistant', content: 'Willkommen! Ich bin dein Sovereign Studio Agent. Wie kann ich dir heute helfen?', timestamp: Date.now() }
+  ]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [architectureAnalysis, setArchitectureAnalysis] = useState<ArchitectureAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -531,6 +538,7 @@ export function useProductMagic() {
       setAgentMessage('Pruefung fertig: Fehler gefunden. Ich arbeite weiter.');
       setCurrentStepLabel('Fix anwenden');
       setNextStepLabel('Erneute Pruefung');
+      await sleep(800);
 
       setPipelineState('fixing');
       setProgress(70);

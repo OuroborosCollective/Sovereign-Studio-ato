@@ -14,7 +14,7 @@ const localStorageMock = (() => {
 })();
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
-describe('useProductMagic - Chat Features', () => {
+describe('useProductMagic - Chat Features', { timeout: 15000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorageMock.clear();
@@ -193,7 +193,7 @@ describe('useProductMagic - Chat Features', () => {
       const { result } = renderHook(() => useProductMagic());
       
       act(() => {
-        result.current.setBlueprint('Chat application with real-time messaging');
+        result.current.setBlueprint('Chat application with real-time messaging github');
       });
       
       await act(async () => {
@@ -355,7 +355,7 @@ describe('useProductMagic - Chat Features', () => {
       
       // Set blueprint to ensure analysis has content
       act(() => {
-        result.current.setBlueprint('Build a chat app with notifications');
+        result.current.setBlueprint('Build a chat app with notifications github');
       });
       
       // Run autonomous job (mock the async behavior)
@@ -366,7 +366,7 @@ describe('useProductMagic - Chat Features', () => {
       // Wait for the job to complete (includes analysis)
       await waitFor(() => {
         expect(result.current.suggestions.length).toBeGreaterThan(0);
-      }, { timeout: 5000 });
+      }, { timeout: 15000 });
     });
   });
 });

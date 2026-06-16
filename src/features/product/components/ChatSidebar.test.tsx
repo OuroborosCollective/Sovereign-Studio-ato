@@ -52,7 +52,8 @@ describe('ChatSidebar', () => {
     it('renders suggestions section when suggestions exist', () => {
       render(<ChatSidebar {...defaultProps} />);
       
-      expect(screen.getByText(/Vorschläge/i)).toBeDefined();
+      const vorschlage = screen.getAllByText(/Vorschläge/i);
+      expect(vorschlage.length).toBeGreaterThan(0);
       expect(screen.getByText('Integration: WebSocket')).toBeDefined();
     });
 
@@ -84,7 +85,7 @@ describe('ChatSidebar', () => {
       render(<ChatSidebar {...defaultProps} />);
       
       const input = screen.getByPlaceholderText(/Frage oder Feedback/i);
-      const submitButton = screen.getAllByRole('button')[0];
+      const submitButton = screen.getByLabelText('Nachricht senden');
       
       fireEvent.change(input, { target: { value: 'Test message' } });
       fireEvent.click(submitButton);
@@ -96,9 +97,10 @@ describe('ChatSidebar', () => {
       render(<ChatSidebar {...defaultProps} />);
       
       const input = screen.getByPlaceholderText(/Frage oder Feedback/i) as HTMLInputElement;
+      const submitButton = screen.getByLabelText('Nachricht senden');
       
       fireEvent.change(input, { target: { value: 'Test message' } });
-      fireEvent.click(screen.getAllByRole('button')[0]);
+      fireEvent.click(submitButton);
       
       expect(input.value).toBe('');
     });
@@ -134,7 +136,7 @@ describe('ChatSidebar', () => {
     it('disables submit button when input is empty', () => {
       render(<ChatSidebar {...defaultProps} />);
       
-      const submitButton = screen.getAllByRole('button')[0];
+      const submitButton = screen.getByLabelText('Nachricht senden');
       expect(submitButton).toBeDisabled();
     });
 
@@ -142,7 +144,7 @@ describe('ChatSidebar', () => {
       render(<ChatSidebar {...defaultProps} />);
       
       const input = screen.getByPlaceholderText(/Frage oder Feedback/i);
-      const submitButton = screen.getAllByRole('button')[0];
+      const submitButton = screen.getByLabelText('Nachricht senden');
       
       fireEvent.change(input, { target: { value: 'Test' } });
       
@@ -188,16 +190,18 @@ describe('ChatSidebar', () => {
     it('shows priority badges for high priority suggestions', () => {
       render(<ChatSidebar {...defaultProps} />);
       
-      const badge = screen.getByText('WICHTIG');
-      expect(badge).toBeDefined();
+      const badges = screen.getAllByText('WICHTIG');
+      expect(badges.length).toBeGreaterThan(0);
     });
   });
 
   describe('Error Handling', () => {
     it('handles empty suggestions array gracefully', () => {
-      render(<ChatSidebar {...defaultProps} suggestions={[]} />);
+      const { container } = render(<ChatSidebar {...defaultProps} suggestions={[]} />);
       
-      expect(screen.queryByText(/Vorschläge/i)).toBeNull();
+      // The header contains "Vorschläge", but the specific suggestions section should not be present
+      const suggestionsTitle = container.querySelector('.text-stone-600.uppercase.mb-2');
+      expect(suggestionsTitle).toBeNull();
     });
 
     it('handles very long messages', () => {

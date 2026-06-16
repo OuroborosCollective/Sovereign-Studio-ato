@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, Lightbulb, Loader2 } from 'lucide-react';
+import { Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, Lightbulb, Loader2, CircleX } from 'lucide-react';
 import { ChatMessage, Suggestion } from '../types';
 
 interface ChatSidebarProps {
@@ -150,17 +150,31 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       {/* Input Area */}
       <div className="border-t border-stone-200 p-3 bg-white shrink-0">
         <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Frage oder Feedback..."
-            className="flex-1 text-[11px] p-2 border border-stone-300 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-          />
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Frage oder Feedback..."
+              className="w-full text-[11px] p-2 pr-8 border border-stone-300 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
+            />
+            {inputValue && (
+              <button
+                type="button"
+                onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-all active:scale-95 p-1"
+                aria-label="Eingabe loeschen"
+                title="Eingabe loeschen"
+              >
+                <CircleX size={14} />
+              </button>
+            )}
+          </div>
           <button
             type="submit"
             disabled={!inputValue.trim()}
+            aria-label="Nachricht senden"
             className="px-3 py-2 bg-indigo-600 disabled:bg-stone-300 text-white rounded-lg hover:bg-indigo-700 transition-colors"
           >
             <Send size={14} />
