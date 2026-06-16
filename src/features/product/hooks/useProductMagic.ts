@@ -1,9 +1,180 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane, ChatMessage, Suggestion, ArchitectureAnalysis } from '../types';
 import { makeId, demoFiles, starterCards, defaultSettings } from '../constants';
 import { validateAppState, validateGitHubUrl, runtimeCheck, safeGet } from '../../../shared/utils/runtimeValidation';
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+// Storage keys for persistence
+const STORAGE_KEYS = {
+  REPO_URL: 'sovereign_repo_url',
+  ACCESS_KEY: 'sovereign_access_key',
+  GEMINI_KEY: 'sovereign_gemini_key',
+  BLUEPRINT: 'sovereign_blueprint',
+  SETTINGS: 'sovereign_settings',
+  CHAT_MESSAGES: 'sovereign_chat_messages',
+  WORKING_STATE: 'sovereign_working_state',
+  APPROVAL_STATE: 'sovereign_approval_state',
+  GENERATED_CODE: 'sovereign_generated_code',
+  BUILT: 'sovereign_built',
+} as const;
+
+// Safe localStorage helpers with error handling
+function safeLoadStorage<T>(key: string, fallback: T): T {
+  try {
+    const item = localStorage.getItem(key);
+    if (item) {
+      return JSON.parse(item) as T;
+    }
+  } catch (e) {
+    console.warn(`[STORAGE] Failed to load ${key}:`, e);
+  }
+  return fallback;
+}
+
+function safeSaveStorage(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn(`[STORAGE] Failed to save ${key}:`, e);
+  }
+}
+
+function safeRemoveStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch (e) {
+    console.warn(`[STORAGE] Failed to remove ${key}:`, e);
+  }
+}
+
+// WebSocket connection manager with reconnection support
+interface WebSocketManagerOptions {
+  url: string;
+  onMessage?: (data: unknown) => void;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+  onError?: (error: Event) => void;
+  reconnectInterval?: number;
+  maxReconnectAttempts?: number;
+}
+
+interface WebSocketManagerState {
+  url: string;
+  reconnectInterval: number;
+  maxReconnectAttempts: number;
+  onMessage?: (data: unknown) => void;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+  onError?: (error: Event) => void;
+}
+
+class WebSocketManager {
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private options: WebSocketManagerState;
+  private isIntentionallyClosed = false;
+
+  constructor(options: WebSocketManagerOptions) {
+    this.options = {
+      url: options.url,
+      reconnectInterval: 3000,
+      maxReconnectAttempts: 10,
+      onMessage: undefined,
+      onConnect: undefined,
+      onDisconnect: undefined,
+      onError: undefined,
+      ...options,
+    };
+  }
+
+  connect(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) return;
+    
+    this.isIntentionallyClosed = false;
+    
+    try {
+      this.ws = new WebSocket(this.options.url);
+      
+      this.ws.onopen = () => {
+        console.log('[WS] Connected');
+        this.reconnectAttempts = 0;
+        this.options.onConnect?.();
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this.options.onMessage?.(data);
+        } catch {
+          this.options.onMessage?.(event.data);
+        }
+      };
+
+      this.ws.onclose = () => {
+        console.log('[WS] Disconnected');
+        this.options.onDisconnect?.();
+        if (!this.isIntentionallyClosed) {
+          this.scheduleReconnect();
+        }
+      };
+
+      this.ws.onerror = (error) => {
+        console.error('[WS] Error:', error);
+        this.options.onError?.(error);
+      };
+    } catch (e) {
+      console.error('[WS] Connection failed:', e);
+      this.scheduleReconnect();
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
+      console.log('[WS] Max reconnect attempts reached');
+      return;
+    }
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+
+    const delay = Math.min(
+      this.options.reconnectInterval * Math.pow(1.5, this.reconnectAttempts),
+      30000
+    );
+
+    console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
+    
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectAttempts++;
+      this.connect();
+    }, delay);
+  }
+
+  send(data: unknown): boolean {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(typeof data === 'string' ? data : JSON.stringify(data));
+      return true;
+    }
+    return false;
+  }
+
+  disconnect(): void {
+    this.isIntentionallyClosed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+}
 
 // Helper to parse GitHub repo URL
 function parseGitHubUrl(url: string): { owner: string; repo: string; branch: string } | null {
@@ -14,6 +185,37 @@ function parseGitHubUrl(url: string): { owner: string; repo: string; branch: str
     repo: match[2].replace(/\.git$/, ''),
     branch: match[3] || 'main',
   };
+}
+
+// Validate GitHub access token
+function validateGitHubToken(token: string): { valid: boolean; error?: string } {
+  if (!token || !token.trim()) {
+    return { valid: false, error: 'GitHub Access Token ist erforderlich fuer GitHub-Operationen.' };
+  }
+  if (token.length < 10) {
+    return { valid: false, error: 'GitHub Access Token scheint zu kurz zu sein.' };
+  }
+  // Basic format check - GitHub tokens typically start with ghp_, gho_, ghu_, ghs_, ghr_ or are fine-grained tokens
+  const tokenPattern = /^(ghp_|gho_|ghu_|ghs_|ghr_)?[a-zA-Z0-9]{20,}$/;
+  if (!tokenPattern.test(token)) {
+    console.warn('[GITHUB] Token format may be invalid');
+  }
+  return { valid: true };
+}
+
+// Validate repository URL
+function validateRepoUrl(url: string): { valid: boolean; error?: string } {
+  if (!url || !url.trim()) {
+    return { valid: false, error: 'Repository URL ist erforderlich.' };
+  }
+  const parsed = parseGitHubUrl(url);
+  if (!parsed) {
+    return { valid: false, error: 'Ungueltige GitHub URL. Format: https://github.com/owner/repo' };
+  }
+  if (parsed.owner.length === 0 || parsed.repo.length === 0) {
+    return { valid: false, error: 'Repository URL ist unvollstaendig.' };
+  }
+  return { valid: true };
 }
 
 // Analyze architecture based on blueprint and cards
@@ -78,36 +280,51 @@ const VALID_PACKAGE_MANAGERS = ['auto', 'pnpm', 'npm', 'yarn'];
 const VALID_LINTERS = ['biome', 'eslint', 'prettier'];
 
 export function useProductMagic() {
-  // State with runtime validation
-  const [repoUrl, setRepoUrl] = useState('https://github.com/OuroborosCollective/Sovereign-Studio-ato');
-  const [accessKey, setAccessKey] = useState('');
-  const [geminiKey, setGeminiKey] = useState('');
-  const [blueprint, setBlueprint] = useState('Beschreibe deine Idee oder deinen Auftrag. Ich plane, generiere, pruefe und zeige alle Aenderungen sichtbar.');
-  const [cards, setCards] = useState<Card[]>(starterCards());
+  // Load persisted state from storage
+  const [repoUrl, setRepoUrl] = useState(() => safeLoadStorage(STORAGE_KEYS.REPO_URL, 'https://github.com/OuroborosCollective/Sovereign-Studio-ato'));
+  const [accessKey, setAccessKey] = useState(() => safeLoadStorage(STORAGE_KEYS.ACCESS_KEY, ''));
+  const [geminiKey, setGeminiKey] = useState(() => safeLoadStorage(STORAGE_KEYS.GEMINI_KEY, ''));
+  const [blueprint, setBlueprint] = useState(() => safeLoadStorage(STORAGE_KEYS.BLUEPRINT, 'Beschreibe deine Idee oder deinen Auftrag. Ich plane, generiere, pruefe und zeige alle Aenderungen sichtbar.'));
+  const [cards, setCards] = useState<Card[]>(() => starterCards());
   const [selectedFile, setSelectedFile] = useState<FileItem>(demoFiles[0]);
-  const [built, setBuilt] = useState(false);
+  const [built, setBuilt] = useState(() => safeLoadStorage(STORAGE_KEYS.BUILT, false));
   const [chatInput, setChatInput] = useState('Starte mit diesem Auftrag.');
   const [logs, setLogs] = useState<string[]>(['Sovereign Studio bereit.', 'Links Auftrag und Dateien. Mitte Chat und Editor. Rechts nur Log.']);
   const [workView, setWorkView] = useState<WorkView>('editor');
   const [pipelineState, setPipelineState] = useState<PipelineState>('idle');
   const [fixLoops, setFixLoops] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState<ProjectSettings>(defaultSettings);
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [isWorking, setIsWorking] = useState(false);
+  const [settings, setSettings] = useState<ProjectSettings>(() => safeLoadStorage(STORAGE_KEYS.SETTINGS, defaultSettings));
+  const [generatedCode, setGeneratedCode] = useState(() => safeLoadStorage(STORAGE_KEYS.GENERATED_CODE, ''));
+  const [isWorking, setIsWorking] = useState(() => safeLoadStorage(STORAGE_KEYS.WORKING_STATE, false));
   const [agentMessage, setAgentMessage] = useState('Bereit. Gib links deinen Auftrag ein und starte dann Schritt 1.');
   const [progress, setProgress] = useState(0);
   const [mobilePane, setMobilePane] = useState<MobilePane>('auftrag');
   const [currentStepLabel, setCurrentStepLabel] = useState('');
   const [nextStepLabel, setNextStepLabel] = useState('');
-  const [approvalConfirmed, setApprovalConfirmed] = useState(false);
-  const [targetLink, setTargetLink] = useState(''); // External target link (e.g., PR URL)
+  const [approvalConfirmed, setApprovalConfirmed] = useState(() => safeLoadStorage(STORAGE_KEYS.APPROVAL_STATE, false));
+  const [targetLink, setTargetLink] = useState('');
   
-  // Chat and analysis state
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  // Chat and analysis state with persistence
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => safeLoadStorage(STORAGE_KEYS.CHAT_MESSAGES, []));
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [architectureAnalysis, setArchitectureAnalysis] = useState<ArchitectureAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // WebSocket manager ref
+  const wsManagerRef = useRef<WebSocketManager | null>(null);
+  const wsUrlRef = useRef<string>('');
+  
+  // Persist state changes to localStorage
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.REPO_URL, repoUrl); }, [repoUrl]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.ACCESS_KEY, accessKey); }, [accessKey]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.GEMINI_KEY, geminiKey); }, [geminiKey]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.BLUEPRINT, blueprint); }, [blueprint]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.SETTINGS, settings); }, [settings]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.CHAT_MESSAGES, chatMessages); }, [chatMessages]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.GENERATED_CODE, generatedCode); }, [generatedCode]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.BUILT, built); }, [built]);
+  useEffect(() => { safeSaveStorage(STORAGE_KEYS.APPROVAL_STATE, approvalConfirmed); }, [approvalConfirmed]);
 
   // Runtime validation effect - validates state on mount and on changes
   useEffect(() => {
@@ -479,6 +696,16 @@ export function useProductMagic() {
       return;
     }
 
+    // Check for GitHub token first
+    const tokenValidation = validateGitHubToken(accessKey);
+    if (!tokenValidation.valid) {
+      setIsWorking(false);
+      log('FEHLER: ' + (tokenValidation.error || 'GitHub Token fehlt'));
+      setAgentMessage('GitHub Token erforderlich. Oeffne Einstellungen und trage deinen Personal Access Token ein.');
+      setShowSettings(true);
+      return;
+    }
+
     setIsWorking(true);
     setAgentMessage('Ich pushe jetzt zum GitHub Repo...');
     log('=== Push zu GitHub gestartet ===');
@@ -492,10 +719,26 @@ export function useProductMagic() {
 
       const headers: Record<string, string> = {
         'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${accessKey}`,
+        'Authorization': `Bearer ${accessKey.trim()}`,
         'Content-Type': 'application/json',
         'X-GitHub-Api-Version': '2022-11-28',
       };
+
+      // First, verify the token works by checking repository access
+      const verifyResponse = await fetch(
+        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`,
+        { headers }
+      );
+      
+      if (!verifyResponse.ok) {
+        if (verifyResponse.status === 401) {
+          throw new Error('GitHub Token ungueltig oder abgelaufen. Bitte neuen Token in Einstellungen eintragen.');
+        }
+        if (verifyResponse.status === 404) {
+          throw new Error('Repository nicht gefunden oder keine Berechtigung.');
+        }
+        throw new Error(`Repository-Zugriff fehlgeschlagen: ${verifyResponse.status}`);
+      }
 
       // Create a new branch for the changes
       const timestamp = Date.now();
@@ -508,6 +751,12 @@ export function useProductMagic() {
       );
       
       if (!refResponse.ok) {
+        if (refResponse.status === 404) {
+          throw new Error(`Branch '${parsed.branch}' nicht gefunden. Bitte URL mit korrektem Branch prufen.`);
+        }
+        if (refResponse.status === 401) {
+          throw new Error('GitHub Token ungueltig. Bitte in Einstellungen erneuern.');
+        }
         throw new Error(`Konnte Branch-Info nicht laden: ${refResponse.status}`);
       }
       
@@ -515,7 +764,7 @@ export function useProductMagic() {
       const baseSha = refData.object.sha;
 
       // Create new branch
-      await fetch(
+      const branchResponse = await fetch(
         `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/refs`,
         {
           method: 'POST',
@@ -526,6 +775,10 @@ export function useProductMagic() {
           }),
         }
       );
+
+      if (!branchResponse.ok) {
+        throw new Error(`Konnte Branch nicht erstellen: ${branchResponse.status}`);
+      }
 
       // Create a commit with the generated code
       const commitMessage = `feat: Sovereign Studio generated code\n\nGenerated by Sovereign Studio\n\nAuftrag: ${blueprint.slice(0, 100)}...`;
@@ -649,7 +902,42 @@ export function useProductMagic() {
     }
 
     setIsWorking(false);
-  }, [guardBusy, approvalConfirmed, pipelineState, repoUrl, accessKey, generatedCode, blueprint, log]);
+  }, [guardBusy, approvalConfirmed, pipelineState, repoUrl, accessKey, generatedCode, blueprint, log, setShowSettings]);
+
+  // Auto-switch mobile pane based on pipeline state
+  useEffect(() => {
+    if (pipelineState === 'validating' || pipelineState === 'generating' || pipelineState === 'fixing') {
+      setMobilePane('live');
+    } else if (pipelineState === 'green' || pipelineState === 'failed') {
+      // Stay on current pane, log updates automatically
+    }
+  }, [pipelineState]);
+
+  // Initialize WebSocket manager on mount (for future real-time features)
+  useEffect(() => {
+    // WebSocket is optional - only initialize if URL is configured
+    const wsUrl = wsUrlRef.current;
+    if (!wsUrl) return;
+
+    wsManagerRef.current = new WebSocketManager({
+      url: wsUrl,
+      onConnect: () => {
+        log('[WS] Verbunden');
+      },
+      onDisconnect: () => {
+        log('[WS] Verbindung verloren - automatisches Wiederverbinden...');
+      },
+      onError: (error) => {
+        console.error('[WS] Fehler:', error);
+      },
+    });
+
+    wsManagerRef.current.connect();
+
+    return () => {
+      wsManagerRef.current?.disconnect();
+    };
+  }, [wsUrlRef.current]);
 
   return {
     repoUrl, setRepoUrl,
