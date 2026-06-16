@@ -22,9 +22,13 @@ const cards: Card[] = [
 ];
 
 describe('sovereignRuntime', () => {
-  it('keeps the existing primary provider first', () => {
-    expect(SOVEREIGN_LLM_ROUTES[0]?.id).toBe('current-primary');
-    expect(SOVEREIGN_LLM_ROUTES.slice(1).map((route) => route.id)).toContain('ovh-anonymous-code-chat');
+  it('keeps the real free-first provider order before fallbacks', () => {
+    expect(SOVEREIGN_LLM_ROUTES.slice(0, 3).map((route) => route.id)).toEqual([
+      'mlvoca',
+      'pollinations',
+      'optional-user-keys',
+    ]);
+    expect(SOVEREIGN_LLM_ROUTES.slice(3).map((route) => route.id)).toContain('ovh-anonymous-code-chat');
   });
 
   it('detects repository architecture from real tree paths', () => {
@@ -57,11 +61,12 @@ describe('sovereignRuntime', () => {
         '.github/workflows/ci.yml',
         'android/app/build.gradle',
       ],
-      existingProviderOrder: ['current-primary', 'pollinations-dev-key', 'mlvocka-dev-key'],
+      existingProviderOrder: ['mlvoca', 'pollinations', 'optional-user-keys'],
     });
 
     runtimeAssertSovereignPackage(pkg);
 
+    expect(pkg.brain.execution.patches.length).toBeGreaterThan(0);
     expect(pkg.files.map((file) => file.path)).toContain('README.md');
     expect(pkg.files.map((file) => file.path)).toContain('docs/UPDATE_HISTORY.md');
     expect(pkg.files.map((file) => file.path)).toContain('docs/SOVEREIGN_RUNTIME.md');
