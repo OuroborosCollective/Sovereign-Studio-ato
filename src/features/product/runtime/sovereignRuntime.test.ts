@@ -70,6 +70,7 @@ describe('sovereignRuntime', () => {
     expect(pkg.files.map((file) => file.path)).toContain('README.md');
     expect(pkg.files.map((file) => file.path)).toContain('docs/UPDATE_HISTORY.md');
     expect(pkg.files.map((file) => file.path)).toContain('docs/SOVEREIGN_RUNTIME.md');
+    expect(pkg.files.map((file) => file.path)).toContain('docs/LAUNCH_READINESS.md');
     expect(pkg.files.map((file) => file.path)).toContain('generated/sovereign-product/workflow.ts');
   });
 
