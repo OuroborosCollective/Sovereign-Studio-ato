@@ -19,6 +19,8 @@ Brain-gated implementation package
 ↓
 Functional guards
 ↓
+Generated Files Review
+↓
 Telemetry terminal + session memory
 ↓
 Draft PR Publisher
@@ -35,12 +37,13 @@ The important rule is simple: no visible action should pretend that a repository
 | Readiness runtime | `src/features/product/runtime/repoLaunchReadiness.ts` | Scores launch readiness and builds risk/checklist/release-state output. |
 | File signal mapping | `src/features/product/runtime/repoLaunchReadinessFromFiles.ts` | Converts loaded tree entries into readiness signals. |
 | File integrity matrix | `src/features/product/runtime/repoFileIntegrity.ts` | Performs honest path-only risk scoring for repo entries without pretending to scan content. |
+| Generated file review | `src/features/product/runtime/generatedFileReview.ts` | Reviews generated files before publish, flags high-risk content/path markers and creates preview metadata. |
 | Telemetry runtime | `src/features/product/runtime/sovereignTelemetry.ts` | Records visible lifecycle events across repo, readiness, package, guards, GitHub, workflow, memory and UI stages. |
 | Session memory | `src/features/product/runtime/sovereignSessionMemory.ts` | Saves and restores repo snapshot, mission and preview without storing PATs. |
 | Brain package builder | `src/features/product/runtime/sovereignPackageFromRepoFiles.ts` | Turns a mission and repo snapshot into a Sovereign implementation package. |
 | Functional guards | `src/features/product/runtime/sovereignFunctionalGuards.ts` | Blocks empty snapshots, duplicate files, forbidden paths and incomplete docs packages. |
 | Draft PR publisher | `src/features/github/githubPackagePublisher.ts` | Creates branch, tree, commit and draft pull request through GitHub API. |
-| UI shell | `src/App.tsx` | Wires tabbed repo loading, readiness, integrity, action builder, telemetry and draft PR creation. |
+| UI shell | `src/App.tsx` | Wires tabbed repo loading, readiness, integrity, action builder, file review, telemetry and draft PR creation. |
 
 ## Practical skills this tool now has
 
@@ -120,7 +123,23 @@ Best practice:
 - Never bypass `assertGeneratedPackageReady` in publishing paths.
 - Keep runtime checks small and deterministic.
 
-### 6. Telemetry terminal
+### 6. Generated file review
+
+Generated file review is the final human-readable gate before a Draft PR. It lists each generated file with path, reason, line count, character count, risk level, flags and preview.
+
+It blocks Draft PR creation when high-risk generated files are detected, for example:
+
+- secret markers in generated content
+- forbidden-looking output paths
+- empty generated files
+
+Best practice:
+
+- Review the `Files` tab before creating a Draft PR.
+- Treat workflow/config files as medium-risk and review them manually.
+- Do not hide generated content behind only a JSON brain preview.
+
+### 7. Telemetry terminal
 
 Telemetry is the visible runtime trail. It should answer: what just happened, what stage did it happen in, and did it pass or fail?
 
@@ -145,7 +164,7 @@ Best practice:
 - Keep events short and structured.
 - Use telemetry to explain failures before asking the user to retry.
 
-### 7. Session memory
+### 8. Session memory
 
 Session memory stores the last useful local state: repo URL, branch, status, repo file snapshot, mission, summary and preview. It intentionally does not store the GitHub PAT.
 
@@ -155,7 +174,7 @@ Best practice:
 - Mark restored repo state visibly.
 - Re-load GitHub when freshness matters.
 
-### 8. Draft PR publishing
+### 9. Draft PR publishing
 
 The publisher creates a branch, tree, commit and draft pull request. It intentionally does not auto-merge.
 
@@ -175,6 +194,7 @@ Repo
 Readiness
 Integrity
 Builder
+Files
 Telemetry
 ```
 
@@ -210,6 +230,8 @@ Sovereign Brain Contract
 ↓
 Functional Guards
 ↓
+Generated Files Review
+↓
 Preview
 ↓
 Draft PR Publisher
@@ -232,10 +254,11 @@ When writing to GitHub:
 3. Resolve base ref and base tree.
 4. Create a uniquely named branch.
 5. Build a tree from validated generated files.
-6. Create a commit.
-7. Move the branch ref to the commit.
-8. Create a draft PR.
-9. Show the PR URL, branch and commit SHA.
+6. Review generated files.
+7. Create a commit.
+8. Move the branch ref to the commit.
+9. Create a draft PR.
+10. Show the PR URL, branch and commit SHA.
 
 Do not push directly to default branch from the UI.
 
@@ -249,6 +272,7 @@ Every structural layer should have tests:
 | Repo file signal mapping | `src/features/product/runtime/repoLaunchReadinessFromFiles.test.ts` |
 | Readiness runtime | `src/features/product/runtime/repoLaunchReadiness.test.ts` |
 | File integrity runtime | `src/features/product/runtime/repoFileIntegrity.test.ts` |
+| Generated file review | `src/features/product/runtime/generatedFileReview.test.ts` |
 | Telemetry runtime | `src/features/product/runtime/sovereignTelemetry.test.ts` |
 | Session memory | `src/features/product/runtime/sovereignSessionMemory.test.ts` |
 | Package builder | `src/features/product/runtime/sovereignPackageFromRepoFiles.test.ts` |
@@ -290,14 +314,14 @@ Avoid these:
 - hardcoded secrets or direct secret logging
 - broad rewrites of large hooks when a small adapter module is enough
 - synthetic purity scores presented as true content scans
+- pushing generated files without a reviewable file list
 
 ## Current next hardening targets
 
 1. Add a workflow-watch reader that can inspect PR commit status after Draft PR creation.
-2. Add a small PR review panel that lists generated files before publishing.
-3. Add content-level diff preview for generated files.
-4. Move PAT handling into a safer session-only utility boundary.
-5. Keep `useProductMagic.ts` and other large hooks thin by routing through small runtime modules.
+2. Add content-level source diff preview once file-content fetching exists.
+3. Move PAT handling into a safer session-only utility boundary.
+4. Keep `useProductMagic.ts` and other large hooks thin by routing through small runtime modules.
 
 ## Principle
 
