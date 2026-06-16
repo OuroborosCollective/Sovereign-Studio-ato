@@ -1,7 +1,10 @@
 import { ParsedRepo } from './types';
 
 export const parseGithubRepoUrl = (value: string): ParsedRepo | null => {
-  const match = value.match(/github\.com\/([^/]+)\/([^/]+)/i);
+  const match = value.trim().match(/github\.com\/([^/?#]+)\/([^/?#]+?)(?:\.git)?\/?(?:[?#].*)?$/i);
   if (!match) return null;
-  return { owner: match[1], repo: match[2].replace('.git', '') };
+  return {
+    owner: decodeURIComponent(match[1]),
+    repo: decodeURIComponent(match[2].replace(/\.git$/i, '')),
+  };
 };
