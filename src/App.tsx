@@ -4,6 +4,7 @@ import { BoardState } from './features/canvas/types';
 import { defaultBoard } from './features/canvas/utils';
 import { useGithubRepo } from './features/github/hooks/useGithubRepo';
 import { RepoFileList } from './features/github/components/RepoFileList';
+import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
@@ -60,6 +61,8 @@ const App: React.FC = () => {
       </button>
 
       <p>{repoStatus}</p>
+
+      <RepoReadinessPanel repoUrl={repoUrl} files={repoFiles} status={repoStatus} />
 
       <RepoFileList files={repoFiles} />
 
