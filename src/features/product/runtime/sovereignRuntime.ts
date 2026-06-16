@@ -5,6 +5,11 @@ import {
   toImplementationFiles,
   type SovereignBrainResult,
 } from '../brain/sovereignBrainContract';
+import {
+  buildLaunchPackageMarkdown,
+  evaluateRepoReadiness,
+  type RepoSignals,
+} from './repoLaunchReadiness';
 
 export type ProviderStatus = 'primary' | 'enabled' | 'fallback' | 'experimental';
 
@@ -105,7 +110,7 @@ export function analyzeRepoArchitecture(repoPaths: string[]): RepoArchitectureRu
     hasGithubWorkflows,
     hasTests,
     hasRuntimeValidation,
-    suggestedTargets: ['README.md', 'docs/UPDATE_HISTORY.md', 'docs/SOVEREIGN_RUNTIME.md', 'generated/sovereign-product/workflow.ts'],
+    suggestedTargets: ['README.md', 'docs/UPDATE_HISTORY.md', 'docs/SOVEREIGN_RUNTIME.md', 'docs/LAUNCH_READINESS.md', 'generated/sovereign-product/workflow.ts'],
     riskNotes,
   };
 }
@@ -122,12 +127,30 @@ function providerList(): string {
   return SOVEREIGN_LLM_ROUTES.map((route, index) => `${index + 1}. ${route.id} - ${route.label}`).join('\n');
 }
 
+function buildRepoSignals(input: BuildImplementationInput, architecture: RepoArchitectureRuntime): RepoSignals {
+  return {
+    owner: 'target',
+    repo: 'repository',
+    recentCommitCount: 0,
+    branchProtectionActive: false,
+    hasReadme: architecture.hasReadme,
+    hasLicense: hasPath(input.repoPaths, (path) => path === 'license' || path === 'license.md'),
+    hasTests: architecture.hasTests,
+    hasGithubWorkflows: architecture.hasGithubWorkflows,
+    hasPackageJson: hasPath(input.repoPaths, (path) => path === 'package.json'),
+    hasRuntimeValidation: architecture.hasRuntimeValidation,
+  };
+}
+
 function createDocsBrain(input: BuildImplementationInput, architecture: RepoArchitectureRuntime): SovereignBrainResult {
-  const readme = `# Sovereign Studio\n\n${input.blueprint}\n\n## Runtime goals\n\n- Provider output is never trusted blindly.\n- Each result must pass the Sovereign five-layer brain contract.\n- README requests must update README/docs, not only generated preview artifacts.\n- GitHub push uses real repo tree analysis before branch creation.\n- Workflows are surfaced to the user before final approval.\n\n## Architecture\n\n${architecture.summary}\n\n## Provider order\n\n${providerList()}\n`;
+  const signals = buildRepoSignals(input, architecture);
+  const readiness = evaluateRepoReadiness(signals);
+  const launchReadiness = buildLaunchPackageMarkdown(signals, readiness, input.blueprint);
+  const readme = `# Sovereign Studio\n\n${input.blueprint}\n\n## Runtime goals\n\n- Provider output is never trusted blindly.\n- Each result must pass the Sovereign five-layer brain contract.\n- README requests must update README/docs, not only generated preview artifacts.\n- GitHub push uses real repo tree analysis before branch creation.\n- Workflows are surfaced to the user before final approval.\n\n## Architecture\n\n${architecture.summary}\n\n## Launch readiness\n\n${readiness.summary}\n\n## Provider order\n\n${providerList()}\n`;
 
-  const history = `# Update History\n\n## Sovereign brain guarded package\n\nRequest:\n\n${input.blueprint}\n\nArchitecture:\n\n${architecture.summary}\n\nCards:\n\n${input.cards.map((card) => `- ${card.title}: ${card.body}`).join('\n') || '- none'}\n`;
+  const history = `# Update History\n\n## Sovereign brain guarded package\n\nRequest:\n\n${input.blueprint}\n\nArchitecture:\n\n${architecture.summary}\n\nReadiness:\n\n${readiness.summary}\n\nCards:\n\n${input.cards.map((card) => `- ${card.title}: ${card.body}`).join('\n') || '- none'}\n`;
 
-  const runtime = `# Sovereign Runtime\n\n## Brain gate\n\nEvery provider route must produce perception, analysis, plan, execution and learning layers. A response without execution patches is rejected before GitHub push.\n\n## Routes\n\n${providerList()}\n\n## Checks\n\n- npm run type-check\n- npm run lint\n- npm run test:run\n- npm run build:web\n`;
+  const runtime = `# Sovereign Runtime\n\n## Brain gate\n\nEvery provider route must produce perception, analysis, plan, execution and learning layers. A response without execution patches is rejected before GitHub push.\n\n## Routes\n\n${providerList()}\n\n## Launch readiness rail\n\nSovereign runtime imports the RepoP3N12 launch-readiness idea as deterministic TypeScript checks: safe repo inspection, task extraction, readiness evaluation, owner checklist, copywriting and workflow watch.\n\n## Checks\n\n- npm run type-check\n- npm run lint\n- npm run test:run\n- npm run build:web\n`;
 
   return {
     perception: {
@@ -137,7 +160,7 @@ function createDocsBrain(input: BuildImplementationInput, architecture: RepoArch
       confidence: architecture.repoKind === 'unknown' ? 0.62 : 0.86,
     },
     analysis: {
-      severity: 'medium',
+      severity: readiness.grade === 'BLOCKED' ? 'high' : 'medium',
       issues: [
         {
           type: 'architecture',
@@ -150,27 +173,28 @@ function createDocsBrain(input: BuildImplementationInput, architecture: RepoArch
       systemicRisk: 'The app may open noisy PRs that fail checks and do not satisfy the user request.',
     },
     plan: {
-      strategy: 'Classify request, analyze repo tree, produce concrete files, validate package, then push through GitHub PR flow.',
+      strategy: 'Classify request, analyze repo tree, score launch readiness, produce concrete files, validate package, then push through GitHub PR flow.',
       phases: [
         { phase: 1, name: 'Perception', actions: ['scan repo tree', 'classify request'], rationale: 'Target files depend on repository shape.' },
-        { phase: 2, name: 'Planning', actions: ['select files', 'preserve free-first route order'], rationale: 'Push must match user intent.' },
+        { phase: 2, name: 'Readiness', actions: ['score docs/tests/workflows', 'build owner checklist'], rationale: 'Launch readiness catches missing documentation and CI before push.' },
         { phase: 3, name: 'Execution', actions: ['create files', 'wait workflows'], rationale: 'The PR must contain real requested files.' },
       ],
-      estimatedComplexity: 'medium',
+      estimatedComplexity: readiness.grade === 'BLOCKED' ? 'high' : 'medium',
     },
     execution: {
       patches: [
-        { file: 'README.md', type: architecture.hasReadme ? 'replace' : 'create', description: 'Repository README generated from architecture analysis.', code: readme },
+        { file: 'README.md', type: architecture.hasReadme ? 'replace' : 'create', description: 'Repository README generated from architecture and launch-readiness analysis.', code: readme },
         { file: 'docs/UPDATE_HISTORY.md', type: 'create', description: 'Update history generated from request context.', code: history },
         { file: 'docs/SOVEREIGN_RUNTIME.md', type: 'create', description: 'Runtime and provider behavior documentation.', code: runtime },
+        { file: 'docs/LAUNCH_READINESS.md', type: 'create', description: 'Launch readiness package generated from RepoP3N12-derived rubric.', code: launchReadiness },
       ],
       integrationNotes: 'Use these patches as GitHub tree entries after user approval.',
       testStrategy: 'Run type-check, lint, test:run and build:web; wait for GitHub checks with 66 second retry windows.',
     },
     learning: {
-      patterns: ['Brain-gated providers prevent preview-only PRs.', 'Repository tree analysis must happen before file generation.'],
+      patterns: ['Brain-gated providers prevent preview-only PRs.', 'Repository tree analysis must happen before file generation.', 'Launch readiness scoring catches missing CI and docs before merge.'],
       rules: ['Never push provider text without valid execution patches.', 'README tasks must touch README or docs files.', 'Workflow failures must route back to fix mode.'],
-      architectureUpgrade: 'Promote Sovereign brain output to the central planning contract of the app.',
+      architectureUpgrade: 'Promote Sovereign brain output plus launch-readiness report to the central planning contract of the app.',
     },
   };
 }
