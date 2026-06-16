@@ -1,7 +1,5 @@
 import './runtime-adapter';
 import React, { useState } from 'react';
-import { BoardState } from './features/canvas/types';
-import { defaultBoard } from './features/canvas/utils';
 import { useGithubRepo } from './features/github/hooks/useGithubRepo';
 import { RepoFileList } from './features/github/components/RepoFileList';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
@@ -11,7 +9,6 @@ import { LoginView } from './components/LoginView';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserSession | null>(null);
-  const [board, setBoard] = useState<BoardState>(() => defaultBoard());
   const {
     repoUrl,
     setRepoUrl,
@@ -24,10 +21,6 @@ const App: React.FC = () => {
     repoFiles,
     loadRepoTree,
   } = useGithubRepo();
-
-  const updateBoard = (next: BoardState) => {
-    setBoard({ ...next, updatedAt: new Date().toISOString() });
-  };
 
   const generateRepoIdeas = () => {
     console.log('Ideen generiert');
