@@ -19,7 +19,7 @@ export function detectFailureCode(error: unknown): LlmFailureCode {
   if (status === 401 || status === 403 || message.includes('unauthorized') || message.includes('forbidden')) return 'unauthorized';
   if (anyError?.name === 'AbortError' || message.includes('timeout')) return 'timeout';
   if (message.includes('network') || message.includes('fetch failed')) return 'network';
-  if (message.includes('contract') || message.includes('invalid')) return 'invalid_contract';
+  if (message.includes('contract') || message.includes('invalid') || message.includes('documentation request') || message.includes('no execution patches')) return 'invalid_contract';
   if (message.includes('empty')) return 'empty_output';
   return 'unknown';
 }
