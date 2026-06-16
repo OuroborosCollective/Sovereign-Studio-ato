@@ -14,6 +14,8 @@ export interface PublishPackageInput {
   body: string;
   files: PublishableFile[];
   branchPrefix?: string;
+  branchNonce?: string;
+  maxBranchAttempts?: number;
   fetcher?: typeof fetch;
 }
 
@@ -66,6 +68,16 @@ function normalizePath(path: string): string {
   return path.trim().replace(/^\/+/, '');
 }
 
+function githubHeaders(token: string, extra?: HeadersInit): HeadersInit {
+  return {
+    Accept: 'application/vnd.github+json',
+    'Content-Type': 'application/json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    Authorization: `Bearer ${token}`,
+    ...(extra ?? {}),
+  };
+}
+
 export function validatePublishableFiles(files: PublishableFile[]): PublishableFile[] {
   if (!files.length) throw new Error('No files to publish.');
 
@@ -95,13 +107,7 @@ export function validatePublishableFiles(files: PublishableFile[]): PublishableF
 async function githubJson<T>(fetcher: typeof fetch, url: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetcher(url, {
     ...init,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'Content-Type': 'application/json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      Authorization: `Bearer ${token}`,
-      ...(init.headers ?? {}),
-    },
+    headers: githubHeaders(token, init.headers),
   });
 
   if (!response.ok) {
@@ -112,8 +118,37 @@ async function githubJson<T>(fetcher: typeof fetch, url: string, token: string, 
   return response.json() as Promise<T>;
 }
 
-export function buildSovereignBranchName(prefix: string, title: string, files: PublishableFile[]): string {
-  const source = `${title}\n${files.map((file) => `${file.path}:${file.content.length}`).join('\n')}`;
+async function createUniqueBranchRef(
+  fetcher: typeof fetch,
+  apiBase: string,
+  token: string,
+  baseBranchName: string,
+  baseSha: string,
+  maxAttempts: number,
+): Promise<string> {
+  const attempts = Math.max(1, Math.min(maxAttempts, 20));
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const branch = attempt === 0 ? baseBranchName : `${baseBranchName}-${attempt + 1}`;
+    const response = await fetcher(`${apiBase}/git/refs`, {
+      method: 'POST',
+      headers: githubHeaders(token),
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha }),
+    });
+
+    if (response.ok) return branch;
+
+    const message = await response.text().catch(() => '');
+    if (response.status !== 422) {
+      throw new Error(`GitHub API ${response.status}: ${message || response.statusText}`);
+    }
+  }
+
+  throw new Error(`Could not create a unique branch after ${attempts} attempts.`);
+}
+
+export function buildSovereignBranchName(prefix: string, title: string, files: PublishableFile[], nonce = ''): string {
+  const source = `${title}\n${nonce}\n${files.map((file) => `${file.path}:${file.content.length}`).join('\n')}`;
   const cleanPrefix = prefix.toLowerCase().replace(/[^a-z0-9/_-]+/g, '-').replace(/^-+|-+$/g, '') || 'sovereign';
   return `${cleanPrefix}/${stableHash(source)}`;
 }
@@ -137,12 +172,20 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
   const baseTreeSha = baseCommit.tree?.sha;
   if (!baseTreeSha) throw new Error('Could not resolve base tree.');
 
-  const branch = buildSovereignBranchName(input.branchPrefix ?? 'sovereign/package', input.title, files);
-
-  await githubJson(fetcher, `${apiBase}/git/refs`, input.token, {
-    method: 'POST',
-    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha }),
-  });
+  const requestedBranch = buildSovereignBranchName(
+    input.branchPrefix ?? 'sovereign/package',
+    input.title,
+    files,
+    input.branchNonce ?? '',
+  );
+  const branch = await createUniqueBranchRef(
+    fetcher,
+    apiBase,
+    input.token,
+    requestedBranch,
+    baseSha,
+    input.maxBranchAttempts ?? 6,
+  );
 
   const tree = await githubJson<GitHubTreeResponse>(fetcher, `${apiBase}/git/trees`, input.token, {
     method: 'POST',
