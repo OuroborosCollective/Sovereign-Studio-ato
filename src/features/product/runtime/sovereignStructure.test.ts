@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildSovereignBranchName, validatePublishableFiles } from '../../github/githubPackagePublisher';
+import {
+  analyzeRepoFileIntegrityList,
+  summarizeFileIntegrity,
+} from './repoFileIntegrity';
 import { buildRepoSignalsFromFiles } from './repoLaunchReadinessFromFiles';
 import {
   DEFAULT_TOOL_PROGRESS_RAIL,
@@ -11,6 +15,17 @@ import {
   getRepoSnapshotStatus,
 } from './sovereignFunctionalGuards';
 import { buildSovereignPackageFromRepoFiles } from './sovereignPackageFromRepoFiles';
+import {
+  createSessionMemorySnapshot,
+  parseSessionMemory,
+  serializeSessionMemory,
+} from './sovereignSessionMemory';
+import {
+  appendTelemetryEvent,
+  createInitialTelemetryState,
+  createTelemetryEvent,
+  summarizeTelemetry,
+} from './sovereignTelemetry';
 
 const repoFiles = [
   { path: 'README.md', type: 'blob' as const },
@@ -30,12 +45,30 @@ describe('sovereign runtime structure', () => {
     const markdown = buildLaunchPackageMarkdown(signals, report, 'README + Update History');
     expect(markdown).toContain('Launch Readiness Package');
 
+    const integrity = analyzeRepoFileIntegrityList(repoFiles);
+    expect(summarizeFileIntegrity(integrity)).toContain('path-only');
+
     const pkg = buildSovereignPackageFromRepoFiles({
       mission: 'README + Update History',
       repoFiles,
     });
     expect(() => assertGeneratedPackageReady(pkg, repoFiles)).not.toThrow();
     expect(pkg.files.map((file) => file.path)).toContain('docs/LAUNCH_READINESS.md');
+
+    const memory = createSessionMemorySnapshot({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      repoBranch: 'main',
+      repoStatus: 'loaded',
+      repoFiles,
+      mission: 'README + Update History',
+      sovereignSummary: 'summary',
+      sovereignPreview: 'preview',
+    });
+    expect(parseSessionMemory(serializeSessionMemory(memory))?.repoFiles).toHaveLength(repoFiles.length);
+
+    let telemetry = createInitialTelemetryState();
+    telemetry = appendTelemetryEvent(telemetry, createTelemetryEvent('guards', 'success', 'guards:passed', 'Package ready.'));
+    expect(summarizeTelemetry(telemetry)).toContain('guards:passed');
 
     const publishable = validatePublishableFiles(pkg.files);
     expect(publishable.length).toBe(pkg.files.length);
