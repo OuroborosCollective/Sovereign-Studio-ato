@@ -181,50 +181,60 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
+    // ⚡ Bolt: Maintain fabricObjectsMapRef incrementally for O(1) lookups.
+    const fabricObjectsMap = fabricObjectsMapRef.current;
+
+    // If map is empty but canvas has objects, initialize it once.
+    if (fabricObjectsMap.size === 0) {
+      const initialObjects = canvas.getObjects();
+      for (let i = 0; i < initialObjects.length; i++) {
+        const fObj = initialObjects[i] as ExtendedObject;
+        if (fObj.id) fabricObjectsMap.set(fObj.id, fObj);
+      }
+    }
+
     const currentFabricObjects = canvas.getObjects();
+    const reduxObjectIdsSet = new Set<string>();
     let hasChanges = false;
 
-    const existingFabricObjectsMap = fabricObjectsMapRef.current;
+    // 1. Sync Redux -> Fabric (Update existing or Create new)
+    for (let i = 0; i < objects.length; i++) {
+      const objData = objects[i];
+      const id = objData.id;
+      reduxObjectIdsSet.add(id);
 
-    // ⚡ Bolt: Optimization - Avoid redundant map clearing and rebuilding.
-    // The map is maintained across renders and kept in sync incrementally:
-    // 1. New objects are added to the map when created.
-    // 2. Existing objects are kept in the map.
-    // 3. Removed objects are deleted from the map at the end of this effect.
-
-    const reduxObjectIdsSet = new Set<string>();
-
-    for (let index = 0; index < objects.length; index++) {
-      const objData = objects[index];
-      reduxObjectIdsSet.add(objData.id);
-      const existingObj = existingFabricObjectsMap.get(objData.id);
+      const existingObj = fabricObjectsMap.get(id);
+      // Fallback to left/top if x/y are not present (common in initial state/tests)
+      const targetX = objData.x ?? objData.left;
+      const targetY = objData.y ?? objData.top;
 
       if (existingObj) {
-        const needsUpdate =
-          existingObj.left !== objData.x ||
-          existingObj.top !== objData.y ||
-          currentFabricObjects[index] !== existingObj;
+        const needsPosUpdate = existingObj.left !== targetX || existingObj.top !== targetY;
+        const needsStackUpdate = currentFabricObjects[i] !== existingObj;
 
-        if (needsUpdate) {
-          existingObj.set({ left: objData.x, top: objData.y });
-          existingObj.setCoords();
-          moveObjectToLayer(canvas, existingObj, index);
+        if (needsPosUpdate || needsStackUpdate) {
+          if (needsPosUpdate) {
+            existingObj.set({ left: targetX, top: targetY });
+            existingObj.setCoords();
+          }
+          if (needsStackUpdate) {
+            moveObjectToLayer(canvas, existingObj, i);
+          }
           hasChanges = true;
         }
       } else {
         let newObj: FabricObject;
-
         if (objData.type === 'ai-text') {
           newObj = new IText((objData.data as any).text || '', {
-            left: objData.x,
-            top: objData.y,
+            left: targetX,
+            top: targetY,
             fontSize: 16,
             fontFamily: 'Inter',
           });
         } else {
           newObj = new Rect({
-            left: objData.x,
-            top: objData.y,
+            left: targetX,
+            top: targetY,
             width: objData.width,
             height: objData.height,
             fill: (objData.data as any).color || '#94a3b8',
@@ -233,20 +243,19 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
           });
         }
 
-        (newObj as ExtendedObject).id = objData.id;
+        (newObj as ExtendedObject).id = id;
         canvas.add(newObj);
-        moveObjectToLayer(canvas, newObj, index);
-
-        existingFabricObjectsMap.set(objData.id, newObj);
+        moveObjectToLayer(canvas, newObj, i);
+        fabricObjectsMap.set(id, newObj);
         hasChanges = true;
       }
     }
 
-    for (let i = 0; i < currentFabricObjects.length; i++) {
-      const fObj = currentFabricObjects[i] as ExtendedObject;
-      if (fObj.id && !reduxObjectIdsSet.has(fObj.id)) {
+    // 2. Cleanup orphaned Fabric objects
+    for (const [id, fObj] of fabricObjectsMap.entries()) {
+      if (!reduxObjectIdsSet.has(id)) {
         canvas.remove(fObj);
-        existingFabricObjectsMap.delete(fObj.id);
+        fabricObjectsMap.delete(id);
         hasChanges = true;
       }
     }
@@ -264,7 +273,7 @@ export const CanvasEngine: React.FC<CanvasEngineProps> = ({ className }) => {
 
     if (primarySelectedId) {
       if (!activeObj || activeObj.id !== primarySelectedId) {
-        // ⚡ Bolt: Use O(1) lookup via Map instead of O(N) loop
+        // ⚡ Bolt: Use O(1) lookup from fabricObjectsMapRef instead of O(N) canvas iteration
         const target = fabricObjectsMapRef.current.get(primarySelectedId);
         if (target) {
           canvas.setActiveObject(target);
