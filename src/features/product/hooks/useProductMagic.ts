@@ -187,37 +187,6 @@ function parseGitHubUrl(url: string): { owner: string; repo: string; branch: str
   };
 }
 
-// Validate GitHub access token
-function validateGitHubToken(token: string): { valid: boolean; error?: string } {
-  if (!token || !token.trim()) {
-    return { valid: false, error: 'GitHub Access Token ist erforderlich fuer GitHub-Operationen.' };
-  }
-  if (token.length < 10) {
-    return { valid: false, error: 'GitHub Access Token scheint zu kurz zu sein.' };
-  }
-  // Basic format check - GitHub tokens typically start with ghp_, gho_, ghu_, ghs_, ghr_ or are fine-grained tokens
-  const tokenPattern = /^(ghp_|gho_|ghu_|ghs_|ghr_)?[a-zA-Z0-9]{20,}$/;
-  if (!tokenPattern.test(token)) {
-    console.warn('[GITHUB] Token format may be invalid');
-  }
-  return { valid: true };
-}
-
-// Validate repository URL
-function validateRepoUrl(url: string): { valid: boolean; error?: string } {
-  if (!url || !url.trim()) {
-    return { valid: false, error: 'Repository URL ist erforderlich.' };
-  }
-  const parsed = parseGitHubUrl(url);
-  if (!parsed) {
-    return { valid: false, error: 'Ungueltige GitHub URL. Format: https://github.com/owner/repo' };
-  }
-  if (parsed.owner.length === 0 || parsed.repo.length === 0) {
-    return { valid: false, error: 'Repository URL ist unvollstaendig.' };
-  }
-  return { valid: true };
-}
-
 // Analyze architecture based on blueprint and cards
 function analyzeArchitecture(blueprint: string, cards: Card[]): ArchitectureAnalysis {
   const lowerBlueprint = blueprint.toLowerCase();
@@ -302,29 +271,14 @@ export function useProductMagic() {
   const [mobilePane, setMobilePane] = useState<MobilePane>('auftrag');
   const [currentStepLabel, setCurrentStepLabel] = useState('');
   const [nextStepLabel, setNextStepLabel] = useState('');
-  const [approvalConfirmed, setApprovalConfirmed] = useState(() => safeLoadStorage(STORAGE_KEYS.APPROVAL_STATE, false));
-  const [targetLink, setTargetLink] = useState('');
+  const [approvalConfirmed, setApprovalConfirmed] = useState(false);
+  const [targetLink, setTargetLink] = useState(''); // External target link (e.g., PR URL)
   
-  // Chat and analysis state with persistence
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => safeLoadStorage(STORAGE_KEYS.CHAT_MESSAGES, []));
+  // Chat and analysis state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [architectureAnalysis, setArchitectureAnalysis] = useState<ArchitectureAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  // WebSocket manager ref
-  const wsManagerRef = useRef<WebSocketManager | null>(null);
-  const wsUrlRef = useRef<string>('');
-  
-  // Persist state changes to localStorage
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.REPO_URL, repoUrl); }, [repoUrl]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.ACCESS_KEY, accessKey); }, [accessKey]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.GEMINI_KEY, geminiKey); }, [geminiKey]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.BLUEPRINT, blueprint); }, [blueprint]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.SETTINGS, settings); }, [settings]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.CHAT_MESSAGES, chatMessages); }, [chatMessages]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.GENERATED_CODE, generatedCode); }, [generatedCode]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.BUILT, built); }, [built]);
-  useEffect(() => { safeSaveStorage(STORAGE_KEYS.APPROVAL_STATE, approvalConfirmed); }, [approvalConfirmed]);
 
   // Runtime validation effect - validates state on mount and on changes
   useEffect(() => {
