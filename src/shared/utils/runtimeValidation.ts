@@ -12,6 +12,8 @@ export interface ValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
+  /** Compatibility alias for older call sites that read a single error string. */
+  error?: string;
 }
 
 // Global runtime validation mode - set to true for strict mode
@@ -28,7 +30,7 @@ export function validateRequired<T>(value: T | null | undefined, fieldName: stri
     errors.push(`[VALIDATION] Required field '${fieldName}' is null or undefined`);
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -42,7 +44,7 @@ export function validateNonEmpty(value: string | undefined | null, fieldName: st
     errors.push(`[VALIDATION] Field '${fieldName}' cannot be empty`);
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -58,7 +60,7 @@ export function validateUrl(url: string, fieldName: string): ValidationResult {
     errors.push(`[VALIDATION] Field '${fieldName}' is not a valid URL: ${url}`);
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -76,7 +78,7 @@ export function validateGitHubUrl(url: string, fieldName: string = 'repoUrl'): V
     errors.push(`[VALIDATION] Field '${fieldName}' is not a valid GitHub URL: ${url}`);
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -96,7 +98,7 @@ export function validateApiKey(key: string | undefined | null, fieldName: string
     }
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -109,7 +111,7 @@ export function validateGitHubToken(token: string | undefined | null, fieldName:
   const value = token?.trim() ?? '';
 
   if (value.length === 0) {
-    return { valid: true, errors, warnings };
+    return { valid: true, errors, warnings, error: errors[0] };
   }
 
   if (/\s/.test(value)) {
@@ -126,7 +128,7 @@ export function validateGitHubToken(token: string | undefined | null, fieldName:
     errors.push(`[VALIDATION] Field '${fieldName}' appears to be too short for a GitHub token`);
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -140,7 +142,7 @@ export function validateNumberBounds(value: number, min: number, max: number, fi
     errors.push(`[VALIDATION] Field '${fieldName}' value ${value} is outside bounds [${min}, ${max}]`);
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -154,7 +156,7 @@ export function validateArrayNotEmpty<T>(arr: T[] | undefined | null, fieldName:
     errors.push(`[VALIDATION] Field '${fieldName}' array is empty or undefined`);
   }
 
-  return { valid: errors.length === 0, errors, warnings };
+  return { valid: errors.length === 0, errors, warnings, error: errors[0] };
 }
 
 /**
@@ -168,6 +170,7 @@ export function combineValidationResults(...results: ValidationResult[]): Valida
     valid: allErrors.length === 0,
     errors: allErrors,
     warnings: allWarnings,
+    error: allErrors[0],
   };
 }
 
@@ -214,6 +217,7 @@ export function validateAppState(state: {
           valid: false,
           errors: [`[VALIDATION] Invalid repoMode: ${state.settings.repoMode}`],
           warnings: [],
+          error: `[VALIDATION] Invalid repoMode: ${state.settings.repoMode}`,
         });
       }
     }
@@ -224,6 +228,7 @@ export function validateAppState(state: {
           valid: false,
           errors: [`[VALIDATION] Invalid packageManager: ${state.settings.packageManager}`],
           warnings: [],
+          error: `[VALIDATION] Invalid packageManager: ${state.settings.packageManager}`,
         });
       }
     }
