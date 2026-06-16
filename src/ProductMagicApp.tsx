@@ -4,7 +4,7 @@ import { useProductMagic } from './features/product/hooks/useProductMagic';
 import { SettingsModal } from './features/product/components/SettingsModal';
 import { Sidebar } from './features/product/components/Sidebar';
 import { MainContent } from './features/product/components/MainContent';
-import { LogSidebar } from './features/product/components/LogSidebar';
+import { ChatSidebar } from './features/product/components/ChatSidebar';
 
 export type RepoFile = {
   path: string;
@@ -121,7 +121,14 @@ export default function ProductMagicApp() {
     mobilePane, setMobilePane,
     currentStepLabel,
     nextStepLabel,
-    approvalConfirmed
+    approvalConfirmed,
+    targetLink,
+    chatMessages,
+    setChatMessages,
+    suggestions,
+    isAnalyzing,
+    acceptSuggestion,
+    sendChatMessage
   } = useProductMagic();
 
   return (
@@ -206,10 +213,14 @@ export default function ProductMagicApp() {
         </div>
 
         <div className={`${mobilePane === 'log' ? 'flex' : 'hidden'} md:flex`}>
-          <LogSidebar
-            logs={logs}
-            setLogs={setLogs}
-            downloadPackage={downloadPackage}
+          <ChatSidebar
+            chatMessages={chatMessages}
+            suggestions={suggestions}
+            isAnalyzing={isAnalyzing}
+            onSendMessage={sendChatMessage}
+            onAcceptSuggestion={acceptSuggestion}
+            onDownloadPackage={downloadPackage}
+            onClearChat={() => setChatMessages([{ id: '1', role: 'assistant', content: 'Chat geleert. Starte neu mit einer Idee.', timestamp: Date.now() }])}
           />
         </div>
       </main>
