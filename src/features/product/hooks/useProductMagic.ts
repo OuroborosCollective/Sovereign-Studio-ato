@@ -1,10 +1,17 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane } from '../types';
 import { makeId, demoFiles, starterCards, defaultSettings } from '../constants';
+import { validateAppState, validateGitHubUrl, runtimeCheck, safeGet } from '../../../shared/utils/runtimeValidation';
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+// Runtime validation on module load
+const VALID_REPO_MODES = ['monorepo', 'single'];
+const VALID_PACKAGE_MANAGERS = ['auto', 'pnpm', 'npm', 'yarn'];
+const VALID_LINTERS = ['biome', 'eslint', 'prettier'];
+
 export function useProductMagic() {
+  // State with runtime validation
   const [repoUrl, setRepoUrl] = useState('https://github.com/OuroborosCollective/Sovereign-Studio-ato');
   const [accessKey, setAccessKey] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
@@ -27,6 +34,56 @@ export function useProductMagic() {
   const [currentStepLabel, setCurrentStepLabel] = useState('');
   const [nextStepLabel, setNextStepLabel] = useState('');
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
+
+  // Runtime validation effect - validates state on mount and on changes
+  useEffect(() => {
+    const validation = validateAppState({
+      repoUrl,
+      accessKey,
+      geminiKey,
+      cards,
+      settings,
+    });
+    
+    if (!validation.valid) {
+      console.error('[RUNTIME_VALIDATION] App state validation failed:', validation.errors);
+    }
+    if (validation.warnings.length > 0) {
+      console.warn('[RUNTIME_VALIDATION] Warnings:', validation.warnings);
+    }
+  }, [repoUrl, accessKey, geminiKey, cards, settings]);
+
+  // Validated setters with runtime checks
+  const validatedSetRepoUrl = useCallback((url: string) => {
+    // Runtime check for valid URL format
+    const urlValidation = validateGitHubUrl(url, 'repoUrl');
+    if (!urlValidation.valid) {
+      console.warn('[RUNTIME_VALIDATION] Invalid repo URL:', url);
+    }
+    setRepoUrl(url);
+  }, []);
+
+  const validatedSetSettings = useCallback((newSettings: ProjectSettings | ((prev: ProjectSettings) => ProjectSettings)) => {
+    setSettings((prev: ProjectSettings) => {
+      const updated = typeof newSettings === 'function' ? newSettings(prev) : newSettings;
+      
+      // Runtime validation of settings
+      if (updated.repoMode && !VALID_REPO_MODES.includes(updated.repoMode)) {
+        console.error(`[RUNTIME_VALIDATION] Invalid repoMode: ${updated.repoMode}, defaulting to 'single'`);
+        updated.repoMode = 'single';
+      }
+      if (updated.packageManager && !VALID_PACKAGE_MANAGERS.includes(updated.packageManager)) {
+        console.error(`[RUNTIME_VALIDATION] Invalid packageManager: ${updated.packageManager}, defaulting to 'auto'`);
+        updated.packageManager = 'auto';
+      }
+      if (updated.linter && !VALID_LINTERS.includes(updated.linter)) {
+        console.error(`[RUNTIME_VALIDATION] Invalid linter: ${updated.linter}, defaulting to 'biome'`);
+        updated.linter = 'biome';
+      }
+      
+      return updated;
+    });
+  }, []);
 
   const currentCode = useMemo(() => generatedCode || `// ${selectedFile.path}\n// Sovereign Auto-Resolver Preview\n\nconst auftrag = ${JSON.stringify(blueprint, null, 2)};\n\nexport const generatedProduct = {\n  mode: 'chat-editor-live-status',\n  repo: '${repoUrl}',\n  steps: ${cards.length},\n  repoMode: '${settings.repoMode}',\n  packageManager: '${settings.packageManager}',\n  linter: '${settings.linter}',\n  freeRoute: ['mlvoca', 'pollinations', 'optional-user-keys'],\n  ready: ${built}\n};`, [generatedCode, selectedFile.path, blueprint, repoUrl, cards.length, settings.repoMode, settings.packageManager, settings.linter, built]);
 

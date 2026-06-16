@@ -9,6 +9,7 @@ vi.mock('lucide-react', () => ({
   AlertTriangle: () => <div data-testid="AlertTriangle" />,
   Bot: () => <div data-testid="Bot" />,
   CheckCircle: () => <div data-testid="CheckCircle" />,
+  CircleX: () => <div data-testid="CircleX" />,
   Code2: () => <div data-testid="Code2" />,
   Download: () => <div data-testid="Download" />,
   Eye: () => <div data-testid="Eye" />,
