@@ -1,0 +1,225 @@
+# Sovereign Reader: Tools, Skills & Best Practices
+
+This reader is the practical orientation layer for Sovereign Studio. It explains what the current tool actually does, which modules are trusted, and which guardrails must stay intact while new ideas are integrated.
+
+## Current functional chain
+
+```txt
+GitHub Repo URL + optional PAT
+↓
+Real repository tree loader
+↓
+Repo Launch Readiness Panel
+↓
+Sovereign Action Builder
+↓
+Brain-gated implementation package
+↓
+Functional guards
+↓
+Draft PR Publisher
+```
+
+The important rule is simple: no visible action should pretend that a repository has been analyzed until a real repository snapshot has been loaded.
+
+## Core reader map
+
+| Area | Entry point | Purpose |
+| --- | --- | --- |
+| Repo loading | `src/features/github/hooks/useGithubRepo.ts` | Loads real GitHub tree entries, handles default branch fallback and private repo PATs. |
+| Repo URL parsing | `src/features/github/utils.ts` | Normalizes GitHub repo URLs before API use. |
+| Readiness runtime | `src/features/product/runtime/repoLaunchReadiness.ts` | Scores launch readiness and builds risk/checklist/release-state output. |
+| File signal mapping | `src/features/product/runtime/repoLaunchReadinessFromFiles.ts` | Converts loaded tree entries into readiness signals. |
+| Brain package builder | `src/features/product/runtime/sovereignPackageFromRepoFiles.ts` | Turns a mission and repo snapshot into a Sovereign implementation package. |
+| Functional guards | `src/features/product/runtime/sovereignFunctionalGuards.ts` | Blocks empty snapshots, duplicate files, forbidden paths and incomplete docs packages. |
+| Draft PR publisher | `src/features/github/githubPackagePublisher.ts` | Creates branch, tree, commit and draft pull request through GitHub API. |
+| UI shell | `src/App.tsx` | Wires repo loading, readiness, action builder, preview and draft PR creation. |
+
+## Practical skills this tool now has
+
+### 1. Repository perception
+
+The app can load a repository tree and build a practical local snapshot from it. This snapshot is intentionally limited to path, type and size. That keeps the first perception pass cheap, quick and safe.
+
+Best practice:
+
+- Use tree paths for architecture detection first.
+- Fetch file contents only when a later step truly needs them.
+- Keep private repo access behind an explicit PAT field.
+
+### 2. Launch readiness scoring
+
+The readiness runtime checks for documentation, license, tests, workflows, runtime validation, branch-safety hints and open-workload signals. It returns a score, grade, risk register and owner checklist.
+
+Best practice:
+
+- Treat readiness as guidance, not an automatic merge decision.
+- Show risks before generating a PR.
+- Keep owner checklist items concrete and role-based.
+
+### 3. Brain-gated package generation
+
+A Sovereign package is not just text. It must contain a five-layer brain result and concrete implementation files. Docs/runtime requests must create the full docs set:
+
+```txt
+README.md
+docs/UPDATE_HISTORY.md
+docs/SOVEREIGN_RUNTIME.md
+docs/LAUNCH_READINESS.md
+generated/sovereign-product/workflow.ts
+```
+
+Best practice:
+
+- No execution patches, no GitHub write.
+- Docs requests must touch README or `docs/*`.
+- Generated files must be shown in preview before publishing.
+
+### 4. Functional guards
+
+Functional guards are the cement layer. They prevent the app from generating or publishing nonsense.
+
+They currently block:
+
+- empty repo snapshots
+- snapshots containing only folders
+- duplicate generated file paths
+- empty generated file content
+- unsafe output paths such as `.env`, `.git/`, `node_modules/`, `dist/`, `build/`
+- incomplete docs packages
+
+Best practice:
+
+- Add new tool modules behind guards first, then expose them in UI.
+- Never bypass `assertGeneratedPackageReady` in publishing paths.
+- Keep runtime checks small and deterministic.
+
+### 5. Draft PR publishing
+
+The publisher creates a branch, tree, commit and draft pull request. It intentionally does not auto-merge.
+
+Best practice:
+
+- Draft PR first, review second, merge later.
+- Use deterministic branch names plus nonce/collision fallback.
+- Keep PR body useful: architecture, brain summary, generated file list and suggestions.
+- Do not log or persist PAT values.
+
+## Tool progress rail
+
+The visible workflow is based on this stable rail:
+
+```txt
+safe_repo_inspection
+task_extraction
+readiness_eval
+checklist_generation
+copywriting
+workflow_watch
+```
+
+This rail should remain the top-level mental model for users. New internal tools can be added, but they should map back to one of these stages unless the user-facing workflow truly changes.
+
+## Provider and LLM best practices
+
+The LLM side should stay modular and guarded.
+
+Recommended flow:
+
+```txt
+LLM Adapter
+↓
+LLM Revolver Router
+↓
+Sovereign Brain Contract
+↓
+Functional Guards
+↓
+Preview
+↓
+Draft PR Publisher
+```
+
+Rules:
+
+- External providers are plugins, not core logic.
+- Provider failure should rotate, not crash the whole tool.
+- Invalid brain output should be treated as provider failure.
+- Local-safe deterministic generation remains the final fallback.
+- Never put secret-bearing provider calls directly into reusable UI code without a deliberate boundary.
+
+## GitHub best practices
+
+When writing to GitHub:
+
+1. Parse and validate the repo URL.
+2. Resolve the default branch from repo metadata.
+3. Resolve base ref and base tree.
+4. Create a uniquely named branch.
+5. Build a tree from validated generated files.
+6. Create a commit.
+7. Move the branch ref to the commit.
+8. Create a draft PR.
+9. Show the PR URL, branch and commit SHA.
+
+Do not push directly to default branch from the UI.
+
+## Testing expectations
+
+Every structural layer should have tests:
+
+| Layer | Test file |
+| --- | --- |
+| URL parser | `src/features/github/utils.test.ts` |
+| Repo file signal mapping | `src/features/product/runtime/repoLaunchReadinessFromFiles.test.ts` |
+| Readiness runtime | `src/features/product/runtime/repoLaunchReadiness.test.ts` |
+| Package builder | `src/features/product/runtime/sovereignPackageFromRepoFiles.test.ts` |
+| Functional guards | `src/features/product/runtime/sovereignFunctionalGuards.test.ts` |
+| Draft PR publisher | `src/features/github/githubPackagePublisher.test.ts` |
+| Whole structure | `src/features/product/runtime/sovereignStructure.test.ts` |
+
+Before merging larger changes, run:
+
+```bash
+npm run type-check
+npm run lint
+npm run test:run
+npm run build:web
+```
+
+## Integration checklist for new gold-egg modules
+
+When a new experimental repo or file arrives, use this checklist:
+
+- Does it improve the top-level rail?
+- Can it be ported as a small runtime module?
+- Can it be tested without network or secrets?
+- Does it need a UI panel or only a backend helper?
+- Does it create files? If yes, route through functional guards.
+- Does it call GitHub? If yes, route through the publisher pattern.
+- Does it call an LLM? If yes, route through adapter + revolver + brain contract.
+- Does it risk fake output? If yes, keep only the idea, not the implementation.
+
+## Anti-patterns
+
+Avoid these:
+
+- sample files pretending to be a real repository snapshot
+- console-only buttons
+- provider output pushed directly to GitHub
+- docs-only requests that generate only preview artifacts
+- hidden auto-merge behavior
+- hardcoded secrets or direct secret logging
+- broad rewrites of large hooks when a small adapter module is enough
+
+## Current next hardening targets
+
+1. Add a workflow-watch reader that can inspect PR commit status after Draft PR creation.
+2. Add a small PR review panel that lists generated files before publishing.
+3. Add content-level diff preview for generated files.
+4. Move PAT handling into a safer session-only utility boundary.
+5. Keep `useProductMagic.ts` and other large hooks thin by routing through small runtime modules.
+
+## Principle
+
+Sovereign Studio should feel autonomous, but behave conservatively. It may generate plans and draft PRs, but every write path must pass through visible preview, functional guards and deliberate user action.
