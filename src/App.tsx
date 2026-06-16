@@ -15,6 +15,10 @@ const App: React.FC = () => {
   const {
     repoUrl,
     setRepoUrl,
+    repoBranch,
+    setRepoBranch,
+    githubToken,
+    setGithubToken,
     repoStatus,
     isRepoBusy,
     repoFiles,
@@ -50,11 +54,26 @@ const App: React.FC = () => {
     <div className="min-h-screen p-4">
       <h1 className="font-bold">Sovereign Canvas Tool</h1>
 
-      <input
-        value={repoUrl}
-        onChange={(e) => setRepoUrl(e.target.value)}
-        placeholder="GitHub Repo URL"
-      />
+      <div className="mt-4 grid gap-2 md:grid-cols-3">
+        <input
+          value={repoUrl}
+          onChange={(e) => setRepoUrl(e.target.value)}
+          placeholder="GitHub Repo URL"
+        />
+
+        <input
+          value={repoBranch}
+          onChange={(e) => setRepoBranch(e.target.value)}
+          placeholder="Branch leer = Default"
+        />
+
+        <input
+          value={githubToken}
+          onChange={(e) => setGithubToken(e.target.value)}
+          placeholder="GitHub PAT für private Repos"
+          type="password"
+        />
+      </div>
 
       <button onClick={loadRepoTree} disabled={isRepoBusy}>
         Load Repo
