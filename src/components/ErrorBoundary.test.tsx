@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { storageService } from '../shared/api/storageService';
+import { maskSecrets } from '../shared/utils/crypto';
 
 // Mock storageService
 vi.mock('../shared/api/storageService', () => {
@@ -79,5 +80,28 @@ describe('ErrorBoundary', () => {
     await waitFor(() => {
       expect(storageService.set).toHaveBeenCalled();
     });
+  });
+
+  it('should mask secrets in error logs', async () => {
+    const secret = 'ghp_1234567890abcdefghijklmnopqrstuvwx';
+    vi.mocked(storageService.get).mockResolvedValueOnce(null);
+
+    render(
+      <ErrorBoundary>
+        <ThrowError message={`Fail with ${secret}`} />
+      </ErrorBoundary>
+    );
+
+    await waitFor(() => {
+      expect(storageService.set).toHaveBeenCalledWith(
+        'ss_error_log',
+        expect.stringContaining('ghp_****')
+      );
+    });
+
+    expect(storageService.set).not.toHaveBeenCalledWith(
+      'ss_error_log',
+      expect.stringContaining(secret)
+    );
   });
 });
