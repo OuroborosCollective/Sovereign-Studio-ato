@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Bot, CheckCircle, Loader2, Send, CircleX } from 'lucide-react';
+import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
 
 interface MainContentProps {
@@ -24,6 +24,7 @@ interface MainContentProps {
   currentStepLabel?: string;
   nextStepLabel?: string;
   approvalConfirmed?: boolean;
+  targetLink?: string;
 }
 
 export const MainContent: React.FC<MainContentProps> = ({
@@ -35,7 +36,8 @@ export const MainContent: React.FC<MainContentProps> = ({
   progress,
   currentStepLabel,
   nextStepLabel,
-  approvalConfirmed = false
+  approvalConfirmed = false,
+  targetLink
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const red = pipelineState === 'failed' || pipelineState === 'blocked';
@@ -125,6 +127,17 @@ export const MainContent: React.FC<MainContentProps> = ({
                     ? 'Alles erledigt. Du musst nicht nochmal auf Senden, Frei oder Pruefen druecken.'
                     : 'Druecke diesen grossen Button. Das blaue Senden-Symbol ist hierfuer nicht noetig.'}
                 </p>
+                {approvalConfirmed && targetLink && (
+                  <a
+                    href={targetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900 underline"
+                  >
+                    <ExternalLink size={12} />
+                    Ziel-Link anzeigen (PR)
+                  </a>
+                )}
               </div>
               <button
                 type="button"

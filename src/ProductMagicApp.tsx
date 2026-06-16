@@ -201,6 +201,7 @@ export default function ProductMagicApp() {
             currentStepLabel={currentStepLabel}
             nextStepLabel={nextStepLabel}
             approvalConfirmed={approvalConfirmed}
+            targetLink={targetLink}
           />
         </div>
 
