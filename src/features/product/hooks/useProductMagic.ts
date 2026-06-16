@@ -16,6 +16,62 @@ function parseGitHubUrl(url: string): { owner: string; repo: string; branch: str
   };
 }
 
+// Analyze architecture based on blueprint and cards
+function analyzeArchitecture(blueprint: string, cards: Card[]): ArchitectureAnalysis {
+  const lowerBlueprint = blueprint.toLowerCase();
+  
+  // Detect components from blueprint keywords
+  const components: string[] = [];
+  if (lowerBlueprint.includes('react') || lowerBlueprint.includes('frontend') || lowerBlueprint.includes('ui')) {
+    components.push('Frontend Framework');
+  }
+  if (lowerBlueprint.includes('api') || lowerBlueprint.includes('backend') || lowerBlueprint.includes('server')) {
+    components.push('Backend API');
+  }
+  if (lowerBlueprint.includes('database') || lowerBlueprint.includes('db') || lowerBlueprint.includes('postgres') || lowerBlueprint.includes('mongodb')) {
+    components.push('Database');
+  }
+  if (lowerBlueprint.includes('auth') || lowerBlueprint.includes('login') || lowerBlueprint.includes('user')) {
+    components.push('Authentication');
+  }
+  if (lowerBlueprint.includes('cloud') || lowerBlueprint.includes('aws') || lowerBlueprint.includes('azure') || lowerBlueprint.includes('gcp')) {
+    components.push('Cloud Infrastructure');
+  }
+  
+  // Default components if none detected
+  if (components.length === 0) {
+    components.push('Core Application');
+  }
+  
+  // Detect integrations
+  const integrations: string[] = [];
+  if (lowerBlueprint.includes('github')) integrations.push('GitHub Integration');
+  if (lowerBlueprint.includes('slack')) integrations.push('Slack Integration');
+  if (lowerBlueprint.includes('stripe') || lowerBlueprint.includes('payment')) integrations.push('Payment Processing');
+  if (lowerBlueprint.includes('openai') || lowerBlueprint.includes('ai') || lowerBlueprint.includes('llm')) integrations.push('AI/LLM Integration');
+  
+  // Generate suggested features
+  const suggestedFeatures: string[] = [];
+  if (!lowerBlueprint.includes('test')) suggestedFeatures.push('Testing Suite');
+  if (!lowerBlueprint.includes('docker') && !lowerBlueprint.includes('container')) suggestedFeatures.push('Containerization');
+  if (!lowerBlueprint.includes('ci') && !lowerBlueprint.includes('github action')) suggestedFeatures.push('CI/CD Pipeline');
+  if (!lowerBlueprint.includes('monitor') && !lowerBlueprint.includes('observab')) suggestedFeatures.push('Monitoring & Logging');
+  
+  // Detect potential issues
+  const potentialIssues: string[] = [];
+  if (blueprint.length < 50) potentialIssues.push('Blueprint may be too brief - Consider adding more detail');
+  if (cards.length === 0) potentialIssues.push('No cards defined - Add at least one feature card');
+  if (cards.length > 10) potentialIssues.push('Many cards detected - Consider prioritizing core features first');
+  
+  return {
+    summary: `Detected ${components.length} component(s) with ${integrations.length} integration(s). ${suggestedFeatures.length} additional features recommended.`,
+    components,
+    potentialIssues,
+    suggestedFeatures,
+    integrations
+  };
+}
+
 // Runtime validation on module load
 const VALID_REPO_MODES = ['monorepo', 'single'];
 const VALID_PACKAGE_MANAGERS = ['auto', 'pnpm', 'npm', 'yarn'];
@@ -46,6 +102,12 @@ export function useProductMagic() {
   const [nextStepLabel, setNextStepLabel] = useState('');
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
   const [targetLink, setTargetLink] = useState(''); // External target link (e.g., PR URL)
+  
+  // Chat and analysis state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [architectureAnalysis, setArchitectureAnalysis] = useState<ArchitectureAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Runtime validation effect - validates state on mount and on changes
   useEffect(() => {
