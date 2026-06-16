@@ -84,7 +84,7 @@ describe('ChatSidebar', () => {
       render(<ChatSidebar {...defaultProps} />);
       
       const input = screen.getByPlaceholderText(/Frage oder Feedback/i);
-      const submitButton = screen.getByRole('button', { type: 'submit' });
+      const submitButton = screen.getAllByRole('button')[0];
       
       fireEvent.change(input, { target: { value: 'Test message' } });
       fireEvent.click(submitButton);
@@ -98,7 +98,7 @@ describe('ChatSidebar', () => {
       const input = screen.getByPlaceholderText(/Frage oder Feedback/i) as HTMLInputElement;
       
       fireEvent.change(input, { target: { value: 'Test message' } });
-      fireEvent.click(screen.getByRole('button', { type: 'submit' }));
+      fireEvent.click(screen.getAllByRole('button')[0]);
       
       expect(input.value).toBe('');
     });
@@ -134,7 +134,7 @@ describe('ChatSidebar', () => {
     it('disables submit button when input is empty', () => {
       render(<ChatSidebar {...defaultProps} />);
       
-      const submitButton = screen.getByRole('button', { type: 'submit' });
+      const submitButton = screen.getAllByRole('button')[0];
       expect(submitButton).toBeDisabled();
     });
 
@@ -142,7 +142,7 @@ describe('ChatSidebar', () => {
       render(<ChatSidebar {...defaultProps} />);
       
       const input = screen.getByPlaceholderText(/Frage oder Feedback/i);
-      const submitButton = screen.getByRole('button', { type: 'submit' });
+      const submitButton = screen.getAllByRole('button')[0];
       
       fireEvent.change(input, { target: { value: 'Test' } });
       

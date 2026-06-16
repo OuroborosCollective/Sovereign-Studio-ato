@@ -735,6 +735,7 @@ export function useProductMagic() {
     architectureAnalysis,
     isAnalyzing,
     acceptSuggestion,
-    sendChatMessage
+    sendChatMessage,
+    runArchitectureAnalysis
   };
 }
