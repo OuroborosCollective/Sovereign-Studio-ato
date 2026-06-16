@@ -1,13 +1,11 @@
-/**
- * Runtime Validation System for Sovereign Studio
- * Provides comprehensive validation at runtime to catch issues early
- * 
- * This system ensures:
- * - No invalid state reaches production
- * - All API calls have proper fallback
- * - All user inputs are validated before use
- * - All routes have proper error handling
- */
+// Runtime Validation System for Sovereign Studio
+// Provides comprehensive validation at runtime to catch issues early
+//
+// This system ensures:
+// - No invalid state reaches production
+// - All API calls have proper fallback
+// - All user inputs are validated before use
+// - All routes have proper error handling
 
 // Validation result type
 export interface ValidationResult {
@@ -25,11 +23,11 @@ const RUNTIME_STRICT_MODE = true;
 export function validateRequired<T>(value: T | null | undefined, fieldName: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   if (value === null || value === undefined) {
     errors.push(`[VALIDATION] Required field '${fieldName}' is null or undefined`);
   }
-  
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -39,11 +37,11 @@ export function validateRequired<T>(value: T | null | undefined, fieldName: stri
 export function validateNonEmpty(value: string | undefined | null, fieldName: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   if (!value || value.trim().length === 0) {
     errors.push(`[VALIDATION] Field '${fieldName}' cannot be empty`);
   }
-  
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -53,29 +51,31 @@ export function validateNonEmpty(value: string | undefined | null, fieldName: st
 export function validateUrl(url: string, fieldName: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   try {
     new URL(url);
   } catch {
     errors.push(`[VALIDATION] Field '${fieldName}' is not a valid URL: ${url}`);
   }
-  
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
 /**
- * Validates GitHub repository URL format
+ * Validates GitHub repository URL format.
+ * Supports normal repo URLs and optional /tree/<branch> URLs used by the UI parser.
  */
 export function validateGitHubUrl(url: string, fieldName: string = 'repoUrl'): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
-  const githubPattern = /^(https?:\/\/)?(www\.)?github\.com\/[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}\/[a-zA-Z0-9._-]+\/?$/;
-  
-  if (!githubPattern.test(url)) {
+  const trimmed = url.trim();
+
+  const githubPattern = /^(https?:\/\/)?(www\.)?github\.com\/[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}\/[a-zA-Z0-9._-]+(?:\.git)?\/?(?:tree\/[A-Za-z0-9._\/-]+)?\/?$/;
+
+  if (!githubPattern.test(trimmed)) {
     errors.push(`[VALIDATION] Field '${fieldName}' is not a valid GitHub URL: ${url}`);
   }
-  
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -85,7 +85,7 @@ export function validateGitHubUrl(url: string, fieldName: string = 'repoUrl'): V
 export function validateApiKey(key: string | undefined | null, fieldName: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   if (key && key.trim().length > 0) {
     if (key.length < 10) {
       warnings.push(`[VALIDATION] Field '${fieldName}' appears to be too short`);
@@ -95,7 +95,37 @@ export function validateApiKey(key: string | undefined | null, fieldName: string
       errors.push(`[VALIDATION] Field '${fieldName}' appears to be an invalid GitHub PAT (too short)`);
     }
   }
-  
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+/**
+ * Validates GitHub token format without contacting GitHub.
+ * This is a structural runtime check only; it never proves account validity or scopes.
+ */
+export function validateGitHubToken(token: string | undefined | null, fieldName: string = 'githubToken'): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const value = token?.trim() ?? '';
+
+  if (value.length === 0) {
+    return { valid: true, errors, warnings };
+  }
+
+  if (/\s/.test(value)) {
+    errors.push(`[VALIDATION] Field '${fieldName}' must not contain whitespace`);
+  }
+
+  const knownGitHubTokenPattern = /^(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,255}$|^github_pat_[A-Za-z0-9_]{22}_[A-Za-z0-9_]{59,255}$/;
+
+  if (!knownGitHubTokenPattern.test(value)) {
+    warnings.push(`[VALIDATION] Field '${fieldName}' does not match a known GitHub token prefix/shape`);
+  }
+
+  if (value.length < 30) {
+    errors.push(`[VALIDATION] Field '${fieldName}' appears to be too short for a GitHub token`);
+  }
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -105,11 +135,11 @@ export function validateApiKey(key: string | undefined | null, fieldName: string
 export function validateNumberBounds(value: number, min: number, max: number, fieldName: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   if (value < min || value > max) {
     errors.push(`[VALIDATION] Field '${fieldName}' value ${value} is outside bounds [${min}, ${max}]`);
   }
-  
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -119,11 +149,11 @@ export function validateNumberBounds(value: number, min: number, max: number, fi
 export function validateArrayNotEmpty<T>(arr: T[] | undefined | null, fieldName: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   if (!arr || arr.length === 0) {
     errors.push(`[VALIDATION] Field '${fieldName}' array is empty or undefined`);
   }
-  
+
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -133,7 +163,7 @@ export function validateArrayNotEmpty<T>(arr: T[] | undefined | null, fieldName:
 export function combineValidationResults(...results: ValidationResult[]): ValidationResult {
   const allErrors = results.flatMap(r => r.errors);
   const allWarnings = results.flatMap(r => r.warnings);
-  
+
   return {
     valid: allErrors.length === 0,
     errors: allErrors,
@@ -156,25 +186,25 @@ export function validateAppState(state: {
   };
 }): ValidationResult {
   const results: ValidationResult[] = [];
-  
+
   // Validate repo URL if provided
   if (state.repoUrl) {
     results.push(validateGitHubUrl(state.repoUrl, 'repoUrl'));
   }
-  
+
   // Validate API keys
   if (state.accessKey) {
-    results.push(validateApiKey(state.accessKey, 'accessKey'));
+    results.push(validateGitHubToken(state.accessKey, 'accessKey'));
   }
   if (state.geminiKey) {
     results.push(validateApiKey(state.geminiKey, 'geminiKey'));
   }
-  
+
   // Validate cards array
   if (state.cards !== undefined) {
     results.push(validateArrayNotEmpty(state.cards, 'cards'));
   }
-  
+
   // Validate settings
   if (state.settings) {
     if (state.settings.repoMode) {
@@ -198,7 +228,7 @@ export function validateAppState(state: {
       }
     }
   }
-  
+
   return combineValidationResults(...results);
 }
 
@@ -227,13 +257,13 @@ export function validateAppStateStrict(state: {
   };
 }): ValidationResult {
   const result = validateAppState(state);
-  
+
   if (RUNTIME_STRICT_MODE && !result.valid) {
     const errorMsg = `[RUNTIME_VALIDATION_STRICT] Critical validation failed: ${result.errors.join(', ')}`;
     console.error(errorMsg);
     throw new Error(errorMsg);
   }
-  
+
   return result;
 }
 
