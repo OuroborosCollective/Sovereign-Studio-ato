@@ -1,4 +1,10 @@
 import type { Card, ProjectSettings } from '../types';
+import { freeFirstProviderRoute } from '../freeFirstPlan';
+import {
+  assertSovereignBrainResult,
+  toImplementationFiles,
+  type SovereignBrainResult,
+} from '../brain/sovereignBrainContract';
 
 export type ProviderStatus = 'primary' | 'enabled' | 'fallback' | 'experimental';
 
@@ -30,6 +36,7 @@ export interface ImplementationFile {
 
 export interface SovereignImplementationPackage {
   architecture: RepoArchitectureRuntime;
+  brain: SovereignBrainResult;
   files: ImplementationFile[];
   suggestions: string[];
   providerRoutes: LlmRouteDescriptor[];
@@ -46,10 +53,14 @@ export interface BuildImplementationInput {
   existingProviderOrder?: string[];
 }
 
+const EXISTING_ROUTE_INFO: Record<string, LlmRouteDescriptor> = {
+  mlvoca: { id: 'mlvoca', label: 'Existing Mlvoca route', status: 'primary', requiresApiKey: false, requiresUserOptIn: false },
+  pollinations: { id: 'pollinations', label: 'Existing Pollinations route', status: 'enabled', requiresApiKey: false, requiresUserOptIn: false },
+  'optional-user-keys': { id: 'optional-user-keys', label: 'Optional user-key routes', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
+};
+
 export const SOVEREIGN_LLM_ROUTES: LlmRouteDescriptor[] = [
-  { id: 'current-primary', label: 'Existing first provider', status: 'primary', requiresApiKey: true, requiresUserOptIn: false },
-  { id: 'pollinations-dev-key', label: 'Existing Pollinations dev-key route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
-  { id: 'mlvocka-dev-key', label: 'Existing Mlvocka dev-key route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
+  ...freeFirstProviderRoute.map((id) => EXISTING_ROUTE_INFO[id]),
   { id: 'ovh-anonymous-code-chat', label: 'OVHcloud anonymous code_chat@latest', status: 'fallback', requiresApiKey: false, requiresUserOptIn: false, endpoint: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions' },
   { id: 'ovh-anonymous-fixed-model', label: 'OVHcloud anonymous pinned model', status: 'fallback', requiresApiKey: false, requiresUserOptIn: false, endpoint: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions' },
   { id: 'puter-js-opt-in', label: 'Puter.js opt-in route', status: 'experimental', requiresApiKey: false, requiresUserOptIn: true },
@@ -72,7 +83,7 @@ export function analyzeRepoArchitecture(repoPaths: string[]): RepoArchitectureRu
   const hasReadme = hasPath(repoPaths, (path) => path === 'readme.md');
   const hasGithubWorkflows = hasPath(repoPaths, (path) => path.startsWith('.github/workflows/'));
   const hasTests = hasPath(repoPaths, (path) => path.includes('.test.') || path.includes('.spec.') || path.startsWith('tests/'));
-  const hasRuntimeValidation = hasPath(repoPaths, (path) => path.includes('runtimevalidation') || path.includes('/runtime/'));
+  const hasRuntimeValidation = hasPath(repoPaths, (path) => path.includes('runtimevalidation') || path.includes('/runtime/') || path.includes('/brain/'));
 
   const repoKind = hasPackageJson && hasAndroid && hasVite
     ? 'react-vite-capacitor'
@@ -107,64 +118,119 @@ export function classifyRequestedWork(blueprint: string): 'readme-docs' | 'tests
   return 'general';
 }
 
-function readmeContent(input: BuildImplementationInput, architecture: RepoArchitectureRuntime): string {
-  return `# Sovereign Studio\n\n${input.blueprint}\n\n## Runtime goals\n\n- Keep the existing first provider as the first route.\n- Keep existing dev-key routes in place.\n- Add legal fallback routes underneath the existing routes.\n- Analyze the live GitHub tree before push.\n- Push real requested files, not only a preview artifact.\n- Wait for GitHub checks with a visible 66 second retry window.\n\n## Architecture\n\n${architecture.summary}\n\n## Provider order\n\n${SOVEREIGN_LLM_ROUTES.map((route, index) => `${index + 1}. ${route.id} - ${route.label}`).join('\n')}\n\n## Validation\n\n\`\`\`bash\nnpm run type-check\nnpm run lint\nnpm run test:run\nnpm run build:web\n\`\`\`\n`;
+function providerList(): string {
+  return SOVEREIGN_LLM_ROUTES.map((route, index) => `${index + 1}. ${route.id} - ${route.label}`).join('\n');
 }
 
-function updateHistoryContent(input: BuildImplementationInput, architecture: RepoArchitectureRuntime): string {
-  return `# Update History\n\n## ${new Date().toISOString()} - Sovereign implementation package\n\nRequest:\n\n${input.blueprint}\n\nArchitecture:\n\n${architecture.summary}\n\nCards:\n\n${input.cards.map((card) => `- ${card.title}: ${card.body}`).join('\n') || '- none'}\n\nChanges:\n\n- Documentation requests now generate documentation files.\n- GitHub push can write multiple files.\n- Provider order is preserved before fallback routes.\n- Workflow check waiting uses a visible 66 second retry window.\n`;
+function createDocsBrain(input: BuildImplementationInput, architecture: RepoArchitectureRuntime): SovereignBrainResult {
+  const readme = `# Sovereign Studio\n\n${input.blueprint}\n\n## Runtime goals\n\n- Provider output is never trusted blindly.\n- Each result must pass the Sovereign five-layer brain contract.\n- README requests must update README/docs, not only generated preview artifacts.\n- GitHub push uses real repo tree analysis before branch creation.\n- Workflows are surfaced to the user before final approval.\n\n## Architecture\n\n${architecture.summary}\n\n## Provider order\n\n${providerList()}\n`;
+
+  const history = `# Update History\n\n## Sovereign brain guarded package\n\nRequest:\n\n${input.blueprint}\n\nArchitecture:\n\n${architecture.summary}\n\nCards:\n\n${input.cards.map((card) => `- ${card.title}: ${card.body}`).join('\n') || '- none'}\n`;
+
+  const runtime = `# Sovereign Runtime\n\n## Brain gate\n\nEvery provider route must produce perception, analysis, plan, execution and learning layers. A response without execution patches is rejected before GitHub push.\n\n## Routes\n\n${providerList()}\n\n## Checks\n\n- npm run type-check\n- npm run lint\n- npm run test:run\n- npm run build:web\n`;
+
+  return {
+    perception: {
+      domain: architecture.repoKind === 'react-vite-capacitor' ? 'React Vite Capacitor repository automation' : 'repository automation',
+      intent: input.blueprint,
+      architecture: architecture.summary,
+      confidence: architecture.repoKind === 'unknown' ? 0.62 : 0.86,
+    },
+    analysis: {
+      severity: 'medium',
+      issues: [
+        {
+          type: 'architecture',
+          location: 'generation pipeline',
+          description: 'Single preview artifact generation does not satisfy documentation requests.',
+          impact: 'README tasks can produce irrelevant workflow artifacts and failing PRs.',
+        },
+      ],
+      rootCause: 'Provider output was not gated through a repository-aware brain schema before push.',
+      systemicRisk: 'The app may open noisy PRs that fail checks and do not satisfy the user request.',
+    },
+    plan: {
+      strategy: 'Classify request, analyze repo tree, produce concrete files, validate package, then push through GitHub PR flow.',
+      phases: [
+        { phase: 1, name: 'Perception', actions: ['scan repo tree', 'classify request'], rationale: 'Target files depend on repository shape.' },
+        { phase: 2, name: 'Planning', actions: ['select files', 'preserve free-first route order'], rationale: 'Push must match user intent.' },
+        { phase: 3, name: 'Execution', actions: ['create files', 'wait workflows'], rationale: 'The PR must contain real requested files.' },
+      ],
+      estimatedComplexity: 'medium',
+    },
+    execution: {
+      patches: [
+        { file: 'README.md', type: architecture.hasReadme ? 'replace' : 'create', description: 'Repository README generated from architecture analysis.', code: readme },
+        { file: 'docs/UPDATE_HISTORY.md', type: 'create', description: 'Update history generated from request context.', code: history },
+        { file: 'docs/SOVEREIGN_RUNTIME.md', type: 'create', description: 'Runtime and provider behavior documentation.', code: runtime },
+      ],
+      integrationNotes: 'Use these patches as GitHub tree entries after user approval.',
+      testStrategy: 'Run type-check, lint, test:run and build:web; wait for GitHub checks with 66 second retry windows.',
+    },
+    learning: {
+      patterns: ['Brain-gated providers prevent preview-only PRs.', 'Repository tree analysis must happen before file generation.'],
+      rules: ['Never push provider text without valid execution patches.', 'README tasks must touch README or docs files.', 'Workflow failures must route back to fix mode.'],
+      architectureUpgrade: 'Promote Sovereign brain output to the central planning contract of the app.',
+    },
+  };
 }
 
-function runtimeDocContent(input: BuildImplementationInput, architecture: RepoArchitectureRuntime): string {
-  return `# Sovereign Runtime\n\n## Request\n\n${input.blueprint}\n\n## Architecture\n\n${architecture.summary}\n\n## LLM routes\n\n${SOVEREIGN_LLM_ROUTES.map((route) => `- ${route.id}: ${route.label}; status=${route.status}; key=${route.requiresApiKey ? 'yes' : 'no'}; optIn=${route.requiresUserOptIn ? 'yes' : 'no'}`).join('\n')}\n\n## Rules\n\n- Existing primary provider stays first.\n- Dev-key integrations stay enabled.\n- OVH anonymous routes are fallback only.\n- Puter and Hugging Face routes require explicit user opt-in.\n- Tokens and private repository data must not be sent to public fallback routes.\n- Failed provider responses remain real errors and are not hidden.\n`;
-}
-
-function auditContent(input: BuildImplementationInput, architecture: RepoArchitectureRuntime, files: ImplementationFile[]): string {
-  return `// Generated by Sovereign Studio\nexport const sovereignImplementationAudit = ${JSON.stringify({
-    request: input.blueprint,
-    architecture: architecture.summary,
-    generatedFiles: files.map((file) => file.path),
-    providerOrder: SOVEREIGN_LLM_ROUTES.map((route) => route.id),
-    retrySeconds: 66,
-  }, null, 2)} as const;\n`;
+function createFallbackBrain(input: BuildImplementationInput, architecture: RepoArchitectureRuntime): SovereignBrainResult {
+  return {
+    perception: { domain: 'repository automation', intent: input.blueprint, architecture: architecture.summary, confidence: 0.7 },
+    analysis: {
+      severity: 'low',
+      issues: [{ type: 'missing', location: 'request classifier', description: 'No specific file class was detected.', impact: 'A visible plan is safer than a fake code patch.' }],
+      rootCause: 'The request needs more targeted file selection.',
+      systemicRisk: 'A generic provider response could push unrelated code.',
+    },
+    plan: {
+      strategy: 'Create a visible plan file and keep the user in the approval loop.',
+      phases: [{ phase: 1, name: 'Plan', actions: ['record request', 'surface next steps'], rationale: 'Avoid fake implementation.' }],
+      estimatedComplexity: 'low',
+    },
+    execution: {
+      patches: [{ file: 'docs/SOVEREIGN_PLAN.md', type: 'create', description: 'Visible implementation plan.', code: `# Sovereign Plan\n\n${input.blueprint}\n` }],
+      integrationNotes: 'Use as planning artifact only.',
+      testStrategy: 'Run type-check, lint and tests after concrete patches are accepted.',
+    },
+    learning: { patterns: ['Fallback planning is safer than fake implementation.'], rules: ['No concrete patch, no code push.'], architectureUpgrade: 'Ask the brain for more precise target files.' },
+  };
 }
 
 export function buildSovereignImplementationPackage(input: BuildImplementationInput): SovereignImplementationPackage {
   const architecture = analyzeRepoArchitecture(input.repoPaths);
   const requestedWork = classifyRequestedWork(input.blueprint);
-  const files: ImplementationFile[] = [];
+  const brain = requestedWork === 'readme-docs' || requestedWork === 'runtime-hardening'
+    ? createDocsBrain(input, architecture)
+    : createFallbackBrain(input, architecture);
 
-  if (requestedWork === 'readme-docs' || requestedWork === 'general') {
-    files.push({ path: 'README.md', content: readmeContent(input, architecture), reason: 'Repository documentation requested.' });
-    files.push({ path: 'docs/UPDATE_HISTORY.md', content: updateHistoryContent(input, architecture), reason: 'Update history requested.' });
-  }
-
-  if (requestedWork === 'runtime-hardening' || requestedWork === 'readme-docs' || requestedWork === 'general') {
-    files.push({ path: 'docs/SOVEREIGN_RUNTIME.md', content: runtimeDocContent(input, architecture), reason: 'Runtime behavior documentation.' });
-  }
-
-  if (requestedWork === 'tests') {
-    files.push({
-      path: 'docs/TEST_PLAN.md',
-      content: `# Test Plan\n\n${input.blueprint}\n\n- npm run type-check\n- npm run lint\n- npm run test:run\n- npm run build:web\n`,
-      reason: 'Test request.',
-    });
-  }
-
-  const auditFile: ImplementationFile = {
+  assertSovereignBrainResult(brain);
+  const files = toImplementationFiles(brain);
+  files.push({
     path: 'generated/sovereign-product/workflow.ts',
-    content: '',
+    content: `// Generated by Sovereign Studio\nexport const sovereignImplementationAudit = ${JSON.stringify({
+      request: input.blueprint,
+      architecture: architecture.summary,
+      generatedFiles: files.map((file) => file.path),
+      providerOrder: SOVEREIGN_LLM_ROUTES.map((route) => route.id),
+      brain: {
+        severity: brain.analysis.severity,
+        strategy: brain.plan.strategy,
+      },
+      retrySeconds: 66,
+    }, null, 2)} as const;\n`,
     reason: 'Audit artifact for generated implementation package.',
-  };
-  auditFile.content = auditContent(input, architecture, [...files, auditFile]);
-  files.push(auditFile);
+  });
 
   return {
     architecture,
+    brain,
     files,
     suggestions: [
       `Target files: ${files.map((file) => file.path).join(', ')}`,
       `Architecture: ${architecture.summary}`,
+      `Brain: ${brain.analysis.severity} / ${brain.plan.estimatedComplexity}`,
       'Wait for real GitHub checks before final approval.',
     ],
     providerRoutes: SOVEREIGN_LLM_ROUTES,
@@ -181,5 +247,6 @@ export function runtimeAssertSovereignPackage(pkg: SovereignImplementationPackag
   if (!pkg.files.length) throw new Error('Package must contain real files.');
   const invalid = pkg.files.find((file) => !file.path || !file.content.trim());
   if (invalid) throw new Error(`Invalid generated file: ${invalid.path || '<missing-path>'}`);
-  if (pkg.providerRoutes[0]?.id !== 'current-primary') throw new Error('Existing primary provider must remain first.');
+  if (pkg.providerRoutes[0]?.id !== 'mlvoca') throw new Error('Free-first route order must start with mlvoca.');
+  assertSovereignBrainResult(pkg.brain);
 }
