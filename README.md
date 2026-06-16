@@ -2,85 +2,78 @@
 
 [![Engine: Vite](https://img.shields.io/badge/Engine-Vite-646CFF?logo=vite)](https://vitejs.dev/)
 [![Bridge: Capacitor 6](https://img.shields.io/badge/Bridge-Capacitor%206-119EFF?logo=capacitor)](https://capacitorjs.com/)
-[![Intelligence: Gemini Pro](https://img.shields.io/badge/Intelligence-Gemini%20Pro-4285F4?logo=googlegemini)](https://deepmind.google/technologies/gemini/)
-[![Process: Autonomous CI/CD](https://img.shields.io/badge/Process-Autonomous-000000?logo=githubactions)](https://github.com/features/actions)
+[![Process: Draft PR Guardrails](https://img.shields.io/badge/Process-Draft%20PR%20Guardrails-000000?logo=githubactions)](https://github.com/features/actions)
+[![Runtime: Brain Gated](https://img.shields.io/badge/Runtime-Brain%20Gated-6D28D9)](docs/SOVEREIGN_READER.md)
 
-## 🏛 Architectural Manifesto
+## 📖 Practical Reader
 
-Sovereign Studio V3 is not merely an Integrated Development Environment (IDE); it is a **self-evolving software organism**. By fusing high-performance web technologies with native Android capabilities and a multi-agentic AI mesh, the system achieves a closed-loop development cycle—from issue detection to automated production releases (AAB/APK).
+Start here for the current functional structure, tools, skills, guardrails and best practices:
+
+- [`docs/SOVEREIGN_READER.md`](docs/SOVEREIGN_READER.md) — practical map of repo loading, readiness scoring, brain-gated packages, functional guards, draft PR publishing, tests and anti-patterns.
 
 ---
 
-## 🏗 High-Level System Topology
+## 🏛 Architectural Manifesto
+
+Sovereign Studio V3 is a repository workbench for turning loaded GitHub repository snapshots into visible, guarded implementation packages and draft pull requests. It is built around one strict principle: autonomous-feeling workflows must still pass through visible preview, functional guards and deliberate user action before GitHub writes happen.
+
+---
+
+## 🏗 Current Functional Chain
 
 ```mermaid
 graph TD
-    subgraph "The Intelligence Layer (ATO-V2 & Mesh)"
-        A[Issue Trigger] --> B{Decision Engine}
-        B --> C[Architect Agent]
-        C --> D[Coder Agent]
-        D --> E[Reviewer Agent]
-        E --> F[Patch Engine]
-    end
-
-    subgraph "The Application Core (Vite/TS)"
-        F --> G[React UI / Canvas Engine]
-        G --> H[Gemini Service Integration]
-    end
-
-    subgraph "The Native Bridge (Capacitor 6)"
-        H --> I[Android Manifest/Gradle]
-        I --> J[Production Release .aab]
-    end
-
-    subgraph "Autonomous CI/CD Pipeline"
-        J --> K[Ghost Pilot / Autonomous Cycle]
-        K --> L[Launch Bot / Social Distribution]
-    end
+    A[GitHub Repo URL + optional PAT] --> B[Real Repo Tree Loader]
+    B --> C[Repo Launch Readiness Panel]
+    C --> D[Sovereign Action Builder]
+    D --> E[Brain-Gated Implementation Package]
+    E --> F[Functional Guards]
+    F --> G[Preview: Summary + Brain]
+    G --> H[Draft PR Publisher]
+    H --> I[GitHub Branch + Commit + Draft PR]
 ```
-
 
 ---
 
 ## 🧩 Core Modules & Responsibilities
 
-### 1. [`ato-v2/`](src/ato-v2/) (Autonomous Task Operations)
-The central nervous system of Sovereign Studio. It orchestrates the transformation of abstract requirements into executable code.
-- **`brain/`**: Decision engines and prompt builders tailored for the Gemini Pro model.
-- **`generator/`**: The `patch-engine` applies precise AST (Abstract Syntax Tree) modifications to the codebase.
-- **`signal-hub/`**: Aggregates feedback from GitHub Issues and beta testing analytics to inform the next development cycle.
+### 1. GitHub ingestion
 
-### 2. [`mesh-system/`](mesh-system/) (Agentic Swarm)
-A distributed network of specialized agents that simulate a full-scale engineering team.
-- **Architect**: Structural planning and dependency mapping.
-- **Coder**: Writing TypeScript/React implementation logic.
-- **Tester/Reviewer**: Automated verification of PRs and code quality enforcement.
-- **Marketer**: Automated generation of release notes and distribution metadata.
+- [`src/features/github/hooks/useGithubRepo.ts`](src/features/github/hooks/useGithubRepo.ts): loads real GitHub tree entries, supports default branch fallback and optional PAT use for private repositories.
+- [`src/features/github/utils.ts`](src/features/github/utils.ts): parses and normalizes GitHub repository URLs.
+- [`src/features/github/githubPackagePublisher.ts`](src/features/github/githubPackagePublisher.ts): validates generated files, creates a branch/tree/commit and opens a draft PR.
 
-### 3. [`src/`](src/) (The Application Core)
-A modern React stack optimized for speed and AI interaction.
-- **`features/ai/`**: Deep integration with Google Gemini for real-time repo editing.
-- **`features/ai/RefactorEngine.ts`**: Central AI brain for code transformation with automatic fallback to free LLM providers.
-- **`features/canvas/`**: A high-performance `CanvasEngine` for visual repository mapping.
-- **`store/`**: Centralized state management via Redux Toolkit, handling complex AI-human interaction states.
+### 2. Readiness and reader layer
 
-### 4. [`android/`](android/) (Native Transformation)
-The Capacitor 6 implementation that transforms the web core into a sovereign mobile experience.
-- Pre-configured Gradle environment for automated signing and release.
-- Fastlane integration for seamless Play Store deployment.
+- [`src/features/product/runtime/repoLaunchReadiness.ts`](src/features/product/runtime/repoLaunchReadiness.ts): launch readiness score, grade, risk register, owner checklist and launch package markdown.
+- [`src/features/product/runtime/repoLaunchReadinessFromFiles.ts`](src/features/product/runtime/repoLaunchReadinessFromFiles.ts): converts loaded repo paths into readiness signals.
+- [`docs/SOVEREIGN_READER.md`](docs/SOVEREIGN_READER.md): practical operating guide for tools, skills and best practices.
+
+### 3. Sovereign package runtime
+
+- [`src/features/product/runtime/sovereignRuntime.ts`](src/features/product/runtime/sovereignRuntime.ts): creates brain-gated implementation packages.
+- [`src/features/product/runtime/sovereignPackageFromRepoFiles.ts`](src/features/product/runtime/sovereignPackageFromRepoFiles.ts): builds packages from loaded repo snapshots.
+- [`src/features/product/runtime/sovereignFunctionalGuards.ts`](src/features/product/runtime/sovereignFunctionalGuards.ts): blocks empty snapshots, duplicate generated paths, forbidden paths and incomplete docs packages.
+- [`src/features/product/brain/sovereignBrainContract.ts`](src/features/product/brain/sovereignBrainContract.ts): defines the five-layer Sovereign brain contract.
+
+### 4. Application shell
+
+- [`src/App.tsx`](src/App.tsx): wires repo loading, readiness panel, action builder, brain preview and draft PR publishing.
+- [`src/features/product/components/RepoReadinessPanel.tsx`](src/features/product/components/RepoReadinessPanel.tsx): visible score, rail, risk register, owner checklist and launch markdown.
 
 ---
 
-## ⚡ Autonomous Workflow: "The Ghost Pilot"
+## ⚙️ Guarded Workflow
 
-Sovereign Studio V3 operates on a **zero-touch development philosophy**:
+1. Load a real GitHub repository tree.
+2. Convert repo paths into readiness signals.
+3. Show readiness score, risks and owner checklist.
+4. Build a Sovereign package from mission + repo snapshot.
+5. Enforce functional guards.
+6. Show summary and brain preview.
+7. Publish only as a draft PR and only after explicit user action.
 
-1. **Issue Analysis**: A GitHub Issue is opened. The `🤖 Issue → Code Agent` workflow triggers.
-2. **Autonomous Design**: `ato-v2` builds a context-aware prompt; `mesh-system/architect` defines the plan.
-3. **Code Synthesis**: `mesh-system/coder` generates a patch; `vitest` validates the logic.
-4. **Verification**: `mesh-system/reviewer` approves the PR; `autonomous-cycle.yml` merges it.
-5. **Native Build**: `android-release.yml` compiles the source into a signed AAB.
-6. **Deployment**: `launch-bot` notifies the ecosystem and prepares the Play Store rollout.
+No default-branch writes from the UI. No generated file can bypass guards before publishing.
 
 ---
 
@@ -88,42 +81,53 @@ Sovereign Studio V3 operates on a **zero-touch development philosophy**:
 
 | Component | Technology |
 | :--- | :--- |
-| **Frontend** | React 18, TypeScript, Vite |
-| **Styling** | Tailwind CSS / PostCSS |
-| **State** | Redux Toolkit |
-| **AI Backend** | Gemini Pro API (via `geminiService.ts`) |
-| **Mobile Bridge** | Capacitor 6 (Android) |
-| **Automation** | GitHub Actions, Fastlane, Node.js Scripts |
-| **Testing** | Vitest, Testing Library |
+| **Frontend** | React, TypeScript, Vite |
+| **Mobile Bridge** | Capacitor Android |
+| **Repo Access** | GitHub REST API |
+| **Runtime Guardrails** | TypeScript runtime checks |
+| **Testing** | Vitest |
+| **Publishing** | Draft PR branch/tree/commit flow |
 
 ---
 
-## 🚀 Getting Started (Architectural Context)
-
-To initiate the Sovereign environment locally:
+## 🚀 Getting Started
 
 ```bash
-# Install dependencies
 npm install
-
-# Initialize the Native Bridge
-npx cap sync android
-
-# Run the Development Environment (with HMR)
 npm run dev
-
-# Trigger the Autonomous Mesh (Local Simulation)
-node mesh-system/mesh/runMesh.js
 ```
 
+Recommended verification before merging larger changes:
+
+```bash
+npm run type-check
+npm run lint
+npm run test:run
+npm run build:web
+```
+
+---
+
+## 🧪 Structure Tests
+
+Important guard tests:
+
+- `src/features/github/utils.test.ts`
+- `src/features/github/githubPackagePublisher.test.ts`
+- `src/features/product/runtime/repoLaunchReadiness.test.ts`
+- `src/features/product/runtime/repoLaunchReadinessFromFiles.test.ts`
+- `src/features/product/runtime/sovereignFunctionalGuards.test.ts`
+- `src/features/product/runtime/sovereignPackageFromRepoFiles.test.ts`
+- `src/features/product/runtime/sovereignStructure.test.ts`
 
 ---
 
 ## 📜 Metadata & Versioning
+
 - **Project Name:** Sovereign Studio
-- **Version:** 3.0.0 (Autonomous Edition)
-- **Codename:** Gemini-Bridge
-- **Architect:** Sovereign Studio Master-Architekt (AI)
+- **Version:** 3.0.0
+- **Current Focus:** guarded repo analysis, brain-gated package generation and draft PR publishing
 
 ---
-*This README is a live document, maintained and updated by the `mesh-system/marketer` agent.*
+
+This README is the short entry point. The practical operating manual lives in [`docs/SOVEREIGN_READER.md`](docs/SOVEREIGN_READER.md).
