@@ -11,11 +11,15 @@ Real repository tree loader
 ↓
 Repo Launch Readiness Panel
 ↓
+Repo File Integrity Matrix
+↓
 Sovereign Action Builder
 ↓
 Brain-gated implementation package
 ↓
 Functional guards
+↓
+Telemetry terminal + session memory
 ↓
 Draft PR Publisher
 ```
@@ -26,14 +30,17 @@ The important rule is simple: no visible action should pretend that a repository
 
 | Area | Entry point | Purpose |
 | --- | --- | --- |
-| Repo loading | `src/features/github/hooks/useGithubRepo.ts` | Loads real GitHub tree entries, handles default branch fallback and private repo PATs. |
+| Repo loading | `src/features/github/hooks/useGithubRepo.ts` | Loads real GitHub tree entries, handles default branch fallback, private repo PATs and safe snapshot restore. |
 | Repo URL parsing | `src/features/github/utils.ts` | Normalizes GitHub repo URLs before API use. |
 | Readiness runtime | `src/features/product/runtime/repoLaunchReadiness.ts` | Scores launch readiness and builds risk/checklist/release-state output. |
 | File signal mapping | `src/features/product/runtime/repoLaunchReadinessFromFiles.ts` | Converts loaded tree entries into readiness signals. |
+| File integrity matrix | `src/features/product/runtime/repoFileIntegrity.ts` | Performs honest path-only risk scoring for repo entries without pretending to scan content. |
+| Telemetry runtime | `src/features/product/runtime/sovereignTelemetry.ts` | Records visible lifecycle events across repo, readiness, package, guards, GitHub, workflow, memory and UI stages. |
+| Session memory | `src/features/product/runtime/sovereignSessionMemory.ts` | Saves and restores repo snapshot, mission and preview without storing PATs. |
 | Brain package builder | `src/features/product/runtime/sovereignPackageFromRepoFiles.ts` | Turns a mission and repo snapshot into a Sovereign implementation package. |
 | Functional guards | `src/features/product/runtime/sovereignFunctionalGuards.ts` | Blocks empty snapshots, duplicate files, forbidden paths and incomplete docs packages. |
 | Draft PR publisher | `src/features/github/githubPackagePublisher.ts` | Creates branch, tree, commit and draft pull request through GitHub API. |
-| UI shell | `src/App.tsx` | Wires repo loading, readiness, action builder, preview and draft PR creation. |
+| UI shell | `src/App.tsx` | Wires tabbed repo loading, readiness, integrity, action builder, telemetry and draft PR creation. |
 
 ## Practical skills this tool now has
 
@@ -46,6 +53,7 @@ Best practice:
 - Use tree paths for architecture detection first.
 - Fetch file contents only when a later step truly needs them.
 - Keep private repo access behind an explicit PAT field.
+- Never store PAT values in session memory.
 
 ### 2. Launch readiness scoring
 
@@ -57,7 +65,25 @@ Best practice:
 - Show risks before generating a PR.
 - Keep owner checklist items concrete and role-based.
 
-### 3. Brain-gated package generation
+### 3. File integrity matrix
+
+The file integrity layer was inspired by the GitForge-style verification matrix, but hardened for honesty. It is a path-only risk scan until file contents are explicitly fetched.
+
+It can flag:
+
+- secret-looking paths
+- generated/build folders
+- mock/stub/todo/sample indicators
+- very large files
+- code/test file hints
+
+Best practice:
+
+- Label confidence clearly as `path-only`.
+- Do not call path-only scores content verification.
+- Use the matrix to prioritize follow-up scans, not to declare a repo safe.
+
+### 4. Brain-gated package generation
 
 A Sovereign package is not just text. It must contain a five-layer brain result and concrete implementation files. Docs/runtime requests must create the full docs set:
 
@@ -75,7 +101,7 @@ Best practice:
 - Docs requests must touch README or `docs/*`.
 - Generated files must be shown in preview before publishing.
 
-### 4. Functional guards
+### 5. Functional guards
 
 Functional guards are the cement layer. They prevent the app from generating or publishing nonsense.
 
@@ -94,7 +120,42 @@ Best practice:
 - Never bypass `assertGeneratedPackageReady` in publishing paths.
 - Keep runtime checks small and deterministic.
 
-### 5. Draft PR publishing
+### 6. Telemetry terminal
+
+Telemetry is the visible runtime trail. It should answer: what just happened, what stage did it happen in, and did it pass or fail?
+
+Typical events:
+
+```txt
+repo:load-start
+repo:load-finished
+package:build-start
+guards:passed
+guards:failed
+github:draft-pr-start
+github:draft-pr-created
+github:draft-pr-failed
+memory:saved
+memory:restored
+```
+
+Best practice:
+
+- Log lifecycle events, not secrets.
+- Keep events short and structured.
+- Use telemetry to explain failures before asking the user to retry.
+
+### 7. Session memory
+
+Session memory stores the last useful local state: repo URL, branch, status, repo file snapshot, mission, summary and preview. It intentionally does not store the GitHub PAT.
+
+Best practice:
+
+- Use memory as last-known snapshot, not proof of freshness.
+- Mark restored repo state visibly.
+- Re-load GitHub when freshness matters.
+
+### 8. Draft PR publishing
 
 The publisher creates a branch, tree, commit and draft pull request. It intentionally does not auto-merge.
 
@@ -104,6 +165,20 @@ Best practice:
 - Use deterministic branch names plus nonce/collision fallback.
 - Keep PR body useful: architecture, brain summary, generated file list and suggestions.
 - Do not log or persist PAT values.
+
+## UI workspaces
+
+The app shell is intentionally split into tabs:
+
+```txt
+Repo
+Readiness
+Integrity
+Builder
+Telemetry
+```
+
+This mirrors the imported multi-tab idea from the experimental app, but keeps the implementation web-native and guard-first.
 
 ## Tool progress rail
 
@@ -173,6 +248,9 @@ Every structural layer should have tests:
 | URL parser | `src/features/github/utils.test.ts` |
 | Repo file signal mapping | `src/features/product/runtime/repoLaunchReadinessFromFiles.test.ts` |
 | Readiness runtime | `src/features/product/runtime/repoLaunchReadiness.test.ts` |
+| File integrity runtime | `src/features/product/runtime/repoFileIntegrity.test.ts` |
+| Telemetry runtime | `src/features/product/runtime/sovereignTelemetry.test.ts` |
+| Session memory | `src/features/product/runtime/sovereignSessionMemory.test.ts` |
 | Package builder | `src/features/product/runtime/sovereignPackageFromRepoFiles.test.ts` |
 | Functional guards | `src/features/product/runtime/sovereignFunctionalGuards.test.ts` |
 | Draft PR publisher | `src/features/github/githubPackagePublisher.test.ts` |
@@ -211,6 +289,7 @@ Avoid these:
 - hidden auto-merge behavior
 - hardcoded secrets or direct secret logging
 - broad rewrites of large hooks when a small adapter module is enough
+- synthetic purity scores presented as true content scans
 
 ## Current next hardening targets
 
