@@ -1,5 +1,5 @@
 import './runtime-adapter';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
 import { useGithubRepo } from './features/github/hooks/useGithubRepo';
 import { RepoFileList } from './features/github/components/RepoFileList';
@@ -7,6 +7,13 @@ import { GeneratedFileReviewPanel } from './features/product/components/Generate
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { SovereignTelemetryPanel } from './features/product/components/SovereignTelemetryPanel';
+import {
+  AUTOMATION_MODE_LABELS,
+  buildAutomationRunKey,
+  decideSovereignAutomation,
+  describeAutomationMode,
+  type SovereignAutomationMode,
+} from './features/product/runtime/sovereignAutomationMode';
 import { assertGeneratedFileReviewSafe, reviewGeneratedFiles } from './features/product/runtime/generatedFileReview';
 import { getRepoSnapshotStatus } from './features/product/runtime/sovereignFunctionalGuards';
 import {
@@ -40,16 +47,22 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'telemetry', label: 'Telemetry' },
 ];
 
+const automationModes: SovereignAutomationMode[] = ['manual', 'auto-review', 'full-auto-draft-pr'];
+
 const App: React.FC = () => {
   const [user, setUser] = useState<UserSession | null>(null);
   const [mission, setMission] = useState('README + Update History');
   const [sovereignSummary, setSovereignSummary] = useState('Noch kein Sovereign-Paket erzeugt.');
   const [sovereignPreview, setSovereignPreview] = useState('');
   const [lastPackage, setLastPackage] = useState<SovereignImplementationPackage | null>(null);
+  const [lastPackageKey, setLastPackageKey] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<SovereignTab>('repo');
   const [telemetryExpanded, setTelemetryExpanded] = useState(false);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
+  const [automationMode, setAutomationMode] = useState<SovereignAutomationMode>('manual');
+  const [lastAutoRunKey, setLastAutoRunKey] = useState('');
+  const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
   const {
     repoUrl,
     setRepoUrl,
@@ -66,6 +79,21 @@ const App: React.FC = () => {
   } = useGithubRepo();
   const repoSnapshotStatus = getRepoSnapshotStatus(repoFiles);
   const actionDisabled = isRepoBusy || !repoSnapshotStatus.ready;
+  const packageInputKey = buildAutomationRunKey({
+    mode: 'manual',
+    repoUrl,
+    repoBranch,
+    mission,
+    repoFileCount: repoFiles.length,
+  });
+  const automationRunKey = buildAutomationRunKey({
+    mode: automationMode,
+    repoUrl,
+    repoBranch,
+    mission,
+    repoFileCount: repoFiles.length,
+  });
+  const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
 
   const pushTelemetry = (
     stage: Parameters<typeof createTelemetryEvent>[0],
@@ -77,7 +105,7 @@ const App: React.FC = () => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
   };
 
-  const buildPackage = (nextMission: string): SovereignImplementationPackage | null => {
+  const buildPackage = (nextMission: string, nextPackageKey = packageInputKey): SovereignImplementationPackage | null => {
     try {
       pushTelemetry('package', 'info', 'package:build-start', 'Building Sovereign package.', { files: repoFiles.length });
       const pkg = buildSovereignPackageFromRepoFiles({
@@ -92,6 +120,7 @@ const App: React.FC = () => {
 
       setMission(nextMission);
       setLastPackage(pkg);
+      setLastPackageKey(nextPackageKey);
       setSovereignSummary(`${summarizeSovereignPackage(pkg, repoFiles)}\n${review.summary}`);
       setSovereignPreview(JSON.stringify({
         architecture: pkg.architecture,
@@ -105,6 +134,7 @@ const App: React.FC = () => {
       return pkg;
     } catch (error) {
       setLastPackage(null);
+      setLastPackageKey('');
       const message = error instanceof Error ? error.message : 'Sovereign-Paket konnte nicht erzeugt werden.';
       setSovereignSummary(message);
       pushTelemetry('guards', 'error', 'guards:failed', message);
@@ -116,6 +146,8 @@ const App: React.FC = () => {
     pushTelemetry('repo', 'info', 'repo:load-start', 'Loading repository tree.', { repoUrl });
     await loadRepoTree();
     pushTelemetry('repo', 'success', 'repo:load-finished', 'Repository load request finished. Check repo status for exact result.');
+    setLastPackage(null);
+    setLastPackageKey('');
     setActiveTab('readiness');
   };
 
@@ -157,6 +189,8 @@ const App: React.FC = () => {
     setSovereignSummary(`${snapshot.sovereignSummary}\nRestored ${formatSessionMemoryAge(snapshot)}.`);
     setSovereignPreview(snapshot.sovereignPreview);
     setLastPackage(null);
+    setLastPackageKey('');
+    setLastAutoRunKey('');
     pushTelemetry('memory', 'success', 'memory:restored', `Restored session from ${formatSessionMemoryAge(snapshot)}.`, { files: snapshot.repoFiles.length });
     setActiveTab('repo');
   };
@@ -164,15 +198,15 @@ const App: React.FC = () => {
   const clearSession = () => {
     clearRepoSnapshot();
     setLastPackage(null);
+    setLastPackageKey('');
+    setLastAutoRunKey('');
     setSovereignPreview('');
     setSovereignSummary('Noch kein Sovereign-Paket erzeugt.');
     pushTelemetry('memory', 'info', 'memory:cleared', 'Visible session state cleared. Stored memory is unchanged.');
     setActiveTab('repo');
   };
 
-  const publishDraftPr = async () => {
-    const pkg = lastPackage ?? buildPackage(mission.trim() || 'README + Update History');
-    if (!pkg) return;
+  const publishDraftPrForPackage = async (pkg: SovereignImplementationPackage): Promise<boolean> => {
     const review = reviewGeneratedFiles(pkg.files);
     try {
       assertGeneratedFileReviewSafe(review);
@@ -181,13 +215,13 @@ const App: React.FC = () => {
       setSovereignSummary(message);
       pushTelemetry('github', 'error', 'github:review-blocked', message);
       setActiveTab('files');
-      return;
+      return false;
     }
 
     if (!githubToken.trim()) {
       setSovereignSummary('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
       pushTelemetry('github', 'warning', 'github:token-missing', 'Draft PR blocked because no PAT was entered.');
-      return;
+      return false;
     }
 
     setIsPublishing(true);
@@ -226,13 +260,87 @@ const App: React.FC = () => {
       });
       setActiveTab('telemetry');
       setTelemetryExpanded(true);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft PR konnte nicht erstellt werden.';
       setSovereignSummary(message);
       pushTelemetry('github', 'error', 'github:draft-pr-failed', message);
+      return false;
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  const publishDraftPr = async () => {
+    const pkg = hasFreshPackage && lastPackage
+      ? lastPackage
+      : buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+    if (!pkg) return;
+    await publishDraftPrForPackage(pkg);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    const decision = decideSovereignAutomation({
+      mode: automationMode,
+      repoReady: repoSnapshotStatus.ready,
+      hasMission: mission.trim().length > 0,
+      hasToken: githubToken.trim().length > 0,
+      isBusy: isRepoBusy || isPublishing,
+      hasPackage: hasFreshPackage,
+      lastAutoRunKey,
+      nextAutoRunKey: automationRunKey,
+    });
+
+    if (automationMode === 'manual') {
+      setAutomationStatus('Manual mode is active.');
+      return;
+    }
+
+    if (decision.blockedReason) {
+      setAutomationStatus(decision.blockedReason);
+      return;
+    }
+
+    if (decision.shouldBuildPackage && automationMode === 'auto-review') {
+      setLastAutoRunKey(automationRunKey);
+      setAutomationStatus('Auto Review is building and reviewing generated files.');
+      pushTelemetry('workflow', 'info', 'automation:auto-review', 'Auto Review triggered package build.');
+      buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+      return;
+    }
+
+    if (automationMode === 'full-auto-draft-pr' && decision.shouldPublishDraftPr) {
+      setLastAutoRunKey(automationRunKey);
+      setAutomationStatus('Full Auto is building, reviewing and creating a Draft PR.');
+      pushTelemetry('workflow', 'info', 'automation:full-auto', 'Full Auto triggered guarded Draft PR flow.');
+      const pkg = hasFreshPackage && lastPackage
+        ? lastPackage
+        : buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+      if (pkg) void publishDraftPrForPackage(pkg);
+    }
+    // The automation effect intentionally watches value snapshots, not helper function identities.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    automationMode,
+    automationRunKey,
+    githubToken,
+    hasFreshPackage,
+    isPublishing,
+    isRepoBusy,
+    lastAutoRunKey,
+    lastPackage,
+    mission,
+    packageInputKey,
+    repoSnapshotStatus.ready,
+    user,
+  ]);
+
+  const changeAutomationMode = (mode: SovereignAutomationMode) => {
+    setAutomationMode(mode);
+    setLastAutoRunKey('');
+    setAutomationStatus(describeAutomationMode(mode));
+    pushTelemetry('workflow', mode === 'manual' ? 'info' : 'warning', 'automation:mode-changed', describeAutomationMode(mode));
   };
 
   const login = () => {
@@ -264,6 +372,27 @@ const App: React.FC = () => {
           </button>
         ))}
       </div>
+
+      <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-bold">Automation Mode</h2>
+            <p className="mt-1 text-xs text-slate-400">{automationStatus}</p>
+          </div>
+          <select
+            value={automationMode}
+            onChange={(event) => changeAutomationMode(event.target.value as SovereignAutomationMode)}
+            className="rounded border border-slate-700 bg-slate-900 p-2 text-sm"
+          >
+            {automationModes.map((mode) => (
+              <option key={mode} value={mode}>{AUTOMATION_MODE_LABELS[mode]}</option>
+            ))}
+          </select>
+        </div>
+        <p className="mt-2 text-[11px] text-slate-500">
+          Full Auto still runs repo snapshot checks, functional guards, generated-file review and Draft PR publishing rules. It does not auto-merge.
+        </p>
+      </section>
 
       {activeTab === 'repo' ? (
         <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
