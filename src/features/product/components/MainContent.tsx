@@ -1,5 +1,5 @@
-import React from 'react';
-import { Bot, CheckCircle, Loader2, Send } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Bot, CheckCircle, Loader2, Send, CircleX } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
 
 interface MainContentProps {
@@ -37,6 +37,7 @@ export const MainContent: React.FC<MainContentProps> = ({
   nextStepLabel,
   approvalConfirmed = false
 }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
   const red = pipelineState === 'failed' || pipelineState === 'blocked';
   const green = pipelineState === 'green';
   const yellow = pipelineState === 'planning' || pipelineState === 'generating' || pipelineState === 'validating' || pipelineState === 'fixing' || pipelineState === 'revalidating';
@@ -129,7 +130,7 @@ export const MainContent: React.FC<MainContentProps> = ({
                 type="button"
                 onClick={mergeWhenGreen}
                 disabled={!canApprove}
-                className="w-full sm:w-auto min-h-14 px-6 py-3 rounded-2xl bg-emerald-600 disabled:bg-emerald-200 text-white font-black text-sm uppercase shadow-lg shadow-emerald-100 active:scale-[0.98] transition-all"
+                className="w-full sm:w-auto min-h-14 px-6 py-3 rounded-2xl bg-emerald-600 disabled:bg-emerald-200 text-white font-black text-sm uppercase shadow-lg shadow-emerald-100 active:scale-[0.98]"
                 aria-label="Freigabe bestaetigen"
               >
                 {approvalConfirmed ? 'Bestaetigt' : 'Freigabe bestaetigen'}
@@ -155,18 +156,31 @@ export const MainContent: React.FC<MainContentProps> = ({
 
       <div className="h-12 bg-white border-t border-stone-200 flex items-center px-3 sm:px-4 gap-3 shrink-0">
         <span className="text-lg">Chat</span>
-        <input
-          value={chatInput}
-          onChange={(event) => setChatInput(event.target.value)}
-          onKeyDown={(event) => { if (event.key === 'Enter') handleChatSubmit(); }}
-          placeholder={green ? 'Freigabe oben bestaetigen - Senden ist nicht noetig' : 'Idee, Auftrag oder Frage eingeben'}
-          className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded bg-stone-50"
-        />
+        <div className="flex-1 relative">
+          <input
+            ref={inputRef}
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') handleChatSubmit(); }}
+            placeholder={green ? 'Freigabe oben bestaetigen - Senden ist nicht noetig' : 'Idee, Auftrag oder Frage eingeben'}
+            className="w-full text-[11px] p-1.5 pr-8 border border-stone-300 rounded bg-stone-50 focus:outline-none focus:border-indigo-500 transition-colors"
+          />
+          {chatInput && (
+            <button
+              type="button"
+              onClick={() => { setChatInput(''); inputRef.current?.focus(); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-all active:scale-95 p-1"
+              aria-label="Eingabe loeschen"
+              title="Eingabe loeschen"
+            >
+              <CircleX size={14} />
+            </button>
+          )}
+        </div>
         <button
           disabled={(derivedWorking && !green) || approvalConfirmed}
           onClick={handleChatSubmit}
           title={green ? 'Auch dieses Symbol bestaetigt jetzt die Freigabe' : 'Nachricht senden'}
-          aria-label={green ? 'Freigabe bestaetigen' : 'Nachricht senden'}
           className="bg-indigo-600 disabled:bg-stone-300 text-white px-4 py-1.5 rounded text-[10px] font-bold uppercase shadow-sm"
         >
           <Send size={13}/>
