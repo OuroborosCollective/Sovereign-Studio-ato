@@ -11,6 +11,42 @@ Reported result after running the full test suite:
 - Build completed successfully.
 - The known failures are pre-existing API-dependent timeout tests and chat-message tests, not introduced by the Remote Memory App Bridge codemod.
 
+## Test lanes
+
+Use separated commands so deterministic local runtime work is not blocked by known external/API timing failures:
+
+```bash
+npm run test:unit
+npm run test:integration
+npm run test:e2e
+npm run test:all
+```
+
+### `test:unit`
+
+Runs the deterministic local unit/runtime lane and excludes known external/API/e2e paths:
+
+- `**/*.chat.test.ts`
+- `**/*.integration.test.ts`
+- `**/*.e2e.test.ts`
+- `**/*.spec.ts`
+- `**/e2e/**`
+- `**/api-fallback/**`
+
+This is the primary release gate for local runtime feature work.
+
+### `test:integration`
+
+Runs explicit integration-style Vitest files such as chat/API-adjacent tests. These can require mocks or controlled API setup.
+
+### `test:e2e`
+
+Runs the mobile/e2e runner under `sovereign-studio-rn/e2e/run-e2e.ts`.
+
+### `test:all`
+
+Runs the complete Vitest suite with no lane exclusions. Use this for full visibility, not as the only signal for whether a deterministic runtime change is healthy.
+
 ## Release-gate interpretation
 
 Runtime and unit tests that do not depend on external services are the primary release gate for local feature work.
@@ -47,11 +83,11 @@ The Remote Memory integration should be considered healthy when these local targ
 
 ## Next cleanup step
 
-Split the test commands into clear lanes:
+After the lanes are proven in CI, record the exact failing files and error class in this document whenever `test:all` is red.
 
-- `test:unit` for deterministic local runtime and component tests.
-- `test:integration` for tests that need mocked or live API boundaries.
-- `test:e2e` for mobile/browser flows.
-- `test:all` for the full suite.
+Long-term cleanup target:
 
-Until that split exists, record the exact failing files and error class in this document whenever the full suite is run.
+- replace API timeout behavior with deterministic mocks where possible;
+- keep live-service tests behind explicit env variables;
+- keep mobile/browser e2e in its own job lane;
+- never hide real deterministic runtime regressions behind broad skip rules.
