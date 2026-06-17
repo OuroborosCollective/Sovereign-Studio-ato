@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { buildGitHubHeaders, stripTokenFromText } from '../githubAuthSession';
 import { RepoFile } from '../types';
 import { parseGithubRepoUrl } from '../utils';
 
@@ -40,14 +41,7 @@ export const useGithubRepo = () => {
     setRepoStatus(`Lade ${parsed.owner}/${parsed.repo}...`);
 
     try {
-      const headers: Record<string, string> = {
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      };
-
-      if (githubToken.trim()) {
-        headers.Authorization = `Bearer ${githubToken.trim()}`;
-      }
+      const headers = buildGitHubHeaders({ token: githubToken });
 
       const repoResponse = await fetch(
         `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`,
@@ -112,7 +106,8 @@ export const useGithubRepo = () => {
     } catch (err) {
       console.error(err);
       setRepoFiles([]);
-      setRepoStatus(err instanceof Error ? err.message : 'Fehler beim Laden des Repos');
+      const message = err instanceof Error ? err.message : 'Fehler beim Laden des Repos';
+      setRepoStatus(stripTokenFromText(message, githubToken));
     } finally {
       setIsRepoBusy(false);
     }
