@@ -44,6 +44,13 @@ export interface SequentialRuntimeDecision {
   reason: string;
 }
 
+export interface SequentialRuntimeValidationReport {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  summary: string;
+}
+
 export const SEQUENTIAL_RUNTIME_STEPS: SequentialRuntimeStep[] = [
   'repo-load',
   'package-build',
@@ -100,11 +107,87 @@ function pushEvent(
   };
 }
 
+export function validateSequentialRuntimeState(state: SequentialRuntimeState): SequentialRuntimeValidationReport {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const knownSteps = new Set(SEQUENTIAL_RUNTIME_STEPS);
+
+  for (const step of SEQUENTIAL_RUNTIME_STEPS) {
+    const record = state.steps[step];
+    if (!record) {
+      errors.push(`Missing step record: ${step}`);
+      continue;
+    }
+    if (record.step !== step) {
+      errors.push(`Step record mismatch: expected ${step}, got ${record.step}`);
+    }
+    if (record.status === 'running' && !record.startedAt) {
+      warnings.push(`${describeSequentialStep(step)} is running without a start timestamp.`);
+    }
+    if ((record.status === 'completed' || record.status === 'failed' || record.status === 'skipped') && !record.finishedAt) {
+      warnings.push(`${describeSequentialStep(step)} is ${record.status} without a finish timestamp.`);
+    }
+  }
+
+  const runningSteps = SEQUENTIAL_RUNTIME_STEPS.filter((step) => state.steps[step]?.status === 'running');
+  if (runningSteps.length > 1) {
+    errors.push(`More than one runtime step is running: ${runningSteps.join(', ')}`);
+  }
+
+  if (state.activeStep && !knownSteps.has(state.activeStep)) {
+    errors.push(`Unknown active step: ${state.activeStep}`);
+  }
+
+  if (state.activeStep && state.steps[state.activeStep]?.status !== 'running') {
+    errors.push(`Active step ${state.activeStep} is not marked as running.`);
+  }
+
+  if (!state.activeStep && runningSteps.length > 0) {
+    errors.push(`Running step exists without activeStep: ${runningSteps.join(', ')}`);
+  }
+
+  if (state.activeStep && runningSteps.length === 0) {
+    errors.push(`activeStep is ${state.activeStep}, but no step is running.`);
+  }
+
+  let previousSequence = 0;
+  for (const event of state.history) {
+    if (!knownSteps.has(event.step)) {
+      errors.push(`History contains unknown step: ${event.step}`);
+    }
+    if (event.sequence <= previousSequence) {
+      errors.push('History sequence is not strictly increasing.');
+      break;
+    }
+    previousSequence = event.sequence;
+  }
+
+  if (state.history.length && state.sequence !== state.history[state.history.length - 1]?.sequence) {
+    warnings.push('State sequence does not match latest history event.');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary: `${errors.length} error(s), ${warnings.length} warning(s) in sequential runtime state.`,
+  };
+}
+
+export function assertSequentialRuntimeStateValid(state: SequentialRuntimeState): void {
+  const report = validateSequentialRuntimeState(state);
+  if (!report.valid) {
+    throw new Error(`Sequential runtime state is invalid: ${report.errors.join(' | ')}`);
+  }
+}
+
 export function canStartSequentialStep(
   state: SequentialRuntimeState,
   step: SequentialRuntimeStep,
   options: SequentialStartOptions = {},
 ): SequentialRuntimeDecision {
+  assertSequentialRuntimeStateValid(state);
+
   if (state.activeStep) {
     return {
       allowed: false,
@@ -161,7 +244,9 @@ export function startSequentialStep(
     },
   };
 
-  return pushEvent(next, step, 'running', decision.reason, at);
+  const withEvent = pushEvent(next, step, 'running', decision.reason, at);
+  assertSequentialRuntimeStateValid(withEvent);
+  return withEvent;
 }
 
 export function finishSequentialStep(
@@ -171,6 +256,8 @@ export function finishSequentialStep(
   message: string,
   at = Date.now(),
 ): SequentialRuntimeState {
+  assertSequentialRuntimeStateValid(state);
+
   if (state.activeStep !== step) {
     throw new Error(`Cannot finish ${describeSequentialStep(step)} because ${state.activeStep ? describeSequentialStep(state.activeStep) : 'no step'} is active.`);
   }
@@ -189,7 +276,9 @@ export function finishSequentialStep(
     },
   };
 
-  return pushEvent(next, step, status, message, at);
+  const withEvent = pushEvent(next, step, status, message, at);
+  assertSequentialRuntimeStateValid(withEvent);
+  return withEvent;
 }
 
 export function resetSequentialRuntime(state: SequentialRuntimeState = createSequentialRuntimeState()): SequentialRuntimeState {
