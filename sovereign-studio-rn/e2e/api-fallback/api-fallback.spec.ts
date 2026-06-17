@@ -250,25 +250,16 @@ describe('API Fallback Chain Tests', () => {
     });
 
     it('should handle malformed responses', async () => {
-      // Test with invalid response format
-      // Relaxed to handle potential network blocks/HTML responses in CI
+      const malformedResponse = '<html>not-json</html>';
+      let handled = false;
+
       try {
-        const response = await fetch('https://httpbin.org/json');
-        if (response.ok) {
-          const text = await response.text();
-          try {
-            const data = JSON.parse(text);
-            if (typeof data === 'object' && data !== null) {
-              console.log('Successfully fetched and parsed JSON');
-            }
-          } catch (parseError) {
-            console.log('Gracefully handled JSON parse error from response');
-          }
-        }
-      } catch (e) {
-        console.log('Gracefully handled network fetch error');
+        JSON.parse(malformedResponse);
+      } catch {
+        handled = true;
       }
-      expect(true).toBe(true);
+
+      expect(handled).toBe(true);
     });
 
     it('should handle rate limiting', async () => {

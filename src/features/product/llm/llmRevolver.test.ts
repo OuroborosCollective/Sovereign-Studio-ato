@@ -66,7 +66,7 @@ describe('llmRevolver', () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.code).toBe('invalid_contract');
+    expect((result as { ok: false; failure: { code: string } }).failure.code).toBe('invalid_contract');
   });
 
   it('skips external no-key adapters unless enabled', async () => {

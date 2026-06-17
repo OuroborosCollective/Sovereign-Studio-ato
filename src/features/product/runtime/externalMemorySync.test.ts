@@ -124,7 +124,7 @@ describe('externalMemorySync', () => {
       ok: true,
       status: 200,
       json: async () => ({ ok: true, service: 'sovereign-memory-gateway' }),
-    }) as Response);
+    }) as unknown as Response);
 
     const result = await checkExternalMemoryHealth({ config, fetcher: fetcher as unknown as typeof fetch });
     expect(result.ok).toBe(true);
@@ -146,7 +146,7 @@ describe('externalMemorySync', () => {
       status: 200,
       json: async () => ({ accepted: true, imported: 1, exported: 2, rejected: 0, summary: 'done' }),
       init,
-    }) as Response);
+    }) as unknown as Response);
 
     const result = await syncExternalMemory({ config, payload, fetcher: fetcher as unknown as typeof fetch });
     expect(result.status).toBe('synced');
@@ -167,7 +167,7 @@ describe('externalMemorySync', () => {
       ok: true,
       status: 200,
       json: async () => ({ success: true, imported: 2, exported: 0, rejected: 0, summary: 'gateway synced' }),
-    }) as Response);
+    }) as unknown as Response);
 
     const result = await syncExternalMemory({ config, payload, fetcher: fetcher as unknown as typeof fetch });
     expect(result.status).toBe('synced');
@@ -189,7 +189,7 @@ describe('externalMemorySync', () => {
       status: 200,
       json: async () => ({ items: [{ id: 'remote-1', kind: 'solution-pattern', title: 'Lint repair', text: 'Repair lint pattern', tags: ['lint'], metadata: { contributionScope: 'shared-derived-pattern' } }] }),
       init,
-    }) as Response);
+    }) as unknown as Response);
 
     const result = await searchExternalMemory({ config, query: 'lint repair', fetcher: fetcher as unknown as typeof fetch });
     expect(result.ok).toBe(true);
@@ -211,7 +211,7 @@ describe('externalMemorySync', () => {
       ok: true,
       status: 200,
       json: async () => ({ updates: [{ id: 'remote-2', kind: 'learning-pattern', title: 'Workflow hint', text: 'Use workflow watch', tags: ['workflow'], metadata: { contributionScope: 'shared-derived-pattern' } }] }),
-    }) as Response);
+    }) as unknown as Response);
 
     const result = await pullExternalMemoryUpdates({ config, fetcher: fetcher as unknown as typeof fetch });
     expect(result.ok).toBe(true);
@@ -274,7 +274,7 @@ describe('externalMemorySync', () => {
       status: 200,
       json: async () => ({ success: true, deleted: true, deletedItems: 5, retainedSharedItems: 17, summary: 'contributor records removed' }),
       init,
-    }) as Response);
+    }) as unknown as Response);
 
     const result = await deleteExternalMemoryData({ config, request, fetcher: fetcher as unknown as typeof fetch });
     expect(result.status).toBe('synced');

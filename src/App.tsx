@@ -46,6 +46,7 @@ import {
   searchExternalMemory,
   syncExternalMemory,
   type ExternalMemoryHealthResult,
+  type ExternalMemorySyncConfig,
   type ExternalMemoryPullUpdatesResult,
   type ExternalMemorySearchResult,
   type ExternalMemorySyncResult,
@@ -59,6 +60,10 @@ import {
   createSolutionPatternStore,
   type SolutionPatternStore,
 } from './features/product/runtime/solutionPatternMemory';
+import {
+  loadSolutionPatternStore,
+  saveSolutionPatternStore,
+} from './features/product/runtime/solutionPatternPersistence';
 import type { RemoteMemoryUpdateIntakeResult } from './features/product/runtime/remoteMemoryUpdateIntake';
 import {
   createSequentialRuntimeState,
@@ -154,8 +159,11 @@ const App: React.FC = () => {
   const [telemetryExpanded, setTelemetryExpanded] = useState(false);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
   const [scanRegistry, setScanRegistry] = useState(() => createScanFindingRegistry());
-  const [solutionPatternStore, setSolutionPatternStore] = useState(() => createSolutionPatternStore());
-  const [remoteMemoryConfig, setRemoteMemoryConfig] = useState(() => ({
+  const [solutionPatternStore, setSolutionPatternStore] = useState(() => {
+    if (typeof window === 'undefined') return createSolutionPatternStore();
+    return loadSolutionPatternStore(window.localStorage).store;
+  });
+  const [remoteMemoryConfig, setRemoteMemoryConfig] = useState<ExternalMemorySyncConfig>(() => ({
     ...createExternalMemorySyncConfig(),
     gatewayUrl: 'http://46.202.154.25:8088',
     workspaceId: 'Pattern',
@@ -228,6 +236,14 @@ const App: React.FC = () => {
   ) => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const result = saveSolutionPatternStore(window.localStorage, solutionPatternStore);
+    if (!result.ok) pushTelemetry('memory', 'warning', 'aha-memory:persist-failed', result.summary);
+    // Store persistence follows solutionPatternStore changes only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solutionPatternStore]);
 
   useEffect(() => {
     if (!repoFiles.length) return;

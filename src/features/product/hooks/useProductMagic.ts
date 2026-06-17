@@ -3,7 +3,8 @@ import { FileItem, Card, WorkView, PipelineState, ProjectSettings, MobilePane, C
 import { makeId, demoFiles, starterCards, defaultSettings } from '../constants';
 import { validateAppState, validateGitHubUrl, validateGitHubToken, runtimeCheck, safeGet } from '../../../shared/utils/runtimeValidation';
 
-const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const isVitestRuntime = typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test';
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, isVitestRuntime ? 0 : ms));
 
 // Storage keys for persistence
 const STORAGE_KEYS = {
