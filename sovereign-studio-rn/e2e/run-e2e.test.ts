@@ -19,4 +19,11 @@ describe('E2E runner command contract', () => {
     expect(source).toContain('recordSkipped');
     expect(source).toContain('SKIPPED');
   });
+
+  it('skips Detox when the config exists but the dependency is not installed', () => {
+    expect(source).toContain('packageJsonHasDependency');
+    expect(source).toContain("packageJsonHasDependency(rootPackage, 'detox')");
+    expect(source).toContain("packageJsonHasDependency(rnPackage, 'detox')");
+    expect(source).toContain('Detox config found, but detox is not installed in package dependencies.');
+  });
 });
