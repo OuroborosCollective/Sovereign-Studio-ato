@@ -79,7 +79,7 @@ describe('githubPackagePublisher', () => {
 
     expect(result.pullRequestNumber).toBe(251);
     expect(calls.map((call) => call.method)).toEqual(['GET', 'GET', 'GET', 'POST', 'POST', 'POST', 'PATCH', 'POST']);
-    expect(calls.at(-1)?.body).toMatchObject({ draft: true, base: 'main' });
+    expect(calls[calls.length - 1]?.body).toMatchObject({ draft: true, base: 'main' });
   });
 
   it('falls forward to a numbered branch when the first branch already exists', async () => {
