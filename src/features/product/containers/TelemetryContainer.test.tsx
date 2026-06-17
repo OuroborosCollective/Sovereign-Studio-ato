@@ -4,14 +4,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { TelemetryContainer } from './TelemetryContainer';
 import { appendTelemetryEvent, createInitialTelemetryState, createTelemetryEvent } from '../runtime/sovereignTelemetry';
 
+const TELEMETRY_TOGGLE = /NoCode Live Monitor.*Telemetry Log/i;
+
 describe('TelemetryContainer', () => {
-  it('renders empty telemetry and keeps it collapsed', () => {
+  it('renders empty telemetry and keeps it collapsed when no events exist', () => {
     const onExpandedChange = vi.fn();
     render(<TelemetryContainer state={createInitialTelemetryState()} expanded={false} onExpandedChange={onExpandedChange} />);
 
     expect(screen.getByTestId('telemetry-container')).toBeDefined();
-    expect(screen.getByText(/No telemetry events yet/i)).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: /Sovereign Telemetry Terminal/i }));
+    expect(screen.getByText(/Noch keine Live-Events/i)).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
     expect(onExpandedChange).toHaveBeenCalledWith(false);
   });
 
@@ -23,12 +26,12 @@ describe('TelemetryContainer', () => {
     );
 
     const { rerender } = render(<TelemetryContainer state={telemetry} expanded={false} onExpandedChange={onExpandedChange} />);
-    fireEvent.click(screen.getByRole('button', { name: /Sovereign Telemetry Terminal/i }));
+    fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
     expect(onExpandedChange).toHaveBeenCalledWith(true);
 
     rerender(<TelemetryContainer state={telemetry} expanded={true} onExpandedChange={onExpandedChange} />);
     expect(screen.getAllByText(/ui:ready/i).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: /Sovereign Telemetry Terminal/i }));
+    fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
     expect(onExpandedChange).toHaveBeenLastCalledWith(false);
   });
 });
