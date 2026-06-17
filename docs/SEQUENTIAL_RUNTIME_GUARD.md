@@ -11,6 +11,7 @@ Only one runtime step may be active at a time.
 A downstream step may only start when its required prior data exists.
 A failed step records failure and blocks confusing follow-up behavior.
 The guard validates its own internal state before and after transitions.
+Every planned step request is validated before start.
 ```
 
 ## Guarded steps
@@ -57,6 +58,32 @@ The self-validation checks:
 - state sequence matches the latest history event, with warning if not
 
 `canStartSequentialStep`, `startSequentialStep` and `finishSequentialStep` call the self-validation path so a corrupted guard state fails closed instead of silently continuing.
+
+## Step request validation
+
+Every individual step request can be validated before start:
+
+```txt
+validateSequentialRuntimeStepRequest
+assertSequentialRuntimeStepRequestValid
+```
+
+This validates both:
+
+```txt
+current runtime state
+requested step prerequisites
+```
+
+Examples:
+
+```txt
+draft-pr-publish without a package -> invalid
+workflow-watch without a commit SHA -> invalid
+package-build while repo-load is running -> invalid
+```
+
+`startSequentialStep` calls this request validator directly.
 
 ## App integration
 
