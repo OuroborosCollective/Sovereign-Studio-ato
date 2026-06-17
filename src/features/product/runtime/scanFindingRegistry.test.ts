@@ -16,7 +16,11 @@ import {
   applyWorkflowWatchFindingsWithBookkeeping,
   markSourceResolvedByCleanScan,
 } from './scanFindingBookkeeping';
-import { applyWorkflowScanAndBuildGate } from './scanFindingWorkflowBridge';
+import {
+  applyWorkflowScanAndBuildGate,
+  assertWorkflowScanFindingBridgeResultValid,
+  validateWorkflowScanFindingBridgeResult,
+} from './scanFindingWorkflowBridge';
 import type { WorkflowWatchReport } from './workflowWatch';
 
 describe('scanFindingRegistry', () => {
@@ -144,6 +148,21 @@ describe('scanFindingRegistry', () => {
     expect(result.registry.findings[0]).toMatchObject({ category: 'build-logic', filePath: 'vite.config.*' });
     expect(result.gate.allowed).toBe(true);
     expect(result.summary).toContain('Scan workflow-watch abgeschlossen');
+    expect(validateWorkflowScanFindingBridgeResult(result).valid).toBe(true);
+  });
+
+  it('rejects bridge results with mismatched gates', () => {
+    const registry = createScanFindingRegistry(1);
+    const result = {
+      registry,
+      gate: { allowed: false, blockers: [], summary: 'wrong' },
+      summary: 'wrong',
+    };
+
+    const validation = validateWorkflowScanFindingBridgeResult(result);
+    expect(validation.valid).toBe(false);
+    expect(validation.errors.join(' ')).toContain('publish gate mismatch');
+    expect(() => assertWorkflowScanFindingBridgeResultValid(result)).toThrow('Workflow scan bridge result is invalid');
   });
 
   it('rejects forged findings with unredacted secrets', () => {
