@@ -478,7 +478,6 @@ export function applyScanFindings(
     if (!report.valid) throw new Error(`Invalid scan finding ${finding.id}: ${report.errors.join(' | ')}`);
   }
 
-  const incomingIds = new Set(findings.map((finding) => finding.id));
   const mergedExisting = registry.findings.map((existing) => {
     const incoming = findings.find((finding) => finding.id === existing.id);
     if (incoming) {
@@ -498,9 +497,7 @@ export function applyScanFindings(
 
   const existingIds = new Set(registry.findings.map((finding) => finding.id));
   const newFindings = findings.filter((finding) => !existingIds.has(finding.id));
-  const nextFindings = [...newFindings, ...mergedExisting]
-    .filter((finding) => incomingIds.has(finding.id) || finding.status === 'active' || finding.hits > 1)
-    .slice(0, MAX_FINDINGS);
+  const nextFindings = [...newFindings, ...mergedExisting].slice(0, MAX_FINDINGS);
   const run = createScanFindingRun(source, findings, startedAt, completedAt);
   const nextRegistry = {
     version: 1 as const,
