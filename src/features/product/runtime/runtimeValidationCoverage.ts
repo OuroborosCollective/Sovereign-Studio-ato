@@ -71,9 +71,17 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     id: 'learning-memory',
     runtimePath: 'src/features/product/runtime/sovereignLearningMemory.ts',
     testPath: 'src/features/product/runtime/sovereignLearningMemory.test.ts',
-    purpose: 'Stores validated learning patterns through explicit intake/output nodes without leaking secrets.',
+    purpose: 'Stores validated learning patterns through explicit intake/output nodes without leaking sensitive text.',
     status: 'covered',
     integrationPoint: 'Workflow Repair + Health + Action Builder pattern context',
+  },
+  {
+    id: 'solution-pattern-memory',
+    runtimePath: 'src/features/product/runtime/solutionPatternMemory.ts',
+    testPath: 'src/features/product/runtime/solutionPatternMemory.test.ts',
+    purpose: 'Learns problem-to-solution repair patterns from reported and completed fixes with soft rejection for unsafe entries.',
+    status: 'covered',
+    integrationPoint: 'Workflow Repair + Scan Findings + Action Builder Aha logic',
   },
   {
     id: 'functional-guards',
