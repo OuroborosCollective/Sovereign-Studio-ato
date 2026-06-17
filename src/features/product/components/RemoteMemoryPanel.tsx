@@ -1,6 +1,9 @@
 import {
+  EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT,
   buildExternalMemoryConsentText,
+  buildExternalMemoryDeleteWarningText,
   validateExternalMemorySyncConfig,
+  type ExternalMemoryDeleteResult,
   type ExternalMemoryHealthResult,
   type ExternalMemoryPullUpdatesResult,
   type ExternalMemorySearchResult,
@@ -17,17 +20,23 @@ export interface RemoteMemoryPanelProps {
   healthResult: ExternalMemoryHealthResult | null;
   monitoringResult: ExternalMemoryMonitoringResult | null;
   previewResult?: ExternalMemorySyncPreview | null;
+  cleanupResult?: ExternalMemoryDeleteResult | null;
   searchResult: ExternalMemorySearchResult | null;
   updatesResult: ExternalMemoryPullUpdatesResult | null;
   intakeResult: RemoteMemoryUpdateIntakeResult | null;
   isBusy: boolean;
+  cleanupConfirmationText?: string;
+  cleanupScopeConfirmed?: boolean;
   onChange: (config: ExternalMemorySyncConfig) => void;
+  onCleanupConfirmationTextChange?: (value: string) => void;
+  onCleanupScopeConfirmedChange?: (value: boolean) => void;
   onHealth: () => void;
   onMonitoring: () => void;
   onPreview?: () => void;
   onSync: () => void;
   onSearch: () => void;
   onPullUpdates: () => void;
+  onCleanupContributor?: () => void;
 }
 
 export function RemoteMemoryPanel({
@@ -36,21 +45,31 @@ export function RemoteMemoryPanel({
   healthResult,
   monitoringResult,
   previewResult = null,
+  cleanupResult = null,
   searchResult,
   updatesResult,
   intakeResult,
   isBusy,
+  cleanupConfirmationText = '',
+  cleanupScopeConfirmed = false,
   onChange,
+  onCleanupConfirmationTextChange,
+  onCleanupScopeConfirmedChange,
   onHealth,
   onMonitoring,
   onPreview,
   onSync,
   onSearch,
   onPullUpdates,
+  onCleanupContributor,
 }: RemoteMemoryPanelProps) {
   const validation = validateExternalMemorySyncConfig(config);
   const update = (patch: Partial<ExternalMemorySyncConfig>) => onChange({ ...config, ...patch });
   const canRun = config.enabled && validation.valid && !isBusy;
+  const cleanupReady = canRun
+    && Boolean(onCleanupContributor)
+    && cleanupScopeConfirmed
+    && cleanupConfirmationText.trim() === EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT;
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
@@ -111,6 +130,31 @@ export function RemoteMemoryPanel({
         <button type="button" onClick={onPullUpdates} disabled={!canRun}>Pull Updates + Intake</button>
       </div>
 
+      {onCleanupContributor ? (
+        <section className="mt-4 rounded border border-amber-700 bg-amber-950/20 p-3 text-xs text-amber-100">
+          <h3 className="font-bold">Contributor Bereinigen</h3>
+          <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-950/60 p-2 text-amber-100">{buildExternalMemoryDeleteWarningText()}</pre>
+          <label className="mt-3 flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={cleanupScopeConfirmed}
+              onChange={(event) => onCleanupScopeConfirmedChange?.(event.target.checked)}
+            />
+            <span>Ich bestätige: Nur meine contributor-submissions werden angefragt. Shared-derived-pattern bleibt erhalten.</span>
+          </label>
+          <label className="mt-3 grid gap-1">
+            <span className="font-bold">Bestätigungstext</span>
+            <input
+              className="rounded border border-amber-700 bg-slate-900 p-2 text-slate-100"
+              value={cleanupConfirmationText}
+              onChange={(event) => onCleanupConfirmationTextChange?.(event.target.value)}
+              placeholder={EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT}
+            />
+          </label>
+          <button type="button" className="mt-3" onClick={onCleanupContributor} disabled={!cleanupReady}>Contributor Remote Memory bereinigen</button>
+        </section>
+      ) : null}
+
       <p className={validation.valid ? 'mt-3 text-xs text-emerald-300' : 'mt-3 text-xs text-red-300'}>{validation.summary}</p>
       {validation.errors.length ? <ul className="mt-2 list-disc pl-5 text-xs text-red-300">{validation.errors.map((error) => <li key={error}>{error}</li>)}</ul> : null}
       {validation.warnings.length ? <ul className="mt-2 list-disc pl-5 text-xs text-amber-300">{validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
@@ -119,6 +163,7 @@ export function RemoteMemoryPanel({
         {healthResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Health: {healthResult.summary}</pre> : null}
         {monitoringResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Monitoring: {monitoringResult.summary}</pre> : null}
         {previewResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Preview: {previewResult.summary}</pre> : null}
+        {cleanupResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Bereinigen: {cleanupResult.summary}</pre> : null}
         {syncResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Sync: {syncResult.summary}</pre> : null}
         {searchResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Search: {searchResult.summary}</pre> : null}
         {updatesResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Updates: {updatesResult.summary}</pre> : null}
