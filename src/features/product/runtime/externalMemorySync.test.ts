@@ -126,6 +126,27 @@ describe('externalMemorySync', () => {
     expect((fetcher.mock.calls[0][1]?.headers as Record<string, string>)['X-Sovereign-Gateway-Key']).toBe('session-key');
   });
 
+  it('accepts gateway sync success responses', async () => {
+    const config = {
+      ...createExternalMemorySyncConfig(),
+      enabled: true,
+      consentAccepted: true,
+      gatewayUrl: 'https://memory.example.test',
+    };
+    const payload = buildExternalMemorySyncPayload({ config, now: 1 });
+    const fetcher = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, imported: 2, exported: 0, rejected: 0, summary: 'gateway synced' }),
+    }) as Response);
+
+    const result = await syncExternalMemory({ config, payload, fetcher: fetcher as unknown as typeof fetch });
+    expect(result.status).toBe('synced');
+    expect(result.accepted).toBe(true);
+    expect(result.response?.success).toBe(true);
+    expect(result.response?.imported).toBe(2);
+  });
+
   it('searches gateway patterns with summary-only request shape', async () => {
     const config = {
       ...createExternalMemorySyncConfig(),
