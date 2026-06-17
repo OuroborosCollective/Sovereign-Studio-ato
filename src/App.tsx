@@ -6,7 +6,10 @@ import { RepoFileList } from './features/github/components/RepoFileList';
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
+import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
+import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { SovereignTelemetryPanel } from './features/product/components/SovereignTelemetryPanel';
+import { WorkflowWatchPanel } from './features/product/components/WorkflowWatchPanel';
 import {
   AUTOMATION_MODE_LABELS,
   buildAutomationRunKey,
@@ -16,6 +19,8 @@ import {
 } from './features/product/runtime/sovereignAutomationMode';
 import { assertGeneratedFileReviewSafe, reviewGeneratedFiles } from './features/product/runtime/generatedFileReview';
 import { getRepoSnapshotStatus } from './features/product/runtime/sovereignFunctionalGuards';
+import { buildRuntimeValidationCoverageReport } from './features/product/runtime/runtimeValidationCoverage';
+import { buildSovereignHealthReport } from './features/product/runtime/sovereignHealth';
 import {
   createSessionMemorySnapshot,
   formatSessionMemoryAge,
@@ -31,12 +36,13 @@ import {
   buildSovereignPackageFromRepoFiles,
   summarizeSovereignPackage,
 } from './features/product/runtime/sovereignPackageFromRepoFiles';
+import { fetchWorkflowWatchReport, type WorkflowWatchReport } from './features/product/runtime/workflowWatch';
 import type { SovereignImplementationPackage } from './features/product/runtime/sovereignRuntime';
 import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'telemetry';
+type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'workflow' | 'health' | 'coverage' | 'telemetry';
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
@@ -44,6 +50,9 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'integrity', label: 'Integrity' },
   { id: 'builder', label: 'Builder' },
   { id: 'files', label: 'Files' },
+  { id: 'workflow', label: 'Workflow' },
+  { id: 'health', label: 'Health' },
+  { id: 'coverage', label: 'Coverage' },
   { id: 'telemetry', label: 'Telemetry' },
 ];
 
@@ -56,6 +65,10 @@ const App: React.FC = () => {
   const [sovereignPreview, setSovereignPreview] = useState('');
   const [lastPackage, setLastPackage] = useState<SovereignImplementationPackage | null>(null);
   const [lastPackageKey, setLastPackageKey] = useState('');
+  const [lastDraftCommitSha, setLastDraftCommitSha] = useState('');
+  const [lastDraftBranch, setLastDraftBranch] = useState('');
+  const [workflowReport, setWorkflowReport] = useState<WorkflowWatchReport | null>(null);
+  const [isWatchingWorkflow, setIsWatchingWorkflow] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<SovereignTab>('repo');
   const [telemetryExpanded, setTelemetryExpanded] = useState(false);
@@ -94,6 +107,14 @@ const App: React.FC = () => {
     repoFileCount: repoFiles.length,
   });
   const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
+  const latestGeneratedReview = lastPackage ? reviewGeneratedFiles(lastPackage.files) : null;
+  const healthReport = buildSovereignHealthReport({
+    repoFiles,
+    generatedFileReview: latestGeneratedReview,
+    workflowWatch: workflowReport,
+    telemetry,
+  });
+  const coverageReport = buildRuntimeValidationCoverageReport();
 
   const pushTelemetry = (
     stage: Parameters<typeof createTelemetryEvent>[0],
@@ -103,6 +124,32 @@ const App: React.FC = () => {
     details?: Parameters<typeof createTelemetryEvent>[4],
   ) => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
+  };
+
+  const watchLatestWorkflow = async (commitSha = lastDraftCommitSha, branch = lastDraftBranch) => {
+    setIsWatchingWorkflow(true);
+    pushTelemetry('workflow', 'info', 'workflow:watch-start', 'Watching GitHub commit checks.', { commitSha: commitSha || 'none' });
+    try {
+      const report = await fetchWorkflowWatchReport({
+        repoUrl,
+        token: githubToken,
+        commitSha,
+        branch,
+      });
+      setWorkflowReport(report);
+      pushTelemetry(
+        'workflow',
+        report.status === 'red' ? 'error' : report.status === 'green' ? 'success' : 'warning',
+        'workflow:watch-finished',
+        report.summary,
+      );
+      setActiveTab('workflow');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Workflow watch failed.';
+      pushTelemetry('workflow', 'error', 'workflow:watch-failed', message);
+    } finally {
+      setIsWatchingWorkflow(false);
+    }
   };
 
   const buildPackage = (nextMission: string, nextPackageKey = packageInputKey): SovereignImplementationPackage | null => {
@@ -148,6 +195,9 @@ const App: React.FC = () => {
     pushTelemetry('repo', 'success', 'repo:load-finished', 'Repository load request finished. Check repo status for exact result.');
     setLastPackage(null);
     setLastPackageKey('');
+    setLastDraftCommitSha('');
+    setLastDraftBranch('');
+    setWorkflowReport(null);
     setActiveTab('readiness');
   };
 
@@ -190,6 +240,9 @@ const App: React.FC = () => {
     setSovereignPreview(snapshot.sovereignPreview);
     setLastPackage(null);
     setLastPackageKey('');
+    setLastDraftCommitSha('');
+    setLastDraftBranch('');
+    setWorkflowReport(null);
     setLastAutoRunKey('');
     pushTelemetry('memory', 'success', 'memory:restored', `Restored session from ${formatSessionMemoryAge(snapshot)}.`, { files: snapshot.repoFiles.length });
     setActiveTab('repo');
@@ -199,6 +252,9 @@ const App: React.FC = () => {
     clearRepoSnapshot();
     setLastPackage(null);
     setLastPackageKey('');
+    setLastDraftCommitSha('');
+    setLastDraftBranch('');
+    setWorkflowReport(null);
     setLastAutoRunKey('');
     setSovereignPreview('');
     setSovereignSummary('Noch kein Sovereign-Paket erzeugt.');
@@ -248,6 +304,8 @@ const App: React.FC = () => {
         files: pkg.files,
       });
 
+      setLastDraftCommitSha(result.commitSha);
+      setLastDraftBranch(result.branch);
       setSovereignSummary([
         'Draft PR erstellt.',
         `URL: ${result.pullRequestUrl}`,
@@ -258,8 +316,8 @@ const App: React.FC = () => {
         pr: result.pullRequestNumber,
         branch: result.branch,
       });
-      setActiveTab('telemetry');
       setTelemetryExpanded(true);
+      await watchLatestWorkflow(result.commitSha, result.branch);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft PR konnte nicht erstellt werden.';
@@ -390,7 +448,7 @@ const App: React.FC = () => {
           </select>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          Full Auto still runs repo snapshot checks, functional guards, generated-file review and Draft PR publishing rules. It does not auto-merge.
+          Full Auto still runs repo snapshot checks, functional guards, generated-file review, workflow watch and Draft PR publishing rules. It does not auto-merge.
         </p>
       </section>
 
@@ -471,6 +529,18 @@ const App: React.FC = () => {
       ) : null}
 
       {activeTab === 'files' ? <GeneratedFileReviewPanel pkg={lastPackage} /> : null}
+
+      {activeTab === 'workflow' ? (
+        <WorkflowWatchPanel
+          report={workflowReport}
+          isWatching={isWatchingWorkflow}
+          onWatch={() => { void watchLatestWorkflow(); }}
+        />
+      ) : null}
+
+      {activeTab === 'health' ? <SovereignHealthPanel report={healthReport} /> : null}
+
+      {activeTab === 'coverage' ? <RuntimeValidationCoveragePanel report={coverageReport} /> : null}
 
       {activeTab === 'telemetry' ? (
         <SovereignTelemetryPanel
