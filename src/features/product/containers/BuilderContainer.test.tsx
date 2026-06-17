@@ -21,57 +21,67 @@ function baseProps() {
 }
 
 describe('BuilderContainer', () => {
-  it('renders builder state and preview', () => {
+  it('renders the chat-driven ideas factory and preview', () => {
     render(<BuilderContainer {...baseProps()} />);
 
     expect(screen.getByTestId('builder-container')).toBeDefined();
     expect(screen.getByText('Package summary')).toBeDefined();
     expect(screen.getByText('Brain preview')).toBeDefined();
     expect(screen.getByText(/Ideenfabrik/)).toBeDefined();
+    expect(screen.getByLabelText(/Ideenfabrik Wunschfeld/i)).toBeDefined();
   });
 
-  it('emits mission changes and button actions', () => {
+  it('lets option buttons write into the chat wish field instead of directly replacing the mission', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} />);
 
-    fireEvent.change(screen.getByLabelText(/Builder mission/i), { target: { value: 'New mission' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Vorschlag erzeugen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Runtime härten' }));
+
+    expect(screen.getByLabelText(/Ideenfabrik Wunschfeld/i)).toHaveValue(expect.stringContaining('Runtime-Checks'));
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
+  it('analyzes the chat wish into a guarded executable mission', () => {
+    const props = baseProps();
+    render(<BuilderContainer {...props} />);
+
+    fireEvent.change(screen.getByLabelText(/Ideenfabrik Wunschfeld/i), {
+      target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Vorschlag analysieren' }));
+
+    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Ideenfabrik Auftrag'));
+    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('mobile UX verbessern'));
+    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Repo-Snapshot ist geladen'));
+    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Keine Mock-, Stub- oder Facade-Live-Pfade'));
+  });
+
+  it('keeps the production action wired to the builder generation flow', () => {
+    const props = baseProps();
+    render(<BuilderContainer {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Auftrag in Produktion geben' }));
     fireEvent.click(screen.getByRole('button', { name: 'Fehlerlog reparieren' }));
     fireEvent.click(screen.getByRole('button', { name: /Draft PR erstellen/i }));
 
-    expect(props.onMissionChange).toHaveBeenCalledWith('New mission');
     expect(props.onGenerateIdeas).toHaveBeenCalledOnce();
     expect(props.onGenerateErrorWorkflow).toHaveBeenCalledOnce();
     expect(props.onPublishDraftPr).toHaveBeenCalledOnce();
   });
 
-  it('applies preset ideas into the executable mission', () => {
+  it('emits direct mission changes from the analyzed mission field', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Runtime \+ Tests härten/i }));
+    fireEvent.change(screen.getByLabelText(/Builder mission/i), { target: { value: 'New mission' } });
 
-    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Runtime-Checks'));
+    expect(props.onMissionChange).toHaveBeenCalledWith('New mission');
   });
 
-  it('turns a chat wish into a guarded mission', () => {
-    const props = baseProps();
-    render(<BuilderContainer {...props} />);
-
-    fireEvent.change(screen.getByLabelText(/Builder custom wish/i), {
-      target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Wunsch in Auftrag übernehmen' }));
-
-    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Individueller Nutzerwunsch'));
-    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('mobile UX verbessern'));
-    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Keine Mock-/Stub-/Facade-Live-Pfade'));
-  });
-
-  it('blocks actions while repo is not ready', () => {
+  it('blocks production actions while repo is not ready', () => {
     render(<BuilderContainer {...baseProps()} repoReady={false} />);
 
-    expect(screen.getByRole('button', { name: 'Vorschlag erzeugen' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Auftrag in Produktion geben' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Fehlerlog reparieren' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Draft PR erstellen/i })).toBeDisabled();
     expect(screen.getByText(/not ready/i)).toBeDefined();
