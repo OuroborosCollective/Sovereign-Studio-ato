@@ -9,7 +9,7 @@ releaseVersionName = releaseVersionName.toString()
 def releaseStoreFile = project.findProperty('android.injected.signing.store.file') ?: System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseStorePassword = project.findProperty('android.injected.signing.store.password') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias') ?: System.getenv('ANDROID_KEY_ALIAS')
-def releaseKeyPassword = project.findProperty('android.injected.signing.key.password') ?: System.getenv('ANDROID_KEY_PASSWORD')
+def releaseKeyPassword = project.findProperty('android.injected.signing.key.password') ?: System.getenv('ANDROID_KEY_PASSWORD') ?: releaseStorePassword
 def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
 tasks.register('buildWebAssetsForAndroid', Exec) {
@@ -25,7 +25,7 @@ preBuild.dependsOn buildWebAssetsForAndroid
 
 android {
     namespace "com.arestudio.nocode.aab"
-    compileSdk 34
+    compileSdk rootProject.ext.compileSdkVersion
 
     aaptOptions {
         cruncherEnabled = false
@@ -34,7 +34,7 @@ android {
     defaultConfig {
         applicationId "com.arestudio.nocode.aab"
         minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion 34
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode releaseVersionCode
         versionName releaseVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -71,7 +71,7 @@ android {
             if (releaseSigningConfigured) {
                 signingConfig signingConfigs.release
             } else {
-                logger.lifecycle('Release signing is not configured. Signed Play Store artifacts require ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD.')
+                logger.lifecycle('Release signing is not configured. Signed Play Store artifacts require ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and optional ANDROID_KEY_PASSWORD.')
             }
             minifyEnabled true
             shrinkResources true
