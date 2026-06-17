@@ -5,6 +5,8 @@ import type { SolutionPatternStore } from './solutionPatternMemory';
 export type ExternalMemorySyncMode = 'manual' | 'pull-only' | 'push-pull';
 export type ExternalMemorySyncItemKind = 'scan-finding' | 'learning-pattern' | 'solution-pattern';
 export type ExternalMemorySyncStatus = 'idle' | 'disabled' | 'ready' | 'synced' | 'soft-failed';
+export type ExternalMemoryContributionScope = 'user-submitted-summary' | 'shared-derived-pattern';
+export type ExternalMemoryErasureScope = 'contributor-submissions';
 
 export const EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT = 'DELETE_REMOTE_MEMORY' as const;
 
@@ -14,6 +16,7 @@ export interface ExternalMemorySyncConfig {
   gatewayUrl: string;
   workspaceId: string;
   collectionName: string;
+  contributorId: string;
   mode: ExternalMemorySyncMode;
   clientAccessKey?: string;
   allowSelfHostedHttp?: boolean;
@@ -43,6 +46,8 @@ export interface ExternalMemorySyncPayload {
   client: 'sovereign-studio';
   workspaceId: string;
   collectionName: string;
+  contributorId: string;
+  contributionScope: 'user-submitted-summary';
   createdAt: number;
   redaction: 'summary-only-no-source-files';
   retrievalProfile: 'hybrid-dense-sparse-graph';
@@ -83,6 +88,8 @@ export interface ExternalMemorySearchQuery {
   redaction: 'summary-only-no-source-files';
   workspaceId: string;
   collectionName: string;
+  contributorId: string;
+  includeSharedPatterns: true;
   query: string;
   limit: number;
 }
@@ -110,16 +117,19 @@ export interface ExternalMemoryDeleteRequest {
   redaction: 'summary-only-no-source-files';
   workspaceId: string;
   collectionName: string;
+  contributorId: string;
   requestedAt: number;
   confirmDelete: true;
   confirmationText: typeof EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT;
-  scope: 'workspace-user-data';
+  scope: ExternalMemoryErasureScope;
+  preserveSharedPatterns: true;
 }
 
 export interface ExternalMemoryDeleteResponse {
   success: boolean;
   deleted: boolean;
   deletedItems: number;
+  retainedSharedItems: number;
   summary: string;
 }
 
@@ -200,6 +210,7 @@ export function createExternalMemorySyncConfig(): ExternalMemorySyncConfig {
     gatewayUrl: '',
     workspaceId: 'local-workspace',
     collectionName: 'sovereign_logic_patterns',
+    contributorId: 'local-contributor',
     mode: 'manual',
     allowSelfHostedHttp: false,
     includeScanFindings: true,
@@ -213,16 +224,18 @@ export function buildExternalMemoryConsentText(): string {
     'Optional external memory sync is disabled by default.',
     'When enabled, Sovereign Studio sends sanitized logic patterns, finding summaries and repair patterns to the configured Agent Memory gateway.',
     'Raw source files, raw repository contents, private user keys and private credentials are not included by this client-side payload builder.',
-    'The gateway may store summaries and metadata in a hybrid retrieval backend such as dense/sparse vector search, keyword search and graph relations.',
+    'User-submitted summaries are tagged with a contributor id so erasure requests can target only that contributor’s submissions.',
+    'Shared derived pattern updates are not removed by a contributor erasure request.',
     'The user can keep this disabled and use local memory only.',
   ].join('\n');
 }
 
 export function buildExternalMemoryDeleteWarningText(): string {
   return [
-    'Achtung: Diese Aktion fordert die Löschung deiner zuvor übermittelten Remote-Memory-Daten an.',
-    'Betroffen sind nur Daten im konfigurierten Workspace und in der konfigurierten Collection.',
-    'Lokale Session-Daten im Browser werden dadurch nicht automatisch gelöscht.',
+    'Achtung: Diese Aktion fordert die Entfernung deiner zuvor übermittelten Remote-Memory-Beiträge an.',
+    'Betroffen sind nur contributor-submissions für den konfigurierten Contributor, Workspace und die Collection.',
+    'Gemeinsame, abgeleitete Pattern-Updates bleiben erhalten und werden nicht durch diesen Request entfernt.',
+    'Lokale Session-Daten im Browser werden dadurch nicht automatisch entfernt.',
     `Zur Bestätigung muss ${EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT} bestätigt werden.`,
   ].join('\n');
 }
@@ -245,6 +258,8 @@ export function validateExternalMemorySyncConfig(config: ExternalMemorySyncConfi
   if (url && url.port === '19530') errors.push('Do not connect the browser directly to a vector database server port. Use the Agent Memory gateway instead.');
   if (!SAFE_ID.test(config.workspaceId)) errors.push('workspaceId must be a safe short identifier.');
   if (!SAFE_ID.test(config.collectionName)) errors.push('collectionName must be a safe short identifier.');
+  if (!SAFE_ID.test(config.contributorId)) errors.push('contributorId must be a safe short identifier.');
+  if (config.contributorId === 'local-contributor') warnings.push('Default contributorId is intended for local testing. Use a stable per-installation id before production sync.');
   if (!['manual', 'pull-only', 'push-pull'].includes(config.mode)) errors.push(`Unknown sync mode: ${config.mode}`);
   if (!config.includeScanFindings && !config.includeLearningPatterns && !config.includeSolutionPatterns) warnings.push('No local memory sources are selected for sync.');
   if (config.clientAccessKey && hasUnsafeText(config.clientAccessKey)) warnings.push('Client access key should stay session-only and must not be logged.');
@@ -262,6 +277,9 @@ export function validateExternalMemorySyncItem(item: ExternalMemorySyncItem): Ex
   if (item.text.length > MAX_TEXT) errors.push('Item text is too long.');
   if ([item.id, item.title, item.text, ...item.tags].some(hasUnsafeText)) errors.push('Item contains unsafe raw text.');
   if (!item.tags.length) warnings.push('Item has no tags.');
+  if (item.metadata.contributionScope && item.metadata.contributionScope !== 'user-submitted-summary' && item.metadata.contributionScope !== 'shared-derived-pattern') {
+    errors.push('Item contributionScope is invalid.');
+  }
   return { valid: errors.length === 0, errors, warnings, summary: `${errors.length} error(s), ${warnings.length} warning(s) in external memory item.` };
 }
 
@@ -272,6 +290,8 @@ export function validateExternalMemorySyncPayload(payload: ExternalMemorySyncPay
   if (payload.client !== 'sovereign-studio') errors.push('Unsupported payload client.');
   if (!SAFE_ID.test(payload.workspaceId)) errors.push('Invalid payload workspaceId.');
   if (!SAFE_ID.test(payload.collectionName)) errors.push('Invalid payload collectionName.');
+  if (!SAFE_ID.test(payload.contributorId)) errors.push('Invalid payload contributorId.');
+  if (payload.contributionScope !== 'user-submitted-summary') errors.push('Payload contributionScope must be user-submitted-summary.');
   if (!Number.isFinite(payload.createdAt) || payload.createdAt <= 0) errors.push('Payload createdAt must be positive.');
   if (payload.redaction !== 'summary-only-no-source-files') errors.push('Payload redaction mode must stay summary-only-no-source-files.');
   if (payload.items.length > MAX_ITEMS) errors.push(`Payload exceeds ${MAX_ITEMS} items.`);
@@ -280,8 +300,17 @@ export function validateExternalMemorySyncPayload(payload: ExternalMemorySyncPay
     const itemReport = validateExternalMemorySyncItem(item);
     errors.push(...itemReport.errors.map((error) => `${item.id}: ${error}`));
     warnings.push(...itemReport.warnings.map((warning) => `${item.id}: ${warning}`));
+    if (item.metadata.contributorId !== payload.contributorId) errors.push(`${item.id}: item contributorId does not match payload contributorId.`);
+    if (item.metadata.contributionScope !== payload.contributionScope) errors.push(`${item.id}: item contributionScope does not match payload contributionScope.`);
   }
   return { valid: errors.length === 0, errors, warnings, summary: `${payload.items.length} item(s), ${errors.length} error(s), ${warnings.length} warning(s) in external memory payload.` };
+}
+
+function contributorMetadata(config: ExternalMemorySyncConfig): Record<string, string> {
+  return {
+    contributorId: config.contributorId,
+    contributionScope: 'user-submitted-summary',
+  };
 }
 
 export function buildExternalMemorySyncPayload(input: {
@@ -293,6 +322,7 @@ export function buildExternalMemorySyncPayload(input: {
 }): ExternalMemorySyncPayload {
   const items: ExternalMemorySyncItem[] = [];
   const now = input.now ?? Date.now();
+  const contributor = contributorMetadata(input.config);
 
   if (input.config.includeScanFindings && input.scanRegistry) {
     for (const finding of input.scanRegistry.findings.filter((item) => item.status === 'active').slice(0, 80)) {
@@ -303,6 +333,7 @@ export function buildExternalMemorySyncPayload(input: {
         text: sanitizeText(`${finding.category}: ${finding.description} Fix: ${finding.fixTips}`),
         tags: normalizeTags([finding.category, finding.severity, finding.confidence, finding.source]),
         metadata: {
+          ...contributor,
           category: finding.category,
           severity: finding.severity,
           status: finding.status,
@@ -323,7 +354,7 @@ export function buildExternalMemorySyncPayload(input: {
         title: sanitizeText(pattern.summary),
         text: sanitizeText(`${pattern.kind}: ${pattern.summary}. Evidence: ${pattern.evidence}`),
         tags: normalizeTags([pattern.kind, pattern.confidence, pattern.sourceNode, ...pattern.outputNodes, ...pattern.tags]),
-        metadata: { kind: pattern.kind, confidence: pattern.confidence, sourceNode: pattern.sourceNode, hits: pattern.hits },
+        metadata: { ...contributor, kind: pattern.kind, confidence: pattern.confidence, sourceNode: pattern.sourceNode, hits: pattern.hits },
       });
     }
   }
@@ -337,6 +368,7 @@ export function buildExternalMemorySyncPayload(input: {
         text: sanitizeText(`Problem: ${pattern.problemSummary}. Solution: ${pattern.solutionSummary}. Steps: ${pattern.recommendedSteps.join(' | ')}`),
         tags: normalizeTags([pattern.category, pattern.fileExtension, pattern.confidence, ...pattern.conditions, ...pattern.tags]),
         metadata: {
+          ...contributor,
           category: pattern.category,
           fileExtension: pattern.fileExtension,
           confidence: pattern.confidence,
@@ -354,6 +386,8 @@ export function buildExternalMemorySyncPayload(input: {
     client: 'sovereign-studio' as const,
     workspaceId: input.config.workspaceId,
     collectionName: input.config.collectionName,
+    contributorId: input.config.contributorId,
+    contributionScope: 'user-submitted-summary' as const,
     createdAt: now,
     redaction: 'summary-only-no-source-files' as const,
     retrievalProfile: 'hybrid-dense-sparse-graph' as const,
@@ -373,10 +407,12 @@ export function buildExternalMemoryDeleteRequest(config: ExternalMemorySyncConfi
     redaction: 'summary-only-no-source-files' as const,
     workspaceId: config.workspaceId,
     collectionName: config.collectionName,
+    contributorId: config.contributorId,
     requestedAt: now,
     confirmDelete: true as const,
     confirmationText: EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT,
-    scope: 'workspace-user-data' as const,
+    scope: 'contributor-submissions' as const,
+    preserveSharedPatterns: true as const,
   };
   const validation = validateExternalMemoryDeleteRequest(request);
   if (!validation.valid) throw new Error(`External memory delete request is invalid: ${validation.errors.join(' | ')}`);
@@ -391,11 +427,13 @@ export function validateExternalMemoryDeleteRequest(request: ExternalMemoryDelet
   if (request.redaction !== 'summary-only-no-source-files') errors.push('Delete request redaction must stay summary-only-no-source-files.');
   if (!SAFE_ID.test(request.workspaceId)) errors.push('Invalid delete request workspaceId.');
   if (!SAFE_ID.test(request.collectionName)) errors.push('Invalid delete request collectionName.');
+  if (!SAFE_ID.test(request.contributorId)) errors.push('Invalid delete request contributorId.');
   if (!Number.isFinite(request.requestedAt) || request.requestedAt <= 0) errors.push('Delete request timestamp must be positive.');
   if (request.confirmDelete !== true) errors.push('Delete request must include confirmDelete=true.');
   if (request.confirmationText !== EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT) errors.push('Delete request confirmation text is invalid.');
-  if (request.scope !== 'workspace-user-data') errors.push('Delete request scope is invalid.');
-  if (request.workspaceId === 'local-workspace') warnings.push('Deleting the default local-workspace remote data. Confirm this is intended.');
+  if (request.scope !== 'contributor-submissions') errors.push('Delete request scope must be contributor-submissions.');
+  if (request.preserveSharedPatterns !== true) errors.push('Delete request must preserve shared patterns.');
+  if (request.contributorId === 'local-contributor') warnings.push('Default contributorId is intended for local testing. Confirm this is intended.');
   return { valid: errors.length === 0, errors, warnings, summary: `${errors.length} error(s), ${warnings.length} warning(s) in external memory delete request.` };
 }
 
@@ -458,7 +496,7 @@ export async function searchExternalMemory(input: {
   fetcher?: typeof fetch;
 }): Promise<ExternalMemorySearchResult> {
   const validation = validateExternalMemorySyncConfig(input.config);
-  const query: ExternalMemorySearchQuery = { schemaVersion: 1, client: 'sovereign-studio', redaction: 'summary-only-no-source-files', workspaceId: input.config.workspaceId, collectionName: input.config.collectionName, query: sanitizeText(input.query), limit: Math.max(1, Math.min(input.limit ?? 8, 50)) };
+  const query: ExternalMemorySearchQuery = { schemaVersion: 1, client: 'sovereign-studio', redaction: 'summary-only-no-source-files', workspaceId: input.config.workspaceId, collectionName: input.config.collectionName, contributorId: input.config.contributorId, includeSharedPatterns: true, query: sanitizeText(input.query), limit: Math.max(1, Math.min(input.limit ?? 8, 50)) };
   if (!input.config.enabled) return { status: 'disabled', ok: false, query, items: [], validation, summary: 'External memory sync is disabled.' };
   if (!validation.valid) return { status: 'soft-failed', ok: false, query, items: [], validation, summary: validation.summary };
   if (!query.query.trim()) return { status: 'soft-failed', ok: false, query, items: [], validation: emptyValidation('Empty search query.'), summary: 'External memory search query is empty.' };
@@ -483,6 +521,8 @@ export async function pullExternalMemoryUpdates(input: {
     const url = new URL(buildGatewayEndpoint(input.config, '/api/sovereign-memory/pull-updates'));
     url.searchParams.set('workspaceId', input.config.workspaceId);
     url.searchParams.set('collectionName', input.config.collectionName);
+    url.searchParams.set('contributorId', input.config.contributorId);
+    url.searchParams.set('includeSharedPatterns', 'true');
     const response = await (input.fetcher ?? fetch)(url.toString(), { headers: buildGatewayHeaders(input.config) });
     const body = await response.json().catch(() => ({})) as { items?: unknown; updates?: unknown; summary?: string };
     const items = parseRemoteItems(body.items ?? body.updates);
@@ -503,6 +543,9 @@ export async function deleteExternalMemoryData(input: {
 
   if (!input.config.enabled) return { status: 'disabled', deleted: false, request: input.request, validation, summary: 'External memory sync is disabled.' };
   if (!validation.valid) return { status: 'soft-failed', deleted: false, request: input.request, validation, summary: `External memory delete rejected softly: ${validation.summary}` };
+  if (input.request.scope !== 'contributor-submissions' || input.request.preserveSharedPatterns !== true) {
+    return { status: 'soft-failed', deleted: false, request: input.request, validation, summary: 'External memory delete blocked because it would not preserve shared patterns.' };
+  }
 
   try {
     const response = await (input.fetcher ?? fetch)(buildGatewayEndpoint(input.config, '/api/sovereign-memory/delete-user-data'), { method: 'POST', headers: buildGatewayHeaders(input.config), body: JSON.stringify(input.request) });
@@ -513,7 +556,8 @@ export async function deleteExternalMemoryData(input: {
       success: deleted,
       deleted,
       deletedItems: Number(body.deletedItems ?? 0),
-      summary: sanitizeText(body.summary ?? 'External memory data deletion completed.'),
+      retainedSharedItems: Number(body.retainedSharedItems ?? 0),
+      summary: sanitizeText(body.summary ?? 'External memory contributor submissions deletion completed.'),
     };
     return { status: deleted ? 'synced' : 'soft-failed', deleted, request: input.request, response: deleteResponse, validation, summary: deleteResponse.summary };
   } catch (error) {
