@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildExternalMemoryConsentText,
   buildExternalMemorySyncPayload,
+  checkExternalMemoryHealth,
   createExternalMemorySyncConfig,
+  pullExternalMemoryUpdates,
+  searchExternalMemory,
   syncExternalMemory,
   validateExternalMemorySyncConfig,
   validateExternalMemorySyncPayload,
@@ -22,17 +25,28 @@ describe('externalMemorySync', () => {
     expect(report.errors.join(' ')).toContain('Consent');
   });
 
-  it('rejects direct database-style port usage and non-https remote gateways', () => {
-    const config = {
+  it('rejects direct database-style port usage and non-https remote gateways unless self-hosted test mode is explicit', () => {
+    const blocked = {
       ...createExternalMemorySyncConfig(),
       enabled: true,
       consentAccepted: true,
       gatewayUrl: 'http://example.test:19530',
     };
-    const report = validateExternalMemorySyncConfig(config);
-    expect(report.valid).toBe(false);
-    expect(report.errors.join(' ')).toContain('Gateway URL must use HTTPS');
-    expect(report.errors.join(' ')).toContain('gateway instead');
+    const blockedReport = validateExternalMemorySyncConfig(blocked);
+    expect(blockedReport.valid).toBe(false);
+    expect(blockedReport.errors.join(' ')).toContain('Gateway URL must use HTTPS');
+    expect(blockedReport.errors.join(' ')).toContain('gateway instead');
+
+    const allowed = {
+      ...createExternalMemorySyncConfig(),
+      enabled: true,
+      consentAccepted: true,
+      gatewayUrl: 'http://46.202.154.25:8088',
+      allowSelfHostedHttp: true,
+    };
+    const allowedReport = validateExternalMemorySyncConfig(allowed);
+    expect(allowedReport.valid).toBe(true);
+    expect(allowedReport.warnings.join(' ')).toContain('Self-hosted HTTP');
   });
 
   it('builds summary-only payloads from active scan findings', () => {
@@ -69,7 +83,27 @@ describe('externalMemorySync', () => {
     expect(result.accepted).toBe(false);
   });
 
-  it('posts to the gateway endpoint when enabled and valid', async () => {
+  it('checks gateway health', async () => {
+    const config = {
+      ...createExternalMemorySyncConfig(),
+      enabled: true,
+      consentAccepted: true,
+      gatewayUrl: 'http://46.202.154.25:8088',
+      allowSelfHostedHttp: true,
+    };
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, service: 'sovereign-memory-gateway' }),
+    }) as Response);
+
+    const result = await checkExternalMemoryHealth({ config, fetcher: fetcher as unknown as typeof fetch });
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe('ready');
+    expect(String(fetcher.mock.calls[0][0])).toBe('http://46.202.154.25:8088/health');
+  });
+
+  it('posts to the gateway sync endpoint when enabled and valid', async () => {
     const config = {
       ...createExternalMemorySyncConfig(),
       enabled: true,
@@ -78,15 +112,56 @@ describe('externalMemorySync', () => {
       clientAccessKey: 'session-key',
     };
     const payload = buildExternalMemorySyncPayload({ config, now: 1 });
-    const fetcher = vi.fn(async (_url: RequestInfo | URL) => ({
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => ({
       ok: true,
       status: 200,
       json: async () => ({ accepted: true, imported: 1, exported: 2, rejected: 0, summary: 'done' }),
+      init,
     }) as Response);
 
     const result = await syncExternalMemory({ config, payload, fetcher: fetcher as unknown as typeof fetch });
     expect(result.status).toBe('synced');
     expect(result.response?.imported).toBe(1);
     expect(String(fetcher.mock.calls[0][0])).toBe('https://memory.example.test/api/sovereign-memory/sync');
+    expect((fetcher.mock.calls[0][1]?.headers as Record<string, string>)['X-Sovereign-Gateway-Key']).toBe('session-key');
+  });
+
+  it('searches gateway patterns with summary-only request shape', async () => {
+    const config = {
+      ...createExternalMemorySyncConfig(),
+      enabled: true,
+      consentAccepted: true,
+      gatewayUrl: 'https://memory.example.test',
+    };
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ items: [{ id: 'remote-1', kind: 'solution-pattern', title: 'Lint repair', text: 'Repair lint pattern', tags: ['lint'] }] }),
+    }) as Response);
+
+    const result = await searchExternalMemory({ config, query: 'lint repair', fetcher: fetcher as unknown as typeof fetch });
+    expect(result.ok).toBe(true);
+    expect(result.items).toHaveLength(1);
+    expect(String(fetcher.mock.calls[0][0])).toBe('https://memory.example.test/api/sovereign-memory/search');
+  });
+
+  it('pulls remote updates from the gateway', async () => {
+    const config = {
+      ...createExternalMemorySyncConfig(),
+      enabled: true,
+      consentAccepted: true,
+      gatewayUrl: 'https://memory.example.test',
+    };
+    const fetcher = vi.fn(async (_url: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ updates: [{ id: 'remote-2', kind: 'learning-pattern', title: 'Workflow hint', text: 'Use workflow watch', tags: ['workflow'] }] }),
+    }) as Response);
+
+    const result = await pullExternalMemoryUpdates({ config, fetcher: fetcher as unknown as typeof fetch });
+    expect(result.ok).toBe(true);
+    expect(result.items).toHaveLength(1);
+    expect(String(fetcher.mock.calls[0][0])).toContain('/api/sovereign-memory/pull-updates');
+    expect(String(fetcher.mock.calls[0][0])).toContain('workspaceId=local-workspace');
   });
 });
