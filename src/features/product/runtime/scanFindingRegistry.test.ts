@@ -16,6 +16,7 @@ import {
   applyWorkflowWatchFindingsWithBookkeeping,
   markSourceResolvedByCleanScan,
 } from './scanFindingBookkeeping';
+import { applyWorkflowScanAndBuildGate } from './scanFindingWorkflowBridge';
 import type { WorkflowWatchReport } from './workflowWatch';
 
 describe('scanFindingRegistry', () => {
@@ -126,6 +127,23 @@ describe('scanFindingRegistry', () => {
     const ciFinding = clean.findings.find((finding) => finding.category === 'ci-failure');
     expect(ciFinding?.status).toBe('resolved');
     expect(buildScanFindingPublishGate(clean).allowed).toBe(true);
+  });
+
+  it('bridges workflow scans into registry plus publish gate', () => {
+    const failing: WorkflowWatchReport = {
+      status: 'red',
+      checkedAt: 1,
+      checks: [{ name: 'build', status: 'red', conclusion: 'failure', source: 'check-run', summary: 'vite build failed' }],
+      errors: [],
+      warnings: [],
+      fixes: [],
+      summary: 'red',
+    };
+
+    const result = applyWorkflowScanAndBuildGate(createScanFindingRegistry(1), failing, 1, 2);
+    expect(result.registry.findings[0]).toMatchObject({ category: 'build-logic', filePath: 'vite.config.*' });
+    expect(result.gate.allowed).toBe(true);
+    expect(result.summary).toContain('Scan workflow-watch abgeschlossen');
   });
 
   it('rejects forged findings with unredacted secrets', () => {
