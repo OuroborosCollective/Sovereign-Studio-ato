@@ -44,6 +44,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'RepoFileIntegrityMatrix',
   },
   {
+    id: 'scan-finding-registry',
+    runtimePath: 'src/features/product/runtime/scanFindingRegistry.ts',
+    testPath: 'src/features/product/runtime/scanFindingRegistry.test.ts',
+    purpose: 'Collects categorized scan findings with direct paths, severity, details, fix tips and scan-run summaries.',
+    status: 'covered',
+    integrationPoint: 'ScanFindingRegistryPanel + App repo snapshot scan effect',
+  },
+  {
     id: 'github-auth-session',
     runtimePath: 'src/features/github/githubAuthSession.ts',
     testPath: 'src/features/github/githubAuthSession.test.ts',
