@@ -218,16 +218,54 @@ export function canStartSequentialStep(
   return { allowed: true, reason: `${describeSequentialStep(step)} may start.` };
 }
 
+export function validateSequentialRuntimeStepRequest(
+  state: SequentialRuntimeState,
+  step: SequentialRuntimeStep,
+  options: SequentialStartOptions = {},
+): SequentialRuntimeValidationReport {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!SEQUENTIAL_RUNTIME_STEPS.includes(step)) {
+    errors.push(`Unknown sequential runtime step: ${step}`);
+  }
+
+  const stateReport = validateSequentialRuntimeState(state);
+  errors.push(...stateReport.errors.map((error) => `state: ${error}`));
+  warnings.push(...stateReport.warnings.map((warning) => `state: ${warning}`));
+
+  if (!errors.length) {
+    const decision = canStartSequentialStep(state, step, options);
+    if (!decision.allowed) errors.push(decision.reason);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary: `${errors.length} error(s), ${warnings.length} warning(s) before starting ${describeSequentialStep(step)}.`,
+  };
+}
+
+export function assertSequentialRuntimeStepRequestValid(
+  state: SequentialRuntimeState,
+  step: SequentialRuntimeStep,
+  options: SequentialStartOptions = {},
+): void {
+  const report = validateSequentialRuntimeStepRequest(state, step, options);
+  if (!report.valid) {
+    throw new Error(`Sequential runtime step request is invalid: ${report.errors.join(' | ')}`);
+  }
+}
+
 export function startSequentialStep(
   state: SequentialRuntimeState,
   step: SequentialRuntimeStep,
   options: SequentialStartOptions = {},
   at = Date.now(),
 ): SequentialRuntimeState {
+  assertSequentialRuntimeStepRequestValid(state, step, options);
   const decision = canStartSequentialStep(state, step, options);
-  if (!decision.allowed) {
-    throw new Error(decision.reason);
-  }
 
   const next: SequentialRuntimeState = {
     ...state,
