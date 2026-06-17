@@ -20,6 +20,7 @@ describe('externalMemorySync', () => {
   it('is disabled by default and requires explicit consent when enabled', () => {
     const config = createExternalMemorySyncConfig();
     expect(config.enabled).toBe(false);
+    expect(config.contributorId).toBe('local-contributor');
     expect(validateExternalMemorySyncConfig(config).valid).toBe(true);
     expect(buildExternalMemoryConsentText()).toContain('disabled by default');
 
@@ -53,7 +54,7 @@ describe('externalMemorySync', () => {
     expect(allowedReport.warnings.join(' ')).toContain('Self-hosted HTTP');
   });
 
-  it('builds summary-only payloads from active scan findings', () => {
+  it('builds summary-only contributor-scoped payloads from active scan findings', () => {
     const findings = collectRepoPathFindings([
       { path: 'node_modules/pkg/index.js', type: 'blob', size: 10 },
       { path: 'README.md', type: 'blob', size: 10 },
@@ -64,13 +65,37 @@ describe('externalMemorySync', () => {
       enabled: true,
       consentAccepted: true,
       gatewayUrl: 'https://memory.example.test',
+      contributorId: 'install-abc',
     };
 
     const payload = buildExternalMemorySyncPayload({ config, scanRegistry: registry, now: 3 });
     expect(payload.redaction).toBe('summary-only-no-source-files');
     expect(payload.retrievalProfile).toBe('hybrid-dense-sparse-graph');
+    expect(payload.contributorId).toBe('install-abc');
+    expect(payload.contributionScope).toBe('user-submitted-summary');
     expect(payload.items.some((item) => item.kind === 'scan-finding')).toBe(true);
+    expect(payload.items.every((item) => item.metadata.contributorId === 'install-abc')).toBe(true);
+    expect(payload.items.every((item) => item.metadata.contributionScope === 'user-submitted-summary')).toBe(true);
     expect(validateExternalMemorySyncPayload(payload).valid).toBe(true);
+  });
+
+  it('rejects payloads where item contributor does not match payload contributor', () => {
+    const config = { ...createExternalMemorySyncConfig(), contributorId: 'install-one' };
+    const payload = buildExternalMemorySyncPayload({ config, now: 1 });
+    const mutated = {
+      ...payload,
+      items: [{
+        id: 'scan-1',
+        kind: 'scan-finding' as const,
+        title: 'Finding',
+        text: 'Finding summary',
+        tags: ['scan'],
+        metadata: { contributorId: 'install-two', contributionScope: 'user-submitted-summary' },
+      }],
+    };
+    const report = validateExternalMemorySyncPayload(mutated);
+    expect(report.valid).toBe(false);
+    expect(report.errors.join(' ')).toContain('contributorId does not match');
   });
 
   it('soft-fails invalid sync instead of throwing', async () => {
@@ -151,36 +176,41 @@ describe('externalMemorySync', () => {
     expect(result.response?.imported).toBe(2);
   });
 
-  it('searches gateway patterns with summary-only request shape', async () => {
+  it('searches gateway patterns with contributor and shared-pattern request shape', async () => {
     const config = {
       ...createExternalMemorySyncConfig(),
       enabled: true,
       consentAccepted: true,
       gatewayUrl: 'https://memory.example.test',
+      contributorId: 'install-abc',
     };
-    const fetcher = vi.fn(async (_url: RequestInfo | URL) => ({
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => ({
       ok: true,
       status: 200,
-      json: async () => ({ items: [{ id: 'remote-1', kind: 'solution-pattern', title: 'Lint repair', text: 'Repair lint pattern', tags: ['lint'] }] }),
+      json: async () => ({ items: [{ id: 'remote-1', kind: 'solution-pattern', title: 'Lint repair', text: 'Repair lint pattern', tags: ['lint'], metadata: { contributionScope: 'shared-derived-pattern' } }] }),
+      init,
     }) as Response);
 
     const result = await searchExternalMemory({ config, query: 'lint repair', fetcher: fetcher as unknown as typeof fetch });
     expect(result.ok).toBe(true);
     expect(result.items).toHaveLength(1);
+    expect(result.query.contributorId).toBe('install-abc');
+    expect(result.query.includeSharedPatterns).toBe(true);
     expect(String(fetcher.mock.calls[0][0])).toBe('https://memory.example.test/api/sovereign-memory/search');
   });
 
-  it('pulls remote updates from the gateway', async () => {
+  it('pulls remote updates without making them contributor deletable', async () => {
     const config = {
       ...createExternalMemorySyncConfig(),
       enabled: true,
       consentAccepted: true,
       gatewayUrl: 'https://memory.example.test',
+      contributorId: 'install-abc',
     };
     const fetcher = vi.fn(async (_url: RequestInfo | URL) => ({
       ok: true,
       status: 200,
-      json: async () => ({ updates: [{ id: 'remote-2', kind: 'learning-pattern', title: 'Workflow hint', text: 'Use workflow watch', tags: ['workflow'] }] }),
+      json: async () => ({ updates: [{ id: 'remote-2', kind: 'learning-pattern', title: 'Workflow hint', text: 'Use workflow watch', tags: ['workflow'], metadata: { contributionScope: 'shared-derived-pattern' } }] }),
     }) as Response);
 
     const result = await pullExternalMemoryUpdates({ config, fetcher: fetcher as unknown as typeof fetch });
@@ -188,38 +218,47 @@ describe('externalMemorySync', () => {
     expect(result.items).toHaveLength(1);
     expect(String(fetcher.mock.calls[0][0])).toContain('/api/sovereign-memory/pull-updates');
     expect(String(fetcher.mock.calls[0][0])).toContain('workspaceId=local-workspace');
+    expect(String(fetcher.mock.calls[0][0])).toContain('contributorId=install-abc');
+    expect(String(fetcher.mock.calls[0][0])).toContain('includeSharedPatterns=true');
   });
 
-  it('builds and validates explicit remote memory delete requests', () => {
+  it('builds and validates explicit contributor-only remote memory erasure requests', () => {
     const config = {
       ...createExternalMemorySyncConfig(),
       workspaceId: 'Pattern',
       collectionName: 'sovereign_logic_patterns',
+      contributorId: 'install-abc',
     };
     const request = buildExternalMemoryDeleteRequest(config, 123);
+    expect(request.contributorId).toBe('install-abc');
     expect(request.confirmDelete).toBe(true);
     expect(request.confirmationText).toBe(EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT);
+    expect(request.scope).toBe('contributor-submissions');
+    expect(request.preserveSharedPatterns).toBe(true);
     expect(validateExternalMemoryDeleteRequest(request).valid).toBe(true);
   });
 
-  it('rejects delete requests without the exact confirmation text', () => {
+  it('rejects erasure requests that could remove shared derived patterns', () => {
     const request = {
       schemaVersion: 1,
       client: 'sovereign-studio',
       redaction: 'summary-only-no-source-files',
       workspaceId: 'Pattern',
       collectionName: 'sovereign_logic_patterns',
+      contributorId: 'install-abc',
       requestedAt: 123,
       confirmDelete: true,
-      confirmationText: 'WRONG',
+      confirmationText: EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT,
       scope: 'workspace-user-data',
+      preserveSharedPatterns: false,
     } as const;
     const report = validateExternalMemoryDeleteRequest(request as never);
     expect(report.valid).toBe(false);
-    expect(report.errors.join(' ')).toContain('confirmation text');
+    expect(report.errors.join(' ')).toContain('contributor-submissions');
+    expect(report.errors.join(' ')).toContain('preserve shared patterns');
   });
 
-  it('posts delete-user-data requests and accepts success responses', async () => {
+  it('posts contributor-only erasure requests and tracks retained shared items', async () => {
     const config = {
       ...createExternalMemorySyncConfig(),
       enabled: true,
@@ -227,12 +266,13 @@ describe('externalMemorySync', () => {
       gatewayUrl: 'https://memory.example.test',
       workspaceId: 'Pattern',
       collectionName: 'sovereign_logic_patterns',
+      contributorId: 'install-abc',
     };
     const request = buildExternalMemoryDeleteRequest(config, 123);
     const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => ({
       ok: true,
       status: 200,
-      json: async () => ({ success: true, deleted: true, deletedItems: 5, summary: 'deleted' }),
+      json: async () => ({ success: true, deleted: true, deletedItems: 5, retainedSharedItems: 17, summary: 'contributor records removed' }),
       init,
     }) as Response);
 
@@ -240,6 +280,7 @@ describe('externalMemorySync', () => {
     expect(result.status).toBe('synced');
     expect(result.deleted).toBe(true);
     expect(result.response?.deletedItems).toBe(5);
+    expect(result.response?.retainedSharedItems).toBe(17);
     expect(String(fetcher.mock.calls[0][0])).toBe('https://memory.example.test/api/sovereign-memory/delete-user-data');
   });
 });
