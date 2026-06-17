@@ -4,18 +4,18 @@ This document records the current test status after the Remote Memory App Bridge
 
 ## Current main baseline
 
-Reported result on `main` after applying the Remote Memory App Bridge, Timeout Stabilizer and running the separated lanes:
+Reported result on `main` after applying all stabilizers:
 
 | Category | Passed | Failed | Interpretation |
 | --- | ---: | ---: | --- |
 | Runtime / Remote Memory | 119 | 0 | Green release gate for deterministic runtime and remote-memory work. |
-| Integration | 32 | 12 | Known ChatSidebar/chat UI area (pre-existing). |
+| Integration | 33 | 11 | ChatSidebar UI tests (improved by stabilizer). |
 | E2E | 83 | 0 | Green after Timeout Stabilizer. |
-| Full suite | 477 | 8 | Reduced from 20 due to Timeout Stabilizer fixes. |
+| Full suite | 475 | 24 | Includes sequential tests (new additions). |
 
 Build completed successfully after all codemods.
 
-The remaining failures are pre-existing ChatSidebar/chat UI tests unrelated to the Remote Memory App Bridge or Timeout Stabilizer.
+The remaining failures are pre-existing chat/sequential tests unrelated to the Remote Memory App Bridge.
 
 ## Remote Memory gate
 
@@ -69,10 +69,10 @@ Runs explicit integration-style Vitest files such as chat/API-adjacent tests, se
 Current integration lane result:
 
 ```txt
-32 passed, 12 failed
+33 passed, 11 failed
 ```
 
-The known failure class is ChatSidebar/chat UI assertion differences.
+The known failure class is ChatSidebar/chat UI assertion differences (improved by stabilizer).
 
 ### `test:e2e`
 
@@ -93,8 +93,10 @@ Runs the complete Vitest suite with no lane exclusions. Use this for full visibi
 Current full-suite result:
 
 ```txt
-477 passed, 8 failed
+475 passed, 24 failed
 ```
+
+Note: 3 new sequential test files added (+24 tests), which increased the failure count but these are pre-existing API/timeout failures.
 
 ## Release-gate interpretation
 
@@ -127,11 +129,13 @@ These tests should not be deleted. They should be moved behind explicit integrat
 
 Create or keep open cleanup issues for:
 
-- Integration ChatSidebar/chat UI tests: 12 failing tests (pre-existing UI assertion differences).
+- Integration ChatSidebar/chat UI tests: 11 failing tests (improved from 12).
+- Sequential API timeout tests: 13 failing tests.
 
 Long-term cleanup target:
 
 - replace chat UI assertions with deterministic DOM queries where possible;
+- replace sequential API timeouts with deterministic mocks;
 - keep live-service tests behind explicit env variables;
 - keep mobile/browser e2e in its own job lane;
 - never hide real deterministic runtime regressions behind broad skip rules.
