@@ -1,3 +1,9 @@
 packages:
   - "."
   - "launch-bot-v1"
+allowBuilds:
+  '@google/genai': false
+  canvas: false
+  core-js: false
+  esbuild: false
+  protobufjs: false
