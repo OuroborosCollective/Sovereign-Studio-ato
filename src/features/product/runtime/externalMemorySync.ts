@@ -14,6 +14,7 @@ export interface ExternalMemorySyncConfig {
   collectionName: string;
   mode: ExternalMemorySyncMode;
   clientAccessKey?: string;
+  allowSelfHostedHttp?: boolean;
   includeScanFindings: boolean;
   includeLearningPatterns: boolean;
   includeSolutionPatterns: boolean;
@@ -65,6 +66,41 @@ export interface ExternalMemorySyncResult {
   summary: string;
 }
 
+export interface ExternalMemoryHealthResult {
+  status: ExternalMemorySyncStatus;
+  ok: boolean;
+  summary: string;
+  details?: Record<string, unknown>;
+  validation: ExternalMemorySyncValidationReport;
+}
+
+export interface ExternalMemorySearchQuery {
+  schemaVersion: 1;
+  client: 'sovereign-studio';
+  redaction: 'summary-only-no-source-files';
+  workspaceId: string;
+  collectionName: string;
+  query: string;
+  limit: number;
+}
+
+export interface ExternalMemorySearchResult {
+  status: ExternalMemorySyncStatus;
+  ok: boolean;
+  query: ExternalMemorySearchQuery;
+  items: ExternalMemorySyncItem[];
+  summary: string;
+  validation: ExternalMemorySyncValidationReport;
+}
+
+export interface ExternalMemoryPullUpdatesResult {
+  status: ExternalMemorySyncStatus;
+  ok: boolean;
+  items: ExternalMemorySyncItem[];
+  summary: string;
+  validation: ExternalMemorySyncValidationReport;
+}
+
 const MAX_TEXT = 1600;
 const MAX_ITEMS = 250;
 const SAFE_ID = /^[a-zA-Z0-9._:-]{2,80}$/;
@@ -95,6 +131,37 @@ function safeUrl(value: string): URL | null {
   }
 }
 
+function buildGatewayEndpoint(config: ExternalMemorySyncConfig, path: string): string {
+  const base = safeUrl(config.gatewayUrl);
+  if (!base) throw new Error('Invalid gateway URL.');
+  return new URL(path, base).toString();
+}
+
+function buildGatewayHeaders(config: ExternalMemorySyncConfig): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(config.clientAccessKey ? { 'X-Sovereign-Gateway-Key': config.clientAccessKey } : {}),
+  };
+}
+
+function parseRemoteItems(value: unknown): ExternalMemorySyncItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Partial<ExternalMemorySyncItem> => Boolean(item) && typeof item === 'object')
+    .map((item, index): ExternalMemorySyncItem => ({
+      id: sanitizeText(String(item.id ?? `remote-${index}`)),
+      kind: ['scan-finding', 'learning-pattern', 'solution-pattern'].includes(String(item.kind))
+        ? item.kind as ExternalMemorySyncItemKind
+        : 'solution-pattern',
+      title: sanitizeText(String(item.title ?? 'Remote pattern')),
+      text: sanitizeText(String(item.text ?? item.title ?? 'Remote pattern')),
+      tags: normalizeTags(Array.isArray(item.tags) ? item.tags.map(String) : ['remote']),
+      metadata: typeof item.metadata === 'object' && item.metadata ? item.metadata as ExternalMemorySyncItem['metadata'] : {},
+    }))
+    .filter((item) => validateExternalMemorySyncItem(item).valid)
+    .slice(0, 50);
+}
+
 export function createExternalMemorySyncConfig(): ExternalMemorySyncConfig {
   return {
     enabled: false,
@@ -103,6 +170,7 @@ export function createExternalMemorySyncConfig(): ExternalMemorySyncConfig {
     workspaceId: 'local-workspace',
     collectionName: 'sovereign_logic_patterns',
     mode: 'manual',
+    allowSelfHostedHttp: false,
     includeScanFindings: true,
     includeLearningPatterns: true,
     includeSolutionPatterns: true,
@@ -130,9 +198,10 @@ export function validateExternalMemorySyncConfig(config: ExternalMemorySyncConfi
   if (!config.consentAccepted) errors.push('Consent must be accepted before external memory sync can run.');
   const url = safeUrl(config.gatewayUrl);
   if (!url) errors.push('A valid Agent Memory gateway URL is required.');
-  if (url && url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
-    errors.push('Gateway URL must use HTTPS unless it is localhost.');
-  }
+  const localHost = url?.hostname === 'localhost' || url?.hostname === '127.0.0.1';
+  const selfHostedHttp = url?.protocol === 'http:' && Boolean(config.allowSelfHostedHttp);
+  if (url && url.protocol !== 'https:' && !localHost && !selfHostedHttp) errors.push('Gateway URL must use HTTPS unless self-hosted HTTP testing is explicitly enabled.');
+  if (selfHostedHttp) warnings.push('Self-hosted HTTP is allowed for testing. Use HTTPS before production use.');
   if (url && url.port === '19530') errors.push('Do not connect the browser directly to a vector database server port. Use the Agent Memory gateway instead.');
   if (!SAFE_ID.test(config.workspaceId)) errors.push('workspaceId must be a safe short identifier.');
   if (!SAFE_ID.test(config.collectionName)) errors.push('collectionName must be a safe short identifier.');
@@ -257,6 +326,26 @@ export function buildExternalMemorySyncPayload(input: {
   return payload;
 }
 
+function emptyValidation(summary: string): ExternalMemorySyncValidationReport {
+  return { valid: true, errors: [], warnings: [], summary };
+}
+
+export async function checkExternalMemoryHealth(input: {
+  config: ExternalMemorySyncConfig;
+  fetcher?: typeof fetch;
+}): Promise<ExternalMemoryHealthResult> {
+  const validation = validateExternalMemorySyncConfig(input.config);
+  if (!input.config.enabled) return { status: 'disabled', ok: false, validation, summary: 'External memory sync is disabled.' };
+  if (!validation.valid) return { status: 'soft-failed', ok: false, validation, summary: validation.summary };
+  try {
+    const response = await (input.fetcher ?? fetch)(buildGatewayEndpoint(input.config, '/health'), { headers: buildGatewayHeaders(input.config) });
+    const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+    return { status: response.ok ? 'ready' : 'soft-failed', ok: response.ok, validation, details: body, summary: response.ok ? 'External memory gateway is reachable.' : `External memory gateway returned ${response.status}.` };
+  } catch (error) {
+    return { status: 'soft-failed', ok: false, validation, summary: error instanceof Error ? sanitizeText(error.message) : 'External memory health request failed.' };
+  }
+}
+
 export async function syncExternalMemory(input: {
   config: ExternalMemorySyncConfig;
   payload: ExternalMemorySyncPayload;
@@ -264,24 +353,13 @@ export async function syncExternalMemory(input: {
 }): Promise<ExternalMemorySyncResult> {
   const configReport = validateExternalMemorySyncConfig(input.config);
   const payloadReport = validateExternalMemorySyncPayload(input.payload);
-  const validation = {
-    valid: configReport.valid && payloadReport.valid,
-    errors: [...configReport.errors, ...payloadReport.errors],
-    warnings: [...configReport.warnings, ...payloadReport.warnings],
-    summary: `${configReport.summary} ${payloadReport.summary}`,
-  };
+  const validation = { valid: configReport.valid && payloadReport.valid, errors: [...configReport.errors, ...payloadReport.errors], warnings: [...configReport.warnings, ...payloadReport.warnings], summary: `${configReport.summary} ${payloadReport.summary}` };
 
   if (!input.config.enabled) return { status: 'disabled', accepted: false, payload: input.payload, validation, summary: 'External memory sync is disabled.' };
   if (!validation.valid) return { status: 'soft-failed', accepted: false, payload: input.payload, validation, summary: `External memory sync rejected softly: ${validation.summary}` };
 
   try {
-    const fetcher = input.fetcher ?? fetch;
-    const endpoint = new URL('/api/sovereign-memory/sync', input.config.gatewayUrl).toString();
-    const response = await fetcher(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...input.payload, clientAccessKey: input.config.clientAccessKey ? '<session-present>' : undefined }),
-    });
+    const response = await (input.fetcher ?? fetch)(buildGatewayEndpoint(input.config, '/api/sovereign-memory/sync'), { method: 'POST', headers: buildGatewayHeaders(input.config), body: JSON.stringify(input.payload) });
     if (!response.ok) return { status: 'soft-failed', accepted: false, payload: input.payload, validation, summary: `External memory gateway returned ${response.status}.` };
     const body = await response.json() as Partial<ExternalMemorySyncResponse>;
     const syncResponse: ExternalMemorySyncResponse = {
@@ -290,10 +368,51 @@ export async function syncExternalMemory(input: {
       exported: Number(body.exported ?? 0),
       rejected: Number(body.rejected ?? 0),
       summary: sanitizeText(body.summary ?? 'External memory sync completed.'),
-      remotePatterns: Array.isArray(body.remotePatterns) ? body.remotePatterns.slice(0, 50) : undefined,
+      remotePatterns: parseRemoteItems(body.remotePatterns),
     };
     return { status: syncResponse.accepted ? 'synced' : 'soft-failed', accepted: syncResponse.accepted, payload: input.payload, response: syncResponse, validation, summary: syncResponse.summary };
   } catch (error) {
     return { status: 'soft-failed', accepted: false, payload: input.payload, validation, summary: error instanceof Error ? sanitizeText(error.message) : 'External memory sync request failed.' };
+  }
+}
+
+export async function searchExternalMemory(input: {
+  config: ExternalMemorySyncConfig;
+  query: string;
+  limit?: number;
+  fetcher?: typeof fetch;
+}): Promise<ExternalMemorySearchResult> {
+  const validation = validateExternalMemorySyncConfig(input.config);
+  const query: ExternalMemorySearchQuery = { schemaVersion: 1, client: 'sovereign-studio', redaction: 'summary-only-no-source-files', workspaceId: input.config.workspaceId, collectionName: input.config.collectionName, query: sanitizeText(input.query), limit: Math.max(1, Math.min(input.limit ?? 8, 50)) };
+  if (!input.config.enabled) return { status: 'disabled', ok: false, query, items: [], validation, summary: 'External memory sync is disabled.' };
+  if (!validation.valid) return { status: 'soft-failed', ok: false, query, items: [], validation, summary: validation.summary };
+  if (!query.query.trim()) return { status: 'soft-failed', ok: false, query, items: [], validation: emptyValidation('Empty search query.'), summary: 'External memory search query is empty.' };
+  try {
+    const response = await (input.fetcher ?? fetch)(buildGatewayEndpoint(input.config, '/api/sovereign-memory/search'), { method: 'POST', headers: buildGatewayHeaders(input.config), body: JSON.stringify(query) });
+    const body = await response.json().catch(() => ({})) as { items?: unknown; results?: unknown; summary?: string };
+    const items = parseRemoteItems(body.items ?? body.results);
+    return { status: response.ok ? 'ready' : 'soft-failed', ok: response.ok, query, items, validation, summary: response.ok ? sanitizeText(body.summary ?? `${items.length} remote item(s) found.`) : `External memory search returned ${response.status}.` };
+  } catch (error) {
+    return { status: 'soft-failed', ok: false, query, items: [], validation, summary: error instanceof Error ? sanitizeText(error.message) : 'External memory search request failed.' };
+  }
+}
+
+export async function pullExternalMemoryUpdates(input: {
+  config: ExternalMemorySyncConfig;
+  fetcher?: typeof fetch;
+}): Promise<ExternalMemoryPullUpdatesResult> {
+  const validation = validateExternalMemorySyncConfig(input.config);
+  if (!input.config.enabled) return { status: 'disabled', ok: false, items: [], validation, summary: 'External memory sync is disabled.' };
+  if (!validation.valid) return { status: 'soft-failed', ok: false, items: [], validation, summary: validation.summary };
+  try {
+    const url = new URL(buildGatewayEndpoint(input.config, '/api/sovereign-memory/pull-updates'));
+    url.searchParams.set('workspaceId', input.config.workspaceId);
+    url.searchParams.set('collectionName', input.config.collectionName);
+    const response = await (input.fetcher ?? fetch)(url.toString(), { headers: buildGatewayHeaders(input.config) });
+    const body = await response.json().catch(() => ({})) as { items?: unknown; updates?: unknown; summary?: string };
+    const items = parseRemoteItems(body.items ?? body.updates);
+    return { status: response.ok ? 'ready' : 'soft-failed', ok: response.ok, items, validation, summary: response.ok ? sanitizeText(body.summary ?? `${items.length} remote update(s) available.`) : `External memory update pull returned ${response.status}.` };
+  } catch (error) {
+    return { status: 'soft-failed', ok: false, items: [], validation, summary: error instanceof Error ? sanitizeText(error.message) : 'External memory pull-updates request failed.' };
   }
 }
