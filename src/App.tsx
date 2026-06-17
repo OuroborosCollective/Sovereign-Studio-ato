@@ -1,5 +1,5 @@
 import './runtime-adapter';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { buildGitHubHeaders, stripTokenFromText } from './features/github/githubAuthSession';
 import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
@@ -10,6 +10,7 @@ import { GeneratedFileReviewPanel } from './features/product/components/Generate
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
+import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { SovereignTelemetryPanel } from './features/product/components/SovereignTelemetryPanel';
 import { WorkflowRepairPanel } from './features/product/components/WorkflowRepairPanel';
@@ -28,6 +29,14 @@ import {
 import { assertGeneratedFileReviewSafe, reviewGeneratedFiles } from './features/product/runtime/generatedFileReview';
 import { getRepoSnapshotStatus } from './features/product/runtime/sovereignFunctionalGuards';
 import { buildRuntimeValidationCoverageReport } from './features/product/runtime/runtimeValidationCoverage';
+import {
+  createSequentialRuntimeState,
+  finishSequentialStep,
+  startSequentialStep,
+  type SequentialRuntimeState,
+  type SequentialRuntimeStep,
+  type SequentialStartOptions,
+} from './features/product/runtime/sequentialRuntimeGuard';
 import { buildSovereignHealthReport } from './features/product/runtime/sovereignHealth';
 import {
   createSessionMemorySnapshot,
@@ -51,7 +60,7 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'coverage' | 'telemetry';
+type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'telemetry';
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
@@ -63,6 +72,7 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'workflow', label: 'Workflow' },
   { id: 'repair', label: 'Repair' },
   { id: 'health', label: 'Health' },
+  { id: 'runtime', label: 'Runtime' },
   { id: 'coverage', label: 'Coverage' },
   { id: 'telemetry', label: 'Telemetry' },
 ];
@@ -96,6 +106,8 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SovereignTab>('repo');
   const [telemetryExpanded, setTelemetryExpanded] = useState(false);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
+  const sequentialRuntimeRef = useRef<SequentialRuntimeState>(createSequentialRuntimeState());
+  const [sequentialRuntime, setSequentialRuntime] = useState(() => sequentialRuntimeRef.current);
   const [automationMode, setAutomationMode] = useState<SovereignAutomationMode>('manual');
   const [lastAutoRunKey, setLastAutoRunKey] = useState('');
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
@@ -114,7 +126,8 @@ const App: React.FC = () => {
     clearRepoSnapshot,
   } = useGithubRepo();
   const repoSnapshotStatus = getRepoSnapshotStatus(repoFiles);
-  const actionDisabled = isRepoBusy || !repoSnapshotStatus.ready;
+  const runtimeBusy = Boolean(sequentialRuntime.activeStep);
+  const actionDisabled = isRepoBusy || runtimeBusy || !repoSnapshotStatus.ready;
   const packageInputKey = buildAutomationRunKey({
     mode: 'manual',
     repoUrl,
@@ -151,78 +164,122 @@ const App: React.FC = () => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
   };
 
-  const loadGeneratedFileSources = async () => {
-    if (!lastPackage) {
-      pushTelemetry('workflow', 'warning', 'diff:no-package', 'Build a Sovereign package before loading diff sources.');
-      return;
-    }
-    const parsed = parseGithubRepoUrl(repoUrl);
-    if (!parsed) {
-      pushTelemetry('workflow', 'error', 'diff:invalid-repo', 'Cannot load diff sources from an invalid GitHub repo URL.');
-      return;
-    }
+  const setSequentialState = (next: SequentialRuntimeState) => {
+    sequentialRuntimeRef.current = next;
+    setSequentialRuntime(next);
+  };
 
-    setIsLoadingDiffSources(true);
-    pushTelemetry('workflow', 'info', 'diff:load-start', 'Loading source snapshots for generated files.', { files: lastPackage.files.length });
+  const sequentialOptions = (override: SequentialStartOptions = {}): SequentialStartOptions => ({
+    repoReady: repoSnapshotStatus.ready,
+    hasPackage: Boolean(lastPackage),
+    hasDiffSources: diffSources.length > 0,
+    hasDraftCommit: Boolean(lastDraftCommitSha),
+    hasWorkflowReport: Boolean(workflowReport),
+    ...override,
+  });
 
-    const headers = buildGitHubHeaders({ token: githubToken });
-    const refQuery = repoBranch.trim() ? `?ref=${encodeURIComponent(repoBranch.trim())}` : '';
-
+  const runSequentialStep = async <T,>(
+    step: SequentialRuntimeStep,
+    task: () => Promise<T>,
+    options: SequentialStartOptions = {},
+  ): Promise<T | null> => {
     try {
-      const snapshots = await Promise.all(lastPackage.files.map(async (file): Promise<SourceFileSnapshot> => {
-        const path = encodeGitHubContentPath(file.path);
-        const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${path}${refQuery}`;
-        try {
-          const response = await fetch(url, { headers });
-          if (response.status === 404) return { path: file.path, content: null, found: false };
-          if (!response.ok) return { path: file.path, content: null, found: false };
-          const payload = await response.json() as { content?: string; encoding?: string } | Array<unknown>;
-          if (Array.isArray(payload) || !payload.content || payload.encoding !== 'base64') {
+      const started = startSequentialStep(sequentialRuntimeRef.current, step, sequentialOptions(options));
+      setSequentialState(started);
+      pushTelemetry('workflow', 'info', `sequence:${step}:start`, started.steps[step].message ?? `${step} started.`);
+
+      const result = await task();
+
+      const completed = finishSequentialStep(sequentialRuntimeRef.current, step, 'completed', `${step} completed.`);
+      setSequentialState(completed);
+      pushTelemetry('workflow', 'success', `sequence:${step}:completed`, `${step} completed.`);
+      return result;
+    } catch (error) {
+      const message = stripTokenFromText(error instanceof Error ? error.message : `${step} failed.`, githubToken);
+      if (sequentialRuntimeRef.current.activeStep === step) {
+        const failed = finishSequentialStep(sequentialRuntimeRef.current, step, 'failed', message);
+        setSequentialState(failed);
+      }
+      setSovereignSummary(message);
+      pushTelemetry('workflow', 'error', `sequence:${step}:failed`, message);
+      return null;
+    }
+  };
+
+  const loadGeneratedFileSources = async () => {
+    await runSequentialStep('diff-load', async () => {
+      if (!lastPackage) {
+        throw new Error('Build a Sovereign package before loading diff sources.');
+      }
+      const parsed = parseGithubRepoUrl(repoUrl);
+      if (!parsed) {
+        throw new Error('Cannot load diff sources from an invalid GitHub repo URL.');
+      }
+
+      setIsLoadingDiffSources(true);
+      pushTelemetry('workflow', 'info', 'diff:load-start', 'Loading source snapshots for generated files.', { files: lastPackage.files.length });
+
+      const headers = buildGitHubHeaders({ token: githubToken });
+      const refQuery = repoBranch.trim() ? `?ref=${encodeURIComponent(repoBranch.trim())}` : '';
+
+      try {
+        const snapshots = await Promise.all(lastPackage.files.map(async (file): Promise<SourceFileSnapshot> => {
+          const path = encodeGitHubContentPath(file.path);
+          const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${path}${refQuery}`;
+          try {
+            const response = await fetch(url, { headers });
+            if (response.status === 404) return { path: file.path, content: null, found: false };
+            if (!response.ok) return { path: file.path, content: null, found: false };
+            const payload = await response.json() as { content?: string; encoding?: string } | Array<unknown>;
+            if (Array.isArray(payload) || !payload.content || payload.encoding !== 'base64') {
+              return { path: file.path, content: null, found: false };
+            }
+            return { path: file.path, content: decodeBase64Utf8(payload.content), found: true };
+          } catch {
             return { path: file.path, content: null, found: false };
           }
-          return { path: file.path, content: decodeBase64Utf8(payload.content), found: true };
-        } catch {
-          return { path: file.path, content: null, found: false };
-        }
-      }));
+        }));
 
-      setDiffSources(snapshots);
-      const report = buildGeneratedFileDiffReport(lastPackage.files, snapshots);
-      setSovereignSummary(report.summary);
-      pushTelemetry('workflow', 'success', 'diff:load-finished', stripTokenFromText(report.summary, githubToken));
-      setActiveTab('diff');
-    } finally {
-      setIsLoadingDiffSources(false);
-    }
+        setDiffSources(snapshots);
+        const report = buildGeneratedFileDiffReport(lastPackage.files, snapshots);
+        setSovereignSummary(report.summary);
+        pushTelemetry('workflow', 'success', 'diff:load-finished', stripTokenFromText(report.summary, githubToken));
+        setActiveTab('diff');
+        return report;
+      } finally {
+        setIsLoadingDiffSources(false);
+      }
+    });
   };
 
   const watchLatestWorkflow = async (commitSha = lastDraftCommitSha, branch = lastDraftBranch) => {
-    setIsWatchingWorkflow(true);
-    pushTelemetry('workflow', 'info', 'workflow:watch-start', 'Watching GitHub commit checks.', { commitSha: commitSha || 'none' });
-    try {
-      const report = await fetchWorkflowWatchReport({
-        repoUrl,
-        token: githubToken,
-        commitSha,
-        branch,
-      });
-      setWorkflowReport(report);
-      pushTelemetry(
-        'workflow',
-        report.status === 'red' ? 'error' : report.status === 'green' ? 'success' : 'warning',
-        'workflow:watch-finished',
-        stripTokenFromText(report.summary, githubToken),
-      );
-      setActiveTab(report.status === 'red' ? 'repair' : 'workflow');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Workflow watch failed.';
-      pushTelemetry('workflow', 'error', 'workflow:watch-failed', stripTokenFromText(message, githubToken));
-    } finally {
-      setIsWatchingWorkflow(false);
-    }
+    const report = await runSequentialStep('workflow-watch', async () => {
+      setIsWatchingWorkflow(true);
+      pushTelemetry('workflow', 'info', 'workflow:watch-start', 'Watching GitHub commit checks.', { commitSha: commitSha || 'none' });
+      try {
+        const nextReport = await fetchWorkflowWatchReport({
+          repoUrl,
+          token: githubToken,
+          commitSha,
+          branch,
+        });
+        setWorkflowReport(nextReport);
+        pushTelemetry(
+          'workflow',
+          nextReport.status === 'red' ? 'error' : nextReport.status === 'green' ? 'success' : 'warning',
+          'workflow:watch-finished',
+          stripTokenFromText(nextReport.summary, githubToken),
+        );
+        setActiveTab(nextReport.status === 'red' ? 'repair' : 'workflow');
+        return nextReport;
+      } finally {
+        setIsWatchingWorkflow(false);
+      }
+    }, { hasDraftCommit: Boolean(commitSha) });
+    return report;
   };
 
-  const buildPackage = (nextMission: string, nextPackageKey = packageInputKey): SovereignImplementationPackage | null => {
+  const buildPackageCore = (nextMission: string, nextPackageKey = packageInputKey): SovereignImplementationPackage | null => {
     try {
       pushTelemetry('package', 'info', 'package:build-start', 'Building Sovereign package.', { files: repoFiles.length });
       const pkg = buildSovereignPackageFromRepoFiles({
@@ -261,35 +318,49 @@ const App: React.FC = () => {
     }
   };
 
+  const buildPackage = async (nextMission: string, nextPackageKey = packageInputKey): Promise<SovereignImplementationPackage | null> => {
+    return runSequentialStep('package-build', async () => {
+      const pkg = buildPackageCore(nextMission, nextPackageKey);
+      if (!pkg) throw new Error('Package build failed.');
+      return pkg;
+    });
+  };
+
   const handleLoadRepoTree = async () => {
-    pushTelemetry('repo', 'info', 'repo:load-start', 'Loading repository tree.', { repoUrl });
-    await loadRepoTree();
-    pushTelemetry('repo', 'success', 'repo:load-finished', 'Repository load request finished. Check repo status for exact result.');
-    setLastPackage(null);
-    setLastPackageKey('');
-    setDiffSources([]);
-    setLastDraftCommitSha('');
-    setLastDraftBranch('');
-    setWorkflowReport(null);
-    setActiveTab('readiness');
+    await runSequentialStep('repo-load', async () => {
+      pushTelemetry('repo', 'info', 'repo:load-start', 'Loading repository tree.', { repoUrl });
+      await loadRepoTree();
+      pushTelemetry('repo', 'success', 'repo:load-finished', 'Repository load request finished. Check repo status for exact result.');
+      setLastPackage(null);
+      setLastPackageKey('');
+      setDiffSources([]);
+      setLastDraftCommitSha('');
+      setLastDraftBranch('');
+      setWorkflowReport(null);
+      setActiveTab('readiness');
+      return true;
+    });
   };
 
   const generateRepoIdeas = () => {
-    buildPackage(mission.trim() || 'README + Update History');
+    void buildPackage(mission.trim() || 'README + Update History');
   };
 
   const generateErrorWorkflow = () => {
-    buildPackage('Workflow Fehleranalyse + Runtime Check + Test Plan');
+    void buildPackage('Workflow Fehleranalyse + Runtime Check + Test Plan');
   };
 
   const useRepairMission = (nextMission: string) => {
-    setMission(nextMission);
-    setLastPackage(null);
-    setLastPackageKey('');
-    setDiffSources([]);
-    setSovereignSummary('Repair mission loaded into Builder. Run Ideen/Full Auto to generate a guarded repair package.');
-    pushTelemetry('workflow', 'info', 'repair:mission-loaded', 'Workflow repair mission loaded into Builder.');
-    setActiveTab('builder');
+    void runSequentialStep('repair-plan', async () => {
+      setMission(nextMission);
+      setLastPackage(null);
+      setLastPackageKey('');
+      setDiffSources([]);
+      setSovereignSummary('Repair mission loaded into Builder. Run Ideen/Full Auto to generate a guarded repair package.');
+      pushTelemetry('workflow', 'info', 'repair:mission-loaded', 'Workflow repair mission loaded into Builder.');
+      setActiveTab('builder');
+      return true;
+    }, { hasWorkflowReport: Boolean(workflowReport) });
   };
 
   const saveCurrentSession = () => {
@@ -348,77 +419,69 @@ const App: React.FC = () => {
   };
 
   const publishDraftPrForPackage = async (pkg: SovereignImplementationPackage): Promise<boolean> => {
-    const review = reviewGeneratedFiles(pkg.files);
-    try {
+    const result = await runSequentialStep('draft-pr-publish', async () => {
+      const review = reviewGeneratedFiles(pkg.files);
       assertGeneratedFileReviewSafe(review);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Generated file review blocked Draft PR.';
-      setSovereignSummary(stripTokenFromText(message, githubToken));
-      pushTelemetry('github', 'error', 'github:review-blocked', stripTokenFromText(message, githubToken));
+
+      if (!githubToken.trim()) {
+        throw new Error('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
+      }
+
+      setIsPublishing(true);
+      setSovereignSummary('Erstelle GitHub Branch, Commit und Draft PR...');
+      pushTelemetry('github', 'info', 'github:draft-pr-start', 'Creating GitHub branch, commit and draft PR.', { files: pkg.files.length });
+      try {
+        return await publishPackageAsDraftPr({
+          repoUrl,
+          token: githubToken,
+          baseBranch: repoBranch,
+          branchNonce: String(Date.now()),
+          title: `Sovereign Studio: ${mission.trim() || pkg.requestedWork}`,
+          body: [
+            'Generated by Sovereign Studio.',
+            '',
+            summarizeSovereignPackage(pkg, repoFiles),
+            '',
+            'Generated file review:',
+            review.summary,
+            diffReport ? `Generated file diff preview: ${diffReport.summary}` : 'Generated file diff preview: not loaded.',
+            '',
+            'Suggestions:',
+            ...pkg.suggestions.map((item) => `- ${item}`),
+          ].join('\n'),
+          files: pkg.files,
+        });
+      } finally {
+        setIsPublishing(false);
+      }
+    }, { hasPackage: true });
+
+    if (!result) {
       setActiveTab('files');
       return false;
     }
 
-    if (!githubToken.trim()) {
-      setSovereignSummary('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
-      pushTelemetry('github', 'warning', 'github:token-missing', 'Draft PR blocked because no PAT was entered.');
-      return false;
-    }
-
-    setIsPublishing(true);
-    setSovereignSummary('Erstelle GitHub Branch, Commit und Draft PR...');
-    pushTelemetry('github', 'info', 'github:draft-pr-start', 'Creating GitHub branch, commit and draft PR.', { files: pkg.files.length });
-    try {
-      const result = await publishPackageAsDraftPr({
-        repoUrl,
-        token: githubToken,
-        baseBranch: repoBranch,
-        branchNonce: String(Date.now()),
-        title: `Sovereign Studio: ${mission.trim() || pkg.requestedWork}`,
-        body: [
-          'Generated by Sovereign Studio.',
-          '',
-          summarizeSovereignPackage(pkg, repoFiles),
-          '',
-          'Generated file review:',
-          review.summary,
-          diffReport ? `Generated file diff preview: ${diffReport.summary}` : 'Generated file diff preview: not loaded.',
-          '',
-          'Suggestions:',
-          ...pkg.suggestions.map((item) => `- ${item}`),
-        ].join('\n'),
-        files: pkg.files,
-      });
-
-      setLastDraftCommitSha(result.commitSha);
-      setLastDraftBranch(result.branch);
-      setSovereignSummary([
-        'Draft PR erstellt.',
-        `URL: ${result.pullRequestUrl}`,
-        `Branch: ${result.branch}`,
-        `Commit: ${result.commitSha}`,
-      ].join('\n'));
-      pushTelemetry('github', 'success', 'github:draft-pr-created', 'Draft PR created.', {
-        pr: result.pullRequestNumber,
-        branch: result.branch,
-      });
-      setTelemetryExpanded(true);
-      await watchLatestWorkflow(result.commitSha, result.branch);
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Draft PR konnte nicht erstellt werden.';
-      setSovereignSummary(stripTokenFromText(message, githubToken));
-      pushTelemetry('github', 'error', 'github:draft-pr-failed', stripTokenFromText(message, githubToken));
-      return false;
-    } finally {
-      setIsPublishing(false);
-    }
+    setLastDraftCommitSha(result.commitSha);
+    setLastDraftBranch(result.branch);
+    setSovereignSummary([
+      'Draft PR erstellt.',
+      `URL: ${result.pullRequestUrl}`,
+      `Branch: ${result.branch}`,
+      `Commit: ${result.commitSha}`,
+    ].join('\n'));
+    pushTelemetry('github', 'success', 'github:draft-pr-created', 'Draft PR created.', {
+      pr: result.pullRequestNumber,
+      branch: result.branch,
+    });
+    setTelemetryExpanded(true);
+    await watchLatestWorkflow(result.commitSha, result.branch);
+    return true;
   };
 
   const publishDraftPr = async () => {
     const pkg = hasFreshPackage && lastPackage
       ? lastPackage
-      : buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+      : await buildPackage(mission.trim() || 'README + Update History', packageInputKey);
     if (!pkg) return;
     await publishDraftPrForPackage(pkg);
   };
@@ -430,7 +493,7 @@ const App: React.FC = () => {
       repoReady: repoSnapshotStatus.ready,
       hasMission: mission.trim().length > 0,
       hasToken: githubToken.trim().length > 0,
-      isBusy: isRepoBusy || isPublishing,
+      isBusy: isRepoBusy || isPublishing || runtimeBusy,
       hasPackage: hasFreshPackage,
       lastAutoRunKey,
       nextAutoRunKey: automationRunKey,
@@ -450,7 +513,7 @@ const App: React.FC = () => {
       setLastAutoRunKey(automationRunKey);
       setAutomationStatus('Auto Review is building and reviewing generated files.');
       pushTelemetry('workflow', 'info', 'automation:auto-review', 'Auto Review triggered package build.');
-      buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+      void buildPackage(mission.trim() || 'README + Update History', packageInputKey);
       return;
     }
 
@@ -458,10 +521,12 @@ const App: React.FC = () => {
       setLastAutoRunKey(automationRunKey);
       setAutomationStatus('Full Auto is building, reviewing and creating a Draft PR.');
       pushTelemetry('workflow', 'info', 'automation:full-auto', 'Full Auto triggered guarded Draft PR flow.');
-      const pkg = hasFreshPackage && lastPackage
-        ? lastPackage
-        : buildPackage(mission.trim() || 'README + Update History', packageInputKey);
-      if (pkg) void publishDraftPrForPackage(pkg);
+      void (async () => {
+        const pkg = hasFreshPackage && lastPackage
+          ? lastPackage
+          : await buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+        if (pkg) await publishDraftPrForPackage(pkg);
+      })();
     }
     // The automation effect intentionally watches value snapshots, not helper function identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -477,6 +542,7 @@ const App: React.FC = () => {
     mission,
     packageInputKey,
     repoSnapshotStatus.ready,
+    runtimeBusy,
     user,
   ]);
 
@@ -534,7 +600,7 @@ const App: React.FC = () => {
           </select>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          Full Auto still runs repo snapshot checks, functional guards, generated-file review, diff preview when loaded, workflow watch and Draft PR publishing rules. It does not auto-merge.
+          Full Auto still runs repo snapshot checks, sequential runtime guard, functional guards, generated-file review, diff preview when loaded, workflow watch and Draft PR publishing rules. It does not auto-merge.
         </p>
       </section>
 
@@ -563,16 +629,16 @@ const App: React.FC = () => {
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={handleLoadRepoTree} disabled={isRepoBusy} type="button">
+            <button onClick={handleLoadRepoTree} disabled={isRepoBusy || runtimeBusy} type="button">
               Load Repo
             </button>
-            <button onClick={saveCurrentSession} disabled={!repoSnapshotStatus.ready} type="button">
+            <button onClick={saveCurrentSession} disabled={!repoSnapshotStatus.ready || runtimeBusy} type="button">
               Save Session
             </button>
-            <button onClick={restoreSession} type="button">
+            <button onClick={restoreSession} disabled={runtimeBusy} type="button">
               Restore Session
             </button>
-            <button onClick={clearSession} type="button">
+            <button onClick={clearSession} disabled={runtimeBusy} type="button">
               Clear View
             </button>
           </div>
@@ -619,7 +685,7 @@ const App: React.FC = () => {
       {activeTab === 'diff' ? (
         <GeneratedFileDiffPreviewPanel
           report={diffReport}
-          isLoading={isLoadingDiffSources}
+          isLoading={isLoadingDiffSources || runtimeBusy}
           onLoadSources={() => { void loadGeneratedFileSources(); }}
         />
       ) : null}
@@ -627,7 +693,7 @@ const App: React.FC = () => {
       {activeTab === 'workflow' ? (
         <WorkflowWatchPanel
           report={workflowReport}
-          isWatching={isWatchingWorkflow}
+          isWatching={isWatchingWorkflow || runtimeBusy}
           onWatch={() => { void watchLatestWorkflow(); }}
         />
       ) : null}
@@ -635,6 +701,8 @@ const App: React.FC = () => {
       {activeTab === 'repair' ? <WorkflowRepairPanel plan={repairPlan} onUseMission={useRepairMission} /> : null}
 
       {activeTab === 'health' ? <SovereignHealthPanel report={healthReport} /> : null}
+
+      {activeTab === 'runtime' ? <SequentialRuntimePanel state={sequentialRuntime} /> : null}
 
       {activeTab === 'coverage' ? <RuntimeValidationCoveragePanel report={coverageReport} /> : null}
 
