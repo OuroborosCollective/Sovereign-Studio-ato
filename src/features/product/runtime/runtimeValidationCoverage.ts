@@ -60,6 +60,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'SequentialRuntimePanel + App action wrappers',
   },
   {
+    id: 'learning-memory',
+    runtimePath: 'src/features/product/runtime/sovereignLearningMemory.ts',
+    testPath: 'src/features/product/runtime/sovereignLearningMemory.test.ts',
+    purpose: 'Stores validated learning patterns through explicit intake/output nodes without leaking secrets.',
+    status: 'covered',
+    integrationPoint: 'Workflow Repair + Health + Action Builder pattern context',
+  },
+  {
     id: 'functional-guards',
     runtimePath: 'src/features/product/runtime/sovereignFunctionalGuards.ts',
     testPath: 'src/features/product/runtime/sovereignFunctionalGuards.test.ts',
