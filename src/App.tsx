@@ -36,6 +36,7 @@ import {
   createScanFindingRegistry,
   summarizeScanFindingRegistry,
 } from './features/product/runtime/scanFindingRegistry';
+import { applyWorkflowScanAndBuildGate } from './features/product/runtime/scanFindingWorkflowBridge';
 import {
   createSequentialRuntimeState,
   finishSequentialStep,
@@ -287,11 +288,23 @@ const App: React.FC = () => {
           branch,
         });
         setWorkflowReport(nextReport);
+
+        const scanStartedAt = Date.now();
+        const workflowFindingBridge = applyWorkflowScanAndBuildGate(scanRegistry, nextReport, scanStartedAt, Date.now());
+        setScanRegistry(workflowFindingBridge.registry);
+
         pushTelemetry(
           'workflow',
           nextReport.status === 'red' ? 'error' : nextReport.status === 'green' ? 'success' : 'warning',
           'workflow:watch-finished',
           stripTokenFromText(nextReport.summary, githubToken),
+        );
+        pushTelemetry(
+          'workflow',
+          workflowFindingBridge.gate.allowed ? 'success' : 'warning',
+          'scan:workflow-findings-synced',
+          stripTokenFromText(workflowFindingBridge.summary, githubToken),
+          { blockers: workflowFindingBridge.gate.blockers.length },
         );
         setActiveTab(nextReport.status === 'red' ? 'repair' : 'workflow');
         return nextReport;
