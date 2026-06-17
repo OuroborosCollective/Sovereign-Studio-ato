@@ -14,7 +14,14 @@ const testStore = configureStore({
       isDragging: false,
     }) => state,
     billing: (state = { isSubscribed: false }) => state,
-    ouroboros: (state = { active: false }) => state,
+    ouroboros: (state = {
+      isAuthSequenceActive: false,
+      activeAREPayload: null,
+      errorState: null,
+      isRootInitialized: false,
+      telemetry: null,
+      resonance: null,
+    }) => state,
   },
 });
 
@@ -58,7 +65,9 @@ describe('useAppSelector', () => {
 
   it('selects ouroboros state', () => {
     const { result } = renderHook(() => useAppSelector((state) => state.ouroboros), { wrapper });
-    expect(result.current.active).toBe(false);
+    expect(result.current.isAuthSequenceActive).toBe(false);
+    expect(result.current.isRootInitialized).toBe(false);
+    expect(result.current.errorState).toBeNull();
   });
 });
 
