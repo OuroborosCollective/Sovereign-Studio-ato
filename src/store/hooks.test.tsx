@@ -5,111 +5,94 @@ import { useAppDispatch, useAppSelector } from './hooks';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 
-// Create a minimal test store with just the shape we need
 const testStore = configureStore({
   reducer: {
-    canvas: (state = { 
-      objects: [], 
-      selectedIds: [], 
+    canvas: (state = {
+      objects: [],
+      selectedIds: [],
       viewbox: { zoom: 1, panX: 0, panY: 0 },
-      isDragging: false 
+      isDragging: false,
     }) => state,
     billing: (state = { isSubscribed: false }) => state,
     ouroboros: (state = { active: false }) => state,
   },
 });
 
-// Wrapper for renderHook with Redux Provider
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <Provider store={testStore}>{children}</Provider>
 );
 
 describe('useAppDispatch', () => {
-  it('should return a dispatch function', () => {
+  it('returns a dispatch function', () => {
     const { result } = renderHook(() => useAppDispatch(), { wrapper });
-    
     expect(result.current).toBe(testStore.dispatch);
     expect(typeof result.current).toBe('function');
   });
 
-  it('should dispatch actions correctly', () => {
+  it('dispatches plain actions', () => {
     const { result } = renderHook(() => useAppDispatch(), { wrapper });
-    
-    // Dispatch a simple action
     const action = { type: 'TEST_ACTION', payload: 'test' };
-    const dispatchResult = result.current(action);
-    
-    // Thunk middleware returns the action itself for plain actions
-    expect(dispatchResult).toEqual(action);
+    expect(result.current(action)).toEqual(action);
   });
 });
 
 describe('useAppSelector', () => {
-  it('should select canvas state from the store', () => {
+  it('selects canvas state', () => {
     const { result } = renderHook(() => useAppSelector((state) => state.canvas), { wrapper });
-    
-    expect(result.current).toBeDefined();
-    expect(result.current).toHaveProperty('objects');
-    expect(result.current).toHaveProperty('viewbox');
-    expect(result.current).toHaveProperty('isDragging');
+    expect(result.current.objects).toEqual([]);
+    expect(result.current.viewbox).toEqual({ zoom: 1, panX: 0, panY: 0 });
+    expect(result.current.isDragging).toBe(false);
   });
 
-  it('should select viewbox state correctly', () => {
+  it('selects viewbox state', () => {
     const { result } = renderHook(() => useAppSelector((state) => state.canvas.viewbox), { wrapper });
-    
-    expect(result.current).toBeDefined();
-    expect(result.current).toHaveProperty('zoom');
-    expect(result.current).toHaveProperty('panX');
-    expect(result.current).toHaveProperty('panY');
+    expect(result.current.zoom).toBe(1);
+    expect(result.current.panX).toBe(0);
+    expect(result.current.panY).toBe(0);
   });
 
-  it('should select billing state', () => {
+  it('selects billing state', () => {
     const { result } = renderHook(() => useAppSelector((state) => state.billing), { wrapper });
-    
-    expect(result.current).toBeDefined();
-    expect(result.current).toHaveProperty('isSubscribed');
+    expect(result.current.isSubscribed).toBe(false);
   });
 
-  it('should select ouroboros state', () => {
+  it('selects ouroboros state', () => {
     const { result } = renderHook(() => useAppSelector((state) => state.ouroboros), { wrapper });
-    
-    expect(result.current).toBeDefined();
-    expect(result.current).toHaveProperty('active');
+    expect(result.current.active).toBe(false);
   });
 });
 
 describe('Typed hooks integration', () => {
-  it('should work together for common patterns', () => {
-    // Test selecting canvas objects
+  it('works with primitive selector patterns', () => {
     const { result: objectsResult } = renderHook(
-      () => useAppSelector((state) => state.canvas.objects),
-      { wrapper }
+      () => useAppSelector((state) => state.canvas.objects.length),
+      { wrapper },
     );
-    expect(Array.isArray(objectsResult.current)).toBe(true);
+    expect(objectsResult.current).toBe(0);
 
-    // Test selecting billing status
     const { result: billingResult } = renderHook(
       () => useAppSelector((state) => state.billing.isSubscribed),
-      { wrapper }
+      { wrapper },
     );
-    expect(typeof billingResult.current).toBe('boolean');
+    expect(billingResult.current).toBe(false);
   });
 
-  it('should handle complex selectors', () => {
-    const { result } = renderHook(
-      () => useAppSelector((state) => ({
-        objectCount: state.canvas.objects.length,
-        selectedCount: state.canvas.selectedIds.length,
-        isSubscribed: state.billing.isSubscribed,
-      })),
-      { wrapper }
+  it('checks multiple values through separate stable selectors', () => {
+    const { result: objectCount } = renderHook(
+      () => useAppSelector((state) => state.canvas.objects.length),
+      { wrapper },
     );
-    
-    expect(result.current).toHaveProperty('objectCount');
-    expect(result.current).toHaveProperty('selectedCount');
-    expect(result.current).toHaveProperty('isSubscribed');
-    expect(typeof result.current.objectCount).toBe('number');
-    expect(typeof result.current.selectedCount).toBe('number');
-    expect(typeof result.current.isSubscribed).toBe('boolean');
+    const { result: selectedCount } = renderHook(
+      () => useAppSelector((state) => state.canvas.selectedIds.length),
+      { wrapper },
+    );
+    const { result: subscribed } = renderHook(
+      () => useAppSelector((state) => state.billing.isSubscribed),
+      { wrapper },
+    );
+
+    expect(objectCount.current).toBe(0);
+    expect(selectedCount.current).toBe(0);
+    expect(subscribed.current).toBe(false);
   });
 });
