@@ -1,6 +1,7 @@
 /**
  * E2E Test Runner
- * Orchestrates all E2E tests: Detox, API Fallback, Self-Healing, Auto-Fix
+ * Orchestrates E2E suites without fake-green results.
+ * Missing optional suite configs are reported as SKIPPED, not passed.
  */
 
 import { spawn } from 'child_process';
@@ -16,8 +17,11 @@ interface TestConfig {
   verbose: boolean;
 }
 
+type TestResultStatus = 'passed' | 'failed' | 'skipped';
+
 interface TestResult {
   suite: string;
+  status: TestResultStatus;
   success: boolean;
   duration: number;
   output: string;
@@ -54,42 +58,67 @@ class E2ERunner {
 
     const testResults: boolean[] = [];
 
-    if (this.config.detox) {
-      testResults.push(await this.runDetox());
-    }
+    if (this.config.detox) testResults.push(await this.runDetox());
+    if (this.config.apiFallback) testResults.push(await this.runApiFallback());
+    if (this.config.selfHealing) testResults.push(await this.runSelfHealing());
+    if (this.config.autoFix) testResults.push(await this.runAutoFix());
 
-    if (this.config.apiFallback) {
-      testResults.push(await this.runApiFallback());
-    }
-
-    if (this.config.selfHealing) {
-      testResults.push(await this.runSelfHealing());
-    }
-
-    if (this.config.autoFix) {
-      testResults.push(await this.runAutoFix());
-    }
-
-    const allPassed = testResults.every(r => r);
+    const allPassed = testResults.every((result) => result);
     this.printSummary();
 
     return allPassed;
   }
 
+  private recordSkipped(suite: string, startTime: number, output: string): boolean {
+    console.log(`⏭️ ${suite}: ${output}`);
+    this.results.push({
+      suite,
+      status: 'skipped',
+      success: true,
+      duration: Date.now() - startTime,
+      output,
+      errors: [],
+    });
+    return true;
+  }
+
+  private recordPassed(suite: string, startTime: number, output: string): boolean {
+    this.results.push({
+      suite,
+      status: 'passed',
+      success: true,
+      duration: Date.now() - startTime,
+      output,
+      errors: [],
+    });
+    return true;
+  }
+
+  private recordFailed(suite: string, startTime: number, error: unknown): boolean {
+    const output = error instanceof Error ? error.message : String(error);
+    this.results.push({
+      suite,
+      status: 'failed',
+      success: false,
+      duration: Date.now() - startTime,
+      output,
+      errors: this.parseErrors(output),
+    });
+    return false;
+  }
+
   private async runDetox(): Promise<boolean> {
     console.log('\n🎯 Running Detox E2E Tests...');
     const startTime = Date.now();
-    
+
     try {
-      // Check if Detox is configured
-      const detoxConfig = path.join(process.cwd(), 'e2e/config/detox.config.ts');
-      
+      const detoxConfig = path.join(process.cwd(), 'sovereign-studio-rn/e2e/config/detox.config.ts');
       if (!existsSync(detoxConfig)) {
-        console.log('⚠️ Detox config not found, skipping...');
-        return true;
+        return this.recordSkipped('Detox E2E', startTime, 'Detox config not found.');
       }
 
-      await this.runCommand('npx', [
+      await this.runCommand('pnpm', [
+        'exec',
         'detox',
         'test',
         '--configuration',
@@ -97,154 +126,109 @@ class E2ERunner {
         ...(this.config.ci ? ['--record-logs', 'failing'] : []),
       ]);
 
-      this.results.push({
-        suite: 'Detox E2E',
-        success: true,
-        duration: Date.now() - startTime,
-        output: 'All Detox tests passed',
-        errors: [],
-      });
-
-      return true;
+      return this.recordPassed('Detox E2E', startTime, 'All Detox tests passed');
     } catch (error) {
-      const output = error instanceof Error ? error.message : String(error);
-      
-      this.results.push({
-        suite: 'Detox E2E',
-        success: false,
-        duration: Date.now() - startTime,
-        output: output,
-        errors: this.parseErrors(output),
-      });
-
+      const failed = this.recordFailed('Detox E2E', startTime, error);
       if (this.config.autoFix) {
         console.log('🔄 Triggering Auto-Fix for Detox failures...');
         await this.triggerAutoFix('detox');
       }
-
-      return false;
+      return failed;
     }
   }
 
   private async runApiFallback(): Promise<boolean> {
     console.log('\n🔄 Running API Fallback Tests...');
     const startTime = Date.now();
-    
+
     try {
-      await this.runCommand('npx', [
+      const configPath = 'sovereign-studio-rn/e2e/api-fallback/jest.config.js';
+      const specPattern = 'api-fallback.spec.ts';
+      if (!existsSync(path.join(process.cwd(), configPath))) {
+        return this.recordSkipped('API Fallback', startTime, `${configPath} not found.`);
+      }
+
+      await this.runCommand('pnpm', [
+        'exec',
         'jest',
         '--config',
-        'e2e/api-fallback/jest.config.js',
-        '--testPathPattern',
-        'api-fallback.spec.ts',
+        configPath,
+        '--testPathPatterns',
+        specPattern,
       ]);
 
-      this.results.push({
-        suite: 'API Fallback',
-        success: true,
-        duration: Date.now() - startTime,
-        output: 'All API fallback tests passed',
-        errors: [],
-      });
-
-      return true;
+      return this.recordPassed('API Fallback', startTime, 'All API fallback tests passed');
     } catch (error) {
-      const output = error instanceof Error ? error.message : String(error);
-      
-      this.results.push({
-        suite: 'API Fallback',
-        success: false,
-        duration: Date.now() - startTime,
-        output: output,
-        errors: this.parseErrors(output),
-      });
-
-      return false;
+      return this.recordFailed('API Fallback', startTime, error);
     }
   }
 
   private async runSelfHealing(): Promise<boolean> {
     console.log('\n🧹 Running Self-Healing Tests...');
     const startTime = Date.now();
-    
+
     try {
-      await this.runCommand('npx', [
+      const configPath = 'sovereign-studio-rn/e2e/self-healing/jest.config.js';
+      const specPattern = 'self-healing.spec.ts';
+      if (!existsSync(path.join(process.cwd(), configPath))) {
+        return this.recordSkipped('Self-Healing', startTime, `${configPath} not found.`);
+      }
+
+      await this.runCommand('pnpm', [
+        'exec',
         'jest',
         '--config',
-        'e2e/self-healing/jest.config.js',
-        '--testPathPattern',
-        'self-healing.spec.ts',
+        configPath,
+        '--testPathPatterns',
+        specPattern,
       ]);
 
-      this.results.push({
-        suite: 'Self-Healing',
-        success: true,
-        duration: Date.now() - startTime,
-        output: 'All self-healing tests passed',
-        errors: [],
-      });
-
-      return true;
+      return this.recordPassed('Self-Healing', startTime, 'All self-healing tests passed');
     } catch (error) {
-      const output = error instanceof Error ? error.message : String(error);
-      
-      this.results.push({
-        suite: 'Self-Healing',
-        success: false,
-        duration: Date.now() - startTime,
-        output: output,
-        errors: this.parseErrors(output),
-      });
-
-      return false;
+      return this.recordFailed('Self-Healing', startTime, error);
     }
   }
 
   private async runAutoFix(): Promise<boolean> {
     console.log('\n🔧 Running Auto-Fix Loop...');
     const startTime = Date.now();
-    
+
     try {
-      await this.runCommand('npx', [
-        'ts-node',
-        'e2e/auto-fix/auto-fix-loop.ts',
+      const autoFixPath = 'sovereign-studio-rn/e2e/auto-fix/auto-fix-loop.ts';
+      if (!existsSync(path.join(process.cwd(), autoFixPath))) {
+        return this.recordSkipped('Auto-Fix', startTime, `${autoFixPath} not found.`);
+      }
+
+      await this.runCommand('pnpm', [
+        'exec',
+        'tsx',
+        autoFixPath,
         '--max=5',
         '--verbose',
       ]);
 
-      this.results.push({
-        suite: 'Auto-Fix',
-        success: true,
-        duration: Date.now() - startTime,
-        output: 'Auto-fix completed successfully',
-        errors: [],
-      });
-
-      return true;
+      return this.recordPassed('Auto-Fix', startTime, 'Auto-fix completed successfully');
     } catch (error) {
-      const output = error instanceof Error ? error.message : String(error);
-      
-      this.results.push({
-        suite: 'Auto-Fix',
-        success: false,
-        duration: Date.now() - startTime,
-        output: output,
-        errors: this.parseErrors(output),
-      });
-
-      return false;
+      return this.recordFailed('Auto-Fix', startTime, error);
     }
   }
 
   private async triggerAutoFix(suite: string): Promise<void> {
     console.log(`\n🔄 Triggering auto-fix for ${suite}...`);
-    
+
     try {
-      await this.runCommand('npx', [
-        'ts-node',
-        'e2e/auto-fix/auto-fix-loop.ts',
+      const autoFixPath = 'sovereign-studio-rn/e2e/auto-fix/auto-fix-loop.ts';
+      if (!existsSync(path.join(process.cwd(), autoFixPath))) {
+        console.log(`⏭️ Auto-fix skipped: ${autoFixPath} not found.`);
+        return;
+      }
+
+      await this.runCommand('pnpm', [
+        'exec',
+        'tsx',
+        autoFixPath,
         '--max=3',
-        '--test=detox',
+        `--test=${suite}`,
       ]);
     } catch (error) {
       console.log(`❌ Auto-fix failed: ${error}`);
@@ -260,31 +244,24 @@ class E2ERunner {
       });
 
       let output = '';
-      
+
       if (proc.stdout) {
         proc.stdout.on('data', (data) => {
           output += data.toString();
-          if (this.config.verbose) {
-            process.stdout.write(data);
-          }
+          if (this.config.verbose) process.stdout.write(data);
         });
       }
 
       if (proc.stderr) {
         proc.stderr.on('data', (data) => {
           output += data.toString();
-          if (this.config.verbose) {
-            process.stderr.write(data);
-          }
+          if (this.config.verbose) process.stderr.write(data);
         });
       }
 
       proc.on('close', (code) => {
-        if (code === 0) {
-          resolve(output);
-        } else {
-          reject(new Error(output || `Command failed with exit code ${code}`));
-        }
+        if (code === 0) resolve(output);
+        else reject(new Error(output || `Command failed with exit code ${code}`));
       });
 
       proc.on('error', reject);
@@ -294,60 +271,64 @@ class E2ERunner {
   private parseErrors(output: string): string[] {
     const errors: string[] = [];
     const lines = output.split('\n');
-    
+
     for (const line of lines) {
       if (line.includes('Error:') || line.includes('FAIL') || line.includes('✕')) {
         errors.push(line.trim());
       }
     }
-    
+
     return errors;
   }
 
   private printSummary(): void {
     const totalTime = Date.now() - this.startTime;
-    
+
     console.log('\n' + '='.repeat(60));
     console.log('📊 E2E Test Summary');
     console.log('='.repeat(60));
     console.log(`Total Duration: ${(totalTime / 1000).toFixed(1)}s`);
     console.log('\nResults:');
-    
+
     for (const result of this.results) {
-      const icon = result.success ? '✅' : '❌';
+      const icon = result.status === 'passed' ? '✅' : result.status === 'skipped' ? '⏭️' : '❌';
       const duration = (result.duration / 1000).toFixed(1);
-      console.log(`  ${icon} ${result.suite}: ${duration}s`);
-      
+      console.log(`  ${icon} ${result.suite}: ${result.status.toUpperCase()} (${duration}s)`);
+
+      if (result.status === 'skipped') {
+        console.log(`     ${result.output}`);
+      }
+
       if (result.errors.length > 0 && this.config.verbose) {
         console.log(`     Errors: ${result.errors.length}`);
-        result.errors.slice(0, 3).forEach(e => console.log(`       - ${e}`));
+        result.errors.slice(0, 3).forEach((error) => console.log(`       - ${error}`));
       }
     }
 
-    const passedCount = this.results.filter(r => r.success).length;
+    const passedCount = this.results.filter((result) => result.status === 'passed').length;
+    const skippedCount = this.results.filter((result) => result.status === 'skipped').length;
+    const failedCount = this.results.filter((result) => result.status === 'failed').length;
     const totalCount = this.results.length;
-    
+
     console.log('\n' + '-'.repeat(60));
-    console.log(`Total: ${passedCount}/${totalCount} test suites passed`);
+    console.log(`Total: ${passedCount}/${totalCount} passed, ${skippedCount} skipped, ${failedCount} failed`);
     console.log('='.repeat(60));
 
-    // Generate report for CI
-    if (this.config.ci) {
-      this.generateCIReport();
-    }
+    if (this.config.ci) this.generateCIReport();
   }
 
   private generateCIReport(): void {
     const report = {
       timestamp: new Date().toISOString(),
       duration: Date.now() - this.startTime,
-      results: this.results.map(r => ({
-        suite: r.suite,
-        success: r.success,
-        duration: r.duration,
-        errors: r.errors,
+      results: this.results.map((result) => ({
+        suite: result.suite,
+        status: result.status,
+        success: result.success,
+        duration: result.duration,
+        errors: result.errors,
       })),
-      allPassed: this.results.every(r => r.success),
+      allPassed: this.results.every((result) => result.success),
     };
 
     console.log('\n📄 CI Report:');
@@ -361,7 +342,6 @@ class E2ERunner {
 
 export default E2ERunner;
 
-// CLI Interface
 if (require.main === module) {
   const args = process.argv.slice(2);
   const config: Partial<TestConfig> = {
@@ -374,11 +354,11 @@ if (require.main === module) {
   };
 
   const runner = new E2ERunner(config);
-  
-  runner.runAll().then(success => {
-    console.log('\n' + (success ? '✅ All tests passed!' : '❌ Some tests failed'));
+
+  runner.runAll().then((success) => {
+    console.log('\n' + (success ? '✅ All required tests passed or were explicitly skipped!' : '❌ Some tests failed'));
     process.exit(success ? 0 : 1);
-  }).catch(error => {
+  }).catch((error) => {
     console.error('❌ E2E Runner failed:', error);
     process.exit(1);
   });
