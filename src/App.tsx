@@ -51,6 +51,16 @@ import {
   type ExternalMemorySyncResult,
 } from './features/product/runtime/externalMemorySync';
 import {
+  fetchExternalMemoryMonitoring,
+  type ExternalMemoryMonitoringResult,
+} from './features/product/runtime/externalMemoryMonitoring';
+import { pullRemoteUpdatesIntoSolutionMemory } from './features/product/runtime/remoteMemoryGatewayBridge';
+import {
+  createSolutionPatternStore,
+  type SolutionPatternStore,
+} from './features/product/runtime/solutionPatternMemory';
+import type { RemoteMemoryUpdateIntakeResult } from './features/product/runtime/remoteMemoryUpdateIntake';
+import {
   createSequentialRuntimeState,
   finishSequentialStep,
   startSequentialStep,
@@ -112,6 +122,20 @@ function encodeGitHubContentPath(path: string): string {
   return path.split('/').map((part) => encodeURIComponent(part)).join('/');
 }
 
+function formatSolutionPatternHints(store: SolutionPatternStore): string {
+  const patterns = store.patterns
+    .filter((pattern) => pattern.status === 'active')
+    .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt)
+    .slice(0, 5);
+
+  if (!patterns.length) return '';
+
+  return [
+    'Remote Aha Memory:',
+    ...patterns.map((pattern) => `- ${pattern.category} ${pattern.fileExtension}: ${pattern.solutionSummary}`),
+  ].join('\n');
+}
+
 const App: React.FC = () => {
   const [user, setUser] = useState<UserSession | null>(null);
   const [mission, setMission] = useState('README + Update History');
@@ -130,17 +154,21 @@ const App: React.FC = () => {
   const [telemetryExpanded, setTelemetryExpanded] = useState(false);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
   const [scanRegistry, setScanRegistry] = useState(() => createScanFindingRegistry());
+  const [solutionPatternStore, setSolutionPatternStore] = useState(() => createSolutionPatternStore());
   const [remoteMemoryConfig, setRemoteMemoryConfig] = useState(() => ({
     ...createExternalMemorySyncConfig(),
     gatewayUrl: 'http://46.202.154.25:8088',
     workspaceId: 'Pattern',
     collectionName: 'sovereign_logic_patterns',
+    contributorId: 'sovereign-local-install',
     allowSelfHostedHttp: true,
   }));
   const [remoteMemoryHealth, setRemoteMemoryHealth] = useState<ExternalMemoryHealthResult | null>(null);
+  const [remoteMemoryMonitoring, setRemoteMemoryMonitoring] = useState<ExternalMemoryMonitoringResult | null>(null);
   const [remoteMemorySync, setRemoteMemorySync] = useState<ExternalMemorySyncResult | null>(null);
   const [remoteMemorySearch, setRemoteMemorySearch] = useState<ExternalMemorySearchResult | null>(null);
   const [remoteMemoryUpdates, setRemoteMemoryUpdates] = useState<ExternalMemoryPullUpdatesResult | null>(null);
+  const [remoteMemoryIntake, setRemoteMemoryIntake] = useState<RemoteMemoryUpdateIntakeResult | null>(null);
   const [isRemoteMemoryBusy, setIsRemoteMemoryBusy] = useState(false);
   const sequentialRuntimeRef = useRef<SequentialRuntimeState>(createSequentialRuntimeState());
   const [sequentialRuntime, setSequentialRuntime] = useState(() => sequentialRuntimeRef.current);
@@ -189,6 +217,7 @@ const App: React.FC = () => {
     telemetry,
   });
   const coverageReport = buildRuntimeValidationCoverageReport();
+  const solutionPatternHints = formatSolutionPatternHints(solutionPatternStore);
 
   const pushTelemetry = (
     stage: Parameters<typeof createTelemetryEvent>[0],
@@ -278,9 +307,20 @@ const App: React.FC = () => {
     });
   };
 
+  const handleRemoteMemoryMonitoring = () => {
+    void withRemoteMemoryBusy(async () => {
+      const result = await fetchExternalMemoryMonitoring({ config: remoteMemoryConfig });
+      setRemoteMemoryMonitoring(result);
+      pushTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:monitoring', result.summary, {
+        milvusConnected: result.monitoring?.milvusConnected ?? false,
+      });
+      return result;
+    });
+  };
+
   const handleRemoteMemorySync = () => {
     void withRemoteMemoryBusy(async () => {
-      const payload = buildExternalMemorySyncPayload({ config: remoteMemoryConfig, scanRegistry });
+      const payload = buildExternalMemorySyncPayload({ config: remoteMemoryConfig, scanRegistry, solutionStore: solutionPatternStore });
       const result = await syncExternalMemory({ config: remoteMemoryConfig, payload });
       setRemoteMemorySync(result);
       pushTelemetry('memory', result.accepted ? 'success' : 'warning', 'remote-memory:sync', result.summary, { items: payload.items.length });
@@ -299,10 +339,16 @@ const App: React.FC = () => {
 
   const handleRemoteMemoryPullUpdates = () => {
     void withRemoteMemoryBusy(async () => {
-      const result = await pullExternalMemoryUpdates({ config: remoteMemoryConfig });
-      setRemoteMemoryUpdates(result);
-      pushTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:pull-updates', result.summary, { items: result.items.length });
-      return result;
+      const bridge = await pullRemoteUpdatesIntoSolutionMemory({
+        config: remoteMemoryConfig,
+        store: solutionPatternStore,
+      });
+      setRemoteMemoryUpdates(bridge.updates);
+      setRemoteMemoryIntake(bridge.intake);
+      setSolutionPatternStore(bridge.store);
+      pushTelemetry('memory', bridge.updates.ok ? 'success' : 'warning', 'remote-memory:pull-updates', bridge.updates.summary, { items: bridge.updates.items.length });
+      pushTelemetry('memory', bridge.intake.accepted > 0 ? 'success' : bridge.intake.rejected > 0 ? 'warning' : 'info', 'remote-memory:intake', bridge.intake.summary, { accepted: bridge.intake.accepted, rejected: bridge.intake.rejected });
+      return bridge;
     });
   };
 
@@ -394,8 +440,9 @@ const App: React.FC = () => {
   const buildPackageCore = (nextMission: string, nextPackageKey = packageInputKey): SovereignImplementationPackage | null => {
     try {
       pushTelemetry('package', 'info', 'package:build-start', 'Building Sovereign package.', { files: repoFiles.length });
+      const missionWithAha = solutionPatternHints ? `${nextMission}\n\n${solutionPatternHints}` : nextMission;
       const pkg = buildSovereignPackageFromRepoFiles({
-        mission: nextMission,
+        mission: missionWithAha,
         repoFiles,
         selectedFilePath: 'README.md',
         previousPreview: sovereignPreview,
@@ -408,12 +455,13 @@ const App: React.FC = () => {
       setLastPackage(pkg);
       setLastPackageKey(nextPackageKey);
       setDiffSources([]);
-      setSovereignSummary(`${summarizeSovereignPackage(pkg, repoFiles)}\n${review.summary}`);
+      setSovereignSummary(`${summarizeSovereignPackage(pkg, repoFiles)}\n${review.summary}${solutionPatternHints ? `\n${solutionPatternHints}` : ``}`);
       setSovereignPreview(JSON.stringify({
         architecture: pkg.architecture,
         brain: pkg.brain,
         files: pkg.files.map((file) => ({ path: file.path, reason: file.reason })),
         fileReview: review,
+        remoteAhaMemory: solutionPatternHints,
         suggestions: pkg.suggestions,
       }, null, 2));
       pushTelemetry('guards', 'success', 'guards:passed', 'Functional guards and generated-file review accepted package.', { generatedFiles: pkg.files.length });
@@ -760,6 +808,7 @@ const App: React.FC = () => {
 
           <p className="mt-3 text-xs text-slate-400">{repoStatus}</p>
           <p className="mt-1 text-xs text-slate-400">{repoSnapshotStatus.reason}</p>
+          {solutionPatternHints ? <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-900/70 p-3 text-xs text-emerald-200">{solutionPatternHints}</pre> : null}
           <RepoFileList files={repoFiles} />
         </section>
       ) : null}
@@ -828,11 +877,14 @@ const App: React.FC = () => {
           config={remoteMemoryConfig}
           syncResult={remoteMemorySync}
           healthResult={remoteMemoryHealth}
+          monitoringResult={remoteMemoryMonitoring}
           searchResult={remoteMemorySearch}
           updatesResult={remoteMemoryUpdates}
+          intakeResult={remoteMemoryIntake}
           isBusy={isRemoteMemoryBusy}
           onChange={setRemoteMemoryConfig}
           onHealth={handleRemoteMemoryHealth}
+          onMonitoring={handleRemoteMemoryMonitoring}
           onSync={handleRemoteMemorySync}
           onSearch={handleRemoteMemorySearch}
           onPullUpdates={handleRemoteMemoryPullUpdates}
