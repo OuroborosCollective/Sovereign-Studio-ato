@@ -9,6 +9,7 @@ import { GeneratedFileDiffPreviewPanel } from './features/product/components/Gen
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
 import { RemoteMemoryContainer } from './features/product/containers/RemoteMemoryContainer';
 import { BuilderContainer } from './features/product/containers/BuilderContainer';
+import { WorkflowContainer } from './features/product/containers/WorkflowContainer';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
@@ -16,8 +17,6 @@ import { ScanFindingRegistryPanel } from './features/product/components/ScanFind
 import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { SovereignTelemetryPanel } from './features/product/components/SovereignTelemetryPanel';
-import { WorkflowRepairPanel } from './features/product/components/WorkflowRepairPanel';
-import { WorkflowWatchPanel } from './features/product/components/WorkflowWatchPanel';
 import {
   AUTOMATION_MODE_LABELS,
   buildAutomationRunKey,
@@ -775,14 +774,30 @@ const App: React.FC = () => {
       ) : null}
 
       {activeTab === 'workflow' ? (
-        <WorkflowWatchPanel
+        <WorkflowContainer
+          mode="watch"
           report={workflowReport}
-          isWatching={isWatchingWorkflow || runtimeBusy}
+          repairPlan={repairPlan}
+          isWatching={isWatchingWorkflow}
+          runtimeBusy={runtimeBusy}
+          hasDraftCommit={Boolean(lastDraftCommitSha)}
           onWatch={() => { void watchLatestWorkflow(); }}
+          onUseRepairMission={useRepairMission}
         />
       ) : null}
 
-      {activeTab === 'repair' ? <WorkflowRepairPanel plan={repairPlan} onUseMission={useRepairMission} /> : null}
+      {activeTab === 'repair' ? (
+        <WorkflowContainer
+          mode="repair"
+          report={workflowReport}
+          repairPlan={repairPlan}
+          isWatching={isWatchingWorkflow}
+          runtimeBusy={runtimeBusy}
+          hasDraftCommit={Boolean(lastDraftCommitSha)}
+          onWatch={() => { void watchLatestWorkflow(); }}
+          onUseRepairMission={useRepairMission}
+        />
+      ) : null}
 
       {activeTab === 'health' ? <SovereignHealthPanel report={healthReport} /> : null}
 

@@ -10,7 +10,10 @@ const report: WorkflowWatchReport = {
   summary: 'All checks passed.',
   commitSha: 'abc123',
   branch: 'main',
-  checks: [{ name: 'unit', status: 'success', source: 'actions', summary: 'ok' }],
+  checkedAt: Date.now(),
+  errors: [],
+  warnings: [],
+  checks: [{ name: 'unit', status: 'green' as const, source: 'check-run' as const, summary: 'ok' }],
   fixes: [],
 };
 

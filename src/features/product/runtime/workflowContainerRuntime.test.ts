@@ -8,6 +8,9 @@ const greenReport: WorkflowWatchReport = {
   summary: 'All checks passed.',
   commitSha: 'abc123',
   branch: 'main',
+  checkedAt: Date.now(),
+  errors: [],
+  warnings: [],
   checks: [],
   fixes: [],
 };
