@@ -2,14 +2,39 @@
 
 This document records the current test status after the Remote Memory App Bridge integration landed on `main`.
 
-## Current baseline
+## Current main baseline
 
-Reported result after running the full test suite:
+Reported result on `main` after applying the Remote Memory App Bridge and running the separated lanes:
 
-- 477 tests passed.
-- 19 tests failed.
-- Build completed successfully.
-- The known failures are pre-existing API-dependent timeout tests and chat-message tests, not introduced by the Remote Memory App Bridge codemod.
+| Category | Passed | Failed | Interpretation |
+| --- | ---: | ---: | --- |
+| Runtime / Remote Memory | 116 | 0 | Green release gate for deterministic runtime and remote-memory work. |
+| Integration | 31 | 13 | Known API/chat/sequential timeout area. |
+| E2E | 82 | 1 | Known API fallback timeout area. |
+| Full suite | 476 | 20 | Red because of known pre-existing external/API timeout paths. |
+
+Build completed successfully after the Remote Memory App Bridge codemod.
+
+The known failures are pre-existing API-dependent timeout tests and chat/sequential tests. They are not caused by the Remote Memory App Bridge.
+
+## Remote Memory gate
+
+The Remote Memory runtime gate is green:
+
+```txt
+Remote Memory Runtime Tests: 116/116 passed
+```
+
+The passing runtime area includes, among others:
+
+- `externalMemorySync.test.ts`
+- `externalMemoryMonitoring.test.ts`
+- `remoteMemoryUpdateIntake.test.ts`
+- `remoteMemoryGatewayBridge.test.ts`
+- `runtimeValidationCoverage.test.ts`
+- workflow, telemetry, sequential runtime, scan registry, health, and generated-file review runtime tests
+
+Remote Memory can therefore be treated as clean unless a future diff touches its runtime or app bridge code and causes this lane to fail.
 
 ## Test lanes
 
@@ -39,23 +64,37 @@ This is the primary release gate for local runtime feature work.
 
 ### `test:integration`
 
-Runs explicit integration-style Vitest files such as chat/API-adjacent tests, sequential workflow tests and currently flaky chat UI tests. These can require mocks or controlled API setup.
+Runs explicit integration-style Vitest files such as chat/API-adjacent tests, sequential workflow tests and currently flaky chat UI tests. These can require deterministic mocks, controlled fake transports, or explicit live-service opt-in.
 
-Current integration lane includes:
+Current integration lane result:
 
-- `src/**/*.chat.test.ts`
-- `src/**/*.integration.test.ts`
-- `src/**/*.e2e.test.ts`
-- `src/**/*.sequential.test.ts`
-- `src/**/ChatSidebar.test.tsx`
+```txt
+31 passed, 13 failed
+```
+
+The known failure class is API/chat/sequential timeout behavior.
 
 ### `test:e2e`
 
 Runs the mobile/e2e runner under `sovereign-studio-rn/e2e/run-e2e.ts`.
 
+Current e2e lane result:
+
+```txt
+82 passed, 1 failed
+```
+
+The known failure class is an API fallback timeout in `sovereign-studio-rn/e2e/api-fallback/api-fallback.spec.ts`.
+
 ### `test:all`
 
 Runs the complete Vitest suite with no lane exclusions. Use this for full visibility, not as the only signal for whether a deterministic runtime change is healthy.
+
+Current full-suite result:
+
+```txt
+476 passed, 20 failed
+```
 
 ## Release-gate interpretation
 
@@ -72,7 +111,7 @@ Known areas to inspect before treating the full suite as red because of a new lo
 - Chat sidebar UI assertions that currently match multiple badges or empty suggestions differently than expected.
 - Mobile/e2e API fallback tests under `sovereign-studio-rn/e2e/**`.
 
-These tests should not be deleted. They should be moved behind an explicit integration/e2e command or given deterministic mocks.
+These tests should not be deleted. They should be moved behind explicit integration/e2e commands, given deterministic mocks, or gated behind a live-service opt-in flag.
 
 ## Rules for future changes
 
@@ -81,20 +120,15 @@ These tests should not be deleted. They should be moved behind an explicit integ
 3. Keep gateway contract tests mocked unless a separate integration command intentionally targets the VPS gateway.
 4. If a runtime module touches user/contributor data, its tests must verify contributor scoping and shared-pattern preservation.
 5. If a test requires a live service, document the required environment variable and keep it out of the default unit test gate.
+6. Full-suite red from known timeout paths is not the same as runtime gate red.
+7. Remote Memory changes must keep the `Runtime / Remote Memory` lane at 116/116 or higher as tests are added.
 
-## Remote Memory gate
+## Cleanup targets
 
-The Remote Memory integration should be considered healthy when these local targets pass:
+Create or keep open cleanup issues for:
 
-- `externalMemorySync.test.ts`
-- `externalMemoryMonitoring.test.ts`
-- `remoteMemoryUpdateIntake.test.ts`
-- `remoteMemoryGatewayBridge.test.ts`
-- `runtimeValidationCoverage.test.ts` if present in the branch
-
-## Next cleanup step
-
-After the lanes are proven in CI, record the exact failing files and error class in this document whenever `test:all` is red.
+- Integration chat/sequential API timeout tests: 13 failing tests.
+- E2E API fallback timeout test: 1 failing test.
 
 Long-term cleanup target:
 
