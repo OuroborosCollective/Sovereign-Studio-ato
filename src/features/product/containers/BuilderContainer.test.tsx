@@ -40,7 +40,7 @@ describe('BuilderContainer', () => {
     const wishField = screen.getByLabelText(/Ideenfabrik Wunschfeld/i) as HTMLTextAreaElement;
     expect(wishField.value).toContain('Prüfe den schwächsten Ablauf');
     expect(wishField.value).toContain('Runtime-Checks');
-    expect(wishField.value).toContain('Keine Mock-, Stub- oder Facade-Live-Pfade');
+    expect(wishField.value).toContain('ohne Mock-, Stub- oder Facade-Live-Pfade');
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
