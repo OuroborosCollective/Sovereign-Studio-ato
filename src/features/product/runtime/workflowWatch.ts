@@ -1,0 +1,188 @@
+import { parseGithubRepoUrl } from '../../github/utils';
+
+export type WorkflowWatchStatus = 'idle' | 'pending' | 'green' | 'red' | 'unknown';
+
+export interface WorkflowWatchInput {
+  repoUrl: string;
+  token?: string;
+  commitSha?: string;
+  branch?: string;
+  fetcher?: typeof fetch;
+}
+
+export interface WorkflowCheckItem {
+  name: string;
+  status: WorkflowWatchStatus;
+  conclusion?: string;
+  url?: string;
+  source: 'commit-status' | 'check-run' | 'local';
+  summary: string;
+}
+
+export interface WorkflowWatchReport {
+  status: WorkflowWatchStatus;
+  commitSha?: string;
+  branch?: string;
+  checkedAt: number;
+  checks: WorkflowCheckItem[];
+  errors: string[];
+  warnings: string[];
+  fixes: string[];
+  summary: string;
+}
+
+interface GitHubCombinedStatusResponse {
+  state?: string;
+  statuses?: Array<{
+    context?: string;
+    state?: string;
+    target_url?: string;
+    description?: string;
+  }>;
+}
+
+interface GitHubCheckRunsResponse {
+  check_runs?: Array<{
+    name?: string;
+    status?: string;
+    conclusion?: string | null;
+    html_url?: string;
+    output?: { title?: string | null; summary?: string | null };
+  }>;
+}
+
+function githubHeaders(token?: string): HeadersInit {
+  return {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    ...(token?.trim() ? { Authorization: `Bearer ${token.trim()}` } : {}),
+  };
+}
+
+function mapStatus(value?: string | null): WorkflowWatchStatus {
+  const normalized = (value ?? '').toLowerCase();
+  if (normalized === 'success' || normalized === 'completed' || normalized === 'neutral' || normalized === 'skipped') return 'green';
+  if (normalized === 'failure' || normalized === 'failed' || normalized === 'error' || normalized === 'cancelled' || normalized === 'timed_out' || normalized === 'action_required') return 'red';
+  if (normalized === 'pending' || normalized === 'queued' || normalized === 'in_progress' || normalized === 'requested' || normalized === 'waiting') return 'pending';
+  return 'unknown';
+}
+
+function summarizeStatus(checks: WorkflowCheckItem[], errors: string[], warnings: string[]): WorkflowWatchStatus {
+  if (errors.length > 0) return 'red';
+  if (checks.some((check) => check.status === 'red')) return 'red';
+  if (checks.some((check) => check.status === 'pending')) return 'pending';
+  if (checks.length > 0 && checks.every((check) => check.status === 'green')) return 'green';
+  if (warnings.length > 0) return 'unknown';
+  return checks.length ? 'unknown' : 'idle';
+}
+
+function buildFixes(status: WorkflowWatchStatus, checks: WorkflowCheckItem[], errors: string[]): string[] {
+  const fixes: string[] = [];
+  if (errors.length) fixes.push('Check GitHub token permissions and repository visibility.');
+  if (checks.some((check) => check.status === 'red')) fixes.push('Open the failed check logs and generate a focused fix package from the failing step names.');
+  if (checks.some((check) => check.status === 'pending')) fixes.push('Wait for pending checks before preparing a repair package.');
+  if (!checks.length && status !== 'red') fixes.push('No GitHub checks were found for this commit yet. Re-run watch after Actions start.');
+  return fixes;
+}
+
+export function buildLocalWorkflowWatchReport(input: {
+  commitSha?: string;
+  branch?: string;
+  checks?: WorkflowCheckItem[];
+  errors?: string[];
+  warnings?: string[];
+  checkedAt?: number;
+}): WorkflowWatchReport {
+  const checks = input.checks ?? [];
+  const errors = input.errors ?? [];
+  const warnings = input.warnings ?? [];
+  const status = summarizeStatus(checks, errors, warnings);
+  const fixes = buildFixes(status, checks, errors);
+  return {
+    status,
+    commitSha: input.commitSha,
+    branch: input.branch,
+    checkedAt: input.checkedAt ?? Date.now(),
+    checks,
+    errors,
+    warnings,
+    fixes,
+    summary: `${checks.length} workflow check(s), ${errors.length} error(s), ${warnings.length} warning(s). Status: ${status}.`,
+  };
+}
+
+export async function fetchWorkflowWatchReport(input: WorkflowWatchInput): Promise<WorkflowWatchReport> {
+  const parsed = parseGithubRepoUrl(input.repoUrl);
+  if (!parsed) {
+    return buildLocalWorkflowWatchReport({
+      commitSha: input.commitSha,
+      branch: input.branch,
+      errors: ['Invalid GitHub repository URL.'],
+    });
+  }
+  if (!input.commitSha?.trim()) {
+    return buildLocalWorkflowWatchReport({
+      branch: input.branch,
+      warnings: ['No commit SHA is available yet. Create a Draft PR first.'],
+    });
+  }
+
+  const fetcher = input.fetcher ?? fetch;
+  const apiBase = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
+  const headers = githubHeaders(input.token);
+  const checks: WorkflowCheckItem[] = [];
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  try {
+    const statusResponse = await fetcher(`${apiBase}/commits/${encodeURIComponent(input.commitSha)}/status`, { headers });
+    if (statusResponse.ok) {
+      const statusPayload = await statusResponse.json() as GitHubCombinedStatusResponse;
+      for (const status of statusPayload.statuses ?? []) {
+        const mapped = mapStatus(status.state);
+        checks.push({
+          name: status.context ?? 'commit-status',
+          status: mapped,
+          conclusion: status.state,
+          url: status.target_url,
+          source: 'commit-status',
+          summary: status.description ?? `Commit status is ${status.state ?? 'unknown'}.`,
+        });
+      }
+    } else if (statusResponse.status !== 404) {
+      warnings.push(`Commit status endpoint returned ${statusResponse.status}.`);
+    }
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : 'Commit status request failed.');
+  }
+
+  try {
+    const checksResponse = await fetcher(`${apiBase}/commits/${encodeURIComponent(input.commitSha)}/check-runs`, { headers });
+    if (checksResponse.ok) {
+      const checksPayload = await checksResponse.json() as GitHubCheckRunsResponse;
+      for (const check of checksPayload.check_runs ?? []) {
+        const mapped = mapStatus(check.conclusion ?? check.status);
+        checks.push({
+          name: check.name ?? 'check-run',
+          status: mapped,
+          conclusion: check.conclusion ?? check.status ?? undefined,
+          url: check.html_url,
+          source: 'check-run',
+          summary: check.output?.summary ?? check.output?.title ?? `Check run is ${check.conclusion ?? check.status ?? 'unknown'}.`,
+        });
+      }
+    } else if (checksResponse.status !== 404) {
+      warnings.push(`Check-runs endpoint returned ${checksResponse.status}.`);
+    }
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : 'Check-runs request failed.');
+  }
+
+  return buildLocalWorkflowWatchReport({
+    commitSha: input.commitSha,
+    branch: input.branch,
+    checks,
+    errors,
+    warnings,
+  });
+}
