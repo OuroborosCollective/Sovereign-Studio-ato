@@ -68,6 +68,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'GeneratedFileReviewPanel + Draft PR flow',
   },
   {
+    id: 'generated-file-diff-preview',
+    runtimePath: 'src/features/product/runtime/generatedFileDiffPreview.ts',
+    testPath: 'src/features/product/runtime/generatedFileDiffPreview.test.ts',
+    purpose: 'Compares generated files with loaded source snapshots before publishing.',
+    status: 'covered',
+    integrationPoint: 'GeneratedFileDiffPreviewPanel + Draft PR body',
+  },
+  {
     id: 'automation-mode',
     runtimePath: 'src/features/product/runtime/sovereignAutomationMode.ts',
     testPath: 'src/features/product/runtime/sovereignAutomationMode.test.ts',
