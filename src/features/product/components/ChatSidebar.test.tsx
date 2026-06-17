@@ -4,10 +4,12 @@ import React from 'react';
 import { ChatSidebar } from './ChatSidebar';
 import { ChatMessage, Suggestion } from '../types';
 
+const BASE_TIME = 1_700_000_000_000;
+
 describe('ChatSidebar', () => {
   const mockChatMessages: ChatMessage[] = [
-    { id: '1', role: 'assistant', content: 'Willkommen!', timestamp: Date.now() },
-    { id: '2', role: 'user', content: 'Hallo', timestamp: Date.now() + 1000 },
+    { id: '1', role: 'assistant', content: 'Willkommen!', timestamp: BASE_TIME },
+    { id: '2', role: 'user', content: 'Hallo', timestamp: BASE_TIME + 1000 },
   ];
 
   const mockSuggestions: Suggestion[] = [
@@ -21,7 +23,7 @@ describe('ChatSidebar', () => {
     {
       id: 's2',
       type: 'error',
-      title: '⚠️ Security Risk',
+      title: 'Security Risk',
       description: 'Fehlende Auth',
       priority: 'high',
     },
@@ -44,108 +46,112 @@ describe('ChatSidebar', () => {
   describe('Rendering', () => {
     it('renders chat messages correctly', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
+
       expect(screen.getByText('Willkommen!')).toBeDefined();
       expect(screen.getByText('Hallo')).toBeDefined();
     });
 
     it('renders suggestions section when suggestions exist', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
+
       expect(screen.getByText(/Vorschläge/i)).toBeDefined();
-      expect(screen.getByText('Integration: WebSocket')).toBeDefined();
+      expect(screen.getByRole('button', { name: /Vorschlag übernehmen: Integration: WebSocket/i })).toBeDefined();
     });
 
     it('renders input field for user messages', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const input = screen.getByPlaceholderText(/Frage oder Feedback/i);
-      expect(input).toBeDefined();
+
+      expect(screen.getByRole('textbox', { name: /Chat Nachricht/i })).toBeDefined();
     });
 
     it('shows analyzing indicator when isAnalyzing is true', () => {
-      render(<ChatSidebar {...defaultProps} isAnalyzing={true} />);
-      
-      // Should show loader/animation class
-      const header = screen.getByText(/Chat & Vorschläge/i);
-      expect(header).toBeDefined();
+      render(<ChatSidebar {...defaultProps} isAnalyzing />);
+
+      expect(screen.getByLabelText(/Analyse läuft/i)).toBeDefined();
     });
 
     it('renders empty state when no messages', () => {
       render(<ChatSidebar {...defaultProps} chatMessages={[]} />);
-      
-      // Should still render input and suggestions
-      expect(screen.getByPlaceholderText(/Frage oder Feedback/i)).toBeDefined();
+
+      expect(screen.getByRole('textbox', { name: /Chat Nachricht/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /Nachricht senden/i })).toBeDisabled();
     });
   });
 
   describe('User Interaction', () => {
-    it('calls onSendMessage when form is submitted', async () => {
+    it('calls onSendMessage when form is submitted', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const input = screen.getByPlaceholderText(/Frage oder Feedback/i);
-      const submitButton = screen.getAllByRole('button')[0];
-      
+
+      const input = screen.getByRole('textbox', { name: /Chat Nachricht/i });
+      const submitButton = screen.getByRole('button', { name: /Nachricht senden/i });
+
       fireEvent.change(input, { target: { value: 'Test message' } });
       fireEvent.click(submitButton);
-      
+
       expect(defaultProps.onSendMessage).toHaveBeenCalledWith('Test message');
     });
 
-    it('clears input after submission', async () => {
+    it('clears input after submission', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const input = screen.getByPlaceholderText(/Frage oder Feedback/i) as HTMLInputElement;
-      
+
+      const input = screen.getByRole('textbox', { name: /Chat Nachricht/i }) as HTMLInputElement;
+      const submitButton = screen.getByRole('button', { name: /Nachricht senden/i });
+
       fireEvent.change(input, { target: { value: 'Test message' } });
-      fireEvent.click(screen.getAllByRole('button')[0]);
-      
+      fireEvent.click(submitButton);
+
       expect(input.value).toBe('');
     });
 
     it('calls onAcceptSuggestion when suggestion is clicked', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const suggestion = screen.getByText('Integration: WebSocket').closest('button');
-      if (suggestion) {
-        fireEvent.click(suggestion);
-        expect(defaultProps.onAcceptSuggestion).toHaveBeenCalledWith('s1');
-      }
+
+      fireEvent.click(screen.getByRole('button', { name: /Vorschlag übernehmen: Integration: WebSocket/i }));
+      expect(defaultProps.onAcceptSuggestion).toHaveBeenCalledWith('s1');
+    });
+
+    it('does not call onAcceptSuggestion for accepted suggestions', () => {
+      render(
+        <ChatSidebar
+          {...defaultProps}
+          suggestions={[{ ...mockSuggestions[0], accepted: true }]}
+        />,
+      );
+
+      const acceptedButton = screen.getByRole('button', { name: /Vorschlag akzeptiert: Integration: WebSocket/i });
+      expect(acceptedButton).toBeDisabled();
+      fireEvent.click(acceptedButton);
+      expect(defaultProps.onAcceptSuggestion).not.toHaveBeenCalled();
     });
 
     it('calls onClearChat when clear button is clicked', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const clearButton = screen.getByText(/Leeren/i);
-      fireEvent.click(clearButton);
-      
-      expect(defaultProps.onClearChat).toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: /Chat leeren/i }));
+      expect(defaultProps.onClearChat).toHaveBeenCalledOnce();
     });
 
     it('calls onDownloadPackage when download button is clicked', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const downloadButton = screen.getByText(/Verlauf sichern/i);
-      fireEvent.click(downloadButton);
-      
-      expect(defaultProps.onDownloadPackage).toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: /Verlauf sichern/i }));
+      expect(defaultProps.onDownloadPackage).toHaveBeenCalledOnce();
     });
 
     it('disables submit button when input is empty', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const submitButton = screen.getAllByRole('button')[0];
-      expect(submitButton).toBeDisabled();
+
+      expect(screen.getByRole('button', { name: /Nachricht senden/i })).toBeDisabled();
     });
 
     it('enables submit button when input has content', async () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const input = screen.getByPlaceholderText(/Frage oder Feedback/i);
-      const submitButton = screen.getAllByRole('button')[0];
-      
+
+      const input = screen.getByRole('textbox', { name: /Chat Nachricht/i });
+      const submitButton = screen.getByRole('button', { name: /Nachricht senden/i });
+
       fireEvent.change(input, { target: { value: 'Test' } });
-      
+
       await waitFor(() => {
         expect(submitButton).not.toBeDisabled();
       });
@@ -155,49 +161,40 @@ describe('ChatSidebar', () => {
   describe('Styling', () => {
     it('applies correct style to user messages', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const userMessage = screen.getByText('Hallo');
-      // User messages should have different styling (indigo background)
-      expect(userMessage).toBeDefined();
+
+      expect(screen.getByText('Hallo')).toBeDefined();
     });
 
     it('applies correct style to assistant messages', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      const assistantMessage = screen.getByText('Willkommen!');
-      expect(assistantMessage).toBeDefined();
+
+      expect(screen.getByText('Willkommen!')).toBeDefined();
     });
 
     it('shows accepted state for accepted suggestions', () => {
-      const acceptedSuggestion: Suggestion = {
-        ...mockSuggestions[0],
-        accepted: true,
-      };
-      
       render(
         <ChatSidebar
           {...defaultProps}
-          suggestions={[acceptedSuggestion]}
-        />
+          suggestions={[{ ...mockSuggestions[0], accepted: true }]}
+        />,
       );
-      
-      const suggestionText = screen.getByText('✓ Integration: WebSocket');
-      expect(suggestionText).toBeDefined();
+
+      expect(screen.getByText('✓ Integration: WebSocket')).toBeDefined();
+      expect(screen.getByRole('button', { name: /Vorschlag akzeptiert: Integration: WebSocket/i })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('shows priority badges for high priority suggestions', () => {
       render(<ChatSidebar {...defaultProps} />);
-      
-      // Use queryAllBy for potentially multiple badges
+
       const badges = screen.queryAllByText('WICHTIG');
-      expect(badges.length).toBeGreaterThanOrEqual(0);
+      expect(badges.length).toBeGreaterThan(0);
     });
   });
 
   describe('Error Handling', () => {
     it('handles empty suggestions array gracefully', () => {
       render(<ChatSidebar {...defaultProps} suggestions={[]} />);
-      
+
       expect(screen.queryByText(/Vorschläge/i)).toBeNull();
     });
 
@@ -206,12 +203,12 @@ describe('ChatSidebar', () => {
         id: 'long',
         role: 'assistant',
         content: 'A'.repeat(1000),
-        timestamp: Date.now(),
+        timestamp: BASE_TIME + 2000,
       };
-      
+
       render(<ChatSidebar {...defaultProps} chatMessages={[longMessage]} />);
-      
-      expect(screen.getByText(/A{1000}/)).toBeDefined();
+
+      expect(screen.getByText('A'.repeat(1000))).toBeDefined();
     });
   });
 });
