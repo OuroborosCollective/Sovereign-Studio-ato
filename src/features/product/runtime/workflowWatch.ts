@@ -32,6 +32,13 @@ export interface WorkflowWatchReport {
   summary: string;
 }
 
+export interface WorkflowWatchValidationReport {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  summary: string;
+}
+
 interface GitHubCombinedStatusResponse {
   state?: string;
   statuses?: Array<{
@@ -50,6 +57,25 @@ interface GitHubCheckRunsResponse {
     html_url?: string;
     output?: { title?: string | null; summary?: string | null };
   }>;
+}
+
+const WORKFLOW_STATUSES: WorkflowWatchStatus[] = ['idle', 'pending', 'green', 'red', 'unknown'];
+const WORKFLOW_CHECK_SOURCES: WorkflowCheckItem['source'][] = ['commit-status', 'check-run', 'local'];
+
+const SECRET_PATTERNS = [
+  /ghp_[A-Za-z0-9_]{8,}/g,
+  /github_pat_[A-Za-z0-9_]+/g,
+  /sk-[A-Za-z0-9_-]{12,}/g,
+  /Bearer\s+[A-Za-z0-9._~+/=-]{10,}/gi,
+  /password\s*[:=]\s*[^\s]+/gi,
+  /token\s*[:=]\s*[^\s]+/gi,
+];
+
+function hasSecret(value: string): boolean {
+  return SECRET_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(value);
+  });
 }
 
 function mapStatus(value?: string | null): WorkflowWatchStatus {
@@ -78,6 +104,74 @@ function buildFixes(status: WorkflowWatchStatus, checks: WorkflowCheckItem[], er
   return fixes;
 }
 
+export function validateWorkflowCheckItem(check: WorkflowCheckItem): WorkflowWatchValidationReport {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!check.name.trim()) errors.push('Workflow check name is required.');
+  if (!WORKFLOW_STATUSES.includes(check.status)) errors.push(`Unknown workflow check status: ${check.status}`);
+  if (!WORKFLOW_CHECK_SOURCES.includes(check.source)) errors.push(`Unknown workflow check source: ${check.source}`);
+  if (!check.summary.trim()) errors.push('Workflow check summary is required.');
+  if (check.url && !/^https?:\/\//i.test(check.url)) warnings.push('Workflow check URL is not an HTTP URL.');
+  if ([check.name, check.conclusion ?? '', check.url ?? '', check.summary].some(hasSecret)) {
+    errors.push('Workflow check contains unredacted secret-like content.');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary: `${errors.length} error(s), ${warnings.length} warning(s) in workflow check.`,
+  };
+}
+
+export function validateWorkflowWatchReport(report: WorkflowWatchReport): WorkflowWatchValidationReport {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!WORKFLOW_STATUSES.includes(report.status)) errors.push(`Unknown workflow report status: ${report.status}`);
+  if (!Number.isFinite(report.checkedAt) || report.checkedAt <= 0) errors.push('Workflow report checkedAt must be a positive timestamp.');
+  if (!Array.isArray(report.checks)) errors.push('Workflow report checks must be an array.');
+  if (!Array.isArray(report.errors)) errors.push('Workflow report errors must be an array.');
+  if (!Array.isArray(report.warnings)) errors.push('Workflow report warnings must be an array.');
+  if (!Array.isArray(report.fixes)) errors.push('Workflow report fixes must be an array.');
+  if (!report.summary.trim()) errors.push('Workflow report summary is required.');
+
+  for (const check of report.checks ?? []) {
+    const checkReport = validateWorkflowCheckItem(check);
+    errors.push(...checkReport.errors.map((error) => `${check.name || 'check'}: ${error}`));
+    warnings.push(...checkReport.warnings.map((warning) => `${check.name || 'check'}: ${warning}`));
+  }
+
+  if ([report.commitSha ?? '', report.branch ?? '', report.summary, ...report.errors, ...report.warnings, ...report.fixes].some(hasSecret)) {
+    errors.push('Workflow report contains unredacted secret-like content.');
+  }
+
+  const expectedStatus = summarizeStatus(report.checks, report.errors, report.warnings);
+  if (report.status !== expectedStatus) {
+    errors.push(`Workflow report status mismatch: expected ${expectedStatus}, got ${report.status}.`);
+  }
+
+  if (report.status === 'red' && report.fixes.length === 0) warnings.push('Red workflow report should include at least one fix hint.');
+  if (!report.checks.length && !report.errors.length && !report.warnings.length && report.status !== 'idle') {
+    warnings.push('Workflow report has no checks, errors or warnings but is not idle.');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    summary: `${errors.length} error(s), ${warnings.length} warning(s) in workflow report.`,
+  };
+}
+
+export function assertWorkflowWatchReportValid(report: WorkflowWatchReport): void {
+  const validation = validateWorkflowWatchReport(report);
+  if (!validation.valid) {
+    throw new Error(`Workflow watch report is invalid: ${validation.errors.join(' | ')}`);
+  }
+}
+
 export function buildLocalWorkflowWatchReport(input: {
   commitSha?: string;
   branch?: string;
@@ -91,7 +185,7 @@ export function buildLocalWorkflowWatchReport(input: {
   const warnings = input.warnings ?? [];
   const status = summarizeStatus(checks, errors, warnings);
   const fixes = buildFixes(status, checks, errors);
-  return {
+  const report = {
     status,
     commitSha: input.commitSha,
     branch: input.branch,
@@ -101,7 +195,10 @@ export function buildLocalWorkflowWatchReport(input: {
     warnings,
     fixes,
     summary: `${checks.length} workflow check(s), ${errors.length} error(s), ${warnings.length} warning(s). Status: ${status}.`,
-  };
+  } satisfies WorkflowWatchReport;
+
+  assertWorkflowWatchReportValid(report);
+  return report;
 }
 
 export async function fetchWorkflowWatchReport(input: WorkflowWatchInput): Promise<WorkflowWatchReport> {
