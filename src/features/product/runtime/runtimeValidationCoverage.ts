@@ -100,6 +100,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'WorkflowWatchPanel',
   },
   {
+    id: 'workflow-repair-plan',
+    runtimePath: 'src/features/product/runtime/workflowRepairPlan.ts',
+    testPath: 'src/features/product/runtime/workflowRepairPlan.test.ts',
+    purpose: 'Turns failed workflow checks into a focused repair mission.',
+    status: 'covered',
+    integrationPoint: 'WorkflowRepairPanel + Sovereign Action Builder',
+  },
+  {
     id: 'health-runtime',
     runtimePath: 'src/features/product/runtime/sovereignHealth.ts',
     testPath: 'src/features/product/runtime/sovereignHealth.test.ts',
