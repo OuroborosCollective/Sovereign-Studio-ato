@@ -1,0 +1,94 @@
+name: Release Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  release-gate:
+    name: Release Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Cache pnpm modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Type Check
+        run: pnpm run type-check
+
+      - name: Runtime Unit Tests
+        run: pnpm run test:unit
+        env:
+          CI: true
+
+      - name: Build Web + Android Sync
+        run: pnpm run build
+
+      - name: E2E Smoke Gate
+        run: pnpm run test:e2e
+        env:
+          CI: true
+
+      - name: Integration Diagnostics
+        id: integration
+        continue-on-error: true
+        run: pnpm run test:integration
+        env:
+          CI: true
+
+      - name: Release Verification Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Release Verification"
+            echo ""
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+            echo "| Type Check | ${{ steps.type-check.outcome || 'see step' }} |"
+            echo "| Runtime Unit Tests | ${{ steps.runtime-unit-tests.outcome || 'see step' }} |"
+            echo "| Build Web + Android Sync | ${{ steps.build-web-android-sync.outcome || 'see step' }} |"
+            echo "| E2E Smoke Gate | ${{ steps.e2e-smoke-gate.outcome || 'see step' }} |"
+            echo "| Integration Diagnostics | ${{ steps.integration.outcome }} |"
+            echo ""
+            echo "Integration diagnostics are visible but non-blocking until #255 and #257 are closed."
+          } >> "$GITHUB_STEP_SUMMARY"
