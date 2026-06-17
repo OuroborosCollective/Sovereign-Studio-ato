@@ -1,5 +1,6 @@
 import './runtime-adapter';
 import React, { useEffect, useState } from 'react';
+import { buildGitHubHeaders, stripTokenFromText } from './features/github/githubAuthSession';
 import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
 import { useGithubRepo } from './features/github/hooks/useGithubRepo';
@@ -164,11 +165,7 @@ const App: React.FC = () => {
     setIsLoadingDiffSources(true);
     pushTelemetry('workflow', 'info', 'diff:load-start', 'Loading source snapshots for generated files.', { files: lastPackage.files.length });
 
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-    };
-    if (githubToken.trim()) headers.Authorization = `Bearer ${githubToken.trim()}`;
+    const headers = buildGitHubHeaders({ token: githubToken });
     const refQuery = repoBranch.trim() ? `?ref=${encodeURIComponent(repoBranch.trim())}` : '';
 
     try {
@@ -192,7 +189,7 @@ const App: React.FC = () => {
       setDiffSources(snapshots);
       const report = buildGeneratedFileDiffReport(lastPackage.files, snapshots);
       setSovereignSummary(report.summary);
-      pushTelemetry('workflow', 'success', 'diff:load-finished', report.summary);
+      pushTelemetry('workflow', 'success', 'diff:load-finished', stripTokenFromText(report.summary, githubToken));
       setActiveTab('diff');
     } finally {
       setIsLoadingDiffSources(false);
@@ -214,12 +211,12 @@ const App: React.FC = () => {
         'workflow',
         report.status === 'red' ? 'error' : report.status === 'green' ? 'success' : 'warning',
         'workflow:watch-finished',
-        report.summary,
+        stripTokenFromText(report.summary, githubToken),
       );
       setActiveTab(report.status === 'red' ? 'repair' : 'workflow');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Workflow watch failed.';
-      pushTelemetry('workflow', 'error', 'workflow:watch-failed', message);
+      pushTelemetry('workflow', 'error', 'workflow:watch-failed', stripTokenFromText(message, githubToken));
     } finally {
       setIsWatchingWorkflow(false);
     }
@@ -258,8 +255,8 @@ const App: React.FC = () => {
       setLastPackageKey('');
       setDiffSources([]);
       const message = error instanceof Error ? error.message : 'Sovereign-Paket konnte nicht erzeugt werden.';
-      setSovereignSummary(message);
-      pushTelemetry('guards', 'error', 'guards:failed', message);
+      setSovereignSummary(stripTokenFromText(message, githubToken));
+      pushTelemetry('guards', 'error', 'guards:failed', stripTokenFromText(message, githubToken));
       return null;
     }
   };
@@ -356,8 +353,8 @@ const App: React.FC = () => {
       assertGeneratedFileReviewSafe(review);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generated file review blocked Draft PR.';
-      setSovereignSummary(message);
-      pushTelemetry('github', 'error', 'github:review-blocked', message);
+      setSovereignSummary(stripTokenFromText(message, githubToken));
+      pushTelemetry('github', 'error', 'github:review-blocked', stripTokenFromText(message, githubToken));
       setActiveTab('files');
       return false;
     }
@@ -410,8 +407,8 @@ const App: React.FC = () => {
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft PR konnte nicht erstellt werden.';
-      setSovereignSummary(message);
-      pushTelemetry('github', 'error', 'github:draft-pr-failed', message);
+      setSovereignSummary(stripTokenFromText(message, githubToken));
+      pushTelemetry('github', 'error', 'github:draft-pr-failed', stripTokenFromText(message, githubToken));
       return false;
     } finally {
       setIsPublishing(false);
