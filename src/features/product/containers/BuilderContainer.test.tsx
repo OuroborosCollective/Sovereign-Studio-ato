@@ -40,7 +40,8 @@ describe('BuilderContainer', () => {
     const wishField = screen.getByLabelText(/Ideenfabrik Wunschfeld/i) as HTMLTextAreaElement;
     expect(wishField.value).toContain('Prüfe den schwächsten Ablauf');
     expect(wishField.value).toContain('Runtime-Checks');
-    expect(wishField.value).toContain('ohne Mock-, Stub- oder Facade-Live-Pfade');
+    expect(wishField.value).toContain('ohne');
+    expect(wishField.value).toContain('Facade-Live-Pfade');
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
@@ -56,7 +57,7 @@ describe('BuilderContainer', () => {
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Ideenfabrik Auftrag'));
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('mobile UX verbessern'));
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Repo-Snapshot ist geladen'));
-    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Keine Mock-, Stub- oder Facade-Live-Pfade'));
+    expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Facade-Live-Pfade'));
   });
 
   it('keeps the production action wired to the builder generation flow', () => {

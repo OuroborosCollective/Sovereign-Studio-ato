@@ -2,7 +2,7 @@ export const makeId = () => crypto.randomUUID();
 
 /**
  * Redacts sensitive credentials from strings to prevent accidental leakage in logs or UI.
- * Matches common patterns for GitHub tokens, Google API keys, and generic auth tokens.
+ * Matches common token, key and label-based credential patterns.
  */
 export function maskSecrets(text: string): string {
   if (!text) return text;
@@ -16,8 +16,15 @@ export function maskSecrets(text: string): string {
   // Google Cloud API Keys
   masked = masked.replace(/AIzaSy[a-zA-Z0-9_-]{30,40}/g, 'AIzaSy****');
 
+  // AI provider style keys
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,100}/g, 'sk-****');
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,100}/g, 'gsk_****');
+
   // Generic Bearer tokens in common error messages or strings
   masked = masked.replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer ****');
+
+  // Label-based credentials in common logs or error strings
+  masked = masked.replace(/(password|token|secret)\s*[:=]\s*[^\s,;]+/gi, '$1: ****');
 
   return masked;
 }
