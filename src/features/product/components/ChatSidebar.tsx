@@ -123,7 +123,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </div>
 
       {safeSuggestions.length > 0 && (
-        <div className="border-t border-stone-200 bg-stone-50 p-3 max-h-[200px] overflow-y-auto" aria-label="Vorschläge">
+        <div className="border-t border-stone-200 bg-stone-50 p-3 max-h-[200px] overflow-y-auto" aria-label="Vorschläge" data-testid="chat-suggestions">
           <div className="text-[10px] font-bold text-stone-600 uppercase mb-2 flex items-center gap-1">
             <Sparkles size={12} className="text-indigo-600" aria-hidden="true" />
             Vorschläge
