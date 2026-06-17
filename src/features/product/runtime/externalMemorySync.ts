@@ -50,6 +50,7 @@ export interface ExternalMemorySyncPayload {
 
 export interface ExternalMemorySyncResponse {
   accepted: boolean;
+  success: boolean;
   imported: number;
   exported: number;
   rejected: number;
@@ -362,8 +363,10 @@ export async function syncExternalMemory(input: {
     const response = await (input.fetcher ?? fetch)(buildGatewayEndpoint(input.config, '/api/sovereign-memory/sync'), { method: 'POST', headers: buildGatewayHeaders(input.config), body: JSON.stringify(input.payload) });
     if (!response.ok) return { status: 'soft-failed', accepted: false, payload: input.payload, validation, summary: `External memory gateway returned ${response.status}.` };
     const body = await response.json() as Partial<ExternalMemorySyncResponse>;
+    const accepted = Boolean(body.accepted ?? body.success);
     const syncResponse: ExternalMemorySyncResponse = {
-      accepted: Boolean(body.accepted),
+      accepted,
+      success: accepted,
       imported: Number(body.imported ?? 0),
       exported: Number(body.exported ?? 0),
       rejected: Number(body.rejected ?? 0),
