@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT,
   buildExternalMemoryConsentText,
+  buildExternalMemoryDeleteRequest,
   buildExternalMemorySyncPayload,
   checkExternalMemoryHealth,
   createExternalMemorySyncConfig,
+  deleteExternalMemoryData,
   pullExternalMemoryUpdates,
   searchExternalMemory,
   syncExternalMemory,
+  validateExternalMemoryDeleteRequest,
   validateExternalMemorySyncConfig,
   validateExternalMemorySyncPayload,
 } from './externalMemorySync';
@@ -184,5 +188,58 @@ describe('externalMemorySync', () => {
     expect(result.items).toHaveLength(1);
     expect(String(fetcher.mock.calls[0][0])).toContain('/api/sovereign-memory/pull-updates');
     expect(String(fetcher.mock.calls[0][0])).toContain('workspaceId=local-workspace');
+  });
+
+  it('builds and validates explicit remote memory delete requests', () => {
+    const config = {
+      ...createExternalMemorySyncConfig(),
+      workspaceId: 'Pattern',
+      collectionName: 'sovereign_logic_patterns',
+    };
+    const request = buildExternalMemoryDeleteRequest(config, 123);
+    expect(request.confirmDelete).toBe(true);
+    expect(request.confirmationText).toBe(EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT);
+    expect(validateExternalMemoryDeleteRequest(request).valid).toBe(true);
+  });
+
+  it('rejects delete requests without the exact confirmation text', () => {
+    const request = {
+      schemaVersion: 1,
+      client: 'sovereign-studio',
+      redaction: 'summary-only-no-source-files',
+      workspaceId: 'Pattern',
+      collectionName: 'sovereign_logic_patterns',
+      requestedAt: 123,
+      confirmDelete: true,
+      confirmationText: 'WRONG',
+      scope: 'workspace-user-data',
+    } as const;
+    const report = validateExternalMemoryDeleteRequest(request as never);
+    expect(report.valid).toBe(false);
+    expect(report.errors.join(' ')).toContain('confirmation text');
+  });
+
+  it('posts delete-user-data requests and accepts success responses', async () => {
+    const config = {
+      ...createExternalMemorySyncConfig(),
+      enabled: true,
+      consentAccepted: true,
+      gatewayUrl: 'https://memory.example.test',
+      workspaceId: 'Pattern',
+      collectionName: 'sovereign_logic_patterns',
+    };
+    const request = buildExternalMemoryDeleteRequest(config, 123);
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, deleted: true, deletedItems: 5, summary: 'deleted' }),
+      init,
+    }) as Response);
+
+    const result = await deleteExternalMemoryData({ config, request, fetcher: fetcher as unknown as typeof fetch });
+    expect(result.status).toBe('synced');
+    expect(result.deleted).toBe(true);
+    expect(result.response?.deletedItems).toBe(5);
+    expect(String(fetcher.mock.calls[0][0])).toBe('https://memory.example.test/api/sovereign-memory/delete-user-data');
   });
 });
