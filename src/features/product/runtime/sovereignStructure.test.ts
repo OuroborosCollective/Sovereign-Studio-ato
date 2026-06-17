@@ -19,6 +19,11 @@ import {
   evaluateRepoReadiness,
 } from './repoLaunchReadiness';
 import {
+  assertRuntimeValidationCoverageHealthy,
+  buildRuntimeValidationCoverageReport,
+} from './runtimeValidationCoverage';
+import { buildSovereignHealthReport } from './sovereignHealth';
+import {
   assertGeneratedPackageReady,
   getRepoSnapshotStatus,
 } from './sovereignFunctionalGuards';
@@ -34,6 +39,7 @@ import {
   createTelemetryEvent,
   summarizeTelemetry,
 } from './sovereignTelemetry';
+import { buildLocalWorkflowWatchReport } from './workflowWatch';
 
 const repoFiles = [
   { path: 'README.md', type: 'blob' as const },
@@ -44,7 +50,7 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, readiness, automation, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, readiness, automation, workflow, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
 
@@ -85,6 +91,28 @@ describe('sovereign runtime structure', () => {
     expect(fileReview.totalFiles).toBe(pkg.files.length);
     expect(() => assertGeneratedFileReviewSafe(fileReview)).not.toThrow();
 
+    const workflow = buildLocalWorkflowWatchReport({
+      commitSha: 'commit-sha',
+      branch: 'sovereign/package/test',
+      checks: [{ name: 'ci', status: 'green', source: 'local', summary: 'passed' }],
+    });
+    expect(workflow.status).toBe('green');
+
+    let telemetry = createInitialTelemetryState();
+    telemetry = appendTelemetryEvent(telemetry, createTelemetryEvent('guards', 'success', 'guards:passed', 'Package ready.'));
+    expect(summarizeTelemetry(telemetry)).toContain('guards:passed');
+
+    const health = buildSovereignHealthReport({
+      repoFiles,
+      generatedFileReview: fileReview,
+      workflowWatch: workflow,
+      telemetry,
+    });
+    expect(health.status).not.toBe('idle');
+
+    const coverage = buildRuntimeValidationCoverageReport();
+    expect(() => assertRuntimeValidationCoverageHealthy(coverage)).not.toThrow();
+
     const memory = createSessionMemorySnapshot({
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
       repoBranch: 'main',
@@ -95,10 +123,6 @@ describe('sovereign runtime structure', () => {
       sovereignPreview: 'preview',
     });
     expect(parseSessionMemory(serializeSessionMemory(memory))?.repoFiles).toHaveLength(repoFiles.length);
-
-    let telemetry = createInitialTelemetryState();
-    telemetry = appendTelemetryEvent(telemetry, createTelemetryEvent('guards', 'success', 'guards:passed', 'Package ready.'));
-    expect(summarizeTelemetry(telemetry)).toContain('guards:passed');
 
     const publishable = validatePublishableFiles(pkg.files);
     expect(publishable.length).toBe(pkg.files.length);
