@@ -17,10 +17,16 @@ describe('App', () => {
     expect(screen.getByText(/Ohne geladenes Repository bleibt Full Auto bewusst blockiert/)).toBeDefined();
   });
 
-  it('renders main content after launch', () => {
+  it('opens the repo-first container workspace after launch', () => {
     render(<App />);
     fireEvent.click(screen.getByText('Sovereign Arbeitsfläche öffnen'));
+
     expect(screen.getByText('Automation Mode')).toBeDefined();
-    expect(screen.getByTestId('operator-monitor')).toBeDefined();
+    expect(screen.getByText('Repo')).toBeDefined();
+    expect(screen.getByText('Builder')).toBeDefined();
+    expect(screen.getByText('Remote Memory')).toBeDefined();
+    expect(screen.getByText('Pattern Memory')).toBeDefined();
+    expect(screen.getByText('Telemetry')).toBeDefined();
+    expect(screen.getByPlaceholderText('GitHub Repo URL')).toBeDefined();
   });
 });
