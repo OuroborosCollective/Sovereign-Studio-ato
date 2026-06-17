@@ -56,7 +56,7 @@ jobs:
         run: pnpm run type-check
 
       - name: Run Unit Tests
-        run: pnpm run test:run
+        run: pnpm run test:unit
         env:
           CI: true
 
