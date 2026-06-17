@@ -1,8 +1,10 @@
 import './runtime-adapter';
 import React, { useEffect, useState } from 'react';
+import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
 import { useGithubRepo } from './features/github/hooks/useGithubRepo';
 import { RepoFileList } from './features/github/components/RepoFileList';
+import { GeneratedFileDiffPreviewPanel } from './features/product/components/GeneratedFileDiffPreviewPanel';
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
@@ -18,6 +20,10 @@ import {
   describeAutomationMode,
   type SovereignAutomationMode,
 } from './features/product/runtime/sovereignAutomationMode';
+import {
+  buildGeneratedFileDiffReport,
+  type SourceFileSnapshot,
+} from './features/product/runtime/generatedFileDiffPreview';
 import { assertGeneratedFileReviewSafe, reviewGeneratedFiles } from './features/product/runtime/generatedFileReview';
 import { getRepoSnapshotStatus } from './features/product/runtime/sovereignFunctionalGuards';
 import { buildRuntimeValidationCoverageReport } from './features/product/runtime/runtimeValidationCoverage';
@@ -44,7 +50,7 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'workflow' | 'repair' | 'health' | 'coverage' | 'telemetry';
+type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'coverage' | 'telemetry';
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
@@ -52,6 +58,7 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'integrity', label: 'Integrity' },
   { id: 'builder', label: 'Builder' },
   { id: 'files', label: 'Files' },
+  { id: 'diff', label: 'Diff' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'repair', label: 'Repair' },
   { id: 'health', label: 'Health' },
@@ -60,6 +67,16 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
 ];
 
 const automationModes: SovereignAutomationMode[] = ['manual', 'auto-review', 'full-auto-draft-pr'];
+
+function decodeBase64Utf8(value: string): string {
+  const binary = atob(value.replace(/\s/g, ''));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function encodeGitHubContentPath(path: string): string {
+  return path.split('/').map((part) => encodeURIComponent(part)).join('/');
+}
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserSession | null>(null);
@@ -71,6 +88,8 @@ const App: React.FC = () => {
   const [lastDraftCommitSha, setLastDraftCommitSha] = useState('');
   const [lastDraftBranch, setLastDraftBranch] = useState('');
   const [workflowReport, setWorkflowReport] = useState<WorkflowWatchReport | null>(null);
+  const [diffSources, setDiffSources] = useState<SourceFileSnapshot[]>([]);
+  const [isLoadingDiffSources, setIsLoadingDiffSources] = useState(false);
   const [isWatchingWorkflow, setIsWatchingWorkflow] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeTab, setActiveTab] = useState<SovereignTab>('repo');
@@ -111,6 +130,7 @@ const App: React.FC = () => {
   });
   const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
   const latestGeneratedReview = lastPackage ? reviewGeneratedFiles(lastPackage.files) : null;
+  const diffReport = lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, diffSources) : null;
   const repairPlan = buildWorkflowRepairPlan(workflowReport);
   const healthReport = buildSovereignHealthReport({
     repoFiles,
@@ -128,6 +148,55 @@ const App: React.FC = () => {
     details?: Parameters<typeof createTelemetryEvent>[4],
   ) => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
+  };
+
+  const loadGeneratedFileSources = async () => {
+    if (!lastPackage) {
+      pushTelemetry('workflow', 'warning', 'diff:no-package', 'Build a Sovereign package before loading diff sources.');
+      return;
+    }
+    const parsed = parseGithubRepoUrl(repoUrl);
+    if (!parsed) {
+      pushTelemetry('workflow', 'error', 'diff:invalid-repo', 'Cannot load diff sources from an invalid GitHub repo URL.');
+      return;
+    }
+
+    setIsLoadingDiffSources(true);
+    pushTelemetry('workflow', 'info', 'diff:load-start', 'Loading source snapshots for generated files.', { files: lastPackage.files.length });
+
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+    if (githubToken.trim()) headers.Authorization = `Bearer ${githubToken.trim()}`;
+    const refQuery = repoBranch.trim() ? `?ref=${encodeURIComponent(repoBranch.trim())}` : '';
+
+    try {
+      const snapshots = await Promise.all(lastPackage.files.map(async (file): Promise<SourceFileSnapshot> => {
+        const path = encodeGitHubContentPath(file.path);
+        const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${path}${refQuery}`;
+        try {
+          const response = await fetch(url, { headers });
+          if (response.status === 404) return { path: file.path, content: null, found: false };
+          if (!response.ok) return { path: file.path, content: null, found: false };
+          const payload = await response.json() as { content?: string; encoding?: string } | Array<unknown>;
+          if (Array.isArray(payload) || !payload.content || payload.encoding !== 'base64') {
+            return { path: file.path, content: null, found: false };
+          }
+          return { path: file.path, content: decodeBase64Utf8(payload.content), found: true };
+        } catch {
+          return { path: file.path, content: null, found: false };
+        }
+      }));
+
+      setDiffSources(snapshots);
+      const report = buildGeneratedFileDiffReport(lastPackage.files, snapshots);
+      setSovereignSummary(report.summary);
+      pushTelemetry('workflow', 'success', 'diff:load-finished', report.summary);
+      setActiveTab('diff');
+    } finally {
+      setIsLoadingDiffSources(false);
+    }
   };
 
   const watchLatestWorkflow = async (commitSha = lastDraftCommitSha, branch = lastDraftBranch) => {
@@ -172,6 +241,7 @@ const App: React.FC = () => {
       setMission(nextMission);
       setLastPackage(pkg);
       setLastPackageKey(nextPackageKey);
+      setDiffSources([]);
       setSovereignSummary(`${summarizeSovereignPackage(pkg, repoFiles)}\n${review.summary}`);
       setSovereignPreview(JSON.stringify({
         architecture: pkg.architecture,
@@ -186,6 +256,7 @@ const App: React.FC = () => {
     } catch (error) {
       setLastPackage(null);
       setLastPackageKey('');
+      setDiffSources([]);
       const message = error instanceof Error ? error.message : 'Sovereign-Paket konnte nicht erzeugt werden.';
       setSovereignSummary(message);
       pushTelemetry('guards', 'error', 'guards:failed', message);
@@ -199,6 +270,7 @@ const App: React.FC = () => {
     pushTelemetry('repo', 'success', 'repo:load-finished', 'Repository load request finished. Check repo status for exact result.');
     setLastPackage(null);
     setLastPackageKey('');
+    setDiffSources([]);
     setLastDraftCommitSha('');
     setLastDraftBranch('');
     setWorkflowReport(null);
@@ -217,6 +289,7 @@ const App: React.FC = () => {
     setMission(nextMission);
     setLastPackage(null);
     setLastPackageKey('');
+    setDiffSources([]);
     setSovereignSummary('Repair mission loaded into Builder. Run Ideen/Full Auto to generate a guarded repair package.');
     pushTelemetry('workflow', 'info', 'repair:mission-loaded', 'Workflow repair mission loaded into Builder.');
     setActiveTab('builder');
@@ -253,6 +326,7 @@ const App: React.FC = () => {
     setSovereignPreview(snapshot.sovereignPreview);
     setLastPackage(null);
     setLastPackageKey('');
+    setDiffSources([]);
     setLastDraftCommitSha('');
     setLastDraftBranch('');
     setWorkflowReport(null);
@@ -265,6 +339,7 @@ const App: React.FC = () => {
     clearRepoSnapshot();
     setLastPackage(null);
     setLastPackageKey('');
+    setDiffSources([]);
     setLastDraftCommitSha('');
     setLastDraftBranch('');
     setWorkflowReport(null);
@@ -310,6 +385,7 @@ const App: React.FC = () => {
           '',
           'Generated file review:',
           review.summary,
+          diffReport ? `Generated file diff preview: ${diffReport.summary}` : 'Generated file diff preview: not loaded.',
           '',
           'Suggestions:',
           ...pkg.suggestions.map((item) => `- ${item}`),
@@ -461,7 +537,7 @@ const App: React.FC = () => {
           </select>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          Full Auto still runs repo snapshot checks, functional guards, generated-file review, workflow watch and Draft PR publishing rules. It does not auto-merge.
+          Full Auto still runs repo snapshot checks, functional guards, generated-file review, diff preview when loaded, workflow watch and Draft PR publishing rules. It does not auto-merge.
         </p>
       </section>
 
@@ -542,6 +618,14 @@ const App: React.FC = () => {
       ) : null}
 
       {activeTab === 'files' ? <GeneratedFileReviewPanel pkg={lastPackage} /> : null}
+
+      {activeTab === 'diff' ? (
+        <GeneratedFileDiffPreviewPanel
+          report={diffReport}
+          isLoading={isLoadingDiffSources}
+          onLoadSources={() => { void loadGeneratedFileSources(); }}
+        />
+      ) : null}
 
       {activeTab === 'workflow' ? (
         <WorkflowWatchPanel
