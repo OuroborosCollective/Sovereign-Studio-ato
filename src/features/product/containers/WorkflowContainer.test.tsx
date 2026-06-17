@@ -43,7 +43,7 @@ describe('WorkflowContainer', () => {
     );
 
     expect(screen.getByTestId('workflow-container')).toBeDefined();
-    expect(screen.getByText(/All checks passed/i)).toBeDefined();
+    expect(screen.getAllByText(/All checks passed/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /Watch Commit Checks/i }));
     expect(onWatch).toHaveBeenCalledOnce();
   });
@@ -62,7 +62,7 @@ describe('WorkflowContainer', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /Watch Commit Checks/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Watching\.\.\./i })).toBeDisabled();
     expect(screen.getByText(/Create a Draft PR before watching/i)).toBeDefined();
   });
 

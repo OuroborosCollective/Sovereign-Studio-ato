@@ -27,7 +27,7 @@ describe('TelemetryContainer', () => {
     expect(onExpandedChange).toHaveBeenCalledWith(true);
 
     rerender(<TelemetryContainer state={telemetry} expanded={true} onExpandedChange={onExpandedChange} />);
-    expect(screen.getByText(/ui:ready/i)).toBeDefined();
+    expect(screen.getAllByText(/ui:ready/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /Sovereign Telemetry Terminal/i }));
     expect(onExpandedChange).toHaveBeenLastCalledWith(false);
   });

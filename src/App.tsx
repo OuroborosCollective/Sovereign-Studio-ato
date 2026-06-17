@@ -11,6 +11,7 @@ import { BuilderContainer } from './features/product/containers/BuilderContainer
 import { WorkflowContainer } from './features/product/containers/WorkflowContainer';
 import { RepoSnapshotContainer } from './features/product/containers/RepoSnapshotContainer';
 import { TelemetryContainer } from './features/product/containers/TelemetryContainer';
+import { PatternMemoryContainer } from './features/product/containers/PatternMemoryContainer';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
@@ -48,6 +49,7 @@ import {
 } from './features/product/runtime/solutionPatternMemory';
 import {
   loadSolutionPatternStore,
+  clearSolutionPatternStore,
   saveSolutionPatternStore,
 } from './features/product/runtime/solutionPatternPersistence';
 import {
@@ -81,7 +83,7 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'findings' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'remote' | 'telemetry';
+type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'findings' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'memory' | 'remote' | 'telemetry';
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
@@ -96,6 +98,7 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'health', label: 'Health' },
   { id: 'runtime', label: 'Runtime' },
   { id: 'coverage', label: 'Coverage' },
+  { id: 'memory', label: 'Memory' },
   { id: 'remote', label: 'Remote' },
   { id: 'telemetry', label: 'Telemetry' },
 ];
@@ -636,6 +639,13 @@ const App: React.FC = () => {
     user,
   ]);
 
+  const resetPatternMemory = () => {
+    if (typeof window === 'undefined') return;
+    const result = clearSolutionPatternStore(window.localStorage);
+    setSolutionPatternStore(result.store);
+    pushTelemetry('memory', result.ok ? 'success' : 'warning', 'pattern-memory:reset', result.summary);
+  };
+
   const changeAutomationMode = (mode: SovereignAutomationMode) => {
     setAutomationMode(mode);
     setLastAutoRunKey('');
@@ -778,6 +788,13 @@ const App: React.FC = () => {
       {activeTab === 'runtime' ? <SequentialRuntimePanel state={sequentialRuntime} /> : null}
 
       {activeTab === 'coverage' ? <RuntimeValidationCoveragePanel report={coverageReport} /> : null}
+
+      {activeTab === 'memory' ? (
+        <PatternMemoryContainer
+          store={solutionPatternStore}
+          onClear={resetPatternMemory}
+        />
+      ) : null}
 
       {activeTab === 'remote' ? (
         <RemoteMemoryContainer
