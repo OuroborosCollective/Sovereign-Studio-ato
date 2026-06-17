@@ -1,26 +1,32 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const required = [
   'package.json',
   'vite.config.ts',
   'AGENTS.md',
   'sovereign.guard.json',
-  'src/ProductMagicApp.tsx',
-  'src/features/product/freeFirstPlan.ts',
-  'src/features/product/visiblePatch.ts',
-  'src/features/product/githubWriteGuard.ts',
-  'src/features/product/userFlow.ts',
-  'src/features/product/flowMessages.ts',
-  'src/features/product/autoModePolicy.ts',
-  'src/features/product/workflowAnalysis.ts',
-  'docs/FREE_FIRST_WORKFLOW.md',
+  'src/main.tsx',
+  'src/App.tsx',
   'android/app/src/main/assets/public/index.html',
 ];
 
 let ok = true;
+
 for (const file of required) {
   if (!existsSync(file)) {
     console.error(`[audit] missing: ${file}`);
+    ok = false;
+  }
+}
+
+if (existsSync('src/main.tsx')) {
+  const main = readFileSync('src/main.tsx', 'utf8');
+  if (!main.includes("import App from './App'")) {
+    console.error('[audit] src/main.tsx must import the current App shell.');
+    ok = false;
+  }
+  if (!main.includes('<App />')) {
+    console.error('[audit] src/main.tsx must render the current App shell.');
     ok = false;
   }
 }
