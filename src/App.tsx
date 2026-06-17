@@ -7,6 +7,7 @@ import { useGithubRepo } from './features/github/hooks/useGithubRepo';
 import { RepoFileList } from './features/github/components/RepoFileList';
 import { GeneratedFileDiffPreviewPanel } from './features/product/components/GeneratedFileDiffPreviewPanel';
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
+import { RemoteMemoryPanel } from './features/product/components/RemoteMemoryPanel';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
@@ -38,6 +39,18 @@ import {
 } from './features/product/runtime/scanFindingRegistry';
 import { applyWorkflowScanAndBuildGate } from './features/product/runtime/scanFindingWorkflowBridge';
 import {
+  buildExternalMemorySyncPayload,
+  checkExternalMemoryHealth,
+  createExternalMemorySyncConfig,
+  pullExternalMemoryUpdates,
+  searchExternalMemory,
+  syncExternalMemory,
+  type ExternalMemoryHealthResult,
+  type ExternalMemoryPullUpdatesResult,
+  type ExternalMemorySearchResult,
+  type ExternalMemorySyncResult,
+} from './features/product/runtime/externalMemorySync';
+import {
   createSequentialRuntimeState,
   finishSequentialStep,
   startSequentialStep,
@@ -68,7 +81,7 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'findings' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'telemetry';
+type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'findings' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'remote' | 'telemetry';
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
@@ -83,6 +96,7 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'health', label: 'Health' },
   { id: 'runtime', label: 'Runtime' },
   { id: 'coverage', label: 'Coverage' },
+  { id: 'remote', label: 'Remote' },
   { id: 'telemetry', label: 'Telemetry' },
 ];
 
@@ -116,6 +130,18 @@ const App: React.FC = () => {
   const [telemetryExpanded, setTelemetryExpanded] = useState(false);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
   const [scanRegistry, setScanRegistry] = useState(() => createScanFindingRegistry());
+  const [remoteMemoryConfig, setRemoteMemoryConfig] = useState(() => ({
+    ...createExternalMemorySyncConfig(),
+    gatewayUrl: 'http://46.202.154.25:8088',
+    workspaceId: 'Pattern',
+    collectionName: 'sovereign_logic_patterns',
+    allowSelfHostedHttp: true,
+  }));
+  const [remoteMemoryHealth, setRemoteMemoryHealth] = useState<ExternalMemoryHealthResult | null>(null);
+  const [remoteMemorySync, setRemoteMemorySync] = useState<ExternalMemorySyncResult | null>(null);
+  const [remoteMemorySearch, setRemoteMemorySearch] = useState<ExternalMemorySearchResult | null>(null);
+  const [remoteMemoryUpdates, setRemoteMemoryUpdates] = useState<ExternalMemoryPullUpdatesResult | null>(null);
+  const [isRemoteMemoryBusy, setIsRemoteMemoryBusy] = useState(false);
   const sequentialRuntimeRef = useRef<SequentialRuntimeState>(createSequentialRuntimeState());
   const [sequentialRuntime, setSequentialRuntime] = useState(() => sequentialRuntimeRef.current);
   const [automationMode, setAutomationMode] = useState<SovereignAutomationMode>('manual');
@@ -228,6 +254,56 @@ const App: React.FC = () => {
       pushTelemetry('workflow', 'error', `sequence:${step}:failed`, message);
       return null;
     }
+  };
+
+  const withRemoteMemoryBusy = async <T,>(task: () => Promise<T>): Promise<T | null> => {
+    setIsRemoteMemoryBusy(true);
+    try {
+      return await task();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Remote memory action failed.';
+      pushTelemetry('memory', 'error', 'remote-memory:failed', stripTokenFromText(message, githubToken));
+      return null;
+    } finally {
+      setIsRemoteMemoryBusy(false);
+    }
+  };
+
+  const handleRemoteMemoryHealth = () => {
+    void withRemoteMemoryBusy(async () => {
+      const result = await checkExternalMemoryHealth({ config: remoteMemoryConfig });
+      setRemoteMemoryHealth(result);
+      pushTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:health', result.summary);
+      return result;
+    });
+  };
+
+  const handleRemoteMemorySync = () => {
+    void withRemoteMemoryBusy(async () => {
+      const payload = buildExternalMemorySyncPayload({ config: remoteMemoryConfig, scanRegistry });
+      const result = await syncExternalMemory({ config: remoteMemoryConfig, payload });
+      setRemoteMemorySync(result);
+      pushTelemetry('memory', result.accepted ? 'success' : 'warning', 'remote-memory:sync', result.summary, { items: payload.items.length });
+      return result;
+    });
+  };
+
+  const handleRemoteMemorySearch = () => {
+    void withRemoteMemoryBusy(async () => {
+      const result = await searchExternalMemory({ config: remoteMemoryConfig, query: mission.trim() || summarizeScanFindingRegistry(scanRegistry), limit: 8 });
+      setRemoteMemorySearch(result);
+      pushTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:search', result.summary, { items: result.items.length });
+      return result;
+    });
+  };
+
+  const handleRemoteMemoryPullUpdates = () => {
+    void withRemoteMemoryBusy(async () => {
+      const result = await pullExternalMemoryUpdates({ config: remoteMemoryConfig });
+      setRemoteMemoryUpdates(result);
+      pushTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:pull-updates', result.summary, { items: result.items.length });
+      return result;
+    });
   };
 
   const loadGeneratedFileSources = async () => {
@@ -746,6 +822,22 @@ const App: React.FC = () => {
       {activeTab === 'runtime' ? <SequentialRuntimePanel state={sequentialRuntime} /> : null}
 
       {activeTab === 'coverage' ? <RuntimeValidationCoveragePanel report={coverageReport} /> : null}
+
+      {activeTab === 'remote' ? (
+        <RemoteMemoryPanel
+          config={remoteMemoryConfig}
+          syncResult={remoteMemorySync}
+          healthResult={remoteMemoryHealth}
+          searchResult={remoteMemorySearch}
+          updatesResult={remoteMemoryUpdates}
+          isBusy={isRemoteMemoryBusy}
+          onChange={setRemoteMemoryConfig}
+          onHealth={handleRemoteMemoryHealth}
+          onSync={handleRemoteMemorySync}
+          onSearch={handleRemoteMemorySearch}
+          onPullUpdates={handleRemoteMemoryPullUpdates}
+        />
+      ) : null}
 
       {activeTab === 'telemetry' ? (
         <SovereignTelemetryPanel
