@@ -18,7 +18,24 @@ describe('main app entry', () => {
   it('keeps visible container app navigation and runtime surfaces available', () => {
     const app = readSource('./App.tsx');
 
-    for (const label of ['Repo', 'Readiness', 'Findings', 'Builder', 'Workflow', 'Health', 'Memory', 'Remote', 'Telemetry']) {
+    for (const label of [
+      'Repo',
+      'Builder',
+      'Files',
+      'Diff',
+      'Workflow',
+      'Repair',
+      'Remote Memory',
+      'Pattern Memory',
+      'Telemetry',
+      'Live Monitor',
+      'Readiness',
+      'Integrity',
+      'Findings',
+      'Health',
+      'Runtime',
+      'Coverage',
+    ]) {
       expect(app).toContain(`label: '${label}'`);
     }
   });
@@ -32,12 +49,13 @@ describe('main app entry', () => {
     expect(app).toContain('workflowStatus: workflowReport?.status');
   });
 
-  it('keeps the industrial shell styling contract in the Android web build', () => {
+  it('keeps the release shell styling contract in the Android web build', () => {
     const css = readSource('./index.css');
 
     expect(css).toContain('--surface-1');
     expect(css).toContain('--accent-2');
-    expect(css).toContain('Live Android shell');
+    expect(css).toContain('Release shell');
     expect(css).toContain('Container runtime');
+    expect(css).toContain('Signed Android artifacts');
   });
 });
