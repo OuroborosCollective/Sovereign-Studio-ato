@@ -87,9 +87,10 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = SovereignAutoViewTab;
+type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
+  { id: 'monitor', label: 'Live Monitor' },
   { id: 'repo', label: 'Repo' },
   { id: 'readiness', label: 'Readiness' },
   { id: 'integrity', label: 'Integrity' },
@@ -102,9 +103,9 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'health', label: 'Health' },
   { id: 'runtime', label: 'Runtime' },
   { id: 'coverage', label: 'Coverage' },
-  { id: 'memory', label: 'Memory' },
-  { id: 'remote', label: 'Remote' },
-  { id: 'telemetry', label: 'Telemetry' },
+  { id: 'memory', label: 'Patterns' },
+  { id: 'remote', label: 'Settings/Gateway' },
+  { id: 'telemetry', label: 'Log' },
 ];
 
 const automationModes: SovereignAutomationMode[] = ['manual', 'auto-review', 'full-auto-draft-pr'];
@@ -147,8 +148,8 @@ const App: React.FC = () => {
   const [isLoadingDiffSources, setIsLoadingDiffSources] = useState(false);
   const [isWatchingWorkflow, setIsWatchingWorkflow] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [activeTab, setActiveTab] = useState<SovereignTab>('repo');
-  const [telemetryExpanded, setTelemetryExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<SovereignTab>('monitor');
+  const [telemetryExpanded, setTelemetryExpanded] = useState(true);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
   const [scanRegistry, setScanRegistry] = useState(() => createScanFindingRegistry());
   const [solutionPatternStore, setSolutionPatternStore] = useState(() => {
@@ -187,30 +188,13 @@ const App: React.FC = () => {
 
   const repoSnapshotStatus = getRepoSnapshotStatus(repoFiles);
   const runtimeBusy = Boolean(sequentialRuntime.activeStep);
-  const packageInputKey = buildAutomationRunKey({
-    mode: 'manual',
-    repoUrl,
-    repoBranch,
-    mission,
-    repoFileCount: repoFiles.length,
-  });
-  const automationRunKey = buildAutomationRunKey({
-    mode: automationMode,
-    repoUrl,
-    repoBranch,
-    mission,
-    repoFileCount: repoFiles.length,
-  });
+  const packageInputKey = buildAutomationRunKey({ mode: 'manual', repoUrl, repoBranch, mission, repoFileCount: repoFiles.length });
+  const automationRunKey = buildAutomationRunKey({ mode: automationMode, repoUrl, repoBranch, mission, repoFileCount: repoFiles.length });
   const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
   const latestGeneratedReview = lastPackage ? reviewGeneratedFiles(lastPackage.files) : null;
   const diffReport = lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, diffSources) : null;
   const repairPlan = buildWorkflowRepairPlan(workflowReport);
-  const healthReport = buildSovereignHealthReport({
-    repoFiles,
-    generatedFileReview: latestGeneratedReview,
-    workflowWatch: workflowReport,
-    telemetry,
-  });
+  const healthReport = buildSovereignHealthReport({ repoFiles, generatedFileReview: latestGeneratedReview, workflowWatch: workflowReport, telemetry });
   const coverageReport = buildRuntimeValidationCoverageReport();
   const solutionPatternHints = formatSolutionPatternHints(solutionPatternStore);
 
@@ -233,10 +217,11 @@ const App: React.FC = () => {
   }, [solutionPatternStore]);
 
   useEffect(() => {
+    const routerActiveTab: SovereignAutoViewTab = activeTab === 'monitor' ? 'repo' : activeTab;
     const decision = decideSovereignAutoView({
       mode: automationMode,
       activeStep: sequentialRuntime.activeStep,
-      activeTab,
+      activeTab: routerActiveTab,
       hasPackage: Boolean(lastPackage),
       isPublishing,
       isWatchingWorkflow,
@@ -251,15 +236,7 @@ const App: React.FC = () => {
     }
     // Auto-view router intentionally follows runtime state snapshots.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeTab,
-    automationMode,
-    isPublishing,
-    isWatchingWorkflow,
-    lastPackage,
-    sequentialRuntime.activeStep,
-    workflowReport?.status,
-  ]);
+  }, [activeTab, automationMode, isPublishing, isWatchingWorkflow, lastPackage, sequentialRuntime.activeStep, workflowReport?.status]);
 
   useEffect(() => {
     if (!repoFiles.length) return;
@@ -286,28 +263,19 @@ const App: React.FC = () => {
     ...override,
   });
 
-  const runSequentialStep = async <T,>(
-    step: SequentialRuntimeStep,
-    task: () => Promise<T>,
-    options: SequentialStartOptions = {},
-  ): Promise<T | null> => {
+  const runSequentialStep = async <T,>(step: SequentialRuntimeStep, task: () => Promise<T>, options: SequentialStartOptions = {}): Promise<T | null> => {
     try {
       const started = startSequentialStep(sequentialRuntimeRef.current, step, sequentialOptions(options));
       setSequentialState(started);
       pushTelemetry('workflow', 'info', `sequence:${step}:start`, started.steps[step].message ?? `${step} started.`);
-
       const result = await task();
-
       const completed = finishSequentialStep(sequentialRuntimeRef.current, step, 'completed', `${step} completed.`);
       setSequentialState(completed);
       pushTelemetry('workflow', 'success', `sequence:${step}:completed`, `${step} completed.`);
       return result;
     } catch (error) {
       const message = stripTokenFromText(error instanceof Error ? error.message : `${step} failed.`, githubToken);
-      if (sequentialRuntimeRef.current.activeStep === step) {
-        const failed = finishSequentialStep(sequentialRuntimeRef.current, step, 'failed', message);
-        setSequentialState(failed);
-      }
+      if (sequentialRuntimeRef.current.activeStep === step) setSequentialState(finishSequentialStep(sequentialRuntimeRef.current, step, 'failed', message));
       setSovereignSummary(message);
       pushTelemetry('workflow', 'error', `sequence:${step}:failed`, message);
       return null;
@@ -318,29 +286,15 @@ const App: React.FC = () => {
     try {
       pushTelemetry('package', 'info', 'package:build-start', 'Building Sovereign package.', { files: repoFiles.length });
       const missionWithAha = solutionPatternHints ? `${nextMission}\n\n${solutionPatternHints}` : nextMission;
-      const pkg = buildSovereignPackageFromRepoFiles({
-        mission: missionWithAha,
-        repoFiles,
-        selectedFilePath: 'README.md',
-        previousPreview: sovereignPreview,
-      });
-
+      const pkg = buildSovereignPackageFromRepoFiles({ mission: missionWithAha, repoFiles, selectedFilePath: 'README.md', previousPreview: sovereignPreview });
       const review = reviewGeneratedFiles(pkg.files);
       assertGeneratedFileReviewSafe(review);
-
       setMission(nextMission);
       setLastPackage(pkg);
       setLastPackageKey(nextPackageKey);
       setDiffSources([]);
       setSovereignSummary(`${summarizeSovereignPackage(pkg, repoFiles)}\n${review.summary}${solutionPatternHints ? `\n${solutionPatternHints}` : ''}`);
-      setSovereignPreview(JSON.stringify({
-        architecture: pkg.architecture,
-        brain: pkg.brain,
-        files: pkg.files.map((file) => ({ path: file.path, reason: file.reason })),
-        fileReview: review,
-        remoteAhaMemory: solutionPatternHints,
-        suggestions: pkg.suggestions,
-      }, null, 2));
+      setSovereignPreview(JSON.stringify({ architecture: pkg.architecture, brain: pkg.brain, files: pkg.files.map((file) => ({ path: file.path, reason: file.reason })), fileReview: review, remoteAhaMemory: solutionPatternHints, suggestions: pkg.suggestions }, null, 2));
       pushTelemetry('guards', 'success', 'guards:passed', 'Functional guards and generated-file review accepted package.', { generatedFiles: pkg.files.length });
       return pkg;
     } catch (error) {
@@ -354,13 +308,11 @@ const App: React.FC = () => {
     }
   };
 
-  const buildPackage = async (nextMission: string, nextPackageKey = packageInputKey): Promise<SovereignImplementationPackage | null> => {
-    return runSequentialStep('package-build', async () => {
-      const pkg = buildPackageCore(nextMission, nextPackageKey);
-      if (!pkg) throw new Error('Package build failed.');
-      return pkg;
-    });
-  };
+  const buildPackage = async (nextMission: string, nextPackageKey = packageInputKey): Promise<SovereignImplementationPackage | null> => runSequentialStep('package-build', async () => {
+    const pkg = buildPackageCore(nextMission, nextPackageKey);
+    if (!pkg) throw new Error('Package build failed.');
+    return pkg;
+  });
 
   const handleLoadRepoTree = async () => {
     await runSequentialStep('repo-load', async () => {
@@ -382,17 +334,12 @@ const App: React.FC = () => {
       if (!lastPackage) throw new Error('Build a Sovereign package before loading diff sources.');
       const parsed = parseGithubRepoUrl(repoUrl);
       if (!parsed) throw new Error('Cannot load diff sources from an invalid GitHub repo URL.');
-
       setIsLoadingDiffSources(true);
-      pushTelemetry('workflow', 'info', 'diff:load-start', 'Loading source snapshots for generated files.', { files: lastPackage.files.length });
-
       const headers = buildGitHubHeaders({ token: githubToken });
       const refQuery = repoBranch.trim() ? `?ref=${encodeURIComponent(repoBranch.trim())}` : '';
-
       try {
         const snapshots = await Promise.all(lastPackage.files.map(async (file): Promise<SourceFileSnapshot> => {
-          const path = encodeGitHubContentPath(file.path);
-          const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${path}${refQuery}`;
+          const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${encodeGitHubContentPath(file.path)}${refQuery}`;
           try {
             const response = await fetch(url, { headers });
             if (response.status === 404 || !response.ok) return { path: file.path, content: null, found: false };
@@ -403,7 +350,6 @@ const App: React.FC = () => {
             return { path: file.path, content: null, found: false };
           }
         }));
-
         setDiffSources(snapshots);
         const report = buildGeneratedFileDiffReport(lastPackage.files, snapshots);
         setSovereignSummary(report.summary);
@@ -415,35 +361,24 @@ const App: React.FC = () => {
     });
   };
 
-  const watchLatestWorkflow = async (commitSha = lastDraftCommitSha, branch = lastDraftBranch) => {
-    const report = await runSequentialStep('workflow-watch', async () => {
-      setIsWatchingWorkflow(true);
-      pushTelemetry('workflow', 'info', 'workflow:watch-start', 'Watching GitHub commit checks.', { commitSha: commitSha || 'none' });
-      try {
-        const nextReport = await fetchWorkflowWatchReport({ repoUrl, token: githubToken, commitSha, branch });
-        setWorkflowReport(nextReport);
+  const watchLatestWorkflow = async (commitSha = lastDraftCommitSha, branch = lastDraftBranch) => runSequentialStep('workflow-watch', async () => {
+    setIsWatchingWorkflow(true);
+    try {
+      const nextReport = await fetchWorkflowWatchReport({ repoUrl, token: githubToken, commitSha, branch });
+      setWorkflowReport(nextReport);
+      const startedAt = Date.now();
+      const bridge = applyWorkflowScanAndBuildGate(scanRegistry, nextReport, startedAt, Date.now());
+      setScanRegistry(bridge.registry);
+      pushTelemetry('workflow', nextReport.status === 'red' ? 'error' : nextReport.status === 'green' ? 'success' : 'warning', 'workflow:watch-finished', stripTokenFromText(nextReport.summary, githubToken));
+      pushTelemetry('workflow', bridge.gate.allowed ? 'success' : 'warning', 'scan:workflow-findings-synced', stripTokenFromText(bridge.summary, githubToken), { blockers: bridge.gate.blockers.length });
+      return nextReport;
+    } finally {
+      setIsWatchingWorkflow(false);
+    }
+  }, { hasDraftCommit: Boolean(commitSha) });
 
-        const scanStartedAt = Date.now();
-        const workflowFindingBridge = applyWorkflowScanAndBuildGate(scanRegistry, nextReport, scanStartedAt, Date.now());
-        setScanRegistry(workflowFindingBridge.registry);
-
-        pushTelemetry('workflow', nextReport.status === 'red' ? 'error' : nextReport.status === 'green' ? 'success' : 'warning', 'workflow:watch-finished', stripTokenFromText(nextReport.summary, githubToken));
-        pushTelemetry('workflow', workflowFindingBridge.gate.allowed ? 'success' : 'warning', 'scan:workflow-findings-synced', stripTokenFromText(workflowFindingBridge.summary, githubToken), { blockers: workflowFindingBridge.gate.blockers.length });
-        return nextReport;
-      } finally {
-        setIsWatchingWorkflow(false);
-      }
-    }, { hasDraftCommit: Boolean(commitSha) });
-    return report;
-  };
-
-  const generateRepoIdeas = () => {
-    void buildPackage(mission.trim() || 'README + Update History');
-  };
-
-  const generateErrorWorkflow = () => {
-    void buildPackage('Workflow Fehleranalyse + Runtime Check + Test Plan');
-  };
+  const generateRepoIdeas = () => { void buildPackage(mission.trim() || 'README + Update History'); };
+  const generateErrorWorkflow = () => { void buildPackage('Workflow Fehleranalyse + Runtime Check + Test Plan'); };
 
   const useRepairMission = (nextMission: string) => {
     void runSequentialStep('repair-plan', async () => {
@@ -507,10 +442,7 @@ const App: React.FC = () => {
       const review = reviewGeneratedFiles(pkg.files);
       assertGeneratedFileReviewSafe(review);
       if (!githubToken.trim()) throw new Error('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
-
       setIsPublishing(true);
-      setSovereignSummary('Erstelle GitHub Branch, Commit und Draft PR...');
-      pushTelemetry('github', 'info', 'github:draft-pr-start', 'Creating GitHub branch, commit and draft PR.', { files: pkg.files.length });
       try {
         return await publishPackageAsDraftPr({
           repoUrl,
@@ -518,21 +450,7 @@ const App: React.FC = () => {
           baseBranch: repoBranch,
           branchNonce: String(Date.now()),
           title: `Sovereign Studio: ${mission.trim() || pkg.requestedWork}`,
-          body: [
-            'Generated by Sovereign Studio.',
-            '',
-            summarizeSovereignPackage(pkg, repoFiles),
-            '',
-            'Generated file review:',
-            review.summary,
-            diffReport ? `Generated file diff preview: ${diffReport.summary}` : 'Generated file diff preview: not loaded.',
-            '',
-            'Scan findings:',
-            summarizeScanFindingRegistry(scanRegistry),
-            '',
-            'Suggestions:',
-            ...pkg.suggestions.map((item) => `- ${item}`),
-          ].join('\n'),
+          body: ['Generated by Sovereign Studio.', '', summarizeSovereignPackage(pkg, repoFiles), '', 'Generated file review:', review.summary, diffReport ? `Generated file diff preview: ${diffReport.summary}` : 'Generated file diff preview: not loaded.', '', 'Scan findings:', summarizeScanFindingRegistry(scanRegistry), '', 'Suggestions:', ...pkg.suggestions.map((item) => `- ${item}`)].join('\n'),
           files: pkg.files,
         });
       } finally {
@@ -558,27 +476,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
-    const decision = decideSovereignAutomation({
-      mode: automationMode,
-      repoReady: repoSnapshotStatus.ready,
-      hasMission: mission.trim().length > 0,
-      hasToken: githubToken.trim().length > 0,
-      isBusy: isRepoBusy || isPublishing || runtimeBusy,
-      hasPackage: hasFreshPackage,
-      lastAutoRunKey,
-      nextAutoRunKey: automationRunKey,
-    });
-
+    const decision = decideSovereignAutomation({ mode: automationMode, repoReady: repoSnapshotStatus.ready, hasMission: mission.trim().length > 0, hasToken: githubToken.trim().length > 0, isBusy: isRepoBusy || isPublishing || runtimeBusy, hasPackage: hasFreshPackage, lastAutoRunKey, nextAutoRunKey: automationRunKey });
     if (automationMode === 'manual') {
       setAutomationStatus('Manual mode is active.');
       return;
     }
-
     if (decision.blockedReason) {
       setAutomationStatus(decision.blockedReason);
       return;
     }
-
     if (decision.shouldBuildPackage && automationMode === 'auto-review') {
       setLastAutoRunKey(automationRunKey);
       setAutomationStatus('Auto Review is building and reviewing generated files.');
@@ -586,7 +492,6 @@ const App: React.FC = () => {
       void buildPackage(mission.trim() || 'README + Update History', packageInputKey);
       return;
     }
-
     if (automationMode === 'full-auto-draft-pr' && decision.shouldPublishDraftPr) {
       setLastAutoRunKey(automationRunKey);
       setAutomationStatus('Full Auto is building, reviewing and creating a Draft PR.');
@@ -626,12 +531,7 @@ const App: React.FC = () => {
 
       <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-800 pb-2">
         {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={activeTab === tab.id ? 'font-bold underline' : ''}
-            onClick={() => setActiveTab(tab.id)}
-            type="button"
-          >
+          <button key={tab.id} className={activeTab === tab.id ? 'font-bold underline' : ''} onClick={() => setActiveTab(tab.id)} type="button">
             {tab.label}
           </button>
         ))}
@@ -647,10 +547,43 @@ const App: React.FC = () => {
             {automationModes.map((mode) => <option key={mode} value={mode}>{AUTOMATION_MODE_LABELS[mode]}</option>)}
           </select>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">
-          Full Auto runs repo snapshot checks, scan findings, sequential runtime guard, generated-file review, auto-view routing, workflow watch and Draft PR publishing rules. It does not auto-merge.
-        </p>
+        <p className="mt-2 text-[11px] text-slate-500">Full Auto runs repo snapshot checks, scan findings, sequential runtime guard, generated-file review, auto-view routing, workflow watch and Draft PR publishing rules. It does not auto-merge.</p>
       </section>
+
+      {activeTab === 'monitor' ? (
+        <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="operator-monitor">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-bold">NoCode Live Monitor</h2>
+              <p className="mt-1 text-xs text-slate-400">Operator-Zentrale für Runtime Guards, Sequential Flow, Pattern-Kategorien, Gateway-Settings und Telemetry Log.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button type="button" onClick={() => setActiveTab('repo')}>Repo laden</button>
+              <button type="button" onClick={() => setActiveTab('remote')}>Settings/Gateway</button>
+              <button type="button" onClick={() => setActiveTab('telemetry')}>Log öffnen</button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-2 text-xs md:grid-cols-4">
+            <div className="rounded bg-slate-900/70 p-3">Repo: {repoSnapshotStatus.ready ? 'ready' : 'not ready'}</div>
+            <div className="rounded bg-slate-900/70 p-3">Runtime: {sequentialRuntime.activeStep ?? 'idle'}</div>
+            <div className="rounded bg-slate-900/70 p-3">Workflow: {workflowReport?.status ?? 'idle'}</div>
+            <div className="rounded bg-slate-900/70 p-3">Patterns: {solutionPatternStore.patterns.filter((pattern) => pattern.status === 'active').length}</div>
+          </div>
+
+          <div className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
+            <h3 className="font-bold uppercase tracking-wide text-slate-200">Gateway Settings Snapshot</h3>
+            <p className="mt-2">Enabled: {remoteMemoryConfig.enabled ? 'yes' : 'no'} · Mode: {remoteMemoryConfig.mode} · Workspace: {remoteMemoryConfig.workspaceId} · Collection: {remoteMemoryConfig.collectionName}</p>
+            <p className="mt-1 text-slate-500">Remote Memory bleibt optional und consent-gated. Änderungen laufen im Settings/Gateway Tab.</p>
+          </div>
+
+          <SequentialRuntimePanel state={sequentialRuntime} />
+          <RuntimeValidationCoveragePanel report={coverageReport} />
+          <ScanFindingRegistryPanel registry={scanRegistry} />
+          <PatternMemoryContainer store={solutionPatternStore} onClear={resetPatternMemory} />
+          <TelemetryContainer state={telemetry} expanded={telemetryExpanded} onExpandedChange={setTelemetryExpanded} />
+        </section>
+      ) : null}
 
       {activeTab === 'repo' ? <RepoSnapshotContainer repoUrl={repoUrl} repoBranch={repoBranch} accessValue={githubToken} repoStatus={repoStatus} isRepoBusy={isRepoBusy} runtimeBusy={runtimeBusy} repoFiles={repoFiles} memoryHints={solutionPatternHints} onRepoUrlChange={setRepoUrl} onRepoBranchChange={setRepoBranch} onAccessValueChange={setGithubToken} onLoadRepo={() => { void handleLoadRepoTree(); }} onSaveView={saveCurrentSession} onRestoreView={restoreSession} onClearView={clearSession} /> : null}
       {activeTab === 'readiness' ? <RepoReadinessPanel repoUrl={repoUrl} files={repoFiles} status={repoStatus} /> : null}
