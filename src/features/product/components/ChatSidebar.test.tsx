@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import React from 'react';
 import { ChatSidebar } from './ChatSidebar';
 import { ChatMessage, Suggestion } from '../types';
@@ -54,7 +54,8 @@ describe('ChatSidebar', () => {
     it('renders suggestions section when suggestions exist', () => {
       render(<ChatSidebar {...defaultProps} />);
 
-      expect(screen.getByText(/Vorschläge/i)).toBeDefined();
+      const suggestionRegion = screen.getByTestId('chat-suggestions');
+      expect(within(suggestionRegion).getByText(/^Vorschläge$/i)).toBeDefined();
       expect(screen.getByRole('button', { name: /Accept suggestion: Integration: WebSocket/i })).toBeDefined();
     });
 
@@ -215,7 +216,8 @@ describe('ChatSidebar', () => {
     it('handles empty suggestions array gracefully', () => {
       render(<ChatSidebar {...defaultProps} suggestions={[]} />);
 
-      expect(screen.queryByText(/Vorschläge/i)).toBeNull();
+      expect(screen.queryByTestId('chat-suggestions')).toBeNull();
+      expect(screen.getByText('Chat & Vorschläge')).toBeDefined();
     });
 
     it('handles very long messages', () => {
