@@ -39,6 +39,7 @@ import {
   createTelemetryEvent,
   summarizeTelemetry,
 } from './sovereignTelemetry';
+import { buildWorkflowRepairPlan } from './workflowRepairPlan';
 import { buildLocalWorkflowWatchReport } from './workflowWatch';
 
 const repoFiles = [
@@ -50,7 +51,7 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, readiness, automation, workflow, health, coverage, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, readiness, automation, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
 
@@ -97,6 +98,15 @@ describe('sovereign runtime structure', () => {
       checks: [{ name: 'ci', status: 'green', source: 'local', summary: 'passed' }],
     });
     expect(workflow.status).toBe('green');
+
+    const failedWorkflow = buildLocalWorkflowWatchReport({
+      commitSha: 'commit-sha',
+      branch: 'sovereign/package/test',
+      checks: [{ name: 'lint', status: 'red', source: 'local', summary: 'eslint failed' }],
+    });
+    const repairPlan = buildWorkflowRepairPlan(failedWorkflow);
+    expect(repairPlan.blocked).toBe(false);
+    expect(repairPlan.mission).toContain('Workflow repair package');
 
     let telemetry = createInitialTelemetryState();
     telemetry = appendTelemetryEvent(telemetry, createTelemetryEvent('guards', 'success', 'guards:passed', 'Package ready.'));
