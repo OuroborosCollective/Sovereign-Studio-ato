@@ -10,13 +10,13 @@ import { RemoteMemoryContainer } from './features/product/containers/RemoteMemor
 import { BuilderContainer } from './features/product/containers/BuilderContainer';
 import { WorkflowContainer } from './features/product/containers/WorkflowContainer';
 import { RepoSnapshotContainer } from './features/product/containers/RepoSnapshotContainer';
+import { TelemetryContainer } from './features/product/containers/TelemetryContainer';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
 import { ScanFindingRegistryPanel } from './features/product/components/ScanFindingRegistryPanel';
 import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
-import { SovereignTelemetryPanel } from './features/product/components/SovereignTelemetryPanel';
 import {
   AUTOMATION_MODE_LABELS,
   buildAutomationRunKey,
@@ -792,10 +792,10 @@ const App: React.FC = () => {
       ) : null}
 
       {activeTab === 'telemetry' ? (
-        <SovereignTelemetryPanel
+        <TelemetryContainer
           state={telemetry}
           expanded={telemetryExpanded}
-          onToggle={() => setTelemetryExpanded((value) => !value)}
+          onExpandedChange={setTelemetryExpanded}
         />
       ) : null}
     </div>
