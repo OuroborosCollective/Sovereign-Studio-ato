@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAppDispatch, useAppSelector } from './hooks';
 import { Provider } from 'react-redux';
@@ -21,6 +21,8 @@ const testStore = configureStore({
       isRootInitialized: false,
       telemetry: null,
       resonance: null,
+      guardReport: null,
+      activePattern: null,
     }) => state,
   },
 });
@@ -68,6 +70,8 @@ describe('useAppSelector', () => {
     expect(result.current.isAuthSequenceActive).toBe(false);
     expect(result.current.isRootInitialized).toBe(false);
     expect(result.current.errorState).toBeNull();
+    expect(result.current.guardReport).toBeNull();
+    expect(result.current.activePattern).toBeNull();
   });
 });
 
