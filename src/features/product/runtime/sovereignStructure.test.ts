@@ -24,6 +24,11 @@ import {
   assertRuntimeValidationCoverageHealthy,
   buildRuntimeValidationCoverageReport,
 } from './runtimeValidationCoverage';
+import {
+  createSequentialRuntimeState,
+  finishSequentialStep,
+  startSequentialStep,
+} from './sequentialRuntimeGuard';
 import { buildSovereignHealthReport } from './sovereignHealth';
 import {
   assertGeneratedPackageReady,
@@ -53,9 +58,17 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, auth, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, auth, sequential runtime, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
+
+    let sequential = createSequentialRuntimeState();
+    sequential = startSequentialStep(sequential, 'repo-load', {}, 1);
+    sequential = finishSequentialStep(sequential, 'repo-load', 'completed', 'loaded', 2);
+    sequential = startSequentialStep(sequential, 'package-build', { repoReady: snapshot.ready }, 3);
+    sequential = finishSequentialStep(sequential, 'package-build', 'completed', 'package built', 4);
+    expect(sequential.steps['repo-load'].status).toBe('completed');
+    expect(sequential.steps['package-build'].status).toBe('completed');
 
     const auth = createGitHubAuthSession(' ghp_demo_token ');
     expect(auth.hasToken).toBe(true);
