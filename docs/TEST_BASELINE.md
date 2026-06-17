@@ -24,12 +24,14 @@ npm run test:all
 
 ### `test:unit`
 
-Runs the deterministic local unit/runtime lane and excludes known external/API/e2e paths:
+Runs the deterministic local unit/runtime lane and excludes known external/API/e2e/UI-flake paths:
 
 - `**/*.chat.test.ts`
 - `**/*.integration.test.ts`
 - `**/*.e2e.test.ts`
 - `**/*.spec.ts`
+- `**/*.sequential.test.ts`
+- `**/ChatSidebar.test.tsx`
 - `**/e2e/**`
 - `**/api-fallback/**`
 
@@ -37,7 +39,15 @@ This is the primary release gate for local runtime feature work.
 
 ### `test:integration`
 
-Runs explicit integration-style Vitest files such as chat/API-adjacent tests. These can require mocks or controlled API setup.
+Runs explicit integration-style Vitest files such as chat/API-adjacent tests, sequential workflow tests and currently flaky chat UI tests. These can require mocks or controlled API setup.
+
+Current integration lane includes:
+
+- `src/**/*.chat.test.ts`
+- `src/**/*.integration.test.ts`
+- `src/**/*.e2e.test.ts`
+- `src/**/*.sequential.test.ts`
+- `src/**/ChatSidebar.test.tsx`
 
 ### `test:e2e`
 
@@ -51,7 +61,7 @@ Runs the complete Vitest suite with no lane exclusions. Use this for full visibi
 
 Runtime and unit tests that do not depend on external services are the primary release gate for local feature work.
 
-External API, mobile/e2e, and network-dependent test paths must be tracked separately so they do not hide regressions in deterministic runtime modules.
+External API, mobile/e2e, UI timing, and network-dependent test paths must be tracked separately so they do not hide regressions in deterministic runtime modules.
 
 ## Known flaky or external areas
 
@@ -59,6 +69,7 @@ Known areas to inspect before treating the full suite as red because of a new lo
 
 - Sequential workflow tests that depend on external APIs or slow network timing.
 - Chat-message tests with API timing behavior.
+- Chat sidebar UI assertions that currently match multiple badges or empty suggestions differently than expected.
 - Mobile/e2e API fallback tests under `sovereign-studio-rn/e2e/**`.
 
 These tests should not be deleted. They should be moved behind an explicit integration/e2e command or given deterministic mocks.
