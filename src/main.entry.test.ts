@@ -23,6 +23,15 @@ describe('main app entry', () => {
     }
   });
 
+  it('wires the runtime auto-view router into the live app shell', () => {
+    const app = readSource('./App.tsx');
+
+    expect(app).toContain('decideSovereignAutoView');
+    expect(app).toContain("view:auto-switch");
+    expect(app).toContain('setActiveTab(decision.tab)');
+    expect(app).toContain('workflowStatus: workflowReport?.status');
+  });
+
   it('keeps the industrial shell styling contract in the Android web build', () => {
     const css = readSource('./index.css');
 
