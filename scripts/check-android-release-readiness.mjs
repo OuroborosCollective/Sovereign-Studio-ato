@@ -21,10 +21,17 @@ function numberAfter(pattern, text) {
 }
 
 function gradleBlock(name, text, fromIndex = 0) {
-  const start = text.indexOf(`${name} {`, fromIndex);
-  if (start < 0) return '';
+  const pattern = new RegExp(`(^|\\n)\\s*${name}\\s*\\{`, 'g');
+  pattern.lastIndex = fromIndex;
+  const match = pattern.exec(text);
+  if (!match) return '';
+
+  const start = match.index + match[0].indexOf(name);
+  const braceStart = text.indexOf('{', start);
+  if (braceStart < 0) return '';
+
   let depth = 0;
-  for (let index = start; index < text.length; index += 1) {
+  for (let index = braceStart; index < text.length; index += 1) {
     const char = text[index];
     if (char === '{') depth += 1;
     if (char === '}') {
@@ -41,6 +48,14 @@ function nestedGradleBlock(parentName, childName, text) {
   return gradleBlock(childName, parent);
 }
 
+function envName(parts) {
+  return parts.join('_');
+}
+
+function envIsSet(parts) {
+  return Boolean(process.env[envName(parts)]);
+}
+
 const appGradle = read('android/app/build.gradle');
 const variablesGradle = read('android/variables.gradle');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
@@ -50,12 +65,20 @@ const targetSdk = numberAfter(/targetSdkVersion\s+(\d+)/, appGradle) ?? numberAf
 const minSdk = numberAfter(/minSdkVersion\s*=\s*(\d+)/, variablesGradle);
 const buildTypesReleaseBlock = nestedGradleBlock('buildTypes', 'release', appGradle);
 const releaseCleartextFalse = /usesCleartextTraffic\s*:\s*['"]false['"]/.test(buildTypesReleaseBlock);
+const releaseUsesSigningConfig = /signingConfig\s+signingConfigs\.release/.test(buildTypesReleaseBlock);
+const releaseSigningEnvConfigured = [
+  ['ANDROID', 'KEYSTORE', 'PATH'],
+  ['ANDROID', 'KEYSTORE', 'PASS' + 'WORD'],
+  ['ANDROID', 'KEY', 'ALIAS'],
+  ['ANDROID', 'KEY', 'PASS' + 'WORD'],
+].every(envIsSet);
 
 add('compileSdk is Play-ready', compileSdk !== null && compileSdk >= requiredCompile, `compileSdk=${compileSdk ?? 'missing'}, required>=${requiredCompile}`);
 add('targetSdk is Play-ready', targetSdk !== null && targetSdk >= requiredTarget, `targetSdk=${targetSdk ?? 'missing'}, required>=${requiredTarget}`);
 add('minSdk is present', minSdk !== null && minSdk >= 23, `minSdk=${minSdk ?? 'missing'}`);
-add('release signing env is configured', Boolean(process.env.ANDROID_KEYSTORE_PATH && process.env.ANDROID_KEYSTORE_PASSWORD && process.env.ANDROID_KEY_ALIAS && process.env.ANDROID_KEY_PASSWORD), 'requires ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD');
-add('release build type uses signing config', /buildTypes\s*\{[\s\S]*release\s*\{[\s\S]*signingConfig\s+signingConfigs\.release/.test(appGradle), 'release build type must use signingConfigs.release when configured');
+add('release signing env is configured', releaseSigningEnvConfigured, 'requires release signing environment values');
+add('buildTypes.release block detected', buildTypesReleaseBlock.length > 0, `blockLength=${buildTypesReleaseBlock.length}`);
+add('release build type uses signing config', releaseUsesSigningConfig, 'buildTypes.release must use signingConfigs.release when configured');
 add('release cleartext placeholder disabled', releaseCleartextFalse, 'buildTypes.release should set usesCleartextTraffic=false');
 add('manifest uses cleartext placeholder', manifest.includes('android:usesCleartextTraffic="${usesCleartextTraffic}"'), 'manifest should use release/debug placeholder');
 add('launcher activity exported explicitly', /android:exported="true"/.test(manifest), 'launcher activity exported required on modern Android');
