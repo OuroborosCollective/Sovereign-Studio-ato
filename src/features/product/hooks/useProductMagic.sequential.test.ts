@@ -16,7 +16,7 @@ const localStorageMock = (() => {
 
 Object.defineProperty(window, 'localStorage', { value: localStorageMock, configurable: true });
 
-describe('useProductMagic - deterministic sequential workflow', () => {
+describe('useProductMagic - deterministic text-first sequential workflow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(Date, 'now').mockReturnValue(BASE_TIME);
@@ -123,22 +123,24 @@ describe('useProductMagic - deterministic sequential workflow', () => {
     expect(result.current.chatMessages.some((message) => message.role === 'assistant' && message.content.includes('So nutzt du Sovereign Studio'))).toBe(true);
   });
 
-  it('accepts one suggestion and turns it into a card', async () => {
+  it('accepts a suggestion as a text-first intention instead of asserting card counts', async () => {
     const { result } = renderHook(() => useProductMagic());
 
     await act(async () => {
       await result.current.runArchitectureAnalysis();
     });
 
+    const suggestionTitle = result.current.suggestions[0].title;
     const suggestionId = result.current.suggestions[0].id;
-    const initialCardCount = result.current.cards.length;
 
     act(() => {
       result.current.acceptSuggestion(suggestionId);
     });
 
     expect(result.current.suggestions[0].accepted).toBe(true);
-    expect(result.current.cards.length).toBeGreaterThan(initialCardCount);
+    expect(result.current.chatMessages.some((message) => message.content.includes(suggestionTitle))).toBe(true);
+    expect(result.current.workView).toBe('editor');
+    expect(result.current.mobilePane).toBe('live');
   });
 
   it('blocks approval before the workflow is green', async () => {
