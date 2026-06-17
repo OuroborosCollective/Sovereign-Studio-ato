@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyScanFindings,
+  buildScanFindingPublishGate,
   collectRepoPathFindings,
+  collectWorkflowWatchFindings,
   createScanFindingRegistry,
   groupScanFindingsByCategory,
   summarizeScanFindingRegistry,
@@ -9,6 +11,12 @@ import {
   validateScanFindingRegistry,
   type ScanFinding,
 } from './scanFindingRegistry';
+import {
+  applyScanFindingsWithBookkeeping,
+  applyWorkflowWatchFindingsWithBookkeeping,
+  markSourceResolvedByCleanScan,
+} from './scanFindingBookkeeping';
+import type { WorkflowWatchReport } from './workflowWatch';
 
 describe('scanFindingRegistry', () => {
   it('collects categorized findings with direct paths and details', () => {
@@ -46,19 +54,19 @@ describe('scanFindingRegistry', () => {
     expect(validateScanFindingRegistry(registry).valid).toBe(true);
   });
 
-  it('increments repeated findings and resolves missing findings from the same source', () => {
+  it('increments repeated findings and keeps resolved findings in bookkeeping history', () => {
     const firstFindings = collectRepoPathFindings([
       { path: '.env', type: 'blob', size: 20 },
       { path: 'README.md', type: 'blob', size: 100 },
     ], 1);
-    const first = applyScanFindings(createScanFindingRegistry(1), 'repo-path-scan', firstFindings, 1, 2);
+    const first = applyScanFindingsWithBookkeeping(createScanFindingRegistry(1), 'repo-path-scan', firstFindings, 1, 2);
 
     const secondFindings = collectRepoPathFindings([
       { path: 'README.md', type: 'blob', size: 100 },
       { path: '.github/workflows/ci.yml', type: 'blob', size: 100 },
       { path: 'src/app.test.ts', type: 'blob', size: 100 },
     ], 3);
-    const second = applyScanFindings(first, 'repo-path-scan', secondFindings, 3, 4);
+    const second = applyScanFindingsWithBookkeeping(first, 'repo-path-scan', secondFindings, 3, 4);
 
     const envFinding = second.findings.find((finding) => finding.filePath === '.env');
     expect(envFinding?.status).toBe('resolved');
@@ -73,6 +81,51 @@ describe('scanFindingRegistry', () => {
     const grouped = groupScanFindingsByCategory(findings);
     expect(grouped['security-leak']).toHaveLength(1);
     expect(grouped['build-artifact']).toHaveLength(1);
+  });
+
+  it('collects CI workflow findings with likely paths and runtime-observed confidence', () => {
+    const report: WorkflowWatchReport = {
+      status: 'red',
+      commitSha: 'abc',
+      branch: 'main',
+      checkedAt: 1,
+      checks: [
+        { name: 'lint', status: 'red', conclusion: 'failure', source: 'check-run', summary: 'eslint failed' },
+        { name: 'typecheck', status: 'red', conclusion: 'failure', source: 'check-run', summary: 'tsc failed' },
+      ],
+      errors: [],
+      warnings: [],
+      fixes: [],
+      summary: 'red',
+    };
+
+    const findings = collectWorkflowWatchFindings(report, 1);
+    expect(findings).toHaveLength(2);
+    expect(findings[0]).toMatchObject({ category: 'ci-failure', filePath: 'eslint.config.*', confidence: 'runtime-observed' });
+    expect(findings[1]).toMatchObject({ category: 'type-error', filePath: 'tsconfig.json' });
+  });
+
+  it('keeps CI findings active until a clean workflow scan proves resolution', () => {
+    const failing: WorkflowWatchReport = {
+      status: 'red',
+      commitSha: 'abc',
+      branch: 'main',
+      checkedAt: 1,
+      checks: [{ name: 'lint', status: 'red', conclusion: 'failure', source: 'check-run', summary: 'eslint failed' }],
+      errors: [],
+      warnings: [],
+      fixes: [],
+      summary: 'red',
+    };
+
+    const first = applyWorkflowWatchFindingsWithBookkeeping(createScanFindingRegistry(1), failing, 1, 2);
+    expect(first.findings.find((finding) => finding.category === 'ci-failure')?.status).toBe('active');
+    expect(buildScanFindingPublishGate(first).allowed).toBe(false);
+
+    const clean = markSourceResolvedByCleanScan(first, 'workflow-watch', 3, 4);
+    const ciFinding = clean.findings.find((finding) => finding.category === 'ci-failure');
+    expect(ciFinding?.status).toBe('resolved');
+    expect(buildScanFindingPublishGate(clean).allowed).toBe(true);
   });
 
   it('rejects forged findings with unredacted secrets', () => {
