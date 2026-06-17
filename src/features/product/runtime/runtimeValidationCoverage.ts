@@ -52,6 +52,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Repo loader + Diff loader + Workflow Watch + Draft PR Publisher',
   },
   {
+    id: 'sequential-runtime-guard',
+    runtimePath: 'src/features/product/runtime/sequentialRuntimeGuard.ts',
+    testPath: 'src/features/product/runtime/sequentialRuntimeGuard.test.ts',
+    purpose: 'Ensures one runtime step finishes before the next starts and validates transitions.',
+    status: 'covered',
+    integrationPoint: 'SequentialRuntimePanel + App action wrappers',
+  },
+  {
     id: 'functional-guards',
     runtimePath: 'src/features/product/runtime/sovereignFunctionalGuards.ts',
     testPath: 'src/features/product/runtime/sovereignFunctionalGuards.test.ts',
