@@ -1,4 +1,4 @@
-name: 🚀 Android Artifact Release
+name: Android Artifact Release
 
 on:
   push:
@@ -15,33 +15,41 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: android-artifact-release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: 🏗️ Build Android Artifacts
+    name: Build Signed Android Artifacts
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
       actions: write
     env:
       NODE_VERSION: 22
+      JAVA_VERSION: 21
+      KEYSTORE_FILE: android/app/keystore/release.jks
     steps:
-      - name: 🧾 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           clean: true
 
-      - name: 📦 Setup pnpm
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
+          run_install: false
 
-      - name: 🟢 Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: 🏷️ Determine Versioning
+      - name: Determine Versioning
         id: vars
         run: |
           INPUT_NAME="${{ github.event.inputs.version_name }}"
@@ -52,137 +60,115 @@ jobs:
           if [ -z "$INPUT_CODE" ]; then
             INPUT_CODE="${{ github.run_number }}"
           fi
-          echo "version_name=$INPUT_NAME" >> $GITHUB_OUTPUT
-          echo "version_code=$INPUT_CODE" >> $GITHUB_OUTPUT
+          echo "version_name=$INPUT_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$INPUT_CODE" >> "$GITHUB_OUTPUT"
 
-      - name: 🔄 Check RN App
-        id: check_rn
-        run: |
-          if [ -d "sovereign-studio-rn" ] && [ -f "sovereign-studio-rn/app.json" ]; then
-            echo "rn_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "rn_exists=false" >> $GITHUB_OUTPUT
-          fi
+      - name: Install Root Dependencies
+        run: pnpm install --no-frozen-lockfile
 
-      - name: 📦 Install Dependencies
-        run: |
-          if [ "${{ steps.check_rn.outputs.rn_exists }}" == "true" ]; then
-            cd sovereign-studio-rn && pnpm install --no-frozen-lockfile
-          else
-            pnpm install --no-frozen-lockfile
-          fi
+      - name: Type Check
+        run: pnpm run type-check
 
-      - name: 🏗️ Build Web App
-        if: steps.check_rn.outputs.rn_exists == 'false'
-        run: |
-          echo "🔨 Building web app..."
-          pnpm run build
-          echo "✅ Web build complete"
-          ls -la dist/ || echo "dist not found"
+      - name: Runtime Unit Tests
+        run: pnpm run test:unit
+        env:
+          CI: true
 
-      - name: 🔄 Sync Capacitor
-        if: steps.check_rn.outputs.rn_exists == 'false'
+      - name: Build Root Web App
         run: |
-          echo "🔄 Syncing Capacitor..."
+          pnpm run build:web
+          test -d dist
+          test -f dist/index.html
+
+      - name: Sync Capacitor Android
+        run: |
           npx cap sync android
-          ls -la android/app/src/main/assets/public/ || echo "Assets not found"
-          echo "✅ Sync complete"
+          test -d android/app/src/main/assets/public
+          test -f android/app/src/main/assets/public/index.html
 
-      - name: ☕ Setup Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: ⚡ Clean Gradle Cache
+      - name: Prepare Android Signing Key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          rm -rf ~/.gradle/caches ~/.gradle/wrapper
-          echo "✅ Gradle cache cleaned"
-
-      - name: 🔐 Decode Android Keystore
-        run: |
-          echo "🔐 Checking for Android signing secrets..."
-          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "⚠️ Warning: ANDROID_KEYSTORE_BASE64 is missing. Building UNSIGNED APKs."
-            echo "UNSIGNED_BUILD=true" >> $GITHUB_OUTPUT
-          else
-            echo "🔐 Keystore secret found. Creating signed build."
-            mkdir -p android/app/keystore
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore/release.jks
-            ls -la android/app/keystore/release.jks
-            echo "UNSIGNED_BUILD=false" >> $GITHUB_OUTPUT
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 is required for signed release artifacts." >&2
+            exit 1
           fi
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "ANDROID_KEYSTORE_PASSWORD is required for signed release artifacts." >&2
+            exit 1
+          fi
+          if [ -z "$ANDROID_KEY_ALIAS" ]; then
+            echo "ANDROID_KEY_ALIAS is required for signed release artifacts." >&2
+            exit 1
+          fi
+          mkdir -p android/app/keystore
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+          test -s "$KEYSTORE_FILE"
+          EFFECTIVE_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+          echo "ANDROID_KEYSTORE_PATH=$PWD/$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$EFFECTIVE_KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: 📦 Build Release AAB
-        if: env.UNSIGNED_BUILD != 'true'
+      - name: Android Release Readiness Check
+        run: node scripts/check-android-release-readiness.mjs
+
+      - name: Build Signed Release AAB and APK
         run: |
           cd android
           chmod +x gradlew
-          echo "🔨 Building AAB..."
-          ./gradlew bundleRelease --no-daemon --no-build-cache --rerun-tasks \
-            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
-            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+          ./gradlew bundleRelease assembleRelease --no-daemon --no-build-cache --rerun-tasks \
             -PversionCode=${{ steps.vars.outputs.version_code }} \
             -PversionName=${{ steps.vars.outputs.version_name }}
-          echo "✅ AAB build complete"
-          ls -la app/build/outputs/bundle/release/ || echo "AAB not found"
+          test -f app/build/outputs/bundle/release/app-release.aab
+          test -f app/build/outputs/apk/release/app-release.apk
 
-      - name: 📦 Build Release APK (unsigned fallback)
-        if: env.UNSIGNED_BUILD == 'true'
+      - name: Prepare Release Artifacts
         run: |
-          cd android
-          chmod +x gradlew
-          echo "🔨 Building UNSIGNED APK..."
-          ./gradlew assembleRelease --no-daemon --no-build-cache --rerun-tasks
-          echo "✅ Unsigned APK build complete"
-          ls -la app/build/outputs/apk/release/ || echo "APK not found"
-
-      - name: 📦 Build Signed APK
-        if: env.UNSIGNED_BUILD != 'true'
-        run: |
-          cd android
-          chmod +x gradlew
-          echo "🔨 Building SIGNED APK..."
-          ./gradlew assembleRelease --no-daemon --no-build-cache --rerun-tasks \
-            -Pandroid.injected.signing.store.file=$(pwd)/app/keystore/release.jks \
-            -Pandroid.injected.signing.store.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.ANDROID_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            -PversionCode=${{ steps.vars.outputs.version_code }} \
-            -PversionName=${{ steps.vars.outputs.version_name }}
-          echo "✅ Signed APK build complete"
-          ls -la app/build/outputs/apk/release/ || echo "APK not found"
-
-      - name: 📁 Prepare Artifacts
-        run: |
+          rm -rf release-bundle SovereignStudio-PlayStore-Release.zip
           mkdir -p release-bundle
-          if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
-            cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
-            echo "✅ AAB copied"
-          fi
-          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
-            echo "✅ APK copied"
-          fi
-          ls -la release-bundle/
-          if [ -f SovereignStudio-PlayStore-Release.zip ]; then
-            rm SovereignStudio-PlayStore-Release.zip
-          fi
+          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
+          cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
+          cp android-release-readiness.md release-bundle/android-release-readiness.md
+          (cd release-bundle && sha256sum SovereignStudio-release.aab SovereignStudio-release.apk android-release-readiness.md > CHECKSUMS.txt)
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
-          echo "✅ ZIP created"
-          ls -la SovereignStudio-PlayStore-Release.zip
+          test -s release-bundle/SovereignStudio-release.aab
+          test -s release-bundle/SovereignStudio-release.apk
+          test -s SovereignStudio-PlayStore-Release.zip
 
-      - name: 📤 Upload Artifact
+      - name: Upload Signed AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-release-aab-v${{ steps.vars.outputs.version_name }}
+          path: release-bundle/SovereignStudio-release.aab
+          retention-days: 30
+
+      - name: Upload Signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-release-apk-v${{ steps.vars.outputs.version_name }}
+          path: release-bundle/SovereignStudio-release.apk
+          retention-days: 30
+
+      - name: Upload PlayStore Release Bundle
         uses: actions/upload-artifact@v4
         with:
           name: SovereignStudio-PlayStore-Release-v${{ steps.vars.outputs.version_name }}
           path: SovereignStudio-PlayStore-Release.zip
           retention-days: 30
 
-      - name: 🏷️ Create Git Tag
-        if: github.ref == 'refs/heads/main' && env.UNSIGNED_BUILD != 'true'
+      - name: Create Git Tag
+        if: github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -193,15 +179,20 @@ jobs:
           else
             git config user.name "github-actions"
             git config user.email "github-actions@github.com"
-            git tag $TAG
-            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git $TAG
-            echo "✅ Tag $TAG created and pushed"
+            git tag "$TAG"
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git "$TAG"
           fi
 
-      - name: ⚠️ Summary
+      - name: Release Summary
+        if: always()
         run: |
-          echo "📋 Build Summary:"
-          echo "   Version: ${{ steps.vars.outputs.version_name }}"
-          echo "   Version Code: ${{ steps.vars.outputs.version_code }}"
-          echo "   Signed: ${{ env.UNSIGNED_BUILD != 'true' }}"
-          echo "   Artifacts: release-bundle/"
+          {
+            echo "## Android Artifact Release"
+            echo ""
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Version | ${{ steps.vars.outputs.version_name }} |"
+            echo "| Version Code | ${{ steps.vars.outputs.version_code }} |"
+            echo "| compileSdk / targetSdk | 35 / 35 |"
+            echo "| Artifacts | signed AAB, signed APK, PlayStore ZIP |"
+          } >> "$GITHUB_STEP_SUMMARY"
