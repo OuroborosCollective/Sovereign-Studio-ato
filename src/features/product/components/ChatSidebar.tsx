@@ -1,6 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, Lightbulb, Loader2 } from 'lucide-react';
 import { ChatMessage, Suggestion } from '../types';
+import {
+  canSubmitChatMessage,
+  chatSidebarSummary,
+  describeSuggestionAction,
+  normalizeChatInput,
+  normalizeChatMessages,
+  normalizeSuggestions,
+} from '../runtime/chatSidebarRuntime';
 
 interface ChatSidebarProps {
   chatMessages: ChatMessage[];
@@ -24,6 +32,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const safeMessages = normalizeChatMessages(chatMessages);
+  const safeSuggestions = normalizeSuggestions(suggestions);
+  const normalizedInput = normalizeChatInput(inputValue);
+  const canSubmit = canSubmitChatMessage(inputValue);
+  const summary = chatSidebarSummary(safeMessages, safeSuggestions);
 
   useEffect(() => {
     try {
@@ -31,13 +44,12 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
     } catch {
       // scrollIntoView not supported in test environment
     }
-  }, [chatMessages]);
+  }, [safeMessages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const nextMessage = inputValue.trim();
-    if (nextMessage) {
-      onSendMessage(nextMessage);
+    if (canSubmit) {
+      onSendMessage(normalizedInput);
       setInputValue('');
     }
   };
@@ -76,7 +88,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   };
 
   return (
-    <section className="w-full md:w-[380px] shrink-0 border-l border-stone-200 bg-white flex flex-col" aria-label="Chat und Vorschläge">
+    <section className="w-full md:w-[380px] shrink-0 border-l border-stone-200 bg-white flex flex-col" aria-label="Chat und Vorschläge" data-testid="chat-sidebar" data-summary={summary}>
       <div className="p-3 bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-indigo-600" aria-hidden="true" />
@@ -89,7 +101,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-stone-50 to-white" aria-label="Chat Nachrichten">
-        {chatMessages.map((msg) => (
+        {safeMessages.map((msg) => (
           <div
             key={msg.id}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -110,20 +122,20 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {suggestions.length > 0 && (
+      {safeSuggestions.length > 0 && (
         <div className="border-t border-stone-200 bg-stone-50 p-3 max-h-[200px] overflow-y-auto" aria-label="Vorschläge">
           <div className="text-[10px] font-bold text-stone-600 uppercase mb-2 flex items-center gap-1">
             <Sparkles size={12} className="text-indigo-600" aria-hidden="true" />
             Vorschläge
           </div>
           <div className="space-y-2">
-            {suggestions.map((suggestion) => (
+            {safeSuggestions.map((suggestion) => (
               <button
                 key={suggestion.id}
                 type="button"
                 onClick={() => handleSuggestionClick(suggestion)}
                 disabled={suggestion.accepted}
-                aria-label={suggestion.accepted ? `Vorschlag akzeptiert: ${suggestion.title}` : `Vorschlag übernehmen: ${suggestion.title}`}
+                aria-label={describeSuggestionAction(suggestion)}
                 aria-pressed={Boolean(suggestion.accepted)}
                 className={`w-full text-left p-3 rounded-xl border transition-all duration-200 ${getSuggestionStyle(suggestion.type, suggestion.accepted)} ${!suggestion.accepted ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}`}
               >
@@ -162,7 +174,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           <button
             type="submit"
             aria-label="Nachricht senden"
-            disabled={!inputValue.trim()}
+            disabled={!canSubmit}
             className="px-3 py-2 bg-indigo-600 disabled:bg-stone-300 text-white rounded-lg hover:bg-indigo-700 transition-colors"
           >
             <Send size={14} aria-hidden="true" />
