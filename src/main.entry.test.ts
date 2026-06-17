@@ -1,0 +1,34 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+function readSource(path: string): string {
+  return readFileSync(new URL(path, import.meta.url), 'utf8');
+}
+
+describe('main app entry', () => {
+  it('renders the current Sovereign container app, not the legacy ProductMagic shell', () => {
+    const main = readSource('./main.tsx');
+
+    expect(main).toContain("import App from './App'");
+    expect(main).toContain('<App />');
+    expect(main).not.toContain("import ProductMagicApp from './ProductMagicApp'");
+    expect(main).not.toContain('<ProductMagicApp />');
+  });
+
+  it('keeps visible container app navigation and runtime surfaces available', () => {
+    const app = readSource('./App.tsx');
+
+    for (const label of ['Repo', 'Readiness', 'Findings', 'Builder', 'Workflow', 'Health', 'Memory', 'Remote', 'Telemetry']) {
+      expect(app).toContain(`label: '${label}'`);
+    }
+  });
+
+  it('keeps the industrial shell styling contract in the Android web build', () => {
+    const css = readSource('./index.css');
+
+    expect(css).toContain('--surface-1');
+    expect(css).toContain('--accent-2');
+    expect(css).toContain('Live Android shell');
+    expect(css).toContain('Container runtime');
+  });
+});
