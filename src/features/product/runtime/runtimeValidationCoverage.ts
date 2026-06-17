@@ -84,6 +84,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Workflow Repair + Scan Findings + Action Builder Aha logic',
   },
   {
+    id: 'remote-memory-update-intake',
+    runtimePath: 'src/features/product/runtime/remoteMemoryUpdateIntake.ts',
+    testPath: 'src/features/product/runtime/remoteMemoryUpdateIntake.test.ts',
+    purpose: 'Turns shared remote solution updates into local Aha solution patterns while rejecting contributor submissions.',
+    status: 'covered',
+    integrationPoint: 'Remote Memory Pull Updates + Solution Pattern Memory',
+  },
+  {
     id: 'functional-guards',
     runtimePath: 'src/features/product/runtime/sovereignFunctionalGuards.ts',
     testPath: 'src/features/product/runtime/sovereignFunctionalGuards.test.ts',
