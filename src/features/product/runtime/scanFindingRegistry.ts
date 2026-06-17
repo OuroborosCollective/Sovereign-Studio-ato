@@ -13,7 +13,8 @@ export type ScanFindingCategory =
   | 'workflow'
   | 'learning-memory'
   | 'diff-preview'
-  | 'generated-file';
+  | 'generated-file'
+  | 'docs';
 
 export type ScanFindingSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type ScanFindingStatus = 'active' | 'resolved';
@@ -79,6 +80,7 @@ export const SCAN_FINDING_CATEGORIES: ScanFindingCategory[] = [
   'learning-memory',
   'diff-preview',
   'generated-file',
+  'docs',
 ];
 
 export const SCAN_FINDING_SEVERITIES: ScanFindingSeverity[] = ['low', 'medium', 'high', 'critical'];
@@ -295,7 +297,7 @@ export function collectRepoPathFindings(files: RepoFile[], now = Date.now()): Sc
       confidence: 'path-only',
       source: 'repo-path-scan',
       now,
-    } as never));
+    }));
   }
 
   return findings;
