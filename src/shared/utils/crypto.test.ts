@@ -26,6 +26,22 @@ describe('maskSecrets', () => {
     expect(maskSecrets(text)).toBe('Authorization: Bearer ****');
   });
 
+  it('masks OpenAI/Anthropic keys', () => {
+    const secret = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01';
+    expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-****');
+  });
+
+  it('masks Groq keys', () => {
+    const secret = 'gsk_abcdefghijklmnopqrstuvwxyz0123456789';
+    expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with gsk_****');
+  });
+
+  it('masks label-based secrets', () => {
+    expect(maskSecrets('password: my-secret-password')).toBe('password: ****');
+    expect(maskSecrets('token=ghp_12345')).toBe('token: ****');
+    expect(maskSecrets('secret: somevalue')).toBe('secret: ****');
+  });
+
   it('masks multiple secrets in one string', () => {
     const text = 'Keys: ghp_1234567890abcdefghijklmnopqrstuvwx and AIzaSyA-1234567890_abcdefghijklmnopqrst';
     expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIzaSy****');

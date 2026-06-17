@@ -29,9 +29,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // ✅ SECURITY FIX: Removed console logging of error.stack and componentStack
+    // to prevent leaking internal code structure and potential sensitive data in the console.
     console.error('[GHOST_PILOT_FAILURE] CAUGHT_EXCEPTION:', error.message);
-    console.error('[GHOST_PILOT_FAILURE] STACK_TRACE:', error.stack);
-    console.error('[GHOST_PILOT_FAILURE] COMPONENT_STACK:', errorInfo.componentStack);
     
     this.setState({ errorInfo });
     

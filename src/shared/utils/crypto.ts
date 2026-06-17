@@ -16,8 +16,17 @@ export function maskSecrets(text: string): string {
   // Google Cloud API Keys
   masked = masked.replace(/AIzaSy[a-zA-Z0-9_-]{30,40}/g, 'AIzaSy****');
 
+  // OpenAI / Anthropic / Generic AI keys
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,100}/g, 'sk-****');
+
+  // Groq API Keys
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,100}/g, 'gsk_****');
+
   // Generic Bearer tokens in common error messages or strings
   masked = masked.replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer ****');
+
+  // Label-based masking (e.g. "password: mypass" or "token=mytoken")
+  masked = masked.replace(/(password|token|secret)\s*[:=]\s*[^\s,;]+/gi, '$1: ****');
 
   return masked;
 }
