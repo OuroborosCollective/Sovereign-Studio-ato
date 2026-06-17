@@ -92,6 +92,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Remote Memory Pull Updates + Solution Pattern Memory',
   },
   {
+    id: 'remote-memory-gateway-bridge',
+    runtimePath: 'src/features/product/runtime/remoteMemoryGatewayBridge.ts',
+    testPath: 'src/features/product/runtime/remoteMemoryGatewayBridge.test.ts',
+    purpose: 'Combines gateway monitoring, remote update pulls and local solution-pattern intake into one guarded flow.',
+    status: 'covered',
+    integrationPoint: 'Remote Memory monitoring + pull updates + Aha intake',
+  },
+  {
     id: 'external-memory-monitoring',
     runtimePath: 'src/features/product/runtime/externalMemoryMonitoring.ts',
     testPath: 'src/features/product/runtime/externalMemoryMonitoring.test.ts',
