@@ -1,9 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 import App from './App';
 import React from 'react';
 
-// Mock crypto.randomUUID
 if (!global.crypto) {
   (global as any).crypto = {
     randomUUID: () => 'test-uuid',
@@ -11,15 +10,17 @@ if (!global.crypto) {
 }
 
 describe('App', () => {
-  it('renders login button initially', () => {
+  it('renders a clear launch screen initially', () => {
     render(<App />);
-    expect(screen.getByText('Login')).toBeDefined();
+    expect(screen.getByText('Sovereign Canvas Tool')).toBeDefined();
+    expect(screen.getByText('Sovereign Arbeitsfläche öffnen')).toBeDefined();
+    expect(screen.getByText(/Ohne geladenes Repository bleibt Full Auto bewusst blockiert/)).toBeDefined();
   });
 
-  it('renders main content after login', () => {
+  it('renders main content after launch', () => {
     render(<App />);
-    const loginButton = screen.getByText('Login');
-    fireEvent.click(loginButton);
-    expect(screen.getByText('Sovereign Canvas Tool')).toBeDefined();
+    fireEvent.click(screen.getByText('Sovereign Arbeitsfläche öffnen'));
+    expect(screen.getByText('Automation Mode')).toBeDefined();
+    expect(screen.getByText('Sovereign Action Builder')).toBeDefined();
   });
 });
