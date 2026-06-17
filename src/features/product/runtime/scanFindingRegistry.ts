@@ -1,4 +1,5 @@
 import type { RepoFile } from '../../github/types';
+import type { WorkflowCheckItem, WorkflowWatchReport } from './workflowWatch';
 
 export type ScanFindingCategory =
   | 'architecture'
@@ -11,6 +12,7 @@ export type ScanFindingCategory =
   | 'runtime-guard'
   | 'auth'
   | 'workflow'
+  | 'ci-failure'
   | 'learning-memory'
   | 'diff-preview'
   | 'generated-file'
@@ -62,6 +64,12 @@ export interface ScanFindingValidationReport {
   summary: string;
 }
 
+export interface ScanFindingPublishGate {
+  allowed: boolean;
+  blockers: ScanFinding[];
+  summary: string;
+}
+
 const MAX_FINDINGS = 500;
 const MAX_RUNS = 80;
 const MAX_TEXT = 1400;
@@ -77,6 +85,7 @@ export const SCAN_FINDING_CATEGORIES: ScanFindingCategory[] = [
   'runtime-guard',
   'auth',
   'workflow',
+  'ci-failure',
   'learning-memory',
   'diff-preview',
   'generated-file',
@@ -162,8 +171,89 @@ function severityCounts(findings: ScanFinding[]): Record<ScanFindingSeverity, nu
   return counts;
 }
 
+function workflowText(check: WorkflowCheckItem): string {
+  return `${check.name} ${check.conclusion ?? ''} ${check.summary}`.toLowerCase();
+}
+
+function inferWorkflowCategory(check: WorkflowCheckItem): ScanFindingCategory {
+  const text = workflowText(check);
+  if (/auth|permission|token|403|401/.test(text)) return 'auth';
+  if (/typescript|tsc|typecheck|type-check|type error/.test(text)) return 'type-error';
+  if (/build|vite|rollup|webpack|compile/.test(text)) return 'build-logic';
+  if (/test|vitest|jest|playwright|e2e/.test(text)) return 'ci-failure';
+  if (/lint|eslint|prettier/.test(text)) return 'ci-failure';
+  if (/workflow|action|ci|yaml|yml/.test(text)) return 'workflow';
+  return 'ci-failure';
+}
+
+function inferWorkflowFilePath(check: WorkflowCheckItem): string {
+  const text = workflowText(check);
+  if (/auth|permission|token|403|401/.test(text)) return 'GitHub Auth Session';
+  if (/typescript|tsc|typecheck|type-check|type error/.test(text)) return 'tsconfig.json';
+  if (/lint|eslint|prettier/.test(text)) return 'eslint.config.*';
+  if (/test|vitest|jest/.test(text)) return 'src/**/*.test.ts';
+  if (/playwright|e2e/.test(text)) return 'e2e/**/*';
+  if (/build|vite|rollup|webpack|compile/.test(text)) return 'vite.config.*';
+  if (/install|pnpm|npm|lockfile|dependency/.test(text)) return 'package.json';
+  if (/workflow|action|ci|yaml|yml/.test(text)) return '.github/workflows/*';
+  return '.github/workflows/*';
+}
+
+function severityForWorkflowCheck(check: WorkflowCheckItem): ScanFindingSeverity {
+  if (check.status === 'red') return 'high';
+  if (check.status === 'pending') return 'medium';
+  return 'low';
+}
+
 export function createScanFindingRegistry(now = Date.now()): ScanFindingRegistry {
   return { version: 1, findings: [], runs: [], updatedAt: now };
+}
+
+export function collectWorkflowWatchFindings(
+  report: WorkflowWatchReport | null,
+  now = Date.now(),
+  source = 'workflow-watch',
+): ScanFinding[] {
+  if (!report) return [];
+  const findings: ScanFinding[] = [];
+
+  for (const check of report.checks) {
+    if (check.status !== 'red' && check.status !== 'pending') continue;
+    const category = inferWorkflowCategory(check);
+    const filePath = inferWorkflowFilePath(check);
+    const blocked = check.status === 'red';
+    findings.push(createFinding({
+      category,
+      severity: severityForWorkflowCheck(check),
+      filePath,
+      lineNumber: 1,
+      title: blocked ? `CI check failed: ${check.name}` : `CI check pending: ${check.name}`,
+      description: `${check.name} reported ${check.status}${check.conclusion ? ` (${check.conclusion})` : ''}. ${check.summary}`,
+      fixTips: blocked
+        ? 'Inspect the failed workflow job/step logs, repair the likely files, then run Workflow Watch again to prove the finding is resolved.'
+        : 'Wait for this check to finish before publishing another repair package.',
+      confidence: 'runtime-observed',
+      source,
+      now,
+    }));
+  }
+
+  for (const error of report.errors) {
+    findings.push(createFinding({
+      category: /token|permission|403|401/i.test(error) ? 'auth' : 'workflow',
+      severity: 'high',
+      filePath: /token|permission|403|401/i.test(error) ? 'GitHub Auth Session' : '.github/workflows/*',
+      lineNumber: 1,
+      title: 'Workflow Watch runtime error',
+      description: error,
+      fixTips: 'Check GitHub token permissions, repository visibility, workflow availability and retry Workflow Watch.',
+      confidence: 'runtime-observed',
+      source,
+      now,
+    }));
+  }
+
+  return findings;
 }
 
 export function collectRepoPathFindings(files: RepoFile[], now = Date.now()): ScanFinding[] {
@@ -426,6 +516,32 @@ export function groupScanFindingsByCategory(findings: ScanFinding[]): Record<Sca
   const grouped = Object.fromEntries(SCAN_FINDING_CATEGORIES.map((category) => [category, []])) as Record<ScanFindingCategory, ScanFinding[]>;
   for (const finding of findings) grouped[finding.category].push(finding);
   return grouped;
+}
+
+export function getBlockingScanFindings(registry: ScanFindingRegistry): ScanFinding[] {
+  assertScanFindingRegistryValid(registry);
+  return registry.findings.filter((finding) => finding.status === 'active' && (
+    finding.severity === 'critical'
+    || finding.category === 'security-leak'
+    || finding.category === 'auth'
+    || finding.category === 'ci-failure'
+  ));
+}
+
+export function buildScanFindingPublishGate(registry: ScanFindingRegistry): ScanFindingPublishGate {
+  const blockers = getBlockingScanFindings(registry);
+  return {
+    allowed: blockers.length === 0,
+    blockers,
+    summary: blockers.length
+      ? `Publish blocked by ${blockers.length} active scan finding(s). Re-scan after fixing to prove resolution.`
+      : 'Publish gate clear: no active blocking scan findings.',
+  };
+}
+
+export function assertNoBlockingScanFindingsBeforePublish(registry: ScanFindingRegistry): void {
+  const gate = buildScanFindingPublishGate(registry);
+  if (!gate.allowed) throw new Error(gate.summary);
 }
 
 export function summarizeScanFindingRegistry(registry: ScanFindingRegistry): string {
