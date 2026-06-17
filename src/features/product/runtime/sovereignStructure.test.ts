@@ -29,6 +29,12 @@ import {
   finishSequentialStep,
   startSequentialStep,
 } from './sequentialRuntimeGuard';
+import {
+  buildLearningMemoryRuntimeSummary,
+  createLearningMemoryStore,
+  intakeLearningMemory,
+  queryLearningMemory,
+} from './sovereignLearningMemory';
 import { buildSovereignHealthReport } from './sovereignHealth';
 import {
   assertGeneratedPackageReady,
@@ -58,7 +64,7 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, auth, sequential runtime, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, auth, sequential runtime, learning memory, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
 
@@ -135,6 +141,20 @@ describe('sovereign runtime structure', () => {
     const repairPlan = buildWorkflowRepairPlan(failedWorkflow);
     expect(repairPlan.blocked).toBe(false);
     expect(repairPlan.mission).toContain('Workflow repair package');
+
+    let learning = createLearningMemoryStore(1);
+    learning = intakeLearningMemory(learning, {
+      kind: 'workflow',
+      sourceNode: 'workflow-watch',
+      outputNodes: ['workflow-repair-plan', 'action-builder'],
+      summary: 'Failed lint workflow maps to a focused repair mission.',
+      evidence: repairPlan.summary,
+      tags: ['lint', 'workflow'],
+      confidence: 'observed',
+      now: 2,
+    });
+    expect(queryLearningMemory(learning, { outputNode: 'action-builder' })).toHaveLength(1);
+    expect(buildLearningMemoryRuntimeSummary(learning)).toContain('1 learning pattern');
 
     let telemetry = createInitialTelemetryState();
     telemetry = appendTelemetryEvent(telemetry, createTelemetryEvent('guards', 'success', 'guards:passed', 'Package ready.'));
