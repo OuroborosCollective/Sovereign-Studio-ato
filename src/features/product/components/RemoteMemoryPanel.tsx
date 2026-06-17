@@ -8,6 +8,7 @@ import {
   type ExternalMemorySyncResult,
 } from '../runtime/externalMemorySync';
 import type { ExternalMemoryMonitoringResult } from '../runtime/externalMemoryMonitoring';
+import type { ExternalMemorySyncPreview } from '../runtime/externalMemorySyncPreview';
 import type { RemoteMemoryUpdateIntakeResult } from '../runtime/remoteMemoryUpdateIntake';
 
 export interface RemoteMemoryPanelProps {
@@ -15,6 +16,7 @@ export interface RemoteMemoryPanelProps {
   syncResult: ExternalMemorySyncResult | null;
   healthResult: ExternalMemoryHealthResult | null;
   monitoringResult: ExternalMemoryMonitoringResult | null;
+  previewResult?: ExternalMemorySyncPreview | null;
   searchResult: ExternalMemorySearchResult | null;
   updatesResult: ExternalMemoryPullUpdatesResult | null;
   intakeResult: RemoteMemoryUpdateIntakeResult | null;
@@ -22,6 +24,7 @@ export interface RemoteMemoryPanelProps {
   onChange: (config: ExternalMemorySyncConfig) => void;
   onHealth: () => void;
   onMonitoring: () => void;
+  onPreview?: () => void;
   onSync: () => void;
   onSearch: () => void;
   onPullUpdates: () => void;
@@ -32,6 +35,7 @@ export function RemoteMemoryPanel({
   syncResult,
   healthResult,
   monitoringResult,
+  previewResult = null,
   searchResult,
   updatesResult,
   intakeResult,
@@ -39,12 +43,14 @@ export function RemoteMemoryPanel({
   onChange,
   onHealth,
   onMonitoring,
+  onPreview,
   onSync,
   onSearch,
   onPullUpdates,
 }: RemoteMemoryPanelProps) {
   const validation = validateExternalMemorySyncConfig(config);
   const update = (patch: Partial<ExternalMemorySyncConfig>) => onChange({ ...config, ...patch });
+  const canRun = config.enabled && validation.valid && !isBusy;
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
@@ -64,7 +70,7 @@ export function RemoteMemoryPanel({
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <label className="grid gap-1">
           <span className="text-xs font-bold uppercase text-slate-400">URL</span>
-          <input className="rounded border border-slate-700 bg-slate-900 p-2" value={config.gatewayUrl} onChange={(event) => update({ gatewayUrl: event.target.value })} placeholder="http://46.202.154.25:8088" />
+          <input className="rounded border border-slate-700 bg-slate-900 p-2" value={config.gatewayUrl} onChange={(event) => update({ gatewayUrl: event.target.value })} placeholder="Remote Memory Gateway URL" />
         </label>
         <label className="grid gap-1">
           <span className="text-xs font-bold uppercase text-slate-400">Workspace</span>
@@ -97,11 +103,12 @@ export function RemoteMemoryPanel({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" onClick={onHealth} disabled={!config.enabled || !validation.valid || isBusy}>Health</button>
-        <button type="button" onClick={onMonitoring} disabled={!config.enabled || !validation.valid || isBusy}>Monitoring</button>
-        <button type="button" onClick={onSync} disabled={!config.enabled || !validation.valid || isBusy}>Sync</button>
-        <button type="button" onClick={onSearch} disabled={!config.enabled || !validation.valid || isBusy}>Search</button>
-        <button type="button" onClick={onPullUpdates} disabled={!config.enabled || !validation.valid || isBusy}>Pull Updates + Intake</button>
+        <button type="button" onClick={onHealth} disabled={!canRun}>Health</button>
+        <button type="button" onClick={onMonitoring} disabled={!canRun}>Monitoring</button>
+        {onPreview ? <button type="button" onClick={onPreview} disabled={!canRun}>Sync Preview</button> : null}
+        <button type="button" onClick={onSync} disabled={!canRun}>Sync</button>
+        <button type="button" onClick={onSearch} disabled={!canRun}>Search</button>
+        <button type="button" onClick={onPullUpdates} disabled={!canRun}>Pull Updates + Intake</button>
       </div>
 
       <p className={validation.valid ? 'mt-3 text-xs text-emerald-300' : 'mt-3 text-xs text-red-300'}>{validation.summary}</p>
@@ -111,6 +118,7 @@ export function RemoteMemoryPanel({
       <div className="mt-4 grid gap-3 text-xs text-slate-300">
         {healthResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Health: {healthResult.summary}</pre> : null}
         {monitoringResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Monitoring: {monitoringResult.summary}</pre> : null}
+        {previewResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Preview: {previewResult.summary}</pre> : null}
         {syncResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Sync: {syncResult.summary}</pre> : null}
         {searchResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Search: {searchResult.summary}</pre> : null}
         {updatesResult ? <pre className="whitespace-pre-wrap rounded bg-slate-900/70 p-3">Updates: {updatesResult.summary}</pre> : null}
