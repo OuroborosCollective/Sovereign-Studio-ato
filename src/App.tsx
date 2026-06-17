@@ -9,6 +9,7 @@ import { RepoReadinessPanel } from './features/product/components/RepoReadinessP
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { SovereignTelemetryPanel } from './features/product/components/SovereignTelemetryPanel';
+import { WorkflowRepairPanel } from './features/product/components/WorkflowRepairPanel';
 import { WorkflowWatchPanel } from './features/product/components/WorkflowWatchPanel';
 import {
   AUTOMATION_MODE_LABELS,
@@ -36,13 +37,14 @@ import {
   buildSovereignPackageFromRepoFiles,
   summarizeSovereignPackage,
 } from './features/product/runtime/sovereignPackageFromRepoFiles';
+import { buildWorkflowRepairPlan } from './features/product/runtime/workflowRepairPlan';
 import { fetchWorkflowWatchReport, type WorkflowWatchReport } from './features/product/runtime/workflowWatch';
 import type { SovereignImplementationPackage } from './features/product/runtime/sovereignRuntime';
 import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'workflow' | 'health' | 'coverage' | 'telemetry';
+type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'workflow' | 'repair' | 'health' | 'coverage' | 'telemetry';
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
@@ -51,6 +53,7 @@ const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'builder', label: 'Builder' },
   { id: 'files', label: 'Files' },
   { id: 'workflow', label: 'Workflow' },
+  { id: 'repair', label: 'Repair' },
   { id: 'health', label: 'Health' },
   { id: 'coverage', label: 'Coverage' },
   { id: 'telemetry', label: 'Telemetry' },
@@ -108,6 +111,7 @@ const App: React.FC = () => {
   });
   const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
   const latestGeneratedReview = lastPackage ? reviewGeneratedFiles(lastPackage.files) : null;
+  const repairPlan = buildWorkflowRepairPlan(workflowReport);
   const healthReport = buildSovereignHealthReport({
     repoFiles,
     generatedFileReview: latestGeneratedReview,
@@ -143,7 +147,7 @@ const App: React.FC = () => {
         'workflow:watch-finished',
         report.summary,
       );
-      setActiveTab('workflow');
+      setActiveTab(report.status === 'red' ? 'repair' : 'workflow');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Workflow watch failed.';
       pushTelemetry('workflow', 'error', 'workflow:watch-failed', message);
@@ -207,6 +211,15 @@ const App: React.FC = () => {
 
   const generateErrorWorkflow = () => {
     buildPackage('Workflow Fehleranalyse + Runtime Check + Test Plan');
+  };
+
+  const useRepairMission = (nextMission: string) => {
+    setMission(nextMission);
+    setLastPackage(null);
+    setLastPackageKey('');
+    setSovereignSummary('Repair mission loaded into Builder. Run Ideen/Full Auto to generate a guarded repair package.');
+    pushTelemetry('workflow', 'info', 'repair:mission-loaded', 'Workflow repair mission loaded into Builder.');
+    setActiveTab('builder');
   };
 
   const saveCurrentSession = () => {
@@ -537,6 +550,8 @@ const App: React.FC = () => {
           onWatch={() => { void watchLatestWorkflow(); }}
         />
       ) : null}
+
+      {activeTab === 'repair' ? <WorkflowRepairPanel plan={repairPlan} onUseMission={useRepairMission} /> : null}
 
       {activeTab === 'health' ? <SovereignHealthPanel report={healthReport} /> : null}
 
