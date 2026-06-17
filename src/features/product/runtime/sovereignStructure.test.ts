@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildGitHubHeaders, createGitHubAuthSession } from '../../github/githubAuthSession';
 import { buildSovereignBranchName, validatePublishableFiles } from '../../github/githubPackagePublisher';
 import {
   buildAutomationRunKey,
@@ -52,9 +53,14 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, auth, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
+
+    const auth = createGitHubAuthSession(' ghp_demo_token ');
+    expect(auth.hasToken).toBe(true);
+    expect(auth.redactedToken).not.toContain('demo_token');
+    expect((buildGitHubHeaders({ token: auth.token }) as Record<string, string>).Authorization).toBe('Bearer ghp_demo_token');
 
     const signals = buildRepoSignalsFromFiles('https://github.com/OuroborosCollective/Sovereign-Studio-ato', repoFiles);
     const report = evaluateRepoReadiness(signals);
