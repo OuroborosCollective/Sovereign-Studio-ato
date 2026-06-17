@@ -160,7 +160,12 @@ export const ouroborosSlice = createSlice({
     },
 
     setGuardReport: (state, action: PayloadAction<OuroborosGuardReport>) => {
-      state.guardReport = action.payload;
+      state.guardReport = {
+        isValid: action.payload.isValid,
+        violations: [...action.payload.violations],
+        checkedAt: action.payload.checkedAt,
+        stateHash: action.payload.stateHash,
+      };
     },
 
     grantPatternConsent: (state, action: PayloadAction<ConsentGrantPayload>) => {
