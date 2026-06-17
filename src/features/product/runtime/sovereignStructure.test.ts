@@ -30,6 +30,7 @@ import {
   createScanFindingRegistry,
   summarizeScanFindingRegistry,
 } from './scanFindingRegistry';
+import { applyWorkflowScanAndBuildGate } from './scanFindingWorkflowBridge';
 import {
   createSequentialRuntimeState,
   finishSequentialStep,
@@ -70,7 +71,7 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, categorized findings, auth, sequential runtime, learning memory, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, categorized findings, workflow finding bridge, auth, sequential runtime, learning memory, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
 
@@ -149,6 +150,10 @@ describe('sovereign runtime structure', () => {
       branch: 'sovereign/package/test',
       checks: [{ name: 'lint', status: 'red', source: 'local', summary: 'eslint failed' }],
     });
+    const workflowBridge = applyWorkflowScanAndBuildGate(scanRegistry, failedWorkflow, 3, 4);
+    expect(workflowBridge.registry.findings.some((finding) => finding.category === 'ci-failure')).toBe(true);
+    expect(workflowBridge.gate.allowed).toBe(false);
+
     const repairPlan = buildWorkflowRepairPlan(failedWorkflow);
     expect(repairPlan.blocked).toBe(false);
     expect(repairPlan.mission).toContain('Workflow repair package');
