@@ -4,6 +4,7 @@ import {
   buildAutomationRunKey,
   decideSovereignAutomation,
 } from './sovereignAutomationMode';
+import { buildGeneratedFileDiffReport } from './generatedFileDiffPreview';
 import {
   assertGeneratedFileReviewSafe,
   reviewGeneratedFiles,
@@ -51,7 +52,7 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, readiness, automation, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
 
@@ -91,6 +92,14 @@ describe('sovereign runtime structure', () => {
     const fileReview = reviewGeneratedFiles(pkg.files);
     expect(fileReview.totalFiles).toBe(pkg.files.length);
     expect(() => assertGeneratedFileReviewSafe(fileReview)).not.toThrow();
+
+    const diff = buildGeneratedFileDiffReport(pkg.files, pkg.files.map((file) => ({
+      path: file.path,
+      content: file.path === 'README.md' ? '# Old README' : null,
+      found: file.path === 'README.md',
+    })));
+    expect(diff.files.length).toBe(pkg.files.length);
+    expect(diff.summary).toContain('generated file');
 
     const workflow = buildLocalWorkflowWatchReport({
       commitSha: 'commit-sha',
