@@ -44,6 +44,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'RepoFileIntegrityMatrix',
   },
   {
+    id: 'github-auth-session',
+    runtimePath: 'src/features/github/githubAuthSession.ts',
+    testPath: 'src/features/github/githubAuthSession.test.ts',
+    purpose: 'Centralizes session-only GitHub token headers, redaction and write-path token requirements.',
+    status: 'covered',
+    integrationPoint: 'Repo loader + Diff loader + Workflow Watch + Draft PR Publisher',
+  },
+  {
     id: 'functional-guards',
     runtimePath: 'src/features/product/runtime/sovereignFunctionalGuards.ts',
     testPath: 'src/features/product/runtime/sovereignFunctionalGuards.test.ts',
