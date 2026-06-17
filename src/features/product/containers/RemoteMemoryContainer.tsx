@@ -3,10 +3,13 @@ import { RemoteMemoryPanel } from '../components/RemoteMemoryPanel';
 import type { ScanFindingRegistry } from '../runtime/scanFindingRegistry';
 import { summarizeScanFindingRegistry } from '../runtime/scanFindingRegistry';
 import {
+  buildExternalMemoryDeleteRequest,
   buildExternalMemorySyncPayload,
   checkExternalMemoryHealth,
+  deleteExternalMemoryData,
   searchExternalMemory,
   syncExternalMemory,
+  type ExternalMemoryDeleteResult,
   type ExternalMemoryHealthResult,
   type ExternalMemoryPullUpdatesResult,
   type ExternalMemorySearchResult,
@@ -55,6 +58,9 @@ export function RemoteMemoryContainer({
   const [health, setHealth] = useState<ExternalMemoryHealthResult | null>(null);
   const [monitoring, setMonitoring] = useState<ExternalMemoryMonitoringResult | null>(null);
   const [preview, setPreview] = useState<ExternalMemorySyncPreview | null>(null);
+  const [cleanupResult, setCleanupResult] = useState<ExternalMemoryDeleteResult | null>(null);
+  const [cleanupConfirmationText, setCleanupConfirmationText] = useState('');
+  const [cleanupScopeConfirmed, setCleanupScopeConfirmed] = useState(false);
   const [syncResult, setSyncResult] = useState<ExternalMemorySyncResult | null>(null);
   const [searchResult, setSearchResult] = useState<ExternalMemorySearchResult | null>(null);
   const [updates, setUpdates] = useState<ExternalMemoryPullUpdatesResult | null>(null);
@@ -130,6 +136,24 @@ export function RemoteMemoryContainer({
     });
   };
 
+  const handleCleanupContributor = () => {
+    void withBusy(async () => {
+      if (!cleanupScopeConfirmed) throw new Error('Contributor cleanup scope is not confirmed.');
+      const request = buildExternalMemoryDeleteRequest(config);
+      const result = await deleteExternalMemoryData({ config, request });
+      setCleanupResult(result);
+      onTelemetry('memory', result.deleted ? 'success' : 'warning', 'remote-memory:cleanup-contributor', result.summary, {
+        deleted: result.response?.deletedItems ?? 0,
+        retainedShared: result.response?.retainedSharedItems ?? 0,
+      });
+      if (result.deleted) {
+        setCleanupConfirmationText('');
+        setCleanupScopeConfirmed(false);
+      }
+      return result;
+    });
+  };
+
   return (
     <RemoteMemoryPanel
       config={config}
@@ -137,17 +161,23 @@ export function RemoteMemoryContainer({
       healthResult={health}
       monitoringResult={monitoring}
       previewResult={preview}
+      cleanupResult={cleanupResult}
       searchResult={searchResult}
       updatesResult={updates}
       intakeResult={intake}
       isBusy={busy}
+      cleanupConfirmationText={cleanupConfirmationText}
+      cleanupScopeConfirmed={cleanupScopeConfirmed}
       onChange={onConfigChange}
+      onCleanupConfirmationTextChange={setCleanupConfirmationText}
+      onCleanupScopeConfirmedChange={setCleanupScopeConfirmed}
       onHealth={handleHealth}
       onMonitoring={handleMonitoring}
       onPreview={handlePreview}
       onSync={handleSync}
       onSearch={handleSearch}
       onPullUpdates={handlePullUpdates}
+      onCleanupContributor={handleCleanupContributor}
     />
   );
 }
