@@ -26,6 +26,10 @@ import {
   type SovereignAutomationMode,
 } from './features/product/runtime/sovereignAutomationMode';
 import {
+  decideSovereignAutoView,
+  type SovereignAutoViewTab,
+} from './features/product/runtime/sovereignAutoViewRouter';
+import {
   buildGeneratedFileDiffReport,
   type SourceFileSnapshot,
 } from './features/product/runtime/generatedFileDiffPreview';
@@ -48,8 +52,8 @@ import {
   type SolutionPatternStore,
 } from './features/product/runtime/solutionPatternMemory';
 import {
-  loadSolutionPatternStore,
   clearSolutionPatternStore,
+  loadSolutionPatternStore,
   saveSolutionPatternStore,
 } from './features/product/runtime/solutionPatternPersistence';
 import {
@@ -83,7 +87,7 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'findings' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'memory' | 'remote' | 'telemetry';
+type SovereignTab = SovereignAutoViewTab;
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
@@ -164,6 +168,8 @@ const App: React.FC = () => {
   const [automationMode, setAutomationMode] = useState<SovereignAutomationMode>('manual');
   const [lastAutoRunKey, setLastAutoRunKey] = useState('');
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
+  const lastAutoViewReasonRef = useRef('');
+
   const {
     repoUrl,
     setRepoUrl,
@@ -178,9 +184,9 @@ const App: React.FC = () => {
     restoreRepoSnapshot,
     clearRepoSnapshot,
   } = useGithubRepo();
+
   const repoSnapshotStatus = getRepoSnapshotStatus(repoFiles);
   const runtimeBusy = Boolean(sequentialRuntime.activeStep);
-  const actionDisabled = isRepoBusy || runtimeBusy || !repoSnapshotStatus.ready;
   const packageInputKey = buildAutomationRunKey({
     mode: 'manual',
     repoUrl,
@@ -227,14 +233,40 @@ const App: React.FC = () => {
   }, [solutionPatternStore]);
 
   useEffect(() => {
+    const decision = decideSovereignAutoView({
+      mode: automationMode,
+      activeStep: sequentialRuntime.activeStep,
+      activeTab,
+      hasPackage: Boolean(lastPackage),
+      isPublishing,
+      isWatchingWorkflow,
+      workflowStatus: workflowReport?.status ?? 'idle',
+    });
+
+    if (!decision.shouldSwitch) return;
+    setActiveTab(decision.tab);
+    if (lastAutoViewReasonRef.current !== decision.reason) {
+      lastAutoViewReasonRef.current = decision.reason;
+      pushTelemetry('workflow', 'info', 'view:auto-switch', decision.reason, { tab: decision.tab });
+    }
+    // Auto-view router intentionally follows runtime state snapshots.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeTab,
+    automationMode,
+    isPublishing,
+    isWatchingWorkflow,
+    lastPackage,
+    sequentialRuntime.activeStep,
+    workflowReport?.status,
+  ]);
+
+  useEffect(() => {
     if (!repoFiles.length) return;
     const startedAt = Date.now();
     const findings = collectRepoPathFindings(repoFiles, startedAt);
     const completedAt = Date.now();
-    setScanRegistry((current) => {
-      const next = applyScanFindings(current, 'repo-path-scan', findings, startedAt, completedAt);
-      return next;
-    });
+    setScanRegistry((current) => applyScanFindings(current, 'repo-path-scan', findings, startedAt, completedAt));
     pushTelemetry('workflow', findings.some((finding) => finding.severity === 'critical' || finding.severity === 'high') ? 'warning' : 'success', 'scan:repo-path-finished', `Repo scan abgeschlossen: ${findings.length} finding(s).`);
     // Only react to fresh repo snapshots; telemetry helper identity is intentionally not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -282,91 +314,6 @@ const App: React.FC = () => {
     }
   };
 
-  const loadGeneratedFileSources = async () => {
-    await runSequentialStep('diff-load', async () => {
-      if (!lastPackage) {
-        throw new Error('Build a Sovereign package before loading diff sources.');
-      }
-      const parsed = parseGithubRepoUrl(repoUrl);
-      if (!parsed) {
-        throw new Error('Cannot load diff sources from an invalid GitHub repo URL.');
-      }
-
-      setIsLoadingDiffSources(true);
-      pushTelemetry('workflow', 'info', 'diff:load-start', 'Loading source snapshots for generated files.', { files: lastPackage.files.length });
-
-      const headers = buildGitHubHeaders({ token: githubToken });
-      const refQuery = repoBranch.trim() ? `?ref=${encodeURIComponent(repoBranch.trim())}` : '';
-
-      try {
-        const snapshots = await Promise.all(lastPackage.files.map(async (file): Promise<SourceFileSnapshot> => {
-          const path = encodeGitHubContentPath(file.path);
-          const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${path}${refQuery}`;
-          try {
-            const response = await fetch(url, { headers });
-            if (response.status === 404) return { path: file.path, content: null, found: false };
-            if (!response.ok) return { path: file.path, content: null, found: false };
-            const payload = await response.json() as { content?: string; encoding?: string } | Array<unknown>;
-            if (Array.isArray(payload) || !payload.content || payload.encoding !== 'base64') {
-              return { path: file.path, content: null, found: false };
-            }
-            return { path: file.path, content: decodeBase64Utf8(payload.content), found: true };
-          } catch {
-            return { path: file.path, content: null, found: false };
-          }
-        }));
-
-        setDiffSources(snapshots);
-        const report = buildGeneratedFileDiffReport(lastPackage.files, snapshots);
-        setSovereignSummary(report.summary);
-        pushTelemetry('workflow', 'success', 'diff:load-finished', stripTokenFromText(report.summary, githubToken));
-        setActiveTab('diff');
-        return report;
-      } finally {
-        setIsLoadingDiffSources(false);
-      }
-    });
-  };
-
-  const watchLatestWorkflow = async (commitSha = lastDraftCommitSha, branch = lastDraftBranch) => {
-    const report = await runSequentialStep('workflow-watch', async () => {
-      setIsWatchingWorkflow(true);
-      pushTelemetry('workflow', 'info', 'workflow:watch-start', 'Watching GitHub commit checks.', { commitSha: commitSha || 'none' });
-      try {
-        const nextReport = await fetchWorkflowWatchReport({
-          repoUrl,
-          token: githubToken,
-          commitSha,
-          branch,
-        });
-        setWorkflowReport(nextReport);
-
-        const scanStartedAt = Date.now();
-        const workflowFindingBridge = applyWorkflowScanAndBuildGate(scanRegistry, nextReport, scanStartedAt, Date.now());
-        setScanRegistry(workflowFindingBridge.registry);
-
-        pushTelemetry(
-          'workflow',
-          nextReport.status === 'red' ? 'error' : nextReport.status === 'green' ? 'success' : 'warning',
-          'workflow:watch-finished',
-          stripTokenFromText(nextReport.summary, githubToken),
-        );
-        pushTelemetry(
-          'workflow',
-          workflowFindingBridge.gate.allowed ? 'success' : 'warning',
-          'scan:workflow-findings-synced',
-          stripTokenFromText(workflowFindingBridge.summary, githubToken),
-          { blockers: workflowFindingBridge.gate.blockers.length },
-        );
-        setActiveTab(nextReport.status === 'red' ? 'repair' : 'workflow');
-        return nextReport;
-      } finally {
-        setIsWatchingWorkflow(false);
-      }
-    }, { hasDraftCommit: Boolean(commitSha) });
-    return report;
-  };
-
   const buildPackageCore = (nextMission: string, nextPackageKey = packageInputKey): SovereignImplementationPackage | null => {
     try {
       pushTelemetry('package', 'info', 'package:build-start', 'Building Sovereign package.', { files: repoFiles.length });
@@ -385,7 +332,7 @@ const App: React.FC = () => {
       setLastPackage(pkg);
       setLastPackageKey(nextPackageKey);
       setDiffSources([]);
-      setSovereignSummary(`${summarizeSovereignPackage(pkg, repoFiles)}\n${review.summary}${solutionPatternHints ? `\n${solutionPatternHints}` : ``}`);
+      setSovereignSummary(`${summarizeSovereignPackage(pkg, repoFiles)}\n${review.summary}${solutionPatternHints ? `\n${solutionPatternHints}` : ''}`);
       setSovereignPreview(JSON.stringify({
         architecture: pkg.architecture,
         brain: pkg.brain,
@@ -395,7 +342,6 @@ const App: React.FC = () => {
         suggestions: pkg.suggestions,
       }, null, 2));
       pushTelemetry('guards', 'success', 'guards:passed', 'Functional guards and generated-file review accepted package.', { generatedFiles: pkg.files.length });
-      setActiveTab('files');
       return pkg;
     } catch (error) {
       setLastPackage(null);
@@ -427,9 +373,68 @@ const App: React.FC = () => {
       setLastDraftCommitSha('');
       setLastDraftBranch('');
       setWorkflowReport(null);
-      setActiveTab('readiness');
       return true;
     });
+  };
+
+  const loadGeneratedFileSources = async () => {
+    await runSequentialStep('diff-load', async () => {
+      if (!lastPackage) throw new Error('Build a Sovereign package before loading diff sources.');
+      const parsed = parseGithubRepoUrl(repoUrl);
+      if (!parsed) throw new Error('Cannot load diff sources from an invalid GitHub repo URL.');
+
+      setIsLoadingDiffSources(true);
+      pushTelemetry('workflow', 'info', 'diff:load-start', 'Loading source snapshots for generated files.', { files: lastPackage.files.length });
+
+      const headers = buildGitHubHeaders({ token: githubToken });
+      const refQuery = repoBranch.trim() ? `?ref=${encodeURIComponent(repoBranch.trim())}` : '';
+
+      try {
+        const snapshots = await Promise.all(lastPackage.files.map(async (file): Promise<SourceFileSnapshot> => {
+          const path = encodeGitHubContentPath(file.path);
+          const url = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${path}${refQuery}`;
+          try {
+            const response = await fetch(url, { headers });
+            if (response.status === 404 || !response.ok) return { path: file.path, content: null, found: false };
+            const payload = await response.json() as { content?: string; encoding?: string } | Array<unknown>;
+            if (Array.isArray(payload) || !payload.content || payload.encoding !== 'base64') return { path: file.path, content: null, found: false };
+            return { path: file.path, content: decodeBase64Utf8(payload.content), found: true };
+          } catch {
+            return { path: file.path, content: null, found: false };
+          }
+        }));
+
+        setDiffSources(snapshots);
+        const report = buildGeneratedFileDiffReport(lastPackage.files, snapshots);
+        setSovereignSummary(report.summary);
+        pushTelemetry('workflow', 'success', 'diff:load-finished', stripTokenFromText(report.summary, githubToken));
+        return report;
+      } finally {
+        setIsLoadingDiffSources(false);
+      }
+    });
+  };
+
+  const watchLatestWorkflow = async (commitSha = lastDraftCommitSha, branch = lastDraftBranch) => {
+    const report = await runSequentialStep('workflow-watch', async () => {
+      setIsWatchingWorkflow(true);
+      pushTelemetry('workflow', 'info', 'workflow:watch-start', 'Watching GitHub commit checks.', { commitSha: commitSha || 'none' });
+      try {
+        const nextReport = await fetchWorkflowWatchReport({ repoUrl, token: githubToken, commitSha, branch });
+        setWorkflowReport(nextReport);
+
+        const scanStartedAt = Date.now();
+        const workflowFindingBridge = applyWorkflowScanAndBuildGate(scanRegistry, nextReport, scanStartedAt, Date.now());
+        setScanRegistry(workflowFindingBridge.registry);
+
+        pushTelemetry('workflow', nextReport.status === 'red' ? 'error' : nextReport.status === 'green' ? 'success' : 'warning', 'workflow:watch-finished', stripTokenFromText(nextReport.summary, githubToken));
+        pushTelemetry('workflow', workflowFindingBridge.gate.allowed ? 'success' : 'warning', 'scan:workflow-findings-synced', stripTokenFromText(workflowFindingBridge.summary, githubToken), { blockers: workflowFindingBridge.gate.blockers.length });
+        return nextReport;
+      } finally {
+        setIsWatchingWorkflow(false);
+      }
+    }, { hasDraftCommit: Boolean(commitSha) });
+    return report;
   };
 
   const generateRepoIdeas = () => {
@@ -448,36 +453,27 @@ const App: React.FC = () => {
       setDiffSources([]);
       setSovereignSummary('Repair mission loaded into Builder. Run Ideen/Full Auto to generate a guarded repair package.');
       pushTelemetry('workflow', 'info', 'repair:mission-loaded', 'Workflow repair mission loaded into Builder.');
-      setActiveTab('builder');
       return true;
     }, { hasWorkflowReport: Boolean(workflowReport) });
   };
 
   const saveCurrentSession = () => {
-    if (!repoSnapshotStatus.ready) {
+    if (!repoSnapshotStatus.ready || typeof window === 'undefined') {
       pushTelemetry('memory', 'warning', 'memory:save-blocked', repoSnapshotStatus.reason);
       return;
     }
-    const snapshot = createSessionMemorySnapshot({
-      repoUrl,
-      repoBranch,
-      repoStatus,
-      repoFiles,
-      mission,
-      sovereignSummary,
-      sovereignPreview,
-    });
+    const snapshot = createSessionMemorySnapshot({ repoUrl, repoBranch, repoStatus, repoFiles, mission, sovereignSummary, sovereignPreview });
     saveSessionMemory(window.localStorage, snapshot);
     pushTelemetry('memory', 'success', 'memory:saved', `Session saved ${formatSessionMemoryAge(snapshot)}.`, { files: repoFiles.length });
   };
 
   const restoreSession = () => {
+    if (typeof window === 'undefined') return;
     const snapshot = loadSessionMemory(window.localStorage);
     if (!snapshot) {
       pushTelemetry('memory', 'warning', 'memory:empty', 'No valid session memory snapshot found.');
       return;
     }
-
     restoreRepoSnapshot(snapshot);
     setMission(snapshot.mission);
     setSovereignSummary(`${snapshot.sovereignSummary}\nRestored ${formatSessionMemoryAge(snapshot)}.`);
@@ -490,7 +486,6 @@ const App: React.FC = () => {
     setWorkflowReport(null);
     setLastAutoRunKey('');
     pushTelemetry('memory', 'success', 'memory:restored', `Restored session from ${formatSessionMemoryAge(snapshot)}.`, { files: snapshot.repoFiles.length });
-    setActiveTab('repo');
   };
 
   const clearSession = () => {
@@ -505,17 +500,13 @@ const App: React.FC = () => {
     setSovereignPreview('');
     setSovereignSummary('Noch kein Sovereign-Paket erzeugt.');
     pushTelemetry('memory', 'info', 'memory:cleared', 'Visible session state cleared. Stored memory is unchanged.');
-    setActiveTab('repo');
   };
 
   const publishDraftPrForPackage = async (pkg: SovereignImplementationPackage): Promise<boolean> => {
     const result = await runSequentialStep('draft-pr-publish', async () => {
       const review = reviewGeneratedFiles(pkg.files);
       assertGeneratedFileReviewSafe(review);
-
-      if (!githubToken.trim()) {
-        throw new Error('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
-      }
+      if (!githubToken.trim()) throw new Error('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
 
       setIsPublishing(true);
       setSovereignSummary('Erstelle GitHub Branch, Commit und Draft PR...');
@@ -549,32 +540,18 @@ const App: React.FC = () => {
       }
     }, { hasPackage: true });
 
-    if (!result) {
-      setActiveTab('files');
-      return false;
-    }
-
+    if (!result) return false;
     setLastDraftCommitSha(result.commitSha);
     setLastDraftBranch(result.branch);
-    setSovereignSummary([
-      'Draft PR erstellt.',
-      `URL: ${result.pullRequestUrl}`,
-      `Branch: ${result.branch}`,
-      `Commit: ${result.commitSha}`,
-    ].join('\n'));
-    pushTelemetry('github', 'success', 'github:draft-pr-created', 'Draft PR created.', {
-      pr: result.pullRequestNumber,
-      branch: result.branch,
-    });
+    setSovereignSummary(['Draft PR erstellt.', `URL: ${result.pullRequestUrl}`, `Branch: ${result.branch}`, `Commit: ${result.commitSha}`].join('\n'));
+    pushTelemetry('github', 'success', 'github:draft-pr-created', 'Draft PR created.', { pr: result.pullRequestNumber, branch: result.branch });
     setTelemetryExpanded(true);
     await watchLatestWorkflow(result.commitSha, result.branch);
     return true;
   };
 
   const publishDraftPr = async () => {
-    const pkg = hasFreshPackage && lastPackage
-      ? lastPackage
-      : await buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+    const pkg = hasFreshPackage && lastPackage ? lastPackage : await buildPackage(mission.trim() || 'README + Update History', packageInputKey);
     if (!pkg) return;
     await publishDraftPrForPackage(pkg);
   };
@@ -615,29 +592,13 @@ const App: React.FC = () => {
       setAutomationStatus('Full Auto is building, reviewing and creating a Draft PR.');
       pushTelemetry('workflow', 'info', 'automation:full-auto', 'Full Auto triggered guarded Draft PR flow.');
       void (async () => {
-        const pkg = hasFreshPackage && lastPackage
-          ? lastPackage
-          : await buildPackage(mission.trim() || 'README + Update History', packageInputKey);
+        const pkg = hasFreshPackage && lastPackage ? lastPackage : await buildPackage(mission.trim() || 'README + Update History', packageInputKey);
         if (pkg) await publishDraftPrForPackage(pkg);
       })();
     }
     // The automation effect intentionally watches value snapshots, not helper function identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    automationMode,
-    automationRunKey,
-    githubToken,
-    hasFreshPackage,
-    isPublishing,
-    isRepoBusy,
-    lastAutoRunKey,
-    lastPackage,
-    mission,
-    packageInputKey,
-    repoSnapshotStatus.ready,
-    runtimeBusy,
-    user,
-  ]);
+  }, [automationMode, automationRunKey, githubToken, hasFreshPackage, isPublishing, isRepoBusy, lastAutoRunKey, lastPackage, mission, packageInputKey, repoSnapshotStatus.ready, runtimeBusy, user]);
 
   const resetPatternMemory = () => {
     if (typeof window === 'undefined') return;
@@ -654,17 +615,10 @@ const App: React.FC = () => {
   };
 
   const login = () => {
-    setUser({
-      id: makeId(),
-      email: 'demo@local',
-      name: 'User',
-      imageUrl: '',
-    });
+    setUser({ id: makeId(), email: 'demo@local', name: 'User', imageUrl: '' });
   };
 
-  if (!user) {
-    return <LoginView onLogin={login} />;
-  }
+  if (!user) return <LoginView onLogin={login} />;
 
   return (
     <div className="min-h-screen p-4">
@@ -689,132 +643,30 @@ const App: React.FC = () => {
             <h2 className="font-bold">Automation Mode</h2>
             <p className="mt-1 text-xs text-slate-400">{automationStatus}</p>
           </div>
-          <select
-            value={automationMode}
-            onChange={(event) => changeAutomationMode(event.target.value as SovereignAutomationMode)}
-            className="rounded border border-slate-700 bg-slate-900 p-2 text-sm"
-          >
-            {automationModes.map((mode) => (
-              <option key={mode} value={mode}>{AUTOMATION_MODE_LABELS[mode]}</option>
-            ))}
+          <select value={automationMode} onChange={(event) => changeAutomationMode(event.target.value as SovereignAutomationMode)} className="rounded border border-slate-700 bg-slate-900 p-2 text-sm">
+            {automationModes.map((mode) => <option key={mode} value={mode}>{AUTOMATION_MODE_LABELS[mode]}</option>)}
           </select>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          Full Auto still runs repo snapshot checks, categorized scan findings, sequential runtime guard, functional guards, generated-file review, diff preview when loaded, workflow watch and Draft PR publishing rules. It does not auto-merge.
+          Full Auto runs repo snapshot checks, scan findings, sequential runtime guard, generated-file review, auto-view routing, workflow watch and Draft PR publishing rules. It does not auto-merge.
         </p>
       </section>
 
-      {activeTab === 'repo' ? (
-        <RepoSnapshotContainer
-          repoUrl={repoUrl}
-          repoBranch={repoBranch}
-          accessValue={githubToken}
-          repoStatus={repoStatus}
-          isRepoBusy={isRepoBusy}
-          runtimeBusy={runtimeBusy}
-          repoFiles={repoFiles}
-          memoryHints={solutionPatternHints}
-          onRepoUrlChange={setRepoUrl}
-          onRepoBranchChange={setRepoBranch}
-          onAccessValueChange={setGithubToken}
-          onLoadRepo={() => { void handleLoadRepoTree(); }}
-          onSaveView={saveCurrentSession}
-          onRestoreView={restoreSession}
-          onClearView={clearSession}
-        />
-      ) : null}
-
+      {activeTab === 'repo' ? <RepoSnapshotContainer repoUrl={repoUrl} repoBranch={repoBranch} accessValue={githubToken} repoStatus={repoStatus} isRepoBusy={isRepoBusy} runtimeBusy={runtimeBusy} repoFiles={repoFiles} memoryHints={solutionPatternHints} onRepoUrlChange={setRepoUrl} onRepoBranchChange={setRepoBranch} onAccessValueChange={setGithubToken} onLoadRepo={() => { void handleLoadRepoTree(); }} onSaveView={saveCurrentSession} onRestoreView={restoreSession} onClearView={clearSession} /> : null}
       {activeTab === 'readiness' ? <RepoReadinessPanel repoUrl={repoUrl} files={repoFiles} status={repoStatus} /> : null}
-
       {activeTab === 'integrity' ? <RepoFileIntegrityMatrix files={repoFiles} /> : null}
-
       {activeTab === 'findings' ? <ScanFindingRegistryPanel registry={scanRegistry} /> : null}
-
-      {activeTab === 'builder' ? (
-        <BuilderContainer
-          mission={mission}
-          repoReady={repoSnapshotStatus.ready}
-          repoReason={repoSnapshotStatus.reason}
-          repoBusy={isRepoBusy}
-          runtimeBusy={runtimeBusy}
-          isPublishing={isPublishing}
-          sovereignSummary={sovereignSummary}
-          sovereignPreview={sovereignPreview}
-          onMissionChange={setMission}
-          onGenerateIdeas={generateRepoIdeas}
-          onGenerateErrorWorkflow={generateErrorWorkflow}
-          onPublishDraftPr={() => { void publishDraftPr(); }}
-        />
-      ) : null}
-
+      {activeTab === 'builder' ? <BuilderContainer mission={mission} repoReady={repoSnapshotStatus.ready} repoReason={repoSnapshotStatus.reason} repoBusy={isRepoBusy} runtimeBusy={runtimeBusy} isPublishing={isPublishing} sovereignSummary={sovereignSummary} sovereignPreview={sovereignPreview} onMissionChange={setMission} onGenerateIdeas={generateRepoIdeas} onGenerateErrorWorkflow={generateErrorWorkflow} onPublishDraftPr={() => { void publishDraftPr(); }} /> : null}
       {activeTab === 'files' ? <GeneratedFileReviewPanel pkg={lastPackage} /> : null}
-
-      {activeTab === 'diff' ? (
-        <GeneratedFileDiffPreviewPanel
-          report={diffReport}
-          isLoading={isLoadingDiffSources || runtimeBusy}
-          onLoadSources={() => { void loadGeneratedFileSources(); }}
-        />
-      ) : null}
-
-      {activeTab === 'workflow' ? (
-        <WorkflowContainer
-          mode="watch"
-          report={workflowReport}
-          repairPlan={repairPlan}
-          isWatching={isWatchingWorkflow}
-          runtimeBusy={runtimeBusy}
-          hasDraftCommit={Boolean(lastDraftCommitSha)}
-          onWatch={() => { void watchLatestWorkflow(); }}
-          onUseRepairMission={useRepairMission}
-        />
-      ) : null}
-
-      {activeTab === 'repair' ? (
-        <WorkflowContainer
-          mode="repair"
-          report={workflowReport}
-          repairPlan={repairPlan}
-          isWatching={isWatchingWorkflow}
-          runtimeBusy={runtimeBusy}
-          hasDraftCommit={Boolean(lastDraftCommitSha)}
-          onWatch={() => { void watchLatestWorkflow(); }}
-          onUseRepairMission={useRepairMission}
-        />
-      ) : null}
-
+      {activeTab === 'diff' ? <GeneratedFileDiffPreviewPanel report={diffReport} isLoading={isLoadingDiffSources || runtimeBusy} onLoadSources={() => { void loadGeneratedFileSources(); }} /> : null}
+      {activeTab === 'workflow' ? <WorkflowContainer mode="watch" report={workflowReport} repairPlan={repairPlan} isWatching={isWatchingWorkflow} runtimeBusy={runtimeBusy} hasDraftCommit={Boolean(lastDraftCommitSha)} onWatch={() => { void watchLatestWorkflow(); }} onUseRepairMission={useRepairMission} /> : null}
+      {activeTab === 'repair' ? <WorkflowContainer mode="repair" report={workflowReport} repairPlan={repairPlan} isWatching={isWatchingWorkflow} runtimeBusy={runtimeBusy} hasDraftCommit={Boolean(lastDraftCommitSha)} onWatch={() => { void watchLatestWorkflow(); }} onUseRepairMission={useRepairMission} /> : null}
       {activeTab === 'health' ? <SovereignHealthPanel report={healthReport} /> : null}
-
       {activeTab === 'runtime' ? <SequentialRuntimePanel state={sequentialRuntime} /> : null}
-
       {activeTab === 'coverage' ? <RuntimeValidationCoveragePanel report={coverageReport} /> : null}
-
-      {activeTab === 'memory' ? (
-        <PatternMemoryContainer
-          store={solutionPatternStore}
-          onClear={resetPatternMemory}
-        />
-      ) : null}
-
-      {activeTab === 'remote' ? (
-        <RemoteMemoryContainer
-          config={remoteMemoryConfig}
-          onConfigChange={setRemoteMemoryConfig}
-          scanRegistry={scanRegistry}
-          solutionPatternStore={solutionPatternStore}
-          onSolutionPatternStoreChange={setSolutionPatternStore}
-          mission={mission}
-          onTelemetry={pushTelemetry}
-        />
-      ) : null}
-
-      {activeTab === 'telemetry' ? (
-        <TelemetryContainer
-          state={telemetry}
-          expanded={telemetryExpanded}
-          onExpandedChange={setTelemetryExpanded}
-        />
-      ) : null}
+      {activeTab === 'memory' ? <PatternMemoryContainer store={solutionPatternStore} onClear={resetPatternMemory} /> : null}
+      {activeTab === 'remote' ? <RemoteMemoryContainer config={remoteMemoryConfig} onConfigChange={setRemoteMemoryConfig} scanRegistry={scanRegistry} solutionPatternStore={solutionPatternStore} onSolutionPatternStoreChange={setSolutionPatternStore} mission={mission} onTelemetry={pushTelemetry} /> : null}
+      {activeTab === 'telemetry' ? <TelemetryContainer state={telemetry} expanded={telemetryExpanded} onExpandedChange={setTelemetryExpanded} /> : null}
     </div>
   );
 };
