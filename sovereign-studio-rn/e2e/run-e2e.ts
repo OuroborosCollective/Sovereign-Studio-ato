@@ -1,11 +1,11 @@
 /**
  * E2E Test Runner
  * Orchestrates E2E suites without fake-green results.
- * Missing optional suite configs are reported as SKIPPED, not passed.
+ * Missing optional suite configs or missing optional suite dependencies are reported as SKIPPED, not passed.
  */
 
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 
 interface TestConfig {
@@ -26,6 +26,26 @@ interface TestResult {
   duration: number;
   output: string;
   errors: string[];
+}
+
+function packageJsonHasDependency(packageJsonPath: string, dependencyName: string): boolean {
+  if (!existsSync(packageJsonPath)) return false;
+
+  try {
+    const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+
+    return Boolean(
+      parsed.dependencies?.[dependencyName]
+      || parsed.devDependencies?.[dependencyName]
+      || parsed.optionalDependencies?.[dependencyName],
+    );
+  } catch {
+    return false;
+  }
 }
 
 class E2ERunner {
@@ -115,6 +135,13 @@ class E2ERunner {
       const detoxConfig = path.join(process.cwd(), 'sovereign-studio-rn/e2e/config/detox.config.ts');
       if (!existsSync(detoxConfig)) {
         return this.recordSkipped('Detox E2E', startTime, 'Detox config not found.');
+      }
+
+      const rootPackage = path.join(process.cwd(), 'package.json');
+      const rnPackage = path.join(process.cwd(), 'sovereign-studio-rn/package.json');
+      const hasDetox = packageJsonHasDependency(rootPackage, 'detox') || packageJsonHasDependency(rnPackage, 'detox');
+      if (!hasDetox) {
+        return this.recordSkipped('Detox E2E', startTime, 'Detox config found, but detox is not installed in package dependencies.');
       }
 
       await this.runCommand('pnpm', [
