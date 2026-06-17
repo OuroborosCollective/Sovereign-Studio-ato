@@ -55,7 +55,7 @@ describe('ChatSidebar', () => {
       render(<ChatSidebar {...defaultProps} />);
 
       expect(screen.getByText(/Vorschläge/i)).toBeDefined();
-      expect(screen.getByRole('button', { name: /Vorschlag übernehmen: Integration: WebSocket/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /Accept suggestion: Integration: WebSocket/i })).toBeDefined();
     });
 
     it('renders input field for user messages', () => {
@@ -85,7 +85,7 @@ describe('ChatSidebar', () => {
       const input = screen.getByRole('textbox', { name: /Chat Nachricht/i });
       const submitButton = screen.getByRole('button', { name: /Nachricht senden/i });
 
-      fireEvent.change(input, { target: { value: 'Test message' } });
+      fireEvent.change(input, { target: { value: '  Test   message  ' } });
       fireEvent.click(submitButton);
 
       expect(defaultProps.onSendMessage).toHaveBeenCalledWith('Test message');
@@ -106,7 +106,7 @@ describe('ChatSidebar', () => {
     it('calls onAcceptSuggestion when suggestion is clicked', () => {
       render(<ChatSidebar {...defaultProps} />);
 
-      fireEvent.click(screen.getByRole('button', { name: /Vorschlag übernehmen: Integration: WebSocket/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Accept suggestion: Integration: WebSocket/i }));
       expect(defaultProps.onAcceptSuggestion).toHaveBeenCalledWith('s1');
     });
 
@@ -118,7 +118,7 @@ describe('ChatSidebar', () => {
         />,
       );
 
-      const acceptedButton = screen.getByRole('button', { name: /Vorschlag akzeptiert: Integration: WebSocket/i });
+      const acceptedButton = screen.getByRole('button', { name: /Accepted suggestion: Integration: WebSocket/i });
       expect(acceptedButton).toBeDisabled();
       fireEvent.click(acceptedButton);
       expect(defaultProps.onAcceptSuggestion).not.toHaveBeenCalled();
@@ -180,7 +180,7 @@ describe('ChatSidebar', () => {
       );
 
       expect(screen.getByText('✓ Integration: WebSocket')).toBeDefined();
-      expect(screen.getByRole('button', { name: /Vorschlag akzeptiert: Integration: WebSocket/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: /Accepted suggestion: Integration: WebSocket/i })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('shows priority badges for high priority suggestions', () => {
@@ -188,6 +188,26 @@ describe('ChatSidebar', () => {
 
       const badges = screen.queryAllByText('WICHTIG');
       expect(badges.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Runtime normalization', () => {
+    it('normalizes empty ids, blank messages and unsafe suggestion labels before rendering', () => {
+      render(
+        <ChatSidebar
+          {...defaultProps}
+          chatMessages={[
+            { id: '', role: 'assistant', content: '  normalized   message  ', timestamp: BASE_TIME },
+            { id: 'blank', role: 'assistant', content: '   ', timestamp: BASE_TIME + 1 },
+          ]}
+          suggestions={[{ id: '', type: 'feature', title: '', description: '  fallback desc  ', priority: 'low' }]}
+        />,
+      );
+
+      expect(screen.getByText('normalized message')).toBeDefined();
+      expect(screen.queryByText('blank')).toBeNull();
+      expect(screen.getByRole('button', { name: /Accept suggestion: Untitled suggestion/i })).toBeDefined();
+      expect(screen.getByTestId('chat-sidebar')).toHaveAttribute('data-summary', '1 message(s), 1 suggestion(s), 0 accepted.');
     });
   });
 
