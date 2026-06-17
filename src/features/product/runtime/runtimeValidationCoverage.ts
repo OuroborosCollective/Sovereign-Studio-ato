@@ -92,6 +92,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Remote Memory Pull Updates + Solution Pattern Memory',
   },
   {
+    id: 'external-memory-monitoring',
+    runtimePath: 'src/features/product/runtime/externalMemoryMonitoring.ts',
+    testPath: 'src/features/product/runtime/externalMemoryMonitoring.test.ts',
+    purpose: 'Reads and validates the Agent Memory gateway monitoring endpoint without exposing backend secrets.',
+    status: 'covered',
+    integrationPoint: 'Remote Memory monitoring endpoint',
+  },
+  {
     id: 'functional-guards',
     runtimePath: 'src/features/product/runtime/sovereignFunctionalGuards.ts',
     testPath: 'src/features/product/runtime/sovereignFunctionalGuards.test.ts',
