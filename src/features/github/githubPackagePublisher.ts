@@ -1,3 +1,4 @@
+import { buildGitHubHeaders, requireGitHubToken, stripTokenFromText } from './githubAuthSession';
 import { parseGithubRepoUrl } from './utils';
 
 export interface PublishableFile {
@@ -68,16 +69,6 @@ function normalizePath(path: string): string {
   return path.trim().replace(/^\/+/, '');
 }
 
-function githubHeaders(token: string, extra?: HeadersInit): HeadersInit {
-  return {
-    Accept: 'application/vnd.github+json',
-    'Content-Type': 'application/json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    Authorization: `Bearer ${token}`,
-    ...(extra ?? {}),
-  };
-}
-
 export function validatePublishableFiles(files: PublishableFile[]): PublishableFile[] {
   if (!files.length) throw new Error('No files to publish.');
 
@@ -107,12 +98,12 @@ export function validatePublishableFiles(files: PublishableFile[]): PublishableF
 async function githubJson<T>(fetcher: typeof fetch, url: string, token: string, init: RequestInit = {}): Promise<T> {
   const response = await fetcher(url, {
     ...init,
-    headers: githubHeaders(token, init.headers),
+    headers: buildGitHubHeaders({ token, json: true, extra: init.headers }),
   });
 
   if (!response.ok) {
     const message = await response.text().catch(() => '');
-    throw new Error(`GitHub API ${response.status}: ${message || response.statusText}`);
+    throw new Error(stripTokenFromText(`GitHub API ${response.status}: ${message || response.statusText}`, token));
   }
 
   return response.json() as Promise<T>;
@@ -132,7 +123,7 @@ async function createUniqueBranchRef(
     const branch = attempt === 0 ? baseBranchName : `${baseBranchName}-${attempt + 1}`;
     const response = await fetcher(`${apiBase}/git/refs`, {
       method: 'POST',
-      headers: githubHeaders(token),
+      headers: buildGitHubHeaders({ token, json: true }),
       body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha }),
     });
 
@@ -140,7 +131,7 @@ async function createUniqueBranchRef(
 
     const message = await response.text().catch(() => '');
     if (response.status !== 422) {
-      throw new Error(`GitHub API ${response.status}: ${message || response.statusText}`);
+      throw new Error(stripTokenFromText(`GitHub API ${response.status}: ${message || response.statusText}`, token));
     }
   }
 
@@ -156,19 +147,19 @@ export function buildSovereignBranchName(prefix: string, title: string, files: P
 export async function publishPackageAsDraftPr(input: PublishPackageInput): Promise<PublishPackageResult> {
   const parsed = parseGithubRepoUrl(input.repoUrl);
   if (!parsed) throw new Error('Invalid GitHub repository URL.');
-  if (!input.token.trim()) throw new Error('GitHub token is required to create a draft PR.');
+  const token = requireGitHubToken(input.token, 'Draft PR publishing');
 
   const fetcher = input.fetcher ?? fetch;
   const files = validatePublishableFiles(input.files);
   const apiBase = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
 
-  const repo = await githubJson<GitHubRepoResponse>(fetcher, apiBase, input.token);
+  const repo = await githubJson<GitHubRepoResponse>(fetcher, apiBase, token);
   const baseBranch = input.baseBranch?.trim() || repo.default_branch || 'main';
-  const baseRef = await githubJson<GitHubRefResponse>(fetcher, `${apiBase}/git/ref/heads/${encodeBranchPath(baseBranch)}`, input.token);
+  const baseRef = await githubJson<GitHubRefResponse>(fetcher, `${apiBase}/git/ref/heads/${encodeBranchPath(baseBranch)}`, token);
   const baseSha = baseRef.object?.sha;
   if (!baseSha) throw new Error(`Could not resolve base branch: ${baseBranch}`);
 
-  const baseCommit = await githubJson<GitHubCommitResponse>(fetcher, `${apiBase}/git/commits/${baseSha}`, input.token);
+  const baseCommit = await githubJson<GitHubCommitResponse>(fetcher, `${apiBase}/git/commits/${baseSha}`, token);
   const baseTreeSha = baseCommit.tree?.sha;
   if (!baseTreeSha) throw new Error('Could not resolve base tree.');
 
@@ -181,13 +172,13 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
   const branch = await createUniqueBranchRef(
     fetcher,
     apiBase,
-    input.token,
+    token,
     requestedBranch,
     baseSha,
     input.maxBranchAttempts ?? 6,
   );
 
-  const tree = await githubJson<GitHubTreeResponse>(fetcher, `${apiBase}/git/trees`, input.token, {
+  const tree = await githubJson<GitHubTreeResponse>(fetcher, `${apiBase}/git/trees`, token, {
     method: 'POST',
     body: JSON.stringify({
       base_tree: baseTreeSha,
@@ -202,7 +193,7 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
 
   if (!tree.sha) throw new Error('Could not create GitHub tree.');
 
-  const commit = await githubJson<{ sha?: string }>(fetcher, `${apiBase}/git/commits`, input.token, {
+  const commit = await githubJson<{ sha?: string }>(fetcher, `${apiBase}/git/commits`, token, {
     method: 'POST',
     body: JSON.stringify({
       message: input.title,
@@ -213,12 +204,12 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
 
   if (!commit.sha) throw new Error('Could not create GitHub commit.');
 
-  await githubJson(fetcher, `${apiBase}/git/refs/heads/${encodeBranchPath(branch)}`, input.token, {
+  await githubJson(fetcher, `${apiBase}/git/refs/heads/${encodeBranchPath(branch)}`, token, {
     method: 'PATCH',
     body: JSON.stringify({ sha: commit.sha, force: false }),
   });
 
-  const pr = await githubJson<GitHubPullResponse>(fetcher, `${apiBase}/pulls`, input.token, {
+  const pr = await githubJson<GitHubPullResponse>(fetcher, `${apiBase}/pulls`, token, {
     method: 'POST',
     body: JSON.stringify({
       title: input.title,
