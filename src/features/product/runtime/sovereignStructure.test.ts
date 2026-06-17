@@ -25,6 +25,12 @@ import {
   buildRuntimeValidationCoverageReport,
 } from './runtimeValidationCoverage';
 import {
+  applyScanFindings,
+  collectRepoPathFindings,
+  createScanFindingRegistry,
+  summarizeScanFindingRegistry,
+} from './scanFindingRegistry';
+import {
   createSequentialRuntimeState,
   finishSequentialStep,
   startSequentialStep,
@@ -64,9 +70,14 @@ const repoFiles = [
 ];
 
 describe('sovereign runtime structure', () => {
-  it('connects repo snapshot, auth, sequential runtime, learning memory, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
+  it('connects repo snapshot, categorized findings, auth, sequential runtime, learning memory, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
     expect(snapshot.ready).toBe(true);
+
+    const collectedFindings = collectRepoPathFindings(repoFiles, 1);
+    const scanRegistry = applyScanFindings(createScanFindingRegistry(1), 'repo-path-scan', collectedFindings, 1, 2);
+    expect(scanRegistry.runs[0].summary).toContain('abgeschlossen');
+    expect(summarizeScanFindingRegistry(scanRegistry)).toContain('active finding');
 
     let sequential = createSequentialRuntimeState();
     sequential = startSequentialStep(sequential, 'repo-load', {}, 1);
