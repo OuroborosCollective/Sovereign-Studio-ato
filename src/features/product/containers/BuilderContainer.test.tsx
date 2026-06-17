@@ -37,8 +37,10 @@ describe('BuilderContainer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Runtime härten' }));
 
-    expect(screen.getByLabelText(/Ideenfabrik Wunschfeld/i)).toHaveValue(expect.stringContaining('Prüfe den schwächsten Ablauf'));
-    expect(screen.getByLabelText(/Ideenfabrik Wunschfeld/i)).toHaveValue(expect.stringContaining('Runtime-Checks'));
+    const wishField = screen.getByLabelText(/Ideenfabrik Wunschfeld/i) as HTMLTextAreaElement;
+    expect(wishField.value).toContain('Prüfe den schwächsten Ablauf');
+    expect(wishField.value).toContain('Runtime-Checks');
+    expect(wishField.value).toContain('Keine Mock-, Stub- oder Facade-Live-Pfade');
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
