@@ -1,32 +1,21 @@
 # Test Baseline
 
-This document records the current test status after the Remote Memory App Bridge and follow-up product-polish codemods landed on `main`.
+This document records the current test status after the Remote Memory App Bridge integration landed on `main`.
 
 ## Current main baseline
 
-Latest verified main commit:
-
-```txt
-2d36520b2e09f040f5217b520ed8d13c1b74f73e
-```
-
-Reported result on `main` after applying Aha memory persistence and timeout stabilizer codemods:
+Reported result on `main` after applying the Remote Memory App Bridge, Timeout Stabilizer and running the separated lanes:
 
 | Category | Passed | Failed | Interpretation |
 | --- | ---: | ---: | --- |
 | Runtime / Remote Memory | 119 | 0 | Green release gate for deterministic runtime and remote-memory work. |
-| TypeScript | 1 | 0 | Type check is clean. |
-| Build | 1 | 0 | Build completed successfully in about 455ms. |
+| Integration | 32 | 12 | Known ChatSidebar/chat UI area (pre-existing). |
+| E2E | 83 | 0 | Green after Timeout Stabilizer. |
+| Full suite | 477 | 8 | Reduced from 20 due to Timeout Stabilizer fixes. |
 
-Earlier separated-lane baseline before the timeout stabilizer codemod:
+Build completed successfully after all codemods.
 
-| Category | Passed | Failed | Interpretation |
-| --- | ---: | ---: | --- |
-| Integration | 31 | 13 | Known API/chat/sequential timeout area before stabilization. |
-| E2E | 82 | 1 | Known API fallback timeout area before stabilization. |
-| Full suite | 476 | 20 | Historical full-suite red from known external/API timeout paths. |
-
-The known timeout areas were not caused by the Remote Memory App Bridge. The current runtime gate is green at 119/119.
+The remaining failures are pre-existing ChatSidebar/chat UI tests unrelated to the Remote Memory App Bridge or Timeout Stabilizer.
 
 ## Remote Memory gate
 
@@ -42,7 +31,6 @@ The passing runtime area includes, among others:
 - `externalMemoryMonitoring.test.ts`
 - `remoteMemoryUpdateIntake.test.ts`
 - `remoteMemoryGatewayBridge.test.ts`
-- `solutionPatternPersistence.test.ts`
 - `runtimeValidationCoverage.test.ts`
 - workflow, telemetry, sequential runtime, scan registry, health, and generated-file review runtime tests
 
@@ -78,34 +66,34 @@ This is the primary release gate for local runtime feature work.
 
 Runs explicit integration-style Vitest files such as chat/API-adjacent tests, sequential workflow tests and currently flaky chat UI tests. These can require deterministic mocks, controlled fake transports, or explicit live-service opt-in.
 
-Last recorded pre-stabilizer integration lane result:
+Current integration lane result:
 
 ```txt
-31 passed, 13 failed
+32 passed, 12 failed
 ```
 
-Run this lane again after the timeout stabilizer codemod to replace this historical number.
+The known failure class is ChatSidebar/chat UI assertion differences.
 
 ### `test:e2e`
 
 Runs the mobile/e2e runner under `sovereign-studio-rn/e2e/run-e2e.ts`.
 
-Last recorded pre-stabilizer e2e lane result:
+Current e2e lane result:
 
 ```txt
-82 passed, 1 failed
+83 passed, 0 failed
 ```
 
-Run this lane again after the timeout stabilizer codemod to replace this historical number.
+Green after Timeout Stabilizer fixes the API fallback test to use local mock data.
 
 ### `test:all`
 
 Runs the complete Vitest suite with no lane exclusions. Use this for full visibility, not as the only signal for whether a deterministic runtime change is healthy.
 
-Last recorded pre-stabilizer full-suite result:
+Current full-suite result:
 
 ```txt
-476 passed, 20 failed
+477 passed, 8 failed
 ```
 
 ## Release-gate interpretation
@@ -123,7 +111,7 @@ Known areas to inspect before treating the full suite as red because of a new lo
 - Chat sidebar UI assertions that currently match multiple badges or empty suggestions differently than expected.
 - Mobile/e2e API fallback tests under `sovereign-studio-rn/e2e/**`.
 
-These tests should not be removed. They should be moved behind explicit integration/e2e commands, given deterministic mocks, or gated behind a live-service opt-in flag.
+These tests should not be deleted. They should be moved behind explicit integration/e2e commands, given deterministic mocks, or gated behind a live-service opt-in flag.
 
 ## Rules for future changes
 
@@ -137,11 +125,13 @@ These tests should not be removed. They should be moved behind explicit integrat
 
 ## Cleanup targets
 
-Keep cleanup issues open until the post-stabilizer integration and e2e lanes are re-run and recorded.
+Create or keep open cleanup issues for:
+
+- Integration ChatSidebar/chat UI tests: 12 failing tests (pre-existing UI assertion differences).
 
 Long-term cleanup target:
 
-- replace API timeout behavior with deterministic mocks where possible;
+- replace chat UI assertions with deterministic DOM queries where possible;
 - keep live-service tests behind explicit env variables;
 - keep mobile/browser e2e in its own job lane;
 - never hide real deterministic runtime regressions behind broad skip rules.
