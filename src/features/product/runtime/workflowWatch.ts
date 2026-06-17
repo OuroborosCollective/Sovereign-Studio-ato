@@ -1,3 +1,4 @@
+import { buildGitHubHeaders } from '../../github/githubAuthSession';
 import { parseGithubRepoUrl } from '../../github/utils';
 
 export type WorkflowWatchStatus = 'idle' | 'pending' | 'green' | 'red' | 'unknown';
@@ -49,14 +50,6 @@ interface GitHubCheckRunsResponse {
     html_url?: string;
     output?: { title?: string | null; summary?: string | null };
   }>;
-}
-
-function githubHeaders(token?: string): HeadersInit {
-  return {
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    ...(token?.trim() ? { Authorization: `Bearer ${token.trim()}` } : {}),
-  };
 }
 
 function mapStatus(value?: string | null): WorkflowWatchStatus {
@@ -129,7 +122,7 @@ export async function fetchWorkflowWatchReport(input: WorkflowWatchInput): Promi
 
   const fetcher = input.fetcher ?? fetch;
   const apiBase = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
-  const headers = githubHeaders(input.token);
+  const headers = buildGitHubHeaders({ token: input.token });
   const checks: WorkflowCheckItem[] = [];
   const errors: string[] = [];
   const warnings: string[] = [];
