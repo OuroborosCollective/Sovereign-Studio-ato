@@ -5,19 +5,271 @@
 }
 
 :root {
-  --foreground-rgb: 28, 25, 23;
-  --background-rgb: 250, 250, 249;
+  --foreground-rgb: 226, 232, 240;
+  --background-rgb: 2, 6, 23;
+  --surface-1: rgba(15, 23, 42, 0.82);
+  --surface-2: rgba(30, 41, 59, 0.72);
+  --surface-3: rgba(51, 65, 85, 0.55);
+  --line: rgba(148, 163, 184, 0.2);
+  --line-strong: rgba(129, 140, 248, 0.45);
+  --accent: #818cf8;
+  --accent-2: #22d3ee;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --bad: #fb7185;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
+  background:
+    radial-gradient(circle at top left, rgba(79, 70, 229, 0.24), transparent 32rem),
+    radial-gradient(circle at 85% 15%, rgba(34, 211, 238, 0.16), transparent 28rem),
+    radial-gradient(circle at 50% 100%, rgba(16, 185, 129, 0.12), transparent 24rem),
+    rgb(var(--background-rgb));
   margin: 0;
   padding: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 #root {
   width: 100%;
   height: 100vh;
   overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+/* Sovereign Canvas current container app shell. */
+#root > .min-h-screen {
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(13.5rem, 17rem) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(2, 6, 23, 0.9), rgba(15, 23, 42, 0.72));
+}
+
+#root > .min-h-screen > h1 {
+  grid-column: 1 / -1;
+  margin: 0;
+  min-height: 4.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  padding: 1rem 1.25rem;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.78)),
+    radial-gradient(circle at top left, rgba(129, 140, 248, 0.18), transparent 22rem);
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.28);
+  color: #f8fafc;
+  font-size: clamp(1.1rem, 2vw, 1.65rem);
+  letter-spacing: -0.04em;
+}
+
+#root > .min-h-screen > h1::after {
+  content: "Live Android shell · Container runtime · Memory gateway";
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  color: #a7f3d0;
+  background: rgba(5, 150, 105, 0.12);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#root > .min-h-screen > div:nth-of-type(1) {
+  align-self: stretch;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  padding: 0.75rem;
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1rem 3rem rgba(0,0,0,0.2);
+}
+
+#root > .min-h-screen > div:nth-of-type(1)::before {
+  content: "Navigation";
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  margin: 0.25rem 0.35rem 0.35rem;
+  text-transform: uppercase;
+}
+
+#root > .min-h-screen > div:nth-of-type(1) button {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 0.9rem;
+  padding: 0.72rem 0.85rem;
+  color: #cbd5e1;
+  background: transparent;
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 750;
+  transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+#root > .min-h-screen > div:nth-of-type(1) button:hover {
+  transform: translateX(2px);
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(30, 41, 59, 0.74);
+  color: #f8fafc;
+}
+
+#root > .min-h-screen > div:nth-of-type(1) button.font-bold,
+#root > .min-h-screen > div:nth-of-type(1) button.underline {
+  border-color: var(--line-strong);
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.26), rgba(14, 165, 233, 0.16));
+  color: #ffffff;
+  box-shadow: 0 0.85rem 2rem rgba(79, 70, 229, 0.16);
+  text-decoration: none;
+}
+
+#root > .min-h-screen > section,
+#root > .min-h-screen > div:not(:nth-of-type(1)) {
+  min-width: 0;
+}
+
+#root > .min-h-screen > section {
+  border-color: var(--line);
+  border-radius: 1.25rem;
+  background: var(--surface-1);
+  box-shadow: 0 1rem 3rem rgba(0,0,0,0.2);
+}
+
+#root > .min-h-screen > section + * {
+  min-height: 0;
+}
+
+#root > .min-h-screen > :nth-child(n + 4) {
+  grid-column: 2;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.68);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 1rem 3rem rgba(0,0,0,0.18);
+}
+
+#root h2,
+#root h3 {
+  color: #f8fafc;
+}
+
+#root p,
+#root label,
+#root li,
+#root span,
+#root div {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(129, 140, 248, 0.5) transparent;
+}
+
+#root input,
+#root textarea,
+#root select {
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  background-color: rgba(15, 23, 42, 0.78) !important;
+  color: #e2e8f0 !important;
+}
+
+#root textarea::placeholder,
+#root input::placeholder {
+  color: #64748b;
+}
+
+#root .rounded,
+#root .rounded-md,
+#root .rounded-lg,
+#root .rounded-xl {
+  box-shadow: none;
+}
+
+#root table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#root th,
+#root td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 0.55rem;
+}
+
+#root pre,
+#root code {
+  border-radius: 0.9rem;
+  background: rgba(2, 6, 23, 0.72);
+  color: #bae6fd;
+}
+
+@media (max-width: 900px) {
+  #root {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  #root > .min-h-screen {
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto minmax(22rem, auto);
+    overflow: visible;
+    padding: 0.75rem;
+  }
+
+  #root > .min-h-screen > h1,
+  #root > .min-h-screen > div:nth-of-type(1),
+  #root > .min-h-screen > section,
+  #root > .min-h-screen > :nth-child(n + 4) {
+    grid-column: 1;
+  }
+
+  #root > .min-h-screen > h1 {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  #root > .min-h-screen > h1::after {
+    white-space: normal;
+  }
+
+  #root > .min-h-screen > div:nth-of-type(1) {
+    max-height: 10rem;
+  }
 }
