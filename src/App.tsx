@@ -8,6 +8,7 @@ import { RepoFileList } from './features/github/components/RepoFileList';
 import { GeneratedFileDiffPreviewPanel } from './features/product/components/GeneratedFileDiffPreviewPanel';
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
 import { RemoteMemoryContainer } from './features/product/containers/RemoteMemoryContainer';
+import { BuilderContainer } from './features/product/containers/BuilderContainer';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
@@ -747,30 +748,20 @@ const App: React.FC = () => {
       {activeTab === 'findings' ? <ScanFindingRegistryPanel registry={scanRegistry} /> : null}
 
       {activeTab === 'builder' ? (
-        <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
-          <h2 className="font-bold">Sovereign Action Builder</h2>
-          <p className="mt-1 text-xs text-slate-400">{repoSnapshotStatus.reason}</p>
-          <textarea
-            className="mt-2 min-h-24 w-full rounded border border-slate-700 bg-slate-900 p-2 text-sm"
-            value={mission}
-            onChange={(e) => setMission(e.target.value)}
-            placeholder="Auftrag, z.B. README + Update History"
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={generateRepoIdeas} disabled={actionDisabled} type="button">Ideen</button>
-            <button onClick={generateErrorWorkflow} disabled={actionDisabled} type="button">Fehler</button>
-            <button onClick={publishDraftPr} disabled={isPublishing || actionDisabled} type="button">
-              {isPublishing ? 'Draft PR läuft...' : 'Draft PR erstellen'}
-            </button>
-          </div>
-          <pre className="mt-3 whitespace-pre-wrap rounded bg-black/40 p-3 text-xs text-slate-300">{sovereignSummary}</pre>
-          {sovereignPreview ? (
-            <details className="mt-3">
-              <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-slate-400">Brain preview</summary>
-              <pre className="mt-2 max-h-96 overflow-auto rounded bg-black/40 p-3 text-[11px] text-slate-300">{sovereignPreview}</pre>
-            </details>
-          ) : null}
-        </section>
+        <BuilderContainer
+          mission={mission}
+          repoReady={repoSnapshotStatus.ready}
+          repoReason={repoSnapshotStatus.reason}
+          repoBusy={isRepoBusy}
+          runtimeBusy={runtimeBusy}
+          isPublishing={isPublishing}
+          sovereignSummary={sovereignSummary}
+          sovereignPreview={sovereignPreview}
+          onMissionChange={setMission}
+          onGenerateIdeas={generateRepoIdeas}
+          onGenerateErrorWorkflow={generateErrorWorkflow}
+          onPublishDraftPr={() => { void publishDraftPr(); }}
+        />
       ) : null}
 
       {activeTab === 'files' ? <GeneratedFileReviewPanel pkg={lastPackage} /> : null}
