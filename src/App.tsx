@@ -10,6 +10,7 @@ import { GeneratedFileReviewPanel } from './features/product/components/Generate
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
+import { ScanFindingRegistryPanel } from './features/product/components/ScanFindingRegistryPanel';
 import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { SovereignTelemetryPanel } from './features/product/components/SovereignTelemetryPanel';
@@ -29,6 +30,12 @@ import {
 import { assertGeneratedFileReviewSafe, reviewGeneratedFiles } from './features/product/runtime/generatedFileReview';
 import { getRepoSnapshotStatus } from './features/product/runtime/sovereignFunctionalGuards';
 import { buildRuntimeValidationCoverageReport } from './features/product/runtime/runtimeValidationCoverage';
+import {
+  applyScanFindings,
+  collectRepoPathFindings,
+  createScanFindingRegistry,
+  summarizeScanFindingRegistry,
+} from './features/product/runtime/scanFindingRegistry';
 import {
   createSequentialRuntimeState,
   finishSequentialStep,
@@ -60,12 +67,13 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 
-type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'telemetry';
+type SovereignTab = 'repo' | 'readiness' | 'integrity' | 'findings' | 'builder' | 'files' | 'diff' | 'workflow' | 'repair' | 'health' | 'runtime' | 'coverage' | 'telemetry';
 
 const tabs: Array<{ id: SovereignTab; label: string }> = [
   { id: 'repo', label: 'Repo' },
   { id: 'readiness', label: 'Readiness' },
   { id: 'integrity', label: 'Integrity' },
+  { id: 'findings', label: 'Findings' },
   { id: 'builder', label: 'Builder' },
   { id: 'files', label: 'Files' },
   { id: 'diff', label: 'Diff' },
@@ -106,6 +114,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SovereignTab>('repo');
   const [telemetryExpanded, setTelemetryExpanded] = useState(false);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
+  const [scanRegistry, setScanRegistry] = useState(() => createScanFindingRegistry());
   const sequentialRuntimeRef = useRef<SequentialRuntimeState>(createSequentialRuntimeState());
   const [sequentialRuntime, setSequentialRuntime] = useState(() => sequentialRuntimeRef.current);
   const [automationMode, setAutomationMode] = useState<SovereignAutomationMode>('manual');
@@ -163,6 +172,20 @@ const App: React.FC = () => {
   ) => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
   };
+
+  useEffect(() => {
+    if (!repoFiles.length) return;
+    const startedAt = Date.now();
+    const findings = collectRepoPathFindings(repoFiles, startedAt);
+    const completedAt = Date.now();
+    setScanRegistry((current) => {
+      const next = applyScanFindings(current, 'repo-path-scan', findings, startedAt, completedAt);
+      return next;
+    });
+    pushTelemetry('workflow', findings.some((finding) => finding.severity === 'critical' || finding.severity === 'high') ? 'warning' : 'success', 'scan:repo-path-finished', `Repo scan abgeschlossen: ${findings.length} finding(s).`);
+    // Only react to fresh repo snapshots; telemetry helper identity is intentionally not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoFiles]);
 
   const setSequentialState = (next: SequentialRuntimeState) => {
     sequentialRuntimeRef.current = next;
@@ -446,6 +469,9 @@ const App: React.FC = () => {
             review.summary,
             diffReport ? `Generated file diff preview: ${diffReport.summary}` : 'Generated file diff preview: not loaded.',
             '',
+            'Scan findings:',
+            summarizeScanFindingRegistry(scanRegistry),
+            '',
             'Suggestions:',
             ...pkg.suggestions.map((item) => `- ${item}`),
           ].join('\n'),
@@ -600,7 +626,7 @@ const App: React.FC = () => {
           </select>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">
-          Full Auto still runs repo snapshot checks, sequential runtime guard, functional guards, generated-file review, diff preview when loaded, workflow watch and Draft PR publishing rules. It does not auto-merge.
+          Full Auto still runs repo snapshot checks, categorized scan findings, sequential runtime guard, functional guards, generated-file review, diff preview when loaded, workflow watch and Draft PR publishing rules. It does not auto-merge.
         </p>
       </section>
 
@@ -652,6 +678,8 @@ const App: React.FC = () => {
       {activeTab === 'readiness' ? <RepoReadinessPanel repoUrl={repoUrl} files={repoFiles} status={repoStatus} /> : null}
 
       {activeTab === 'integrity' ? <RepoFileIntegrityMatrix files={repoFiles} /> : null}
+
+      {activeTab === 'findings' ? <ScanFindingRegistryPanel registry={scanRegistry} /> : null}
 
       {activeTab === 'builder' ? (
         <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
