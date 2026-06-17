@@ -13,6 +13,13 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
+function toMaskedError(error: unknown): Error {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const masked = new Error(maskSecrets(rawMessage));
+  masked.name = error instanceof Error ? error.name : 'Error';
+  return masked;
+}
+
 export class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
@@ -21,43 +28,37 @@ export class ErrorBoundary extends React.Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: unknown): State {
-    const errorInstance = error instanceof Error ? error : new Error(String(error));
-    // Mask error message before logging or storing in state
-    errorInstance.message = maskSecrets(errorInstance.message);
-    console.error('[GHOST_PILOT_FAILURE] UI_CRASH_DETECTED:', errorInstance.message);
-    return { hasError: true, error: errorInstance, errorInfo: null };
+    const maskedError = toMaskedError(error);
+    console.error('[GHOST_PILOT_FAILURE] UI_CRASH_DETECTED:', maskedError.message);
+    return { hasError: true, error: maskedError, errorInfo: null };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // ✅ SECURITY FIX: Removed console logging of error.stack and componentStack
-    // to prevent leaking internal code structure and potential sensitive data in the console.
-    console.error('[GHOST_PILOT_FAILURE] CAUGHT_EXCEPTION:', error.message);
-    
+    const maskedError = toMaskedError(error);
+    console.error('[GHOST_PILOT_FAILURE] CAUGHT_EXCEPTION:', maskedError.message);
+
     this.setState({ errorInfo });
-    
+
     const logError = async () => {
       try {
         const { storageService } = await import('../shared/api/storageService');
         const logsJson = await storageService.get('ss_error_log');
-        
+
         let currentLogs: Array<{time: string, context: string, message: string}> = [];
         try {
           currentLogs = JSON.parse(String(logsJson || '[]'));
         } catch {
           currentLogs = [];
         }
-        
-        const rawMessage = error instanceof Error ? error.message : String(error);
-        const errorMessage = maskSecrets(rawMessage);
-        
-        currentLogs.push({ 
-          time: new Date().toISOString(), 
-          context: 'ErrorBoundary', 
-          message: errorMessage
+
+        currentLogs.push({
+          time: new Date().toISOString(),
+          context: 'ErrorBoundary',
+          message: maskedError.message
         });
-        
+
         await storageService.set('ss_error_log', JSON.stringify(currentLogs.slice(-50)));
-      } catch (e) {
+      } catch {
         // Silently fail logging if storage service is unavailable
       }
     };
@@ -73,7 +74,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
       if (this.props.fallback) {
         return this.props.fallback;
       }
-      
+
       return (
         <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white rounded-xl shadow-xl overflow-hidden border border-stone-200">
@@ -85,7 +86,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               <p className="text-sm text-stone-600 mb-4">
                 An unexpected error occurred in the application UI. The team has been notified.
               </p>
-              
+
               {this.state.error && (
                 <div className="mt-4 p-3 bg-stone-100 rounded text-xs font-mono text-stone-800 break-words overflow-x-auto max-h-40 border border-stone-200">
                   {this.state.error.message || String(this.state.error)}
