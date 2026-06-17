@@ -19,47 +19,62 @@ export interface BuilderContainerProps {
   onPublishDraftPr: () => void;
 }
 
-interface IdeaPreset {
-  readonly title: string;
-  readonly description: string;
-  readonly mission: string;
+interface IdeaOption {
+  readonly label: string;
+  readonly text: string;
 }
 
-const IDEA_PRESETS: IdeaPreset[] = [
+const IDEA_OPTIONS: IdeaOption[] = [
   {
-    title: 'README + Update History',
-    description: 'README, Changelog und klare Release-Erklärung erzeugen.',
-    mission: 'README + Update History mit klarer Nutzer-Erklärung, echten Repo-Dateien und ohne Preview-only Output.',
+    label: 'README erklären',
+    text: 'Erstelle oder verbessere README und Update History so, dass ein normaler Nutzer versteht, was das Tool kann und wie man es benutzt.',
   },
   {
-    title: 'Runtime + Tests härten',
-    description: 'Validierungen, Guards und Tests für einen riskanten Ablauf ergänzen.',
-    mission: 'Analysiere den aktuellen Repo-Snapshot und baue Runtime-Checks, Validierungen und passende Unit-Tests für den schwächsten Ablauf.',
+    label: 'Fehlerlog fixen',
+    text: 'Analysiere den aktuellen Fehlerlog, finde die betroffenen Dateien und erzeuge einen minimalen echten Fix mit passenden Tests.',
   },
   {
-    title: 'Fehlerlog reparieren',
-    description: 'CI-/Build-/TypeScript-Fehler aus Log in echte Patch-Dateien übersetzen.',
-    mission: 'Nutze den aktuellen Fehlerlog, finde die betroffenen Dateien und erstelle einen minimalen, testbaren Fix mit Erklärung.',
+    label: 'UX verbessern',
+    text: 'Verbessere die Bedienbarkeit auf Android: Start, Navigation, Monitor, Logs, Settings und klare Nutzerführung.',
   },
   {
-    title: 'Operator UX verbessern',
-    description: 'Startscreen, Navigation, Monitor, Settings oder Workflow sichtbar nutzbarer machen.',
-    mission: 'Verbessere die Operator-UX ohne Mock, ohne Stub und ohne WASD-Drift. Fokus: Klarheit, Mobile, Monitoring und Bedienbarkeit.',
+    label: 'Runtime härten',
+    text: 'Prüfe den schwächsten Ablauf und ergänze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.',
+  },
+  {
+    label: 'PR vorbereiten',
+    text: 'Baue einen guarded Draft-PR-Auftrag mit echten Repo-Dateien, Review-Zusammenfassung, Diff-Prüfung und Workflow-Watch.',
   },
 ];
 
-function buildCustomMission(baseMission: string, wish: string): string {
-  const cleanWish = wish.trim();
-  const cleanBase = baseMission.trim() || 'Sovereign Tool Verbesserung';
-  if (!cleanWish) return cleanBase;
+function appendOption(current: string, option: IdeaOption): string {
+  const clean = current.trim();
+  if (!clean) return option.text;
+  return `${clean}\n${option.text}`;
+}
+
+function buildAnalyzedMission(args: {
+  readonly wish: string;
+  readonly repoReady: boolean;
+  readonly repoReason: string;
+}): string {
+  const wish = args.wish.trim() || 'Verbessere das Sovereign Tool so, dass es für Nutzer klar bedienbar ist.';
+  const repoState = args.repoReady ? 'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.' : `Repo-Snapshot ist noch nicht bereit: ${args.repoReason}`;
 
   return [
-    cleanBase,
+    'Ideenfabrik Auftrag:',
+    wish,
     '',
-    'Individueller Nutzerwunsch:',
-    cleanWish,
+    'Repository-Kontext:',
+    repoState,
     '',
-    'Bitte als echte Repo-Änderung umsetzen, mit Runtime-Checks, Validierungen und Tests, soweit sinnvoll. Keine Mock-/Stub-/Facade-Live-Pfade.',
+    'Umsetzung:',
+    '- Analysiere zuerst die vorhandene Repo-Struktur und betroffene Dateien.',
+    '- Erzeuge echte Änderungen im passenden Codepfad.',
+    '- Halte Sovereign Tool getrennt von WASD/Science-Portal Drift.',
+    '- Nutze Runtime-Checks, Validierungen und Tests, soweit sinnvoll.',
+    '- Keine Mock-, Stub- oder Facade-Live-Pfade.',
+    '- Gib am Ende klar aus, was geändert wurde und welche Checks noch offen sind.',
   ].join('\n');
 }
 
@@ -77,7 +92,7 @@ export function BuilderContainer({
   onGenerateErrorWorkflow,
   onPublishDraftPr,
 }: BuilderContainerProps) {
-  const [customWish, setCustomWish] = useState('');
+  const [wishText, setWishText] = useState('');
   const state = deriveBuilderContainerState({
     repoReady,
     repoBusy,
@@ -89,18 +104,18 @@ export function BuilderContainer({
   });
   const generateDisabled = !state.canGenerate;
   const publishDisabled = !state.canPublish;
-  const customMissionPreview = useMemo(() => buildCustomMission(mission, customWish), [mission, customWish]);
+  const analyzedMission = useMemo(() => buildAnalyzedMission({ wish: wishText, repoReady, repoReason }), [repoReady, repoReason, wishText]);
 
-  const applyCustomWish = () => {
-    onMissionChange(customMissionPreview);
+  const analyzeWish = () => {
+    onMissionChange(analyzedMission);
   };
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="builder-container">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-bold">Ideenfabrik · Sovereign Action Builder</h2>
-          <p className="mt-1 text-xs text-slate-400">Beschreibe wie in einem Chat, was du willst. Die Ideenfabrik formt daraus einen ausführbaren Sovereign-Auftrag.</p>
+          <h2 className="font-bold">Ideenfabrik · Chat Auftrag</h2>
+          <p className="mt-1 text-xs text-slate-400">Klicke eine Option an, ergänze deinen Wunsch in einfachen Worten und lass daraus einen ausführbaren Auftrag bauen.</p>
         </div>
         <span className={repoReady ? 'rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200' : 'rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200'}>
           {repoReady ? 'Repo snapshot ready' : 'Repo snapshot required'}
@@ -110,50 +125,49 @@ export function BuilderContainer({
       <p className="mt-2 text-xs text-slate-400">{repoReason}</p>
       {state.disabledReason ? <p className="mt-1 text-xs text-amber-300">{state.disabledReason}</p> : null}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {IDEA_PRESETS.map((preset) => (
+      <div className="mt-4 flex flex-wrap gap-2" aria-label="Ideenfabrik Optionen">
+        {IDEA_OPTIONS.map((option) => (
           <button
-            key={preset.title}
+            key={option.label}
             type="button"
-            className="rounded border border-slate-800 bg-slate-900/70 p-3 text-left hover:border-cyan-500/40 hover:bg-slate-900"
-            onClick={() => onMissionChange(preset.mission)}
+            className="rounded-full border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100 hover:border-cyan-400/60"
+            onClick={() => setWishText((current) => appendOption(current, option))}
           >
-            <span className="block font-bold text-slate-100">{preset.title}</span>
-            <span className="mt-1 block text-xs text-slate-400">{preset.description}</span>
+            {option.label}
           </button>
         ))}
       </div>
 
       <label className="mt-4 block">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Chat-Wunsch / individuelle Anpassung</span>
-        <textarea
-          className="mt-2 min-h-20 w-full rounded border border-slate-700 bg-slate-900 p-2 text-sm"
-          value={customWish}
-          onChange={(event) => setCustomWish(event.target.value)}
-          placeholder="Beispiel: Mach daraus eine mobile-first UX, zeige die Logs direkt, prüfe GitHub Actions und baue Tests dazu."
-          aria-label="Builder custom wish"
-        />
-      </label>
-      <button className="mt-2" type="button" onClick={applyCustomWish}>Wunsch in Auftrag übernehmen</button>
-
-      <label className="mt-4 block">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Ausführbarer Auftrag</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Chatfeld für Nutzerwunsch</span>
         <textarea
           className="mt-2 min-h-28 w-full rounded border border-slate-700 bg-slate-900 p-2 text-sm"
-          value={mission}
-          onChange={(event) => onMissionChange(event.target.value)}
-          placeholder="Auftrag, z.B. README + Update History"
-          aria-label="Builder mission"
+          value={wishText}
+          onChange={(event) => setWishText(event.target.value)}
+          placeholder="Schreib einfach: mach die App verständlicher, zeig Logs, prüfe Buildfehler, mach einen Draft PR..."
+          aria-label="Ideenfabrik Wunschfeld"
         />
       </label>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={onGenerateIdeas} disabled={generateDisabled} type="button">Vorschlag erzeugen</button>
+        <button type="button" onClick={analyzeWish}>Vorschlag analysieren</button>
+        <button onClick={onGenerateIdeas} disabled={generateDisabled} type="button">Auftrag in Produktion geben</button>
         <button onClick={onGenerateErrorWorkflow} disabled={generateDisabled} type="button">Fehlerlog reparieren</button>
         <button onClick={onPublishDraftPr} disabled={publishDisabled} type="button">
           {builderPublishLabel(isPublishing)}
         </button>
       </div>
+
+      <label className="mt-4 block">
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Analysierter ausführbarer Auftrag</span>
+        <textarea
+          className="mt-2 min-h-36 w-full rounded border border-slate-700 bg-slate-900 p-2 text-sm"
+          value={mission}
+          onChange={(event) => onMissionChange(event.target.value)}
+          placeholder="Hier erscheint nach Analyse der ausführbare Auftrag. Du kannst ihn vor Produktion noch ändern."
+          aria-label="Builder mission"
+        />
+      </label>
 
       <pre className="mt-3 whitespace-pre-wrap rounded bg-black/40 p-3 text-xs text-slate-300">{sovereignSummary}</pre>
       {state.hasPreview ? (
