@@ -4,12 +4,12 @@ import { buildGitHubHeaders, stripTokenFromText } from './features/github/github
 import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
 import { useGithubRepo } from './features/github/hooks/useGithubRepo';
-import { RepoFileList } from './features/github/components/RepoFileList';
 import { GeneratedFileDiffPreviewPanel } from './features/product/components/GeneratedFileDiffPreviewPanel';
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
 import { RemoteMemoryContainer } from './features/product/containers/RemoteMemoryContainer';
 import { BuilderContainer } from './features/product/containers/BuilderContainer';
 import { WorkflowContainer } from './features/product/containers/WorkflowContainer';
+import { RepoSnapshotContainer } from './features/product/containers/RepoSnapshotContainer';
 import { RepoFileIntegrityMatrix } from './features/product/components/RepoFileIntegrityMatrix';
 import { RepoReadinessPanel } from './features/product/components/RepoReadinessPanel';
 import { RuntimeValidationCoveragePanel } from './features/product/components/RuntimeValidationCoveragePanel';
@@ -695,49 +695,23 @@ const App: React.FC = () => {
       </section>
 
       {activeTab === 'repo' ? (
-        <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
-          <h2 className="font-bold">Repository Snapshot</h2>
-          <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <input
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              placeholder="GitHub Repo URL"
-            />
-
-            <input
-              value={repoBranch}
-              onChange={(e) => setRepoBranch(e.target.value)}
-              placeholder="Branch leer = Default"
-            />
-
-            <input
-              value={githubToken}
-              onChange={(e) => setGithubToken(e.target.value)}
-              placeholder="GitHub PAT für private Repos"
-              type="password"
-            />
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={handleLoadRepoTree} disabled={isRepoBusy || runtimeBusy} type="button">
-              Load Repo
-            </button>
-            <button onClick={saveCurrentSession} disabled={!repoSnapshotStatus.ready || runtimeBusy} type="button">
-              Save Session
-            </button>
-            <button onClick={restoreSession} disabled={runtimeBusy} type="button">
-              Restore Session
-            </button>
-            <button onClick={clearSession} disabled={runtimeBusy} type="button">
-              Clear View
-            </button>
-          </div>
-
-          <p className="mt-3 text-xs text-slate-400">{repoStatus}</p>
-          <p className="mt-1 text-xs text-slate-400">{repoSnapshotStatus.reason}</p>
-          {solutionPatternHints ? <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-900/70 p-3 text-xs text-emerald-200">{solutionPatternHints}</pre> : null}
-          <RepoFileList files={repoFiles} />
-        </section>
+        <RepoSnapshotContainer
+          repoUrl={repoUrl}
+          repoBranch={repoBranch}
+          accessValue={githubToken}
+          repoStatus={repoStatus}
+          isRepoBusy={isRepoBusy}
+          runtimeBusy={runtimeBusy}
+          repoFiles={repoFiles}
+          memoryHints={solutionPatternHints}
+          onRepoUrlChange={setRepoUrl}
+          onRepoBranchChange={setRepoBranch}
+          onAccessValueChange={setGithubToken}
+          onLoadRepo={() => { void handleLoadRepoTree(); }}
+          onSaveView={saveCurrentSession}
+          onRestoreView={restoreSession}
+          onClearView={clearSession}
+        />
       ) : null}
 
       {activeTab === 'readiness' ? <RepoReadinessPanel repoUrl={repoUrl} files={repoFiles} status={repoStatus} /> : null}
