@@ -6,6 +6,8 @@ export type ExternalMemorySyncMode = 'manual' | 'pull-only' | 'push-pull';
 export type ExternalMemorySyncItemKind = 'scan-finding' | 'learning-pattern' | 'solution-pattern';
 export type ExternalMemorySyncStatus = 'idle' | 'disabled' | 'ready' | 'synced' | 'soft-failed';
 
+export const EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT = 'DELETE_REMOTE_MEMORY' as const;
+
 export interface ExternalMemorySyncConfig {
   enabled: boolean;
   consentAccepted: boolean;
@@ -102,6 +104,34 @@ export interface ExternalMemoryPullUpdatesResult {
   validation: ExternalMemorySyncValidationReport;
 }
 
+export interface ExternalMemoryDeleteRequest {
+  schemaVersion: 1;
+  client: 'sovereign-studio';
+  redaction: 'summary-only-no-source-files';
+  workspaceId: string;
+  collectionName: string;
+  requestedAt: number;
+  confirmDelete: true;
+  confirmationText: typeof EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT;
+  scope: 'workspace-user-data';
+}
+
+export interface ExternalMemoryDeleteResponse {
+  success: boolean;
+  deleted: boolean;
+  deletedItems: number;
+  summary: string;
+}
+
+export interface ExternalMemoryDeleteResult {
+  status: ExternalMemorySyncStatus;
+  deleted: boolean;
+  request?: ExternalMemoryDeleteRequest;
+  response?: ExternalMemoryDeleteResponse;
+  validation: ExternalMemorySyncValidationReport;
+  summary: string;
+}
+
 const MAX_TEXT = 1600;
 const MAX_ITEMS = 250;
 const SAFE_ID = /^[a-zA-Z0-9._:-]{2,80}$/;
@@ -185,6 +215,15 @@ export function buildExternalMemoryConsentText(): string {
     'Raw source files, raw repository contents, private user keys and private credentials are not included by this client-side payload builder.',
     'The gateway may store summaries and metadata in a hybrid retrieval backend such as dense/sparse vector search, keyword search and graph relations.',
     'The user can keep this disabled and use local memory only.',
+  ].join('\n');
+}
+
+export function buildExternalMemoryDeleteWarningText(): string {
+  return [
+    'Achtung: Diese Aktion fordert die Löschung deiner zuvor übermittelten Remote-Memory-Daten an.',
+    'Betroffen sind nur Daten im konfigurierten Workspace und in der konfigurierten Collection.',
+    'Lokale Session-Daten im Browser werden dadurch nicht automatisch gelöscht.',
+    `Zur Bestätigung muss ${EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT} bestätigt werden.`,
   ].join('\n');
 }
 
@@ -327,6 +366,39 @@ export function buildExternalMemorySyncPayload(input: {
   return payload;
 }
 
+export function buildExternalMemoryDeleteRequest(config: ExternalMemorySyncConfig, now = Date.now()): ExternalMemoryDeleteRequest {
+  const request = {
+    schemaVersion: 1 as const,
+    client: 'sovereign-studio' as const,
+    redaction: 'summary-only-no-source-files' as const,
+    workspaceId: config.workspaceId,
+    collectionName: config.collectionName,
+    requestedAt: now,
+    confirmDelete: true as const,
+    confirmationText: EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT,
+    scope: 'workspace-user-data' as const,
+  };
+  const validation = validateExternalMemoryDeleteRequest(request);
+  if (!validation.valid) throw new Error(`External memory delete request is invalid: ${validation.errors.join(' | ')}`);
+  return request;
+}
+
+export function validateExternalMemoryDeleteRequest(request: ExternalMemoryDeleteRequest): ExternalMemorySyncValidationReport {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (request.schemaVersion !== 1) errors.push('Unsupported delete request schemaVersion.');
+  if (request.client !== 'sovereign-studio') errors.push('Unsupported delete request client.');
+  if (request.redaction !== 'summary-only-no-source-files') errors.push('Delete request redaction must stay summary-only-no-source-files.');
+  if (!SAFE_ID.test(request.workspaceId)) errors.push('Invalid delete request workspaceId.');
+  if (!SAFE_ID.test(request.collectionName)) errors.push('Invalid delete request collectionName.');
+  if (!Number.isFinite(request.requestedAt) || request.requestedAt <= 0) errors.push('Delete request timestamp must be positive.');
+  if (request.confirmDelete !== true) errors.push('Delete request must include confirmDelete=true.');
+  if (request.confirmationText !== EXTERNAL_MEMORY_DELETE_CONFIRMATION_TEXT) errors.push('Delete request confirmation text is invalid.');
+  if (request.scope !== 'workspace-user-data') errors.push('Delete request scope is invalid.');
+  if (request.workspaceId === 'local-workspace') warnings.push('Deleting the default local-workspace remote data. Confirm this is intended.');
+  return { valid: errors.length === 0, errors, warnings, summary: `${errors.length} error(s), ${warnings.length} warning(s) in external memory delete request.` };
+}
+
 function emptyValidation(summary: string): ExternalMemorySyncValidationReport {
   return { valid: true, errors: [], warnings: [], summary };
 }
@@ -417,5 +489,34 @@ export async function pullExternalMemoryUpdates(input: {
     return { status: response.ok ? 'ready' : 'soft-failed', ok: response.ok, items, validation, summary: response.ok ? sanitizeText(body.summary ?? `${items.length} remote update(s) available.`) : `External memory update pull returned ${response.status}.` };
   } catch (error) {
     return { status: 'soft-failed', ok: false, items: [], validation, summary: error instanceof Error ? sanitizeText(error.message) : 'External memory pull-updates request failed.' };
+  }
+}
+
+export async function deleteExternalMemoryData(input: {
+  config: ExternalMemorySyncConfig;
+  request: ExternalMemoryDeleteRequest;
+  fetcher?: typeof fetch;
+}): Promise<ExternalMemoryDeleteResult> {
+  const configReport = validateExternalMemorySyncConfig(input.config);
+  const requestReport = validateExternalMemoryDeleteRequest(input.request);
+  const validation = { valid: configReport.valid && requestReport.valid, errors: [...configReport.errors, ...requestReport.errors], warnings: [...configReport.warnings, ...requestReport.warnings], summary: `${configReport.summary} ${requestReport.summary}` };
+
+  if (!input.config.enabled) return { status: 'disabled', deleted: false, request: input.request, validation, summary: 'External memory sync is disabled.' };
+  if (!validation.valid) return { status: 'soft-failed', deleted: false, request: input.request, validation, summary: `External memory delete rejected softly: ${validation.summary}` };
+
+  try {
+    const response = await (input.fetcher ?? fetch)(buildGatewayEndpoint(input.config, '/api/sovereign-memory/delete-user-data'), { method: 'POST', headers: buildGatewayHeaders(input.config), body: JSON.stringify(input.request) });
+    if (!response.ok) return { status: 'soft-failed', deleted: false, request: input.request, validation, summary: `External memory delete returned ${response.status}.` };
+    const body = await response.json().catch(() => ({})) as Partial<ExternalMemoryDeleteResponse>;
+    const deleted = Boolean(body.deleted ?? body.success);
+    const deleteResponse: ExternalMemoryDeleteResponse = {
+      success: deleted,
+      deleted,
+      deletedItems: Number(body.deletedItems ?? 0),
+      summary: sanitizeText(body.summary ?? 'External memory data deletion completed.'),
+    };
+    return { status: deleted ? 'synced' : 'soft-failed', deleted, request: input.request, response: deleteResponse, validation, summary: deleteResponse.summary };
+  } catch (error) {
+    return { status: 'soft-failed', deleted: false, request: input.request, validation, summary: error instanceof Error ? sanitizeText(error.message) : 'External memory delete request failed.' };
   }
 }
