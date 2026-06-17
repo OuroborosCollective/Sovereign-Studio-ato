@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
-import ProductMagicApp from './ProductMagicApp';
+import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './runtime-adapter';
 import './index.css';
@@ -59,7 +59,7 @@ if (container) {
   root.render(
     <StrictMode>
       <ErrorBoundary>
-        <ProductMagicApp />
+        <App />
       </ErrorBoundary>
     </StrictMode>
   );
