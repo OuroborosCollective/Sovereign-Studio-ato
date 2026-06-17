@@ -10,6 +10,7 @@ It exists because Full Auto and manual buttons can otherwise trigger overlapping
 Only one runtime step may be active at a time.
 A downstream step may only start when its required prior data exists.
 A failed step records failure and blocks confusing follow-up behavior.
+The guard validates its own internal state before and after transitions.
 ```
 
 ## Guarded steps
@@ -33,6 +34,29 @@ repair-plan
 | `draft-pr-publish` | loaded repo snapshot + generated package |
 | `workflow-watch` | loaded repo snapshot + Draft PR commit SHA |
 | `repair-plan` | loaded repo snapshot + Workflow Watch report |
+
+## Self validation
+
+The guard is not trusted just because it is the guard. It validates its own state through:
+
+```txt
+validateSequentialRuntimeState
+assertSequentialRuntimeStateValid
+```
+
+The self-validation checks:
+
+- every known step has a step record
+- step records match their step id
+- at most one step is `running`
+- `activeStep` points to the running step
+- no running step exists without `activeStep`
+- `activeStep` does not exist without a running record
+- history steps are known
+- history sequence numbers are strictly increasing
+- state sequence matches the latest history event, with warning if not
+
+`canStartSequentialStep`, `startSequentialStep` and `finishSequentialStep` call the self-validation path so a corrupted guard state fails closed instead of silently continuing.
 
 ## App integration
 
