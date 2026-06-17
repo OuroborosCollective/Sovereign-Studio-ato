@@ -1,28 +1,39 @@
 # Test Baseline
 
-This document records the current test status after the Remote Memory App Bridge integration landed on `main`.
+This document records the current test status after the Remote Memory App Bridge and follow-up product-polish codemods landed on `main`.
 
 ## Current main baseline
 
-Reported result on `main` after applying the Remote Memory App Bridge and running the separated lanes:
+Latest verified main commit:
+
+```txt
+2d36520b2e09f040f5217b520ed8d13c1b74f73e
+```
+
+Reported result on `main` after applying Aha memory persistence and timeout stabilizer codemods:
 
 | Category | Passed | Failed | Interpretation |
 | --- | ---: | ---: | --- |
-| Runtime / Remote Memory | 116 | 0 | Green release gate for deterministic runtime and remote-memory work. |
-| Integration | 31 | 13 | Known API/chat/sequential timeout area. |
-| E2E | 82 | 1 | Known API fallback timeout area. |
-| Full suite | 476 | 20 | Red because of known pre-existing external/API timeout paths. |
+| Runtime / Remote Memory | 119 | 0 | Green release gate for deterministic runtime and remote-memory work. |
+| TypeScript | 1 | 0 | Type check is clean. |
+| Build | 1 | 0 | Build completed successfully in about 455ms. |
 
-Build completed successfully after the Remote Memory App Bridge codemod.
+Earlier separated-lane baseline before the timeout stabilizer codemod:
 
-The known failures are pre-existing API-dependent timeout tests and chat/sequential tests. They are not caused by the Remote Memory App Bridge.
+| Category | Passed | Failed | Interpretation |
+| --- | ---: | ---: | --- |
+| Integration | 31 | 13 | Known API/chat/sequential timeout area before stabilization. |
+| E2E | 82 | 1 | Known API fallback timeout area before stabilization. |
+| Full suite | 476 | 20 | Historical full-suite red from known external/API timeout paths. |
+
+The known timeout areas were not caused by the Remote Memory App Bridge. The current runtime gate is green at 119/119.
 
 ## Remote Memory gate
 
 The Remote Memory runtime gate is green:
 
 ```txt
-Remote Memory Runtime Tests: 116/116 passed
+Remote Memory Runtime Tests: 119/119 passed
 ```
 
 The passing runtime area includes, among others:
@@ -31,6 +42,7 @@ The passing runtime area includes, among others:
 - `externalMemoryMonitoring.test.ts`
 - `remoteMemoryUpdateIntake.test.ts`
 - `remoteMemoryGatewayBridge.test.ts`
+- `solutionPatternPersistence.test.ts`
 - `runtimeValidationCoverage.test.ts`
 - workflow, telemetry, sequential runtime, scan registry, health, and generated-file review runtime tests
 
@@ -66,31 +78,31 @@ This is the primary release gate for local runtime feature work.
 
 Runs explicit integration-style Vitest files such as chat/API-adjacent tests, sequential workflow tests and currently flaky chat UI tests. These can require deterministic mocks, controlled fake transports, or explicit live-service opt-in.
 
-Current integration lane result:
+Last recorded pre-stabilizer integration lane result:
 
 ```txt
 31 passed, 13 failed
 ```
 
-The known failure class is API/chat/sequential timeout behavior.
+Run this lane again after the timeout stabilizer codemod to replace this historical number.
 
 ### `test:e2e`
 
 Runs the mobile/e2e runner under `sovereign-studio-rn/e2e/run-e2e.ts`.
 
-Current e2e lane result:
+Last recorded pre-stabilizer e2e lane result:
 
 ```txt
 82 passed, 1 failed
 ```
 
-The known failure class is an API fallback timeout in `sovereign-studio-rn/e2e/api-fallback/api-fallback.spec.ts`.
+Run this lane again after the timeout stabilizer codemod to replace this historical number.
 
 ### `test:all`
 
 Runs the complete Vitest suite with no lane exclusions. Use this for full visibility, not as the only signal for whether a deterministic runtime change is healthy.
 
-Current full-suite result:
+Last recorded pre-stabilizer full-suite result:
 
 ```txt
 476 passed, 20 failed
@@ -111,7 +123,7 @@ Known areas to inspect before treating the full suite as red because of a new lo
 - Chat sidebar UI assertions that currently match multiple badges or empty suggestions differently than expected.
 - Mobile/e2e API fallback tests under `sovereign-studio-rn/e2e/**`.
 
-These tests should not be deleted. They should be moved behind explicit integration/e2e commands, given deterministic mocks, or gated behind a live-service opt-in flag.
+These tests should not be removed. They should be moved behind explicit integration/e2e commands, given deterministic mocks, or gated behind a live-service opt-in flag.
 
 ## Rules for future changes
 
@@ -121,14 +133,11 @@ These tests should not be deleted. They should be moved behind explicit integrat
 4. If a runtime module touches user/contributor data, its tests must verify contributor scoping and shared-pattern preservation.
 5. If a test requires a live service, document the required environment variable and keep it out of the default unit test gate.
 6. Full-suite red from known timeout paths is not the same as runtime gate red.
-7. Remote Memory changes must keep the `Runtime / Remote Memory` lane at 116/116 or higher as tests are added.
+7. Remote Memory changes must keep the `Runtime / Remote Memory` lane at 119/119 or higher as tests are added.
 
 ## Cleanup targets
 
-Create or keep open cleanup issues for:
-
-- Integration chat/sequential API timeout tests: 13 failing tests.
-- E2E API fallback timeout test: 1 failing test.
+Keep cleanup issues open until the post-stabilizer integration and e2e lanes are re-run and recorded.
 
 Long-term cleanup target:
 
