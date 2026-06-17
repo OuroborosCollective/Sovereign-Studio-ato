@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertSequentialRuntimeStateValid,
+  assertSequentialRuntimeStepRequestValid,
   canStartSequentialStep,
   createSequentialRuntimeState,
   finishSequentialStep,
   startSequentialStep,
   summarizeSequentialRuntime,
   validateSequentialRuntimeState,
+  validateSequentialRuntimeStepRequest,
   type SequentialRuntimeState,
 } from './sequentialRuntimeGuard';
 
@@ -30,6 +32,24 @@ describe('sequentialRuntimeGuard', () => {
     expect(canStartSequentialStep(state, 'draft-pr-publish', { repoReady: true, hasPackage: false }).reason).toContain('generated package');
     expect(canStartSequentialStep(state, 'workflow-watch', { repoReady: true, hasDraftCommit: false }).reason).toContain('commit SHA');
     expect(canStartSequentialStep(state, 'repair-plan', { repoReady: true, hasWorkflowReport: false }).reason).toContain('Workflow Watch');
+  });
+
+  it('validates individual step requests before start', () => {
+    const state = createSequentialRuntimeState();
+    expect(validateSequentialRuntimeStepRequest(state, 'package-build', { repoReady: true }).valid).toBe(true);
+    expect(() => assertSequentialRuntimeStepRequestValid(state, 'package-build', { repoReady: true })).not.toThrow();
+
+    const missingPackage = validateSequentialRuntimeStepRequest(state, 'draft-pr-publish', { repoReady: true, hasPackage: false });
+    expect(missingPackage.valid).toBe(false);
+    expect(missingPackage.errors.join(' ')).toContain('generated package');
+  });
+
+  it('step request validation rejects active runtime locks', () => {
+    const running = startSequentialStep(createSequentialRuntimeState(), 'repo-load', {}, 1);
+    const report = validateSequentialRuntimeStepRequest(running, 'package-build', { repoReady: true });
+    expect(report.valid).toBe(false);
+    expect(report.errors.join(' ')).toContain('still running');
+    expect(() => assertSequentialRuntimeStepRequestValid(running, 'package-build', { repoReady: true })).toThrow('Sequential runtime step request is invalid');
   });
 
   it('finishes steps and records history', () => {
