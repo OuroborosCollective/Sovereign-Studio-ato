@@ -21,6 +21,6 @@ describe('App', () => {
     render(<App />);
     fireEvent.click(screen.getByText('Sovereign Arbeitsfläche öffnen'));
     expect(screen.getByText('Automation Mode')).toBeDefined();
-    expect(screen.getByText('Sovereign Action Builder')).toBeDefined();
+    expect(screen.getByTestId('operator-monitor')).toBeDefined();
   });
 });
