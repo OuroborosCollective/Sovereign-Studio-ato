@@ -6,6 +6,33 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import './runtime-adapter';
 import './index.css';
 
+const VIEW_CLASSES = [
+  'device-phone',
+  'device-foldable',
+  'device-tablet',
+  'is-portrait',
+  'is-landscape',
+  'compact-height',
+  'regular-height',
+  'compact-ui',
+  'comfortable-ui',
+];
+
+function bindViewportClasses() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const width = Math.max(1, window.innerWidth || 390);
+  const height = Math.max(1, window.innerHeight || 844);
+  const shortSide = Math.min(width, height);
+  const longSide = Math.max(width, height);
+  const root = document.documentElement;
+  root.classList.remove(...VIEW_CLASSES);
+  const kind = shortSide >= 680 ? 'device-tablet' : shortSide >= 540 && longSide >= 720 ? 'device-foldable' : 'device-phone';
+  root.classList.add(kind);
+  root.classList.add(width >= height ? 'is-landscape' : 'is-portrait');
+  root.classList.add(height < 620 ? 'compact-height' : 'regular-height');
+  root.classList.add(shortSide < 390 || (window.devicePixelRatio || 1) >= 3 ? 'compact-ui' : 'comfortable-ui');
+}
+
 if (typeof window !== 'undefined') {
   (window as any).global = window;
   (window as any).requestIdleCallback = window.requestIdleCallback || ((cb: any) => {
@@ -17,6 +44,10 @@ if (typeof window !== 'undefined') {
       });
     }, 1);
   });
+
+  bindViewportClasses();
+  window.addEventListener('resize', bindViewportClasses, { passive: true });
+  window.addEventListener('orientationchange', bindViewportClasses, { passive: true });
 
   const style = document.createElement('style');
   style.textContent = [
