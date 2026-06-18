@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { installMobileOperatorCoach } from './mobile-operator-coach';
 import { installMobileMoreMenu } from './mobile-more-menu';
 import { installMobileSetupDrawer } from './mobile-setup-drawer';
+import { installMobileWorkbenchConsole } from './mobile-workbench-console';
 import './runtime-adapter';
 import './index.css';
 
@@ -63,6 +64,7 @@ if (typeof window !== 'undefined') {
   installMobileOperatorCoach();
   installMobileMoreMenu();
   installMobileSetupDrawer();
+  installMobileWorkbenchConsole();
 }
 
 const posthogKey = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
