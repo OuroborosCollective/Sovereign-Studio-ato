@@ -4,6 +4,7 @@ import posthog from 'posthog-js';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { installMobileOperatorCoach } from './mobile-operator-coach';
+import { installMobileMoreMenu } from './mobile-more-menu';
 import './runtime-adapter';
 import './index.css';
 
@@ -59,6 +60,7 @@ if (typeof window !== 'undefined') {
   document.head.appendChild(style);
 
   installMobileOperatorCoach();
+  installMobileMoreMenu();
 }
 
 const posthogKey = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
