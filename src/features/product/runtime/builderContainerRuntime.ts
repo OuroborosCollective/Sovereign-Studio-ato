@@ -17,12 +17,21 @@ export interface BuilderContainerRuntimeState {
   disabledReason: string;
 }
 
+export const BUILDER_PLACEHOLDER_MISSIONS = new Set([
+  'README + Update History',
+]);
+
 export function normalizeBuilderMission(value: string): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, 2000);
 }
 
+export function isPlaceholderMission(value: string): boolean {
+  return BUILDER_PLACEHOLDER_MISSIONS.has(normalizeBuilderMission(value));
+}
+
 export function deriveBuilderContainerState(input: BuilderContainerRuntimeInput): BuilderContainerRuntimeState {
-  const hasMission = normalizeBuilderMission(input.mission).length > 0;
+  const normalizedMission = normalizeBuilderMission(input.mission);
+  const hasMission = normalizedMission.length > 0;
   const hasSummary = input.sovereignSummary.trim().length > 0;
   const hasPreview = input.sovereignPreview.trim().length > 0;
 
@@ -40,6 +49,9 @@ export function deriveBuilderContainerState(input: BuilderContainerRuntimeInput)
   }
   if (!hasMission) {
     return { canGenerate: false, canPublish: false, hasMission, hasSummary, hasPreview, disabledReason: 'Mission is empty.' };
+  }
+  if (isPlaceholderMission(normalizedMission)) {
+    return { canGenerate: false, canPublish: false, hasMission, hasSummary, hasPreview, disabledReason: 'Bitte zuerst einen konkreten Auftrag analysieren. README + Update History ist nur ein Platzhalter.' };
   }
 
   return { canGenerate: true, canPublish: true, hasMission, hasSummary, hasPreview, disabledReason: '' };
