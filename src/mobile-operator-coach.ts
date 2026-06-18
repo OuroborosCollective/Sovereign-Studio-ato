@@ -12,7 +12,7 @@ const STYLE_ID = 'sovereign-mobile-coach-style';
 const ROOT_ID = 'sovereign-mobile-coach';
 
 function pageText(): string {
-  return document.body?.innerText ?? '';
+  return document.body?.textContent ?? '';
 }
 
 function hasAny(source: string, tokens: string[]): boolean {
