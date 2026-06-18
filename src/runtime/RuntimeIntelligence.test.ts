@@ -367,25 +367,102 @@ describe('RuntimeTelemetry redaction', () => {
     }
   });
 
-  it('redacts sensitive keys from properties', () => {
+  it('redacts secrets from telemetry properties via withGuard error', async () => {
     const runtime = createRuntimeIntelligence();
     
-    // Add a learning signal
-    runtime.addLearning({
-      containerId: 'repo-snapshot',
-      action: 'review',
-      reason: 'test reason',
-      outcome: 'accepted',
-      score: 0.8,
-      lamp: 'green',
-      ruleId: 'test-rule',
-      learnTag: 'test-tag',
-    });
+    // Test redaction via withGuard - the error message gets logged
+    const guard: Guard = {
+      name: 'secret-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'secret-guard',
+        reason: 'token ghp_123456789012345678901234567890123456 found in request',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard(
+        'test-operation',
+        async () => 'result',
+        [guard]
+      );
+    } catch {
+      // Expected to throw
+    }
     
     const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
     
-    // Check that learning events were recorded
-    expect(events.length).toBeGreaterThan(0);
+    // The real token should NOT appear in telemetry
+    expect(serialized).not.toContain('ghp_123456789012345678901234567890123456');
+    // But the redaction placeholder SHOULD appear
+    expect(serialized).toContain('[GITHUB_TOKEN]');
+  });
+
+  it('redacts API keys from telemetry via withGuard error', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'api-key-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'api-key-guard',
+        reason: 'api_key: test_api_key_1234567890abcdefghijklmnop is invalid',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard(
+        'api-operation',
+        async () => 'result',
+        [guard]
+      );
+    } catch {
+      // Expected
+    }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    // API key should be redacted
+    expect(serialized).not.toContain('test_api_key_1234567890abcdefghijklmnop');
+    expect(serialized).toContain('[API_KEY]');
+  });
+
+  it('redacts passwords from telemetry via withGuard error', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'password-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'password-guard',
+        reason: 'password: SuperSecretPass999 was rejected',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard(
+        'auth-operation',
+        async () => 'result',
+        [guard]
+      );
+    } catch {
+      // Expected
+    }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    // Password should be redacted
+    expect(serialized).not.toContain('SuperSecretPass999');
+    expect(serialized).toContain('[SECRET]');
   });
 });
 
