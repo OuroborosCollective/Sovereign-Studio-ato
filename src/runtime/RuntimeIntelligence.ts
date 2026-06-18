@@ -29,9 +29,13 @@ import {
 
 import {
   validateFullPipeline,
-  type FullPipelineBridge,
+  type FullPipelineBridge as ImportedFullPipelineBridge,
   type BridgeValidationResult
 } from '../features/product/runtime/containerBridgeValidation';
+
+// Re-export FullPipelineBridge for use in tests
+export type { FullPipelineBridge } from '../features/product/runtime/containerBridgeValidation';
+type FullPipelineBridge = ImportedFullPipelineBridge;
 
 import {
   createContainerDecisionLearningSignal,
@@ -52,6 +56,21 @@ import {
 // ============================================================================
 
 export type TraceId = string;
+
+/**
+ * Trace ID Provider interface for injectable trace ID generation
+ * Allows deterministic IDs for testing and custom implementations
+ */
+export interface TraceIdProvider {
+  (): TraceId;
+}
+
+/**
+ * Default trace ID generator using timestamp + random
+ */
+export function defaultTraceIdProvider(): TraceId {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
 
 export interface RuntimeContext {
   traceId: TraceId;
@@ -87,21 +106,100 @@ export interface TelemetryEvent {
 // Telemetry Service
 // ============================================================================
 
+/**
+ * Patterns for sensitive data that should be redacted in telemetry
+ */
+const REDACTION_PATTERNS: { pattern: RegExp; replacement: string }[] = [
+  // GitHub tokens
+  { pattern: /ghp_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
+  { pattern: /gho_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
+  { pattern: /ghu_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
+  // API keys
+  { pattern: /api[_-]?key["']?\s*[:=]\s*["']?[a-zA-Z0-9_-]{20,}/gi, replacement: 'api_key=[API_KEY]' },
+  // Bearer tokens
+  { pattern: /Bearer\s+[a-zA-Z0-9_.-]{20,}/g, replacement: 'Bearer [TOKEN]' },
+  // Generic secrets
+  { pattern: /["']?(secret|password|passwd|pwd)["']?\s*[:=]\s*["']?[a-zA-Z0-9_@#$%^&*-]{8,}/gi, replacement: '[SECRET]' },
+  // Authorization headers
+  { pattern: /authorization["']?\s*[:=]\s*["']?[a-zA-Z0-9_ -]+/gi, replacement: 'authorization: [REDACTED]' },
+];
+
+/**
+ * Recursively redact sensitive data from an object
+ */
+function redactSensitiveData(data: unknown): unknown {
+  if (data === null || data === undefined) {
+    return data;
+  }
+
+  if (typeof data === 'string') {
+    let result = data;
+    for (const { pattern, replacement } of REDACTION_PATTERNS) {
+      result = result.replace(pattern, replacement);
+    }
+    return result;
+  }
+
+  if (Array.isArray(data)) {
+    return data.map(redactSensitiveData);
+  }
+
+  if (typeof data === 'object') {
+    const redacted: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      // Skip known sensitive keys
+      const lowerKey = key.toLowerCase();
+      if (
+        lowerKey.includes('token') ||
+        lowerKey.includes('secret') ||
+        lowerKey.includes('password') ||
+        lowerKey.includes('key') ||
+        lowerKey.includes('auth') ||
+        lowerKey.includes('credential')
+      ) {
+        redacted[key] = '[REDACTED]';
+      } else {
+        redacted[key] = redactSensitiveData(value);
+      }
+    }
+    return redacted;
+  }
+
+  return data;
+}
+
 class RuntimeTelemetry {
   private events: TelemetryEvent[] = [];
   private traceStack: Map<TraceId, { operation: string; startTime: number }> = new Map();
+  private readonly redactionEnabled: boolean;
 
-  constructor(private enabled = true) {}
+  constructor(
+    private enabled = true,
+    redactionEnabled = true
+  ) {
+    this.redactionEnabled = redactionEnabled;
+  }
 
   track(event: TelemetryEvent): void {
     if (!this.enabled) return;
-    this.events.push(event);
     
-    // Also log to console in development
+    // Redact sensitive data from properties
+    const redactedProperties = this.redactionEnabled
+      ? redactSensitiveData(event.properties) as Record<string, unknown>
+      : event.properties;
+    
+    const redactedEvent: TelemetryEvent = {
+      ...event,
+      properties: redactedProperties
+    };
+    
+    this.events.push(redactedEvent);
+    
+    // Also log to console in development (with redaction)
     if (typeof window !== 'undefined' || process.env.NODE_ENV === 'development') {
       console.debug(`[RuntimeIntel] ${event.name}`, {
         traceId: event.traceId,
-        ...event.properties
+        ...redactedProperties
       });
     }
   }
@@ -156,11 +254,12 @@ export class RuntimeCircuitBreaker {
   constructor(
     private threshold = 5,
     private timeoutMs = 30000,
-    private name = 'default'
+    private name = 'default',
+    private traceIdProvider: TraceIdProvider = defaultTraceIdProvider
   ) {}
 
   async call<T>(fn: () => Promise<T>): Promise<T> {
-    const traceId = generateTraceId();
+    const traceId = this.traceIdProvider();
 
     if (this.state === 'open') {
       if (Date.now() - this.lastFailure > this.timeoutMs) {
@@ -294,19 +393,26 @@ export async function runGuardChain(
 // Main Runtime Intelligence Class
 // ============================================================================
 
+export interface RuntimeIntelligenceConfig {
+  telemetry?: RuntimeTelemetry;
+  traceIdProvider?: TraceIdProvider;
+}
+
 export class RuntimeIntelligence {
   private telemetry: RuntimeTelemetry;
   private circuitBreakers: Map<string, RuntimeCircuitBreaker> = new Map();
+  private traceIdProvider: TraceIdProvider;
   
-  constructor(telemetry: RuntimeTelemetry = globalTelemetry) {
-    this.telemetry = telemetry;
+  constructor(config: RuntimeIntelligenceConfig = {}) {
+    this.telemetry = config.telemetry ?? globalTelemetry;
+    this.traceIdProvider = config.traceIdProvider ?? defaultTraceIdProvider;
   }
 
   /**
    * Generate a unique trace ID
    */
   static createTraceId(): TraceId {
-    return generateTraceId();
+    return defaultTraceIdProvider();
   }
 
   /**
@@ -317,7 +423,7 @@ export class RuntimeIntelligence {
     visibleText: string,
     rules: ContainerDecisionRule[]
   ): RuntimeDecision {
-    const traceId = generateTraceId();
+    const traceId = this.traceIdProvider();
     const startTime = performance.now();
     
     this.telemetry.track({
@@ -355,7 +461,7 @@ export class RuntimeIntelligence {
    * Match mobile workflow patterns
    */
   matchMobilePattern(visibleText: string): MobileWorkflowPatternMatch {
-    const traceId = generateTraceId();
+    const traceId = this.traceIdProvider();
     
     this.telemetry.track({
       name: 'mobile_pattern_matching',
@@ -371,7 +477,7 @@ export class RuntimeIntelligence {
    * Validate the full pipeline bridge
    */
   validatePipeline(bridge: FullPipelineBridge): { overallValid: boolean; criticalErrors: string[] } {
-    const traceId = generateTraceId();
+    const traceId = this.traceIdProvider();
     
     this.telemetry.track({
       name: 'pipeline_validation_started',
@@ -423,7 +529,7 @@ export class RuntimeIntelligence {
       name: 'learning_signal_added',
       properties: { containerId: signal.containerId, action: signal.action },
       timestamp: Date.now(),
-      traceId: generateTraceId()
+      traceId: this.traceIdProvider()
     });
   }
 
@@ -464,7 +570,7 @@ export class RuntimeIntelligence {
     fn: () => Promise<T>,
     guards: Guard[]
   ): Promise<{ result: T; guardResults: RuntimeGuardResult[] }> {
-    const traceId = generateTraceId();
+    const traceId = this.traceIdProvider();
     const ctx = { traceId, timestamp: Date.now(), containerId: undefined, operationId: undefined } as RuntimeContext & Record<string, unknown>;
 
     this.telemetry.startTrace(traceId, name);
@@ -539,15 +645,11 @@ export class RuntimeGuardError extends Error {
 // Utility Functions
 // ============================================================================
 
-function generateTraceId(): TraceId {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
 /**
- * Create a new RuntimeIntelligence instance
+ * Create a new RuntimeIntelligence instance with optional config
  */
-export function createRuntimeIntelligence(telemetry?: RuntimeTelemetry): RuntimeIntelligence {
-  return new RuntimeIntelligence(telemetry);
+export function createRuntimeIntelligence(config?: RuntimeIntelligenceConfig): RuntimeIntelligence {
+  return new RuntimeIntelligence(config);
 }
 
 /**
