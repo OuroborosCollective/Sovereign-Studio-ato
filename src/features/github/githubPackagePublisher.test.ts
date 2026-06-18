@@ -23,6 +23,21 @@ describe('githubPackagePublisher', () => {
     expect(() => validatePublishableFiles([{ path: '../README.md', content: 'x' }])).toThrow('Invalid');
   });
 
+  it('rejects single audit-only package', () => {
+    expect(() =>
+      validatePublishableFiles([{ path: 'generated/sovereign-product/workflow.ts', content: '// audit' }])
+    ).toThrow(/audit-only/i);
+  });
+
+  it('accepts audit file as part of multi-file package', () => {
+    const files = [
+      { path: 'README.md', content: '# Sovereign Studio' },
+      { path: 'docs/UPDATE_HISTORY.md', content: '# Update History' },
+      { path: 'generated/sovereign-product/workflow.ts', content: '// audit' },
+    ];
+    expect(() => validatePublishableFiles(files)).not.toThrow();
+  });
+
   it('builds deterministic branch names from package content', () => {
     const files = [{ path: 'README.md', content: '# Docs' }];
     expect(buildSovereignBranchName('sovereign/package', 'README + Update History', files)).toBe(
@@ -113,5 +128,51 @@ describe('githubPackagePublisher', () => {
     expect(refCreateCalls).toBe(2);
     expect(result.branch).toMatch(/-2$/);
     expect(result.pullRequestNumber).toBe(252);
+  });
+
+  it('sends all files to GitHub tree for multi-file packages', async () => {
+    interface TreeCallBody {
+      base_tree: string;
+      tree: Array<{ path: string; [key: string]: unknown }>;
+    }
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      calls.push({ url: String(url), body });
+
+      const textUrl = String(url);
+      if (textUrl.endsWith('/repos/OuroborosCollective/Sovereign-Studio-ato')) return jsonResponse({ default_branch: 'main' });
+      if (textUrl.includes('/git/ref/heads/main')) return jsonResponse({ object: { sha: 'base-sha' } });
+      if (textUrl.includes('/git/commits/base-sha')) return jsonResponse({ tree: { sha: 'base-tree' } });
+      if (textUrl.endsWith('/git/refs')) return jsonResponse({ ref: 'refs/heads/sovereign/package/test' });
+      if (textUrl.endsWith('/git/trees')) return jsonResponse({ sha: 'new-tree' });
+      if (textUrl.endsWith('/git/commits')) return jsonResponse({ sha: 'new-commit' });
+      if (textUrl.includes('/git/refs/heads/sovereign/package/')) return jsonResponse({ object: { sha: 'new-commit' } });
+      if (textUrl.endsWith('/pulls')) return jsonResponse({ number: 253, html_url: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/253' });
+      return jsonResponse({ message: 'not found' }, false, 404);
+    });
+
+    const files = [
+      { path: 'README.md', content: '# Sovereign Studio' },
+      { path: 'docs/UPDATE_HISTORY.md', content: '# Update History' },
+      { path: 'docs/SOVEREIGN_RUNTIME.md', content: '# Runtime' },
+      { path: 'docs/LAUNCH_READINESS.md', content: '# Launch Readiness' },
+      { path: 'generated/sovereign-product/workflow.ts', content: '// audit' },
+    ];
+
+    await publishPackageAsDraftPr({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      token: 'token-for-test',
+      title: 'Multi-file package',
+      body: 'Generated package',
+      files,
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    const treeCall = calls.find((call) => call.url.endsWith('/git/trees'));
+    expect(treeCall?.body).toMatchObject({ base_tree: 'base-tree' });
+    expect((treeCall?.body as TreeCallBody).tree.map((entry) => entry.path)).toEqual(
+      files.map((file) => file.path)
+    );
   });
 });
