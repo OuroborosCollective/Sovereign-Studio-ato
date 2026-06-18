@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
-const source = readFileSync(new URL('./run-e2e.ts', import.meta.url), 'utf8');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const source = readFileSync(join(__dirname, 'run-e2e.ts'), 'utf8');
 
 describe('E2E runner command contract', () => {
   it('uses the current Jest CLI path pattern flag', () => {
     expect(source).toContain('--testPathPatterns');
-    expect(source).not.toContain('--testPathPattern');
+    expect(source).not.toMatch(/--testPathPattern[^s]/);
   });
 
   it('does not install Jest dynamically through npx in CI', () => {
