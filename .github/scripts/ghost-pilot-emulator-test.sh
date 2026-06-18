@@ -1,8 +1,9 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-# In GitHub Actions, GHOST_PILOT_APP_PACKAGE is provided via env
-APP_PKG="${GHOST_PILOT_APP_PACKAGE:-com.arestudio.nocode.aab}"
+# This script is called by the reactivecircus/android-emulator-runner action.
+# The default shell used by the action might not support 'set -o pipefail'.
+# Moving the script into an external file and calling it with 'bash' fixes this.
 
 adb wait-for-device
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
@@ -25,9 +26,9 @@ if grep -Ei "ErrorBoundary|FATAL EXCEPTION|AndroidRuntime|RuntimeError|CRASH|com
   exit 1
 fi
 
-if grep -Ei "ANR in ${APP_PKG}" emulator_error.log; then
+if grep -Ei "ANR in ${GHOST_PILOT_APP_PACKAGE}" emulator_error.log; then
   echo "❌ App ANR detected"
-  grep -Ei "ANR in ${APP_PKG}" emulator_error.log | head -n 40
+  grep -Ei "ANR in ${GHOST_PILOT_APP_PACKAGE}" emulator_error.log | head -n 40
   exit 1
 fi
 
