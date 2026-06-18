@@ -7,7 +7,15 @@ function clickByText(label: string): void {
   button?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 }
 
+function preferGuardedAuto(): void {
+  const select = Array.from(document.querySelectorAll('select')).find((item) => Array.from(item.options).some((option) => option.value === 'full-auto-draft-pr'));
+  if (!select || select.value === 'full-auto-draft-pr') return;
+  select.value = 'full-auto-draft-pr';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 function install(): void {
+  preferGuardedAuto();
   const nav = document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
   if (!nav) return;
   for (const button of Array.from(nav.querySelectorAll('button'))) {
