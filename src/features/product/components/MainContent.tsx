@@ -2,6 +2,10 @@ import React, { useRef, useMemo } from 'react';
 import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
 
+/**
+ * ⚡ PERFORMANCE: Static configuration objects moved outside the component
+ * to prevent redundant allocation and garbage collection overhead on every render.
+ */
 const AGENT_MESSAGES: Record<PipelineState, string> = {
   idle: 'Bereit. Starte links den Auftrag.',
   planning: 'Auftrag uebernommen. Ich plane und schreibe den Code-Entwurf.',
@@ -74,6 +78,11 @@ export const MainContent: React.FC<MainContentProps> = React.memo(({
     : agentMessage ?? AGENT_MESSAGES[pipelineState];
   const derivedProgress = progress ?? PROGRESS_MAP[pipelineState];
 
+  /**
+   * ⚡ PERFORMANCE: Memoized code formatting transformation.
+   * Prevents expensive O(N) string processing on every render when only
+   * UI state or chat history changes.
+   */
   const formattedCode = useMemo(() => {
     return currentCode.split('\n').map((line, index) => `${String(index + 1).padStart(3, ' ')} │ ${line}`).join('\n');
   }, [currentCode]);
