@@ -446,11 +446,11 @@ jobs:
 
               | Suite | Status |
               |-------|--------|
-              | Detox E2E | ${needs.detox-e2e.result === 'success' ? '✅ Passed' : '❌ Failed'} |
-              | API Fallback | ${needs.api-fallback-tests.result === 'success' ? '✅ Passed' : '⚠️ Warning'} |
-              | Self-Healing | ${needs.self-healing-tests.result === 'success' ? '✅ Passed' : '⚠️ Warning'} |
+              | Detox E2E | ${{ needs.detox-e2e.result === 'success' ? '✅ Passed' : '❌ Failed' }} |
+              | API Fallback | ${{ needs.api-fallback-tests.result === 'success' ? '✅ Passed' : '⚠️ Warning' }} |
+              | Self-Healing | ${{ needs.self-healing-tests.result === 'success' ? '✅ Passed' : '⚠️ Warning' }} |
 
-              ${needs.detox-e2e.result === 'failure' ? '\n⚠️ **Detox tests failed.** Enable auto-fix to automatically resolve failures.' : '\n✅ **All critical tests passed.** Ready to merge.'}
+              ${{ needs.detox-e2e.result === 'failure' ? '\n⚠️ **Detox tests failed.** Enable auto-fix to automatically resolve failures.' : '\n✅ **All critical tests passed.** Ready to merge.' }}
               `
             })
 
