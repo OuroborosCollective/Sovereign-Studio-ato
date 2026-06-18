@@ -192,6 +192,15 @@ export const CONTAINER_INTELLIGENCE_COVERAGE: ContainerIntelligenceCoverageEntry
     missingAreas: [],
     nextAction: 'Reference pattern for container bridge validation.',
   },
+  {
+    id: 'code-creation',
+    label: 'Code Creation Patterns',
+    containerPath: 'src/features/product/runtime/containerIntelligencePatternRules.ts',
+    status: 'covered',
+    coveredAreas: ['pattern-rules'],
+    missingAreas: [],
+    nextAction: 'Code creation language/framework patterns are comprehensive.',
+  },
 ];
 
 function hasDuplicates(values: string[]): string[] {

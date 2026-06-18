@@ -51,6 +51,7 @@ export const KNOWN_CONTAINER_IDS: readonly string[] = [
   'sequential-runtime',
   'mobile-workbench',
   'mobile-coach',
+  'code-creation',
 ];
 
 export function validateContainerDecisionRule(rule: ContainerDecisionRule, knownContainerIds = KNOWN_CONTAINER_IDS): ContainerDecisionReport {
