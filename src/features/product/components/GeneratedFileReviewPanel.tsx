@@ -22,6 +22,9 @@ export function GeneratedFileReviewPanel({ pkg }: GeneratedFileReviewPanelProps)
   }
 
   const report = reviewGeneratedFiles(pkg.files);
+  const selfReviewClass = report.selfReview.accepted
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+    : 'border-amber-500/30 bg-amber-500/10 text-amber-100';
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
@@ -31,6 +34,17 @@ export function GeneratedFileReviewPanel({ pkg }: GeneratedFileReviewPanelProps)
           <p className="text-xs text-slate-400">{report.summary}</p>
         </div>
         <span className="rounded bg-slate-900 px-2 py-1 text-[11px] text-slate-400">pre-publish review</span>
+      </div>
+
+      <div className={`mt-4 rounded-xl border p-3 text-xs ${selfReviewClass}`} data-testid="generated-self-review">
+        <div className="font-black uppercase tracking-wide">{report.selfReview.accepted ? 'Self Review: accepted' : 'Self Review: rewrite required'}</div>
+        <p className="mt-2">{report.selfReview.reason}</p>
+        <p className="mt-1 text-[11px] opacity-80">Learning signal: {report.selfReview.learningSignal}</p>
+        {report.selfReview.rewritePlan.length ? (
+          <ol className="mt-2 list-decimal space-y-1 pl-4">
+            {report.selfReview.rewritePlan.map((step) => <li key={step}>{step}</li>)}
+          </ol>
+        ) : null}
       </div>
 
       <div className="mt-4 grid gap-3">
