@@ -44,22 +44,29 @@ const STEP_TABS: Record<SequentialRuntimeStep, SovereignAutoViewTab> = {
   'repair-plan': 'repair',
 };
 
-const AUTO_VISIBLE_TABS = new Set<SovereignAutoViewTab>([
+const ALL_KNOWN_TABS = new Set<SovereignAutoViewTab>([
   'repo',
   'readiness',
+  'integrity',
+  'findings',
   'builder',
   'files',
   'diff',
   'workflow',
   'repair',
+  'health',
+  'runtime',
+  'coverage',
+  'memory',
+  'remote',
   'telemetry',
 ]);
 
 export function validateSovereignAutoViewInput(input: SovereignAutoViewInput): string[] {
   const errors: string[] = [];
 
-  if (!AUTO_VISIBLE_TABS.has(input.activeTab) && input.mode !== 'manual') {
-    errors.push(`Auto mode is on an unsupported active tab: ${input.activeTab}`);
+  if (!ALL_KNOWN_TABS.has(input.activeTab)) {
+    errors.push(`Unknown active tab: ${input.activeTab}`);
   }
 
   if (input.workflowStatus && !['idle', 'pending', 'green', 'red', 'unknown'].includes(input.workflowStatus)) {
@@ -107,9 +114,6 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   } else if (input.hasPackage && input.mode !== 'manual') {
     tab = 'files';
     reason = 'Auto mode generated package is ready for review.';
-  } else if (input.mode !== 'manual') {
-    tab = 'builder';
-    reason = 'Auto mode starts in the Auftrag/Builder view.';
   }
 
   const target = tab ?? input.activeTab;
