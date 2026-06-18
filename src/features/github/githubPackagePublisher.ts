@@ -51,6 +51,7 @@ interface GitHubPullResponse {
 
 const FORBIDDEN_PATH_PREFIXES = ['.git/', 'node_modules/', 'dist/', 'build/'];
 const FORBIDDEN_EXACT_PATHS = ['.env', '.env.local', '.env.production'];
+const AUDIT_ONLY_PATH = 'generated/sovereign-product/workflow.ts';
 
 function stableHash(input: string): string {
   let hash = 0x811c9dc5;
@@ -73,7 +74,7 @@ export function validatePublishableFiles(files: PublishableFile[]): PublishableF
   if (!files.length) throw new Error('No files to publish.');
 
   const seen = new Set<string>();
-  return files.map((file) => {
+  const normalized = files.map((file) => {
     const path = normalizePath(file.path);
     const lower = path.toLowerCase();
 
@@ -93,6 +94,13 @@ export function validatePublishableFiles(files: PublishableFile[]): PublishableF
 
     return { ...file, path };
   });
+
+  // Reject single audit-only package
+  if (normalized.length === 1 && normalized[0].path === AUDIT_ONLY_PATH) {
+    throw new Error('Refusing to publish audit-only package. Publish requires multi-file content.');
+  }
+
+  return normalized;
 }
 
 async function githubJson<T>(fetcher: typeof fetch, url: string, token: string, init: RequestInit = {}): Promise<T> {
