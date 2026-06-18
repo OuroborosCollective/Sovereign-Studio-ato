@@ -464,6 +464,81 @@ describe('RuntimeTelemetry redaction', () => {
     expect(serialized).not.toContain('SuperSecretPass999');
     expect(serialized).toContain('[SECRET]');
   });
+
+  it('redacts GitHub fine-grained PATs', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'github-pat-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'github-pat-guard',
+        reason: 'github_pat_11AABBCCDD.eyJhbGciOiJIUzI1NiJ9.test_signature_here',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard('github-operation', async () => 'result', [guard]);
+    } catch { /* expected */ }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    expect(serialized).not.toContain('github_pat_11AABBCCDD');
+    expect(serialized).toContain('[GITHUB_TOKEN]');
+  });
+
+  it('redacts Gemini API keys', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'gemini-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'gemini-guard',
+        reason: 'Gemini key AIzaSyBabcdefghijk1234567890abcdefgh is invalid',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard('gemini-operation', async () => 'result', [guard]);
+    } catch { /* expected */ }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    expect(serialized).not.toContain('AIzaSyBabcdefghijk1234567890abcdefgh');
+    expect(serialized).toContain('[GEMINI_KEY]');
+  });
+
+  it('redacts OpenAI keys', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'openai-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'openai-guard',
+        reason: 'OpenAI key sk-proj-abcdefghijklmnopqrstuvwxyz1234567890 is invalid',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard('openai-operation', async () => 'result', [guard]);
+    } catch { /* expected */ }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    expect(serialized).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz1234567890');
+    expect(serialized).toContain('[OPENAI_KEY]');
+  });
 });
 
 describe('RuntimeCircuitBreaker', () => {

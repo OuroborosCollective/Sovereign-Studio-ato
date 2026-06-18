@@ -110,18 +110,25 @@ export interface TelemetryEvent {
  * Patterns for sensitive data that should be redacted in telemetry
  */
 const REDACTION_PATTERNS: { pattern: RegExp; replacement: string }[] = [
-  // GitHub tokens
+  // GitHub classic tokens
   { pattern: /ghp_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
   { pattern: /gho_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
   { pattern: /ghu_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
+  // GitHub fine-grained PATs and installation tokens
+  { pattern: /github_pat_[a-zA-Z0-9_.]{22,}/g, replacement: '[GITHUB_TOKEN]' },
+  { pattern: /ghs_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
+  { pattern: /ghr_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
+  // AI Provider keys (Gemini, OpenAI, etc.)
+  { pattern: /AIza[a-zA-Z0-9_-]{30,}/g, replacement: '[GEMINI_KEY]' },
+  { pattern: /sk-[a-zA-Z0-9_-]{20,}/g, replacement: '[OPENAI_KEY]' },
   // API keys
   { pattern: /api[_-]?key["']?\s*[:=]\s*["']?[a-zA-Z0-9_-]{20,}/gi, replacement: 'api_key=[API_KEY]' },
-  // Bearer tokens
-  { pattern: /Bearer\s+[a-zA-Z0-9_.-]{20,}/g, replacement: 'Bearer [TOKEN]' },
+  // Bearer tokens (full base64 alphabet including +, /, =)
+  { pattern: /Bearer\s+[a-zA-Z0-9_+/.-]{20,}={0,2}/gi, replacement: 'Bearer [TOKEN]' },
   // Generic secrets
   { pattern: /["']?(secret|password|passwd|pwd)["']?\s*[:=]\s*["']?[a-zA-Z0-9_@#$%^&*-]{8,}/gi, replacement: '[SECRET]' },
   // Authorization headers
-  { pattern: /authorization["']?\s*[:=]\s*["']?[a-zA-Z0-9_ -]+/gi, replacement: 'authorization: [REDACTED]' },
+  { pattern: /authorization["']?\s*[:=]\s*["']?[a-zA-Z0-9_ -+/=]+/gi, replacement: 'authorization: [REDACTED]' },
 ];
 
 /**
@@ -553,11 +560,11 @@ export class RuntimeIntelligence {
   }
 
   /**
-   * Get or create a circuit breaker
+   * Get or create a circuit breaker with propagated trace ID provider
    */
   getCircuitBreaker(name: string, threshold = 5, timeoutMs = 30000): RuntimeCircuitBreaker {
     if (!this.circuitBreakers.has(name)) {
-      this.circuitBreakers.set(name, new RuntimeCircuitBreaker(threshold, timeoutMs, name));
+      this.circuitBreakers.set(name, new RuntimeCircuitBreaker(threshold, timeoutMs, name, this.traceIdProvider));
     }
     return this.circuitBreakers.get(name)!;
   }
