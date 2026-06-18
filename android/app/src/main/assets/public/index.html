@@ -6,30 +6,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#fafaf9" />
     <title>Sovereign Studio V3</title>
-    <script type="module" crossorigin src="./assets/index-CSn3dEWB.js"></script>
+    <script type="module" crossorigin src="./assets/index-Did6VWZm.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-Bh1tDfsg.js">
-    <link rel="modulepreload" crossorigin href="./assets/dependencies-C7cNwhZ_.js">
-    <link rel="modulepreload" crossorigin href="./assets/vendor-Br8sOYDe.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-Bl95sH6F.css">
+    <link rel="modulepreload" crossorigin href="./assets/dependencies-Cv9yZckS.js">
+    <link rel="modulepreload" crossorigin href="./assets/vendor-hzyg853b.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-C179MQcR.css">
   </head>
   <body>
     <div id="root"></div>
   
-<script id="SOVEREIGN_BOOT_FALLBACK_V1">
+<script id="SOVEREIGN_BOOT_FALLBACK_V2">
 (function(){
-  function bootFallback(){
+  function bootFallback(reason){
     var root=document.getElementById('root');
-    if(!root||!/Loading Refactor/i.test(root.textContent||''))return;
-    root.innerHTML='<main style="min-height:100vh;box-sizing:border-box;padding:28px 18px;background:#1c1917;color:#f5f5f4;font-family:system-ui">' +
-      '<section style="border:1px solid #574522;border-radius:18px;padding:18px;background:#292524">' +
-      '<h1 style="color:#fbbf24;margin-top:0">Sovereign Studio Boot-Fix aktiv</h1>' +
-      '<p>Der Web-Bundle wurde nicht geladen. Statt Endlos-Loader ist die App jetzt in einem sicheren Recovery-Modus.</p>' +
-      '<p>Release-Fix: npm run build ausfuehren, damit Capacitor die aktuellen Android Assets synchronisiert.</p>' +
-      '<button onclick="location.reload()" style="border:0;border-radius:12px;padding:14px 16px;background:#f59e0b;color:#1c1917;font-weight:800">Neu laden</button>' +
+    if(!root)return;
+    var text=root.textContent||'';
+    var hasAppShell=document.querySelector('[data-testid="repo-snapshot-container"],[data-testid="builder-container"],[data-testid="operator-monitor"]');
+    if(hasAppShell)return;
+    if(!/Loading|Sovereign|Refactor/i.test(text)&&text.trim().length>80)return;
+    root.innerHTML='<main style="min-height:100vh;box-sizing:border-box;padding:24px 16px;background:#0f172a;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">' +
+      '<section style="max-width:720px;margin:0 auto;border:1px solid #334155;padding:18px;background:#111827">' +
+      '<p style="margin:0 0 8px;color:#38bdf8;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">Sovereign Studio · Android Recovery</p>' +
+      '<h1 style="margin:0 0 12px;color:#f8fafc;font-size:24px">App-Bundle konnte nicht starten</h1>' +
+      '<p style="margin:0 0 10px;color:#cbd5e1;line-height:1.5">Die eigentliche Sovereign-App wurde nicht ersetzt. Dieser Bildschirm erscheint nur, wenn der Android/WebView-Bundle nicht geladen oder nicht sauber synchronisiert wurde.</p>' +
+      '<p style="margin:0 0 14px;color:#94a3b8;font-size:13px;line-height:1.45">Recovery-Hinweis: Build erneut ausfuehren und sicherstellen, dass die aktuellen Web-Assets nach Android synchronisiert wurden.</p>' +
+      '<pre style="white-space:pre-wrap;border:1px solid #1f2937;background:#020617;color:#93c5fd;padding:10px;font-size:12px">npm run build:web
+npx cap sync android</pre>' +
+      '<button onclick="location.reload()" style="margin-top:14px;border:1px solid #38bdf8;padding:12px 14px;background:#0ea5e9;color:#020617;font-weight:800">Neu laden</button>' +
       '</section></main>';
+    if(window.console&&console.warn)console.warn('[Sovereign Recovery] Android boot fallback shown:',reason||'startup timeout');
   }
-  window.addEventListener('error',function(){setTimeout(bootFallback,100)});
-  setTimeout(bootFallback,1800);
+  window.addEventListener('error',function(){setTimeout(function(){bootFallback('runtime error')},100)});
+  setTimeout(function(){bootFallback('startup timeout')},33000);
 })();
 </script>
 </body>
