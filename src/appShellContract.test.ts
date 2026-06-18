@@ -34,4 +34,15 @@ describe('current Sovereign app shell contract', () => {
     expect(app).toContain("{ id: 'remote', label: 'Remote Memory' }");
     expect(app).toContain("{ id: 'memory', label: 'Pattern Memory' }");
   });
+
+  it('keeps the Android shell mobile-only and landscape safe', () => {
+    const css = read('src/index.css');
+    const main = read('src/main.tsx');
+
+    expect(css).toContain('Android phones, foldables and tablets only');
+    expect(css).toContain('@media (orientation: landscape)');
+    expect(css).toContain('grid-template-columns: 1fr');
+    expect(css).not.toContain('desktop-like');
+    expect(main).toContain('clamp(5.35rem, 12vw, 8rem)');
+  });
 });
