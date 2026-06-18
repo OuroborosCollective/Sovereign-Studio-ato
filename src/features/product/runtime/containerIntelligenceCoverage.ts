@@ -183,6 +183,15 @@ export const CONTAINER_INTELLIGENCE_COVERAGE: ContainerIntelligenceCoverageEntry
     missingAreas: ['tests', 'pattern-rules', 'telemetry', 'self-review'],
     nextAction: 'Add formal pattern rules and tests for operator coach decision logic.',
   },
+  {
+    id: 'bridge-validation',
+    label: 'Container Bridge Validation',
+    containerPath: 'src/features/product/runtime/containerBridgeValidation.ts',
+    status: 'covered',
+    coveredAreas: ['runtime-checks', 'tests', 'pattern-rules', 'telemetry', 'self-review', 'ui-guidance'],
+    missingAreas: [],
+    nextAction: 'Reference pattern for container bridge validation.',
+  },
 ];
 
 function hasDuplicates(values: string[]): string[] {
