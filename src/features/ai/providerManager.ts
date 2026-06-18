@@ -13,6 +13,7 @@
 
 import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { GeminiRequestOptions } from './geminiService';
+import { maskSecrets } from '../../shared/utils/crypto';
 
 // Provider Types
 export type ProviderType = 'mlvoca' | 'groq' | 'huggingface' | 'together' | 'openrouter' | 'gemini' | 'pollinations';
@@ -194,7 +195,7 @@ async function fetchWithProviderError(
 
       throw {
         provider,
-        error: errorMsg,
+        error: maskSecrets(errorMsg),
         statusCode: response.status,
         isRetryable: response.status === 429 || response.status >= 500,
       };
@@ -207,7 +208,7 @@ async function fetchWithProviderError(
     const isNetworkError = error.name === 'TypeError' && (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network'));
     throw {
       provider,
-      error: error.message || 'Network error',
+      error: maskSecrets(error.message || 'Network error'),
       isRetryable: isNetworkError || error.status === 429 || error.status >= 500,
     };
   }
@@ -473,7 +474,7 @@ export class ProviderManager {
       } catch (error: any) {
         const err: ProviderError = {
           provider: 'gemini',
-          error: error?.message || 'Unknown error',
+          error: maskSecrets(error?.message || 'Unknown error'),
           statusCode: error?.status,
           isRetryable: error?.status === 429 || error?.message?.includes('quota'),
         };
@@ -545,7 +546,7 @@ export class ProviderManager {
       } catch (error: any) {
         const err: ProviderError = {
           provider: type,
-          error: error?.message || error?.error?.message || 'Unknown error',
+          error: maskSecrets(error?.message || error?.error?.message || 'Unknown error'),
           statusCode: error?.statusCode || error?.status,
           isRetryable: isRetryableError(error),
         };

@@ -14,6 +14,7 @@ import {
   type RefactorFile,
   type RefactorOptions,
 } from './RefactorEngine';
+import { maskSecrets } from '../../shared/utils/crypto';
 
 // ============================================================
 // Context Types
@@ -157,7 +158,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       return plan;
     } catch (err: any) {
       const msg = err?.message || 'Analysis failed';
-      setError(msg);
+      setError(maskSecrets(msg));
       throw err;
     } finally {
       setIsLoading(false);
@@ -173,7 +174,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       return result;
     } catch (err: any) {
       const msg = err?.message || 'Generation failed';
-      setError(msg);
+      setError(maskSecrets(msg));
       throw err;
     } finally {
       setIsLoading(false);
@@ -189,7 +190,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       return code;
     } catch (err: any) {
       const msg = err?.message || 'Code generation failed';
-      setError(msg);
+      setError(maskSecrets(msg));
       throw err;
     } finally {
       setIsLoading(false);
@@ -205,7 +206,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       return explanation;
     } catch (err: any) {
       const msg = err?.message || 'Explanation failed';
-      setError(msg);
+      setError(maskSecrets(msg));
       throw err;
     } finally {
       setIsLoading(false);
@@ -221,7 +222,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       return result;
     } catch (err: any) {
       const msg = err?.message || 'Feature generation failed';
-      setError(msg);
+      setError(maskSecrets(msg));
       throw err;
     } finally {
       setIsLoading(false);
@@ -237,7 +238,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
       return result;
     } catch (err: any) {
       const msg = err?.message || 'Apply failed';
-      setError(msg);
+      setError(maskSecrets(msg));
       throw err;
     } finally {
       setIsLoading(false);

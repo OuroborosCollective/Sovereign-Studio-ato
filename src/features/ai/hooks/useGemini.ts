@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
+import { maskSecrets } from '../../../shared/utils/crypto';
 import { addVectors, CanvasObject } from '../../canvas/canvasSlice';
 
 /**
@@ -130,8 +131,8 @@ export function useGemini(options: GeminiHookOptions = {}): GeminiHookResult {
       return result.content || '';
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unbekannter Fehler';
-      setError(errorMessage);
-      return options.offlineFallback || `Fehler: ${errorMessage}`;
+      setError(maskSecrets(errorMessage));
+      return options.offlineFallback || `Fehler: ${maskSecrets(errorMessage)}`;
     } finally {
       setIsLoading(false);
     }
