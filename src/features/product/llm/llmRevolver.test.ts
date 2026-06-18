@@ -3,7 +3,7 @@ import type { LlmAdapter } from './llmAdapter';
 import { resolveWithLlmRevolver } from './llmRevolver';
 import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 
-function brain(file = 'README.md', code = '# README\n'): SovereignBrainResult {
+function brain(file = 'README.md', code = '# README file\n'): SovereignBrainResult {
   return {
     perception: { domain: 'repo automation', intent: 'README', architecture: 'React app', confidence: 0.8 },
     analysis: {

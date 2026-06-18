@@ -11,7 +11,7 @@ const FORBIDDEN_PATCH_PATHS = [
 ];
 
 const PLAN_ONLY_PATCH_PATHS = new Set(['docs/sovereign_plan.md', 'generated/sovereign-product/workflow.ts']);
-const ACTIONABLE_PATCH_PATHS = [/^src\//i, /^tests?\//i, /\.test\.[tj]sx?$/i, /\.spec\.[tj]sx?$/i, /^android\//i, /^scripts\//i, /^\.github\//i, /^package\.json$/i, /^vite\.config/i, /^tsconfig/i, /^readme\.md$/i, /^docs\/update_history\.md$/i];
+const ACTIONABLE_PATCH_PATHS = [/^src\//i, /^tests?\//i, /\.test\.[tj]sx?$/i, /\.spec\.[tj]sx?$/i, /^android\//i, /^scripts\//i, /^\.github\//i, /^package\.json$/i, /^vite\.config/i, /^tsconfig/i, /^readme\.md$/i, /^docs\/update_history\.md$/i, /^docs\//i];
 
 function normalizePatchPath(path: string): string {
   return path.trim().replace(/^\/+/, '').toLowerCase();
