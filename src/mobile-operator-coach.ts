@@ -20,31 +20,62 @@ function hasAny(source: string, tokens: string[]): boolean {
   return tokens.some((token) => lower.includes(token.toLowerCase()));
 }
 
+function hasRealStopper(source: string): boolean {
+  const lower = source.toLowerCase();
+  const harmless = [
+    '0 failed',
+    'no active step; 0 completed step(s), 0 failed step(s)',
+    'repair oder monitor pruefen',
+    'repair or monitor',
+    'repair plan idle',
+    'workflow: idle',
+  ];
+  if (harmless.some((token) => lower.includes(token))) return false;
+  return [
+    'validation_failed',
+    'draft pr failed',
+    'build failed',
+    'workflow failed',
+    'critical blocker',
+    'fehlgeschlagen',
+    'blockierender fehler',
+    'error:',
+  ].some((token) => lower.includes(token));
+}
+
 function readCoachState(): CoachState {
   const source = pageText();
-  const thinking = hasAny(source, ['läuft', 'running', 'busy', 'in progress', 'is building', 'is watching']);
+  const thinking = hasAny(source, ['läuft', 'running', 'busy', 'in progress', 'is building', 'is watching', 'draft pr läuft']);
 
-  if (hasAny(source, ['failed', 'error', 'fehlgeschlagen', 'critical'])) {
-    return { lamp: 'red', title: 'Ich sehe einen Stopper', message: 'Wir halten kurz an. Der naechste Schritt steht im Monitor oder Repair.', action: 'Repair oder Monitor pruefen.', thinking: false };
+  if (hasRealStopper(source)) {
+    return { lamp: 'red', title: 'Ich sehe einen echten Stopper', message: 'Ich zeige dir jetzt Repair oder Logs. Folge nur dem naechsten markierten Schritt.', action: 'Repair/Logs automatisch pruefen.', thinking: false };
   }
 
   if (thinking) {
-    return { lamp: 'green', title: 'Ich arbeite gerade', message: 'Ich analysiere den Ablauf. Du musst jetzt nichts klicken.', action: 'Bitte warten.', thinking: true };
+    return { lamp: 'green', title: 'Ich arbeite gerade', message: 'Ich analysiere und pruefe. Du musst jetzt nichts suchen oder klicken.', action: 'Bitte warten.', thinking: true };
   }
 
-  if (hasAny(source, ['repo fehlt', 'repo snapshot required', 'repository snapshot is not ready', 'noch kein echtes repo'])) {
-    return { lamp: 'yellow', title: 'Ich brauche zuerst dein Repo', message: 'Trage die Repository URL ein und tippe auf 1 · Load Repo.', action: 'Repo laden.', thinking: false };
+  if (hasAny(source, ['repo fehlt', 'repo snapshot required', 'repository snapshot is not ready', 'noch kein echtes repo', 'automation needs a loaded repository snapshot'])) {
+    return { lamp: 'yellow', title: 'Ich brauche zuerst dein Repo', message: 'Oeffne das Zahnrad oder tippe Repo. Trage Repository URL und optional privaten Zugang ein. Danach Load Repo.', action: 'Repo Setup oeffnen.', thinking: false };
   }
 
-  if (hasAny(source, ['platzhalter', 'konkreten auftrag', 'concrete mission'])) {
-    return { lamp: 'yellow', title: 'Ich brauche deinen Wunsch', message: 'Schreibe kurz, was ich verbessern soll. Danach analysieren wir den Auftrag.', action: 'Builder oeffnen.', thinking: false };
+  if (hasAny(source, ['self review: accepted', 'generated-output-accepted', 'generated package passed self review'])) {
+    return { lamp: 'green', title: 'Ergebnis ist bereit', message: 'Die Dateien sind akzeptiert. Pruefe Files und Diff. Danach kann der Draft PR bewusst erstellt werden.', action: 'Files/Diff pruefen.', thinking: false };
   }
 
   if (hasAny(source, ['generated files review', 'pre-publish review', 'generated file'])) {
-    return { lamp: 'green', title: 'Ich habe Ergebnis-Dateien', message: 'Pruefe Files und Diff. Danach kannst du bewusst weitergehen.', action: 'Files und Diff pruefen.', thinking: false };
+    return { lamp: 'green', title: 'Ich habe Ergebnis-Dateien', message: 'Pruefe kurz die erzeugten Dateien. Wenn alles passt, geht es weiter zum Draft PR.', action: 'Dateien pruefen.', thinking: false };
   }
 
-  return { lamp: 'yellow', title: 'Ich warte auf den Start', message: 'Fang mit Repo an. Ich fuehre dich dann Schritt fuer Schritt weiter.', action: 'Repo oeffnen.', thinking: false };
+  if (hasAny(source, ['runtime validation coverage', 'healthy', '21/21 runtime validation'])) {
+    return { lamp: 'green', title: 'Checks sehen gesund aus', message: 'Die Runtime-Pruefung ist gruen. Du kannst zum Repo, Plan oder Dateien zurueck.', action: 'Weiter im Hauptfluss.', thinking: false };
+  }
+
+  if (hasAny(source, ['platzhalter', 'konkreten auftrag', 'concrete mission'])) {
+    return { lamp: 'yellow', title: 'Ich brauche deinen Wunsch', message: 'Schreibe kurz, was ich verbessern soll. Ich plane danach automatisch weiter.', action: 'Auftrag schreiben.', thinking: false };
+  }
+
+  return { lamp: 'yellow', title: 'Ich warte auf den Start', message: 'Beginne mit Repo Setup. Danach fuehre ich dich Schritt fuer Schritt weiter.', action: 'Repo oeffnen.', thinking: false };
 }
 
 function installStyle(): void {
