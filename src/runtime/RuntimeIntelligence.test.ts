@@ -9,8 +9,10 @@ import {
   runtimeIntelligence,
   RuntimeCircuitBreaker,
   runGuardChain,
+  defaultTraceIdProvider,
   type RuntimeContext,
   type Guard,
+  type FullPipelineBridge,
 } from './RuntimeIntelligence';
 
 import { createBaselineContainerDecisionRules } from '../features/product/runtime/containerDecisionBaselineRules';
@@ -31,6 +33,38 @@ describe('RuntimeIntelligence', () => {
       expect(id1).not.toBe(id2);
       expect(typeof id1).toBe('string');
       expect(id1.length).toBeGreaterThan(5);
+    });
+
+    it('supports injectable trace ID provider', () => {
+      let callCount = 0;
+      const customProvider = () => {
+        callCount++;
+        return `custom-trace-${callCount}`;
+      };
+
+      const runtimeWithCustom = createRuntimeIntelligence({
+        traceIdProvider: customProvider
+      });
+
+      const id1 = runtimeWithCustom.decide('repo-snapshot', 'test', baselineRules);
+      const id2 = runtimeWithCustom.decide('repo-snapshot', 'test', baselineRules);
+
+      expect(callCount).toBe(2);
+      expect(id1.context.traceId).toBe('custom-trace-1');
+      expect(id2.context.traceId).toBe('custom-trace-2');
+    });
+
+    it('provides deterministic trace IDs for testing', () => {
+      let counter = 0;
+      const deterministicProvider = () => `test-trace-${++counter}`;
+
+      const runtimeDet = createRuntimeIntelligence({
+        traceIdProvider: deterministicProvider
+      });
+
+      const decision = runtimeDet.decide('repo-snapshot', 'test', baselineRules);
+      
+      expect(decision.context.traceId).toBe('test-trace-1');
     });
   });
 
@@ -84,11 +118,129 @@ describe('RuntimeIntelligence', () => {
     });
   });
 
-  // Note: FullPipelineBridge requires all 7 bridge properties
-  // Integration test skipped - needs complete bridge setup
-  describe.skip('validatePipeline()', () => {
-    it('validates full pipeline bridge', () => {
-      // TODO: Create complete bridge for integration test
+  describe('validatePipeline()', () => {
+    it('validates full pipeline bridge with valid data', () => {
+      const validBridge: FullPipelineBridge = {
+        repoToBuilder: {
+          repoReady: true,
+          fileCount: 42,
+          repoUrl: 'https://github.com/owner/repo',
+          branch: 'main',
+          tokenInLogs: false,
+        },
+        builderToGeneratedFiles: {
+          mission: 'Add new feature',
+          isPlaceholder: false,
+          repoSnapshotReady: true,
+          packageHasFiles: true,
+          filesActionable: true,
+          planOnlyOnly: false,
+        },
+        generatedFilesToDiff: {
+          packageExists: true,
+          pathsValid: true,
+          sourcesLoaded: true,
+          isNewFile: false,
+        },
+        filesToDraftPR: {
+          selfReviewAccepted: true,
+          actionableOutput: true,
+          planOnlyOnly: false,
+          tokenPresent: true,
+          repoParsed: true,
+          branchNonceSafe: true,
+          secretsInLogs: false,
+        },
+        workflowToFindings: {
+          commitSha: 'abc123',
+          workflowResultValid: true,
+          redStatus: false,
+          greenStatus: true,
+          staleResult: false,
+        },
+        remoteMemoryToPatternMemory: {
+          gatewayConfigValid: true,
+          contributorId: 'user-123',
+          collectionName: 'my-patterns',
+          workspaceId: 'ws-456',
+          deleteConfirmationsComplete: true,
+          sharedPatternDetected: false,
+        },
+        telemetryToCoach: {
+          eventValid: true,
+          noSecrets: true,
+          stagesKnown: ['repo', 'builder', 'pr'],
+          latestByStageConsistent: true,
+          noisyEventsCount: 3,
+        },
+      };
+
+      const result = runtime.validatePipeline(validBridge);
+
+      expect(result.overallValid).toBe(true);
+      expect(result.criticalErrors).toHaveLength(0);
+    });
+
+    it('detects critical errors in pipeline', () => {
+      const invalidBridge: FullPipelineBridge = {
+        repoToBuilder: {
+          repoReady: false,
+          fileCount: 0,
+          repoUrl: 'invalid-url',
+          branch: '',
+          tokenInLogs: true,
+        },
+        builderToGeneratedFiles: {
+          mission: '',
+          isPlaceholder: true,
+          repoSnapshotReady: false,
+          packageHasFiles: false,
+          filesActionable: false,
+          planOnlyOnly: false,
+        },
+        generatedFilesToDiff: {
+          packageExists: false,
+          pathsValid: false,
+          sourcesLoaded: false,
+          isNewFile: false,
+        },
+        filesToDraftPR: {
+          selfReviewAccepted: false,
+          actionableOutput: false,
+          planOnlyOnly: true,
+          tokenPresent: false,
+          repoParsed: false,
+          branchNonceSafe: false,
+          secretsInLogs: true,
+        },
+        workflowToFindings: {
+          commitSha: null,
+          workflowResultValid: false,
+          redStatus: true,
+          greenStatus: false,
+          staleResult: true,
+        },
+        remoteMemoryToPatternMemory: {
+          gatewayConfigValid: false,
+          contributorId: null,
+          collectionName: null,
+          workspaceId: null,
+          deleteConfirmationsComplete: false,
+          sharedPatternDetected: true,
+        },
+        telemetryToCoach: {
+          eventValid: false,
+          noSecrets: false,
+          stagesKnown: [],
+          latestByStageConsistent: false,
+          noisyEventsCount: 15,
+        },
+      };
+
+      const result = runtime.validatePipeline(invalidBridge);
+
+      expect(result.overallValid).toBe(false);
+      expect(result.criticalErrors.length).toBeGreaterThan(0);
     });
   });
 
@@ -188,6 +340,204 @@ describe('RuntimeIntelligence', () => {
       expect(runtimeIntelligence).toBeDefined();
       expect(runtimeIntelligence).toBeInstanceOf(RuntimeIntelligence);
     });
+  });
+});
+
+describe('RuntimeTelemetry redaction', () => {
+  let rules: ReturnType<typeof createBaselineContainerDecisionRules>;
+
+  beforeEach(() => {
+    rules = createBaselineContainerDecisionRules();
+  });
+
+  it('redacts GitHub tokens from telemetry events', () => {
+    const runtime = createRuntimeIntelligence();
+    
+    // Create a decision with mock data
+    runtime.decide('repo-snapshot', 'test signal', rules);
+    
+    // Flush and check that no secrets are leaked
+    const events = runtime.flushTelemetry();
+    
+    for (const event of events) {
+      const eventStr = JSON.stringify(event);
+      // Should not contain actual GitHub tokens
+      expect(eventStr).not.toMatch(/ghp_[a-zA-Z0-9]{36}/);
+      expect(eventStr).not.toMatch(/gho_[a-zA-Z0-9]{36}/);
+    }
+  });
+
+  it('redacts secrets from telemetry properties via withGuard error', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    // Test redaction via withGuard - the error message gets logged
+    const guard: Guard = {
+      name: 'secret-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'secret-guard',
+        reason: 'token ghp_123456789012345678901234567890123456 found in request',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard(
+        'test-operation',
+        async () => 'result',
+        [guard]
+      );
+    } catch {
+      // Expected to throw
+    }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    // The real token should NOT appear in telemetry
+    expect(serialized).not.toContain('ghp_123456789012345678901234567890123456');
+    // But the redaction placeholder SHOULD appear
+    expect(serialized).toContain('[GITHUB_TOKEN]');
+  });
+
+  it('redacts API keys from telemetry via withGuard error', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'api-key-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'api-key-guard',
+        reason: 'api_key: test_api_key_1234567890abcdefghijklmnop is invalid',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard(
+        'api-operation',
+        async () => 'result',
+        [guard]
+      );
+    } catch {
+      // Expected
+    }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    // API key should be redacted
+    expect(serialized).not.toContain('test_api_key_1234567890abcdefghijklmnop');
+    expect(serialized).toContain('[API_KEY]');
+  });
+
+  it('redacts passwords from telemetry via withGuard error', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'password-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'password-guard',
+        reason: 'password: SuperSecretPass999 was rejected',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard(
+        'auth-operation',
+        async () => 'result',
+        [guard]
+      );
+    } catch {
+      // Expected
+    }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    // Password should be redacted
+    expect(serialized).not.toContain('SuperSecretPass999');
+    expect(serialized).toContain('[SECRET]');
+  });
+
+  it('redacts GitHub fine-grained PATs', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'github-pat-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'github-pat-guard',
+        reason: 'github_pat_11AABBCCDD.eyJhbGciOiJIUzI1NiJ9.test_signature_here',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard('github-operation', async () => 'result', [guard]);
+    } catch { /* expected */ }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    expect(serialized).not.toContain('github_pat_11AABBCCDD');
+    expect(serialized).toContain('[GITHUB_TOKEN]');
+  });
+
+  it('redacts Gemini API keys', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'gemini-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'gemini-guard',
+        reason: 'Gemini key AIzaSyBabcdefghijk1234567890abcdefgh is invalid',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard('gemini-operation', async () => 'result', [guard]);
+    } catch { /* expected */ }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    expect(serialized).not.toContain('AIzaSyBabcdefghijk1234567890abcdefgh');
+    expect(serialized).toContain('[GEMINI_KEY]');
+  });
+
+  it('redacts OpenAI keys', async () => {
+    const runtime = createRuntimeIntelligence();
+    
+    const guard: Guard = {
+      name: 'openai-guard',
+      check: async () => ({
+        pass: false,
+        guardName: 'openai-guard',
+        reason: 'OpenAI key sk-proj-abcdefghijklmnopqrstuvwxyz1234567890 is invalid',
+        traceId: 'test',
+        durationMs: 1
+      })
+    };
+    
+    try {
+      await runtime.withGuard('openai-operation', async () => 'result', [guard]);
+    } catch { /* expected */ }
+    
+    const events = runtime.flushTelemetry();
+    const serialized = JSON.stringify(events);
+    
+    expect(serialized).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz1234567890');
+    expect(serialized).toContain('[OPENAI_KEY]');
   });
 });
 

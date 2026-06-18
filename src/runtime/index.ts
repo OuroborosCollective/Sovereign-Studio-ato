@@ -14,17 +14,20 @@ export {
   
   // Types
   type TraceId,
+  type TraceIdProvider,
   type RuntimeContext,
   type RuntimeDecision,
   type RuntimeGuardResult,
   type TelemetryEvent,
   type Guard,
   type GuardChainConfig,
+  type RuntimeIntelligenceConfig,
   
   // Utilities
   RuntimeCircuitBreaker,
   RuntimeGuardError,
   runGuardChain,
+  defaultTraceIdProvider,
   
   // React hook
   useRuntimeIntelligence,
