@@ -19,7 +19,11 @@ if (typeof window !== 'undefined') {
   });
 
   const style = document.createElement('style');
-  style.textContent = 'canvas { will-change: transform; transform: translateZ(0); } .ai-stream-container { contain: content; }';
+  style.textContent = [
+    'canvas { will-change: transform; transform: translateZ(0); }',
+    '.ai-stream-container { contain: content; }',
+    '@media (orientation: landscape) { #root > div.min-h-screen > div:nth-of-type(1) button { flex: 0 0 clamp(5.35rem, 12vw, 8rem); } }',
+  ].join(' ');
   document.head.appendChild(style);
 }
 
