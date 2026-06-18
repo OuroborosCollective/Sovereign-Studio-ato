@@ -27,6 +27,6 @@ describe('App', () => {
     expect(screen.getByText('Remote Memory')).toBeDefined();
     expect(screen.getByText('Pattern Memory')).toBeDefined();
     expect(screen.getByText('Telemetry')).toBeDefined();
-    expect(screen.getByPlaceholderText('Repository URL')).toBeDefined();
+    expect(screen.getByPlaceholderText('https://github.com/owner/repository')).toBeDefined();
   });
 });

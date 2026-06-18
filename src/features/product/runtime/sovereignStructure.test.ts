@@ -105,7 +105,7 @@ describe('sovereign runtime structure', () => {
       mode: 'full-auto-draft-pr',
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
       repoBranch: 'main',
-      mission: 'README + Update History',
+      mission: 'Bitte mobile UX verbessern und Logs direkt sichtbar machen.',
       repoFileCount: repoFiles.length,
     });
     const automation = decideSovereignAutomation({

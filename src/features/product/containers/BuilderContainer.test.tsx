@@ -5,7 +5,7 @@ import { BuilderContainer } from './BuilderContainer';
 
 function baseProps() {
   return {
-    mission: 'README + Update History',
+    mission: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.',
     repoReady: true,
     repoReason: 'Repo ready.',
     repoBusy: false,
