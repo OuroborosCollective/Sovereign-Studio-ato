@@ -1,0 +1,77 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { installMobileMoreMenu } from './mobile-more-menu';
+import { installMobileOperatorCoach } from './mobile-operator-coach';
+
+function mountShell() {
+  document.body.innerHTML = `
+    <div id="root">
+      <div class="min-h-screen">
+        <h1>Sovereign Canvas Tool</h1>
+        <div>
+          <button>Repo</button>
+          <button>Builder</button>
+          <button>Files</button>
+          <button>Diff</button>
+          <button>Workflow</button>
+          <button>Telemetry</button>
+          <button>Live Monitor</button>
+        </div>
+        <section>Repo fehlt. Noch kein echtes Repo geladen.</section>
+        <section>
+          <select aria-label="Automation Mode">
+            <option value="manual">Manual</option>
+            <option value="auto-review">Auto Review</option>
+            <option value="full-auto-draft-pr">Full Auto Draft PR</option>
+          </select>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+describe('mobile workflow guidance', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mountShell();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+    document.head.innerHTML = '';
+  });
+
+  it('moves secondary areas into a mobile more menu and prefers guarded full auto', () => {
+    installMobileMoreMenu();
+    vi.advanceTimersByTime(900);
+
+    const menu = document.getElementById('sovereign-more-menu');
+    expect(menu).toBeTruthy();
+    expect(document.querySelector('select[aria-label="Mehr Bereiche"]')).toBeTruthy();
+
+    const buttons = Array.from(document.querySelectorAll('button')).map((button) => ({
+      label: button.textContent?.trim(),
+      display: button.style.display,
+    }));
+    expect(buttons.find((button) => button.label === 'Repo')?.display).not.toBe('none');
+    expect(buttons.find((button) => button.label === 'Builder')?.display).not.toBe('none');
+    expect(buttons.find((button) => button.label === 'Telemetry')?.display).toBe('none');
+
+    const automation = document.querySelector('select[aria-label="Automation Mode"]') as HTMLSelectElement;
+    expect(automation.value).toBe('full-auto-draft-pr');
+  });
+
+  it('renders the operator coach inline after navigation with yellow action guidance', () => {
+    installMobileOperatorCoach();
+    vi.advanceTimersByTime(800);
+
+    const coach = document.getElementById('sovereign-mobile-coach');
+    expect(coach).toBeTruthy();
+    expect(coach?.className).toContain('yellow');
+    expect(coach?.textContent).toContain('Sovereign Bot');
+    expect(coach?.textContent).toContain('Repo laden');
+
+    const nav = document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
+    expect(nav?.nextElementSibling).toBe(coach);
+  });
+});
