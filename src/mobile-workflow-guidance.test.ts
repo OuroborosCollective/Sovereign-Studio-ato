@@ -3,7 +3,7 @@ import { installMobileMoreMenu } from './mobile-more-menu';
 import { installMobileOperatorCoach } from './mobile-operator-coach';
 import { installMobileSetupDrawer } from './mobile-setup-drawer';
 
-function mountShell() {
+function mountShell(extra = '') {
   document.body.innerHTML = `
     <div id="root">
       <div class="min-h-screen">
@@ -29,6 +29,7 @@ function mountShell() {
           <label>GitHub Repository URL<input aria-label="GitHub Repository URL" /></label>
           <label>GitHub private access<input aria-label="GitHub private access" type="password" /></label>
         </section>
+        ${extra}
       </div>
     </div>
   `;
@@ -68,7 +69,7 @@ describe('mobile workflow guidance', () => {
     expect(automation.value).toBe('full-auto-draft-pr');
   });
 
-  it('renders the operator coach inline after navigation with yellow action guidance', () => {
+  it('renders the operator coach inline after navigation with yellow setup guidance', () => {
     installMobileOperatorCoach();
     vi.advanceTimersByTime(800);
 
@@ -76,10 +77,34 @@ describe('mobile workflow guidance', () => {
     expect(coach).toBeTruthy();
     expect(coach?.className).toContain('yellow');
     expect(coach?.textContent).toContain('Sovereign Bot');
-    expect(coach?.textContent).toContain('Repo laden');
+    expect(coach?.textContent).toContain('Repo Setup');
 
     const nav = document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
     expect(nav?.nextElementSibling).toBe(coach);
+  });
+
+  it('does not show a red stopper for harmless zero-failed runtime text', () => {
+    document.body.innerHTML = '';
+    mountShell('<section>Sequential Runtime Guard no active step; 0 completed step(s), 0 failed step(s). Runtime ready.</section>');
+
+    installMobileOperatorCoach();
+    vi.advanceTimersByTime(800);
+
+    const coach = document.getElementById('sovereign-mobile-coach');
+    expect(coach?.className).not.toContain('red');
+    expect(coach?.textContent).not.toContain('Ich sehe einen echten Stopper');
+  });
+
+  it('shows green review guidance when generated files passed self review', () => {
+    document.body.innerHTML = '';
+    mountShell('<section>Generated Files Review SELF REVIEW: ACCEPTED Generated package passed self review. Learning signal: generated-output-accepted</section>');
+
+    installMobileOperatorCoach();
+    vi.advanceTimersByTime(800);
+
+    const coach = document.getElementById('sovereign-mobile-coach');
+    expect(coach?.className).toContain('green');
+    expect(coach?.textContent).toContain('Ergebnis ist bereit');
   });
 
   it('keeps repo setup reachable from every tab through the global setup drawer', () => {
