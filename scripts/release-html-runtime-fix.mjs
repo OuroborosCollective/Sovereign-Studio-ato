@@ -21,9 +21,38 @@ const forbidden = [
 ];
 
 function injectBootFallback(html) {
-  if (html.includes('SOVEREIGN_BOOT_FALLBACK_V1')) return html;
-  const script = `\n<script id="SOVEREIGN_BOOT_FALLBACK_V1">\n(function(){\n  function bootFallback(){\n    var root=document.getElementById('root');\n    if(!root||!/Loading Refactor/i.test(root.textContent||''))return;\n    root.innerHTML='<main style="min-height:100vh;box-sizing:border-box;padding:28px 18px;background:#1c1917;color:#f5f5f4;font-family:system-ui">' +\n      '<section style="border:1px solid #574522;border-radius:18px;padding:18px;background:#292524">' +\n      '<h1 style="color:#fbbf24;margin-top:0">Sovereign Studio Boot-Fix aktiv</h1>' +\n      '<p>Der Web-Bundle wurde nicht geladen. Statt Endlos-Loader ist die App jetzt in einem sicheren Recovery-Modus.</p>' +\n      '<p>Release-Fix: npm run build ausfuehren, damit Capacitor die aktuellen Android Assets synchronisiert.</p>' +\n      '<button onclick="location.reload()" style="border:0;border-radius:12px;padding:14px 16px;background:#f59e0b;color:#1c1917;font-weight:800">Neu laden</button>' +\n      '</section></main>';\n  }\n  window.addEventListener('error',function(){setTimeout(bootFallback,100)});\n  setTimeout(bootFallback,1800);\n})();\n</script>\n`;
+  if (html.includes('SOVEREIGN_BOOT_FALLBACK_V2')) return html;
+  const script = `
+<script id="SOVEREIGN_BOOT_FALLBACK_V2">
+(function(){
+  function bootFallback(reason){
+    var root=document.getElementById('root');
+    if(!root)return;
+    var text=root.textContent||'';
+    var hasAppShell=document.querySelector('[data-testid="repo-snapshot-container"],[data-testid="builder-container"],[data-testid="operator-monitor"]');
+    if(hasAppShell)return;
+    if(!/Loading|Sovereign|Refactor/i.test(text)&&text.trim().length>80)return;
+    root.innerHTML='<main style="min-height:100vh;box-sizing:border-box;padding:24px 16px;background:#0f172a;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">' +
+      '<section style="max-width:720px;margin:0 auto;border:1px solid #334155;padding:18px;background:#111827">' +
+      '<p style="margin:0 0 8px;color:#38bdf8;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">Sovereign Studio · Android Recovery</p>' +
+      '<h1 style="margin:0 0 12px;color:#f8fafc;font-size:24px">App-Bundle konnte nicht starten</h1>' +
+      '<p style="margin:0 0 10px;color:#cbd5e1;line-height:1.5">Die eigentliche Sovereign-App wurde nicht ersetzt. Dieser Bildschirm erscheint nur, wenn der Android/WebView-Bundle nicht geladen oder nicht sauber synchronisiert wurde.</p>' +
+      '<p style="margin:0 0 14px;color:#94a3b8;font-size:13px;line-height:1.45">Recovery-Hinweis: Build erneut ausfuehren und sicherstellen, dass die aktuellen Web-Assets nach Android synchronisiert wurden.</p>' +
+      '<pre style="white-space:pre-wrap;border:1px solid #1f2937;background:#020617;color:#93c5fd;padding:10px;font-size:12px">npm run build:web\nnpx cap sync android</pre>' +
+      '<button onclick="location.reload()" style="margin-top:14px;border:1px solid #38bdf8;padding:12px 14px;background:#0ea5e9;color:#020617;font-weight:800">Neu laden</button>' +
+      '</section></main>';
+    if(window.console&&console.warn)console.warn('[Sovereign Recovery] Android boot fallback shown:',reason||'startup timeout');
+  }
+  window.addEventListener('error',function(){setTimeout(function(){bootFallback('runtime error')},100)});
+  setTimeout(function(){bootFallback('startup timeout')},2200);
+})();
+</script>
+`;
   return html.replace('</body>', `${script}</body>`);
+}
+
+function removeOldBootFallback(html) {
+  return html.replace(/\n?<script id="SOVEREIGN_BOOT_FALLBACK_V1">[\s\S]*?<\/script>\n?/g, '\n');
 }
 
 function patchFile(filePath) {
@@ -34,6 +63,13 @@ function patchFile(filePath) {
 
   let html = readFileSync(filePath, 'utf8');
   let changed = false;
+
+  const withoutOldFallback = removeOldBootFallback(html);
+  if (withoutOldFallback !== html) {
+    html = withoutOldFallback;
+    changed = true;
+    console.log(`[release-html-runtime-fix] removed legacy Android/WebView boot fallback in ${filePath}`);
+  }
 
   for (const replacement of replacements) {
     if (!html.includes(replacement.from)) continue;
@@ -46,7 +82,7 @@ function patchFile(filePath) {
   if (withFallback !== html) {
     html = withFallback;
     changed = true;
-    console.log(`[release-html-runtime-fix] injected Android/WebView boot fallback in ${filePath}`);
+    console.log(`[release-html-runtime-fix] injected Android/WebView recovery fallback in ${filePath}`);
   }
 
   for (const marker of forbidden) {
