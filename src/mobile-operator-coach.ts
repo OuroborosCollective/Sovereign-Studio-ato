@@ -55,15 +55,15 @@ function readCoachState(): CoachState {
     return { lamp: 'green', title: 'Ich arbeite gerade', message: 'Ich analysiere und pruefe. Du musst jetzt nichts suchen oder klicken.', action: 'Bitte warten.', thinking: true };
   }
 
-  if (hasAny(source, ['repo fehlt', 'repo snapshot required', 'repository snapshot is not ready', 'noch kein echtes repo', 'automation needs a loaded repository snapshot'])) {
-    return { lamp: 'yellow', title: 'Ich brauche zuerst dein Repo', message: 'Oeffne das Zahnrad oder tippe Repo. Trage Repository URL und optional privaten Zugang ein. Danach Load Repo.', action: 'Repo Setup oeffnen.', thinking: false };
-  }
-
   if (hasAny(source, ['self review: accepted', 'generated-output-accepted', 'generated package passed self review'])) {
     return { lamp: 'green', title: 'Ergebnis ist bereit', message: 'Die Dateien sind akzeptiert. Pruefe Files und Diff. Danach kann der Draft PR bewusst erstellt werden.', action: 'Files/Diff pruefen.', thinking: false };
   }
 
-  if (hasAny(source, ['generated files review', 'pre-publish review', 'generated file'])) {
+  if (hasAny(source, ['repo fehlt', 'repo snapshot required', 'repository snapshot is not ready', 'noch kein echtes repo', 'automation needs a loaded repository snapshot'])) {
+    return { lamp: 'yellow', title: 'Ich brauche zuerst dein Repo', message: 'Oeffne das Zahnrad oder tippe Repo. Trage Repository URL und optional privaten Zugang ein. Danach Load Repo.', action: 'Repo Setup oeffnen.', thinking: false };
+  }
+
+  if (hasAny(source, ['pre-publish review', 'generated file']) && !hasAny(source, ['self review'])) {
     return { lamp: 'green', title: 'Ich habe Ergebnis-Dateien', message: 'Pruefe kurz die erzeugten Dateien. Wenn alles passt, geht es weiter zum Draft PR.', action: 'Dateien pruefen.', thinking: false };
   }
 
