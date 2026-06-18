@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installMobileMoreMenu } from './mobile-more-menu';
 import { installMobileOperatorCoach } from './mobile-operator-coach';
+import { installMobileSetupDrawer } from './mobile-setup-drawer';
 
 function mountShell() {
   document.body.innerHTML = `
@@ -24,6 +25,10 @@ function mountShell() {
             <option value="full-auto-draft-pr">Full Auto Draft PR</option>
           </select>
         </section>
+        <section>
+          <label>GitHub Repository URL<input aria-label="GitHub Repository URL" /></label>
+          <label>GitHub private access<input aria-label="GitHub private access" type="password" /></label>
+        </section>
       </div>
     </div>
   `;
@@ -32,11 +37,13 @@ function mountShell() {
 describe('mobile workflow guidance', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    window.localStorage.clear();
     mountShell();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    window.localStorage.clear();
     document.body.innerHTML = '';
     document.head.innerHTML = '';
   });
@@ -73,5 +80,28 @@ describe('mobile workflow guidance', () => {
 
     const nav = document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
     expect(nav?.nextElementSibling).toBe(coach);
+  });
+
+  it('keeps repo setup reachable from every tab through the global setup drawer', () => {
+    installMobileSetupDrawer();
+    vi.advanceTimersByTime(1000);
+
+    const root = document.getElementById('sovereign-mobile-setup-drawer');
+    expect(root).toBeTruthy();
+    expect(root?.textContent).toContain('Repo Setup');
+
+    (root?.querySelector('.setup-fab') as HTMLButtonElement).click();
+    expect(root?.querySelector('.setup-panel')?.classList.contains('hidden')).toBe(false);
+
+    const repo = root?.querySelector('[data-field="repoUrl"]') as HTMLInputElement;
+    const access = root?.querySelector('[data-field="accessValue"]') as HTMLInputElement;
+    repo.value = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
+    access.value = 'secret-value';
+
+    (root?.querySelector('[data-action="save"]') as HTMLButtonElement).click();
+    vi.advanceTimersByTime(200);
+
+    expect((document.querySelector('input[aria-label="GitHub Repository URL"]') as HTMLInputElement).value).toBe('https://github.com/OuroborosCollective/Sovereign-Studio-ato');
+    expect((document.querySelector('input[aria-label="GitHub private access"]') as HTMLInputElement).value).toBe('secret-value');
   });
 });
