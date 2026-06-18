@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decideSovereignAutoView, validateSovereignAutoViewInput } from './sovereignAutoViewRouter';
 
 describe('sovereignAutoViewRouter', () => {
-  it('walks auto mode through Auftrag, editor, log/workflow, and ready files views', () => {
+  it('does not force auto mode into builder when no runtime step is active', () => {
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
@@ -11,17 +11,19 @@ describe('sovereignAutoViewRouter', () => {
       isPublishing: false,
       isWatchingWorkflow: false,
       workflowStatus: 'idle',
-    })).toMatchObject({ shouldSwitch: true, tab: 'builder' });
+    })).toMatchObject({ shouldSwitch: false, tab: 'repo' });
+  });
 
+  it('keeps runtime-owned views visible while work is active', () => {
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: 'package-build',
-      activeTab: 'builder',
+      activeTab: 'repo',
       hasPackage: false,
       isPublishing: false,
       isWatchingWorkflow: false,
       workflowStatus: 'idle',
-    })).toMatchObject({ shouldSwitch: false, tab: 'builder' });
+    })).toMatchObject({ shouldSwitch: true, tab: 'builder' });
 
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
@@ -42,7 +44,9 @@ describe('sovereignAutoViewRouter', () => {
       isWatchingWorkflow: true,
       workflowStatus: 'pending',
     })).toMatchObject({ shouldSwitch: false, tab: 'workflow' });
+  });
 
+  it('returns to files after successful workflow when a package exists', () => {
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
@@ -69,6 +73,21 @@ describe('sovereignAutoViewRouter', () => {
     expect(decision.reason).toContain('repair');
   });
 
+  it('keeps user-selected side tabs available in guarded auto mode', () => {
+    const input = {
+      mode: 'full-auto-draft-pr' as const,
+      activeStep: null,
+      activeTab: 'memory' as const,
+      hasPackage: false,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'idle' as const,
+    };
+
+    expect(validateSovereignAutoViewInput(input)).toEqual([]);
+    expect(decideSovereignAutoView(input)).toMatchObject({ shouldSwitch: false, tab: 'memory' });
+  });
+
   it('keeps manual mode from hijacking an intentional user tab when nothing is running', () => {
     expect(decideSovereignAutoView({
       mode: 'manual',
@@ -79,20 +98,5 @@ describe('sovereignAutoViewRouter', () => {
       isWatchingWorkflow: false,
       workflowStatus: 'idle',
     })).toMatchObject({ shouldSwitch: false, tab: 'memory' });
-  });
-
-  it('validates unsupported auto tabs so bad view state goes to telemetry', () => {
-    const input = {
-      mode: 'auto-review' as const,
-      activeStep: null,
-      activeTab: 'memory' as const,
-      hasPackage: false,
-      isPublishing: false,
-      isWatchingWorkflow: false,
-      workflowStatus: 'idle' as const,
-    };
-
-    expect(validateSovereignAutoViewInput(input)).toContain('Auto mode is on an unsupported active tab: memory');
-    expect(decideSovereignAutoView(input)).toMatchObject({ shouldSwitch: true, tab: 'telemetry' });
   });
 });
