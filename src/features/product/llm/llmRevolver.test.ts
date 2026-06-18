@@ -3,7 +3,7 @@ import type { LlmAdapter } from './llmAdapter';
 import { resolveWithLlmRevolver } from './llmRevolver';
 import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 
-function brain(file = 'README.md'): SovereignBrainResult {
+function brain(file = 'README.md', code = '# README\n'): SovereignBrainResult {
   return {
     perception: { domain: 'repo automation', intent: 'README', architecture: 'React app', confidence: 0.8 },
     analysis: {
@@ -18,7 +18,7 @@ function brain(file = 'README.md'): SovereignBrainResult {
       estimatedComplexity: 'medium',
     },
     execution: {
-      patches: [{ file, type: 'replace', description: 'update docs', code: '# README\n' }],
+      patches: [{ file, type: 'replace', description: 'update docs', code }],
       integrationNotes: 'push through PR',
       testStrategy: 'run checks',
     },
@@ -67,6 +67,33 @@ describe('llmRevolver', () => {
 
     expect(result.ok).toBe(false);
     expect((result as { ok: false; failure: { code: string } }).failure.code).toBe('invalid_contract');
+  });
+
+  it('rejects plan-only LLM output before it can become a draft PR', async () => {
+    const bad = adapter('mlvoca', 10, async () => ({ providerId: 'mlvoca', brain: brain('docs/SOVEREIGN_PLAN.md', '# Sovereign Plan\n'), raw: 'plan-only' }));
+
+    const result = await resolveWithLlmRevolver([bad], {
+      mission: 'Improve runtime checks',
+      repoPaths: ['src/App.tsx'],
+      selectedFilePath: 'src/App.tsx',
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; failure: { code: string; message: string } }).failure.code).toBe('invalid_contract');
+    expect((result as { ok: false; failure: { code: string; message: string } }).failure.message).toContain('PLAN_ONLY');
+  });
+
+  it('rejects empty LLM patches', async () => {
+    const bad = adapter('mlvoca', 10, async () => ({ providerId: 'mlvoca', brain: brain('src/App.tsx', ' '), raw: 'empty' }));
+
+    const result = await resolveWithLlmRevolver([bad], {
+      mission: 'Improve runtime checks',
+      repoPaths: ['src/App.tsx'],
+      selectedFilePath: 'src/App.tsx',
+    });
+
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; failure: { code: string; message: string } }).failure.code).toBe('invalid_contract');
   });
 
   it('skips external no-key adapters unless enabled', async () => {
