@@ -1,4 +1,4 @@
-import { decideMobileWorkflow } from './mobile-workflow-orchestrator';
+import { assertMobileWorkflowDecisionValid, decideMobileWorkflow } from './mobile-workflow-orchestrator';
 
 const ROOT_ID = 'sovereign-mobile-workbench-console';
 const STYLE_ID = 'sovereign-mobile-workbench-style';
@@ -9,10 +9,23 @@ function pageText(): string {
   return document.body?.textContent ?? '';
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function findNavButton(label: string): HTMLButtonElement | null {
+  return Array.from(document.querySelectorAll('button')).find((item) => (item.textContent ?? '').trim().toLowerCase() === label.toLowerCase()) ?? null;
+}
+
 function goTo(label: string): void {
   const now = Date.now();
   if (lastTarget === label && now - lastTargetAt < 2400) return;
-  const button = Array.from(document.querySelectorAll('button')).find((item) => (item.textContent ?? '').trim().toLowerCase() === label.toLowerCase());
+  const button = findNavButton(label);
   if (!button) return;
   lastTarget = label;
   lastTargetAt = now;
@@ -45,21 +58,27 @@ function installStyle(): void {
 }
 
 function render(): void {
-  installStyle();
-  const anchor = anchorShell();
-  if (!anchor) return;
-  let root = document.getElementById(ROOT_ID);
-  if (!root) {
-    root = document.createElement('section');
-    root.id = ROOT_ID;
-    anchor.insertAdjacentElement('afterend', root);
-  }
+  try {
+    installStyle();
+    const anchor = anchorShell();
+    if (!anchor) return;
+    let root = document.getElementById(ROOT_ID);
+    if (!root) {
+      root = document.createElement('section');
+      root.id = ROOT_ID;
+      anchor.insertAdjacentElement('afterend', root);
+    }
 
-  const decision = decideMobileWorkflow({ visibleText: pageText() });
-  if (decision.autoOpenTarget && decision.targetNav) goTo(decision.targetNav);
-  root.className = decision.lamp;
-  const dots = decision.mode === 'matrix-work' ? '<span class="dots"></span>' : '';
-  root.innerHTML = `<div class="head"><div><div class="title">Live Arbeitsmonitor · ${decision.title}${dots}</div><div class="mode">${decision.mode}</div></div><div>${decision.targetNav ? `→ ${decision.targetNav}` : 'bereit'}</div></div><div class="body"><div class="summary">${decision.summary}</div><pre>${decision.lines.join('\n')}</pre></div>`;
+    const decision = decideMobileWorkflow({ visibleText: pageText() });
+    assertMobileWorkflowDecisionValid(decision);
+    if (decision.autoOpenTarget && decision.targetNav && findNavButton(decision.targetNav)) goTo(decision.targetNav);
+    root.className = decision.lamp;
+    const dots = decision.mode === 'matrix-work' ? '<span class="dots"></span>' : '';
+    const target = decision.targetNav ? `→ ${escapeHtml(decision.targetNav)}` : 'bereit';
+    root.innerHTML = `<div class="head"><div><div class="title">Live Arbeitsmonitor · ${escapeHtml(decision.title)}${dots}</div><div class="mode">${escapeHtml(decision.mode)}</div></div><div>${target}</div></div><div class="body"><div class="summary">${escapeHtml(decision.summary)}</div><pre>${decision.lines.map(escapeHtml).join('\n')}</pre></div>`;
+  } catch {
+    // The workbench is guidance only. It must never break the real app runtime.
+  }
 }
 
 export function installMobileWorkbenchConsole(): void {
