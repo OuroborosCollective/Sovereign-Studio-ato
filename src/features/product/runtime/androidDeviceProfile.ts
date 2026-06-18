@@ -1,4 +1,4 @@
-export type AndroidDeviceKind = 'phone' | 'foldable' | 'tablet' | 'desktop-like';
+export type AndroidDeviceKind = 'phone' | 'foldable' | 'tablet';
 export type AndroidOrientation = 'portrait' | 'landscape';
 export type AndroidHeightClass = 'compact-height' | 'regular-height';
 export type AndroidDensityClass = 'compact-ui' | 'comfortable-ui';
@@ -15,7 +15,7 @@ export interface AndroidDeviceProfile {
   heightClass: AndroidHeightClass;
   densityClass: AndroidDensityClass;
   columns: 1 | 2;
-  navColumns: 2 | 3 | 4 | 6 | 8;
+  navColumns: 2 | 4 | 6 | 8;
   maxContentWidth: number;
   className: string;
 }
@@ -35,14 +35,13 @@ export function classifyAndroidViewport(input: AndroidViewportInput): AndroidDev
   const densityClass: AndroidDensityClass = shortest < 390 || dpr >= 3 ? 'compact-ui' : 'comfortable-ui';
 
   let kind: AndroidDeviceKind = 'phone';
-  if (shortest >= 900) kind = 'desktop-like';
-  else if (shortest >= 680) kind = 'tablet';
+  if (shortest >= 680) kind = 'tablet';
   else if (shortest >= 540 && longest >= 720) kind = 'foldable';
 
-  const columns: 1 | 2 = kind === 'tablet' || kind === 'desktop-like' ? 2 : 1;
+  const columns: 1 | 2 = kind === 'tablet' ? 2 : 1;
   const navColumns: AndroidDeviceProfile['navColumns'] = orientation === 'landscape'
     ? 8
-    : kind === 'tablet' || kind === 'desktop-like'
+    : kind === 'tablet'
       ? 6
       : kind === 'foldable'
         ? 4
