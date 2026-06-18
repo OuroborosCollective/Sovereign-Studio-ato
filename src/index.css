@@ -7,7 +7,7 @@
 :root {
   --foreground-rgb: 226, 232, 240;
   --background-rgb: 2, 6, 23;
-  --surface-1: rgba(15, 23, 42, 0.86);
+  --surface-1: rgba(15, 23, 42, 0.88);
   --surface-2: rgba(30, 41, 59, 0.78);
   --surface-3: rgba(51, 65, 85, 0.55);
   --line: rgba(148, 163, 184, 0.22);
@@ -17,6 +17,10 @@
   --good: #34d399;
   --warn: #fbbf24;
   --bad: #fb7185;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 html,
@@ -25,24 +29,30 @@ body,
   min-height: 100%;
 }
 
+html {
+  background: rgb(var(--background-rgb));
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background:
-    radial-gradient(circle at top left, rgba(79, 70, 229, 0.24), transparent 32rem),
-    radial-gradient(circle at 85% 15%, rgba(34, 211, 238, 0.16), transparent 28rem),
-    radial-gradient(circle at 50% 100%, rgba(16, 185, 129, 0.12), transparent 24rem),
+    radial-gradient(circle at top left, rgba(79, 70, 229, 0.2), transparent 32rem),
+    radial-gradient(circle at 85% 15%, rgba(34, 211, 238, 0.14), transparent 28rem),
+    radial-gradient(circle at 50% 100%, rgba(16, 185, 129, 0.1), transparent 24rem),
     rgb(var(--background-rgb));
   margin: 0;
   padding: 0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
 }
 
 #root {
   width: 100%;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100dvh;
+  height: auto;
+  overflow: auto;
 }
 
 * {
@@ -78,35 +88,51 @@ summary:focus-visible {
   outline-offset: 2px;
 }
 
-/* Sovereign release app shell. The JSX intentionally stays simple; this CSS keeps the Android UI readable. */
+/* Sovereign release app shell. Android-first, no fragile desktop-only overlap. */
 #root > .min-h-screen {
-  height: 100vh;
-  min-height: 100vh;
-  overflow: hidden;
+  width: 100%;
+  min-height: 100dvh;
+  height: auto;
+  overflow: visible;
   display: grid;
-  grid-template-columns: minmax(13.5rem, 17rem) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 1rem;
-  padding: 1rem;
-  background: linear-gradient(135deg, rgba(2, 6, 23, 0.92), rgba(15, 23, 42, 0.76));
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto auto minmax(0, auto);
+  gap: clamp(0.65rem, 1.5vw, 1rem);
+  padding:
+    calc(0.6rem + var(--safe-top))
+    calc(0.6rem + var(--safe-right))
+    calc(0.9rem + var(--safe-bottom))
+    calc(0.6rem + var(--safe-left));
+  background: linear-gradient(135deg, rgba(2, 6, 23, 0.95), rgba(15, 23, 42, 0.82));
+  -webkit-overflow-scrolling: touch;
+}
+
+#root > .min-h-screen > h1,
+#root > .min-h-screen > div:nth-of-type(1),
+#root > .min-h-screen > section,
+#root > .min-h-screen > :nth-child(n + 4) {
+  grid-column: 1;
+  min-width: 0;
 }
 
 #root > .min-h-screen > h1 {
-  grid-column: 1 / -1;
   margin: 0;
-  min-height: 4.25rem;
+  min-height: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 0.55rem 0.85rem;
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
-  padding: 1rem 1.25rem;
+  border-radius: clamp(0.95rem, 2vw, 1.25rem);
+  padding: clamp(0.78rem, 1.6vw, 1rem);
   background:
     linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(30, 41, 59, 0.82)),
-    radial-gradient(circle at top left, rgba(129, 140, 248, 0.18), transparent 22rem);
-  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.28);
+    radial-gradient(circle at top left, rgba(129, 140, 248, 0.14), transparent 22rem);
+  box-shadow: 0 1rem 2.2rem rgba(0, 0, 0, 0.24);
   color: #f8fafc;
-  font-size: clamp(1.1rem, 2vw, 1.65rem);
+  font-size: clamp(1rem, 3.2vw, 1.5rem);
+  line-height: 1.08;
   letter-spacing: -0.04em;
 }
 
@@ -114,57 +140,60 @@ summary:focus-visible {
   content: "Release shell · Container runtime · Signed Android artifacts";
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  max-width: 100%;
   border: 1px solid rgba(52, 211, 153, 0.35);
   border-radius: 999px;
-  padding: 0.35rem 0.65rem;
+  padding: 0.32rem 0.6rem;
   color: #a7f3d0;
   background: rgba(5, 150, 105, 0.12);
-  font-size: 0.68rem;
-  font-weight: 800;
+  font-size: clamp(0.55rem, 1.7vw, 0.68rem);
+  font-weight: 900;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: normal;
 }
 
 #root > .min-h-screen > div:nth-of-type(1) {
-  align-self: stretch;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
+  width: 100%;
+  overflow: visible;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.48rem;
   border: 1px solid var(--line);
-  border-radius: 1.25rem;
-  padding: 0.75rem;
-  background: rgba(15, 23, 42, 0.76);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1rem 3rem rgba(0,0,0,0.2);
+  border-radius: clamp(0.95rem, 2vw, 1.25rem);
+  padding: clamp(0.58rem, 1.4vw, 0.75rem);
+  background: rgba(15, 23, 42, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 0.8rem 2.2rem rgba(0,0,0,0.18);
 }
 
 #root > .min-h-screen > div:nth-of-type(1)::before {
-  content: "Workflow";
+  content: "Navigation";
+  grid-column: 1 / -1;
   color: #94a3b8;
-  font-size: 0.68rem;
-  font-weight: 900;
+  font-size: 0.62rem;
+  font-weight: 950;
   letter-spacing: 0.12em;
-  margin: 0.25rem 0.35rem 0.35rem;
+  margin: 0 0 0.15rem;
   text-transform: uppercase;
 }
 
 #root > .min-h-screen > div:nth-of-type(1) button {
   width: 100%;
-  border: 1px solid transparent;
-  border-radius: 0.9rem;
-  padding: 0.72rem 0.85rem;
+  min-height: 2.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.78rem;
+  padding: 0.58rem 0.5rem;
   color: #cbd5e1;
-  background: transparent;
-  text-align: left;
-  font-size: 0.85rem;
-  font-weight: 750;
+  background: rgba(15, 23, 42, 0.52);
+  text-align: center;
+  font-size: clamp(0.68rem, 2vw, 0.85rem);
+  font-weight: 800;
+  line-height: 1.1;
   transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
 
 #root > .min-h-screen > div:nth-of-type(1) button:hover {
-  transform: translateX(2px);
-  border-color: rgba(148, 163, 184, 0.24);
+  border-color: rgba(148, 163, 184, 0.34);
   background: rgba(30, 41, 59, 0.76);
   color: #f8fafc;
 }
@@ -172,37 +201,28 @@ summary:focus-visible {
 #root > .min-h-screen > div:nth-of-type(1) button.font-bold,
 #root > .min-h-screen > div:nth-of-type(1) button.underline {
   border-color: var(--line-strong);
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.28), rgba(14, 165, 233, 0.18));
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.38), rgba(14, 165, 233, 0.22));
   color: #ffffff;
-  box-shadow: 0 0.85rem 2rem rgba(79, 70, 229, 0.16);
+  box-shadow: 0 0.65rem 1.5rem rgba(79, 70, 229, 0.14);
   text-decoration: none;
 }
 
 #root > .min-h-screen > section,
-#root > .min-h-screen > div:not(:nth-of-type(1)) {
+#root > .min-h-screen > :nth-child(n + 4) {
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: clamp(0.95rem, 2vw, 1.25rem);
+  padding: clamp(0.82rem, 1.7vw, 1rem);
+  background: rgba(15, 23, 42, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 0.8rem 2.2rem rgba(0,0,0,0.18);
+  -webkit-overflow-scrolling: touch;
 }
 
 #root > .min-h-screen > section {
-  border-color: var(--line);
-  border-radius: 1.25rem;
   background: var(--surface-1);
-  box-shadow: 0 1rem 3rem rgba(0,0,0,0.2);
-}
-
-#root > .min-h-screen > section + * {
-  min-height: 0;
-}
-
-#root > .min-h-screen > :nth-child(n + 4) {
-  grid-column: 2;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 1.25rem;
-  padding: 1rem;
-  background: rgba(15, 23, 42, 0.7);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 1rem 3rem rgba(0,0,0,0.18);
-  -webkit-overflow-scrolling: touch;
 }
 
 #root h2,
@@ -235,6 +255,10 @@ summary:focus-visible {
 #root input,
 #root textarea {
   width: 100%;
+}
+
+#root textarea {
+  min-height: clamp(8rem, 20vh, 12rem);
 }
 
 #root button:not([class*="bg-"]) {
@@ -278,94 +302,132 @@ summary:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 1180px) and (min-height: 720px) {
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  #root > .min-h-screen {
+    height: 100dvh;
+    overflow: hidden;
+    grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, auto) minmax(0, 1fr);
+    padding: 1rem;
+  }
+
+  #root > .min-h-screen > h1 {
+    grid-column: 1 / -1;
+  }
+
+  #root > .min-h-screen > div:nth-of-type(1) {
+    grid-column: 1;
+    grid-row: 2 / 4;
+    align-self: stretch;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  #root > .min-h-screen > div:nth-of-type(1)::before {
+    grid-column: auto;
+  }
+
+  #root > .min-h-screen > div:nth-of-type(1) button {
+    min-height: 2.55rem;
+    text-align: left;
+  }
+
+  #root > .min-h-screen > section,
+  #root > .min-h-screen > :nth-child(n + 4) {
+    grid-column: 2;
+    overflow: auto;
+  }
+
+  #root > .min-h-screen > section {
+    grid-row: 2;
+  }
+
+  #root > .min-h-screen > :nth-child(n + 4) {
+    grid-row: 3;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  #root > .min-h-screen > div:nth-of-type(1) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #root > .min-h-screen > div:nth-of-type(1) button {
+    min-height: 2.55rem;
+    padding: 0.5rem 0.36rem;
+  }
+}
+
+@media (max-width: 430px) {
+  #root > .min-h-screen {
+    padding:
+      calc(0.45rem + var(--safe-top))
+      calc(0.45rem + var(--safe-right))
+      calc(0.75rem + var(--safe-bottom))
+      calc(0.45rem + var(--safe-left));
+  }
+
+  #root > .min-h-screen > h1 {
+    font-size: 1.05rem;
+  }
+
+  #root > .min-h-screen > h1::after {
+    font-size: 0.52rem;
+  }
+
+  #root > .min-h-screen > div:nth-of-type(1) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: landscape) and (max-height: 720px) {
   #root {
     height: auto;
-    min-height: 100vh;
     overflow: auto;
   }
 
   #root > .min-h-screen {
     height: auto;
-    min-height: 100vh;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto minmax(22rem, auto);
+    min-height: 100dvh;
     overflow: visible;
-    padding: 0.75rem;
-    gap: 0.75rem;
-  }
-
-  #root > .min-h-screen > h1,
-  #root > .min-h-screen > div:nth-of-type(1),
-  #root > .min-h-screen > section,
-  #root > .min-h-screen > :nth-child(n + 4) {
-    grid-column: 1;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto auto;
+    gap: 0.58rem;
+    padding:
+      calc(0.45rem + var(--safe-top))
+      calc(0.7rem + var(--safe-right))
+      calc(0.7rem + var(--safe-bottom))
+      calc(0.7rem + var(--safe-left));
   }
 
   #root > .min-h-screen > h1 {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0.65rem;
-  }
-
-  #root > .min-h-screen > h1::after {
-    white-space: normal;
+    padding: 0.62rem 0.75rem;
+    font-size: clamp(1rem, 2.3vw, 1.28rem);
   }
 
   #root > .min-h-screen > div:nth-of-type(1) {
-    max-height: none;
+    grid-template-columns: repeat(8, minmax(5.2rem, 1fr));
     overflow-x: auto;
     overflow-y: hidden;
-    display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.75rem;
-    -webkit-overflow-scrolling: touch;
+    grid-auto-columns: minmax(5.2rem, 1fr);
   }
 
   #root > .min-h-screen > div:nth-of-type(1)::before {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    margin: 0;
-    padding: 0.72rem 0.6rem 0.72rem 0;
-    background: rgba(15, 23, 42, 0.94);
+    display: none;
   }
 
-  #root > .min-h-screen > div:nth-of-type(1) button {
-    width: auto;
-    min-width: 7.25rem;
-    white-space: nowrap;
-    text-align: center;
-  }
-
+  #root > .min-h-screen > section,
   #root > .min-h-screen > :nth-child(n + 4) {
     max-height: none;
     overflow: visible;
-  }
-}
-
-@media (max-width: 560px) {
-  #root > .min-h-screen {
-    padding: 0.55rem;
-  }
-
-  #root > .min-h-screen > h1,
-  #root > .min-h-screen > section,
-  #root > .min-h-screen > :nth-child(n + 4),
-  #root > .min-h-screen > div:nth-of-type(1) {
-    border-radius: 1rem;
-  }
-
-  #root > .min-h-screen > h1 {
-    min-height: auto;
-    padding: 0.85rem;
-    font-size: 1.15rem;
-  }
-
-  #root > .min-h-screen > h1::after {
-    font-size: 0.58rem;
   }
 }
