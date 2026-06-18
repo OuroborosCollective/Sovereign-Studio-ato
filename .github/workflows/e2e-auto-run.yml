@@ -35,6 +35,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   AUTO_FIX_AUTHOR_NAME: "Auto-Fix Bot"
   AUTO_FIX_AUTHOR_EMAIL: "auto-fix@sovereign-studio.dev"
+  NPM_CONFIG_LEGACY_PEER_DEPS: "true"
 
 jobs:
   verify-and-fix:
