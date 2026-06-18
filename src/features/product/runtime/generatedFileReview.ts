@@ -12,6 +12,14 @@ export interface GeneratedFileReviewItem {
   preview: string;
 }
 
+export interface GeneratedFileSelfReview {
+  accepted: boolean;
+  rewriteRequired: boolean;
+  reason: string;
+  learningSignal: string;
+  rewritePlan: string[];
+}
+
 export interface GeneratedFileReviewReport {
   files: GeneratedFileReviewItem[];
   totalFiles: number;
@@ -21,6 +29,7 @@ export interface GeneratedFileReviewReport {
   mediumRiskCount: number;
   planOnlyCount: number;
   actionableFileCount: number;
+  selfReview: GeneratedFileSelfReview;
   summary: string;
 }
 
@@ -49,6 +58,46 @@ function isPlanOnlyPath(path: string): boolean {
 
 function isActionablePath(path: string): boolean {
   return ACTIONABLE_PATHS.some((pattern) => pattern.test(path));
+}
+
+function buildSelfReview(args: { totalFiles: number; highRiskCount: number; planOnlyCount: number; actionableFileCount: number }): GeneratedFileSelfReview {
+  if (args.totalFiles === 0) {
+    return {
+      accepted: false,
+      rewriteRequired: true,
+      reason: 'No generated files were produced.',
+      learningSignal: 'empty-output-rejected',
+      rewritePlan: ['Generate real implementation files before presenting work.', 'Include at least one source, runtime, test, workflow, Android, or script file.'],
+    };
+  }
+
+  if (args.highRiskCount > 0) {
+    return {
+      accepted: false,
+      rewriteRequired: true,
+      reason: `${args.highRiskCount} high-risk generated file(s) detected.`,
+      learningSignal: 'high-risk-output-rejected',
+      rewritePlan: ['Remove forbidden paths and sensitive-looking content.', 'Regenerate a minimal safe implementation package.', 'Run review again before Draft PR.'],
+    };
+  }
+
+  if (args.planOnlyCount > 0 && args.actionableFileCount === 0) {
+    return {
+      accepted: false,
+      rewriteRequired: true,
+      reason: 'Generated package only contains plan/audit artifacts and no actionable implementation file.',
+      learningSignal: 'plan-only-output-rejected',
+      rewritePlan: ['Reflect on the requested user outcome.', 'Select real affected source/runtime/test/workflow files.', 'Rewrite the package so at least one actionable file changes.', 'Keep any plan file only as support, never as the sole result.'],
+    };
+  }
+
+  return {
+    accepted: true,
+    rewriteRequired: false,
+    reason: 'Generated package passed self review.',
+    learningSignal: 'generated-output-accepted',
+    rewritePlan: [],
+  };
 }
 
 export function reviewGeneratedFile(file: ImplementationFile): GeneratedFileReviewItem {
@@ -109,6 +158,7 @@ export function reviewGeneratedFiles(files: ImplementationFile[]): GeneratedFile
   const mediumRiskCount = reviewed.filter((file) => file.risk === 'medium').length;
   const planOnlyCount = reviewed.filter((file) => file.flags.includes('plan-only-output')).length;
   const actionableFileCount = reviewed.filter((file) => file.flags.includes('actionable-output')).length;
+  const selfReview = buildSelfReview({ totalFiles: reviewed.length, highRiskCount, planOnlyCount, actionableFileCount });
 
   return {
     files: reviewed,
@@ -119,14 +169,15 @@ export function reviewGeneratedFiles(files: ImplementationFile[]): GeneratedFile
     mediumRiskCount,
     planOnlyCount,
     actionableFileCount,
-    summary: `${reviewed.length} generated file(s), ${totalLines} line(s), ${highRiskCount} high risk, ${mediumRiskCount} medium risk, ${actionableFileCount} actionable.`,
+    selfReview,
+    summary: `${reviewed.length} generated file(s), ${totalLines} line(s), ${highRiskCount} high risk, ${mediumRiskCount} medium risk, ${actionableFileCount} actionable. Self review: ${selfReview.learningSignal}.`,
   };
 }
 
 export function assertGeneratedFileReviewSafe(report: GeneratedFileReviewReport): void {
   if (report.totalFiles === 0) throw new Error('No generated files to review.');
   if (report.highRiskCount > 0) throw new Error(`Generated file review found ${report.highRiskCount} high-risk file(s).`);
-  if (report.planOnlyCount > 0 && report.actionableFileCount === 0) {
-    throw new Error('Self review rejected plan-only output. Rewrite required: change real source, runtime, test, workflow, Android, or script files before Draft PR.');
+  if (report.selfReview.rewriteRequired) {
+    throw new Error(`Self review rejected generated output: ${report.selfReview.reason} Rewrite plan: ${report.selfReview.rewritePlan.join(' | ')}`);
   }
 }
