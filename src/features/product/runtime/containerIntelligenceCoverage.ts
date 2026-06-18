@@ -169,10 +169,10 @@ export const CONTAINER_INTELLIGENCE_COVERAGE: ContainerIntelligenceCoverageEntry
     containerPath: 'src/mobile-workbench-console.ts',
     runtimePath: 'src/mobile-workflow-orchestrator.ts',
     testPath: 'src/mobile-workflow-guidance.test.ts',
-    status: 'covered',
+    status: 'partial',
     coveredAreas: ['runtime-checks', 'tests', 'pattern-rules', 'ui-guidance'],
-    missingAreas: [],
-    nextAction: 'Keep as reference pattern for mobile runtime integration.',
+    missingAreas: ['telemetry', 'self-review'],
+    nextAction: 'Add telemetry and self-review for mobile workbench decisions.',
   },
   {
     id: 'mobile-coach',
@@ -196,10 +196,10 @@ export const CONTAINER_INTELLIGENCE_COVERAGE: ContainerIntelligenceCoverageEntry
     id: 'code-creation',
     label: 'Code Creation Patterns',
     containerPath: 'src/features/product/runtime/containerIntelligencePatternRules.ts',
-    status: 'covered',
+    status: 'partial',
     coveredAreas: ['pattern-rules'],
-    missingAreas: [],
-    nextAction: 'Code creation language/framework patterns are comprehensive.',
+    missingAreas: ['runtime-checks', 'tests', 'telemetry', 'self-review', 'ui-guidance'],
+    nextAction: 'Add runtime validation, tests, telemetry, self-review, and UI guidance for code creation patterns.',
   },
 ];
 
@@ -228,6 +228,13 @@ function validateEntry(entry: ContainerIntelligenceCoverageEntry): string[] {
   if (overlap.length) errors.push(`Container ${entry.id} area(s) cannot be both covered and missing: ${overlap.join(', ')}`);
   if (entry.status === 'covered' && entry.missingAreas.length > 0) errors.push(`Container ${entry.id} is covered but still has missing areas.`);
   if (entry.status !== 'covered' && entry.missingAreas.length === 0) errors.push(`Container ${entry.id} is not covered but has no missing areas.`);
+  // Semantic validation: 'covered' status requires ALL REQUIRED_AREAS to be present
+  if (entry.status === 'covered') {
+    const missingRequired = REQUIRED_AREAS.filter((area) => !entry.coveredAreas.includes(area));
+    if (missingRequired.length > 0) {
+      errors.push(`Container ${entry.id} is marked 'covered' but missing required areas: ${missingRequired.join(', ')}`);
+    }
+  }
   return errors;
 }
 

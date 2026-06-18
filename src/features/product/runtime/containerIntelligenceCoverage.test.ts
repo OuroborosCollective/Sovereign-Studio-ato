@@ -30,11 +30,15 @@ describe('containerIntelligenceCoverage', () => {
     expect(generatedFiles?.missingAreas).toEqual([]);
   });
 
-  it('keeps mobile-workbench as covered (has tests, pattern rules, runtime checks)', () => {
+  it('keeps mobile-workbench as partial (needs telemetry and self-review)', () => {
     const mobileWorkbench = CONTAINER_INTELLIGENCE_COVERAGE.find((entry) => entry.id === 'mobile-workbench');
-    expect(mobileWorkbench?.status).toBe('covered');
+    expect(mobileWorkbench?.status).toBe('partial');
     expect(mobileWorkbench?.coveredAreas).toContain('pattern-rules');
     expect(mobileWorkbench?.coveredAreas).toContain('tests');
+    expect(mobileWorkbench?.coveredAreas).toContain('runtime-checks');
+    expect(mobileWorkbench?.coveredAreas).toContain('ui-guidance');
+    expect(mobileWorkbench?.missingAreas).toContain('telemetry');
+    expect(mobileWorkbench?.missingAreas).toContain('self-review');
   });
 
   it('rejects duplicate container ids', () => {
@@ -53,6 +57,21 @@ describe('containerIntelligenceCoverage', () => {
     const report = buildContainerIntelligenceCoverageReport(broken);
     expect(report.valid).toBe(false);
     expect(report.errors.join(' ')).toContain('covered but still has missing areas');
+  });
+
+  it('rejects an entry marked covered that is missing any REQUIRED_AREAS', () => {
+    // 'covered' means ALL REQUIRED_AREAS must be present
+    const partialEntry = CONTAINER_INTELLIGENCE_COVERAGE.find((e) => e.status === 'partial');
+    if (!partialEntry) return; // Skip if no partial entries exist
+    const broken = [{
+      ...partialEntry,
+      status: 'covered' as const,
+      coveredAreas: partialEntry.coveredAreas,
+      missingAreas: [],
+    }];
+    const report = buildContainerIntelligenceCoverageReport(broken);
+    expect(report.valid).toBe(false);
+    expect(report.errors.join(' ')).toContain("is marked 'covered' but missing required areas");
   });
 
   it('rejects partial status without missing areas', () => {
@@ -122,6 +141,8 @@ describe('containerIntelligenceCoverage', () => {
       'sequential-runtime',
       'mobile-workbench',
       'mobile-coach',
+      'bridge-validation',
+      'code-creation',
     ];
     const report = buildContainerIntelligenceCoverageReport();
     for (const id of requiredIds) {

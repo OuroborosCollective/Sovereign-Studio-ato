@@ -157,10 +157,12 @@ describe('container runtime integration', () => {
       expect(covered.some((e) => e.id === 'generated-files')).toBe(true);
     });
 
-    it('mobile-workbench is covered', () => {
+    it('mobile-workbench is partial (needs telemetry and self-review)', () => {
       const report = buildContainerIntelligenceCoverageReport();
       const mobileWorkbench = report.entries.find((e) => e.id === 'mobile-workbench');
-      expect(mobileWorkbench?.status).toBe('covered');
+      expect(mobileWorkbench?.status).toBe('partial');
+      expect(mobileWorkbench?.missingAreas).toContain('telemetry');
+      expect(mobileWorkbench?.missingAreas).toContain('self-review');
     });
 
     it('bridge-validation is covered', () => {
