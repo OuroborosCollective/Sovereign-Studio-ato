@@ -1,6 +1,30 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
+
+const AGENT_MESSAGES: Record<PipelineState, string> = {
+  idle: 'Bereit. Starte links den Auftrag.',
+  planning: 'Auftrag uebernommen. Ich plane und schreibe den Code-Entwurf.',
+  generating: 'Ich schreibe den sichtbaren Code-Entwurf.',
+  validating: 'Ich pruefe aktiv. Bitte warten, ich haenge nicht.',
+  failed: 'Pruefung fertig: Fehler gefunden. Ich arbeite weiter.',
+  fixing: 'Ich wende den sichtbaren Fix an.',
+  revalidating: 'Ich pruefe erneut. Bitte warten.',
+  green: 'Alles gruen. Druecke jetzt den grossen Button: Freigabe bestaetigen.',
+  blocked: 'Ich komme alleine nicht weiter. Bitte eingreifen.'
+};
+
+const PROGRESS_MAP: Record<PipelineState, number> = {
+  idle: 0,
+  planning: 10,
+  generating: 25,
+  validating: 45,
+  failed: 60,
+  fixing: 70,
+  revalidating: 88,
+  green: 100,
+  blocked: 65
+};
 
 interface MainContentProps {
   workView: WorkView;
@@ -27,7 +51,7 @@ interface MainContentProps {
   targetLink?: string;
 }
 
-export const MainContent: React.FC<MainContentProps> = ({
+export const MainContent: React.FC<MainContentProps> = React.memo(({
   workView, setWorkView, selectedFile, currentCode, pipelineState, settings,
   publishAndValidate, patchFromPipeline, mergeWhenGreen,
   chatInput, setChatInput, sendChat, cardsCount, fixLoops,
@@ -47,18 +71,12 @@ export const MainContent: React.FC<MainContentProps> = ({
   const canApprove = green && !derivedWorking && !approvalConfirmed;
   const derivedMessage = approvalConfirmed
     ? 'Freigabe bestaetigt. Fertig - du musst nichts mehr suchen oder senden.'
-    : agentMessage ?? ({
-      idle: 'Bereit. Starte links den Auftrag.',
-      planning: 'Auftrag uebernommen. Ich plane und schreibe den Code-Entwurf.',
-      generating: 'Ich schreibe den sichtbaren Code-Entwurf.',
-      validating: 'Ich pruefe aktiv. Bitte warten, ich haenge nicht.',
-      failed: 'Pruefung fertig: Fehler gefunden. Ich arbeite weiter.',
-      fixing: 'Ich wende den sichtbaren Fix an.',
-      revalidating: 'Ich pruefe erneut. Bitte warten.',
-      green: 'Alles gruen. Druecke jetzt den grossen Button: Freigabe bestaetigen.',
-      blocked: 'Ich komme alleine nicht weiter. Bitte eingreifen.'
-    } satisfies Record<PipelineState, string>)[pipelineState];
-  const derivedProgress = progress ?? ({ idle: 0, planning: 10, generating: 25, validating: 45, failed: 60, fixing: 70, revalidating: 88, green: 100, blocked: 65 } satisfies Record<PipelineState, number>)[pipelineState];
+    : agentMessage ?? AGENT_MESSAGES[pipelineState];
+  const derivedProgress = progress ?? PROGRESS_MAP[pipelineState];
+
+  const formattedCode = useMemo(() => {
+    return currentCode.split('\n').map((line, index) => `${String(index + 1).padStart(3, ' ')} │ ${line}`).join('\n');
+  }, [currentCode]);
 
   const handleChatSubmit = () => {
     if (green) {
@@ -159,7 +177,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             <span className="w-2.5 h-2.5 rounded-full bg-green-500"/>
             <span className="ml-2">Matrix File Editor · {derivedWorking ? 'arbeitet...' : approvalConfirmed ? 'freigegeben' : 'bereit'}</span>
           </div>
-          <div className="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre leading-relaxed">{currentCode.split('\n').map((line, index) => `${String(index + 1).padStart(3, ' ')} │ ${line}`).join('\n')}</div>
+          <div className="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre leading-relaxed">{formattedCode}</div>
         </div>
 
         {workView === 'pipeline' && (
@@ -213,4 +231,6 @@ export const MainContent: React.FC<MainContentProps> = ({
       </div>
     </section>
   );
-};
+});
+
+MainContent.displayName = 'MainContent';

@@ -28,7 +28,7 @@ const IDEA_CHIPS = [
   'Release Notes generieren',
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({
+export const Sidebar: React.FC<SidebarProps> = React.memo(({
   settings, buildProduct, blueprint, setBlueprint, addCard, log, selectedFile, setSelectedFile, setWorkView,
   repoUrl, setRepoUrl, setShowSettings, isWorking
 }) => {
@@ -132,4 +132,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
     </section>
   );
-};
+});
+
+Sidebar.displayName = 'Sidebar';

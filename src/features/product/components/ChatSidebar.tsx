@@ -20,7 +20,7 @@ interface ChatSidebarProps {
   onClearChat: () => void;
 }
 
-export const ChatSidebar: React.FC<ChatSidebarProps> = ({
+export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(({
   chatMessages,
   suggestions,
   isAnalyzing,
@@ -191,4 +191,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       </div>
     </section>
   );
-};
+});
+
+ChatSidebar.displayName = 'ChatSidebar';
