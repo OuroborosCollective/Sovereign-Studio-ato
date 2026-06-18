@@ -1,4 +1,16 @@
-# Sovereign Studio V3 — Repository Overview
+# Sovereign Studio V3 — Repository Overview & Agent Pattern Guide
+
+> **⚠️ DISCLAIMER: Pattern Guide — Not a Technology Guarantee**
+> 
+> This file is a **pattern knowledge base for AI agents**. The patterns described here represent architectural best practices and know-how. Before applying any pattern, **always verify**:
+> - Check `package.json` for actual dependencies
+> - Verify runtime imports in the actual codebase
+> - Check existing architecture patterns in `src/`
+> - Consult existing tests in `src/**/*.test.ts`
+> 
+> **Do NOT assume listed technologies are installed or used.** Some patterns (e.g., Redux, Zustand, OpenTelemetry) may be aspirational or partially implemented. Always cross-reference with actual project state before deriving new code paths.
+
+---
 
 ## Project Description
 
