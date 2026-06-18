@@ -38,7 +38,6 @@ describe('RepoSnapshotContainer', () => {
 
     fireEvent.change(screen.getByLabelText(/Repository URL/i), { target: { value: 'https://example.test/next/repo' } });
     fireEvent.change(screen.getByLabelText(/Repository branch/i), { target: { value: 'develop' } });
-    fireEvent.change(screen.getByLabelText(/Private access value/i), { target: { value: 'session-value' } });
     fireEvent.click(screen.getByRole('button', { name: /Load Repo/i }));
     fireEvent.click(screen.getByRole('button', { name: /Save Session/i }));
     fireEvent.click(screen.getByRole('button', { name: /Restore Session/i }));
@@ -46,7 +45,6 @@ describe('RepoSnapshotContainer', () => {
 
     expect(props.onRepoUrlChange).toHaveBeenCalledWith('https://example.test/next/repo');
     expect(props.onRepoBranchChange).toHaveBeenCalledWith('develop');
-    expect(props.onAccessValueChange).toHaveBeenCalledWith('session-value');
     expect(props.onLoadRepo).toHaveBeenCalledOnce();
     expect(props.onSaveView).toHaveBeenCalledOnce();
     expect(props.onRestoreView).toHaveBeenCalledOnce();
