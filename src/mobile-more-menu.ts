@@ -1,4 +1,5 @@
 const MENU_ID = 'sovereign-more-menu';
+const PRIMARY = new Set(['Repo', 'Builder', 'Files', 'Diff']);
 const OPTIONS = ['Workflow', 'Repair', 'Remote Memory', 'Pattern Memory', 'Telemetry', 'Live Monitor', 'Readiness', 'Integrity', 'Findings', 'Health', 'Runtime', 'Coverage'];
 
 function clickByText(label: string): void {
@@ -8,7 +9,12 @@ function clickByText(label: string): void {
 
 function install(): void {
   const nav = document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
-  if (!nav || document.getElementById(MENU_ID)) return;
+  if (!nav) return;
+  for (const button of Array.from(nav.querySelectorAll('button'))) {
+    const label = (button.textContent ?? '').trim();
+    if (label && !PRIMARY.has(label)) button.style.display = 'none';
+  }
+  if (document.getElementById(MENU_ID)) return;
   const box = document.createElement('div');
   box.id = MENU_ID;
   box.style.gridColumn = '1 / -1';
