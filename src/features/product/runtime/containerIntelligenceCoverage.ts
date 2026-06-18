@@ -152,6 +152,37 @@ export const CONTAINER_INTELLIGENCE_COVERAGE: ContainerIntelligenceCoverageEntry
     missingAreas: ['pattern-rules', 'self-review', 'ui-guidance'],
     nextAction: 'Add severity, duplicate, stale, resolved, and repair-priority pattern rules.',
   },
+  {
+    id: 'sequential-runtime',
+    label: 'Sequential Runtime Guard',
+    containerPath: 'src/features/product/runtime/sequentialRuntimeGuard.ts',
+    runtimePath: 'src/features/product/runtime/sequentialRuntimeGuard.ts',
+    testPath: 'src/features/product/runtime/sequentialRuntimeGuard.test.ts',
+    status: 'partial',
+    coveredAreas: ['runtime-checks', 'tests'],
+    missingAreas: ['pattern-rules', 'telemetry', 'self-review', 'ui-guidance'],
+    nextAction: 'Add sequential-state pattern rules for active-step, no-active-step, blocked-transition, completed, failed, skipped.',
+  },
+  {
+    id: 'mobile-workbench',
+    label: 'Mobile Workbench Console',
+    containerPath: 'src/mobile-workbench-console.ts',
+    runtimePath: 'src/mobile-workflow-orchestrator.ts',
+    testPath: 'src/mobile-workflow-guidance.test.ts',
+    status: 'covered',
+    coveredAreas: ['runtime-checks', 'tests', 'pattern-rules', 'ui-guidance'],
+    missingAreas: [],
+    nextAction: 'Keep as reference pattern for mobile runtime integration.',
+  },
+  {
+    id: 'mobile-coach',
+    label: 'Mobile Operator Coach',
+    containerPath: 'src/mobile-operator-coach.ts',
+    status: 'partial',
+    coveredAreas: ['runtime-checks', 'ui-guidance'],
+    missingAreas: ['tests', 'pattern-rules', 'telemetry', 'self-review'],
+    nextAction: 'Add formal pattern rules and tests for operator coach decision logic.',
+  },
 ];
 
 function hasDuplicates(values: string[]): string[] {
