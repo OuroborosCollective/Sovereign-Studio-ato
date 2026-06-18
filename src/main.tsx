@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { installMobileOperatorCoach } from './mobile-operator-coach';
 import './runtime-adapter';
 import './index.css';
 
@@ -56,6 +57,8 @@ if (typeof window !== 'undefined') {
     '@media (orientation: landscape) { #root > div.min-h-screen > div:nth-of-type(1) button { flex: 0 0 clamp(5.35rem, 12vw, 8rem); } }',
   ].join(' ');
   document.head.appendChild(style);
+
+  installMobileOperatorCoach();
 }
 
 const posthogKey = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
