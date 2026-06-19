@@ -1,34 +1,74 @@
 /**
  * Runtime adapter for mobile fallback.
- * 
- * NOTE: The main mobile pane logic is now handled by React state in useProductMagic.ts.
- * This file is kept for Android WebView compatibility and CSS fallback only.
- * Workflow auto-driver and idea factory have been moved to React components.
+ *
+ * NOTE:
+ * The main mobile pane logic is handled by React state in useProductMagic.ts.
+ * This file exists only as a defensive Android WebView / CSS fallback.
+ *
+ * No workflow auto-driver.
+ * No idea factory.
+ * No runtime state mutation.
+ * No fake snapshot logic.
  */
 
-function installMobilePaneFallback() {
-  if (typeof document === 'undefined') return;
-  if (document.getElementById('sovereign-mobile-pane-style')) return;
+const STYLE_ID = 'sovereign-mobile-pane-style';
 
-  // Only apply on smaller screens as fallback
+function canUseDom(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
+    typeof document.createElement === 'function'
+  );
+}
+
+function installMobilePaneFallback(): void {
+  if (!canUseDom()) return;
+
+  const head = document.head || document.getElementsByTagName('head')[0];
+  if (!head) return;
+
+  if (document.getElementById(STYLE_ID)) return;
+
   const style = document.createElement('style');
-  style.id = 'sovereign-mobile-pane-style';
+  style.id = STYLE_ID;
+  style.setAttribute('data-runtime-adapter', 'mobile-pane-fallback');
+
   style.textContent = `
-    /* Mobile pane visibility is now controlled by React */
-    /* This style is only for initial render fallback */
+    /*
+     * Mobile pane visibility is controlled by React.
+     * This fallback only prevents broken initial layout in Android WebView
+     * before React state has fully hydrated.
+     */
+
     @media (min-width: 768px) {
-      .mobile-pane-hidden { display: flex !important; }
+      .mobile-pane-hidden {
+        display: flex !important;
+      }
     }
+
     @media (max-width: 767px) {
-      .mobile-pane-hidden { display: none !important; }
+      .mobile-pane-hidden {
+        display: none !important;
+      }
     }
   `;
-  document.head.appendChild(style);
+
+  head.appendChild(style);
 }
 
-// Lightweight initialization - just for CSS fallback
-if (typeof window !== 'undefined') {
-  window.setTimeout(installMobilePaneFallback, 500);
+function scheduleMobilePaneFallback(): void {
+  if (!canUseDom()) return;
+
+  const run = () => installMobilePaneFallback();
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run, { once: true });
+    return;
+  }
+
+  window.setTimeout(run, 0);
 }
+
+scheduleMobilePaneFallback();
 
 export {};
