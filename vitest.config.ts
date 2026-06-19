@@ -7,6 +7,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.ts'],
     globals: true,
-    exclude: [...configDefaults.exclude, 'sovereign-studio-rn/e2e/detox/**'],
+    exclude: [
+      ...configDefaults.exclude, 
+      'sovereign-studio-rn/e2e/detox/**',
+      'sovereign-studio-rn/e2e/ki-coach/real-smoke.spec.ts'
+    ],
   },
 });
