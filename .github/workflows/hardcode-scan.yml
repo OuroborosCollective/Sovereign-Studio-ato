@@ -10,12 +10,15 @@ on:
 permissions:
   contents: read
 
+env:
+  PNPM_VERSION: 10
+
 jobs:
   hardcode-scan:
     name: Scan for Hardcoded Values & Logic Issues
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,7 +29,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
+
+      - name: Install pnpm
+        shell: bash
+        run: |
+          npm install -g pnpm@${PNPM_VERSION}
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -42,15 +50,13 @@ jobs:
           echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Run the scanner
+
           SCAN_OUTPUT=$(pnpm run hardcode:scan 2>&1 || true)
           echo "$SCAN_OUTPUT"
-          
-          # Extract summary counts
+
           ERROR_COUNT=$(echo "$SCAN_OUTPUT" | grep -oP "(\d+) errors" | grep -oP "\d+" | head -1 || echo "0")
           WARNING_COUNT=$(echo "$SCAN_OUTPUT" | grep -oP "(\d+) warnings" | grep -oP "\d+" | head -1 || echo "0")
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -61,26 +67,25 @@ jobs:
           echo "| ❌ ERROR | ${ERROR_COUNT:-0} |" >> $GITHUB_STEP_SUMMARY
           echo "| ⚠️  WARNING | ${WARNING_COUNT:-0} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Determine if scan passed or failed
+
           if [ "${ERROR_COUNT:-0}" -gt 0 ]; then
             echo ""
             echo "❌ SCAN FAILED: ${ERROR_COUNT:-0} hardcode errors detected"
             echo "   See detailed report above"
             exit 1
-          else
-            echo ""
-            echo "✅ SCAN PASSED: No critical hardcode errors"
-            if [ "${WARNING_COUNT:-0}" -gt 0 ]; then
-              echo "   ⚠️  ${WARNING_COUNT:-0} warnings (informational)"
-            fi
+          fi
+
+          echo ""
+          echo "✅ SCAN PASSED: No critical hardcode errors"
+          if [ "${WARNING_COUNT:-0}" -gt 0 ]; then
+            echo "   ⚠️  ${WARNING_COUNT:-0} warnings (informational)"
           fi
 
   code-quality:
     name: Code Quality Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -91,7 +96,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
+
+      - name: Install pnpm
+        shell: bash
+        run: |
+          npm install -g pnpm@${PNPM_VERSION}
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
