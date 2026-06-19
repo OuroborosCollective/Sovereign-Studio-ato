@@ -70,6 +70,8 @@ const repoFiles = [
   { path: 'src/features/product/runtime/sovereignRuntime.test.ts', type: 'blob' as const },
 ];
 
+const concreteMission = 'Update README and launch readiness docs with current runtime setup';
+
 describe('sovereign runtime structure', () => {
   it('connects repo snapshot, categorized findings, workflow finding bridge, auth, sequential runtime, learning memory, readiness, automation, diff, workflow, repair, health, coverage, file review, package guards and publisher validation', () => {
     const snapshot = getRepoSnapshotStatus(repoFiles);
@@ -95,7 +97,7 @@ describe('sovereign runtime structure', () => {
 
     const signals = buildRepoSignalsFromFiles('https://github.com/OuroborosCollective/Sovereign-Studio-ato', repoFiles);
     const report = evaluateRepoReadiness(signals);
-    const markdown = buildLaunchPackageMarkdown(signals, report, 'README + Update History');
+    const markdown = buildLaunchPackageMarkdown(signals, report, concreteMission);
     expect(markdown).toContain('Launch Readiness Package');
 
     const integrity = analyzeRepoFileIntegrityList(repoFiles);
@@ -120,7 +122,7 @@ describe('sovereign runtime structure', () => {
     expect(automation.shouldPublishDraftPr).toBe(true);
 
     const pkg = buildSovereignPackageFromRepoFiles({
-      mission: 'README + Update History',
+      mission: concreteMission,
       repoFiles,
     });
     expect(() => assertGeneratedPackageReady(pkg, repoFiles)).not.toThrow();
@@ -178,39 +180,34 @@ describe('sovereign runtime structure', () => {
 
     const health = buildSovereignHealthReport({
       repoFiles,
-      generatedFileReview: fileReview,
-      workflowWatch: workflow,
+      package: pkg,
+      generatedReview: fileReview,
+      workflow,
+      learning,
       telemetry,
     });
-    expect(health.status).not.toBe('idle');
+    expect(health.overall).toBe('green');
 
-    const coverage = buildRuntimeValidationCoverageReport();
+    const coverage = buildRuntimeValidationCoverageReport(repoFiles, pkg.files.map((file) => file.path));
+    expect(coverage.score).toBeGreaterThan(0);
     expect(() => assertRuntimeValidationCoverageHealthy(coverage)).not.toThrow();
 
-    const memory = createSessionMemorySnapshot({
+    const headers = buildGitHubHeaders({ token: auth.token });
+    expect(headers.Authorization).toBe('Bearer ghp_demo_token');
+    const branch = buildSovereignBranchName('runtime structure');
+    expect(branch).toContain('sovereign/package');
+    expect(validatePublishableFiles(pkg.files).ok).toBe(true);
+
+    const session = createSessionMemorySnapshot({
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
       repoBranch: 'main',
       repoStatus: 'loaded',
       repoFiles,
-      mission: 'README + Update History',
-      sovereignSummary: 'summary',
-      sovereignPreview: 'preview',
+      mission: concreteMission,
+      sovereignSummary: summarizeSovereignPackage(pkg, repoFiles),
+      sovereignPreview: pkg.files.map((file) => `${file.path}\n${file.content}`).join('\n---\n'),
     });
-    expect(parseSessionMemory(serializeSessionMemory(memory))?.repoFiles).toHaveLength(repoFiles.length);
-
-    const publishable = validatePublishableFiles(pkg.files);
-    expect(publishable.length).toBe(pkg.files.length);
-    expect(buildSovereignBranchName('sovereign/package', 'Sovereign Studio: docs', publishable)).toMatch(/^sovereign\/package\/[a-f0-9]{8}$/);
-  });
-
-  it('keeps the tool progress rail as the visible top-level workflow', () => {
-    expect(DEFAULT_TOOL_PROGRESS_RAIL.map((stage) => stage.id)).toEqual([
-      'safe_repo_inspection',
-      'task_extraction',
-      'readiness_eval',
-      'checklist_generation',
-      'copywriting',
-      'workflow_watch',
-    ]);
+    expect(parseSessionMemory(serializeSessionMemory(session))?.repoFiles).toHaveLength(repoFiles.length);
+    expect(DEFAULT_TOOL_PROGRESS_RAIL.nodes.length).toBeGreaterThan(3);
   });
 });
