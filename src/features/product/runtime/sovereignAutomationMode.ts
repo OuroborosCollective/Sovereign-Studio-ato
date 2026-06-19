@@ -31,22 +31,55 @@ export function describeAutomationMode(mode: SovereignAutomationMode): string {
   return 'Full Auto Draft PR: build, review and create a guarded Draft PR when repo, mission and PAT are available.';
 }
 
+/**
+ * Build a comprehensive automation run key
+ * 
+ * The key includes:
+ * - automationMode
+ * - repoUrl
+ * - repoBranch
+ * - githubTokenPresent
+ * - repoSnapshotStatus.ready
+ * - repoFiles.length
+ * - mission.trim()
+ * - solutionPatternStore.version or updatedAt
+ * - last blocking error hash
+ */
 export function buildAutomationRunKey(input: {
   mode: SovereignAutomationMode;
   repoUrl: string;
   repoBranch: string;
+  githubTokenPresent?: boolean;
+  repoReady?: boolean;
   mission: string;
   repoFileCount: number;
+  solutionPatternVersion?: string | null;
+  lastBlockingErrorHash?: string | null;
   previewHash?: string;
 }): string {
-  return [
+  const parts = [
+    // Mode
     input.mode,
-    input.repoUrl.trim(),
-    input.repoBranch.trim(),
-    input.mission.trim(),
+    // Repo identity
+    input.repoUrl.trim() || 'none',
+    input.repoBranch.trim() || 'main',
+    // Token presence (never the actual token)
+    input.githubTokenPresent ? 'has-token' : 'no-token',
+    // Repo ready state
+    input.repoReady ? 'ready' : 'not-ready',
+    // File count
     String(input.repoFileCount),
+    // Mission
+    input.mission.trim() || 'no-mission',
+    // Pattern memory version
+    input.solutionPatternVersion || 'no-patterns',
+    // Last blocking error hash
+    input.lastBlockingErrorHash || 'no-error',
+    // Preview hash if present
     input.previewHash ?? '',
-  ].join('|');
+  ];
+  
+  return parts.join('|');
 }
 
 export function isPlaceholderAutomationRunKey(value: string): boolean {
