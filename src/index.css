@@ -31,6 +31,8 @@ body,
 
 html {
   background: rgb(var(--background-rgb));
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -46,6 +48,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 #root {
@@ -55,8 +58,21 @@ body {
   overflow: auto;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
 }
 
 button,
@@ -69,6 +85,8 @@ select {
 button {
   touch-action: manipulation;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 button:disabled,
@@ -83,12 +101,12 @@ button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--accent-2);
   outline-offset: 2px;
 }
 
-/* Sovereign mobile release shell. Target: Android phones, foldables and tablets only. */
 #root > div.min-h-screen {
   width: 100%;
   min-height: 100dvh;
@@ -155,6 +173,7 @@ summary:focus-visible {
 
 #root > div.min-h-screen > div:nth-of-type(1) {
   width: 100%;
+  min-width: 0;
   overflow: visible;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -163,7 +182,7 @@ summary:focus-visible {
   border-radius: clamp(0.9rem, 2vw, 1.2rem);
   padding: clamp(0.54rem, 1.3vw, 0.72rem);
   background: rgba(15, 23, 42, 0.78);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 0.7rem 1.8rem rgba(0,0,0,0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0.7rem 1.8rem rgba(0, 0, 0, 0.16);
 }
 
 #root > div.min-h-screen > div:nth-of-type(1)::before {
@@ -179,6 +198,7 @@ summary:focus-visible {
 
 #root > div.min-h-screen > div:nth-of-type(1) button {
   width: 100%;
+  min-width: 0;
   min-height: 2.55rem;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 0.74rem;
@@ -189,13 +209,17 @@ summary:focus-visible {
   font-size: clamp(0.66rem, 2vw, 0.82rem);
   font-weight: 800;
   line-height: 1.1;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
 }
 
-#root > div.min-h-screen > div:nth-of-type(1) button:hover {
+#root > div.min-h-screen > div:nth-of-type(1) button:hover:not(:disabled) {
   border-color: rgba(148, 163, 184, 0.34);
   background: rgba(30, 41, 59, 0.76);
   color: #f8fafc;
+}
+
+#root > div.min-h-screen > div:nth-of-type(1) button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 #root > div.min-h-screen > div:nth-of-type(1) button.font-bold,
@@ -217,7 +241,7 @@ summary:focus-visible {
   border-radius: clamp(0.9rem, 2vw, 1.2rem);
   padding: clamp(0.78rem, 1.6vw, 0.95rem);
   background: rgba(15, 23, 42, 0.76);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 0.7rem 1.8rem rgba(0,0,0,0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 0.7rem 1.8rem rgba(0, 0, 0, 0.16);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -259,6 +283,7 @@ summary:focus-visible {
 
 #root textarea {
   min-height: clamp(7rem, 18vh, 11rem);
+  resize: vertical;
 }
 
 #root button:not([class*="bg-"]) {
@@ -290,6 +315,7 @@ summary:focus-visible {
 #root td {
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
   padding: 0.55rem;
+  vertical-align: top;
 }
 
 #root pre,
@@ -302,14 +328,16 @@ summary:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Foldables and small tablets. */
+#root pre {
+  padding: 0.75rem;
+}
+
 @media (min-width: 540px) and (orientation: portrait) {
   #root > div.min-h-screen > div:nth-of-type(1) {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
-/* Tablets in portrait. */
 @media (min-width: 680px) and (orientation: portrait) {
   #root > div.min-h-screen {
     max-width: 1180px;
@@ -322,7 +350,6 @@ summary:focus-visible {
   }
 }
 
-/* All Android landscape profiles stay mobile-first and scroll-safe. */
 @media (orientation: landscape) {
   #root {
     height: auto;
@@ -363,7 +390,8 @@ summary:focus-visible {
   }
 
   #root > div.min-h-screen > div:nth-of-type(1) button {
-    flex: 0 0 minmax(5.35rem, 8rem);
+    flex: 0 0 clamp(5.35rem, 18vw, 8rem);
+    width: auto;
     min-width: 5.35rem;
     max-width: 8.5rem;
     min-height: 2.35rem;
@@ -377,7 +405,6 @@ summary:focus-visible {
   }
 }
 
-/* Larger tablets may use two working columns, but remain touch-first. */
 @media (min-width: 900px) and (min-height: 720px) and (orientation: landscape) {
   #root > div.min-h-screen {
     max-width: 1280px;
@@ -400,7 +427,6 @@ summary:focus-visible {
   }
 }
 
-/* Small phones. */
 @media (max-width: 430px) {
   #root > div.min-h-screen {
     padding:
@@ -416,5 +442,16 @@ summary:focus-visible {
 
   #root > div.min-h-screen > h1::after {
     font-size: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
