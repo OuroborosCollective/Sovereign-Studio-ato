@@ -10,8 +10,10 @@ import canvasReducer, {
 } from '../features/canvas/canvasSlice';
 import ouroborosReducer from '../features/ouroboros/ouroborosSlice';
 
-export const SOVEREIGN_STORE_ARCHITECTURE_VERSION = 3 as const;
+export const SOVEREIGN_STORE_ARCHITECTURE_VERSION = 4 as const;
 export const SOVEREIGN_CANVAS_PERSISTENCE_KEY = 'sovereign_canvas_state_mirror';
+export const SOVEREIGN_STORE_COACH_EVENT = 'sovereign:runtime-coach-state';
+export const SOVEREIGN_STORE_RUNTIME_EVENT = 'sovereign:store-runtime-state';
 
 export const AI_CANVAS_BRIDGE_ACTION_TYPES = [
   'ai/setGeneratedContent',
@@ -145,6 +147,99 @@ function defer(callback: () => void): void {
   void Promise.resolve().then(callback);
 }
 
+function coachPayloadFromStoreEvent(event: SovereignStoreRuntimeEvent) {
+  if (event.kind === 'canvas-persist-restored') {
+    return {
+      lamp: 'green',
+      title: 'Code wiederhergestellt',
+      message: 'Dein Code wurde aus dem lokalen Speicher zurueckgeholt und sicher in den Workspace geladen.',
+      action: 'Weiterbauen.',
+      thinking: false,
+      source: 'runtime',
+      tick: event.sequence,
+      hash: String(event.sequence),
+      updatedAt: Date.now(),
+    };
+  }
+
+  if (event.kind === 'canvas-persist-queued') {
+    return {
+      lamp: 'green',
+      title: 'Code wird gesichert',
+      message: 'Ich schreibe deinen aktuellen Workspace-Stand in den lokalen Speicher.',
+      action: 'Speicher laeuft.',
+      thinking: true,
+      source: 'runtime',
+      tick: event.sequence,
+      hash: String(event.sequence),
+      updatedAt: Date.now(),
+    };
+  }
+
+  if (event.kind === 'canvas-persist-written') {
+    return {
+      lamp: 'green',
+      title: 'Code gesichert',
+      message: 'Dein aktueller Workspace-Stand ist lokal gesichert.',
+      action: 'Alles gut.',
+      thinking: false,
+      source: 'runtime',
+      tick: event.sequence,
+      hash: String(event.sequence),
+      updatedAt: Date.now(),
+    };
+  }
+
+  if (event.kind === 'canvas-persist-failed' || event.kind === 'canvas-persist-restore-failed') {
+    return {
+      lamp: 'red',
+      title: 'Code-Speicher braucht Hilfe',
+      message: event.message,
+      action: 'Logs pruefen oder erneut speichern.',
+      thinking: false,
+      source: 'runtime',
+      tick: event.sequence,
+      hash: String(event.sequence),
+      updatedAt: Date.now(),
+    };
+  }
+
+  if (event.kind === 'canvas-persist-restore-skipped') {
+    return {
+      lamp: 'yellow',
+      title: 'Kein gespeicherter Code gefunden',
+      message: 'Ich habe keinen lokalen Code-Stand zum Wiederherstellen gefunden. Du startest sauber neu.',
+      action: 'Repo oder Auftrag starten.',
+      thinking: false,
+      source: 'runtime',
+      tick: event.sequence,
+      hash: String(event.sequence),
+      updatedAt: Date.now(),
+    };
+  }
+
+  return null;
+}
+
+function emitStoreRuntimeEvent(event: SovereignStoreRuntimeEvent): void {
+  if (typeof window === 'undefined' || typeof CustomEvent === 'undefined') return;
+
+  window.dispatchEvent(
+    new CustomEvent(SOVEREIGN_STORE_RUNTIME_EVENT, {
+      detail: event,
+    }),
+  );
+
+  const coachPayload = coachPayloadFromStoreEvent(event);
+  if (!coachPayload) return;
+
+  window.dispatchEvent(
+    new CustomEvent(SOVEREIGN_STORE_COACH_EVENT, {
+      detail: coachPayload,
+    }),
+  );
+}
+
 function createStoreRuntimeEventLog() {
   let sequence = 0;
   const events: SovereignStoreRuntimeEvent[] = [];
@@ -154,16 +249,20 @@ function createStoreRuntimeEventLog() {
     message: string,
     actionType?: string,
   ): void {
-    events.push({
+    const event: SovereignStoreRuntimeEvent = {
       sequence: ++sequence,
       kind,
       message,
       actionType,
-    });
+    };
+
+    events.push(event);
 
     while (events.length > STORE_EVENT_LIMIT) {
       events.shift();
     }
+
+    emitStoreRuntimeEvent(event);
   }
 
   function snapshot(): SovereignStoreRuntimeEvent[] {
@@ -238,7 +337,7 @@ function createCanvasPersistenceMirror(key: string) {
 
       storeRuntimeEvents.record(
         'canvas-persist-written',
-        'Canvas state mirror written to native storage.',
+        'Code workspace mirror written to native storage.',
       );
 
       return true;
@@ -249,7 +348,7 @@ function createCanvasPersistenceMirror(key: string) {
 
       storeRuntimeEvents.record(
         'canvas-persist-failed',
-        `Canvas state mirror write failed: ${status.lastError}`,
+        `Code workspace mirror write failed: ${status.lastError}`,
       );
 
       return false;
@@ -309,8 +408,8 @@ function createCanvasPersistenceMirror(key: string) {
       storeRuntimeEvents.record(
         'canvas-persist-skipped',
         sameAsPending
-          ? 'Canvas state mirror skipped because the same value is already pending.'
-          : 'Canvas state mirror skipped because the same value is already written.',
+          ? 'Code workspace mirror skipped because the same value is already pending.'
+          : 'Code workspace mirror skipped because the same value is already written.',
         actionType,
       );
 
@@ -328,7 +427,7 @@ function createCanvasPersistenceMirror(key: string) {
 
     storeRuntimeEvents.record(
       'canvas-persist-queued',
-      'Canvas state mirror queued for native persistence.',
+      'Code workspace mirror queued for native persistence.',
       actionType,
     );
 
@@ -377,7 +476,7 @@ const aiCanvasBridgeMiddleware: Middleware = (storeApi) => (next) => (action) =>
 
   storeRuntimeEvents.record(
     'ai-canvas-bridge',
-    'AI action bridged into canvas object creation.',
+    'AI action bridged into workspace object creation.',
     action.type,
   );
 
@@ -399,7 +498,7 @@ const canvasPersistenceMiddleware: Middleware = (storeApi) => (next) => (action)
   if (serializedCanvas === null) {
     storeRuntimeEvents.record(
       'canvas-persist-serialize-failed',
-      'Canvas state mirror serialization failed.',
+      'Code workspace mirror serialization failed.',
       action.type,
     );
 
@@ -436,14 +535,14 @@ export async function readCanvasStateMirror<TCanvasState = CanvasState>(): Promi
 
     storeRuntimeEvents.record(
       'canvas-persist-read',
-      'Canvas state mirror read from native storage.',
+      'Code workspace mirror read from native storage.',
     );
 
     return safeParseJson(result.value) as TCanvasState;
   } catch (error) {
     storeRuntimeEvents.record(
       'canvas-persist-read-failed',
-      `Canvas state mirror read failed: ${errorToMessage(error)}`,
+      `Code workspace mirror read failed: ${errorToMessage(error)}`,
     );
 
     return null;
@@ -464,13 +563,13 @@ export async function restoreCanvasStateMirror(
     if (!result.value) {
       storeRuntimeEvents.record(
         'canvas-persist-restore-skipped',
-        'Canvas state mirror restore skipped because no mirror exists.',
+        'Code workspace restore skipped because no local mirror exists.',
       );
 
       return {
         restored: false,
         state: null,
-        reason: 'No canvas state mirror exists.',
+        reason: 'No local code mirror exists.',
         status: canvasPersistenceMirror.snapshot(),
       };
     }
@@ -488,16 +587,16 @@ export async function restoreCanvasStateMirror(
       storeRuntimeEvents.record(
         'canvas-persist-restore-failed',
         clearInvalid
-          ? 'Canvas state mirror restore failed and invalid mirror was cleared.'
-          : 'Canvas state mirror restore failed because the mirror payload is invalid.',
+          ? 'Code workspace restore failed and invalid mirror was cleared.'
+          : 'Code workspace restore failed because the mirror payload is invalid.',
       );
 
       return {
         restored: false,
         state: null,
         reason: clearInvalid
-          ? 'Invalid canvas state mirror was cleared.'
-          : 'Invalid canvas state mirror payload.',
+          ? 'Invalid local code mirror was cleared.'
+          : 'Invalid local code mirror payload.',
         status: canvasPersistenceMirror.snapshot(),
       };
     }
@@ -509,8 +608,8 @@ export async function restoreCanvasStateMirror(
     storeRuntimeEvents.record(
       'canvas-persist-restored',
       dispatchRestore
-        ? 'Canvas state mirror restored into Redux state.'
-        : 'Canvas state mirror validated without Redux dispatch.',
+        ? 'Code workspace restored into Redux state.'
+        : 'Code workspace validated without Redux dispatch.',
       restoreCanvasState.type,
     );
 
@@ -518,14 +617,14 @@ export async function restoreCanvasStateMirror(
       restored: true,
       state: normalized,
       reason: dispatchRestore
-        ? 'Canvas state mirror restored into Redux state.'
-        : 'Canvas state mirror validated without Redux dispatch.',
+        ? 'Code workspace restored into Redux state.'
+        : 'Code workspace validated without Redux dispatch.',
       status: canvasPersistenceMirror.snapshot(),
     };
   } catch (error) {
     storeRuntimeEvents.record(
       'canvas-persist-restore-failed',
-      `Canvas state mirror restore failed: ${errorToMessage(error)}`,
+      `Code workspace restore failed: ${errorToMessage(error)}`,
     );
 
     return {
@@ -545,7 +644,7 @@ export async function clearCanvasStateMirror(): Promise<void> {
 
     storeRuntimeEvents.record(
       'canvas-persist-cleared',
-      'Canvas state mirror cleared from native storage.',
+      'Code workspace mirror cleared from native storage.',
     );
   } finally {
     canvasPersistenceMirror.reset();
