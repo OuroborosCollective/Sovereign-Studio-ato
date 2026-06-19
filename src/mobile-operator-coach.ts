@@ -63,6 +63,7 @@ const EMPTY_SOURCE_HOLD_MS = 8_000;
 const MAX_TEXT_NODES = 500;
 const MAX_ATTRIBUTE_NODES = 500;
 const MAX_SIGNAL_CHARS = 50_000;
+const MAX_TERMINAL_LINES = 6;
 
 const SHOW_TEXT = 4;
 const FILTER_ACCEPT = 1;
@@ -78,6 +79,7 @@ const COACH_EVENTS = [
   'sovereign:metrics-state',
   'sovereign:pattern-memory-state',
   'sovereign:remote-memory-state',
+  'sovereign:store-runtime-state',
 ];
 
 const SIGNAL_ATTRIBUTES = [
@@ -127,6 +129,8 @@ const THINKING_TOKENS = [
   'telemetry running',
   'metrics running',
   'pattern scan running',
+  'code wird gesichert',
+  'speicher laeuft',
 ];
 
 const READY_TOKENS = [
@@ -138,6 +142,8 @@ const READY_TOKENS = [
   'checks passed',
   'all checks passed',
   'green gate passed',
+  'code wiederhergestellt',
+  'code gesichert',
 ];
 
 const REPO_MISSING_TOKENS = [
@@ -233,6 +239,19 @@ const REAL_STOPPER_TOKENS = [
   'error:',
 ];
 
+const MIMU_SMILEYS = [
+  '_@=@_',
+  '○¤○',
+  '^-_-^',
+  '[>->_]',
+  ',.;@-@;.,',
+  '⌐■_■',
+  '｡◕‿◕｡',
+  '(-.-)zz',
+  'づ｡◕‿‿◕｡づ',
+  'ʕ•ᴥ•ʔ',
+];
+
 let lastSignalHash = 0;
 let lastSignalChangeAt = 0;
 let lastValidState: ExternalCoachState | null = null;
@@ -247,7 +266,7 @@ function wallClockMs(): number {
 }
 
 function normalizeText(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+  return value.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/\s+/g, ' ').trim();
 }
 
 function toText(value: unknown): string {
@@ -343,6 +362,11 @@ function latestRealStopperIndex(lines: string[]): number {
   }
 
   return -1;
+}
+
+function mimuFace(seed: string | number | undefined): string {
+  const hash = hashString(String(seed ?? wallClockMs()));
+  return MIMU_SMILEYS[hash % MIMU_SMILEYS.length];
 }
 
 function isInsideCoach(node: Node | null): boolean {
@@ -450,11 +474,12 @@ function deriveStateFromRuntimePayload(value: UnknownRecord, fallbackSource: Coa
       toText(value.state) ||
       toText(value.phase) ||
       toText(value.mode) ||
-      toText(value.runState),
+      toText(value.runState) ||
+      toText(value.kind),
   );
 
   const source = validSource(value.source) === 'unknown' ? fallbackSource : validSource(value.source);
-  const tick = toNumber(value.tick);
+  const tick = toNumber(value.tick) ?? toNumber(value.sequence);
   const hash = toText(value.hash) || toText(value.worldHash) || toText(value.snapshotHash) || undefined;
   const message =
     toText(value.message) ||
@@ -463,6 +488,34 @@ function deriveStateFromRuntimePayload(value: UnknownRecord, fallbackSource: Coa
     toText(value.reason);
 
   if (!status && !message && tick === undefined && !hash) return null;
+
+  if (status.includes('restored') || message.includes('restored')) {
+    return {
+      lamp: 'green',
+      title: 'Code wiederhergestellt',
+      message: message || 'Dein Code wurde lokal wiederhergestellt und in den Workspace geladen.',
+      action: 'Weiterbauen.',
+      thinking: false,
+      source,
+      tick,
+      hash,
+      updatedAt: wallClockMs(),
+    };
+  }
+
+  if (status.includes('queued') || message.includes('queued') || message.includes('wird gesichert')) {
+    return {
+      lamp: 'green',
+      title: 'Code wird gesichert',
+      message: message || 'Ich schreibe den aktuellen Code-Stand in den lokalen Speicher.',
+      action: 'Speicher laeuft.',
+      thinking: true,
+      source,
+      tick,
+      hash,
+      updatedAt: wallClockMs(),
+    };
+  }
 
   if (
     status.includes('failed') ||
@@ -513,13 +566,14 @@ function deriveStateFromRuntimePayload(value: UnknownRecord, fallbackSource: Coa
     status.includes('passed') ||
     status.includes('green') ||
     status.includes('done') ||
-    status.includes('complete')
+    status.includes('complete') ||
+    status.includes('written')
   ) {
     return {
       lamp: 'green',
-      title: 'Runtime ist bereit',
+      title: status.includes('written') ? 'Code gesichert' : 'Runtime ist bereit',
       message: message || 'Die Runtime-Library meldet einen gueltigen akzeptierten Zustand.',
-      action: 'Files/Diff oder Monitor pruefen.',
+      action: status.includes('written') ? 'Alles gut.' : 'Files/Diff oder Monitor pruefen.',
       thinking: false,
       source,
       tick,
@@ -859,9 +913,11 @@ function readDomFallbackState(): ExternalCoachState {
   if (readyIndex >= 0) {
     return rememberState({
       lamp: 'green',
-      title: 'Ergebnis ist bereit',
-      message: 'Die Dateien sind akzeptiert. Pruefe Files und Diff. Danach kann der Draft PR bewusst erstellt werden.',
-      action: 'Files/Diff pruefen.',
+      title: hasAny(snapshot.normalized, ['code wiederhergestellt']) ? 'Code wiederhergestellt' : 'Ergebnis ist bereit',
+      message: hasAny(snapshot.normalized, ['code wiederhergestellt'])
+        ? 'Dein Code wurde wiederhergestellt. Du kannst an derselben Stelle weiterbauen.'
+        : 'Die Dateien sind akzeptiert. Pruefe Files und Diff. Danach kann der Draft PR bewusst erstellt werden.',
+      action: hasAny(snapshot.normalized, ['code wiederhergestellt']) ? 'Weiterbauen.' : 'Files/Diff pruefen.',
       thinking: false,
       source: 'dom-fallback',
       updatedAt: wallClockMs(),
@@ -975,7 +1031,8 @@ function readCoachState(): ExternalCoachState {
 }
 
 function installStyle(): void {
-  if (document.getElementById(STYLE_ID)) return;
+  const previous = document.getElementById(STYLE_ID);
+  if (previous) previous.remove();
 
   const style = document.createElement('style');
   style.id = STYLE_ID;
@@ -983,7 +1040,7 @@ function installStyle(): void {
     #${ROOT_ID} {
       border: 1px solid rgba(34,211,238,.28);
       border-radius: 1.25rem;
-      background: linear-gradient(135deg, rgba(2,6,23,.94), rgba(15,23,42,.88));
+      background: linear-gradient(135deg, rgba(2,6,23,.97), rgba(15,23,42,.92));
       color: #e2e8f0;
       overflow: hidden;
       box-shadow: 0 .9rem 2rem rgba(0,0,0,.22);
@@ -1004,13 +1061,14 @@ function installStyle(): void {
     #${ROOT_ID} .coach-bot {
       display: grid;
       place-items: center;
-      width: 2.65rem;
-      height: 2.65rem;
+      width: 2.8rem;
+      height: 2.8rem;
       border-radius: .9rem;
       border: 1px solid rgba(34,211,238,.38);
-      background: rgba(8,47,73,.72);
+      background: radial-gradient(circle at 35% 25%, rgba(103,232,249,.28), rgba(8,47,73,.78));
       font-size: 1.45rem;
       flex: 0 0 auto;
+      box-shadow: inset 0 0 1.1rem rgba(34,211,238,.14), 0 0 1rem rgba(34,211,238,.08);
     }
 
     #${ROOT_ID} .coach-lamp {
@@ -1056,25 +1114,59 @@ function installStyle(): void {
     }
 
     #${ROOT_ID} .coach-terminal {
-      margin-top: .7rem;
-      border: 1px solid rgba(34,211,238,.18);
-      border-radius: .9rem;
-      background: rgba(0,0,0,.35);
-      padding: .7rem;
+      margin-top: .78rem;
+      min-height: 9.8rem;
+      max-height: 14rem;
+      overflow: hidden;
+      border: 1px solid rgba(34,211,238,.22);
+      border-radius: .95rem;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,.92), rgba(2,6,23,.96)),
+        radial-gradient(circle at 15% 0%, rgba(34,211,238,.16), transparent 35%);
+      padding: .78rem;
       color: #67e8f9;
-      font: 700 .74rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      font: 800 .72rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
       word-break: break-word;
+      box-shadow: inset 0 0 1.2rem rgba(34,211,238,.08);
+    }
+
+    #${ROOT_ID} .terminal-line {
+      display: block;
+      white-space: pre-wrap;
+      opacity: .94;
+    }
+
+    #${ROOT_ID} .terminal-line + .terminal-line {
+      margin-top: .22rem;
+    }
+
+    #${ROOT_ID} .terminal-face {
+      color: #f0abfc;
+    }
+
+    #${ROOT_ID} .terminal-dim {
+      color: #94a3b8;
     }
 
     #${ROOT_ID} .prompt {
       color: #a7f3d0;
     }
 
+    #${ROOT_ID}.red .coach-terminal {
+      border-color: rgba(251,113,133,.3);
+      color: #fecdd3;
+    }
+
+    #${ROOT_ID}.yellow .coach-terminal {
+      border-color: rgba(251,191,36,.28);
+      color: #fde68a;
+    }
+
     #${ROOT_ID} .coach-buttons {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: .42rem;
-      margin-top: .7rem;
+      margin-top: .72rem;
     }
 
     #${ROOT_ID} .coach-buttons button {
@@ -1149,6 +1241,7 @@ function navShell(): Element | null {
 function coachMode(state: ExternalCoachState): string {
   if (state.thinking) return 'matrix-work';
   if (state.lamp === 'red') return 'repair-log';
+  if (state.title.includes('Code')) return 'code-memory';
   if (state.source === 'telemetry' || state.source === 'metrics') return 'telemetry';
   if (state.source === 'pattern-memory' || state.source === 'remote-memory') return 'pattern-memory';
   if (state.source === 'runtime-library' || state.source === 'runtime') return 'runtime';
@@ -1160,6 +1253,92 @@ function coachMode(state: ExternalCoachState): string {
 function ensureText(parent: Element, selector: string, value: string): void {
   const node = parent.querySelector(selector);
   if (node && node.textContent !== value) node.textContent = value;
+}
+
+function terminalLinesForState(state: ExternalCoachState, mode: string): string[] {
+  const face = mimuFace(`${state.title}:${state.hash ?? state.tick ?? state.updatedAt}`);
+  const tick = state.tick === undefined ? 'tick:auto' : `tick:${state.tick}`;
+  const hash = state.hash ? ` hash:${state.hash}` : '';
+
+  if (state.lamp === 'red') {
+    return [
+      `${mode} $ ${face} stopper erkannt`,
+      `repair.scan(${tick}${hash}) => blocked`,
+      `reason: ${state.message}`,
+      `next: ${state.action}`,
+      `${mimuFace('repair')} ich halte den Ablauf sicher an _@=@_`,
+    ];
+  }
+
+  if (state.thinking) {
+    return [
+      `${mode} $ ${face} thinking loop aktiv`,
+      `read.signals(${tick}${hash}) => ok`,
+      `diff.map(workspace) => code flow wird visualisiert`,
+      `persist.queue(local-code-memory) => pending`,
+      `${mimuFace('type')} schreibe/prüfe leise weiter ^-_-^`,
+      `status: ${state.message}`,
+    ];
+  }
+
+  if (state.title.includes('Code wiederhergestellt')) {
+    return [
+      `${mode} $ ${face} restore.local_code()`,
+      `mirror.read(native-storage) => valid`,
+      `normalize.workspace_state() => safe`,
+      `redux.dispatch(restoreCodeState) => done`,
+      `${mimuFace('restore')} dein Code ist wieder da ○¤○`,
+      `next: ${state.action}`,
+    ];
+  }
+
+  if (state.title.includes('Code gesichert')) {
+    return [
+      `${mode} $ ${face} save.local_code()`,
+      `mirror.write(native-storage) => done`,
+      `workspace.snapshot() => stable`,
+      `${mimuFace('saved')} alles liegt sicher im Speicher ｡◕‿◕｡`,
+      `next: ${state.action}`,
+    ];
+  }
+
+  return [
+    `${mode} $ ${face} monitor.update()`,
+    `source:${state.source ?? 'dom'} ${tick}${hash}`,
+    `lamp:${state.lamp} thinking:${String(state.thinking)}`,
+    `message: ${state.message}`,
+    `next: ${state.action}`,
+  ];
+}
+
+function renderTerminal(root: HTMLElement, lines: string[]): void {
+  const terminal = root.querySelector('.coach-terminal');
+  if (!terminal) return;
+
+  terminal.replaceChildren();
+
+  for (const line of lines.slice(0, MAX_TERMINAL_LINES)) {
+    const row = document.createElement('span');
+    row.className = 'terminal-line';
+
+    const face = MIMU_SMILEYS.find((candidate) => line.includes(candidate));
+    if (face) {
+      const [before, after] = line.split(face);
+      row.append(document.createTextNode(before));
+
+      const faceNode = document.createElement('span');
+      faceNode.className = 'terminal-face';
+      faceNode.textContent = face;
+      row.append(faceNode, document.createTextNode(after ?? ''));
+    } else if (line.startsWith('source:') || line.startsWith('lamp:')) {
+      row.className = 'terminal-line terminal-dim';
+      row.textContent = line;
+    } else {
+      row.textContent = line;
+    }
+
+    terminal.appendChild(row);
+  }
 }
 
 function buildCoachShell(root: HTMLElement): void {
@@ -1198,14 +1377,12 @@ function buildCoachShell(root: HTMLElement): void {
 
   const terminal = document.createElement('div');
   terminal.className = 'coach-terminal';
-
-  const prompt = document.createElement('span');
-  prompt.className = 'prompt';
+  terminal.setAttribute('aria-label', 'Sovereign Code Monitor Log');
 
   const terminalMessage = document.createElement('span');
   terminalMessage.className = 'terminal-message';
-
-  terminal.append(prompt, document.createTextNode(' '), terminalMessage);
+  terminalMessage.textContent = 'booting code monitor...';
+  terminal.appendChild(terminalMessage);
 
   const buttons = document.createElement('div');
   buttons.className = 'coach-buttons';
@@ -1261,6 +1438,7 @@ function renderCoach(): void {
   const root = ensureCoachRoot(nav);
   const state = readCoachState();
   const mode = coachMode(state);
+  const terminalLines = terminalLinesForState(state, mode);
   const signature = JSON.stringify({
     lamp: state.lamp,
     title: state.title,
@@ -1271,6 +1449,7 @@ function renderCoach(): void {
     tick: state.tick,
     hash: state.hash,
     mode,
+    terminalLines,
   });
 
   if (root.dataset.signature === signature) return;
@@ -1281,8 +1460,7 @@ function renderCoach(): void {
   ensureText(root, '.coach-title', `Sovereign Bot · ${state.title}`);
   ensureText(root, '.coach-action', state.action);
   ensureText(root, '.coach-message', state.message);
-  ensureText(root, '.prompt', `${mode} $`);
-  ensureText(root, '.terminal-message', state.message);
+  renderTerminal(root, terminalLines);
 
   root.querySelector('.coach-title')?.classList.toggle('dots', state.thinking);
   root.querySelector('.terminal-message')?.classList.toggle('dots', state.thinking);
@@ -1314,6 +1492,7 @@ function eventSourceFromName(eventName: string): CoachSource {
   if (eventName.includes('metrics')) return 'metrics';
   if (eventName.includes('pattern-memory')) return 'pattern-memory';
   if (eventName.includes('remote-memory')) return 'remote-memory';
+  if (eventName.includes('store-runtime')) return 'runtime';
   if (eventName.includes('runtime')) return 'runtime-library';
 
   return 'runtime-library';
