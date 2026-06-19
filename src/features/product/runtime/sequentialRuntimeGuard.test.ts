@@ -5,6 +5,8 @@ import {
   canStartSequentialStep,
   createSequentialRuntimeState,
   finishSequentialStep,
+  finishSequentialStepWithFallback,
+  planSequentialRetry,
   startSequentialStep,
   summarizeSequentialRuntime,
   validateSequentialRuntimeState,
@@ -60,6 +62,28 @@ describe('sequentialRuntimeGuard', () => {
     expect(finished.history).toHaveLength(2);
     expect(validateSequentialRuntimeState(finished).valid).toBe(true);
     expect(summarizeSequentialRuntime(finished)).toContain('1 completed');
+  });
+
+  it('plans step-back instead of repeating package-build when concrete mission is missing', () => {
+    let state = startSequentialStep(createSequentialRuntimeState(), 'repo-load', {}, 1);
+    state = finishSequentialStep(state, 'repo-load', 'completed', 'loaded', 2);
+    state = startSequentialStep(state, 'package-build', { repoReady: true }, 3);
+    const result = finishSequentialStepWithFallback(state, 'package-build', 'failed', 'Concrete user mission is required before package build.', 4);
+    expect(result.retryPlan?.action).toBe('step-back');
+    expect(result.retryPlan?.targetStep).toBe('repo-load');
+    expect(result.retryPlan?.canAutoRetry).toBe(false);
+    expect(result.state.history[result.state.history.length - 1].message).toContain('concrete user mission');
+  });
+
+  it('routes real package-build failures to repair-plan before retry', () => {
+    let state = startSequentialStep(createSequentialRuntimeState(), 'repo-load', {}, 1);
+    state = finishSequentialStep(state, 'repo-load', 'completed', 'loaded', 2);
+    state = startSequentialStep(state, 'package-build', { repoReady: true }, 3);
+    const result = finishSequentialStepWithFallback(state, 'package-build', 'failed', 'Generated file review failed for actionable source output.', 4);
+    expect(result.retryPlan?.action).toBe('repair-plan');
+    expect(result.retryPlan?.targetStep).toBe('repair-plan');
+    expect(result.retryPlan?.canAutoRetry).toBe(true);
+    expect(result.state.history[result.state.history.length - 1].step).toBe('repair-plan');
   });
 
   it('rejects finishing a non-active step', () => {
