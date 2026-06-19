@@ -51,6 +51,17 @@ export interface SequentialRuntimeValidationReport {
   summary: string;
 }
 
+export type SequentialRetryAction = 'retry-step' | 'step-back' | 'repair-plan' | 'await-user';
+
+export interface SequentialRetryPlan {
+  action: SequentialRetryAction;
+  fromStep: SequentialRuntimeStep;
+  targetStep: SequentialRuntimeStep;
+  reason: string;
+  message: string;
+  canAutoRetry: boolean;
+}
+
 export const SEQUENTIAL_RUNTIME_STEPS: SequentialRuntimeStep[] = [
   'repo-load',
   'package-build',
@@ -317,6 +328,80 @@ export function finishSequentialStep(
   const withEvent = pushEvent(next, step, status, message, at);
   assertSequentialRuntimeStateValid(withEvent);
   return withEvent;
+}
+
+export function planSequentialRetry(
+  state: SequentialRuntimeState,
+  failedStep: SequentialRuntimeStep,
+  reason: string,
+): SequentialRetryPlan {
+  assertSequentialRuntimeStateValid(state);
+  const lowerReason = reason.toLowerCase();
+  if (failedStep === 'package-build') {
+    if (lowerReason.includes('concrete user mission') || lowerReason.includes('placeholder') || lowerReason.includes('awaiting-intent')) {
+      return {
+        action: 'step-back',
+        fromStep: failedStep,
+        targetStep: 'repo-load',
+        reason,
+        message: 'Package build stopped before retry: repo is ready, but a concrete user mission is required. Step back to intent capture instead of repeating package-build.',
+        canAutoRetry: false,
+      };
+    }
+    return {
+      action: 'repair-plan',
+      fromStep: failedStep,
+      targetStep: 'repair-plan',
+      reason,
+      message: 'Package build failed after generation. Route to repair plan before retrying package-build.',
+      canAutoRetry: true,
+    };
+  }
+  if (failedStep === 'diff-load') {
+    return {
+      action: 'step-back',
+      fromStep: failedStep,
+      targetStep: 'package-build',
+      reason,
+      message: 'Diff source load failed. Step back to package-build and regenerate source package.',
+      canAutoRetry: true,
+    };
+  }
+  if (failedStep === 'draft-pr-publish') {
+    return {
+      action: 'step-back',
+      fromStep: failedStep,
+      targetStep: 'diff-load',
+      reason,
+      message: 'Draft PR publish failed. Step back to diff source load before retrying publish.',
+      canAutoRetry: true,
+    };
+  }
+  return {
+    action: 'await-user',
+    fromStep: failedStep,
+    targetStep: failedStep,
+    reason,
+    message: `${describeSequentialStep(failedStep)} failed and needs user attention before retry.`,
+    canAutoRetry: false,
+  };
+}
+
+export function finishSequentialStepWithFallback(
+  state: SequentialRuntimeState,
+  step: SequentialRuntimeStep,
+  status: Exclude<SequentialRuntimeStepStatus, 'idle' | 'running'>,
+  message: string,
+  at = Date.now(),
+): { state: SequentialRuntimeState; retryPlan: SequentialRetryPlan | null } {
+  const finished = finishSequentialStep(state, step, status, message, at);
+  if (status !== 'failed') return { state: finished, retryPlan: null };
+  const retryPlan = planSequentialRetry(finished, step, message);
+  const routed = retryPlan.action === 'repair-plan'
+    ? pushEvent(finished, 'repair-plan', 'running', retryPlan.message, at + 1)
+    : pushEvent(finished, retryPlan.targetStep, 'skipped', retryPlan.message, at + 1);
+  assertSequentialRuntimeStateValid(routed);
+  return { state: routed, retryPlan };
 }
 
 export function resetSequentialRuntime(state: SequentialRuntimeState = createSequentialRuntimeState()): SequentialRuntimeState {
