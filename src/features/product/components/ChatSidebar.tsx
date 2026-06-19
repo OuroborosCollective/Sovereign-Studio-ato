@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, Lightbulb, Loader2 } from 'lucide-react';
+import { Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, Lightbulb, Loader2, CircleX } from 'lucide-react';
 import { ChatMessage, Suggestion } from '../types';
 import {
   canSubmitChatMessage,
@@ -95,7 +95,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           <span>Chat & Vorschläge</span>
           {isAnalyzing && <Loader2 size={12} className="animate-spin text-indigo-600" aria-label="Analyse läuft" />}
         </div>
-        <button type="button" onClick={onClearChat} aria-label="Chat leeren" className="text-[9px] text-stone-400 hover:text-stone-600 flex items-center gap-1">
+        <button type="button" onClick={onClearChat} aria-label="Chat leeren" className="text-[9px] text-stone-400 hover:text-stone-600 flex items-center gap-1 active:scale-95 transition-all">
           <Trash2 size={12} aria-hidden="true" /> Leeren
         </button>
       </div>
@@ -137,7 +137,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 disabled={suggestion.accepted}
                 aria-label={describeSuggestionAction(suggestion)}
                 aria-pressed={Boolean(suggestion.accepted)}
-                className={`w-full text-left p-3 rounded-xl border transition-all duration-200 ${getSuggestionStyle(suggestion.type, suggestion.accepted)} ${!suggestion.accepted ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}`}
+                className={`w-full group text-left p-3 rounded-xl border transition-all duration-200 ${getSuggestionStyle(suggestion.type, suggestion.accepted)} ${!suggestion.accepted ? 'cursor-pointer active:scale-95' : 'cursor-default'}`}
               >
                 <div className="flex items-start gap-2">
                   {getSuggestionIcon(suggestion.type)}
@@ -162,20 +162,33 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
       <div className="border-t border-stone-200 p-3 bg-white shrink-0">
         <form onSubmit={handleSubmit} className="flex gap-2" aria-label="Chat Nachricht senden">
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Frage oder Feedback..."
-            aria-label="Chat Nachricht"
-            className="flex-1 text-[11px] p-2 border border-stone-300 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-          />
+          <div className="relative flex-1">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Frage oder Feedback..."
+              aria-label="Chat Nachricht"
+              className="w-full text-[11px] p-2 pr-8 border border-stone-300 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 transition-colors"
+            />
+            {inputValue && (
+              <button
+                type="button"
+                onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-all active:scale-95 p-1"
+                aria-label="Eingabe loeschen"
+                title="Eingabe loeschen"
+              >
+                <CircleX size={14} />
+              </button>
+            )}
+          </div>
           <button
             type="submit"
             aria-label="Nachricht senden"
             disabled={!canSubmit}
-            className="px-3 py-2 bg-indigo-600 disabled:bg-stone-300 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            className="px-3 py-2 bg-indigo-600 disabled:bg-stone-300 text-white rounded-lg hover:bg-indigo-700 active:scale-95 transition-all"
           >
             <Send size={14} aria-hidden="true" />
           </button>
@@ -184,7 +197,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           type="button"
           onClick={onDownloadPackage}
           aria-label="Verlauf sichern"
-          className="w-full mt-2 bg-stone-900 text-white py-2 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-black transition-colors"
+          className="w-full mt-2 bg-stone-900 text-white py-2 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-black active:scale-95 transition-all"
         >
           <Download size={13} aria-hidden="true" /> Verlauf sichern
         </button>

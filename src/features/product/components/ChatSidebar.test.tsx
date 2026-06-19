@@ -157,6 +157,22 @@ describe('ChatSidebar', () => {
         expect(submitButton).not.toBeDisabled();
       });
     });
+
+    it('shows clear button when input has content and clears input on click', () => {
+      render(<ChatSidebar {...defaultProps} />);
+
+      const input = screen.getByRole('textbox', { name: /Chat Nachricht/i }) as HTMLInputElement;
+
+      fireEvent.change(input, { target: { value: 'Some message' } });
+
+      const clearButton = screen.getByRole('button', { name: /Eingabe loeschen/i });
+      expect(clearButton).toBeDefined();
+
+      fireEvent.click(clearButton);
+
+      expect(input.value).toBe('');
+      expect(input).toHaveFocus();
+    });
   });
 
   describe('Styling', () => {
