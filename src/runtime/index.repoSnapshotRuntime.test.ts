@@ -13,11 +13,14 @@ import runtimeDefault, {
   createRuntimeIntelligenceWithRepoSnapshot,
   createRuntimeRepoSnapshot,
   defaultTraceIdProvider,
+  inspectRuntimeRepoSnapshotStorage,
   loadRuntimeRepoSnapshot,
   runGuardChain,
   runtimeIntelligence,
   saveRuntimeRepoSnapshot,
+  validateRuntimeRepoSnapshotInput,
   type Guard,
+  type RuntimeContext,
   type RuntimeRepoSnapshotInput,
 } from './index';
 
@@ -52,23 +55,18 @@ function readFailingStorage(): Storage {
     get length(): number {
       throw new Error('read blocked');
     },
-
     clear() {
       values.clear();
     },
-
     getItem() {
       throw new Error('get blocked');
     },
-
     key() {
       throw new Error('key blocked');
     },
-
     removeItem(key: string) {
       values.delete(key);
     },
-
     setItem(key: string, value: string) {
       values.set(key, value);
     },
@@ -93,8 +91,8 @@ describe('runtime index repo snapshot exports', () => {
     const runtime = createRuntimeIntelligenceWithRepoSnapshot();
 
     expect(runtime).toBeDefined();
-    expect(runtime.repoSnapshot).toBeDefined();
-    expect(runtime.repoSnapshot.create).toBe(createRuntimeRepoSnapshot);
+    expect(runtime.createRepoSnapshot).toBe(createRuntimeRepoSnapshot);
+    expect(runtime.saveRepoSnapshot).toBe(saveRuntimeRepoSnapshot);
   });
 
   it('attaches repo snapshot runtime to an existing runtime object', () => {
@@ -102,18 +100,18 @@ describe('runtime index repo snapshot exports', () => {
     const attached = attachRepoSnapshotRuntime(runtime);
 
     expect(attached).toBe(runtime);
-    expect(attached.repoSnapshot).toBeDefined();
-    expect(attached.repoSnapshot.save).toBe(saveRuntimeRepoSnapshot);
+    expect(attached.createRepoSnapshot).toBe(createRuntimeRepoSnapshot);
+    expect(attached.saveRepoSnapshot).toBe(saveRuntimeRepoSnapshot);
   });
 
-  it('exports repo snapshot runtime facade', () => {
-    expect(RuntimeRepoSnapshotRuntime.create(validInput()).fileCount).toBe(1);
-    expect(RuntimeRepoSnapshotRuntime.validateInput(validInput()).valid).toBe(true);
-    expect(RuntimeRepoSnapshotRuntime.validateInput(invalidInput()).valid).toBe(false);
+  it('exports repo snapshot runtime namespace', () => {
+    expect(RuntimeRepoSnapshotRuntime.createRuntimeRepoSnapshot(validInput()).fileCount).toBe(1);
+    expect(RuntimeRepoSnapshotRuntime.validateRuntimeRepoSnapshotInput(validInput()).valid).toBe(true);
+    expect(RuntimeRepoSnapshotRuntime.validateRuntimeRepoSnapshotInput(invalidInput()).valid).toBe(false);
   });
 
   it('saves, loads and clears through index exports', () => {
-    const storage = RuntimeRepoSnapshotRuntime.createMemoryStorage();
+    const storage = RuntimeRepoSnapshotRuntime.createRuntimeMemoryStorage();
 
     expect(saveRuntimeRepoSnapshot(validInput(), storage).valid).toBe(true);
     expect(loadRuntimeRepoSnapshot(storage)?.repoUrl).toBe('https://github.com/owner/repo');
@@ -122,7 +120,7 @@ describe('runtime index repo snapshot exports', () => {
   });
 
   it('keeps failing storage typed as Storage', () => {
-    const status = RuntimeRepoSnapshotRuntime.inspectStorage(readFailingStorage());
+    const status = inspectRuntimeRepoSnapshotStorage(readFailingStorage());
 
     expect(status.available).toBe(true);
     expect(status.readable).toBe(false);
@@ -130,9 +128,21 @@ describe('runtime index repo snapshot exports', () => {
   });
 
   it('supports guard typing through index exports', async () => {
-    const guard: Guard = async () => ({ ok: true });
-    const result = await runGuardChain([guard]);
+    const guard: Guard = {
+      name: 'index-guard',
+      check: async (ctx: RuntimeContext) => ({
+        pass: true,
+        guardName: 'index-guard',
+        traceId: ctx.traceId,
+        durationMs: 0,
+      }),
+    };
 
-    expect(result.ok).toBe(true);
+    const result = await runGuardChain(
+      { traceId: 'index-test', timestamp: Date.now() },
+      { preFlight: [guard], main: [], postFlight: [] },
+    );
+
+    expect(result.pass).toBe(true);
   });
 });
