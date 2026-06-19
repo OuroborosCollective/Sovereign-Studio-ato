@@ -11,14 +11,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Social-Media-Bot ausführen (Reddit/Discord)
         run: |
           echo "Suche auf r/AndroidClosedTesting nach 'Test-for-Test'-Angeboten..."
           PLAY_URL=$(echo ${{ secrets.PLAY_TEST_LINK_BASE64 }} | base64 -d)
           python bot/social_agent.py --target_platform "Reddit" --app_link $PLAY_URL --repo_name ${{ github.repository }}
           echo "5 neue Tester rekrutiert und der Play Console hinzugefügt."
-
       - name: Starte Follow-up-Agent (Tag 7 Engagement-Prüfung)
         run: |
           echo "Prüfe Tester-Liste auf Engagement. Sende sanfte Erinnerung an passive Tester (Tag 7)."
