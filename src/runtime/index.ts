@@ -33,3 +33,12 @@ export {
   useRuntimeIntelligence,
   type UseRuntimeIntelligenceOptions,
 } from './RuntimeIntelligence';
+
+export {
+  createRuntimeRepoSnapshot,
+  saveRuntimeRepoSnapshot,
+  loadRuntimeRepoSnapshot,
+  clearRuntimeRepoSnapshot,
+  type RuntimeRepoSnapshotInput,
+  type RuntimeRepoSnapshotResult,
+} from './repoSnapshotRuntime';
