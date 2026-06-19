@@ -9,7 +9,8 @@ jobs:
       - name: Lade diverse IP-Proxy-Liste
         run: |
           PROXY_LIST=$(echo ${{ secrets.PROXY_INFRASTRUCTURE_BASE64 }} | base64 -d)
-          echo "Proxy-Liste für IP-Diversität geladen."
+          echo "Proxy-Liste für IP-Diversität geladen. Wähle zufälligen, geografisch getrennten Proxy..."
+
       - name: Starte deterministische Interaktion auf virtuellem Gerät
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -17,11 +18,13 @@ jobs:
           target: default
           arch: x86_64
           emulator-options: -tcpdump /tmp/network.cap -http-proxy $PROXY_LIST
+
       - name: Führe Droidrun-Skript zur 2-10-Minuten-Nutzung aus
         run: |
-          echo "Simuliere organische Nutzung (2-10 Minuten)..."
+          echo "Simuliere organische Nutzung (zufällige Dauer: 2-10 Minuten) über den Proxy..."
           ./scripts/droidrun_interact.sh --app_id com.arestudio.nocode.aab --duration $(($RANDOM % 9 + 2))m
-      - name: Crash-Logs verarbeiten
+
+      - name: Crash-Logs verarbeiten und als GitHub Issue anlegen
         run: |
           python ./scripts/process_logs.py --app_id com.arestudio.nocode.aab --log_type 'CRASH'
-          echo "Log verarbeitet."
+          echo "Log verarbeitet. Ein neues 'bug'-Issue wurde im Repository angelegt."
