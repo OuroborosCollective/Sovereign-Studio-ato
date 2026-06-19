@@ -75,5 +75,3 @@ export const runtimeIntelligence: RuntimeIntelligenceWithRepoSnapshot = Object.a
   loadRepoSnapshot: loadRuntimeRepoSnapshot,
   clearRepoSnapshot: clearRuntimeRepoSnapshot,
 });
-
-export type { RuntimeIntelligenceConfig };
