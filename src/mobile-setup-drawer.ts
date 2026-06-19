@@ -31,6 +31,11 @@ function findButton(label: string): HTMLButtonElement | null {
   return Array.from(document.querySelectorAll('button')).find((button) => (button.textContent ?? '').trim().toLowerCase() === label.toLowerCase()) ?? null;
 }
 
+function findButtonContaining(label: string): HTMLButtonElement | null {
+  const needle = label.toLowerCase();
+  return Array.from(document.querySelectorAll('button')).find((button) => (button.textContent ?? '').trim().toLowerCase().includes(needle)) ?? null;
+}
+
 function setNativeInputValue(input: HTMLInputElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
   setter?.call(input, value);
@@ -42,6 +47,17 @@ function inputByLabel(label: string): HTMLInputElement | null {
   return document.querySelector(`input[aria-label="${label}"]`);
 }
 
+function clickLoadRepoWhenReady(attempt = 0): void {
+  const button = findButtonContaining('load repo');
+  if (button && !button.disabled) {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return;
+  }
+  if (attempt < 8) {
+    window.setTimeout(() => clickLoadRepoWhenReady(attempt + 1), 140 + attempt * 120);
+  }
+}
+
 function applyDraftToRepoTab(draft: SetupDraft): void {
   findButton('Repo')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   window.setTimeout(() => {
@@ -50,7 +66,8 @@ function applyDraftToRepoTab(draft: SetupDraft): void {
     if (repo && draft.repoUrl) setNativeInputValue(repo, draft.repoUrl);
     if (access && draft.accessValue) setNativeInputValue(access, draft.accessValue);
     repo?.focus();
-  }, 120);
+    clickLoadRepoWhenReady();
+  }, 160);
 }
 
 function installStyle(): void {
