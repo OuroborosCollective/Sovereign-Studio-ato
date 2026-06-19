@@ -22,41 +22,34 @@ on:
 
 env:
   NODE_VERSION: 22
+  RN_WORKDIR: sovereign-studio-rn
+
+defaults:
+  run:
+    working-directory: sovereign-studio-rn
 
 jobs:
-  # ============================================================
-  # CI Pipeline: Install & Prebuild
-  # ============================================================
   ci:
     name: 🧪 CI Pipeline
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: 🧾 Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
 
       - name: 📦 Install Dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: npm ci
 
       - name: 🔄 Expo Prebuild (Generate Android)
-        run: pnpm prebuild --platform android --clean
+        run: npx expo prebuild --platform android --clean
 
-  # ============================================================
-  # Android Build
-  # ============================================================
   build:
     name: 🏗️ Build Android AAB/APK
     runs-on: ubuntu-latest
@@ -69,22 +62,16 @@ jobs:
       - name: 🧾 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
 
       - name: 📦 Install Dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: npm ci
 
       - name: 🔄 Expo Prebuild
-        run: pnpm prebuild --platform android --clean
+        run: npx expo prebuild --platform android --clean
 
       - name: 🏷️ Determine Versioning
         id: vars
@@ -162,5 +149,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SovereignStudio-PlayStore-Release
-          path: SovereignStudio-PlayStore-Release.zip
+          path: sovereign-studio-rn/SovereignStudio-PlayStore-Release.zip
           retention-days: 14
