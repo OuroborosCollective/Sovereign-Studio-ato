@@ -1,26 +1,37 @@
-import type { RepoFile } from '../features/github/types';
+const RUNTIME_REPO_SNAPSHOT_KEY = 'sovereign-runtime-repo-snapshot';
+const RUNTIME_REPO_SNAPSHOT_VERSION = 1 as const;
+const NO_VALID_SNAPSHOT_MESSAGE = 'No valid runtime repo snapshot is loaded.';
+const STORAGE_REQUIRED_MESSAGE = 'runtime repo snapshot storage is not available.';
 
-import {
-  clearDurableRepoSnapshot,
-  createDurableRepoSnapshot,
-  loadDurableRepoSnapshot,
-  saveDurableRepoSnapshot,
-  validateDurableRepoSnapshot,
-  type DurableRepoSnapshot,
-  type DurableRepoSnapshotValidationReport,
-} from '../features/github/repoSnapshotPersistence';
+export type RuntimeRepoFileType = 'blob' | 'tree' | 'file' | 'directory' | 'unknown';
+
+export interface RuntimeRepoFileSnapshot {
+  path: string;
+  type?: RuntimeRepoFileType;
+  size?: number;
+  sha?: string;
+  content?: string;
+}
 
 export interface RuntimeRepoSnapshotInput {
   repoUrl: string;
   repoBranch: string;
   repoStatus: string;
-  repoFiles: RepoFile[];
+  repoFiles: RuntimeRepoFileSnapshot[];
 }
 
-export interface RuntimeRepoSnapshotResult {
-  ok: boolean;
-  snapshot: DurableRepoSnapshot | null;
-  report: DurableRepoSnapshotValidationReport;
+export interface DurableRepoSnapshot extends RuntimeRepoSnapshotInput {
+  version: typeof RUNTIME_REPO_SNAPSHOT_VERSION;
+  savedAt: number;
+  fileCount: number;
+}
+
+export interface DurableRepoSnapshotValidationReport {
+  valid: boolean;
+  ready: boolean;
+  message: string;
+  errors: string[];
+  warnings: string[];
 }
 
 export interface RuntimeRepoSnapshotStorageStatus {
@@ -33,188 +44,134 @@ export interface RuntimeRepoSnapshotStorageStatus {
   warnings: string[];
 }
 
-export interface RuntimeRepoSnapshotHealth {
-  ok: boolean;
-  storage: RuntimeRepoSnapshotStorageStatus;
-  hasSnapshot: boolean;
-  snapshotValid: boolean;
-  report: DurableRepoSnapshotValidationReport;
-}
-
-export interface RuntimeRepoSnapshotClearResult {
-  ok: boolean;
-  report: DurableRepoSnapshotValidationReport;
-}
-
 export interface RuntimeRepoSnapshotReadyGate {
   ready: boolean;
-  result: RuntimeRepoSnapshotResult;
-  health: RuntimeRepoSnapshotHealth;
-  reason: string;
+  message: string;
+  report: DurableRepoSnapshotValidationReport;
 }
 
-const STORAGE_REQUIRED_MESSAGE = 'storage is required.';
-const NO_VALID_SNAPSHOT_MESSAGE = 'no valid durable repo snapshot found.';
-const SAVE_FAILED_MESSAGE = 'snapshot could not be saved.';
-const SAVE_VERIFY_FAILED_MESSAGE = 'snapshot was saved but verification failed.';
-const CLEAR_FAILED_MESSAGE = 'snapshot could not be cleared.';
-const RUNTIME_REPO_SNAPSHOT_STORAGE_PROBE_KEY = '__runtime_repo_snapshot_probe__';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function errorToMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
 function createReport(
   valid: boolean,
-  summary: string,
+  message: string,
   errors: string[] = [],
   warnings: string[] = [],
 ): DurableRepoSnapshotValidationReport {
   return {
     valid,
+    ready: valid && errors.length === 0,
+    message,
     errors,
     warnings,
-    summary,
   };
 }
 
-function okReport(summary: string, warnings: string[] = []): DurableRepoSnapshotValidationReport {
-  return createReport(true, summary, [], warnings);
+function okReport(message: string, warnings: string[] = []): DurableRepoSnapshotValidationReport {
+  return createReport(true, message, [], warnings);
 }
 
-function errorReport(
-  message: string,
-  warnings: string[] = [],
-): DurableRepoSnapshotValidationReport {
-  return createReport(false, message, [message], warnings);
+function errorReport(message: string, errors: string[] = [message]): DurableRepoSnapshotValidationReport {
+  return createReport(false, message, errors, []);
 }
 
-function mergeReportWarnings(
-  report: DurableRepoSnapshotValidationReport,
-  warnings: string[],
-): DurableRepoSnapshotValidationReport {
-  const mergedWarnings = [...warnings, ...report.warnings];
+function normalizeRepoFiles(files: RuntimeRepoFileSnapshot[]): RuntimeRepoFileSnapshot[] {
+  return files.map((file) => ({
+    ...file,
+    path: file.path.trim(),
+    type: file.type ?? 'unknown',
+  }));
+}
+
+export function createRuntimeRepoSnapshot(input: RuntimeRepoSnapshotInput): DurableRepoSnapshot {
+  const repoFiles = normalizeRepoFiles(input.repoFiles);
 
   return {
-    ...report,
-    warnings: Array.from(new Set(mergedWarnings)),
-  };
-}
-
-function errorToMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return 'unknown runtime repo snapshot error';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function safeTrim(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeRuntimeRepoSnapshotInput(
-  input: RuntimeRepoSnapshotInput,
-): RuntimeRepoSnapshotInput {
-  return {
+    version: RUNTIME_REPO_SNAPSHOT_VERSION,
     repoUrl: input.repoUrl.trim(),
     repoBranch: input.repoBranch.trim(),
     repoStatus: input.repoStatus.trim(),
-    repoFiles: [...input.repoFiles],
+    repoFiles,
+    savedAt: Date.now(),
+    fileCount: repoFiles.length,
   };
 }
 
-function buildInvalidResult(report: DurableRepoSnapshotValidationReport): RuntimeRepoSnapshotResult {
-  return {
-    ok: false,
-    snapshot: null,
-    report,
-  };
-}
-
-function buildValidResult(
+export function validateDurableRepoSnapshot(
   snapshot: DurableRepoSnapshot,
-  report: DurableRepoSnapshotValidationReport,
-): RuntimeRepoSnapshotResult {
-  return {
-    ok: true,
-    snapshot,
-    report,
-  };
-}
-
-function stableSerialize(value: unknown): string {
-  const seen = new WeakSet<object>();
-
-  const normalize = (input: unknown): unknown => {
-    if (input === null || input === undefined) return input;
-
-    if (typeof input !== 'object') return input;
-
-    if (seen.has(input)) return '[CIRCULAR]';
-    seen.add(input);
-
-    if (Array.isArray(input)) {
-      return input.map(normalize);
-    }
-
-    const record = input as Record<string, unknown>;
-    const sorted: Record<string, unknown> = {};
-
-    for (const key of Object.keys(record).sort()) {
-      sorted[key] = normalize(record[key]);
-    }
-
-    return sorted;
-  };
-
-  try {
-    return JSON.stringify(normalize(value));
-  } catch {
-    return '';
-  }
-}
-
-function createStorageProbeValue(): string {
-  return `runtime-probe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-export function validateRuntimeRepoSnapshotInput(
-  input: unknown,
 ): DurableRepoSnapshotValidationReport {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (!isRecord(input)) {
-    return errorReport('runtime repo snapshot input must be an object.');
+  if (snapshot.version !== RUNTIME_REPO_SNAPSHOT_VERSION) {
+    errors.push(`unsupported runtime repo snapshot version: ${String(snapshot.version)}`);
   }
 
-  const repoUrl = safeTrim(input.repoUrl);
-  const repoBranch = safeTrim(input.repoBranch);
-  const repoStatus = safeTrim(input.repoStatus);
-  const repoFiles = input.repoFiles;
+  if (!snapshot.repoUrl.trim()) errors.push('repoUrl is required.');
+  if (!snapshot.repoBranch.trim()) errors.push('repoBranch is required.');
+  if (!snapshot.repoStatus.trim()) errors.push('repoStatus is required.');
 
-  if (!repoUrl) {
-    errors.push('repoUrl is required.');
-  }
-
-  if (!repoBranch) {
-    errors.push('repoBranch is required.');
-  }
-
-  if (!repoStatus) {
-    errors.push('repoStatus is required.');
-  }
-
-  if (!Array.isArray(repoFiles)) {
+  if (!Array.isArray(snapshot.repoFiles)) {
     errors.push('repoFiles must be an array.');
-  } else if (repoFiles.length === 0) {
-    errors.push('repoFiles must contain at least one file.');
   } else {
-    const invalidFileIndex = repoFiles.findIndex((file) => !isRecord(file));
+    if (snapshot.repoFiles.length === 0) warnings.push('repoFiles is empty.');
+
+    const invalidIndex = snapshot.repoFiles.findIndex(
+      (file) => !isRecord(file) || typeof file.path !== 'string' || !file.path.trim(),
+    );
+
+    if (invalidIndex >= 0) {
+      errors.push(`repoFiles[${invalidIndex}] must include a non-empty path.`);
+    }
+  }
+
+  if (snapshot.fileCount !== snapshot.repoFiles.length) {
+    warnings.push('fileCount does not match repoFiles.length.');
+  }
+
+  try {
+    if (snapshot.repoUrl) new URL(snapshot.repoUrl);
+  } catch {
+    warnings.push('repoUrl is not a valid absolute URL.');
+  }
+
+  if (errors.length > 0) {
+    return createReport(
+      false,
+      `runtime repo snapshot invalid: ${errors.length} error(s).`,
+      errors,
+      warnings,
+    );
+  }
+
+  return okReport('runtime repo snapshot is valid.', warnings);
+}
+
+export function validateRuntimeRepoSnapshotInput(
+  input: RuntimeRepoSnapshotInput,
+): DurableRepoSnapshotValidationReport {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!input.repoUrl.trim()) errors.push('repoUrl is required.');
+  if (!input.repoBranch.trim()) errors.push('repoBranch is required.');
+  if (!input.repoStatus.trim()) errors.push('repoStatus is required.');
+
+  if (!Array.isArray(input.repoFiles)) {
+    errors.push('repoFiles must be an array.');
+  } else {
+    if (input.repoFiles.length === 0) warnings.push('repoFiles is empty.');
+
+    const invalidFileIndex = input.repoFiles.findIndex(
+      (file) => !isRecord(file) || typeof file.path !== 'string' || !file.path.trim(),
+    );
 
     if (invalidFileIndex >= 0) {
       errors.push(`repoFiles[${invalidFileIndex}] must be an object.`);
@@ -222,8 +179,8 @@ export function validateRuntimeRepoSnapshotInput(
   }
 
   try {
-    if (repoUrl) {
-      new URL(repoUrl);
+    if (input.repoUrl) {
+      new URL(input.repoUrl);
     }
   } catch {
     warnings.push('repoUrl is not a valid absolute URL.');
@@ -253,7 +210,7 @@ export function validateLoadedRuntimeRepoSnapshot(
   }
 
   try {
-    return validateDurableRepoSnapshot(snapshot as DurableRepoSnapshot);
+    return validateDurableRepoSnapshot(snapshot as unknown as DurableRepoSnapshot);
   } catch (error) {
     return errorReport(`loaded runtime repo snapshot validation failed: ${errorToMessage(error)}`);
   }
@@ -277,42 +234,31 @@ export function inspectRuntimeRepoSnapshotStorage(
     };
   }
 
-  let length: number | null = null;
   let readable = false;
   let writable = false;
   let clearable = false;
+  let length: number | null = null;
 
   try {
     length = storage.length;
     readable = true;
   } catch (error) {
-    errors.push(`storage is not readable: ${errorToMessage(error)}`);
+    errors.push(`storage length read failed: ${errorToMessage(error)}`);
   }
 
-  const probeKey = RUNTIME_REPO_SNAPSHOT_STORAGE_PROBE_KEY;
-  const probeValue = createStorageProbeValue();
+  try {
+    storage.setItem('__sovereign_runtime_probe__', '1');
+    storage.removeItem('__sovereign_runtime_probe__');
+    writable = true;
+  } catch (error) {
+    errors.push(`storage write probe failed: ${errorToMessage(error)}`);
+  }
 
   try {
-    storage.setItem(probeKey, probeValue);
-    writable = storage.getItem(probeKey) === probeValue;
-    storage.removeItem(probeKey);
-    clearable = storage.getItem(probeKey) === null;
-
-    if (!writable) {
-      errors.push('storage probe write verification failed.');
-    }
-
-    if (!clearable) {
-      warnings.push('storage probe cleanup verification failed.');
-    }
+    storage.removeItem('__sovereign_runtime_clear_probe__');
+    clearable = true;
   } catch (error) {
-    errors.push(`storage is not writable: ${errorToMessage(error)}`);
-
-    try {
-      storage.removeItem(probeKey);
-    } catch {
-      warnings.push('storage probe cleanup failed after write error.');
-    }
+    errors.push(`storage clear probe failed: ${errorToMessage(error)}`);
   }
 
   return {
@@ -326,326 +272,126 @@ export function inspectRuntimeRepoSnapshotStorage(
   };
 }
 
-export function createRuntimeRepoSnapshot(
-  input: RuntimeRepoSnapshotInput,
-): RuntimeRepoSnapshotResult {
-  const inputReport = validateRuntimeRepoSnapshotInput(input);
-
-  if (!inputReport.valid) {
-    return buildInvalidResult(inputReport);
-  }
-
-  try {
-    const normalizedInput = normalizeRuntimeRepoSnapshotInput(input);
-    const snapshot = createDurableRepoSnapshot(normalizedInput);
-    const report = mergeReportWarnings(
-      validateDurableRepoSnapshot(snapshot),
-      inputReport.warnings,
-    );
-
-    if (!report.valid) {
-      return buildInvalidResult(report);
-    }
-
-    return buildValidResult(snapshot, report);
-  } catch (error) {
-    return buildInvalidResult(
-      errorReport(`runtime repo snapshot creation failed: ${errorToMessage(error)}`),
-    );
-  }
-}
-
 export function saveRuntimeRepoSnapshot(
-  storage: Storage | null,
   input: RuntimeRepoSnapshotInput,
-): RuntimeRepoSnapshotResult {
-  const storageStatus = inspectRuntimeRepoSnapshotStorage(storage);
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
+): DurableRepoSnapshotValidationReport {
+  const inputReport = validateRuntimeRepoSnapshotInput(input);
+  if (!inputReport.valid) return inputReport;
 
-  if (!storageStatus.available) {
-    return buildInvalidResult(errorReport(STORAGE_REQUIRED_MESSAGE));
-  }
+  if (!storage) return errorReport(STORAGE_REQUIRED_MESSAGE);
 
-  if (!storageStatus.writable) {
-    return buildInvalidResult(
-      errorReport('storage is not writable.', storageStatus.errors),
-    );
-  }
-
-  const created = createRuntimeRepoSnapshot(input);
-
-  if (!created.ok || !created.snapshot) {
-    return created;
-  }
+  const snapshot = createRuntimeRepoSnapshot(input);
+  const snapshotReport = validateDurableRepoSnapshot(snapshot);
+  if (!snapshotReport.valid) return snapshotReport;
 
   try {
-    const saved = saveDurableRepoSnapshot(storage as Storage, created.snapshot);
-
-    if (!saved) {
-      return buildInvalidResult(errorReport(SAVE_FAILED_MESSAGE));
-    }
-
-    const loadedSnapshot = loadDurableRepoSnapshot(storage as Storage);
-
-    if (!loadedSnapshot) {
-      return buildInvalidResult(errorReport(SAVE_VERIFY_FAILED_MESSAGE));
-    }
-
-    const verifyReport = validateLoadedRuntimeRepoSnapshot(loadedSnapshot);
-
-    if (!verifyReport.valid) {
-      return buildInvalidResult(verifyReport);
-    }
-
-    const createdHash = stableSerialize(created.snapshot);
-    const loadedHash = stableSerialize(loadedSnapshot);
-
-    const verificationWarnings =
-      createdHash && loadedHash && createdHash !== loadedHash
-        ? ['saved snapshot differs from loaded snapshot after storage roundtrip.']
-        : [];
-
-    return buildValidResult(
-      loadedSnapshot,
-      mergeReportWarnings(verifyReport, verificationWarnings),
-    );
+    storage.setItem(RUNTIME_REPO_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    return okReport('runtime repo snapshot saved.', snapshotReport.warnings);
   } catch (error) {
-    return buildInvalidResult(
-      errorReport(`runtime repo snapshot save failed: ${errorToMessage(error)}`),
-    );
+    return errorReport(`runtime repo snapshot save failed: ${errorToMessage(error)}`);
   }
 }
 
-export function loadRuntimeRepoSnapshot(storage: Storage | null): RuntimeRepoSnapshotResult {
-  const storageStatus = inspectRuntimeRepoSnapshotStorage(storage);
-
-  if (!storageStatus.available) {
-    return buildInvalidResult(errorReport(STORAGE_REQUIRED_MESSAGE));
-  }
-
-  if (!storageStatus.readable) {
-    return buildInvalidResult(
-      errorReport('storage is not readable.', storageStatus.errors),
-    );
-  }
+export function loadRuntimeRepoSnapshot(
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
+): DurableRepoSnapshot | null {
+  if (!storage) return null;
 
   try {
-    const snapshot = loadDurableRepoSnapshot(storage as Storage);
+    const raw = storage.getItem(RUNTIME_REPO_SNAPSHOT_KEY);
+    if (!raw) return null;
 
-    if (!snapshot) {
-      return buildInvalidResult(errorReport(NO_VALID_SNAPSHOT_MESSAGE));
-    }
+    const parsed = JSON.parse(raw) as unknown;
+    const report = validateLoadedRuntimeRepoSnapshot(parsed);
 
-    const report = validateLoadedRuntimeRepoSnapshot(snapshot);
+    return report.valid ? (parsed as DurableRepoSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
 
-    if (!report.valid) {
-      return buildInvalidResult(report);
-    }
+export function clearRuntimeRepoSnapshot(
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
+): boolean {
+  if (!storage) return false;
 
-    return buildValidResult(snapshot, report);
-  } catch (error) {
-    return buildInvalidResult(
-      errorReport(`runtime repo snapshot load failed: ${errorToMessage(error)}`),
-    );
+  try {
+    storage.removeItem(RUNTIME_REPO_SNAPSHOT_KEY);
+    return true;
+  } catch {
+    return false;
   }
 }
 
 export function clearRuntimeRepoSnapshotResult(
-  storage: Storage | null,
-): RuntimeRepoSnapshotClearResult {
-  const storageStatus = inspectRuntimeRepoSnapshotStorage(storage);
-
-  if (!storageStatus.available) {
-    return {
-      ok: false,
-      report: errorReport(STORAGE_REQUIRED_MESSAGE),
-    };
-  }
-
-  if (!storageStatus.writable) {
-    return {
-      ok: false,
-      report: errorReport('storage is not writable.', storageStatus.errors),
-    };
-  }
-
-  try {
-    clearDurableRepoSnapshot(storage as Storage);
-
-    const loaded = loadDurableRepoSnapshot(storage as Storage);
-
-    if (loaded) {
-      return {
-        ok: false,
-        report: errorReport(CLEAR_FAILED_MESSAGE),
-      };
-    }
-
-    return {
-      ok: true,
-      report: okReport('runtime repo snapshot cleared.'),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      report: errorReport(`runtime repo snapshot clear failed: ${errorToMessage(error)}`),
-    };
-  }
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
+): DurableRepoSnapshotValidationReport {
+  return clearRuntimeRepoSnapshot(storage)
+    ? okReport('runtime repo snapshot cleared.')
+    : errorReport('runtime repo snapshot clear failed.');
 }
 
-export function clearRuntimeRepoSnapshot(storage: Storage | null): boolean {
-  return clearRuntimeRepoSnapshotResult(storage).ok;
-}
-
-export function hasRuntimeRepoSnapshot(storage: Storage | null): boolean {
-  return loadRuntimeRepoSnapshot(storage).ok;
-}
-
-export function getRuntimeRepoSnapshotHealth(storage: Storage | null): RuntimeRepoSnapshotHealth {
-  const storageStatus = inspectRuntimeRepoSnapshotStorage(storage);
-
-  if (!storageStatus.available) {
-    return {
-      ok: false,
-      storage: storageStatus,
-      hasSnapshot: false,
-      snapshotValid: false,
-      report: errorReport(STORAGE_REQUIRED_MESSAGE),
-    };
-  }
-
-  if (!storageStatus.readable) {
-    return {
-      ok: false,
-      storage: storageStatus,
-      hasSnapshot: false,
-      snapshotValid: false,
-      report: errorReport('storage is not readable.', storageStatus.errors),
-    };
-  }
-
-  try {
-    const snapshot = loadDurableRepoSnapshot(storage as Storage);
-
-    if (!snapshot) {
-      return {
-        ok: false,
-        storage: storageStatus,
-        hasSnapshot: false,
-        snapshotValid: false,
-        report: errorReport(NO_VALID_SNAPSHOT_MESSAGE),
-      };
-    }
-
-    const report = validateLoadedRuntimeRepoSnapshot(snapshot);
-
-    return {
-      ok: report.valid,
-      storage: storageStatus,
-      hasSnapshot: true,
-      snapshotValid: report.valid,
-      report,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      storage: storageStatus,
-      hasSnapshot: false,
-      snapshotValid: false,
-      report: errorReport(`runtime repo snapshot health check failed: ${errorToMessage(error)}`),
-    };
-  }
+export function hasRuntimeRepoSnapshot(
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
+): boolean {
+  return loadRuntimeRepoSnapshot(storage) !== null;
 }
 
 export function getRuntimeRepoSnapshotReadyGate(
-  storage: Storage | null,
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
 ): RuntimeRepoSnapshotReadyGate {
-  const result = loadRuntimeRepoSnapshot(storage);
-  const health = getRuntimeRepoSnapshotHealth(storage);
-
-  if (!health.storage.available) {
-    return {
-      ready: false,
-      result,
-      health,
-      reason: STORAGE_REQUIRED_MESSAGE,
-    };
-  }
-
-  if (!health.storage.readable) {
-    return {
-      ready: false,
-      result,
-      health,
-      reason: 'storage is not readable.',
-    };
-  }
-
-  if (!health.hasSnapshot) {
-    return {
-      ready: false,
-      result,
-      health,
-      reason: NO_VALID_SNAPSHOT_MESSAGE,
-    };
-  }
-
-  if (!health.snapshotValid) {
-    return {
-      ready: false,
-      result,
-      health,
-      reason: health.report.summary,
-    };
-  }
+  const snapshot = loadRuntimeRepoSnapshot(storage);
+  const report = validateLoadedRuntimeRepoSnapshot(snapshot);
 
   return {
-    ready: true,
-    result,
-    health,
-    reason: 'runtime repo snapshot ready.',
+    ready: report.ready,
+    message: report.message,
+    report,
   };
 }
 
-export function assertRuntimeRepoSnapshotReady(storage: Storage | null): RuntimeRepoSnapshotResult {
-  const gate = getRuntimeRepoSnapshotReadyGate(storage);
+export function assertRuntimeRepoSnapshotReady(
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
+): DurableRepoSnapshot {
+  const snapshot = loadRuntimeRepoSnapshot(storage);
+  const report = validateLoadedRuntimeRepoSnapshot(snapshot);
 
-  if (!gate.ready) {
-    return buildInvalidResult(gate.health.report);
+  if (!snapshot || !report.ready) {
+    throw new Error(report.message);
   }
 
-  return gate.result;
+  return snapshot;
 }
 
-/**
- * In-memory Storage implementation for deterministic runtime tests,
- * isolated workbenches, Android WebView fallback checks, and sandbox flows.
- */
-export function createRuntimeMemoryStorage(seed: Record<string, string> = {}): Storage {
-  const map = new Map<string, string>(Object.entries(seed));
+export function getRuntimeRepoSnapshotHealth(
+  storage: Storage | null = typeof window === 'undefined' ? null : window.localStorage,
+): DurableRepoSnapshotValidationReport {
+  const snapshot = loadRuntimeRepoSnapshot(storage);
+  return validateLoadedRuntimeRepoSnapshot(snapshot);
+}
+
+export function createRuntimeMemoryStorage(): Storage {
+  const values = new Map<string, string>();
 
   return {
-    get length() {
-      return map.size;
+    get length(): number {
+      return values.size;
     },
-
-    clear() {
-      map.clear();
+    clear(): void {
+      values.clear();
     },
-
-    getItem(key: string) {
-      return map.has(key) ? map.get(key) ?? null : null;
+    getItem(key: string): string | null {
+      return values.get(key) ?? null;
     },
-
-    key(index: number) {
-      return Array.from(map.keys())[index] ?? null;
+    key(index: number): string | null {
+      return Array.from(values.keys())[index] ?? null;
     },
-
-    removeItem(key: string) {
-      map.delete(key);
+    removeItem(key: string): void {
+      values.delete(key);
     },
-
-    setItem(key: string, value: string) {
-      map.set(String(key), String(value));
+    setItem(key: string, value: string): void {
+      values.set(key, value);
     },
   };
-      }
+}
