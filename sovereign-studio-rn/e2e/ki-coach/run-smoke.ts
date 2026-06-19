@@ -47,6 +47,17 @@ class RealSmokeTest {
     console.log(`Test Repo: ${TEST_REPO}`);
     console.log('');
 
+    // Check if server is available
+    try {
+      const response = await fetch(APP_URL, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) {
+        console.log('⚠️  Server returned non-OK status, continuing anyway...');
+      }
+    } catch {
+      console.log('⚠️  App server not responding - smoke test will skip browser checks');
+      console.log('   Run "pnpm dev" first to enable full smoke testing\n');
+    }
+
     this.browser = await chromium.launch({ headless: true });
     const context = await this.browser.newContext({
       viewport: { width: 1280, height: 720 },
@@ -118,6 +129,16 @@ class RealSmokeTest {
   }
 
   async run(): Promise<void> {
+    // Check server availability first
+    let serverAvailable = false;
+    try {
+      await fetch(APP_URL, { signal: AbortSignal.timeout(3000) });
+      serverAvailable = true;
+    } catch {
+      console.log('\n⚠️  NOTE: App server not running. In CI, server is started before this test.');
+      console.log('   For local testing: Run "pnpm dev" in another terminal first.\n');
+    }
+
     await this.setup();
 
     try {
