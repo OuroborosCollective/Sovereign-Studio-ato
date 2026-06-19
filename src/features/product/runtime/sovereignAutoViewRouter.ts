@@ -117,20 +117,26 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
       tab = 'diff';
       reason = 'Green workflow with diff sources loaded - show the diff.';
     } else {
-      tab = 'diff';
-      reason = 'Green workflow with generated package - show diff view.';
+      tab = 'files';
+      reason = 'Green workflow with generated package - show files view.';
     }
   } else if (input.hasPackage && input.hasDiffSources && input.workflowStatus === 'idle') {
     // Package + Diff + kein Workflow = Diff anschauen
     tab = 'diff';
     reason = 'Package ready with diff sources - review the generated diff.';
   } else if (input.hasPackage && input.mode !== 'manual') {
+    // Auto mode: Package bereit -> Files
     tab = 'files';
     reason = 'Auto mode generated package is ready for review.';
-  } else if (input.hasPackage && input.workflowStatus === 'idle') {
-    // Package da aber noch kein Workflow gestartet
-    tab = 'workflow';
-    reason = 'Package ready - start workflow to validate.';
+  } else if (input.hasPackage && input.workflowStatus === 'idle' && input.mode === 'manual') {
+    // Manual mode: Package da, user darf selbst entscheiden wo sie sind
+    // Nur zu workflow wechseln wenn sie auf Haupt-Tabs sind
+    const userTabs = ['repo', 'builder', 'files', 'diff', 'workflow', 'repair'];
+    if (userTabs.includes(input.activeTab)) {
+      tab = 'workflow';
+      reason = 'Package ready in manual mode - you can start workflow from here.';
+    }
+    // Wenn user auf side tab (memory, remote, telemetry, etc.), bleib dort
   } else if (input.hasActivePatterns && input.hasPackage) {
     // Patterns verfügbar + Package = Memory anschauen
     tab = 'memory';
