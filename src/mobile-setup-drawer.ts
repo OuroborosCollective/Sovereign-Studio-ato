@@ -33,9 +33,10 @@ function readDraft(): SetupDraft {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return { repoUrl: '', accessValue: '' };
     const parsed = JSON.parse(raw) as Partial<SetupDraft>;
+    // Never restore private access values for security - always use empty
     return {
       repoUrl: typeof parsed.repoUrl === 'string' ? normalize(parsed.repoUrl) : '',
-      accessValue: typeof parsed.accessValue === 'string' ? parsed.accessValue.trim() : '',
+      accessValue: '',
     };
   } catch {
     return { repoUrl: '', accessValue: '' };
@@ -44,9 +45,10 @@ function readDraft(): SetupDraft {
 
 function writeDraft(draft: SetupDraft): void {
   try {
+    // Never persist private access values to localStorage for security
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ repoUrl: normalize(draft.repoUrl), accessValue: draft.accessValue.trim() }),
+      JSON.stringify({ repoUrl: normalize(draft.repoUrl) }),
     );
   } catch {
     // Optional local helper only.
@@ -111,6 +113,17 @@ function watchRepoLoadOutcome(detail: MobileRepoSetupDetail, attempt = 0): void 
     return;
   }
   if (attempt < 22) window.setTimeout(() => watchRepoLoadOutcome(detail, attempt + 1), 260 + attempt * 120);
+}
+
+function isValidRepoUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, attempt = 0): void {
@@ -232,7 +245,20 @@ function renderDrawer(): void {
   saveButton.addEventListener('click', () => {
     const repo = panel.querySelector<HTMLInputElement>('[data-field="repoUrl"]');
     const access = panel.querySelector<HTMLInputElement>('[data-field="accessValue"]');
-    const next = { repoUrl: normalize(repo?.value ?? ''), accessValue: access?.value.trim() ?? '' };
+    const repoUrl = normalize(repo?.value ?? '');
+    const accessValue = access?.value.trim() ?? '';
+
+    // Validate URL before proceeding
+    if (!repoUrl) {
+      setStatus('GitHub Repository URL fehlt.', 'failed');
+      return;
+    }
+    if (!isValidRepoUrl(repoUrl)) {
+      setStatus('GitHub Repository URL ist ungueltig.', 'failed');
+      return;
+    }
+
+    const next = { repoUrl, accessValue };
     const detail = createMobileRepoSetupDetail({ ...next, autoLoad: true });
     writeDraft(next);
     setStatus('Repo setup submitted.', 'submitted');

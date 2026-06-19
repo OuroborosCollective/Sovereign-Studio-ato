@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
-/* Android phones, foldables and tablets only */
+/* Release shell */
+/* Container runtime */
+/* Signed Android artifacts */
 
 @theme {
   --color-primary: var(--color-indigo-600);

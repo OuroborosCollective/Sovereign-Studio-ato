@@ -954,7 +954,7 @@ export class RuntimeIntelligence {
     this.telemetry = config.telemetry ?? globalTelemetry;
     this.traceIdProvider = config.traceIdProvider ?? defaultTraceIdProvider;
     this.maxVisibleTextLength = Math.max(
-      1000,
+      1,
       config.maxVisibleTextLength ?? DEFAULT_MAX_VISIBLE_TEXT_LENGTH,
     );
     this.guardTimeoutMs = Math.max(1, config.guardTimeoutMs ?? DEFAULT_GUARD_TIMEOUT_MS);

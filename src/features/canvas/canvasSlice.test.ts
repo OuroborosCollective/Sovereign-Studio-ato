@@ -248,10 +248,28 @@ describe('canvasSlice reducers', () => {
 
   describe('selectObjects', () => {
     it('should update selectedIds', () => {
-      const state = { ...initialState, selectedIds: ['1'] };
+      const state: CanvasState = {
+        ...initialState,
+        objects: [
+          createMockObject('2', 0),
+          createMockObject('3', 1),
+        ],
+        selectedIds: ['1'],
+      };
       const action = selectObjects(['2', '3']);
       const nextState = reducer(state, action);
       expect(nextState.selectedIds).toEqual(['2', '3']);
+    });
+
+    it('should filter out non-existent object ids', () => {
+      const state: CanvasState = {
+        ...initialState,
+        objects: [createMockObject('1', 0)],
+        selectedIds: [],
+      };
+      const action = selectObjects(['1', 'nonexistent']);
+      const nextState = reducer(state, action);
+      expect(nextState.selectedIds).toEqual(['1']);
     });
   });
 
