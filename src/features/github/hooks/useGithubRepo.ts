@@ -3,6 +3,12 @@ import { buildGitHubHeaders, stripTokenFromText } from '../githubAuthSession';
 import { RepoFile } from '../types';
 import { parseGithubRepoUrl } from '../utils';
 
+export interface LoadRepoTreeOptions {
+  repoUrl?: string;
+  repoBranch?: string;
+  githubToken?: string;
+}
+
 export const useGithubRepo = () => {
   const [repoUrl, setRepoUrl] = useState('');
   const [repoBranch, setRepoBranch] = useState('');
@@ -28,8 +34,16 @@ export const useGithubRepo = () => {
     setRepoStatus('Noch kein echtes Repo geladen.');
   };
 
-  const loadRepoTree = async () => {
-    const parsed = parseGithubRepoUrl(repoUrl);
+  const loadRepoTree = async (options: LoadRepoTreeOptions = {}) => {
+    const nextRepoUrl = (options.repoUrl ?? repoUrl).trim();
+    const nextRepoBranch = (options.repoBranch ?? repoBranch).trim();
+    const nextGithubToken = options.githubToken ?? githubToken;
+
+    if (options.repoUrl !== undefined) setRepoUrl(nextRepoUrl);
+    if (options.repoBranch !== undefined) setRepoBranch(nextRepoBranch);
+    if (options.githubToken !== undefined) setGithubToken(nextGithubToken);
+
+    const parsed = parseGithubRepoUrl(nextRepoUrl);
 
     if (!parsed) {
       setRepoStatus('Ungültige GitHub URL');
@@ -41,7 +55,7 @@ export const useGithubRepo = () => {
     setRepoStatus(`Lade ${parsed.owner}/${parsed.repo}...`);
 
     try {
-      const headers = buildGitHubHeaders({ token: githubToken });
+      const headers = buildGitHubHeaders({ token: nextGithubToken });
 
       const repoResponse = await fetch(
         `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`,
@@ -62,7 +76,7 @@ export const useGithubRepo = () => {
       const defaultBranch = typeof repoData.default_branch === 'string' && repoData.default_branch.trim()
         ? repoData.default_branch.trim()
         : 'main';
-      const branchToLoad = repoBranch.trim() || defaultBranch;
+      const branchToLoad = nextRepoBranch || defaultBranch;
 
       let response = await fetch(
         `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(branchToLoad)}?recursive=1`,
@@ -107,7 +121,7 @@ export const useGithubRepo = () => {
       console.error(err);
       setRepoFiles([]);
       const message = err instanceof Error ? err.message : 'Fehler beim Laden des Repos';
-      setRepoStatus(stripTokenFromText(message, githubToken));
+      setRepoStatus(stripTokenFromText(message, nextGithubToken));
     } finally {
       setIsRepoBusy(false);
     }
