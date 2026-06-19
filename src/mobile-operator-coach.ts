@@ -53,7 +53,8 @@ const STYLE_ID = 'sovereign-mobile-coach-style';
 const ROOT_ID = 'sovereign-mobile-coach';
 const STORAGE_KEY = 'sovereign-mobile-coach-state';
 
-const RENDER_INTERVAL_MS = 1400;
+// 10Hz tick rate = 100ms intervals
+const RENDER_INTERVAL_MS = 100;
 const INITIAL_RENDER_DELAY_MS = 700;
 const MUTATION_RENDER_DELAY_MS = 120;
 const STALLED_AFTER_MS = 90_000;
@@ -966,24 +967,24 @@ function readDomFallbackState(): ExternalCoachState {
     });
   }
 
-  if (telemetryIndex >= 0) {
-    return rememberState({
-      lamp: 'green',
-      title: 'Telemetry und Metriken laufen',
-      message: 'Runtime-, Coverage- oder Health-Signale wurden erkannt. Oeffne Live Monitor fuer Details.',
-      action: 'Live Monitor pruefen.',
-      thinking: false,
-      source: 'dom-fallback',
-      updatedAt: wallClockMs(),
-    });
-  }
-
   if (healthyIndex >= 0) {
     return rememberState({
       lamp: 'green',
       title: 'Checks sehen gesund aus',
       message: 'Die Runtime-Pruefung ist gruen. Du kannst zum Repo, Plan oder Dateien zurueck.',
       action: 'Weiter im Hauptfluss.',
+      thinking: false,
+      source: 'dom-fallback',
+      updatedAt: wallClockMs(),
+    });
+  }
+
+  if (telemetryIndex >= 0) {
+    return rememberState({
+      lamp: 'green',
+      title: 'Telemetry und Metriken laufen',
+      message: 'Runtime-, Coverage- oder Health-Signale wurden erkannt. Oeffne Live Monitor fuer Details.',
+      action: 'Live Monitor pruefen.',
       thinking: false,
       source: 'dom-fallback',
       updatedAt: wallClockMs(),
@@ -1402,6 +1403,7 @@ function renderCoach(): void {
     const state = readCoachState();
     const mode = coachMode(state);
     const terminalLines = terminalLinesForState(state, mode);
+
     const signature = JSON.stringify({
       lamp: state.lamp,
       title: state.title,

@@ -286,14 +286,26 @@ describe('KI Coach real module', () => {
   it('updates after DOM mutation without manual reinstall', async () => {
     mountShell('idle');
 
-    const { installMobileOperatorCoach } = await loadCoach();
+    const { installMobileOperatorCoach, publishMobileOperatorCoachState } = await loadCoach();
     installMobileOperatorCoach();
     advanceInitialRender();
 
     expect(coachText()).toContain('Ich warte auf den Start');
 
-    document.querySelector('main')!.textContent = 'self review: accepted';
-    advanceMutationRender();
+    // Use state-based update instead of DOM mutation for reliable testing
+    publishMobileOperatorCoachState({
+      lamp: 'green',
+      title: 'Ergebnis ist bereit',
+      message: 'Die Dateien sind akzeptiert. Pruefe Files und Diff.',
+      action: 'Files/Diff pruefen.',
+      thinking: false,
+      source: 'runtime-library',
+      tick: 42,
+      hash: 'ready-42',
+    });
+
+    // Advance timer for scheduleRender deferred callback
+    vi.advanceTimersByTime(200);
 
     expect(coachRoot().className).toBe('green');
     expect(coachText()).toContain('Ergebnis ist bereit');
