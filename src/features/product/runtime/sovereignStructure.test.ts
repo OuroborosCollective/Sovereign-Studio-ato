@@ -47,7 +47,10 @@ import {
   assertGeneratedPackageReady,
   getRepoSnapshotStatus,
 } from './sovereignFunctionalGuards';
-import { buildSovereignPackageFromRepoFiles } from './sovereignPackageFromRepoFiles';
+import {
+  buildSovereignPackageFromRepoFiles,
+  summarizeSovereignPackage,
+} from './sovereignPackageFromRepoFiles';
 import {
   createSessionMemorySnapshot,
   parseSessionMemory,
@@ -90,10 +93,10 @@ describe('sovereign runtime structure', () => {
     expect(sequential.steps['repo-load'].status).toBe('completed');
     expect(sequential.steps['package-build'].status).toBe('completed');
 
-    const auth = createGitHubAuthSession(' ghp_demo_token ');
+    const auth = createGitHubAuthSession(' demo_token ');
     expect(auth.hasToken).toBe(true);
     expect(auth.redactedToken).not.toContain('demo_token');
-    expect((buildGitHubHeaders({ token: auth.token }) as Record<string, string>).Authorization).toBe('Bearer ghp_demo_token');
+    expect((buildGitHubHeaders({ token: auth.token }) as Record<string, string>).Authorization).toBe('Bearer demo_token');
 
     const signals = buildRepoSignalsFromFiles('https://github.com/OuroborosCollective/Sovereign-Studio-ato', repoFiles);
     const report = evaluateRepoReadiness(signals);
@@ -180,23 +183,29 @@ describe('sovereign runtime structure', () => {
 
     const health = buildSovereignHealthReport({
       repoFiles,
-      package: pkg,
-      generatedReview: fileReview,
-      workflow,
-      learning,
+      generatedFileReview: fileReview,
+      workflowWatch: workflow,
       telemetry,
     });
-    expect(health.overall).toBe('green');
+    expect(health.status).toBe('green');
 
-    const coverage = buildRuntimeValidationCoverageReport(repoFiles, pkg.files.map((file) => file.path));
-    expect(coverage.score).toBeGreaterThan(0);
+    const coverage = buildRuntimeValidationCoverageReport();
+    expect(coverage.covered).toBeGreaterThan(0);
+    expect(coverage.healthy).toBe(true);
     expect(() => assertRuntimeValidationCoverageHealthy(coverage)).not.toThrow();
 
-    const headers = buildGitHubHeaders({ token: auth.token });
-    expect(headers.Authorization).toBe('Bearer ghp_demo_token');
-    const branch = buildSovereignBranchName('runtime structure');
+    const headers = buildGitHubHeaders({ token: auth.token }) as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer demo_token');
+
+    const branch = buildSovereignBranchName(
+      'sovereign/package',
+      'runtime structure',
+      pkg.files,
+      'test',
+    );
     expect(branch).toContain('sovereign/package');
-    expect(validatePublishableFiles(pkg.files).ok).toBe(true);
+
+    expect(validatePublishableFiles(pkg.files)).toHaveLength(pkg.files.length);
 
     const session = createSessionMemorySnapshot({
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
@@ -208,6 +217,6 @@ describe('sovereign runtime structure', () => {
       sovereignPreview: pkg.files.map((file) => `${file.path}\n${file.content}`).join('\n---\n'),
     });
     expect(parseSessionMemory(serializeSessionMemory(session))?.repoFiles).toHaveLength(repoFiles.length);
-    expect(DEFAULT_TOOL_PROGRESS_RAIL.nodes.length).toBeGreaterThan(3);
+    expect(DEFAULT_TOOL_PROGRESS_RAIL.length).toBeGreaterThan(3);
   });
 });
