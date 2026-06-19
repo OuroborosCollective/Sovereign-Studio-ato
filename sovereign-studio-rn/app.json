@@ -20,7 +20,9 @@
       "bundleIdentifier": "com.arestudio.nocode.aab"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
