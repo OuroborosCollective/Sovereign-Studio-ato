@@ -1,4 +1,11 @@
 import { useState } from 'react';
+import {
+  clearDurableRepoSnapshot,
+  createDurableRepoSnapshot,
+  loadDurableRepoSnapshot,
+  saveDurableRepoSnapshot,
+  type DurableRepoSnapshot,
+} from '../repoSnapshotPersistence';
 import { buildGitHubHeaders, stripTokenFromText } from '../githubAuthSession';
 import { RepoFile } from '../types';
 import { parseGithubRepoUrl } from '../utils';
@@ -9,12 +16,23 @@ export interface LoadRepoTreeOptions {
   githubToken?: string;
 }
 
+function readInitialSnapshot(): DurableRepoSnapshot | null {
+  if (typeof window === 'undefined') return null;
+  return loadDurableRepoSnapshot(window.localStorage);
+}
+
+function persistSnapshot(input: { repoUrl: string; repoBranch: string; repoStatus: string; repoFiles: RepoFile[] }): void {
+  if (typeof window === 'undefined') return;
+  saveDurableRepoSnapshot(window.localStorage, createDurableRepoSnapshot(input));
+}
+
 export const useGithubRepo = () => {
-  const [repoUrl, setRepoUrl] = useState('');
-  const [repoBranch, setRepoBranch] = useState('');
+  const [initialSnapshot] = useState(readInitialSnapshot);
+  const [repoUrl, setRepoUrl] = useState(initialSnapshot?.repoUrl ?? '');
+  const [repoBranch, setRepoBranch] = useState(initialSnapshot?.repoBranch ?? '');
   const [githubToken, setGithubToken] = useState('');
-  const [repoFiles, setRepoFiles] = useState<RepoFile[]>([]);
-  const [repoStatus, setRepoStatus] = useState('Noch kein echtes Repo geladen.');
+  const [repoFiles, setRepoFiles] = useState<RepoFile[]>(initialSnapshot?.repoFiles ?? []);
+  const [repoStatus, setRepoStatus] = useState(initialSnapshot ? `${initialSnapshot.repoStatus} [durable restored]` : 'Noch kein echtes Repo geladen.');
   const [isRepoBusy, setIsRepoBusy] = useState(false);
 
   const restoreRepoSnapshot = (next: {
@@ -23,15 +41,19 @@ export const useGithubRepo = () => {
     repoStatus: string;
     repoFiles: RepoFile[];
   }) => {
+    const safeFiles = next.repoFiles.filter((file) => file.type === 'blob' || file.type === 'tree').slice(0, 500);
+    const nextStatus = `${next.repoStatus} [session restored]`;
     setRepoUrl(next.repoUrl);
     setRepoBranch(next.repoBranch);
-    setRepoStatus(`${next.repoStatus} [session restored]`);
-    setRepoFiles(next.repoFiles.filter((file) => file.type === 'blob' || file.type === 'tree').slice(0, 500));
+    setRepoStatus(nextStatus);
+    setRepoFiles(safeFiles);
+    persistSnapshot({ repoUrl: next.repoUrl, repoBranch: next.repoBranch, repoStatus: nextStatus, repoFiles: safeFiles });
   };
 
   const clearRepoSnapshot = () => {
     setRepoFiles([]);
     setRepoStatus('Noch kein echtes Repo geladen.');
+    if (typeof window !== 'undefined') clearDurableRepoSnapshot(window.localStorage);
   };
 
   const loadRepoTree = async (options: LoadRepoTreeOptions = {}) => {
@@ -113,9 +135,11 @@ export const useGithubRepo = () => {
         }
       }
 
+      const nextStatus = `${files.length} echte Repo-Einträge geladen (${branchToLoad})`;
       setRepoFiles(files);
       setRepoBranch(branchToLoad);
-      setRepoStatus(`${files.length} echte Repo-Einträge geladen (${branchToLoad})`);
+      setRepoStatus(nextStatus);
+      persistSnapshot({ repoUrl: nextRepoUrl, repoBranch: branchToLoad, repoStatus: nextStatus, repoFiles: files });
       console.log(`Repo geladen: ${parsed.owner}/${parsed.repo}`);
     } catch (err) {
       console.error(err);
