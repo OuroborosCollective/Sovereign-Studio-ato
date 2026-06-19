@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
 
@@ -59,6 +59,11 @@ export const MainContent: React.FC<MainContentProps> = ({
       blocked: 'Ich komme alleine nicht weiter. Bitte eingreifen.'
     } satisfies Record<PipelineState, string>)[pipelineState];
   const derivedProgress = progress ?? ({ idle: 0, planning: 10, generating: 25, validating: 45, failed: 60, fixing: 70, revalidating: 88, green: 100, blocked: 65 } satisfies Record<PipelineState, number>)[pipelineState];
+
+  // Performance: Memoize line-numbered code formatting to prevent expensive processing on every re-render
+  const formattedCode = useMemo(() => {
+    return currentCode.split('\n').map((line, index) => `${String(index + 1).padStart(3, ' ')} │ ${line}`).join('\n');
+  }, [currentCode]);
 
   const handleChatSubmit = () => {
     if (green) {
@@ -159,7 +164,7 @@ export const MainContent: React.FC<MainContentProps> = ({
             <span className="w-2.5 h-2.5 rounded-full bg-green-500"/>
             <span className="ml-2">Matrix File Editor · {derivedWorking ? 'arbeitet...' : approvalConfirmed ? 'freigegeben' : 'bereit'}</span>
           </div>
-          <div className="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre leading-relaxed">{currentCode.split('\n').map((line, index) => `${String(index + 1).padStart(3, ' ')} │ ${line}`).join('\n')}</div>
+          <div className="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre leading-relaxed">{formattedCode}</div>
         </div>
 
         {workView === 'pipeline' && (
