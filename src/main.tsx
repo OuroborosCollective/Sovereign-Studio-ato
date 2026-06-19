@@ -7,6 +7,7 @@ import { installMobileOperatorCoach } from './mobile-operator-coach';
 import { installMobileMoreMenu } from './mobile-more-menu';
 import { installMobileSetupDrawer } from './mobile-setup-drawer';
 import { installMobileWorkbenchConsole } from './mobile-workbench-console';
+import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import './runtime-adapter';
 import './index.css';
 
@@ -34,6 +35,7 @@ type MobileWindow = Window &
     cancelIdleCallback?: (handle: number) => void;
     __sovereignViewportRuntimeInstalled?: boolean;
     __sovereignMobileRuntimeInstalled?: boolean;
+    __sovereignCodeWorkspacePersistenceInstalled?: boolean;
   };
 
 const VIEW_CLASSES = [
@@ -138,6 +140,32 @@ function installMobileRuntimeModules(): void {
   installMobileWorkbenchConsole();
 }
 
+function installCodeWorkspacePersistenceRuntime(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  const mobileWindow = window as MobileWindow;
+  if (mobileWindow.__sovereignCodeWorkspacePersistenceInstalled) return;
+  mobileWindow.__sovereignCodeWorkspacePersistenceInstalled = true;
+
+  void restoreCanvasStateMirror({
+    dispatch: true,
+    clearInvalid: true,
+  });
+
+  const flushWorkspace = (): void => {
+    void flushCanvasStateMirror();
+  };
+
+  window.addEventListener('pagehide', flushWorkspace, { passive: true });
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      if (document.visibilityState === 'hidden') flushWorkspace();
+    },
+    { passive: true },
+  );
+}
+
 function initPostHog(): void {
   const posthogKey = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
   const posthogHost = (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ?? 'https://eu.i.posthog.com';
@@ -195,6 +223,7 @@ function bootApp(): void {
 installIdleCallbackFallback();
 installViewportRuntime();
 installMobileRuntimeModules();
+installCodeWorkspacePersistenceRuntime();
 initPostHog();
 initGoogleAuth();
 bootApp();
