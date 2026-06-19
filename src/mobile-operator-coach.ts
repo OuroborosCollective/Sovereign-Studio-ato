@@ -35,7 +35,6 @@ type CoachWindow = Window &
     __sovereignMobileCoachInterval?: number;
     __sovereignMobileCoachObserver?: MutationObserver;
     __sovereignMobileCoachRenderTimer?: number;
-    __sovereignMobileCoachEventInstalled?: boolean;
     __sovereignMobileCoachState?: ExternalCoachState;
     __sovereignCoachState?: ExternalCoachState;
     __sovereignRuntimeCoachState?: ExternalCoachState;
@@ -63,7 +62,6 @@ const EMPTY_SOURCE_HOLD_MS = 8_000;
 const MAX_TEXT_NODES = 500;
 const MAX_ATTRIBUTE_NODES = 500;
 const MAX_SIGNAL_CHARS = 50_000;
-const MAX_TERMINAL_LINES = 6;
 
 const SHOW_TEXT = 4;
 const FILTER_ACCEPT = 1;
@@ -182,7 +180,6 @@ const TELEMETRY_TOKENS = [
   'metrics',
   'metriken',
   'runtime metrics',
-  'live monitor',
   'health snapshot',
   'coverage',
 ];
@@ -239,23 +236,13 @@ const REAL_STOPPER_TOKENS = [
   'error:',
 ];
 
-const MIMU_SMILEYS = [
-  '_@=@_',
-  '○¤○',
-  '^-_-^',
-  '[>->_]',
-  ',.;@-@;.,',
-  '⌐■_■',
-  '｡◕‿◕｡',
-  '(-.-)zz',
-  'づ｡◕‿‿◕｡づ',
-  'ʕ•ᴥ•ʔ',
-];
+const MIMU_SMILEYS = ['_@=@_', '○¤○', '^-_-^', '[>->_]', ',.;@-@;.,', '｡◕‿◕｡'];
 
 let lastSignalHash = 0;
 let lastSignalChangeAt = 0;
 let lastValidState: ExternalCoachState | null = null;
 let lastValidStateAt = 0;
+let eventBridgeInstalled = false;
 
 function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -266,7 +253,14 @@ function wallClockMs(): number {
 }
 
 function normalizeText(value: string): string {
-  return value.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/\s+/g, ' ').trim();
+  return value
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function toText(value: unknown): string {
@@ -664,7 +658,7 @@ function rememberState(state: ExternalCoachState): ExternalCoachState {
 function shouldAcceptIncomingState(incoming: ExternalCoachState, current: ExternalCoachState | null): boolean {
   if (!current) return true;
   if (incoming.lamp === 'red') return true;
-  if (current.lamp === 'red' && incoming.lamp !== 'red' && incoming.thinking) return false;
+  if (current.lamp === 'red' && incoming.thinking) return false;
 
   if (
     incoming.tick !== undefined &&
@@ -1068,7 +1062,6 @@ function installStyle(): void {
       background: radial-gradient(circle at 35% 25%, rgba(103,232,249,.28), rgba(8,47,73,.78));
       font-size: 1.45rem;
       flex: 0 0 auto;
-      box-shadow: inset 0 0 1.1rem rgba(34,211,238,.14), 0 0 1rem rgba(34,211,238,.08);
     }
 
     #${ROOT_ID} .coach-lamp {
@@ -1120,14 +1113,11 @@ function installStyle(): void {
       overflow: hidden;
       border: 1px solid rgba(34,211,238,.22);
       border-radius: .95rem;
-      background:
-        linear-gradient(180deg, rgba(0,0,0,.92), rgba(2,6,23,.96)),
-        radial-gradient(circle at 15% 0%, rgba(34,211,238,.16), transparent 35%);
+      background: linear-gradient(180deg, rgba(0,0,0,.92), rgba(2,6,23,.96));
       padding: .78rem;
       color: #67e8f9;
       font: 800 .72rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
       word-break: break-word;
-      box-shadow: inset 0 0 1.2rem rgba(34,211,238,.08);
     }
 
     #${ROOT_ID} .terminal-line {
@@ -1136,30 +1126,12 @@ function installStyle(): void {
       opacity: .94;
     }
 
-    #${ROOT_ID} .terminal-line + .terminal-line {
-      margin-top: .22rem;
-    }
-
     #${ROOT_ID} .terminal-face {
       color: #f0abfc;
     }
 
     #${ROOT_ID} .terminal-dim {
       color: #94a3b8;
-    }
-
-    #${ROOT_ID} .prompt {
-      color: #a7f3d0;
-    }
-
-    #${ROOT_ID}.red .coach-terminal {
-      border-color: rgba(251,113,133,.3);
-      color: #fecdd3;
-    }
-
-    #${ROOT_ID}.yellow .coach-terminal {
-      border-color: rgba(251,191,36,.28);
-      color: #fde68a;
     }
 
     #${ROOT_ID} .coach-buttons {
@@ -1179,10 +1151,6 @@ function installStyle(): void {
       font-weight: 850;
       cursor: pointer;
       touch-action: manipulation;
-    }
-
-    #${ROOT_ID} .coach-buttons button:active {
-      transform: translateY(1px);
     }
 
     #${ROOT_ID} .dots::after {
@@ -1276,7 +1244,7 @@ function terminalLinesForState(state: ExternalCoachState, mode: string): string[
       `read.signals(${tick}${hash}) => ok`,
       `diff.map(workspace) => code flow wird visualisiert`,
       `persist.queue(local-code-memory) => pending`,
-      `${mimuFace('type')} schreibe/prüfe leise weiter ^-_-^`,
+      `${mimuFace('type')} schreibe/pruefe leise weiter ^-_-^`,
       `status: ${state.message}`,
     ];
   }
@@ -1317,9 +1285,11 @@ function renderTerminal(root: HTMLElement, lines: string[]): void {
 
   terminal.replaceChildren();
 
-  for (const line of lines.slice(0, MAX_TERMINAL_LINES)) {
+  for (const line of lines.slice(0, 6)) {
     const row = document.createElement('span');
-    row.className = 'terminal-line';
+    row.className = line.startsWith('source:') || line.startsWith('lamp:')
+      ? 'terminal-line terminal-dim'
+      : 'terminal-line';
 
     const face = MIMU_SMILEYS.find((candidate) => line.includes(candidate));
     if (face) {
@@ -1330,9 +1300,6 @@ function renderTerminal(root: HTMLElement, lines: string[]): void {
       faceNode.className = 'terminal-face';
       faceNode.textContent = face;
       row.append(faceNode, document.createTextNode(after ?? ''));
-    } else if (line.startsWith('source:') || line.startsWith('lamp:')) {
-      row.className = 'terminal-line terminal-dim';
-      row.textContent = line;
     } else {
       row.textContent = line;
     }
@@ -1378,11 +1345,6 @@ function buildCoachShell(root: HTMLElement): void {
   const terminal = document.createElement('div');
   terminal.className = 'coach-terminal';
   terminal.setAttribute('aria-label', 'Sovereign Code Monitor Log');
-
-  const terminalMessage = document.createElement('span');
-  terminalMessage.className = 'terminal-message';
-  terminalMessage.textContent = 'booting code monitor...';
-  terminal.appendChild(terminalMessage);
 
   const buttons = document.createElement('div');
   buttons.className = 'coach-buttons';
@@ -1463,7 +1425,6 @@ function renderCoach(): void {
   renderTerminal(root, terminalLines);
 
   root.querySelector('.coach-title')?.classList.toggle('dots', state.thinking);
-  root.querySelector('.terminal-message')?.classList.toggle('dots', state.thinking);
 }
 
 function scheduleRender(): void {
@@ -1499,10 +1460,8 @@ function eventSourceFromName(eventName: string): CoachSource {
 }
 
 function installCoachEventBridge(): void {
-  const win = window as CoachWindow;
-
-  if (win.__sovereignMobileCoachEventInstalled) return;
-  win.__sovereignMobileCoachEventInstalled = true;
+  if (eventBridgeInstalled) return;
+  eventBridgeInstalled = true;
 
   for (const eventName of COACH_EVENTS) {
     window.addEventListener(eventName, (event) => {
