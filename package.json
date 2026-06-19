@@ -26,7 +26,8 @@
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "postinstall": "node patch_capacitor.mjs",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "hardcode:scan": "node scripts/hardcode-scanner.mjs src"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.0",
