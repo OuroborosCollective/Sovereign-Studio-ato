@@ -1,3 +1,5 @@
+import { createMobileRepoSetupDetail, dispatchMobileRepoSetup } from './mobile-setup-bridge';
+
 const DRAWER_ID = 'sovereign-mobile-setup-drawer';
 const STYLE_ID = 'sovereign-mobile-setup-style';
 const STORAGE_KEY = 'sovereign-mobile-setup-draft';
@@ -83,7 +85,7 @@ function render(): void {
     <button class="setup-fab" type="button" aria-label="Repo Setup oeffnen">⚙</button>
     <section class="setup-panel hidden" role="dialog" aria-label="Repo Setup">
       <strong>Repo Setup</strong>
-      <p class="hint">Immer erreichbar: Repo URL und privater GitHub Zugang. Danach springe ich direkt zum Repo-Laden.</p>
+      <p class="hint">Immer erreichbar: Repo URL und privater GitHub Zugang. Danach lade ich das Repo direkt ueber die App-Runtime.</p>
       <label>GitHub Repository URL<input data-field="repoUrl" value="${draft.repoUrl.replace(/"/g, '&quot;')}" placeholder="https://github.com/owner/repository" /></label>
       <label>GitHub Zugang fuer private Repos / Draft PR<input data-field="accessValue" value="${draft.accessValue.replace(/"/g, '&quot;')}" placeholder="Privaten Zugang einfuegen" type="password" /></label>
       <p class="hint">Zugang nur fuer private Repos oder Draft PRs. Die App zeigt ihn nicht im Log an.</p>
@@ -101,6 +103,7 @@ function render(): void {
     writeDraft(next);
     panel?.classList.add('hidden');
     applyDraftToRepoTab(next);
+    dispatchMobileRepoSetup(createMobileRepoSetupDetail({ ...next, autoLoad: true }));
   });
 }
 
