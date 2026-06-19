@@ -11,6 +11,11 @@ const STYLE_ID = 'sovereign-mobile-setup-style';
 const STORAGE_KEY = 'sovereign-mobile-setup-draft';
 const INSTALL_FLAG = '__sovereignMobileSetupDrawerInstalled';
 const RENDER_DELAY_MS = 900;
+const INPUT_RETRY_LIMIT = 48;
+const LOAD_RETRY_LIMIT = 40;
+const OUTCOME_RETRY_LIMIT = 180;
+const RETRY_DELAY_MS = 120;
+const OUTCOME_DELAY_MS = 240;
 
 type MobileWindow = Window & typeof globalThis & { [INSTALL_FLAG]?: boolean };
 type RepoSetupStage = Parameters<typeof createMobileRepoSetupState>[1];
@@ -19,6 +24,13 @@ interface SetupDraft {
   repoUrl: string;
   accessValue: string;
 }
+
+interface RepoUrlValidation {
+  valid: boolean;
+  message?: string;
+}
+
+let activeSessionId = 0;
 
 function mobileWindow(): MobileWindow {
   return window as MobileWindow;
@@ -33,7 +45,6 @@ function readDraft(): SetupDraft {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return { repoUrl: '', accessValue: '' };
     const parsed = JSON.parse(raw) as Partial<SetupDraft>;
-    // Never restore private access values for security - always use empty
     return {
       repoUrl: typeof parsed.repoUrl === 'string' ? normalize(parsed.repoUrl) : '',
       accessValue: '',
@@ -45,7 +56,6 @@ function readDraft(): SetupDraft {
 
 function writeDraft(draft: SetupDraft): void {
   try {
-    // Never persist private access values to localStorage for security
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ repoUrl: normalize(draft.repoUrl) }),
@@ -53,6 +63,10 @@ function writeDraft(draft: SetupDraft): void {
   } catch {
     // Optional local helper only.
   }
+}
+
+function isActiveSession(sessionId: number): boolean {
+  return sessionId === activeSessionId;
 }
 
 function writeStage(detail: MobileRepoSetupDetail, stage: RepoSetupStage, message: string): void {
@@ -63,22 +77,47 @@ function writeStage(detail: MobileRepoSetupDetail, stage: RepoSetupStage, messag
   }
 }
 
+function setStatus(message: string, phase = 'idle'): void {
+  const status = document.getElementById(DRAWER_ID)?.querySelector<HTMLElement>('[data-role="setup-status"]');
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.phase = phase;
+}
+
+function setSessionStatus(sessionId: number, message: string, phase = 'idle'): boolean {
+  if (!isActiveSession(sessionId)) return false;
+
+  const status = document.getElementById(DRAWER_ID)?.querySelector<HTMLElement>('[data-role="setup-status"]');
+  if (!status) return false;
+  if (status.dataset.phase === 'loaded' && phase !== 'loaded') return false;
+
+  status.textContent = message;
+  status.dataset.phase = phase;
+  return true;
+}
+
 function pageText(): string {
   return document.body?.textContent?.toLowerCase() ?? '';
 }
 
 function findButton(label: string): HTMLButtonElement | null {
   const wanted = label.toLowerCase();
-  return Array.from(document.querySelectorAll('button')).find((button) =>
-    (button.textContent ?? '').trim().toLowerCase() === wanted,
-  ) ?? null;
+  return Array.from(document.querySelectorAll('button')).find((button) => {
+    if (button.closest(`#${DRAWER_ID}`)) return false;
+    return (button.textContent ?? '').trim().toLowerCase() === wanted;
+  }) ?? null;
 }
 
 function findButtonContaining(label: string): HTMLButtonElement | null {
   const wanted = label.toLowerCase();
-  return Array.from(document.querySelectorAll('button')).find((button) =>
-    ((button.textContent ?? '').trim().toLowerCase()).includes(wanted),
-  ) ?? null;
+  return Array.from(document.querySelectorAll('button')).find((button) => {
+    if (button.closest(`#${DRAWER_ID}`)) return false;
+    return ((button.textContent ?? '').trim().toLowerCase()).includes(wanted);
+  }) ?? null;
+}
+
+function findLoadRepoButton(): HTMLButtonElement | null {
+  return findButtonContaining('load repo') ?? findButtonContaining('repo laden') ?? findButtonContaining('laden');
 }
 
 function setNativeInputValue(input: HTMLInputElement, value: string): void {
@@ -90,79 +129,115 @@ function setNativeInputValue(input: HTMLInputElement, value: string): void {
 }
 
 function inputByLabel(label: string): HTMLInputElement | null {
-  return document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+  return Array.from(document.querySelectorAll<HTMLInputElement>(`input[aria-label="${label}"]`)).find(
+    (input) => !input.closest(`#${DRAWER_ID}`),
+  ) ?? null;
 }
 
-function setStatus(message: string, phase = 'idle'): void {
-  const status = document.getElementById(DRAWER_ID)?.querySelector<HTMLElement>('[data-role="setup-status"]');
-  if (!status) return;
-  status.textContent = message;
-  status.dataset.phase = phase;
-}
-
-function watchRepoLoadOutcome(detail: MobileRepoSetupDetail, attempt = 0): void {
-  const text = pageText();
-  if (text.includes('echte repo-einträge geladen') || text.includes('repo geladen') || text.includes('repo snapshot ready')) {
-    setStatus('Repository load completed.', 'loaded');
-    writeStage(detail, 'loaded', 'Repository load completed.');
-    return;
-  }
-  if (text.includes('ungültige github url') || text.includes('repo-info fehler') || text.includes('repository nicht gefunden')) {
-    setStatus('Repository load failed.', 'failed');
-    writeStage(detail, 'failed', 'Repository load failed.');
-    return;
-  }
-  if (attempt < 22) window.setTimeout(() => watchRepoLoadOutcome(detail, attempt + 1), 260 + attempt * 120);
-}
-
-function isValidRepoUrl(url: string): boolean {
+function validateRepoUrl(url: string): RepoUrlValidation {
   const trimmed = url.trim();
-  if (!trimmed) return false;
+  if (!trimmed) return { valid: false, message: 'GitHub Repository URL fehlt.' };
+
   try {
     const parsed = new URL(trimmed);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { valid: false, message: 'GitHub Repository URL muss http oder https nutzen.' };
+    }
+    return { valid: true };
   } catch {
-    return false;
+    return { valid: false, message: 'GitHub Repository URL ist ungueltig.' };
   }
 }
 
-function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, attempt = 0): void {
-  const button = findButtonContaining('load repo') ?? findButtonContaining('repo laden') ?? findButtonContaining('laden');
-  if (button && !button.disabled) {
-    setStatus('Repository load button clicked.', 'loading');
-    writeStage(detail, 'loading', 'Repository load button clicked.');
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    watchRepoLoadOutcome(detail);
+function watchRepoLoadOutcome(detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
+  if (!isActiveSession(sessionId)) return;
+
+  const text = pageText();
+  if (
+    text.includes('echte repo-einträge geladen') ||
+    text.includes('repo geladen') ||
+    text.includes('repo snapshot ready') ||
+    text.includes('repository loaded') ||
+    text.includes('repo loaded')
+  ) {
+    if (setSessionStatus(sessionId, 'Repository load completed.', 'loaded')) {
+      writeStage(detail, 'loaded', 'Repository load completed.');
+    }
     return;
   }
-  if (attempt < 14) window.setTimeout(() => clickLoadRepoWhenReady(detail, attempt + 1), 140 + attempt * 120);
+
+  if (text.includes('ungültige github url') || text.includes('repo-info fehler') || text.includes('repository nicht gefunden')) {
+    if (setSessionStatus(sessionId, 'Repository load failed.', 'failed')) {
+      writeStage(detail, 'failed', 'Repository load failed.');
+    }
+    return;
+  }
+
+  if (attempt >= OUTCOME_RETRY_LIMIT) {
+    if (setSessionStatus(sessionId, 'Repository load outcome was not detected.', 'failed')) {
+      writeStage(detail, 'failed', 'Repository load outcome was not detected.');
+    }
+    return;
+  }
+
+  window.setTimeout(() => watchRepoLoadOutcome(detail, sessionId, attempt + 1), OUTCOME_DELAY_MS);
 }
 
-function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, attempt = 0): void {
+function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
+  if (!isActiveSession(sessionId)) return;
+
+  const button = findLoadRepoButton();
+  if (button && !button.disabled) {
+    if (!setSessionStatus(sessionId, 'Repository load button clicked.', 'loading')) return;
+    writeStage(detail, 'loading', 'Repository load button clicked.');
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    watchRepoLoadOutcome(detail, sessionId);
+    return;
+  }
+
+  if (attempt >= LOAD_RETRY_LIMIT) {
+    if (setSessionStatus(sessionId, 'Repository load button was not found or remained disabled.', 'failed')) {
+      writeStage(detail, 'failed', 'Repository load button was not found or remained disabled.');
+    }
+    return;
+  }
+
+  setSessionStatus(sessionId, 'Waiting for repository load button.', 'applied');
+  window.setTimeout(() => clickLoadRepoWhenReady(detail, sessionId, attempt + 1), RETRY_DELAY_MS);
+}
+
+function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
+  if (!isActiveSession(sessionId)) return;
   if (attempt === 0) findButton('Repo')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
   window.setTimeout(() => {
+    if (!isActiveSession(sessionId)) return;
+
     const repo = inputByLabel('GitHub Repository URL');
     const access = inputByLabel('GitHub private access');
 
-    if (!repo && attempt < 14) {
-      applyDraftToRepoTab(draft, detail, attempt + 1);
+    if (!repo && attempt < INPUT_RETRY_LIMIT) {
+      setSessionStatus(sessionId, 'Waiting for Repo tab inputs.', 'submitted');
+      applyDraftToRepoTab(draft, detail, sessionId, attempt + 1);
       return;
     }
 
     if (!repo) {
-      setStatus('Repo URL input was not found.', 'failed');
-      writeStage(detail, 'failed', 'Repo URL input was not found.');
+      if (setSessionStatus(sessionId, 'Repo URL input was not found.', 'failed')) {
+        writeStage(detail, 'failed', 'Repo URL input was not found.');
+      }
       return;
     }
 
     if (draft.repoUrl) setNativeInputValue(repo, draft.repoUrl);
     if (access && draft.accessValue) setNativeInputValue(access, draft.accessValue);
     repo.focus();
-    setStatus('Repo setup values applied to Repo tab.', 'applied');
-    writeStage(detail, 'applied', 'Repo setup values applied to Repo tab.');
-    clickLoadRepoWhenReady(detail);
-  }, attempt === 0 ? 160 : 120);
+
+    if (setSessionStatus(sessionId, 'Repo setup values applied to Repo tab.', 'applied')) {
+      writeStage(detail, 'applied', 'Repo setup values applied to Repo tab.');
+    }
+    clickLoadRepoWhenReady(detail, sessionId);
+  }, attempt === 0 ? 160 : RETRY_DELAY_MS);
 }
 
 function installStyle(): void {
@@ -247,24 +322,23 @@ function renderDrawer(): void {
     const access = panel.querySelector<HTMLInputElement>('[data-field="accessValue"]');
     const repoUrl = normalize(repo?.value ?? '');
     const accessValue = access?.value.trim() ?? '';
+    const validation = validateRepoUrl(repoUrl);
 
-    // Validate URL before proceeding
-    if (!repoUrl) {
-      setStatus('GitHub Repository URL fehlt.', 'failed');
-      return;
-    }
-    if (!isValidRepoUrl(repoUrl)) {
-      setStatus('GitHub Repository URL ist ungueltig.', 'failed');
+    if (!validation.valid) {
+      setStatus(validation.message ?? 'GitHub Repository URL ist ungueltig.', 'failed');
       return;
     }
 
     const next = { repoUrl, accessValue };
     const detail = createMobileRepoSetupDetail({ ...next, autoLoad: true });
+    const sessionId = activeSessionId + 1;
+    activeSessionId = sessionId;
+
     writeDraft(next);
-    setStatus('Repo setup submitted.', 'submitted');
-    writeStage(detail, 'applied', 'Repo setup submitted.');
+    setSessionStatus(sessionId, 'Repo setup submitted.', 'submitted');
+    writeStage(detail, 'dispatched', 'Repo setup submitted.');
     try { dispatchMobileRepoSetup(detail); } catch { /* side-channel only */ }
-    applyDraftToRepoTab(next, detail);
+    applyDraftToRepoTab(next, detail, sessionId);
   });
 
   root.append(fab, panel);
