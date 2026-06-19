@@ -28,6 +28,7 @@ type MoreMenuWindow = Window &
     __sovereignMoreMenuObserver?: MutationObserver;
     __sovereignMoreMenuMedia?: MediaQueryList;
     __sovereignMoreMenuRaf?: number;
+    __sovereignMoreMenuTimer?: number;
     __sovereignMoreMenuFallbackInterval?: number;
     __sovereignMoreMenuFallbackRuns?: number;
   };
@@ -47,9 +48,10 @@ function readButtonLabel(button: HTMLButtonElement): string {
 function isMobileViewport(): boolean {
   if (typeof window === 'undefined') return false;
 
-  if (typeof window.matchMedia === 'function') {
-    return window.matchMedia(MOBILE_QUERY).matches;
-  }
+  const docWidth = document.documentElement?.clientWidth ?? 0;
+  if (docWidth <= 0) return true;
+
+  if (typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_QUERY).matches) return true;
 
   return window.innerWidth < 768;
 }
@@ -120,7 +122,7 @@ function findNavRoot(): HTMLElement | null {
   const root = getAppRoot();
 
   const explicitNav = Array.from(
-    root.querySelectorAll<HTMLElement>('nav, header, [role="navigation"], [data-mobile-nav], [data-sovereign-mobile-nav]'),
+    root.querySelectorAll<HTMLElement>('nav, header, [role="navigation"], [data-role="primary-nav"], [data-mobile-nav], [data-sovereign-mobile-nav]'),
   ).find((candidate) => getPrimaryButtons(candidate).length >= 2);
 
   if (explicitNav) return explicitNav;
@@ -161,6 +163,12 @@ function restoreManagedButtons(root: ParentNode = document): void {
 function removeMenus(root: ParentNode = document): void {
   for (const menu of Array.from(root.querySelectorAll<HTMLElement>(`#${MENU_ID}`))) {
     menu.remove();
+  }
+}
+
+function removeMenusOutside(nav: HTMLElement): void {
+  for (const menu of Array.from(document.querySelectorAll<HTMLElement>(`#${MENU_ID}`))) {
+    if (menu.parentElement !== nav) menu.remove();
   }
 }
 
@@ -228,6 +236,16 @@ function createMenu(): HTMLDivElement {
   return box;
 }
 
+function ensureSingleMenu(nav: HTMLElement): void {
+  removeMenusOutside(nav);
+
+  const menus = Array.from(nav.querySelectorAll<HTMLElement>(`#${MENU_ID}`));
+  const [first, ...duplicates] = menus;
+
+  for (const duplicate of duplicates) duplicate.remove();
+  if (!first) nav.appendChild(createMenu());
+}
+
 function installNow(): void {
   preferGuardedAuto();
 
@@ -241,20 +259,19 @@ function installNow(): void {
 
   if (!nav) return;
 
-  removeMenus(nav);
   applyMobileButtonVisibility(nav);
-  nav.appendChild(createMenu());
+  ensureSingleMenu(nav);
 }
 
 function scheduleInstall(): void {
   const state = runtimeWindow();
 
-  if (state.__sovereignMoreMenuRaf) return;
+  if (state.__sovereignMoreMenuTimer) return;
 
-  state.__sovereignMoreMenuRaf = window.requestAnimationFrame(() => {
-    state.__sovereignMoreMenuRaf = undefined;
+  state.__sovereignMoreMenuTimer = window.setTimeout(() => {
+    state.__sovereignMoreMenuTimer = undefined;
     installNow();
-  });
+  }, 0);
 }
 
 function installObserver(): void {
@@ -307,6 +324,7 @@ export function installMobileMoreMenu(): void {
   const state = runtimeWindow();
 
   if (state.__sovereignMoreMenuInstalled) {
+    installNow();
     scheduleInstall();
     return;
   }
@@ -317,7 +335,8 @@ export function installMobileMoreMenu(): void {
   installMediaListener();
   installBoundedFallback();
 
-  window.setTimeout(scheduleInstall, 0);
+  installNow();
+  scheduleInstall();
   window.setTimeout(scheduleInstall, 250);
   window.setTimeout(scheduleInstall, 800);
 }
