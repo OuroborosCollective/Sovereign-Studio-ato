@@ -27,7 +27,9 @@
     "test:run": "vitest run",
     "postinstall": "node patch_capacitor.mjs",
     "type-check": "tsc --noEmit",
-    "hardcode:scan": "node scripts/hardcode-scanner.mjs src"
+    "hardcode:scan": "node scripts/hardcode-scanner.mjs src",
+    "smoke:ki-coach": "tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts",
+    "smoke:ki-coach:headed": "HEADED=true tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.0",
