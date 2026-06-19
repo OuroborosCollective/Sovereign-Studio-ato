@@ -61,7 +61,7 @@ jobs:
           CI: true
 
       - name: Build Web Assets
-        run: pnpm run build
+        run: pnpm run build:web
 
       - name: Upload Web Build Artifact
         uses: actions/upload-artifact@v4
