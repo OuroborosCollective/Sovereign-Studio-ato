@@ -9,155 +9,499 @@ import {
 const DRAWER_ID = 'sovereign-mobile-setup-drawer';
 const STYLE_ID = 'sovereign-mobile-setup-style';
 const STORAGE_KEY = 'sovereign-mobile-setup-draft';
+const INSTALL_FLAG = '__sovereignMobileSetupDrawerInstalled';
+
+const MAX_REPO_LOAD_ATTEMPTS = 22;
+const MAX_LOAD_BUTTON_ATTEMPTS = 14;
+const MAX_APPLY_ATTEMPTS = 14;
+const RENDER_DELAY_MS = 900;
+
+type MobileWindow = Window &
+  typeof globalThis & {
+    [INSTALL_FLAG]?: boolean;
+  };
 
 interface SetupDraft {
+  repoUrl: string;
+}
+
+interface SetupSubmission {
   repoUrl: string;
   accessValue: string;
 }
 
-function readDraft(): SetupDraft {
+type RepoSetupStage = Parameters<typeof createMobileRepoSetupState>[1];
+
+type SessionPhase =
+  | 'idle'
+  | 'submitted'
+  | 'repo-tab'
+  | 'applied'
+  | 'loading'
+  | 'loaded'
+  | 'failed';
+
+interface SetupSession {
+  id: number;
+  detail: MobileRepoSetupDetail;
+  submission: SetupSubmission;
+  phase: SessionPhase;
+  message: string;
+  timers: Set<number>;
+}
+
+const EMPTY_DRAFT: SetupDraft = {
+  repoUrl: '',
+};
+
+const SUCCESS_TEXT_MARKERS = [
+  'echte repo-einträge geladen',
+  'echte repo-eintraege geladen',
+  'repo geladen',
+  'repository loaded',
+  'repo snapshot ready',
+  'snapshot ready',
+  'repository load completed',
+];
+
+const FAILURE_TEXT_MARKERS = [
+  'ungültige github url',
+  'ungueltige github url',
+  'repo-info fehler',
+  'repository nicht gefunden',
+  'repository not found',
+  'repo load failed',
+  'repository load failed',
+  'bad credentials',
+  'invalid credentials',
+  '401',
+  '403',
+  '404',
+];
+
+let sessionSequence = 0;
+let activeSession: SetupSession | null = null;
+
+function mobileWindow(): MobileWindow {
+  return window as MobileWindow;
+}
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeRepoUrl(value: string): string {
+  return normalizeText(value);
+}
+
+function normalizeAccessValue(value: string): string {
+  return value.trim();
+}
+
+function safeReadStorage(key: string): string | null {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { repoUrl: '', accessValue: '' };
-    const parsed = JSON.parse(raw) as Partial<SetupDraft>;
-    return {
-      repoUrl: typeof parsed.repoUrl === 'string' ? parsed.repoUrl : '',
-      accessValue: typeof parsed.accessValue === 'string' ? parsed.accessValue : '',
-    };
+    return window.localStorage.getItem(key);
   } catch {
-    return { repoUrl: '', accessValue: '' };
+    return null;
   }
 }
 
-function writeDraft(draft: SetupDraft): void {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+function safeWriteStorage(key: string, value: string): boolean {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function writeStage(detail: MobileRepoSetupDetail, stage: Parameters<typeof createMobileRepoSetupState>[1], message: string): void {
-  writeMobileRepoSetupState(createMobileRepoSetupState(detail, stage, message));
+function readDraft(): SetupDraft {
+  const raw = safeReadStorage(STORAGE_KEY);
+  if (!raw) return EMPTY_DRAFT;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<SetupDraft>;
+
+    return {
+      repoUrl: typeof parsed.repoUrl === 'string' ? normalizeRepoUrl(parsed.repoUrl) : '',
+    };
+  } catch {
+    return EMPTY_DRAFT;
+  }
+}
+
+function writeDraft(draft: SetupDraft): boolean {
+  return safeWriteStorage(
+    STORAGE_KEY,
+    JSON.stringify({
+      repoUrl: normalizeRepoUrl(draft.repoUrl),
+    }),
+  );
+}
+
+function writeStage(
+  detail: MobileRepoSetupDetail,
+  stage: RepoSetupStage,
+  message: string,
+): void {
+  try {
+    writeMobileRepoSetupState(createMobileRepoSetupState(detail, stage, message));
+  } catch {
+    // Side-channel only. Never break the drawer flow.
+  }
 }
 
 function pageText(): string {
   return document.body?.textContent?.toLowerCase() ?? '';
 }
 
-function watchRepoLoadOutcome(detail: MobileRepoSetupDetail, attempt = 0): void {
-  const text = pageText();
-  if (text.includes('echte repo-einträge geladen') || text.includes('repo geladen')) {
-    writeStage(detail, 'loaded', 'Repository load completed.');
-    return;
+function hasAnyMarker(source: string, markers: string[]): boolean {
+  return markers.some((marker) => source.includes(marker));
+}
+
+function isActiveSession(session: SetupSession): boolean {
+  return activeSession?.id === session.id;
+}
+
+function clearSessionTimers(session: SetupSession): void {
+  for (const timer of session.timers) {
+    window.clearTimeout(timer);
   }
-  if (text.includes('ungültige github url') || text.includes('repo-info fehler') || text.includes('repository nicht gefunden')) {
-    writeStage(detail, 'failed', 'Repository load failed.');
-    return;
-  }
-  if (attempt < 18) {
-    window.setTimeout(() => watchRepoLoadOutcome(detail, attempt + 1), 260 + attempt * 120);
+
+  session.timers.clear();
+}
+
+function scheduleSession(
+  session: SetupSession,
+  callback: () => void,
+  delayMs: number,
+): void {
+  const timer = window.setTimeout(() => {
+    session.timers.delete(timer);
+
+    if (!isActiveSession(session)) return;
+
+    callback();
+  }, delayMs);
+
+  session.timers.add(timer);
+}
+
+function setDrawerStatus(message: string, phase: SessionPhase = 'idle'): void {
+  const root = document.getElementById(DRAWER_ID);
+  const status = root?.querySelector<HTMLElement>('[data-role="setup-status"]');
+
+  if (!status) return;
+
+  status.textContent = message;
+  status.dataset.phase = phase;
+}
+
+function setSessionPhase(
+  session: SetupSession,
+  phase: SessionPhase,
+  message: string,
+  stage?: RepoSetupStage,
+): void {
+  if (!isActiveSession(session)) return;
+
+  session.phase = phase;
+  session.message = message;
+
+  setDrawerStatus(message, phase);
+
+  if (stage) {
+    writeStage(session.detail, stage, message);
   }
 }
 
+function failSession(session: SetupSession, message: string): void {
+  if (!isActiveSession(session)) return;
+
+  clearSessionTimers(session);
+  setSessionPhase(session, 'failed', message, 'failed');
+}
+
+function completeSession(session: SetupSession, message: string): void {
+  if (!isActiveSession(session)) return;
+
+  clearSessionTimers(session);
+  setSessionPhase(session, 'loaded', message, 'loaded');
+}
+
+function buttonText(button: HTMLButtonElement): string {
+  return (button.textContent ?? '').trim().toLowerCase();
+}
+
 function findButton(label: string): HTMLButtonElement | null {
-  return Array.from(document.querySelectorAll('button')).find((button) => (button.textContent ?? '').trim().toLowerCase() === label.toLowerCase()) ?? null;
+  const needle = label.toLowerCase();
+
+  return (
+    Array.from(document.querySelectorAll('button')).find(
+      (button) => buttonText(button) === needle,
+    ) ?? null
+  );
 }
 
 function findButtonContaining(label: string): HTMLButtonElement | null {
   const needle = label.toLowerCase();
-  return Array.from(document.querySelectorAll('button')).find((button) => (button.textContent ?? '').trim().toLowerCase().includes(needle)) ?? null;
+
+  return (
+    Array.from(document.querySelectorAll('button')).find((button) =>
+      buttonText(button).includes(needle),
+    ) ?? null
+  );
 }
 
 function setNativeInputValue(input: HTMLInputElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-  setter?.call(input, value);
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    'value',
+  )?.set;
+
+  if (setter) {
+    setter.call(input, value);
+  } else {
+    input.value = value;
+  }
+
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function inputByLabel(label: string): HTMLInputElement | null {
-  return document.querySelector(`input[aria-label="${label}"]`);
+  const exact = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+  if (exact) return exact;
+
+  const needle = label.toLowerCase();
+
+  return (
+    Array.from(document.querySelectorAll<HTMLInputElement>('input')).find((input) => {
+      const aria = input.getAttribute('aria-label')?.toLowerCase() ?? '';
+      const placeholder = input.getAttribute('placeholder')?.toLowerCase() ?? '';
+      const name = input.getAttribute('name')?.toLowerCase() ?? '';
+      const dataField = input.getAttribute('data-field')?.toLowerCase() ?? '';
+
+      return (
+        aria.includes(needle) ||
+        placeholder.includes(needle) ||
+        name.includes(needle) ||
+        dataField.includes(needle)
+      );
+    }) ?? null
+  );
 }
 
-function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, attempt = 0): void {
-  const button = findButtonContaining('load repo');
-  if (button && !button.disabled) {
-    writeStage(detail, 'loading', 'Repository load button clicked.');
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    watchRepoLoadOutcome(detail);
+function findRepoInput(): HTMLInputElement | null {
+  return (
+    inputByLabel('GitHub Repository URL') ??
+    inputByLabel('Repository URL') ??
+    inputByLabel('repoUrl') ??
+    null
+  );
+}
+
+function findAccessInput(): HTMLInputElement | null {
+  return (
+    inputByLabel('GitHub private access') ??
+    inputByLabel('private access') ??
+    inputByLabel('accessValue') ??
+    inputByLabel('token') ??
+    null
+  );
+}
+
+function watchRepoLoadOutcome(session: SetupSession, attempt = 0): void {
+  if (!isActiveSession(session)) return;
+
+  const text = pageText();
+
+  if (hasAnyMarker(text, SUCCESS_TEXT_MARKERS)) {
+    completeSession(session, 'Repository load completed.');
     return;
   }
-  if (attempt < 8) {
-    window.setTimeout(() => clickLoadRepoWhenReady(detail, attempt + 1), 140 + attempt * 120);
+
+  if (hasAnyMarker(text, FAILURE_TEXT_MARKERS)) {
+    failSession(session, 'Repository load failed.');
+    return;
+  }
+
+  if (attempt < MAX_REPO_LOAD_ATTEMPTS) {
+    scheduleSession(session, () => watchRepoLoadOutcome(session, attempt + 1), 260 + attempt * 120);
+    return;
+  }
+
+  failSession(session, 'Repository load outcome was not detected.');
+}
+
+function clickLoadRepoWhenReady(session: SetupSession, attempt = 0): void {
+  if (!isActiveSession(session)) return;
+
+  const button =
+    findButtonContaining('load repo') ??
+    findButtonContaining('repo laden') ??
+    findButtonContaining('repository laden') ??
+    findButtonContaining('laden');
+
+  if (button && !button.disabled) {
+    setSessionPhase(session, 'loading', 'Repository load button clicked.', 'loading');
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    watchRepoLoadOutcome(session);
+    return;
+  }
+
+  if (attempt < MAX_LOAD_BUTTON_ATTEMPTS) {
+    setSessionPhase(session, 'repo-tab', 'Waiting for repository load button.');
+    scheduleSession(session, () => clickLoadRepoWhenReady(session, attempt + 1), 140 + attempt * 120);
+    return;
+  }
+
+  failSession(session, 'Repository load button was not found or remained disabled.');
+}
+
+function openRepoTab(session: SetupSession): void {
+  if (!isActiveSession(session)) return;
+
+  const repoButton = findButton('Repo') ?? findButtonContaining('Repo');
+
+  if (repoButton) {
+    setSessionPhase(session, 'repo-tab', 'Repo tab selected.');
+    repoButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  } else {
+    setSessionPhase(session, 'repo-tab', 'Repo tab button not found yet.');
   }
 }
 
-function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail): void {
-  findButton('Repo')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-  window.setTimeout(() => {
-    const repo = inputByLabel('GitHub Repository URL');
-    const access = inputByLabel('GitHub private access');
-    if (repo && draft.repoUrl) setNativeInputValue(repo, draft.repoUrl);
-    if (access && draft.accessValue) setNativeInputValue(access, draft.accessValue);
-    repo?.focus();
-    writeStage(detail, 'applied', 'Repo setup values applied to Repo tab.');
-    clickLoadRepoWhenReady(detail);
-  }, 160);
+function applyDraftToRepoTab(session: SetupSession, attempt = 0): void {
+  if (!isActiveSession(session)) return;
+
+  if (attempt === 0) {
+    openRepoTab(session);
+  }
+
+  scheduleSession(session, () => {
+    if (!isActiveSession(session)) return;
+
+    const repo = findRepoInput();
+    const access = findAccessInput();
+
+    if (!repo && attempt < MAX_APPLY_ATTEMPTS) {
+      setSessionPhase(session, 'repo-tab', 'Waiting for Repo tab inputs.');
+      scheduleSession(session, () => applyDraftToRepoTab(session, attempt + 1), 160 + attempt * 120);
+      return;
+    }
+
+    if (!repo) {
+      failSession(session, 'Repo URL input was not found.');
+      return;
+    }
+
+    if (session.submission.repoUrl) {
+      setNativeInputValue(repo, session.submission.repoUrl);
+    }
+
+    if (access && session.submission.accessValue) {
+      setNativeInputValue(access, session.submission.accessValue);
+    }
+
+    repo.focus();
+
+    setSessionPhase(session, 'applied', 'Repo setup values applied to Repo tab.', 'applied');
+    clickLoadRepoWhenReady(session);
+  }, attempt === 0 ? 160 : 0);
+}
+
+function validateSubmission(submission: SetupSubmission): string | null {
+  if (!submission.repoUrl) {
+    return 'GitHub Repository URL fehlt.';
+  }
+
+  try {
+    const url = new URL(submission.repoUrl);
+
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return 'GitHub Repository URL muss http oder https nutzen.';
+    }
+  } catch {
+    return 'GitHub Repository URL ist ungueltig.';
+  }
+
+  return null;
+}
+
+function createSession(submission: SetupSubmission): SetupSession {
+  if (activeSession) {
+    clearSessionTimers(activeSession);
+  }
+
+  const detail = createMobileRepoSetupDetail({
+    ...submission,
+    autoLoad: true,
+  });
+
+  const session: SetupSession = {
+    id: ++sessionSequence,
+    detail,
+    submission,
+    phase: 'submitted',
+    message: 'Repo setup submitted.',
+    timers: new Set<number>(),
+  };
+
+  activeSession = session;
+  return session;
+}
+
+function startRepoSetup(submission: SetupSubmission): void {
+  const validationError = validateSubmission(submission);
+
+  if (validationError) {
+    setDrawerStatus(validationError, 'failed');
+    return;
+  }
+
+  const session = createSession(submission);
+
+  writeDraft({
+    repoUrl: submission.repoUrl,
+  });
+
+  setSessionPhase(session, 'submitted', 'Repo setup submitted.', 'applied');
+
+  try {
+    dispatchMobileRepoSetup(session.detail);
+  } catch {
+    setDrawerStatus('Repo setup event dispatch failed, applying values directly.', 'submitted');
+  }
+
+  applyDraftToRepoTab(session);
 }
 
 function installStyle(): void {
   if (document.getElementById(STYLE_ID)) return;
+
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    #${DRAWER_ID} .setup-fab { position: fixed; top: calc(env(safe-area-inset-top, 0px) + .7rem); right: .75rem; z-index: 50; min-width: 2.75rem; min-height: 2.75rem; border-radius: 999px; border: 1px solid rgba(34,211,238,.45); background: rgba(2,6,23,.92); color: #e0f2fe; box-shadow: 0 .6rem 1.5rem rgba(0,0,0,.32), 0 0 1rem rgba(34,211,238,.16); font-weight: 950; }
-    #${DRAWER_ID} .setup-panel { position: fixed; inset: auto .75rem calc(env(safe-area-inset-bottom, 0px) + .75rem) .75rem; z-index: 55; border: 1px solid rgba(34,211,238,.38); border-radius: 1.15rem; background: linear-gradient(135deg, rgba(2,6,23,.98), rgba(15,23,42,.96)); color: #e2e8f0; padding: .9rem; box-shadow: 0 1rem 2.4rem rgba(0,0,0,.46); }
-    #${DRAWER_ID} .hidden { display: none; }
-    #${DRAWER_ID} label { display: block; margin-top: .7rem; font-size: .72rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: #bae6fd; }
-    #${DRAWER_ID} input { margin-top: .35rem; width: 100%; min-height: 2.65rem; border-radius: .85rem; border: 1px solid rgba(148,163,184,.28); background: rgba(15,23,42,.92); color: #f8fafc; padding: .58rem .7rem; font-size: .9rem; }
-    #${DRAWER_ID} .actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .8rem; }
-    #${DRAWER_ID} button { cursor: pointer; }
-    #${DRAWER_ID} .primary { border: 1px solid rgba(34,211,238,.45); background: rgba(8,47,73,.8); color: #e0f2fe; border-radius: .85rem; padding: .65rem .75rem; font-weight: 950; }
-    #${DRAWER_ID} .ghost { border: 1px solid rgba(148,163,184,.25); background: rgba(15,23,42,.76); color: #cbd5e1; border-radius: .85rem; padding: .65rem .75rem; font-weight: 850; }
-    #${DRAWER_ID} .hint { margin-top: .6rem; color: #fef3c7; font-size: .72rem; line-height: 1.35; }
-  `;
-  document.head.appendChild(style);
-}
+    #${DRAWER_ID} .setup-fab {
+      position: fixed;
+      top: calc(env(safe-area-inset-top, 0px) + .7rem);
+      right: .75rem;
+      z-index: 50;
+      min-width: 2.75rem;
+      min-height: 2.75rem;
+      border-radius: 999px;
+      border: 1px solid rgba(34,211,238,.45);
+      background: rgba(2,6,23,.92);
+      color: #e0f2fe;
+      box-shadow: 0 .6rem 1.5rem rgba(0,0,0,.32), 0 0 1rem rgba(34,211,238,.16);
+      font-weight: 950;
+    }
 
-function render(): void {
-  installStyle();
-  let root = document.getElementById(DRAWER_ID);
-  if (!root) {
-    root = document.createElement('div');
-    root.id = DRAWER_ID;
-    document.body.appendChild(root);
-  }
-  const draft = readDraft();
-  root.innerHTML = `
-    <button class="setup-fab" type="button" aria-label="Repo Setup oeffnen">⚙</button>
-    <section class="setup-panel hidden" role="dialog" aria-label="Repo Setup">
-      <strong>Repo Setup</strong>
-      <p class="hint">Immer erreichbar: Repo URL und privater GitHub Zugang. Danach lade ich das Repo direkt ueber die App-Runtime.</p>
-      <label>GitHub Repository URL<input data-field="repoUrl" value="${draft.repoUrl.replace(/"/g, '&quot;')}" placeholder="https://github.com/owner/repository" /></label>
-      <label>GitHub Zugang fuer private Repos / Draft PR<input data-field="accessValue" value="${draft.accessValue.replace(/"/g, '&quot;')}" placeholder="Privaten Zugang einfuegen" type="password" /></label>
-      <p class="hint">Zugang nur fuer private Repos oder Draft PRs. Die App zeigt ihn nicht im Log an.</p>
-      <div class="actions"><button class="primary" data-action="save" type="button">Speichern & Repo</button><button class="ghost" data-action="close" type="button">Schliessen</button></div>
-    </section>
-  `;
-  const panel = root.querySelector('.setup-panel') as HTMLElement | null;
-  root.querySelector('.setup-fab')?.addEventListener('click', () => panel?.classList.toggle('hidden'));
-  root.querySelector('[data-action="close"]')?.addEventListener('click', () => panel?.classList.add('hidden'));
-  root.querySelector('[data-action="save"]')?.addEventListener('click', () => {
-    const next = {
-      repoUrl: (root.querySelector('[data-field="repoUrl"]') as HTMLInputElement | null)?.value.trim() ?? '',
-      accessValue: (root.querySelector('[data-field="accessValue"]') as HTMLInputElement | null)?.value.trim() ?? '',
-    };
-    const detail = createMobileRepoSetupDetail({ ...next, autoLoad: true });
-    writeDraft(next);
-    panel?.classList.add('hidden');
-    dispatchMobileRepoSetup(detail);
-    applyDraftToRepoTab(next, detail);
-  });
-}
-
-export function installMobileSetupDrawer(): void {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  window.setTimeout(render, 900);
-}
+    #${DRAWER_ID} .setup-panel {
+      position: fixed;
+      inset: auto .75rem calc(env(safe-area-inset-bottom, 0px) + .75rem) .75rem;
+      z-index: 55;
+      border: 1px solid rgba(34,211,238,.38);
+      border-radius: 1.15rem;
+      background: linear-gradient(135deg, rgba
