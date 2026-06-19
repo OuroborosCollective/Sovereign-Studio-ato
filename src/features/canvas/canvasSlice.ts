@@ -1,17 +1,17 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 /**
  * Erweitertes Typ-System für Fabric.js Objekte inklusive KI-spezifischer Entitäten.
  */
-export type FabricObjectType = 
-  | 'rect' 
-  | 'circle' 
-  | 'path' 
-  | 'image' 
-  | 'i-text' 
-  | 'textbox' 
-  | 'group' 
-  | 'ai-text' 
+export type FabricObjectType =
+  | 'rect'
+  | 'circle'
+  | 'path'
+  | 'image'
+  | 'i-text'
+  | 'textbox'
+  | 'group'
+  | 'ai-text'
   | 'activeSelection';
 
 /**
@@ -34,14 +34,14 @@ export interface CanvasObject {
   flipY: boolean;
   opacity: number;
   visible: boolean;
-  fill?: string | any;
+  fill?: string | unknown;
   stroke?: string;
   strokeWidth?: number;
   originX?: 'left' | 'center' | 'right' | string;
   originY?: 'top' | 'center' | 'bottom' | string;
   zIndex: number;
-  data?: any;
-  
+  data?: unknown;
+
   // Text & KI-Text Eigenschaften
   text?: string;
   fontSize?: number;
@@ -50,21 +50,21 @@ export interface CanvasObject {
   textAlign?: 'left' | 'center' | 'right' | 'justify';
   lineHeight?: number;
   charSpacing?: number;
-  
+
   // Bild Eigenschaften
   src?: string;
   crossOrigin?: string;
-  
+
   // Vektor Eigenschaften
-  path?: any[];
-  
+  path?: unknown[];
+
   // Metadaten & Status für KI-Vorgänge
   locked?: boolean;
   aiGenerated?: boolean;
   promptSource?: string;
   metadata?: Record<string, unknown>;
-  
-  [key: string]: any;
+
+  [key: string]: unknown;
 }
 
 export interface CanvasState {
@@ -78,6 +78,8 @@ export interface CanvasState {
   isDragging: boolean;
 }
 
+export const CANVAS_STATE_SCHEMA_VERSION = 1 as const;
+
 const initialState: CanvasState = {
   objects: [],
   selectedIds: [],
@@ -88,6 +90,111 @@ const initialState: CanvasState = {
   },
   isDragging: false,
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringOrFallback(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+function finiteNumberOrFallback(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function booleanOrFallback(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizeCanvasObject(value: unknown, index: number): CanvasObject | null {
+  if (!isRecord(value)) return null;
+
+  const id = stringOrFallback(value.id, `restored-canvas-object-${index}`);
+  const type = stringOrFallback(value.type, 'rect');
+  const zIndex = finiteNumberOrFallback(value.zIndex, index);
+
+  return {
+    ...value,
+    id,
+    type,
+    left: finiteNumberOrFallback(value.left, finiteNumberOrFallback(value.x, 0)),
+    top: finiteNumberOrFallback(value.top, finiteNumberOrFallback(value.y, 0)),
+    width: finiteNumberOrFallback(value.width, 0),
+    height: finiteNumberOrFallback(value.height, 0),
+    scaleX: finiteNumberOrFallback(value.scaleX, 1),
+    scaleY: finiteNumberOrFallback(value.scaleY, 1),
+    angle: finiteNumberOrFallback(value.angle, 0),
+    flipX: booleanOrFallback(value.flipX, false),
+    flipY: booleanOrFallback(value.flipY, false),
+    opacity: finiteNumberOrFallback(value.opacity, 1),
+    visible: booleanOrFallback(value.visible, true),
+    zIndex,
+  };
+}
+
+function normalizeSelectedIds(value: unknown, validObjectIds: Set<string>): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const selectedIds: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    if (!validObjectIds.has(item)) continue;
+    if (seen.has(item)) continue;
+
+    seen.add(item);
+    selectedIds.push(item);
+  }
+
+  return selectedIds;
+}
+
+function normalizeViewbox(value: unknown): CanvasState['viewbox'] {
+  if (!isRecord(value)) return { ...initialState.viewbox };
+
+  return {
+    zoom: finiteNumberOrFallback(value.zoom, initialState.viewbox.zoom),
+    panX: finiteNumberOrFallback(value.panX, initialState.viewbox.panX),
+    panY: finiteNumberOrFallback(value.panY, initialState.viewbox.panY),
+  };
+}
+
+function sortObjectsByZIndex(objects: CanvasObject[]): CanvasObject[] {
+  return [...objects].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+}
+
+export function normalizeCanvasStateInput(value: unknown): CanvasState | null {
+  if (!isRecord(value)) return null;
+
+  const rawObjects = Array.isArray(value.objects) ? value.objects : [];
+  const objects = sortObjectsByZIndex(
+    rawObjects
+      .map((object, index) => normalizeCanvasObject(object, index))
+      .filter((object): object is CanvasObject => Boolean(object)),
+  );
+
+  const objectIds = new Set(objects.map((object) => object.id));
+
+  return {
+    objects,
+    selectedIds: normalizeSelectedIds(value.selectedIds, objectIds),
+    viewbox: normalizeViewbox(value.viewbox),
+    isDragging: booleanOrFallback(value.isDragging, false),
+  };
+}
+
+export function getInitialCanvasState(): CanvasState {
+  return {
+    objects: [],
+    selectedIds: [],
+    viewbox: {
+      ...initialState.viewbox,
+    },
+    isDragging: initialState.isDragging,
+  };
+}
 
 export const canvasSlice = createSlice({
   name: 'canvas',
@@ -103,21 +210,23 @@ export const canvasSlice = createSlice({
         state.objects.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
       }
     },
-    
+
     /**
      * Batch-Insert für Vektor-Gruppen oder KI-generierte Szenen.
      */
     addVectors: (state, action: PayloadAction<CanvasObject[]>) => {
-      // ⚡ Bolt: Use explicit loop to avoid map creating an intermediate array
       const existingIds = new Set<string>();
-      for (let i = 0; i < state.objects.length; i++) {
-        existingIds.add(state.objects[i].id);
+      for (let index = 0; index < state.objects.length; index += 1) {
+        existingIds.add(state.objects[index].id);
       }
+
       action.payload.forEach((newObj) => {
         if (!existingIds.has(newObj.id)) {
           state.objects.push(newObj);
+          existingIds.add(newObj.id);
         }
       });
+
       state.objects.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
     },
 
@@ -128,7 +237,7 @@ export const canvasSlice = createSlice({
       const index = state.objects.findIndex((obj) => obj.id === action.payload.id);
       if (index !== -1) {
         state.objects[index] = { ...state.objects[index], ...action.payload };
-        
+
         if (action.payload.zIndex !== undefined) {
           state.objects.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
         }
@@ -136,48 +245,52 @@ export const canvasSlice = createSlice({
     },
 
     removeObject: (state, action: PayloadAction<string>) => {
-      // ⚡ Bolt: Optimized loop to avoid multiple allocations from .filter()
       const idToRemove = action.payload;
-      const newObjects = [];
+      const newObjects: CanvasObject[] = [];
+
       for (const obj of state.objects) {
         if (obj.id !== idToRemove) {
           newObjects.push(obj);
         }
       }
+
       state.objects = newObjects;
 
-      const newSelectedIds = [];
+      const newSelectedIds: string[] = [];
       for (const id of state.selectedIds) {
         if (id !== idToRemove) {
           newSelectedIds.push(id);
         }
       }
+
       state.selectedIds = newSelectedIds;
     },
 
     removeObjects: (state, action: PayloadAction<string[]>) => {
-      // ⚡ Bolt: Optimized loop to avoid multiple allocations from .filter()
       const idsToRemove = new Set(action.payload);
+      const newObjects: CanvasObject[] = [];
 
-      const newObjects = [];
       for (const obj of state.objects) {
         if (!idsToRemove.has(obj.id)) {
           newObjects.push(obj);
         }
       }
+
       state.objects = newObjects;
 
-      const newSelectedIds = [];
+      const newSelectedIds: string[] = [];
       for (const id of state.selectedIds) {
         if (!idsToRemove.has(id)) {
           newSelectedIds.push(id);
         }
       }
+
       state.selectedIds = newSelectedIds;
     },
 
     selectObjects: (state, action: PayloadAction<string[]>) => {
-      state.selectedIds = action.payload;
+      const validIds = new Set(state.objects.map((object) => object.id));
+      state.selectedIds = normalizeSelectedIds(action.payload, validIds);
     },
 
     setZIndex: (state, action: PayloadAction<{ id: string; zIndex: number }>) => {
@@ -194,19 +307,26 @@ export const canvasSlice = createSlice({
     moveLayer: (state, action: PayloadAction<{ id: string; delta: number }>) => {
       const index = state.objects.findIndex((o) => o.id === action.payload.id);
       if (index === -1) return;
-      
-      const newIndex = Math.max(0, Math.min(state.objects.length - 1, index + action.payload.delta));
+
+      const newIndex = Math.max(
+        0,
+        Math.min(state.objects.length - 1, index + action.payload.delta),
+      );
       const [removed] = state.objects.splice(index, 1);
       state.objects.splice(newIndex, 0, removed);
-      
+
       // Normalisierung der Indizes für konsistente Rendering-Pipeline
-      state.objects.forEach((obj, i) => {
-        obj.zIndex = i;
+      state.objects.forEach((obj, itemIndex) => {
+        obj.zIndex = itemIndex;
       });
     },
 
     setViewbox: (state, action: PayloadAction<Partial<CanvasState['viewbox']>>) => {
-      state.viewbox = { ...state.viewbox, ...action.payload };
+      state.viewbox = {
+        zoom: finiteNumberOrFallback(action.payload.zoom, state.viewbox.zoom),
+        panX: finiteNumberOrFallback(action.payload.panX, state.viewbox.panX),
+        panY: finiteNumberOrFallback(action.payload.panY, state.viewbox.panY),
+      };
     },
 
     setDragging: (state, action: PayloadAction<boolean>) => {
@@ -216,13 +336,25 @@ export const canvasSlice = createSlice({
     clearCanvas: (state) => {
       state.objects = [];
       state.selectedIds = [];
+      state.isDragging = false;
     },
 
     /**
      * Synchronisiert den kompletten State aus dem Fabric-Instanz-Serialisat.
      */
     syncFromFabric: (state, action: PayloadAction<CanvasObject[]>) => {
-      state.objects = [...action.payload].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      state.objects = sortObjectsByZIndex(action.payload);
+      const validIds = new Set(state.objects.map((object) => object.id));
+      state.selectedIds = normalizeSelectedIds(state.selectedIds, validIds);
+    },
+
+    /**
+     * Rehydriert den kompletten Canvas-State aus einem gespeicherten Mirror.
+     * Ungültige oder alte Payloads werden normalisiert statt ungeprüft übernommen.
+     */
+    restoreCanvasState: (_state, action: PayloadAction<unknown>) => {
+      const normalized = normalizeCanvasStateInput(action.payload);
+      return normalized ?? getInitialCanvasState();
     },
   },
 });
@@ -240,6 +372,7 @@ export const {
   setDragging,
   clearCanvas,
   syncFromFabric,
+  restoreCanvasState,
 } = canvasSlice.actions;
 
 export default canvasSlice.reducer;
