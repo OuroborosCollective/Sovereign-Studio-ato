@@ -248,7 +248,7 @@ function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
-function wallClockMs(): number {
+export function wallClockMs(): number {
   return Date.now();
 }
 
