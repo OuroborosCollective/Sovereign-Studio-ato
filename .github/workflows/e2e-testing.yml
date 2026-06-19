@@ -38,6 +38,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   JAVA_VERSION: '17'
   ANDROID_SDK_ROOT: /opt/android-sdk
+  GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
 
 jobs:
   setup:
