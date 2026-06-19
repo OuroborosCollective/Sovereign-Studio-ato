@@ -2,7 +2,7 @@
 
 /* Release shell */
 /* Container runtime */
-/* Signed Android artifacts */
+/* Android phones, foldables and tablets only */
 
 @theme {
   --color-primary: var(--color-indigo-600);
