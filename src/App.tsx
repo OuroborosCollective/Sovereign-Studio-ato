@@ -456,9 +456,12 @@ const App: React.FC = () => {
       activeStep: sequentialRuntime.activeStep,
       activeTab: routerActiveTab,
       hasPackage: Boolean(lastPackage),
+      hasDiffSources: safeDiffSources.length > 0,
       isPublishing,
       isWatchingWorkflow,
       workflowStatus: workflowReport?.status ?? 'idle',
+      hasActivePatterns: activePatternCount > 0,
+      hasActiveTelemetry: telemetry.events.length > 0,
     });
 
     if (!decision.shouldSwitch) return;

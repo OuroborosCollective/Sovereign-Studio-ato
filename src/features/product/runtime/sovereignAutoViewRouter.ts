@@ -24,9 +24,12 @@ export interface SovereignAutoViewInput {
   activeStep: SequentialRuntimeStep | null;
   activeTab: SovereignAutoViewTab;
   hasPackage: boolean;
+  hasDiffSources?: boolean;
   isPublishing: boolean;
   isWatchingWorkflow: boolean;
   workflowStatus?: WorkflowWatchStatus;
+  hasActivePatterns?: boolean;
+  hasActiveTelemetry?: boolean;
 }
 
 export interface SovereignAutoViewDecision {
@@ -109,11 +112,32 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
     tab = 'workflow';
     reason = 'Non-final workflow status should stay on workflow watch.';
   } else if (input.workflowStatus === 'green' && input.hasPackage) {
-    tab = 'files';
-    reason = 'Green workflow with a generated package should return to the ready files view.';
+    // Nach grünem Workflow: Diff laden wenn Package da
+    if (input.hasDiffSources) {
+      tab = 'diff';
+      reason = 'Green workflow with diff sources loaded - show the diff.';
+    } else {
+      tab = 'diff';
+      reason = 'Green workflow with generated package - show diff view.';
+    }
+  } else if (input.hasPackage && input.hasDiffSources && input.workflowStatus === 'idle') {
+    // Package + Diff + kein Workflow = Diff anschauen
+    tab = 'diff';
+    reason = 'Package ready with diff sources - review the generated diff.';
   } else if (input.hasPackage && input.mode !== 'manual') {
     tab = 'files';
     reason = 'Auto mode generated package is ready for review.';
+  } else if (input.hasPackage && input.workflowStatus === 'idle') {
+    // Package da aber noch kein Workflow gestartet
+    tab = 'workflow';
+    reason = 'Package ready - start workflow to validate.';
+  } else if (input.hasActivePatterns && input.hasPackage) {
+    // Patterns verfügbar + Package = Memory anschauen
+    tab = 'memory';
+    reason = 'Active patterns available with package - show learned patterns.';
+  } else if (input.hasActiveTelemetry) {
+    tab = 'telemetry';
+    reason = 'Active telemetry events - show status.';
   }
 
   const target = tab ?? input.activeTab;
