@@ -17,10 +17,10 @@ describe('sovereignChaosSmokePlan', () => {
   });
 
   it('rejects chaos smoke plans enabled in live path', () => {
-    const plan: SovereignChaosSmokePlan = {
+    const plan = {
       ...createSovereignChaosSmokePlan(),
-      enabledInLivePath: true as false,
-    };
+      enabledInLivePath: true,
+    } as unknown as SovereignChaosSmokePlan;
 
     expect(() => assertSovereignChaosSmokePlan(plan)).toThrow(/disabled in the live path/i);
   });
