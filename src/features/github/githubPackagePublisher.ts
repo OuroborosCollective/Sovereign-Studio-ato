@@ -17,6 +17,7 @@ export interface PublishPackageInput {
   branchPrefix?: string;
   branchNonce?: string;
   maxBranchAttempts?: number;
+  maxRetries?: number;
   fetcher?: typeof fetch;
 }
 
@@ -52,6 +53,21 @@ interface GitHubPullResponse {
 const FORBIDDEN_PATH_PREFIXES = ['.git/', 'node_modules/', 'dist/', 'build/'];
 const FORBIDDEN_EXACT_PATHS = ['.env', '.env.local', '.env.production'];
 const AUDIT_ONLY_PATH = 'generated/sovereign-product/workflow.ts';
+const DEFAULT_MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 8000;
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function computeRetryDelay(attempt: number, token: string): number {
+  const exponentialDelay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+  const jitter = Math.random() * 500;
+  const tokenHash = token.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const deterministicJitter = (tokenHash % 1000) / 1000 * 200;
+  return Math.min(exponentialDelay + jitter + deterministicJitter, MAX_RETRY_DELAY_MS);
+}
 
 function stableHash(input: string): string {
   let hash = 0x811c9dc5;
@@ -103,18 +119,46 @@ export function validatePublishableFiles(files: PublishableFile[]): PublishableF
   return normalized;
 }
 
-async function githubJson<T>(fetcher: typeof fetch, url: string, token: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetcher(url, {
-    ...init,
-    headers: buildGitHubHeaders({ token, json: true, extra: init.headers }),
-  });
+async function githubJson<T>(
+  fetcher: typeof fetch,
+  url: string,
+  token: string,
+  init: RequestInit = {},
+  options: { maxRetries?: number; retry?: number } = {},
+): Promise<T> {
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const attempt = options.retry ?? 0;
 
-  if (!response.ok) {
+  try {
+    const response = await fetcher(url, {
+      ...init,
+      headers: buildGitHubHeaders({ token, json: true, extra: init.headers }),
+    });
+
+    if (response.ok) {
+      return response.json() as Promise<T>;
+    }
+
     const message = await response.text().catch(() => '');
-    throw new Error(stripTokenFromText(`GitHub API ${response.status}: ${message || response.statusText}`, token));
-  }
 
-  return response.json() as Promise<T>;
+    if (attempt < maxRetries && isRetryableStatus(response.status)) {
+      const delay = computeRetryDelay(attempt, token);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return githubJson<T>(fetcher, url, token, init, { maxRetries, retry: attempt + 1 });
+    }
+
+    throw new Error(stripTokenFromText(`GitHub API ${response.status}: ${message || response.statusText}`, token));
+  } catch (error) {
+    if (attempt < maxRetries && error instanceof Error) {
+      const isNetworkError = error.message.includes('fetch') || error.message.includes('network') || error.message.includes('ECONNREFUSED');
+      if (isNetworkError) {
+        const delay = computeRetryDelay(attempt, token);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return githubJson<T>(fetcher, url, token, init, { maxRetries, retry: attempt + 1 });
+      }
+    }
+    throw error;
+  }
 }
 
 async function createUniqueBranchRef(
@@ -160,14 +204,15 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
   const fetcher = input.fetcher ?? fetch;
   const files = validatePublishableFiles(input.files);
   const apiBase = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
+  const maxRetries = input.maxRetries ?? DEFAULT_MAX_RETRIES;
 
-  const repo = await githubJson<GitHubRepoResponse>(fetcher, apiBase, token);
+  const repo = await githubJson<GitHubRepoResponse>(fetcher, apiBase, token, {}, { maxRetries });
   const baseBranch = input.baseBranch?.trim() || repo.default_branch || 'main';
-  const baseRef = await githubJson<GitHubRefResponse>(fetcher, `${apiBase}/git/ref/heads/${encodeBranchPath(baseBranch)}`, token);
+  const baseRef = await githubJson<GitHubRefResponse>(fetcher, `${apiBase}/git/ref/heads/${encodeBranchPath(baseBranch)}`, token, {}, { maxRetries });
   const baseSha = baseRef.object?.sha;
   if (!baseSha) throw new Error(`Could not resolve base branch: ${baseBranch}`);
 
-  const baseCommit = await githubJson<GitHubCommitResponse>(fetcher, `${apiBase}/git/commits/${baseSha}`, token);
+  const baseCommit = await githubJson<GitHubCommitResponse>(fetcher, `${apiBase}/git/commits/${baseSha}`, token, {}, { maxRetries });
   const baseTreeSha = baseCommit.tree?.sha;
   if (!baseTreeSha) throw new Error('Could not resolve base tree.');
 
@@ -197,7 +242,7 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
         content: file.content,
       })),
     }),
-  });
+  }, { maxRetries });
 
   if (!tree.sha) throw new Error('Could not create GitHub tree.');
 
@@ -208,14 +253,14 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
       tree: tree.sha,
       parents: [baseSha],
     }),
-  });
+  }, { maxRetries });
 
   if (!commit.sha) throw new Error('Could not create GitHub commit.');
 
   await githubJson(fetcher, `${apiBase}/git/refs/heads/${encodeBranchPath(branch)}`, token, {
     method: 'PATCH',
     body: JSON.stringify({ sha: commit.sha, force: false }),
-  });
+  }, { maxRetries });
 
   const pr = await githubJson<GitHubPullResponse>(fetcher, `${apiBase}/pulls`, token, {
     method: 'POST',
@@ -227,7 +272,7 @@ export async function publishPackageAsDraftPr(input: PublishPackageInput): Promi
       draft: true,
       maintainer_can_modify: true,
     }),
-  });
+  }, { maxRetries });
 
   if (!pr.number || !pr.html_url) throw new Error('GitHub did not return a pull request URL.');
 

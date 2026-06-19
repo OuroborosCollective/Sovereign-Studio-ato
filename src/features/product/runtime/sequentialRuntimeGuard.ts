@@ -62,6 +62,14 @@ export interface SequentialRetryPlan {
   canAutoRetry: boolean;
 }
 
+export interface SequentialTimeoutStatus {
+  step: SequentialRuntimeStep;
+  timedOut: boolean;
+  elapsedMs: number;
+  timeoutMs: number;
+  remainingMs: number;
+}
+
 export const SEQUENTIAL_RUNTIME_STEPS: SequentialRuntimeStep[] = [
   'repo-load',
   'package-build',
@@ -78,6 +86,15 @@ const STEP_LABELS: Record<SequentialRuntimeStep, string> = {
   'draft-pr-publish': 'Draft PR publish',
   'workflow-watch': 'Workflow watch',
   'repair-plan': 'Repair plan',
+};
+
+const STEP_TIMEOUT_MS: Record<SequentialRuntimeStep, number> = {
+  'repo-load': 30_000,
+  'package-build': 120_000,
+  'diff-load': 30_000,
+  'draft-pr-publish': 60_000,
+  'workflow-watch': 300_000,
+  'repair-plan': 30_000,
 };
 
 function createStepRecord(step: SequentialRuntimeStep): SequentialRuntimeStepRecord {
@@ -418,4 +435,44 @@ export function summarizeSequentialRuntime(state: SequentialRuntimeState): strin
   const completed = SEQUENTIAL_RUNTIME_STEPS.filter((step) => state.steps[step].status === 'completed').length;
   const failed = SEQUENTIAL_RUNTIME_STEPS.filter((step) => state.steps[step].status === 'failed').length;
   return `${active}; ${completed} completed step(s), ${failed} failed step(s).`;
+}
+
+export function getStepTimeout(step: SequentialRuntimeStep): number {
+  return STEP_TIMEOUT_MS[step] ?? 60_000;
+}
+
+export function checkStepTimeout(
+  state: SequentialRuntimeState,
+  step: SequentialRuntimeStep,
+  now = Date.now(),
+): SequentialTimeoutStatus {
+  const record = state.steps[step];
+  const timeoutMs = getStepTimeout(step);
+
+  if (record.status !== 'running' || !record.startedAt) {
+    return {
+      step,
+      timedOut: false,
+      elapsedMs: 0,
+      timeoutMs,
+      remainingMs: timeoutMs,
+    };
+  }
+
+  const elapsedMs = now - record.startedAt;
+  const remainingMs = Math.max(0, timeoutMs - elapsedMs);
+  const timedOut = elapsedMs > timeoutMs;
+
+  return {
+    step,
+    timedOut,
+    elapsedMs,
+    timeoutMs,
+    remainingMs,
+  };
+}
+
+export function checkActiveStepTimeout(state: SequentialRuntimeState, now = Date.now()): SequentialTimeoutStatus | null {
+  if (!state.activeStep) return null;
+  return checkStepTimeout(state, state.activeStep, now);
 }

@@ -1392,39 +1392,46 @@ function ensureCoachRoot(nav: Element): HTMLElement {
 function renderCoach(): void {
   if (typeof document === 'undefined') return;
 
-  installStyle();
+  try {
+    installStyle();
 
-  const nav = navShell();
-  if (!appShell() || !nav) return;
+    const nav = navShell();
+    if (!appShell() || !nav) return;
 
-  const root = ensureCoachRoot(nav);
-  const state = readCoachState();
-  const mode = coachMode(state);
-  const terminalLines = terminalLinesForState(state, mode);
-  const signature = JSON.stringify({
-    lamp: state.lamp,
-    title: state.title,
-    message: state.message,
-    action: state.action,
-    thinking: state.thinking,
-    source: state.source,
-    tick: state.tick,
-    hash: state.hash,
-    mode,
-    terminalLines,
-  });
+    const root = ensureCoachRoot(nav);
+    const state = readCoachState();
+    const mode = coachMode(state);
+    const terminalLines = terminalLinesForState(state, mode);
+    const signature = JSON.stringify({
+      lamp: state.lamp,
+      title: state.title,
+      message: state.message,
+      action: state.action,
+      thinking: state.thinking,
+      source: state.source,
+      tick: state.tick,
+      hash: state.hash,
+      mode,
+      terminalLines,
+    });
 
-  if (root.dataset.signature === signature) return;
+    if (root.dataset.signature === signature) return;
 
-  root.dataset.signature = signature;
-  root.className = state.lamp;
+    root.dataset.signature = signature;
+    root.className = state.lamp;
 
-  ensureText(root, '.coach-title', `Sovereign Bot · ${state.title}`);
-  ensureText(root, '.coach-action', state.action);
-  ensureText(root, '.coach-message', state.message);
-  renderTerminal(root, terminalLines);
+    ensureText(root, '.coach-title', `Sovereign Bot · ${state.title}`);
+    ensureText(root, '.coach-action', state.action);
+    ensureText(root, '.coach-message', state.message);
+    renderTerminal(root, terminalLines);
 
-  root.querySelector('.coach-title')?.classList.toggle('dots', state.thinking);
+    root.querySelector('.coach-title')?.classList.toggle('dots', state.thinking);
+  } catch (error) {
+    // Coach render errors must never crash the app.
+    // Log to console for debugging but keep coach hidden/stale.
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.warn('[Coach] Render error (non-fatal):', errorMessage);
+  }
 }
 
 function scheduleRender(): void {
@@ -1487,31 +1494,37 @@ export function publishMobileOperatorCoachState(state: ExternalCoachState): void
 export function installMobileOperatorCoach(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  const win = window as CoachWindow;
+  try {
+    const win = window as CoachWindow;
 
-  installCoachEventBridge();
+    installCoachEventBridge();
 
-  const stored = readStoredState();
-  if (stored) rememberState(stored);
+    const stored = readStoredState();
+    if (stored) rememberState(stored);
 
-  window.setTimeout(renderCoach, INITIAL_RENDER_DELAY_MS);
+    window.setTimeout(renderCoach, INITIAL_RENDER_DELAY_MS);
 
-  if (!win.__sovereignMobileCoachInterval) {
-    win.__sovereignMobileCoachInterval = window.setInterval(renderCoach, RENDER_INTERVAL_MS);
-  }
+    if (!win.__sovereignMobileCoachInterval) {
+      win.__sovereignMobileCoachInterval = window.setInterval(renderCoach, RENDER_INTERVAL_MS);
+    }
 
-  if (!win.__sovereignMobileCoachObserver && document.body) {
-    win.__sovereignMobileCoachObserver = new MutationObserver((records) => {
-      if (mutationBelongsOnlyToCoach(records)) return;
-      scheduleRender();
-    });
+    if (!win.__sovereignMobileCoachObserver && document.body) {
+      win.__sovereignMobileCoachObserver = new MutationObserver((records) => {
+        if (mutationBelongsOnlyToCoach(records)) return;
+        scheduleRender();
+      });
 
-    win.__sovereignMobileCoachObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: SIGNAL_ATTRIBUTES,
-    });
+      win.__sovereignMobileCoachObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: SIGNAL_ATTRIBUTES,
+      });
+    }
+  } catch (error) {
+    // Coach installation errors must never crash the app.
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.warn('[Coach] Installation error (non-fatal):', errorMessage);
   }
 }
