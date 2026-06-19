@@ -29,6 +29,8 @@ export interface MobileRepoSetupState {
   updatedAt: number;
 }
 
+type MobileRepoSetupInput = Partial<Record<'repoUrl' | 'repoBranch' | 'accessValue' | 'autoLoad' | 'requestId' | 'createdAt', unknown>>;
+
 const MAX_REPO_URL_LENGTH = 500;
 const MAX_BRANCH_LENGTH = 120;
 const MAX_ACCESS_LENGTH = 500;
@@ -50,14 +52,7 @@ function isLikelyGithubRepoUrl(value: string): boolean {
   return /^https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/?$/i.test(value.trim());
 }
 
-export function createMobileRepoSetupDetail(input: {
-  repoUrl: unknown;
-  repoBranch?: unknown;
-  accessValue: unknown;
-  autoLoad?: unknown;
-  requestId?: unknown;
-  createdAt?: unknown;
-}): MobileRepoSetupDetail {
+export function createMobileRepoSetupDetail(input: MobileRepoSetupInput): MobileRepoSetupDetail {
   const createdAt = typeof input.createdAt === 'number' && Number.isFinite(input.createdAt) && input.createdAt > 0
     ? input.createdAt
     : now();
@@ -98,7 +93,7 @@ export function assertMobileRepoSetupDetailValid(detail: MobileRepoSetupDetail):
 
 export function parseMobileRepoSetupDetail(value: unknown): MobileRepoSetupDetail | null {
   if (!value || typeof value !== 'object') return null;
-  const detail = createMobileRepoSetupDetail(value as Record<string, unknown>);
+  const detail = createMobileRepoSetupDetail(value as MobileRepoSetupInput);
   const report = validateMobileRepoSetupDetail(detail);
   return report.valid ? detail : null;
 }
