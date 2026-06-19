@@ -2,10 +2,15 @@ import { configureStore, type Middleware } from '@reduxjs/toolkit';
 import { Preferences } from '@capacitor/preferences';
 
 import billingReducer from '../features/billing/billingSlice';
-import canvasReducer, { addObject } from '../features/canvas/canvasSlice';
+import canvasReducer, {
+  addObject,
+  normalizeCanvasStateInput,
+  restoreCanvasState,
+  type CanvasState,
+} from '../features/canvas/canvasSlice';
 import ouroborosReducer from '../features/ouroboros/ouroborosSlice';
 
-export const SOVEREIGN_STORE_ARCHITECTURE_VERSION = 2 as const;
+export const SOVEREIGN_STORE_ARCHITECTURE_VERSION = 3 as const;
 export const SOVEREIGN_CANVAS_PERSISTENCE_KEY = 'sovereign_canvas_state_mirror';
 
 export const AI_CANVAS_BRIDGE_ACTION_TYPES = [
@@ -14,6 +19,7 @@ export const AI_CANVAS_BRIDGE_ACTION_TYPES = [
 ] as const;
 
 const AI_CANVAS_BRIDGE_ACTION_TYPE_SET = new Set<string>(AI_CANVAS_BRIDGE_ACTION_TYPES);
+const CANVAS_PERSISTENCE_EXCLUDED_ACTION_TYPES = new Set<string>([restoreCanvasState.type]);
 const STORE_EVENT_LIMIT = 50;
 
 interface ReduxActionLike {
@@ -32,7 +38,11 @@ export type SovereignStoreRuntimeEventKind =
   | 'canvas-persist-skipped'
   | 'canvas-persist-failed'
   | 'canvas-persist-cleared'
+  | 'canvas-persist-read'
   | 'canvas-persist-read-failed'
+  | 'canvas-persist-restored'
+  | 'canvas-persist-restore-skipped'
+  | 'canvas-persist-restore-failed'
   | 'canvas-persist-serialize-failed';
 
 export interface SovereignStoreRuntimeEvent {
@@ -56,6 +66,18 @@ export interface CanvasPersistenceMirrorStatus {
   lastValueBytes: number | null;
   lastWrittenBytes: number | null;
   lastError: string | null;
+}
+
+export interface CanvasStateMirrorRestoreOptions {
+  dispatch?: boolean;
+  clearInvalid?: boolean;
+}
+
+export interface CanvasStateMirrorRestoreResult<TCanvasState = CanvasState> {
+  restored: boolean;
+  state: TCanvasState | null;
+  reason: string;
+  status: CanvasPersistenceMirrorStatus;
 }
 
 export interface SovereignStoreRuntimeStatus {
@@ -83,7 +105,10 @@ function shouldBridgeAiActionToCanvas(action: ReduxActionLike): boolean {
 }
 
 function shouldMirrorCanvasAction(action: ReduxActionLike): boolean {
-  return action.type.startsWith('canvas/');
+  return (
+    action.type.startsWith('canvas/') &&
+    !CANVAS_PERSISTENCE_EXCLUDED_ACTION_TYPES.has(action.type)
+  );
 }
 
 function errorToMessage(error: unknown): string {
@@ -99,8 +124,16 @@ function safeSerializeCanvasState(canvas: unknown): string | null {
   }
 }
 
+function safeParseJson(value: string): unknown {
+  return JSON.parse(value) as unknown;
+}
+
 function byteLength(value: string): number {
-  return new Blob([value]).size;
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(value).byteLength;
+  }
+
+  return value.length;
 }
 
 function defer(callback: () => void): void {
@@ -393,7 +426,7 @@ export async function flushCanvasStateMirror(): Promise<CanvasPersistenceMirrorS
   return canvasPersistenceMirror.snapshot();
 }
 
-export async function readCanvasStateMirror<TCanvasState = unknown>(): Promise<TCanvasState | null> {
+export async function readCanvasStateMirror<TCanvasState = CanvasState>(): Promise<TCanvasState | null> {
   try {
     const result = await Preferences.get({
       key: SOVEREIGN_CANVAS_PERSISTENCE_KEY,
@@ -401,7 +434,12 @@ export async function readCanvasStateMirror<TCanvasState = unknown>(): Promise<T
 
     if (!result.value) return null;
 
-    return JSON.parse(result.value) as TCanvasState;
+    storeRuntimeEvents.record(
+      'canvas-persist-read',
+      'Canvas state mirror read from native storage.',
+    );
+
+    return safeParseJson(result.value) as TCanvasState;
   } catch (error) {
     storeRuntimeEvents.record(
       'canvas-persist-read-failed',
@@ -409,6 +447,93 @@ export async function readCanvasStateMirror<TCanvasState = unknown>(): Promise<T
     );
 
     return null;
+  }
+}
+
+export async function restoreCanvasStateMirror(
+  options: CanvasStateMirrorRestoreOptions = {},
+): Promise<CanvasStateMirrorRestoreResult> {
+  const dispatchRestore = options.dispatch ?? true;
+  const clearInvalid = options.clearInvalid ?? false;
+
+  try {
+    const result = await Preferences.get({
+      key: SOVEREIGN_CANVAS_PERSISTENCE_KEY,
+    });
+
+    if (!result.value) {
+      storeRuntimeEvents.record(
+        'canvas-persist-restore-skipped',
+        'Canvas state mirror restore skipped because no mirror exists.',
+      );
+
+      return {
+        restored: false,
+        state: null,
+        reason: 'No canvas state mirror exists.',
+        status: canvasPersistenceMirror.snapshot(),
+      };
+    }
+
+    const normalized = normalizeCanvasStateInput(safeParseJson(result.value));
+
+    if (!normalized) {
+      if (clearInvalid) {
+        await Preferences.remove({
+          key: SOVEREIGN_CANVAS_PERSISTENCE_KEY,
+        });
+        canvasPersistenceMirror.reset();
+      }
+
+      storeRuntimeEvents.record(
+        'canvas-persist-restore-failed',
+        clearInvalid
+          ? 'Canvas state mirror restore failed and invalid mirror was cleared.'
+          : 'Canvas state mirror restore failed because the mirror payload is invalid.',
+      );
+
+      return {
+        restored: false,
+        state: null,
+        reason: clearInvalid
+          ? 'Invalid canvas state mirror was cleared.'
+          : 'Invalid canvas state mirror payload.',
+        status: canvasPersistenceMirror.snapshot(),
+      };
+    }
+
+    if (dispatchRestore) {
+      store.dispatch(restoreCanvasState(normalized));
+    }
+
+    storeRuntimeEvents.record(
+      'canvas-persist-restored',
+      dispatchRestore
+        ? 'Canvas state mirror restored into Redux state.'
+        : 'Canvas state mirror validated without Redux dispatch.',
+      restoreCanvasState.type,
+    );
+
+    return {
+      restored: true,
+      state: normalized,
+      reason: dispatchRestore
+        ? 'Canvas state mirror restored into Redux state.'
+        : 'Canvas state mirror validated without Redux dispatch.',
+      status: canvasPersistenceMirror.snapshot(),
+    };
+  } catch (error) {
+    storeRuntimeEvents.record(
+      'canvas-persist-restore-failed',
+      `Canvas state mirror restore failed: ${errorToMessage(error)}`,
+    );
+
+    return {
+      restored: false,
+      state: null,
+      reason: errorToMessage(error),
+      status: canvasPersistenceMirror.snapshot(),
+    };
   }
 }
 
