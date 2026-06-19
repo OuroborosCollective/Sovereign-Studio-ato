@@ -3,9 +3,12 @@ import {
   assertSequentialRuntimeStateValid,
   assertSequentialRuntimeStepRequestValid,
   canStartSequentialStep,
+  checkActiveStepTimeout,
+  checkStepTimeout,
   createSequentialRuntimeState,
   finishSequentialStep,
   finishSequentialStepWithFallback,
+  getStepTimeout,
   planSequentialRetry,
   startSequentialStep,
   summarizeSequentialRuntime,
@@ -139,5 +142,59 @@ describe('sequentialRuntimeGuard', () => {
     const report = validateSequentialRuntimeState(broken);
     expect(report.valid).toBe(false);
     expect(report.errors.join(' ')).toContain('strictly increasing');
+  });
+
+  describe('timeout guards', () => {
+    it('returns correct timeout values for each step', () => {
+      expect(getStepTimeout('repo-load')).toBe(30_000);
+      expect(getStepTimeout('package-build')).toBe(120_000);
+      expect(getStepTimeout('diff-load')).toBe(30_000);
+      expect(getStepTimeout('draft-pr-publish')).toBe(60_000);
+      expect(getStepTimeout('workflow-watch')).toBe(300_000);
+      expect(getStepTimeout('repair-plan')).toBe(30_000);
+    });
+
+    it('returns false timedOut for idle step', () => {
+      const state = createSequentialRuntimeState();
+      const result = checkStepTimeout(state, 'repo-load', 1000);
+      expect(result.timedOut).toBe(false);
+      expect(result.remainingMs).toBe(30_000);
+    });
+
+    it('returns false timedOut for completed step', () => {
+      let state = startSequentialStep(createSequentialRuntimeState(), 'repo-load', {}, 1);
+      state = finishSequentialStep(state, 'repo-load', 'completed', 'done', 5000);
+      const result = checkStepTimeout(state, 'repo-load', 10000);
+      expect(result.timedOut).toBe(false);
+    });
+
+    it('returns false timedOut when step is within timeout', () => {
+      const state = startSequentialStep(createSequentialRuntimeState(), 'repo-load', {}, 1);
+      const result = checkStepTimeout(state, 'repo-load', 1 + 29_999);
+      expect(result.timedOut).toBe(false);
+      expect(result.remainingMs).toBeGreaterThan(0);
+    });
+
+    it('returns true timedOut when step exceeds timeout', () => {
+      const state = startSequentialStep(createSequentialRuntimeState(), 'repo-load', {}, 1);
+      const result = checkStepTimeout(state, 'repo-load', 1 + 30_001);
+      expect(result.timedOut).toBe(true);
+      expect(result.remainingMs).toBe(0);
+      expect(result.elapsedMs).toBeGreaterThan(30_000);
+    });
+
+    it('returns null from checkActiveStepTimeout when no active step', () => {
+      const state = createSequentialRuntimeState();
+      expect(checkActiveStepTimeout(state)).toBeNull();
+    });
+
+    it('returns timeout status from checkActiveStepTimeout when step is running', () => {
+      const state = startSequentialStep(createSequentialRuntimeState(), 'repo-load', { repoReady: true }, 1);
+      const result = checkActiveStepTimeout(state, 1 + 30_001);
+      expect(result).not.toBeNull();
+      expect(result!.timedOut).toBe(true);
+      expect(result!.step).toBe('repo-load');
+      expect(result!.timeoutMs).toBe(30_000);
+    });
   });
 });
