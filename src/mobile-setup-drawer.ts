@@ -504,4 +504,162 @@ function installStyle(): void {
       z-index: 55;
       border: 1px solid rgba(34,211,238,.38);
       border-radius: 1.15rem;
-      background: linear-gradient(135deg, rgba
+      background: linear-gradient(135deg, rgba(2,6,23,.97), rgba(15,23,42,.92));
+      color: #e2e8f0;
+      box-shadow: 0 .9rem 2rem rgba(0,0,0,.32);
+      padding: .9rem;
+      display: grid;
+      gap: .7rem;
+      max-width: 32rem;
+    }
+
+    #${DRAWER_ID} .setup-panel.hidden {
+      display: none;
+    }
+
+    #${DRAWER_ID} label {
+      display: grid;
+      gap: .3rem;
+      color: #cbd5e1;
+      font-size: .78rem;
+      font-weight: 800;
+    }
+
+    #${DRAWER_ID} input {
+      border: 1px solid rgba(148,163,184,.32);
+      border-radius: .75rem;
+      background: rgba(15,23,42,.9);
+      color: #f8fafc;
+      padding: .62rem .7rem;
+      min-height: 2.45rem;
+      font-size: .84rem;
+    }
+
+    #${DRAWER_ID} .setup-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: .5rem;
+    }
+
+    #${DRAWER_ID} .setup-save {
+      border: 1px solid rgba(34,211,238,.42);
+      border-radius: .82rem;
+      background: rgba(8,47,73,.9);
+      color: #e0f2fe;
+      padding: .62rem .7rem;
+      font-weight: 950;
+    }
+
+    #${DRAWER_ID} [data-role="setup-status"] {
+      color: #a5b4fc;
+      font-size: .75rem;
+      font-weight: 850;
+      min-height: 1rem;
+    }
+
+    #${DRAWER_ID} [data-role="setup-status"][data-phase="failed"] {
+      color: #fb7185;
+    }
+
+    #${DRAWER_ID} [data-role="setup-status"][data-phase="loaded"] {
+      color: #34d399;
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function createInput(labelText: string, field: 'repoUrl' | 'accessValue', value = ''): HTMLLabelElement {
+  const label = document.createElement('label');
+  label.textContent = labelText;
+
+  const input = document.createElement('input');
+  input.dataset.field = field;
+  input.name = field;
+  input.value = value;
+  input.setAttribute('aria-label', labelText);
+
+  if (field === 'accessValue') {
+    input.type = 'password';
+    input.autocomplete = 'off';
+  } else {
+    input.type = 'url';
+    input.autocomplete = 'url';
+  }
+
+  label.appendChild(input);
+  return label;
+}
+
+function renderDrawer(): void {
+  if (typeof document === 'undefined') return;
+
+  installStyle();
+
+  let root = document.getElementById(DRAWER_ID);
+  if (root) return;
+
+  const draft = readDraft();
+
+  root = document.createElement('section');
+  root.id = DRAWER_ID;
+  root.setAttribute('aria-label', 'Sovereign mobile setup drawer');
+
+  const fab = document.createElement('button');
+  fab.type = 'button';
+  fab.className = 'setup-fab';
+  fab.textContent = '⚙';
+  fab.setAttribute('aria-label', 'Repo Setup öffnen');
+
+  const panel = document.createElement('div');
+  panel.className = 'setup-panel hidden';
+
+  const title = document.createElement('strong');
+  title.textContent = 'GitHub Repo Setup';
+
+  const repoInput = createInput('GitHub Repository URL', 'repoUrl', draft.repoUrl);
+  const accessInput = createInput('GitHub private access', 'accessValue', '');
+
+  const status = document.createElement('div');
+  status.dataset.role = 'setup-status';
+  status.dataset.phase = 'idle';
+  status.textContent = 'Bereit.';
+
+  const actions = document.createElement('div');
+  actions.className = 'setup-actions';
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'setup-save';
+  saveButton.textContent = 'Speichern & Repo';
+  saveButton.addEventListener('click', () => {
+    const repo = panel.querySelector<HTMLInputElement>('[data-field="repoUrl"]');
+    const access = panel.querySelector<HTMLInputElement>('[data-field="accessValue"]');
+
+    startRepoSetup({
+      repoUrl: normalizeRepoUrl(repo?.value ?? ''),
+      accessValue: normalizeAccessValue(access?.value ?? ''),
+    });
+  });
+
+  actions.appendChild(saveButton);
+  panel.append(title, repoInput, accessInput, actions, status);
+
+  fab.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+  });
+
+  root.append(fab, panel);
+  document.body.appendChild(root);
+}
+
+export function installMobileSetupDrawer(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  const win = mobileWindow();
+  if (!win[INSTALL_FLAG]) {
+    win[INSTALL_FLAG] = true;
+  }
+
+  window.setTimeout(renderDrawer, RENDER_DELAY_MS);
+}
