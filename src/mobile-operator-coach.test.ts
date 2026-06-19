@@ -1,227 +1,426 @@
+// @vitest-environment jsdom
+
 /**
  * KI Coach Unit Tests
- * Tests the mobile operator coach logic
+ * Tests the real mobile operator coach runtime/event path and DOM fallback.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock coach state detection functions
-type CoachLamp = 'green' | 'yellow' | 'red';
+type CoachModule = typeof import('./mobile-operator-coach');
 
-interface CoachState {
-  lamp: CoachLamp;
-  title: string;
-  message: string;
-  action: string;
-  thinking: boolean;
+type CoachTestWindow = Window &
+  typeof globalThis & {
+    __sovereignRuntime?: {
+      coachState?: unknown;
+      mobileCoachState?: unknown;
+      operatorCoachState?: unknown;
+      state?: unknown;
+      snapshot?: unknown;
+      telemetry?: unknown;
+      metrics?: unknown;
+      workflow?: unknown;
+      patternMemory?: unknown;
+      remoteMemory?: unknown;
+      getCoachState?: () => unknown;
+      getMobileCoachState?: () => unknown;
+      getSnapshot?: () => unknown;
+    };
+    sovereignRuntime?: CoachTestWindow['__sovereignRuntime'];
+    __sovereignCoachState?: unknown;
+    __sovereignMobileCoachState?: unknown;
+    __sovereignRuntimeCoachState?: unknown;
+  };
+
+const INITIAL_RENDER_DELAY_MS = 700;
+const MUTATION_RENDER_DELAY_MS = 120;
+
+function testWindow(): CoachTestWindow {
+  return window as CoachTestWindow;
 }
 
-function hasAny(source: string, tokens: string[]): boolean {
-  const lower = source.toLowerCase();
-  return tokens.some((token) => lower.includes(token.toLowerCase()));
+function mountShell(extraContent = ''): void {
+  document.body.innerHTML = `
+    <div id="root">
+      <div class="min-h-screen">
+        <nav aria-label="Main navigation">
+          <button type="button">Repo</button>
+          <button type="button">Builder</button>
+          <button type="button">Files</button>
+          <button type="button">Live Monitor</button>
+        </nav>
+        <main>${extraContent}</main>
+      </div>
+    </div>
+  `;
 }
 
-function hasRealStopper(source: string): boolean {
-  const lower = source.toLowerCase();
-  const harmless = [
-    '0 failed',
-    'no active step; 0 completed step(s), 0 failed step(s)',
-    'repair oder monitor pruefen',
-    'repair or monitor',
-    'repair plan idle',
-    'workflow: idle',
-  ];
-  if (harmless.some((token) => lower.includes(token))) return false;
-  return [
-    'validation_failed',
-    'draft pr failed',
-    'build failed',
-    'workflow failed',
-    'critical blocker',
-    'fehlgeschlagen',
-    'blockierender fehler',
-    'error:',
-  ].some((token) => lower.includes(token));
+async function loadCoach(): Promise<CoachModule> {
+  vi.resetModules();
+  return import('./mobile-operator-coach');
 }
 
-function readCoachState(pageContent: string): CoachState {
-  const thinking = hasAny(pageContent, ['läuft', 'running', 'busy', 'in progress', 'is building', 'is watching', 'draft pr läuft']);
-
-  if (hasRealStopper(pageContent)) {
-    return { lamp: 'red', title: 'Ich sehe einen echten Stopper', message: 'Ich zeige dir jetzt Repair oder Logs.', action: 'Repair/Logs automatisch pruefen.', thinking: false };
-  }
-
-  if (thinking) {
-    return { lamp: 'green', title: 'Ich arbeite gerade', message: 'Ich analysiere und pruefe.', action: 'Bitte warten.', thinking: true };
-  }
-
-  if (hasAny(pageContent, ['self review: accepted', 'generated-output-accepted', 'generated package passed self review'])) {
-    return { lamp: 'green', title: 'Ergebnis ist bereit', message: 'Die Dateien sind akzeptiert.', action: 'Files/Diff pruefen.', thinking: false };
-  }
-
-  if (hasAny(pageContent, ['repo fehlt', 'repo snapshot required', 'repository snapshot is not ready', 'noch kein echtes repo', 'automation needs a loaded repository snapshot'])) {
-    return { lamp: 'yellow', title: 'Ich brauche zuerst dein Repo', message: 'Oeffne das Zahnrad oder tippe Repo.', action: 'Repo Setup oeffnen.', thinking: false };
-  }
-
-  if (hasAny(pageContent, ['pre-publish review', 'generated file']) && !hasAny(pageContent, ['self review'])) {
-    return { lamp: 'green', title: 'Ich habe Ergebnis-Dateien', message: 'Pruefe kurz die erzeugten Dateien.', action: 'Dateien pruefen.', thinking: false };
-  }
-
-  if (hasAny(pageContent, ['runtime validation coverage', 'healthy', '21/21 runtime validation'])) {
-    return { lamp: 'green', title: 'Checks sehen gesund aus', message: 'Die Runtime-Pruefung ist gruen.', action: 'Weiter im Hauptfluss.', thinking: false };
-  }
-
-  if (hasAny(pageContent, ['platzhalter', 'konkreten auftrag', 'concrete mission'])) {
-    return { lamp: 'yellow', title: 'Ich brauche deinen Wunsch', message: 'Schreibe kurz, was ich verbessern soll.', action: 'Auftrag schreiben.', thinking: false };
-  }
-
-  return { lamp: 'yellow', title: 'Ich warte auf den Start', message: 'Beginne mit Repo Setup.', action: 'Repo oeffnen.', thinking: false };
+function advanceInitialRender(): void {
+  vi.advanceTimersByTime(INITIAL_RENDER_DELAY_MS + 1);
 }
 
-describe('KI Coach Logic', () => {
-  describe('hasRealStopper', () => {
-    it('detects validation_failed error', () => {
-      expect(hasRealStopper('validation_failed: something went wrong')).toBe(true);
-    });
+function advanceMutationRender(): void {
+  vi.advanceTimersByTime(MUTATION_RENDER_DELAY_MS + 1);
+}
 
-    it('detects draft pr failed', () => {
-      expect(hasRealStopper('draft pr failed to create')).toBe(true);
-    });
+function coachRoot(): HTMLElement {
+  const root = document.getElementById('sovereign-mobile-coach');
+  expect(root).toBeTruthy();
+  return root as HTMLElement;
+}
 
-    it('detects build failed', () => {
-      expect(hasRealStopper('build failed with exit code 1')).toBe(true);
-    });
+function coachText(): string {
+  return coachRoot().textContent ?? '';
+}
 
-    it('detects workflow failed', () => {
-      expect(hasRealStopper('workflow failed on ci check')).toBe(true);
-    });
+function dispatchCoachState(detail: unknown, eventName = 'sovereign:runtime-coach-state'): void {
+  window.dispatchEvent(new CustomEvent(eventName, { detail }));
+  advanceMutationRender();
+}
 
-    it('detects critical blocker', () => {
-      expect(hasRealStopper('critical blocker detected')).toBe(true);
-    });
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-06-19T08:00:00.000Z'));
+  sessionStorage.clear();
+  document.body.innerHTML = '';
+});
 
-    it('detects German error messages', () => {
-      expect(hasRealStopper('fehlgeschlagen bei der validierung')).toBe(true);
-      expect(hasRealStopper('blockierender fehler im workflow')).toBe(true);
-    });
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  sessionStorage.clear();
+  document.body.innerHTML = '';
 
-    it('detects generic error:', () => {
-      expect(hasRealStopper('error: connection timeout')).toBe(true);
-    });
+  const win = testWindow();
+  delete win.__sovereignRuntime;
+  delete win.sovereignRuntime;
+  delete win.__sovereignCoachState;
+  delete win.__sovereignMobileCoachState;
+  delete win.__sovereignRuntimeCoachState;
+});
 
-    it('ignores harmless messages with 0 failed', () => {
-      expect(hasRealStopper('0 failed, all tests passed')).toBe(false);
-    });
+describe('KI Coach real module', () => {
+  it('installs the coach into the app shell', async () => {
+    mountShell();
 
-    it('ignores repair plan idle', () => {
-      expect(hasRealStopper('repair plan idle')).toBe(false);
-    });
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
 
-    it('ignores workflow: idle', () => {
-      expect(hasRealStopper('workflow: idle')).toBe(false);
-    });
-
-    it('ignores repair oder monitor pruefen', () => {
-      expect(hasRealStopper('repair oder monitor pruefen')).toBe(false);
-    });
+    expect(coachRoot()).toBeTruthy();
+    expect(coachText()).toContain('Sovereign Bot');
+    expect(coachText()).toContain('Ich warte auf den Start');
   });
 
-  describe('readCoachState', () => {
-    it('returns RED when real stopper detected', () => {
-      const state = readCoachState('validation_failed: something went wrong');
-      expect(state.lamp).toBe('red');
-      expect(state.title).toContain('Stopper');
+  it('uses runtime-library state before DOM fallback', async () => {
+    mountShell('repo fehlt build failed');
+
+    const { installMobileOperatorCoach, publishMobileOperatorCoachState } = await loadCoach();
+    installMobileOperatorCoach();
+
+    publishMobileOperatorCoachState({
+      lamp: 'green',
+      title: 'Runtime ist Wahrheitspfad',
+      message: 'Die Runtime-Library hat den Coach-State direkt geliefert.',
+      action: 'Runtime pruefen.',
+      thinking: false,
+      source: 'runtime-library',
+      tick: 100,
+      hash: 'runtime-green',
     });
 
-    it('returns GREEN when thinking/running', () => {
-      const state = readCoachState('is building, please wait');
-      expect(state.lamp).toBe('green');
-      expect(state.thinking).toBe(true);
-    });
+    advanceInitialRender();
 
-    it('returns GREEN when self review accepted', () => {
-      const state = readCoachState('self review: accepted');
-      expect(state.lamp).toBe('green');
-      expect(state.title).toContain('Ergebnis');
-    });
-
-    it('returns YELLOW when repo missing', () => {
-      const state = readCoachState('repo fehlt, bitte laden');
-      expect(state.lamp).toBe('yellow');
-      expect(state.title).toContain('Repo');
-    });
-
-    it('returns GREEN when files generated', () => {
-      const state = readCoachState('pre-publish review generated file ready');
-      expect(state.lamp).toBe('green');
-    });
-
-    it('returns GREEN when validation healthy', () => {
-      const state = readCoachState('runtime validation coverage healthy 21/21');
-      expect(state.lamp).toBe('green');
-      expect(state.title).toContain('gesund');
-    });
-
-    it('returns YELLOW when mission missing', () => {
-      const state = readCoachState('platzhalter auftrag, concrete mission required');
-      expect(state.lamp).toBe('yellow');
-      expect(state.title).toContain('Wunsch');
-    });
-
-    it('returns YELLOW by default when waiting for start', () => {
-      const state = readCoachState('idle, waiting for input');
-      expect(state.lamp).toBe('yellow');
-      expect(state.title).toContain('warte');
-    });
+    expect(coachRoot().className).toBe('green');
+    expect(coachText()).toContain('Runtime ist Wahrheitspfad');
+    expect(coachText()).not.toContain('Stopper');
   });
 
-  describe('hasAny', () => {
-    it('matches tokens case-insensitively', () => {
-      expect(hasAny('HELLO WORLD', ['hello'])).toBe(true);
-      expect(hasAny('hello world', ['HELLO'])).toBe(true);
+  it('accepts CustomEvent runtime coach state', async () => {
+    mountShell();
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    dispatchCoachState({
+      lamp: 'green',
+      title: 'Workflow angenommen',
+      message: 'Telemetry, Pattern Memory und Runtime laufen.',
+      action: 'Live Monitor pruefen.',
+      thinking: true,
+      source: 'workflow',
+      tick: 42,
+      hash: 'workflow-42',
     });
 
-    it('returns false when no match', () => {
-      expect(hasAny('hello world', ['goodbye'])).toBe(false);
-    });
-
-    it('matches multiple tokens', () => {
-      expect(hasAny('running busy', ['running', 'busy'])).toBe(true);
-      expect(hasAny('running', ['running', 'busy'])).toBe(true);
-    });
+    expect(coachRoot().className).toBe('green');
+    expect(coachText()).toContain('Workflow angenommen');
+    expect(coachText()).toContain('matrix-work $');
   });
 
-  describe('Coach Status Transitions', () => {
-    it('follows happy path: waiting -> thinking -> green', () => {
-      // Initial state: waiting for repo
-      let state = readCoachState('idle');
-      expect(state.lamp).toBe('yellow');
+  it('accepts derived runtime payloads without full coach shape', async () => {
+    mountShell();
 
-      // After repo loaded: thinking
-      state = readCoachState('running, is building');
-      expect(state.lamp).toBe('green');
-      expect(state.thinking).toBe(true);
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
 
-      // After completion: green ready
-      state = readCoachState('self review: accepted, files ready');
-      expect(state.lamp).toBe('green');
-      expect(state.thinking).toBe(false);
+    dispatchCoachState(
+      {
+        status: 'running',
+        message: 'Runtime metrics running',
+        tick: 12,
+        hash: 'metrics-12',
+      },
+      'sovereign:metrics-state',
+    );
+
+    expect(coachRoot().className).toBe('green');
+    expect(coachText()).toContain('Runtime arbeitet');
+    expect(coachText()).toContain('Runtime metrics running');
+  });
+
+  it('reads assigned runtime object state', async () => {
+    mountShell();
+
+    testWindow().__sovereignRuntime = {
+      coachState: {
+        lamp: 'green',
+        title: 'Runtime Object aktiv',
+        message: 'Der Coach liest die vorhandene Runtime-Library.',
+        action: 'Runtime Monitor pruefen.',
+        thinking: false,
+        source: 'runtime-library',
+        tick: 7,
+        hash: 'runtime-object-7',
+      },
+    };
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    expect(coachRoot().className).toBe('green');
+    expect(coachText()).toContain('Runtime Object aktiv');
+    expect(coachText()).toContain('runtime $');
+  });
+
+  it('detects stalled runtime activity by old updatedAt', async () => {
+    mountShell();
+
+    const { installMobileOperatorCoach, publishMobileOperatorCoachState } = await loadCoach();
+    installMobileOperatorCoach();
+
+    publishMobileOperatorCoachState({
+      lamp: 'green',
+      title: 'Runtime arbeitet',
+      message: 'Ein alter laufender Zustand ohne frisches Update.',
+      action: 'Bitte warten.',
+      thinking: true,
+      source: 'runtime-library',
+      tick: 123,
+      hash: 'stale-hash',
+      updatedAt: Date.now() - 91_000,
     });
 
-    it('detects error state at any point', () => {
-      // In the middle of workflow
-      const state = readCoachState('running, build failed with error');
-      expect(state.lamp).toBe('red');
+    advanceInitialRender();
+
+    expect(coachRoot().className).toBe('yellow');
+    expect(coachText()).toContain('Aktivitaet ohne neues Runtime-Signal');
+  });
+
+  it('uses DOM fallback when no runtime state exists', async () => {
+    mountShell('runtime validation coverage healthy 21/21 runtime validation');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    expect(coachRoot().className).toBe('green');
+    expect(coachText()).toContain('Checks sehen gesund aus');
+  });
+
+  it('detects real DOM fallback stoppers', async () => {
+    mountShell('validation_failed: build failed with error: exit code 1');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    expect(coachRoot().className).toBe('red');
+    expect(coachText()).toContain('Stopper');
+  });
+
+  it('ignores harmless DOM fallback failure counters', async () => {
+    mountShell('0 failed, all tests passed, workflow: idle');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    expect(coachRoot().className).not.toBe('red');
+    expect(coachText()).toContain('Ich warte auf den Start');
+  });
+
+  it('does not read its own coach text as source signal', async () => {
+    mountShell();
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    document.querySelector('main')!.textContent = '';
+    advanceMutationRender();
+
+    expect(coachRoot().className).toBe('yellow');
+    expect(coachText()).toContain('Ich warte auf den Start');
+  });
+
+  it('updates after DOM mutation without manual reinstall', async () => {
+    mountShell('idle');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    expect(coachText()).toContain('Ich warte auf den Start');
+
+    document.querySelector('main')!.textContent = 'self review: accepted';
+    advanceMutationRender();
+
+    expect(coachRoot().className).toBe('green');
+    expect(coachText()).toContain('Ergebnis ist bereit');
+  });
+
+  it('coach buttons click external navigation buttons, not coach buttons', async () => {
+    mountShell();
+
+    const repoButton = Array.from(document.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Repo',
+    );
+
+    expect(repoButton).toBeTruthy();
+
+    const onRepoClick = vi.fn();
+    repoButton!.addEventListener('click', onRepoClick);
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    const coachRepoButton = coachRoot().querySelector<HTMLButtonElement>('[data-go="Repo"]');
+    expect(coachRepoButton).toBeTruthy();
+
+    coachRepoButton!.click();
+
+    expect(onRepoClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists accepted state in sessionStorage for remount recovery', async () => {
+    mountShell();
+
+    let module = await loadCoach();
+    module.installMobileOperatorCoach();
+
+    module.publishMobileOperatorCoachState({
+      lamp: 'green',
+      title: 'Persistierter Runtime-State',
+      message: 'Dieser Zustand wird nach Remount wieder geladen.',
+      action: 'Monitor pruefen.',
+      thinking: false,
+      source: 'runtime-library',
+      tick: 55,
+      hash: 'persisted-55',
     });
 
-    it('recovers from warning states', () => {
-      // Mission missing
-      let state = readCoachState('platzhalter');
-      expect(state.lamp).toBe('yellow');
+    advanceInitialRender();
 
-      // Mission provided
-      state = readCoachState('running, concrete mission loaded');
-      expect(state.lamp).toBe('green');
+    expect(coachText()).toContain('Persistierter Runtime-State');
+
+    document.body.innerHTML = '';
+    mountShell();
+
+    module = await loadCoach();
+    module.installMobileOperatorCoach();
+    advanceInitialRender();
+
+    expect(coachText()).toContain('Persistierter Runtime-State');
+  });
+
+  it('keeps newer tick over older same-source runtime event', async () => {
+    mountShell();
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    dispatchCoachState({
+      lamp: 'green',
+      title: 'Neuer Runtime Tick',
+      message: 'Tick 10 ist gueltig.',
+      action: 'Monitor pruefen.',
+      thinking: false,
+      source: 'workflow',
+      tick: 10,
+      hash: 'tick-10',
     });
+
+    expect(coachText()).toContain('Neuer Runtime Tick');
+
+    dispatchCoachState({
+      lamp: 'green',
+      title: 'Alter Runtime Tick',
+      message: 'Tick 9 darf den Zustand nicht ueberschreiben.',
+      action: 'Nicht anzeigen.',
+      thinking: false,
+      source: 'workflow',
+      tick: 9,
+      hash: 'tick-9',
+    });
+
+    expect(coachText()).toContain('Neuer Runtime Tick');
+    expect(coachText()).not.toContain('Alter Runtime Tick');
+  });
+
+  it('allows red runtime state to override previous green state', async () => {
+    mountShell();
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    dispatchCoachState({
+      lamp: 'green',
+      title: 'Runtime gruen',
+      message: 'Alles laeuft.',
+      action: 'Weiter.',
+      thinking: false,
+      source: 'runtime-library',
+      tick: 1,
+      hash: 'green-1',
+    });
+
+    expect(coachRoot().className).toBe('green');
+
+    dispatchCoachState({
+      lamp: 'red',
+      title: 'Runtime Stopper',
+      message: 'Die Runtime meldet einen echten Fehler.',
+      action: 'Repair pruefen.',
+      thinking: false,
+      source: 'runtime-library',
+      tick: 2,
+      hash: 'red-2',
+    });
+
+    expect(coachRoot().className).toBe('red');
+    expect(coachText()).toContain('Runtime Stopper');
   });
 });
