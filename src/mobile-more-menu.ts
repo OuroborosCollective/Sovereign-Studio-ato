@@ -80,7 +80,15 @@ function clickByText(label: string): void {
 }
 
 function preferGuardedAuto(): void {
-  // No-op: auto-mode selection is now handled by the app state directly.
+  const select = Array.from(document.querySelectorAll<HTMLSelectElement>('select')).find((item) =>
+    Array.from(item.options).some((option) => option.value === AUTO_MODE_VALUE),
+  );
+
+  if (!select || select.value === AUTO_MODE_VALUE) return;
+
+  select.value = AUTO_MODE_VALUE;
+  select.dispatchEvent(new Event('input', { bubbles: true }));
+  select.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function getPrimaryButtons(root: HTMLElement): HTMLButtonElement[] {
