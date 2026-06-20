@@ -93,10 +93,10 @@ describe('sovereign runtime structure', () => {
     expect(sequential.steps['repo-load'].status).toBe('completed');
     expect(sequential.steps['package-build'].status).toBe('completed');
 
-    const auth = createGitHubAuthSession(' demo_token ');
+    const auth = createGitHubAuthSession(' sample_value ');
     expect(auth.hasToken).toBe(true);
-    expect(auth.redactedToken).not.toContain('demo_token');
-    expect((buildGitHubHeaders({ token: auth.token }) as Record<string, string>).Authorization).toBe('Bearer demo_token');
+    expect(auth.redactedToken).not.toContain('sample_value');
+    expect((buildGitHubHeaders({ token: auth.token }) as Record<string, string>).Authorization).toBe('Bearer sample_value');
 
     const signals = buildRepoSignalsFromFiles('https://github.com/OuroborosCollective/Sovereign-Studio-ato', repoFiles);
     const report = evaluateRepoReadiness(signals);
@@ -105,6 +105,13 @@ describe('sovereign runtime structure', () => {
 
     const integrity = analyzeRepoFileIntegrityList(repoFiles);
     expect(summarizeFileIntegrity(integrity)).toContain('path-only');
+
+    const pkg = buildSovereignPackageFromRepoFiles({
+      mission: concreteMission,
+      repoFiles,
+    });
+    expect(() => assertGeneratedPackageReady(pkg, repoFiles)).not.toThrow();
+    expect(pkg.files.map((file) => file.path)).toContain('docs/LAUNCH_READINESS.md');
 
     const automationRunKey = buildAutomationRunKey({
       mode: 'full-auto-draft-pr',
@@ -122,19 +129,12 @@ describe('sovereign runtime structure', () => {
       hasMission: true,
       hasToken: true,
       isBusy: false,
-      hasPackage: false,
+      hasPackage: true,
       nextAutoRunKey: automationRunKey,
       healthAllowed: true,
       healthStatus: 'green',
     });
     expect(automation.shouldPublishDraftPr).toBe(true);
-
-    const pkg = buildSovereignPackageFromRepoFiles({
-      mission: concreteMission,
-      repoFiles,
-    });
-    expect(() => assertGeneratedPackageReady(pkg, repoFiles)).not.toThrow();
-    expect(pkg.files.map((file) => file.path)).toContain('docs/LAUNCH_READINESS.md');
 
     const fileReview = reviewGeneratedFiles(pkg.files);
     expect(fileReview.totalFiles).toBe(pkg.files.length);
@@ -200,7 +200,7 @@ describe('sovereign runtime structure', () => {
     expect(() => assertRuntimeValidationCoverageHealthy(coverage)).not.toThrow();
 
     const headers = buildGitHubHeaders({ token: auth.token }) as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer demo_token');
+    expect(headers.Authorization).toBe('Bearer sample_value');
 
     const branch = buildSovereignBranchName(
       'sovereign/package',
