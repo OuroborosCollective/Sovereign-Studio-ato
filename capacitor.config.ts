@@ -1,12 +1,21 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
+function envValue(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value || value.startsWith('REPLACE_WITH_')) return undefined;
+  return value;
+}
+
+const googleClientId = envValue('VITE_GOOGLE_CLIENT_ID');
+const googleAndroidClientId = envValue('VITE_GOOGLE_ANDROID_CLIENT_ID');
+const googleServerClientId = envValue('VITE_GOOGLE_SERVER_CLIENT_ID');
+
 const config: CapacitorConfig = {
   appId: 'com.arestudio.nocode.aab',
   appName: 'NOCode Studio',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
-    allowNavigation: ['*'],
   },
   android: {
     backgroundColor: '#f4f4f4',
@@ -19,10 +28,10 @@ const config: CapacitorConfig = {
   plugins: {
     GoogleAuth: {
       scopes: ['profile', 'email'],
-      clientId: 'REPLACE_WITH_VITE_GOOGLE_CLIENT_ID',
-      androidClientId: 'REPLACE_WITH_VITE_GOOGLE_ANDROID_CLIENT_ID',
-      serverClientId: 'REPLACE_WITH_VITE_GOOGLE_SERVER_CLIENT_ID',
       forceCodeForRefreshToken: true,
+      ...(googleClientId ? { clientId: googleClientId } : {}),
+      ...(googleAndroidClientId ? { androidClientId: googleAndroidClientId } : {}),
+      ...(googleServerClientId ? { serverClientId: googleServerClientId } : {}),
     },
     SplashScreen: {
       launchShowDuration: 1500,
