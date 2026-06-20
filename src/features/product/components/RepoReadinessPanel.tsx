@@ -1,5 +1,5 @@
 import type { RepoFile } from '../../github/types';
-import type { SovereignHealthReport } from '../runtime/sovereignHealth';
+import { getLatestSovereignHealthReport, type SovereignHealthReport } from '../runtime/sovereignHealth';
 import { getSovereignHealthRuntimeGate } from '../runtime/sovereignFunctionalGuards';
 import {
   DEFAULT_TOOL_PROGRESS_RAIL,
@@ -33,7 +33,8 @@ export function RepoReadinessPanel({ repoUrl, files, status, healthReport }: Rep
   const signals = buildRepoSignalsFromFiles(repoUrl, files);
   const report = evaluateRepoReadiness(signals);
   const launchMarkdown = buildLaunchPackageMarkdown(signals, report, status ?? 'Loaded repository snapshot');
-  const healthGate = healthReport ? getSovereignHealthRuntimeGate(healthReport) : null;
+  const effectiveHealthReport = healthReport ?? getLatestSovereignHealthReport();
+  const healthGate = effectiveHealthReport ? getSovereignHealthRuntimeGate(effectiveHealthReport) : null;
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
