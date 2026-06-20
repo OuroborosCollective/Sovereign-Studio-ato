@@ -1,12 +1,26 @@
-import { describe, expect, it } from 'vitest';
-import { buildSovereignHealthReport } from './sovereignHealth';
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  buildSovereignHealthReport,
+  clearLatestSovereignHealthReportForTests,
+  getLatestSovereignHealthReport,
+} from './sovereignHealth';
 import { appendTelemetryEvent, createInitialTelemetryState, createTelemetryEvent } from './sovereignTelemetry';
 
 describe('sovereignHealth', () => {
+  beforeEach(() => {
+    clearLatestSovereignHealthReportForTests();
+  });
+
   it('is idle without repo snapshot', () => {
     const report = buildSovereignHealthReport({ repoFiles: [] });
     expect(report.status).toBe('idle');
     expect(report.recommendations[0]).toContain('Load a real repository');
+  });
+
+  it('remembers the latest health report for runtime bridges', () => {
+    const report = buildSovereignHealthReport({ repoFiles: [{ path: 'README.md', type: 'blob' }] });
+    expect(getLatestSovereignHealthReport()).toBe(report);
+    expect(getLatestSovereignHealthReport()?.status).toBe('green');
   });
 
   it('turns red for high-risk repo paths', () => {
