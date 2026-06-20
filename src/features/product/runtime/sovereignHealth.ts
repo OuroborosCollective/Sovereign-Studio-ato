@@ -23,6 +23,21 @@ export interface SovereignHealthInput {
   telemetry?: SovereignTelemetryState | null;
 }
 
+let latestSovereignHealthReport: SovereignHealthReport | null = null;
+
+export function getLatestSovereignHealthReport(): SovereignHealthReport | null {
+  return latestSovereignHealthReport;
+}
+
+export function clearLatestSovereignHealthReportForTests(): void {
+  latestSovereignHealthReport = null;
+}
+
+function rememberLatestSovereignHealthReport(report: SovereignHealthReport): SovereignHealthReport {
+  latestSovereignHealthReport = report;
+  return report;
+}
+
 function isDependencyTelemetry(event: SovereignTelemetryEvent): boolean {
   return event.label.startsWith('dependency:');
 }
@@ -83,7 +98,7 @@ export function buildSovereignHealthReport(input: SovereignHealthInput): Soverei
         ? 'warning'
         : 'green';
 
-  return {
+  return rememberLatestSovereignHealthReport({
     status,
     criticalRisks,
     totalIssues,
@@ -91,5 +106,5 @@ export function buildSovereignHealthReport(input: SovereignHealthInput): Soverei
     branchDelta,
     recommendations,
     summary: `Health ${status}: ${criticalRisks} critical risk(s), ${totalIssues} total issue(s), ${repairsLogged} repair signal(s).`,
-  };
+  });
 }
