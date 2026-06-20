@@ -64,9 +64,11 @@ export interface SovereignAutoViewInput {
   nowMs?: number;
   lastUserInteractionAt?: number;
   manualOverrideUntil?: number;
+  recentUserInteractionUntil?: number;
   patternConfidence?: number;
   autoSwitchInactivityMs?: number;
   patternConfidenceThreshold?: number;
+  planningConfirmed?: boolean;
 }
 
 export interface SovereignAutoViewDecision {
@@ -219,7 +221,9 @@ export function validateSovereignAutoViewInput(input: SovereignAutoViewInput): s
   if (input.nowMs !== undefined && !isFiniteNumber(input.nowMs)) errors.push('nowMs must be a finite number.');
   if (input.lastUserInteractionAt !== undefined && !isFiniteNumber(input.lastUserInteractionAt)) errors.push('lastUserInteractionAt must be a finite number.');
   if (input.manualOverrideUntil !== undefined && !isFiniteNumber(input.manualOverrideUntil)) errors.push('manualOverrideUntil must be a finite number.');
+  if (input.recentUserInteractionUntil !== undefined && !isFiniteNumber(input.recentUserInteractionUntil)) errors.push('recentUserInteractionUntil must be a finite number.');
   if (input.patternConfidence !== undefined && !isFiniteNumber(input.patternConfidence)) errors.push('patternConfidence must be a finite number.');
+  if (input.planningConfirmed !== undefined && typeof input.planningConfirmed !== 'boolean') errors.push('planningConfirmed must be a boolean.');
 
   return errors;
 }

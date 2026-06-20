@@ -305,6 +305,12 @@ export const MOBILE_WORKFLOW_PATTERN_RULES: MobileWorkflowPatternRule[] = [
       'vollstaendige ersatzdatei',
       'vollständige ersatzdatei',
     ],
+    negativeSignals: [
+      'build a sovereign package first',
+      'before creating a draft pr',
+      'noch kein sovereign paket',
+      'noch kein package',
+    ],
     minScore: 1,
     lines: [
       'pattern = result-review',
