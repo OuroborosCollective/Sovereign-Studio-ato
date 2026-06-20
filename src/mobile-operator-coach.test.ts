@@ -30,6 +30,17 @@ type CoachTestWindow = Window &
     __sovereignCoachState?: unknown;
     __sovereignMobileCoachState?: unknown;
     __sovereignRuntimeCoachState?: unknown;
+    __sovereignSetupState?: {
+      hasToken: boolean;
+      tokenStatus: 'none' | 'missing' | 'valid' | 'expired';
+      repoReady: boolean;
+      setupPhase: 'no-repo' | 'repo-loading' | 'repo-loaded' | 'repo-error';
+      isBusy: boolean;
+      status: string;
+      redactedToken: string;
+      dependencyHealthy: boolean;
+      updatedAt: number;
+    };
   };
 
 const INITIAL_RENDER_DELAY_MS = 700;
@@ -434,5 +445,162 @@ describe('KI Coach real module', () => {
 
     expect(coachRoot().className).toBe('red');
     expect(coachText()).toContain('Runtime Stopper');
+  });
+
+  describe('Setup State Integration', () => {
+    it('shows no-repo state when setupPhase is no-repo', async () => {
+      mountShell();
+
+      testWindow().__sovereignSetupState = {
+        hasToken: false,
+        tokenStatus: 'none',
+        repoReady: false,
+        setupPhase: 'no-repo',
+        isBusy: false,
+        status: 'Noch kein echtes Repo geladen.',
+        redactedToken: '<no-token>',
+        dependencyHealthy: true,
+        updatedAt: Date.now(),
+      };
+
+      const { installMobileOperatorCoach } = await loadCoach();
+      installMobileOperatorCoach();
+      advanceInitialRender();
+
+      expect(coachRoot().className).toBe('yellow');
+      expect(coachText()).toContain('Ich brauche zuerst dein Repo');
+    });
+
+    it('shows repo-loading state when isBusy is true', async () => {
+      mountShell();
+
+      testWindow().__sovereignSetupState = {
+        hasToken: true,
+        tokenStatus: 'valid',
+        repoReady: false,
+        setupPhase: 'repo-loading',
+        isBusy: true,
+        status: 'Lade Repository...',
+        redactedToken: 'ghp_…def',
+        dependencyHealthy: true,
+        updatedAt: Date.now(),
+      };
+
+      const { installMobileOperatorCoach } = await loadCoach();
+      installMobileOperatorCoach();
+      advanceInitialRender();
+
+      expect(coachRoot().className).toBe('green');
+      expect(coachText()).toContain('Repo wird geladen');
+      expect(coachText()).toContain('thinking');
+    });
+
+    it('shows repo-ready state when repo is loaded', async () => {
+      mountShell();
+
+      testWindow().__sovereignSetupState = {
+        hasToken: true,
+        tokenStatus: 'valid',
+        repoReady: true,
+        setupPhase: 'repo-loaded',
+        isBusy: false,
+        status: '500 echte Repo-Einträge geladen',
+        redactedToken: 'ghp_…def',
+        dependencyHealthy: true,
+        updatedAt: Date.now(),
+      };
+
+      const { installMobileOperatorCoach } = await loadCoach();
+      installMobileOperatorCoach();
+      advanceInitialRender();
+
+      expect(coachRoot().className).toBe('green');
+      expect(coachText()).toContain('Repository bereit');
+      expect(coachText()).toContain('mit GitHub Zugang');
+    });
+
+    it('shows token error state when token is expired', async () => {
+      mountShell();
+
+      testWindow().__sovereignSetupState = {
+        hasToken: false,
+        tokenStatus: 'expired',
+        repoReady: false,
+        setupPhase: 'repo-error',
+        isBusy: false,
+        status: 'GitHub Token fehlt, ist abgelaufen oder hat keine Berechtigung.',
+        redactedToken: '<no-token>',
+        dependencyHealthy: true,
+        updatedAt: Date.now(),
+      };
+
+      const { installMobileOperatorCoach } = await loadCoach();
+      installMobileOperatorCoach();
+      advanceInitialRender();
+
+      expect(coachRoot().className).toBe('yellow');
+      expect(coachText()).toContain('GitHub Zugang braucht PAT');
+    });
+
+    it('shows circuit breaker state when dependency is unhealthy', async () => {
+      mountShell();
+
+      testWindow().__sovereignSetupState = {
+        hasToken: true,
+        tokenStatus: 'valid',
+        repoReady: false,
+        setupPhase: 'repo-loading',
+        isBusy: false,
+        status: 'Kurzzeitige Blockade',
+        redactedToken: 'ghp_…def',
+        dependencyHealthy: false,
+        updatedAt: Date.now(),
+      };
+
+      const { installMobileOperatorCoach } = await loadCoach();
+      installMobileOperatorCoach();
+      advanceInitialRender();
+
+      expect(coachRoot().className).toBe('yellow');
+      expect(coachText()).toContain('Kurzzeitige Blockade');
+    });
+
+    it('setup state takes priority over DOM fallback', async () => {
+      mountShell('some DOM content that might confuse the coach');
+
+      testWindow().__sovereignSetupState = {
+        hasToken: true,
+        tokenStatus: 'valid',
+        repoReady: true,
+        setupPhase: 'repo-loaded',
+        isBusy: false,
+        status: '100 echte Repo-Einträge geladen',
+        redactedToken: 'ghp_…def',
+        dependencyHealthy: true,
+        updatedAt: Date.now(),
+      };
+
+      const { installMobileOperatorCoach } = await loadCoach();
+      installMobileOperatorCoach();
+      advanceInitialRender();
+
+      // Should show setup state, not DOM fallback
+      expect(coachRoot().className).toBe('green');
+      expect(coachText()).toContain('Repository bereit');
+    });
+
+    it('falls back to DOM when no setup state is available', async () => {
+      mountShell('runtime validation coverage healthy 21/21 runtime validation');
+
+      // No setup state set
+      testWindow().__sovereignSetupState = undefined;
+
+      const { installMobileOperatorCoach } = await loadCoach();
+      installMobileOperatorCoach();
+      advanceInitialRender();
+
+      expect(coachRoot().className).toBe('green');
+      expect(coachText()).toContain('Checks sehen gesund aus');
+    });
   });
 });
