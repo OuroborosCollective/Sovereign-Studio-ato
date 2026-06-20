@@ -293,17 +293,25 @@ export const MOBILE_WORKFLOW_PATTERN_RULES: MobileWorkflowPatternRule[] = [
       'generated-output-accepted',
       'generated output accepted',
       'generated package passed self review',
-      'generated files review',
-      'pre-publish review',
-      'generated file',
+      'pre-publish review passed',
       'files ready',
       'diff ready',
       'review accepted',
       'package ready',
       'replacement file ready',
-      'complete replacement file',
-      'vollstaendige ersatzdatei',
-      'vollständige ersatzdatei',
+      'complete replacement file ready',
+      'vollstaendige ersatzdatei bereit',
+      'vollständige ersatzdatei bereit',
+    ],
+    negativeSignals: [
+      'build a sovereign package first',
+      'package first to review',
+      'before creating a draft pr',
+      'noch kein sovereign-paket',
+      'noch kein sovereign paket',
+      'noch kein package',
+      'noch keine erzeugten dateien',
+      'generated files review build a sovereign package first',
     ],
     minScore: 1,
     lines: [
@@ -971,4 +979,4 @@ export function createMobileWorkflowPatternLearningReport(
     suggestions,
     summary: `${usableSignals} usable learning signal(s), ${mismatches} mismatch(es), ${suggestions.length} suggestion(s).`,
   };
-                        }
+}
