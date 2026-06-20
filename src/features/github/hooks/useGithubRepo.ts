@@ -17,7 +17,7 @@ import {
   startSovereignDependencyCheck,
   type SovereignDependencyLifecycleState,
 } from '../../product/runtime/sovereignDependencyLifecycle';
-import { buildSovereignDependencyCoachSignal } from '../../product/runtime/sovereignDependencyCoachBridge';
+import { publishSovereignDependencyCoachSignal } from '../../product/runtime/sovereignDependencyCoachBridge';
 
 export interface LoadRepoTreeOptions {
   repoUrl?: string;
@@ -36,21 +36,7 @@ function createGithubRepoDependency(): SovereignDependencyLifecycleState {
 }
 
 function publishDependencySignal(dependency: SovereignDependencyLifecycleState): void {
-  if (typeof window === 'undefined') return;
-
-  const signal = buildSovereignDependencyCoachSignal(dependency);
-  window.dispatchEvent(new CustomEvent('sovereign:dependency-lifecycle-state', { detail: signal }));
-  window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
-    detail: {
-      lamp: signal.lamp,
-      title: signal.title,
-      message: signal.message,
-      action: signal.action,
-      thinking: signal.thinking,
-      source: signal.source,
-      updatedAt: Date.now(),
-    },
-  }));
+  publishSovereignDependencyCoachSignal(dependency);
 }
 
 function readInitialSnapshot(): DurableRepoSnapshot | null {
