@@ -1,34 +1,75 @@
+import java.util.Locale
+
 apply plugin: 'com.android.application'
 
-def releaseVersionCodeStr = project.hasProperty('versionCode') ? project.getProperty('versionCode') : System.getenv('ANDROID_VERSION_CODE') ?: "1"
-def releaseVersionCode = releaseVersionCodeStr as Integer
+boolean hasText(value) {
+    return value != null && value.toString().trim().length() > 0
+}
 
-def releaseVersionName = project.hasProperty('versionName') ? project.getProperty('versionName') : System.getenv('ANDROID_VERSION_NAME') ?: "1.0.0-dev"
-releaseVersionName = releaseVersionName.toString()
+int parsePositiveVersionCode(value, String sourceName) {
+    String normalized = value == null ? '' : value.toString().trim()
+    if (!(normalized ==~ /[1-9][0-9]*/)) {
+        throw new GradleException("${sourceName} must be a positive integer versionCode, got '${normalized ?: 'missing'}'.")
+    }
+
+    try {
+        return Integer.parseInt(normalized)
+    } catch (NumberFormatException ignored) {
+        throw new GradleException("${sourceName} is outside Android versionCode integer range: '${normalized}'.")
+    }
+}
+
+def releaseVersionCodeSource = project.hasProperty('versionCode') ? project.getProperty('versionCode') : System.getenv('ANDROID_VERSION_CODE') ?: '1'
+def releaseVersionCode = parsePositiveVersionCode(releaseVersionCodeSource, 'versionCode')
+
+def releaseVersionName = project.hasProperty('versionName') ? project.getProperty('versionName') : System.getenv('ANDROID_VERSION_NAME') ?: '1.0.0-dev'
+releaseVersionName = releaseVersionName.toString().trim()
+if (!hasText(releaseVersionName)) {
+    throw new GradleException('versionName must not be empty.')
+}
 
 def releaseStoreFile = project.findProperty('android.injected.signing.store.file') ?: System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseStorePassword = project.findProperty('android.injected.signing.store.password') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias') ?: System.getenv('ANDROID_KEY_ALIAS')
 def releaseKeyPassword = project.findProperty('android.injected.signing.key.password') ?: System.getenv('ANDROID_KEY_PASSWORD') ?: releaseStorePassword
-def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+def releaseSigningConfigured = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { hasText(it) }
 
-def repoRootDir = rootProject.projectDir.parentFile
-def skipWebAssetBuild = providers.gradleProperty('android.skipWebAssetBuild').orElse('false')
+tasks.register('verifyAndroidWebAssets') {
+    group = 'verification'
+    description = 'Verifies that Capacitor has synced the real Vite dist into Android assets.'
 
-tasks.register('buildWebAssetsForAndroid', Exec) {
-    workingDir repoRootDir
-    onlyIf {
-        !skipWebAssetBuild.get().toBoolean()
-    }
+    doLast {
+        def publicDir = file('src/main/assets/public')
+        def indexFile = file('src/main/assets/public/index.html')
 
-    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
-        commandLine 'cmd', '/c', 'if exist pnpm-lock.yaml (where pnpm >nul 2>nul && pnpm run build:web || npm run build:web) else npm run build:web'
-    } else {
-        commandLine 'sh', '-lc', 'if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then pnpm run build:web; else npm run build:web; fi'
+        if (!publicDir.isDirectory() || !indexFile.isFile() || indexFile.length() <= 0) {
+            throw new GradleException(
+                'Android WebView assets are missing. Run "pnpm run build:web" and "npx cap sync android" before Gradle packaging.'
+            )
+        }
     }
 }
 
-preBuild.dependsOn buildWebAssetsForAndroid
+preBuild.dependsOn verifyAndroidWebAssets
+
+gradle.taskGraph.whenReady { taskGraph ->
+    def releaseTaskRequested = taskGraph.allTasks.any { task ->
+        task.name.toLowerCase(Locale.ROOT).contains('release')
+    }
+
+    if (releaseTaskRequested) {
+        if (!releaseSigningConfigured) {
+            throw new GradleException(
+                'Release signing is required for AAB/APK artifacts. Set ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD.'
+            )
+        }
+
+        def keyFile = file(releaseStoreFile)
+        if (!keyFile.isFile() || keyFile.length() <= 0) {
+            throw new GradleException("Release keystore file is missing or empty: ${keyFile}")
+        }
+    }
+}
 
 android {
     namespace "com.arestudio.nocode.aab"
@@ -75,11 +116,7 @@ android {
             ]
         }
         release {
-            if (releaseSigningConfigured) {
-                signingConfig signingConfigs.release
-            } else {
-                logger.lifecycle('Release signing is not configured. Signed Play Store artifacts require ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and optional ANDROID_KEY_PASSWORD.')
-            }
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources true
             manifestPlaceholders = [
@@ -92,7 +129,7 @@ android {
 }
 
 repositories {
-    flatDir{
+    flatDir {
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
     }
 }
