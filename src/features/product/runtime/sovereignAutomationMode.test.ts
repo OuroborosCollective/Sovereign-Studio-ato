@@ -1,11 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   buildAutomationRunKey,
   decideSovereignAutomation,
   describeAutomationMode,
 } from './sovereignAutomationMode';
+import { buildSovereignHealthReport, clearLatestSovereignHealthReportForTests } from './sovereignHealth';
+import { appendTelemetryEvent, createInitialTelemetryState, createTelemetryEvent } from './sovereignTelemetry';
 
 describe('sovereignAutomationMode', () => {
+  beforeEach(() => {
+    clearLatestSovereignHealthReportForTests();
+  });
+
   it('keeps manual mode passive', () => {
     expect(decideSovereignAutomation({
       mode: 'manual',
@@ -49,6 +55,31 @@ describe('sovereignAutomationMode', () => {
       shouldPublishDraftPr: false,
       blockedReason: 'Health red prevents guarded output: dependency blocked.',
     });
+  });
+
+  it('blocks automation from the latest telemetry health report when no explicit gate is passed', () => {
+    const telemetry = appendTelemetryEvent(
+      createInitialTelemetryState(),
+      createTelemetryEvent('github', 'error', 'dependency:github:blocked', 'GitHub dependency unavailable.', undefined, 1_000),
+    );
+
+    buildSovereignHealthReport({
+      repoFiles: [{ path: 'README.md', type: 'blob' }],
+      telemetry,
+    });
+
+    const decision = decideSovereignAutomation({
+      mode: 'full-auto-draft-pr',
+      repoReady: true,
+      hasMission: true,
+      hasToken: true,
+      isBusy: false,
+      hasPackage: true,
+      nextAutoRunKey: 'x',
+    });
+
+    expect(decision.shouldPublishDraftPr).toBe(false);
+    expect(decision.blockedReason).toContain('Health red prevents guarded output');
   });
 
   it('allows automation when the runtime readiness gate is warning but allowed', () => {
