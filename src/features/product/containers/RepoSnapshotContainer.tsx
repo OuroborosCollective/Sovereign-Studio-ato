@@ -110,7 +110,19 @@ export function RepoSnapshotContainer({
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <label className="block rounded-2xl border border-cyan-400/35 bg-cyan-500/10 p-3 md:col-span-2">
           <span className="text-xs font-black uppercase tracking-wide text-cyan-100">GitHub Repository URL</span>
-          <input className="mt-2 text-base" value={repoUrl} onChange={(event) => onRepoUrlChange(event.target.value)} placeholder="https://github.com/owner/repository" aria-label="GitHub Repository URL" />
+          <input
+            id="github-repo-url-input"
+            name="github-repo-url"
+            data-testid="github-repo-url-input"
+            data-mobile-role="github-repo-url-input"
+            className="mt-2 text-base"
+            value={repoUrl}
+            onChange={(event) => onRepoUrlChange(event.target.value)}
+            placeholder="https://github.com/owner/repository"
+            aria-label="GitHub Repository URL"
+            autoComplete="url"
+            type="url"
+          />
           <span className="mt-2 block text-[11px] leading-4 text-cyan-100/80">Pflichtfeld. Ohne geladenes Repo bleibt Produktion blockiert.</span>
         </label>
 
@@ -122,7 +134,20 @@ export function RepoSnapshotContainer({
 
         <label className="block rounded-2xl border border-amber-400/35 bg-amber-500/10 p-3 md:col-span-3">
           <span className="text-xs font-black uppercase tracking-wide text-amber-100">GitHub Private Access</span>
-          <input className="mt-2 text-base" value={accessValue} onFocus={() => setShowAccessHelp(true)} onChange={(event) => onAccessValueChange(event.target.value)} placeholder="Privater GitHub Zugang fuer private Repos" aria-label="GitHub private access" type="password" />
+          <input
+            id="github-token-input"
+            name="github-token"
+            data-testid="github-token-input"
+            data-mobile-role="github-token-input"
+            className="mt-2 text-base"
+            value={accessValue}
+            onFocus={() => setShowAccessHelp(true)}
+            onChange={(event) => onAccessValueChange(event.target.value)}
+            placeholder="Privater GitHub Zugang fuer private Repos"
+            aria-label="GitHub private access"
+            type="password"
+            autoComplete="off"
+          />
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] leading-4 text-amber-100/85">
             <span>Nur noetig fuer private Repos oder Draft PRs.</span>
             <button type="button" onClick={() => setShowAccessHelp((value) => !value)} className="rounded-full border border-amber-300/30 px-3 py-1 text-amber-100">Hilfe anzeigen</button>
