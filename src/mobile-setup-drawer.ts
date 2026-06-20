@@ -9,6 +9,7 @@ import {
 const DRAWER_ID = 'sovereign-mobile-setup-drawer';
 const STYLE_ID = 'sovereign-mobile-setup-style';
 const STORAGE_KEY = 'sovereign-mobile-setup-draft';
+const DURABLE_REPO_SNAPSHOT_KEY = 'sovereign-studio.repo-snapshot.v1';
 const INSTALL_FLAG = '__sovereignMobileSetupDrawerInstalled';
 const RENDER_DELAY_MS = 900;
 const INPUT_RETRY_LIMIT = 48;
@@ -50,6 +51,17 @@ interface SetupDraft {
 interface RepoUrlValidation {
   valid: boolean;
   message?: string;
+}
+
+interface ParsedRepoUrl {
+  owner: string;
+  repo: string;
+}
+
+interface DirectRepoFile {
+  path: string;
+  type: 'blob' | 'tree';
+  size?: number;
 }
 
 let activeSessionId = 0;
@@ -202,6 +214,103 @@ function validateRepoUrl(url: string): RepoUrlValidation {
   }
 }
 
+function parseRepoUrl(url: string): ParsedRepoUrl | null {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.hostname !== 'github.com') return null;
+    const [owner, repo] = parsed.pathname.split('/').filter(Boolean);
+    if (!owner || !repo) return null;
+    return { owner, repo: repo.replace(/\.git$/i, '') };
+  } catch {
+    return null;
+  }
+}
+
+function githubHeaders(accessValue: string): HeadersInit {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+  };
+  if (accessValue.trim()) headers.Authorization = `Bearer ${accessValue.trim()}`;
+  return headers;
+}
+
+function saveDirectSnapshot(input: { repoUrl: string; repoBranch: string; repoStatus: string; repoFiles: DirectRepoFile[] }): void {
+  window.localStorage.setItem(DURABLE_REPO_SNAPSHOT_KEY, JSON.stringify({
+    version: 1,
+    repoUrl: input.repoUrl,
+    repoBranch: input.repoBranch,
+    repoStatus: input.repoStatus,
+    repoFiles: input.repoFiles.slice(0, 500),
+    savedAt: Date.now(),
+  }));
+}
+
+function reloadAfterDirectSnapshot(): void {
+  window.setTimeout(() => {
+    try {
+      window.location.reload();
+    } catch {
+      // Android WebView may block reload during tests; persisted snapshot remains valid.
+    }
+  }, 450);
+}
+
+async function loadRepoDirectly(draft: SetupDraft, detail: MobileRepoSetupDetail, sessionId: number): Promise<void> {
+  if (!isActiveSession(sessionId)) return;
+  const parsed = parseRepoUrl(draft.repoUrl);
+  if (!parsed) {
+    if (setSessionStatus(sessionId, 'GitHub Repository URL ist ungueltig.', 'failed')) {
+      writeStage(detail, 'failed', 'GitHub Repository URL ist ungueltig.');
+    }
+    return;
+  }
+
+  if (setSessionStatus(sessionId, 'Direct repository fallback loading.', 'loading')) {
+    writeStage(detail, 'loading', 'Direct repository fallback loading.');
+  }
+
+  try {
+    const headers = githubHeaders(draft.accessValue);
+    const repoResponse = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`, { headers });
+    if (!repoResponse.ok) throw new Error(`GitHub Repo-Info Fehler: ${repoResponse.status}`);
+    const repoData = await repoResponse.json() as { default_branch?: unknown };
+    const defaultBranch = typeof repoData.default_branch === 'string' && repoData.default_branch.trim()
+      ? repoData.default_branch.trim()
+      : 'main';
+    const treeResponse = await fetch(
+      `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(defaultBranch)}?recursive=1`,
+      { headers },
+    );
+    if (!treeResponse.ok) throw new Error(`GitHub Tree Fehler: ${treeResponse.status}`);
+    const treeData = await treeResponse.json() as { tree?: unknown };
+    const rawTree = Array.isArray(treeData.tree) ? treeData.tree : [];
+    const files: DirectRepoFile[] = rawTree.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as { path?: unknown; type?: unknown; size?: unknown };
+      if (candidate.type !== 'blob' && candidate.type !== 'tree') return [];
+      if (typeof candidate.path !== 'string' || !candidate.path.trim()) return [];
+      return [{
+        path: candidate.path,
+        type: candidate.type,
+        size: typeof candidate.size === 'number' && Number.isFinite(candidate.size) ? candidate.size : undefined,
+      }];
+    }).slice(0, 500);
+
+    if (!files.length) throw new Error('GitHub Tree Fehler: empty tree');
+    const repoStatus = `${files.length} echte Repo-Einträge geladen (${defaultBranch})`;
+    saveDirectSnapshot({ repoUrl: draft.repoUrl, repoBranch: defaultBranch, repoStatus, repoFiles: files });
+    if (setSessionStatus(sessionId, 'Repository load completed.', 'loaded')) {
+      writeStage(detail, 'loaded', 'Repository load completed.');
+    }
+    reloadAfterDirectSnapshot();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Repository load failed.';
+    if (setSessionStatus(sessionId, message, 'failed')) {
+      writeStage(detail, 'failed', message);
+    }
+  }
+}
+
 function watchRepoLoadOutcome(detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
   if (!isActiveSession(sessionId)) return;
 
@@ -236,7 +345,7 @@ function watchRepoLoadOutcome(detail: MobileRepoSetupDetail, sessionId: number, 
   window.setTimeout(() => watchRepoLoadOutcome(detail, sessionId, attempt + 1), OUTCOME_DELAY_MS);
 }
 
-function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
+function clickLoadRepoWhenReady(draft: SetupDraft, detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
   if (!isActiveSession(sessionId)) return;
 
   const button = findLoadRepoButton();
@@ -249,14 +358,12 @@ function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, sessionId: number
   }
 
   if (attempt >= LOAD_RETRY_LIMIT) {
-    if (setSessionStatus(sessionId, 'Repository load button was not found or remained disabled.', 'failed')) {
-      writeStage(detail, 'failed', 'Repository load button was not found or remained disabled.');
-    }
+    void loadRepoDirectly(draft, detail, sessionId);
     return;
   }
 
   setSessionStatus(sessionId, 'Waiting for repository load button.', 'applied');
-  window.setTimeout(() => clickLoadRepoWhenReady(detail, sessionId, attempt + 1), RETRY_DELAY_MS);
+  window.setTimeout(() => clickLoadRepoWhenReady(draft, detail, sessionId, attempt + 1), RETRY_DELAY_MS);
 }
 
 function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
@@ -276,9 +383,7 @@ function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, s
     }
 
     if (!repo) {
-      if (setSessionStatus(sessionId, 'Repo URL input was not found.', 'failed')) {
-        writeStage(detail, 'failed', 'Repo URL input was not found.');
-      }
+      void loadRepoDirectly(draft, detail, sessionId);
       return;
     }
 
@@ -289,7 +394,7 @@ function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, s
     if (setSessionStatus(sessionId, 'Repo setup values applied to Repo tab.', 'applied')) {
       writeStage(detail, 'applied', 'Repo setup values applied to Repo tab.');
     }
-    clickLoadRepoWhenReady(detail, sessionId);
+    clickLoadRepoWhenReady(draft, detail, sessionId);
   }, attempt === 0 ? 160 : RETRY_DELAY_MS);
 }
 
