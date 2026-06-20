@@ -254,7 +254,7 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
       : keepCurrent(input, 'Manual mode keeps side tabs visible after package generation.');
   }
   if (input.hasActivePatterns && input.hasPackage) return switchTo(input, 'memory', 'Active patterns available with package - show learned patterns.');
-  if (input.hasActiveTelemetry && !SIDE_TABS.has(input.activeTab)) return switchTo(input, 'telemetry', 'Active telemetry events - show status.');
+  if (input.hasActiveTelemetry && input.activeTab === 'telemetry') return keepCurrent(input, 'Telemetry is already visible.');
 
   return keepCurrent(input, 'No auto view change required.');
 }
