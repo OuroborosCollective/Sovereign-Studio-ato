@@ -9,6 +9,7 @@ import {
 const DRAWER_ID = 'sovereign-mobile-setup-drawer';
 const STYLE_ID = 'sovereign-mobile-setup-style';
 const STORAGE_KEY = 'sovereign-mobile-setup-draft';
+const DURABLE_REPO_SNAPSHOT_KEY = 'sovereign-studio.repo-snapshot.v1';
 const INSTALL_FLAG = '__sovereignMobileSetupDrawerInstalled';
 const RENDER_DELAY_MS = 900;
 const INPUT_RETRY_LIMIT = 48;
@@ -39,17 +40,24 @@ const ACCESS_INPUT_SELECTORS = [
   'input[type="password"]',
 ] as const;
 
-type MobileWindow = Window & typeof globalThis & { [INSTALL_FLAG]?: boolean };
+type MobileWindow = Window & typeof globalThis & {
+  [INSTALL_FLAG]?: boolean;
+  Capacitor?: unknown;
+};
+
 type RepoSetupStage = Parameters<typeof createMobileRepoSetupState>[1];
+
+type RepoEntryType = 'blob' | 'tree';
 
 interface SetupDraft {
   repoUrl: string;
   accessValue: string;
 }
 
-interface RepoUrlValidation {
-  valid: boolean;
-  message?: string;
+interface DirectRepoFile {
+  path: string;
+  type: RepoEntryType;
+  size?: number;
 }
 
 let activeSessionId = 0;
@@ -78,10 +86,7 @@ function readDraft(): SetupDraft {
 
 function writeDraft(draft: SetupDraft): void {
   try {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ repoUrl: normalize(draft.repoUrl) }),
-    );
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ repoUrl: normalize(draft.repoUrl) }));
   } catch {
     // Optional local helper only.
   }
@@ -89,6 +94,10 @@ function writeDraft(draft: SetupDraft): void {
 
 function isActiveSession(sessionId: number): boolean {
   return sessionId === activeSessionId;
+}
+
+function isDirectFallbackRuntime(): boolean {
+  return /android/i.test(window.navigator?.userAgent ?? '') || Boolean(mobileWindow().Capacitor);
 }
 
 function writeStage(detail: MobileRepoSetupDetail, stage: RepoSetupStage, message: string): void {
@@ -108,18 +117,12 @@ function setStatus(message: string, phase = 'idle'): void {
 
 function setSessionStatus(sessionId: number, message: string, phase = 'idle'): boolean {
   if (!isActiveSession(sessionId)) return false;
-
   const status = document.getElementById(DRAWER_ID)?.querySelector<HTMLElement>('[data-role="setup-status"]');
   if (!status) return false;
   if (status.dataset.phase === 'loaded' && phase !== 'loaded') return false;
-
   status.textContent = message;
   status.dataset.phase = phase;
   return true;
-}
-
-function pageText(): string {
-  return document.body?.textContent?.toLowerCase() ?? '';
 }
 
 function findButton(label: string): HTMLButtonElement | null {
@@ -168,7 +171,6 @@ function visibleTextFor(input: HTMLInputElement): string {
 function findRepoUrlInput(): HTMLInputElement | null {
   const direct = queryAppInput(REPO_INPUT_SELECTORS);
   if (direct) return direct;
-
   return Array.from(document.querySelectorAll<HTMLInputElement>('input')).find((input) => {
     if (input.closest(`#${DRAWER_ID}`)) return false;
     const text = visibleTextFor(input);
@@ -179,7 +181,6 @@ function findRepoUrlInput(): HTMLInputElement | null {
 function findAccessInput(): HTMLInputElement | null {
   const direct = queryAppInput(ACCESS_INPUT_SELECTORS);
   if (direct) return direct;
-
   return Array.from(document.querySelectorAll<HTMLInputElement>('input')).find((input) => {
     if (input.closest(`#${DRAWER_ID}`)) return false;
     const text = visibleTextFor(input);
@@ -187,58 +188,126 @@ function findAccessInput(): HTMLInputElement | null {
   }) ?? null;
 }
 
-function validateRepoUrl(url: string): RepoUrlValidation {
+function validateRepoUrl(url: string): string | null {
   const trimmed = url.trim();
-  if (!trimmed) return { valid: false, message: 'GitHub Repository URL fehlt.' };
-
+  if (!trimmed) return 'GitHub Repository URL fehlt.';
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return { valid: false, message: 'GitHub Repository URL muss http oder https nutzen.' };
-    }
-    return { valid: true };
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return 'GitHub Repository URL muss http oder https nutzen.';
+    return null;
   } catch {
-    return { valid: false, message: 'GitHub Repository URL ist ungueltig.' };
+    return 'GitHub Repository URL ist ungueltig.';
   }
+}
+
+function parseRepoUrl(url: string): { owner: string; repo: string } | null {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.hostname !== 'github.com') return null;
+    const [owner, repo] = parsed.pathname.split('/').filter(Boolean);
+    if (!owner || !repo) return null;
+    return { owner, repo: repo.replace(/\.git$/i, '') };
+  } catch {
+    return null;
+  }
+}
+
+function githubHeaders(accessValue: string): HeadersInit {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
+  if (accessValue.trim()) headers.Authorization = `Bearer ${accessValue.trim()}`;
+  return headers;
+}
+
+function directRepoFileFromUnknown(item: unknown): DirectRepoFile | null {
+  if (!item || typeof item !== 'object') return null;
+  const candidate = item as { path?: unknown; type?: unknown; size?: unknown };
+  const entryType: RepoEntryType | null = candidate.type === 'blob' ? 'blob' : candidate.type === 'tree' ? 'tree' : null;
+  if (!entryType) return null;
+  if (typeof candidate.path !== 'string' || !candidate.path.trim()) return null;
+  return {
+    path: candidate.path,
+    type: entryType,
+    size: typeof candidate.size === 'number' && Number.isFinite(candidate.size) ? candidate.size : undefined,
+  };
+}
+
+function saveDirectSnapshot(input: { repoUrl: string; repoBranch: string; repoStatus: string; repoFiles: DirectRepoFile[] }): void {
+  window.localStorage.setItem(DURABLE_REPO_SNAPSHOT_KEY, JSON.stringify({
+    version: 1,
+    repoUrl: input.repoUrl,
+    repoBranch: input.repoBranch,
+    repoStatus: input.repoStatus,
+    repoFiles: input.repoFiles.slice(0, 500),
+    savedAt: Date.now(),
+  }));
+}
+
+function reloadAfterDirectSnapshot(): void {
+  window.setTimeout(() => {
+    try {
+      window.location.reload();
+    } catch {
+      // Android WebView may block reload during tests; persisted snapshot remains valid.
+    }
+  }, 450);
+}
+
+async function loadRepoDirectly(draft: SetupDraft, detail: MobileRepoSetupDetail, sessionId: number): Promise<void> {
+  if (!isActiveSession(sessionId)) return;
+  const parsed = parseRepoUrl(draft.repoUrl);
+  if (!parsed) {
+    if (setSessionStatus(sessionId, 'GitHub Repository URL ist ungueltig.', 'failed')) writeStage(detail, 'failed', 'GitHub Repository URL ist ungueltig.');
+    return;
+  }
+
+  if (setSessionStatus(sessionId, 'Direct repository fallback loading.', 'loading')) writeStage(detail, 'loading', 'Direct repository fallback loading.');
+
+  try {
+    const headers = githubHeaders(draft.accessValue);
+    const repoResponse = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`, { headers });
+    if (!repoResponse.ok) throw new Error(`GitHub Repo-Info Fehler: ${repoResponse.status}`);
+    const repoData = await repoResponse.json() as { default_branch?: unknown };
+    const defaultBranch = typeof repoData.default_branch === 'string' && repoData.default_branch.trim() ? repoData.default_branch.trim() : 'main';
+    const treeResponse = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(defaultBranch)}?recursive=1`, { headers });
+    if (!treeResponse.ok) throw new Error(`GitHub Tree Fehler: ${treeResponse.status}`);
+    const treeData = await treeResponse.json() as { tree?: unknown };
+    const rawTree = Array.isArray(treeData.tree) ? treeData.tree : [];
+    const files = rawTree.map(directRepoFileFromUnknown).filter((file): file is DirectRepoFile => Boolean(file)).slice(0, 500);
+    if (!files.length) throw new Error('GitHub Tree Fehler: empty tree');
+    const repoStatus = `${files.length} echte Repo-Einträge geladen (${defaultBranch})`;
+    saveDirectSnapshot({ repoUrl: draft.repoUrl, repoBranch: defaultBranch, repoStatus, repoFiles: files });
+    if (setSessionStatus(sessionId, 'Repository load completed.', 'loaded')) writeStage(detail, 'loaded', 'Repository load completed.');
+    reloadAfterDirectSnapshot();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Repository load failed.';
+    if (setSessionStatus(sessionId, message, 'failed')) writeStage(detail, 'failed', message);
+  }
+}
+
+function pageText(): string {
+  return document.body?.textContent?.toLowerCase() ?? '';
 }
 
 function watchRepoLoadOutcome(detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
   if (!isActiveSession(sessionId)) return;
-
   const text = pageText();
-  if (
-    text.includes('echte repo-einträge geladen') ||
-    text.includes('repo geladen') ||
-    text.includes('repo snapshot ready') ||
-    text.includes('repository loaded') ||
-    text.includes('repo loaded')
-  ) {
-    if (setSessionStatus(sessionId, 'Repository load completed.', 'loaded')) {
-      writeStage(detail, 'loaded', 'Repository load completed.');
-    }
+  if (text.includes('echte repo-einträge geladen') || text.includes('repo geladen') || text.includes('repo snapshot ready') || text.includes('repository loaded') || text.includes('repo loaded')) {
+    if (setSessionStatus(sessionId, 'Repository load completed.', 'loaded')) writeStage(detail, 'loaded', 'Repository load completed.');
     return;
   }
-
   if (text.includes('ungültige github url') || text.includes('repo-info fehler') || text.includes('repository nicht gefunden')) {
-    if (setSessionStatus(sessionId, 'Repository load failed.', 'failed')) {
-      writeStage(detail, 'failed', 'Repository load failed.');
-    }
+    if (setSessionStatus(sessionId, 'Repository load failed.', 'failed')) writeStage(detail, 'failed', 'Repository load failed.');
     return;
   }
-
   if (attempt >= OUTCOME_RETRY_LIMIT) {
-    if (setSessionStatus(sessionId, 'Repository load outcome was not detected.', 'failed')) {
-      writeStage(detail, 'failed', 'Repository load outcome was not detected.');
-    }
+    if (setSessionStatus(sessionId, 'Repository load outcome was not detected.', 'failed')) writeStage(detail, 'failed', 'Repository load outcome was not detected.');
     return;
   }
-
   window.setTimeout(() => watchRepoLoadOutcome(detail, sessionId, attempt + 1), OUTCOME_DELAY_MS);
 }
 
-function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
+function clickLoadRepoWhenReady(draft: SetupDraft, detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
   if (!isActiveSession(sessionId)) return;
-
   const button = findLoadRepoButton();
   if (button && !button.disabled) {
     if (!setSessionStatus(sessionId, 'Repository load button clicked.', 'loading')) return;
@@ -247,49 +316,43 @@ function clickLoadRepoWhenReady(detail: MobileRepoSetupDetail, sessionId: number
     watchRepoLoadOutcome(detail, sessionId);
     return;
   }
-
   if (attempt >= LOAD_RETRY_LIMIT) {
-    if (setSessionStatus(sessionId, 'Repository load button was not found or remained disabled.', 'failed')) {
-      writeStage(detail, 'failed', 'Repository load button was not found or remained disabled.');
+    if (isDirectFallbackRuntime()) {
+      void loadRepoDirectly(draft, detail, sessionId);
+      return;
     }
+    if (setSessionStatus(sessionId, 'Repository load button was not found or remained disabled.', 'failed')) writeStage(detail, 'failed', 'Repository load button was not found or remained disabled.');
     return;
   }
-
   setSessionStatus(sessionId, 'Waiting for repository load button.', 'applied');
-  window.setTimeout(() => clickLoadRepoWhenReady(detail, sessionId, attempt + 1), RETRY_DELAY_MS);
+  window.setTimeout(() => clickLoadRepoWhenReady(draft, detail, sessionId, attempt + 1), RETRY_DELAY_MS);
 }
 
 function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, sessionId: number, attempt = 0): void {
   if (!isActiveSession(sessionId)) return;
   if (attempt === 0) findButton('Repo')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-
   window.setTimeout(() => {
     if (!isActiveSession(sessionId)) return;
-
     const repo = findRepoUrlInput();
     const access = findAccessInput();
-
     if (!repo && attempt < INPUT_RETRY_LIMIT) {
       setSessionStatus(sessionId, 'Waiting for Repo tab inputs.', 'submitted');
       applyDraftToRepoTab(draft, detail, sessionId, attempt + 1);
       return;
     }
-
     if (!repo) {
-      if (setSessionStatus(sessionId, 'Repo URL input was not found.', 'failed')) {
-        writeStage(detail, 'failed', 'Repo URL input was not found.');
+      if (isDirectFallbackRuntime()) {
+        void loadRepoDirectly(draft, detail, sessionId);
+        return;
       }
+      if (setSessionStatus(sessionId, 'Repo URL input was not found.', 'failed')) writeStage(detail, 'failed', 'Repo URL input was not found.');
       return;
     }
-
     if (draft.repoUrl) setNativeInputValue(repo, draft.repoUrl);
     if (access && draft.accessValue) setNativeInputValue(access, draft.accessValue);
     repo.focus();
-
-    if (setSessionStatus(sessionId, 'Repo setup values applied to Repo tab.', 'applied')) {
-      writeStage(detail, 'applied', 'Repo setup values applied to Repo tab.');
-    }
-    clickLoadRepoWhenReady(detail, sessionId);
+    if (setSessionStatus(sessionId, 'Repo setup values applied to Repo tab.', 'applied')) writeStage(detail, 'applied', 'Repo setup values applied to Repo tab.');
+    clickLoadRepoWhenReady(draft, detail, sessionId);
   }, attempt === 0 ? 160 : RETRY_DELAY_MS);
 }
 
@@ -333,42 +396,28 @@ function createInput(labelText: string, field: 'repoUrl' | 'accessValue', value 
 function renderDrawer(): void {
   installStyle();
   if (document.getElementById(DRAWER_ID)) return;
-
   const draft = readDraft();
   const root = document.createElement('section');
   root.id = DRAWER_ID;
-
   const fab = document.createElement('button');
   fab.type = 'button';
   fab.className = 'setup-fab';
   fab.textContent = '⚙';
   fab.setAttribute('aria-label', 'Repo Setup öffnen');
-
   const panel = document.createElement('div');
   panel.className = 'setup-panel hidden';
-
   const title = document.createElement('strong');
   title.textContent = 'GitHub Repo Setup';
-
   const saveButton = document.createElement('button');
   saveButton.type = 'button';
   saveButton.className = 'setup-save';
   saveButton.dataset.action = 'save';
   saveButton.textContent = 'Speichern & Repo';
-
   const status = document.createElement('div');
   status.dataset.role = 'setup-status';
   status.dataset.phase = 'idle';
   status.textContent = 'Bereit.';
-
-  panel.append(
-    title,
-    createInput('GitHub Repository URL', 'repoUrl', draft.repoUrl),
-    createInput('GitHub private access', 'accessValue', draft.accessValue),
-    saveButton,
-    status,
-  );
-
+  panel.append(title, createInput('GitHub Repository URL', 'repoUrl', draft.repoUrl), createInput('GitHub private access', 'accessValue', draft.accessValue), saveButton, status);
   fab.addEventListener('click', () => panel.classList.toggle('hidden'));
   saveButton.addEventListener('click', () => {
     const repo = panel.querySelector<HTMLInputElement>('[data-field="repoUrl"]');
@@ -376,24 +425,20 @@ function renderDrawer(): void {
     const repoUrl = normalize(repo?.value ?? '');
     const accessValue = access?.value.trim() ?? '';
     const validation = validateRepoUrl(repoUrl);
-
-    if (!validation.valid) {
-      setStatus(validation.message ?? 'GitHub Repository URL ist ungueltig.', 'failed');
+    if (validation) {
+      setStatus(validation, 'failed');
       return;
     }
-
     const next = { repoUrl, accessValue };
     const detail = createMobileRepoSetupDetail({ ...next, autoLoad: true });
     const sessionId = activeSessionId + 1;
     activeSessionId = sessionId;
-
     writeDraft(next);
     setSessionStatus(sessionId, 'Repo setup submitted.', 'submitted');
     writeStage(detail, 'dispatched', 'Repo setup submitted.');
     try { dispatchMobileRepoSetup(detail); } catch { /* side-channel only */ }
     applyDraftToRepoTab(next, detail, sessionId);
   });
-
   root.append(fab, panel);
   document.body.appendChild(root);
 }
