@@ -17,6 +17,7 @@ import {
   startSovereignDependencyCheck,
   type SovereignDependencyLifecycleState,
 } from '../../product/runtime/sovereignDependencyLifecycle';
+import { buildSovereignDependencyCoachSignal } from '../../product/runtime/sovereignDependencyCoachBridge';
 
 export interface LoadRepoTreeOptions {
   repoUrl?: string;
@@ -32,6 +33,24 @@ function createGithubRepoDependency(): SovereignDependencyLifecycleState {
     'github',
     'GitHub repository tree has not been checked yet.',
   );
+}
+
+function publishDependencySignal(dependency: SovereignDependencyLifecycleState): void {
+  if (typeof window === 'undefined') return;
+
+  const signal = buildSovereignDependencyCoachSignal(dependency);
+  window.dispatchEvent(new CustomEvent('sovereign:dependency-lifecycle-state', { detail: signal }));
+  window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
+    detail: {
+      lamp: signal.lamp,
+      title: signal.title,
+      message: signal.message,
+      action: signal.action,
+      thinking: signal.thinking,
+      source: signal.source,
+      updatedAt: Date.now(),
+    },
+  }));
 }
 
 function readInitialSnapshot(): DurableRepoSnapshot | null {
@@ -66,14 +85,20 @@ export const useGithubRepo = () => {
     setRepoBranch(next.repoBranch);
     setRepoStatus(nextStatus);
     setRepoFiles(safeFiles);
-    setGithubDependencyLifecycle((state) => recordSovereignDependencySuccess(state, 'GitHub repo restored from session snapshot.').state);
+    setGithubDependencyLifecycle((state) => {
+      const nextState = recordSovereignDependencySuccess(state, 'GitHub repo restored from session snapshot.').state;
+      publishDependencySignal(nextState);
+      return nextState;
+    });
     persistSnapshot({ repoUrl: next.repoUrl, repoBranch: next.repoBranch, repoStatus: nextStatus, repoFiles: safeFiles });
   };
 
   const clearRepoSnapshot = () => {
+    const nextState = createGithubRepoDependency();
     setRepoFiles([]);
     setRepoStatus('Noch kein echtes Repo geladen.');
-    setGithubDependencyLifecycle(createGithubRepoDependency());
+    setGithubDependencyLifecycle(nextState);
+    publishDependencySignal(nextState);
     if (typeof window !== 'undefined') clearDurableRepoSnapshot(window.localStorage);
   };
 
@@ -89,14 +114,18 @@ export const useGithubRepo = () => {
     const parsed = parseGithubRepoUrl(nextRepoUrl);
 
     if (!parsed) {
-      setGithubDependencyLifecycle((state) => recordSovereignDependencyFailure(state, {}, 'Invalid GitHub repository URL.').state);
+      const nextState = recordSovereignDependencyFailure(githubDependencyLifecycle, {}, 'Invalid GitHub repository URL.').state;
+      setGithubDependencyLifecycle(nextState);
+      publishDependencySignal(nextState);
       setRepoStatus('Ungültige GitHub URL');
       setRepoFiles([]);
       return;
     }
 
     if (!canUseSovereignDependency(githubDependencyLifecycle)) {
-      setGithubDependencyLifecycle((state) => startSovereignDependencyCheck(state).state);
+      const nextState = startSovereignDependencyCheck(githubDependencyLifecycle).state;
+      setGithubDependencyLifecycle(nextState);
+      publishDependencySignal(nextState);
       setRepoStatus('GitHub Repo-Ladepfad ist kurz blockiert. Bitte nach Circuit-Cooldown erneut versuchen.');
       setRepoFiles([]);
       return;
@@ -104,6 +133,7 @@ export const useGithubRepo = () => {
 
     let dependencyState = startSovereignDependencyCheck(githubDependencyLifecycle).state;
     setGithubDependencyLifecycle(dependencyState);
+    publishDependencySignal(dependencyState);
     setIsRepoBusy(true);
     setRepoStatus(`Lade ${parsed.owner}/${parsed.repo}...`);
 
@@ -172,6 +202,7 @@ export const useGithubRepo = () => {
       setRepoStatus(nextStatus);
       dependencyState = recordSovereignDependencySuccess(dependencyState, `GitHub repo tree loaded: ${parsed.owner}/${parsed.repo}.`).state;
       setGithubDependencyLifecycle(dependencyState);
+      publishDependencySignal(dependencyState);
       persistSnapshot({ repoUrl: nextRepoUrl, repoBranch: branchToLoad, repoStatus: nextStatus, repoFiles: files });
       console.log(`Repo geladen: ${parsed.owner}/${parsed.repo}`);
     } catch (err) {
@@ -179,7 +210,9 @@ export const useGithubRepo = () => {
       setRepoFiles([]);
       const message = err instanceof Error ? err.message : 'Fehler beim Laden des Repos';
       const safeMessage = stripTokenFromText(message, nextGithubToken);
-      setGithubDependencyLifecycle(recordSovereignDependencyFailure(dependencyState, {}, safeMessage).state);
+      const nextState = recordSovereignDependencyFailure(dependencyState, {}, safeMessage).state;
+      setGithubDependencyLifecycle(nextState);
+      publishDependencySignal(nextState);
       setRepoStatus(safeMessage);
     } finally {
       setIsRepoBusy(false);
