@@ -1,5 +1,5 @@
 type CoachLamp = 'green' | 'yellow' | 'red';
-type CoachSource = 'runtime-library' | 'workflow' | 'repair' | 'telemetry' | 'metrics' | 'pattern-memory' | 'remote-memory' | 'runtime' | 'repo' | 'dom-fallback' | 'unknown';
+type CoachSource = 'runtime-library' | 'workflow' | 'repair' | 'telemetry' | 'metrics' | 'pattern-memory' | 'remote-memory' | 'runtime' | 'repo' | 'dom-fallback' | 'unknown' | 'setup';
 
 interface ExternalCoachState {
   lamp: CoachLamp;
@@ -14,6 +14,18 @@ interface ExternalCoachState {
 }
 
 type AnyRecord = Record<string, unknown>;
+type SetupState = {
+  hasToken: boolean;
+  tokenStatus: 'none' | 'missing' | 'valid' | 'expired';
+  repoReady: boolean;
+  setupPhase: 'no-repo' | 'repo-loading' | 'repo-loaded' | 'repo-error';
+  isBusy: boolean;
+  status: string;
+  redactedToken: string;
+  dependencyHealthy: boolean;
+  updatedAt: number;
+};
+
 type CoachWindow = Window & typeof globalThis & {
   __sovereignMobileCoachInterval?: number;
   __sovereignMobileCoachObserver?: MutationObserver;
@@ -23,6 +35,7 @@ type CoachWindow = Window & typeof globalThis & {
   __sovereignRuntimeCoachState?: unknown;
   __sovereignRuntime?: unknown;
   sovereignRuntime?: unknown;
+  __sovereignSetupState?: SetupState;
 };
 
 const ROOT_ID = 'sovereign-mobile-coach';
@@ -71,6 +84,7 @@ const SOURCE_PRIORITY: Record<CoachSource, number> = {
   metrics: 50,
   workflow: 60,
   repair: 65,
+  setup: 70,
   runtime: 80,
   'runtime-library': 90,
 };
@@ -273,6 +287,98 @@ function domDataState(): ExternalCoachState | null {
   return normalizeState({ lamp: carrier.getAttribute('data-coach-lamp'), title: carrier.getAttribute('data-coach-title'), message: carrier.getAttribute('data-coach-message'), action: carrier.getAttribute('data-coach-action'), thinking: carrier.getAttribute('data-coach-thinking'), source: 'dom-fallback' }, 'dom-fallback');
 }
 
+function setupState(): ExternalCoachState | null {
+  const win = window as CoachWindow;
+  const setup = win.__sovereignSetupState;
+  if (!setup) return null;
+
+  const { setupPhase, hasToken, tokenStatus, isBusy, status, dependencyHealthy } = setup;
+
+  // Loading state
+  if (isBusy) {
+    return {
+      lamp: 'green',
+      title: 'Repo wird geladen',
+      message: `Lade Repository... ${status}`,
+      action: 'Bitte warten.',
+      thinking: true,
+      source: 'setup',
+      updatedAt: wallClockMs(),
+    };
+  }
+
+  // No repo state
+  if (setupPhase === 'no-repo') {
+    return {
+      lamp: 'yellow',
+      title: 'Ich brauche zuerst dein Repo',
+      message: 'Oeffne das Zahnrad oder tippe Repo. Trage Repository URL und optional privaten Zugang ein.',
+      action: 'Repo Setup oeffnen.',
+      thinking: false,
+      source: 'setup',
+      updatedAt: wallClockMs(),
+    };
+  }
+
+  // Error states
+  if (setupPhase === 'repo-error') {
+    const isTokenError = tokenStatus === 'expired' || status.includes('Token') || status.includes('401') || status.includes('403');
+    
+    if (isTokenError) {
+      return {
+        lamp: 'yellow',
+        title: 'GitHub Zugang braucht PAT',
+        message: 'Dein GitHub Personal Access Token fehlt, ist abgelaufen oder hat keine Berechtigung.',
+        action: 'Zahnrad: GitHub Schreib-Key aktualisieren.',
+        thinking: false,
+        source: 'setup',
+        updatedAt: wallClockMs(),
+      };
+    }
+    
+    return {
+      lamp: 'red',
+      title: 'Repo-Ladefehler',
+      message: status || 'Repository konnte nicht geladen werden.',
+      action: 'URL pruefen oder spater erneut versuchen.',
+      thinking: false,
+      source: 'setup',
+      updatedAt: wallClockMs(),
+    };
+  }
+
+  // Circuit breaker open
+  if (!dependencyHealthy) {
+    return {
+      lamp: 'yellow',
+      title: 'Kurzzeitige Blockade',
+      message: 'Repo-Ladepfad ist kurz blockiert. Bitte nach Circuit-Cooldown erneut versuchen.',
+      action: 'Kurz warten, dann erneut.',
+      thinking: false,
+      source: 'setup',
+      updatedAt: wallClockMs(),
+    };
+  }
+
+  // Repo loaded - success
+  if (setupPhase === 'repo-loaded') {
+    const tokenHint = hasToken 
+      ? ' mit GitHub Zugang' 
+      : ' (Public Repo)';
+    return {
+      lamp: 'green',
+      title: 'Repository bereit',
+      message: `Repo geladen${tokenHint}. ${status}`,
+      action: 'Mission starten.',
+      thinking: false,
+      source: 'setup',
+      updatedAt: wallClockMs(),
+    };
+  }
+
+  return null;
+}
+
 function domState(signal = bodySignal()): ExternalCoachState {
   const dataState = domDataState();
   if (dataState) return remember(dataState);
@@ -292,6 +398,11 @@ function coachState(): ExternalCoachState {
   const runtime = assignedRuntimeState();
   if (runtime) return remember(stalled(runtime) ? stalledState(runtime) : runtime);
   if (lastRuntimeState) return stalled(lastRuntimeState) ? remember(stalledState(lastRuntimeState)) : lastRuntimeState;
+  
+  // Use direct setup state before DOM scanning
+  const setup = setupState();
+  if (setup) return remember(setup);
+  
   const signal = bodySignal();
   if (signal.strong) return domState(signal);
   const recovery = lastValidState ?? stored();
