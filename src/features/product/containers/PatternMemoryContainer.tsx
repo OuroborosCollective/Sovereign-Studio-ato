@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { SolutionPatternStore } from '../runtime/solutionPatternMemory';
 import { derivePatternMemoryContainerState, canClearPatternMemory } from '../runtime/patternMemoryContainerRuntime';
+import {
+  createSovereignDependencyLifecycleState,
+  recordSovereignDependencyFailure,
+  recordSovereignDependencySuccess,
+} from '../runtime/sovereignDependencyLifecycle';
+import { publishSovereignDependencyCoachSignal } from '../runtime/sovereignDependencyCoachBridge';
 
 export interface PatternMemoryContainerProps {
   store: SolutionPatternStore;
@@ -9,7 +15,25 @@ export interface PatternMemoryContainerProps {
 
 export function PatternMemoryContainer({ store, onClear }: PatternMemoryContainerProps) {
   const state = derivePatternMemoryContainerState(store);
-  const patterns = store.patterns.filter((pattern) => pattern.status === 'active').slice(0, 20);
+  const safePatterns = Array.isArray(store.patterns) ? store.patterns : [];
+  const patterns = safePatterns.filter((pattern) => pattern.status === 'active').slice(0, 20);
+
+  useEffect(() => {
+    const dependency = createSovereignDependencyLifecycleState(
+      'pattern-memory-store',
+      'pattern-memory',
+      'Pattern Memory has not been checked yet.',
+    );
+
+    const next = Array.isArray(store.patterns)
+      ? recordSovereignDependencySuccess(
+        dependency,
+        patterns.length > 0 ? `${patterns.length} active pattern(s) available.` : 'Pattern Memory is available but empty.',
+      ).state
+      : recordSovereignDependencyFailure(dependency, {}, 'Pattern Memory store is not readable.').state;
+
+    publishSovereignDependencyCoachSignal(next);
+  }, [patterns.length, store.patterns]);
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="pattern-memory-container">
