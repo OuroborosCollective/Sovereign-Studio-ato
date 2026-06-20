@@ -37,9 +37,9 @@ export function buildSovereignDependencyCoachSignal(
   if (dependency.phase === 'blocked') {
     return {
       lamp: 'red',
-      title: `${label} blockiert`,
+      title: `${label} not available`,
       message: `${label}: ${dependency.message}`,
-      action: 'Ursache prüfen oder später erneut versuchen.',
+      action: 'Check the cause or retry later.',
       thinking: false,
       source: dependency.kind,
       dependencyKey: dependency.key,
@@ -53,9 +53,9 @@ export function buildSovereignDependencyCoachSignal(
   if (dependency.phase === 'degraded') {
     return {
       lamp: 'yellow',
-      title: `${label} instabil`,
+      title: `${label} degraded`,
       message: `${label}: ${dependency.message}`,
-      action: 'Weiter möglich, Ergebnis prüfen.',
+      action: 'Continue carefully and verify the result.',
       thinking: false,
       source: dependency.kind,
       dependencyKey: dependency.key,
@@ -66,12 +66,28 @@ export function buildSovereignDependencyCoachSignal(
     };
   }
 
+  if (dependency.phase === 'idle') {
+    return {
+      lamp: 'yellow',
+      title: `${label} waiting`,
+      message: `${label}: ${dependency.message}`,
+      action: 'Run the first check before continuing.',
+      thinking: false,
+      source: dependency.kind,
+      dependencyKey: dependency.key,
+      dependencyPhase: dependency.phase,
+      telemetryLevel: 'info',
+      telemetryLabel: `dependency:${dependency.kind}:idle`,
+      telemetryMessage: summary,
+    };
+  }
+
   if (dependency.phase === 'checking' || dependency.phase === 'recovering') {
     return {
       lamp: 'green',
-      title: `${label} wird geprüft`,
+      title: `${label} checking`,
       message: `${label}: ${dependency.message}`,
-      action: 'Bitte warten.',
+      action: 'Please wait.',
       thinking: true,
       source: dependency.kind,
       dependencyKey: dependency.key,
@@ -84,15 +100,15 @@ export function buildSovereignDependencyCoachSignal(
 
   return {
     lamp: 'green',
-    title: `${label} bereit`,
+    title: `${label} ready`,
     message: `${label}: ${dependency.message}`,
-    action: 'Weiterarbeiten.',
+    action: 'Continue.',
     thinking: false,
     source: dependency.kind,
     dependencyKey: dependency.key,
     dependencyPhase: dependency.phase,
-    telemetryLevel: dependency.phase === 'ready' ? 'success' : 'info',
-    telemetryLabel: `dependency:${dependency.kind}:${dependency.phase}`,
+    telemetryLevel: 'success',
+    telemetryLabel: `dependency:${dependency.kind}:ready`,
     telemetryMessage: summary,
   };
 }
