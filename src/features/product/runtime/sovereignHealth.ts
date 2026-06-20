@@ -66,12 +66,17 @@ export function buildSovereignHealthReport(input: SovereignHealthInput): Soverei
   const dependencyWarnings = dependencyEvents.filter((event) => event.level === 'warning').length;
   const dependencyWaiting = dependencyEvents.filter(isDependencyWaiting).length;
 
-  const criticalRisks = highIntegrity + highGenerated + workflowRed + telemetryErrors + dependencyErrors;
-  const totalIssues = criticalRisks + mediumIntegrity + workflowPending + dependencyWarnings + dependencyWaiting;
+  // Existing repository path findings are advisory. Real repositories often contain
+  // build/, dist/, Android assets, archives, or legacy paths. Those paths must be
+  // shown for review, but they must not block planning/package generation before
+  // the generated output is known. Red remains reserved for active runtime blockers:
+  // unsafe generated output, failed workflows, and real telemetry/dependency errors.
+  const criticalRisks = highGenerated + workflowRed + telemetryErrors + dependencyErrors;
+  const totalIssues = criticalRisks + highIntegrity + mediumIntegrity + workflowPending + dependencyWarnings + dependencyWaiting;
   const repairsLogged = telemetryEvents.filter((event) => event.label.includes('draft-pr-created') || event.label.includes('guards:passed')).length;
-  const branchDelta = workflowRed > 0 || dependencyErrors > 0
+  const branchDelta = criticalRisks > 0
     ? 1
-    : workflowPending > 0 || dependencyWarnings > 0 || dependencyWaiting > 0
+    : workflowPending > 0 || dependencyWarnings > 0 || dependencyWaiting > 0 || highIntegrity > 0 || mediumIntegrity > 0
       ? 0.5
       : input.workflowWatch?.status === 'green'
         ? -1
@@ -79,7 +84,7 @@ export function buildSovereignHealthReport(input: SovereignHealthInput): Soverei
 
   const recommendations: string[] = [];
   if (!input.repoFiles.length) recommendations.push('Load a real repository snapshot before judging health.');
-  if (highIntegrity > 0) recommendations.push('Review high-risk repository paths before publishing changes.');
+  if (highIntegrity > 0) recommendations.push('Review high-risk repository paths before publishing changes; existing repo paths do not block planning.');
   if (mediumIntegrity > 0) recommendations.push('Review medium-risk repository paths for accuracy and completeness.');
   if (highGenerated > 0) recommendations.push('Generated file review found high-risk output and should block publishing.');
   if (workflowRed > 0) recommendations.push('Inspect failed workflow checks and prepare a focused repair package.');
