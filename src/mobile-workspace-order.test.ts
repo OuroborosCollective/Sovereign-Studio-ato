@@ -56,6 +56,29 @@ describe('mobile workspace order', () => {
     expect(document.querySelector('.active')?.getAttribute('data-sovereign-active-workspace')).toBe('true');
   });
 
+  it('recognizes the Ideenfabrik planning container as the active workspace below the coach', () => {
+    document.body.innerHTML = `
+      <div id="root">
+        <div class="min-h-screen">
+          <h1>Sovereign Canvas Tool</h1>
+          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
+          <section id="sovereign-mobile-coach"><div>Sovereign Bot</div></section>
+          <section class="automation"><h2>Automation Mode</h2><select><option>Full Auto Draft PR</option></select></section>
+          <section class="active" data-testid="builder-container"><h2>Ideenfabrik · Chat Auftrag</h2><textarea></textarea></section>
+          <section class="more"><h2>Mehr Bereiche: Logs, Speicher, Checks...</h2></section>
+        </div>
+      </div>
+    `;
+
+    expect(orderMobileWorkspace()).toBe(true);
+
+    const coach = document.getElementById('sovereign-mobile-coach');
+    const active = document.querySelector<HTMLElement>('[data-testid="builder-container"]');
+
+    expect(coach?.nextElementSibling).toBe(active);
+    expect(active?.getAttribute('data-sovereign-active-workspace')).toBe('true');
+  });
+
   it('does not treat navigation or automation controls as active workspace', () => {
     document.body.innerHTML = `
       <div id="root">
