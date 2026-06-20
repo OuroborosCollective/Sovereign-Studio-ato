@@ -8,7 +8,8 @@
 import { useEffect } from 'react';
 import { wallClockMs } from '../../../mobile-operator-coach';
 import type { SequentialRuntimeState } from '../runtime/sequentialRuntimeGuard';
-import type { SovereignHealthStatus } from '../runtime/sovereignHealth';
+import { getLatestSovereignHealthReport, type SovereignHealthStatus } from '../runtime/sovereignHealth';
+import { getSovereignHealthRuntimeGate } from '../runtime/sovereignFunctionalGuards';
 
 // Coach State Types
 export type CoachLamp = 'green' | 'yellow' | 'red';
@@ -29,6 +30,17 @@ export interface RuntimeReadinessGateInput {
   allowed: boolean;
   status: SovereignHealthStatus;
   reason: string;
+}
+
+function latestHealthGate(): RuntimeReadinessGateInput | null {
+  const report = getLatestSovereignHealthReport();
+  if (!report) return null;
+  const gate = getSovereignHealthRuntimeGate(report);
+  return {
+    allowed: gate.allowed,
+    status: gate.status,
+    reason: gate.reason,
+  };
 }
 
 function deriveHealthGateCoachState(healthGate: RuntimeReadinessGateInput, now: number): CoachRuntimeState | null {
@@ -126,7 +138,7 @@ export function deriveCoachStateFromRuntime(
     };
   }
 
-  const healthGateCoachState = healthGate ? deriveHealthGateCoachState(healthGate, now) : null;
+  const healthGateCoachState = healthGate ? deriveHealthGateCoachState(healthGate, now) : latestHealthGate() ? deriveHealthGateCoachState(latestHealthGate() as RuntimeReadinessGateInput, now) : null;
   if (healthGateCoachState) return healthGateCoachState;
   
   // 3. Wenn Draft PR erstellt wird
