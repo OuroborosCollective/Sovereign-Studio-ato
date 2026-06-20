@@ -195,7 +195,9 @@ const App: React.FC = () => {
   const [automationMode, setAutomationMode] = useState<SovereignAutomationMode>('manual');
   const [lastAutoRunKey, setLastAutoRunKey] = useState('');
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
+  const [planningConfirmed, setPlanningConfirmed] = useState(false);
   const lastAutoViewReasonRef = useRef('');
+  const recentUserInteractionUntil = useRef(0);
 
   const githubRepoState = useGithubRepo();
   const setupState = useSetupState(githubRepoState);
@@ -289,6 +291,11 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solutionPatternStore]);
 
+  const handleUserTabClick = (tab: SovereignTab) => {
+    recentUserInteractionUntil.current = wallClockMs() + 3_000;
+    setActiveTab(tab);
+  };
+
   useEffect(() => {
     const routerActiveTab: SovereignAutoViewTab = activeTab === 'monitor' ? 'repo' : activeTab;
     const decision = decideSovereignAutoView({
@@ -302,6 +309,10 @@ const App: React.FC = () => {
       workflowStatus: workflowReport?.status ?? 'idle',
       hasActivePatterns: activePatternCount > 0,
       hasActiveTelemetry: telemetry.events.length > 0,
+      nowMs: wallClockMs(),
+      manualOverrideUntil: recentUserInteractionUntil.current,
+      recentUserInteractionUntil: recentUserInteractionUntil.current,
+      planningConfirmed,
     });
 
     if (!decision.shouldSwitch) return;
@@ -826,7 +837,7 @@ const App: React.FC = () => {
           <button
             key={tab.id}
             className={activeTab === tab.id ? 'font-bold underline' : ''}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleUserTabClick(tab.id)}
             type="button"
           >
             {tab.label}
@@ -863,7 +874,7 @@ const App: React.FC = () => {
         <SovereignTabErrorBoundary
           tabId="monitor"
           tabLabel="Monitor"
-          onDismiss={() => setActiveTab('repo')}
+          onDismiss={() => handleUserTabClick('repo')}
         >
           <section
             className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
@@ -878,9 +889,9 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs">
-                <button type="button" onClick={() => setActiveTab('repo')}>Repo laden</button>
-                <button type="button" onClick={() => setActiveTab('remote')}>Remote Memory</button>
-                <button type="button" onClick={() => setActiveTab('telemetry')}>Telemetry öffnen</button>
+                <button type="button" onClick={() => handleUserTabClick('repo')}>Repo laden</button>
+                <button type="button" onClick={() => handleUserTabClick('remote')}>Remote Memory</button>
+                <button type="button" onClick={() => handleUserTabClick('telemetry')}>Telemetry öffnen</button>
               </div>
             </div>
 
