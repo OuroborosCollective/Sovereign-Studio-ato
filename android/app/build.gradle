@@ -12,12 +12,19 @@ def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias')
 def releaseKeyPassword = project.findProperty('android.injected.signing.key.password') ?: System.getenv('ANDROID_KEY_PASSWORD') ?: releaseStorePassword
 def releaseSigningConfigured = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
+def repoRootDir = rootProject.projectDir.parentFile
+def skipWebAssetBuild = providers.gradleProperty('android.skipWebAssetBuild').orElse('false')
+
 tasks.register('buildWebAssetsForAndroid', Exec) {
-    workingDir rootProject.projectDir.parentFile
+    workingDir repoRootDir
+    onlyIf {
+        !skipWebAssetBuild.get().toBoolean()
+    }
+
     if (System.getProperty('os.name').toLowerCase().contains('windows')) {
-        commandLine 'cmd', '/c', 'npm', 'run', 'build:web'
+        commandLine 'cmd', '/c', 'if exist pnpm-lock.yaml (where pnpm >nul 2>nul && pnpm run build:web || npm run build:web) else npm run build:web'
     } else {
-        commandLine 'npm', 'run', 'build:web'
+        commandLine 'sh', '-lc', 'if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then pnpm run build:web; else npm run build:web; fi'
     }
 }
 
