@@ -89,6 +89,7 @@ import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
 import { deriveCoachStateFromRuntime, useCoachRuntimeBridge, type CoachRuntimeState } from './features/product/hooks/useCoachRuntimeBridge';
+import { useSetupState, publishSetupStateToWindow } from './features/github/hooks/useSetupState';
 import { wallClockMs } from './mobile-operator-coach';
 
 type SovereignTab = 'monitor' | SovereignAutoViewTab;
@@ -211,6 +212,15 @@ const App: React.FC = () => {
     restoreRepoSnapshot,
     clearRepoSnapshot,
   } = useGithubRepo();
+
+  // Unified Setup State - Single Source of Truth for Repo/PAT detection
+  const setupState = useSetupState();
+
+  // Publish Setup State to window for Coach consumption
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    publishSetupStateToWindow(setupState);
+  }, [setupState]);
 
   const safeRepoFiles = Array.isArray(repoFiles) ? repoFiles : [];
   const safeDiffSources = Array.isArray(diffSources) ? diffSources : [];

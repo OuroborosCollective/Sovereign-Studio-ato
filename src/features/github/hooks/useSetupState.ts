@@ -168,6 +168,11 @@ export function publishSetupStateToWindow(state: SetupState): void {
     dependencyHealthy: state.dependencyHealthy,
     updatedAt: Date.now(),
   };
+  
+  // Dispatch event so Coach can react immediately
+  window.dispatchEvent(new CustomEvent('sovereign:setup-state', {
+    detail: window.__sovereignSetupState,
+  }));
 }
 
 // Type for window extension
