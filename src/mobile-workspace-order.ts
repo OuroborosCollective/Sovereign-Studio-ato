@@ -8,10 +8,16 @@ type WorkspaceWindow = Window &
 const COACH_ID = 'sovereign-mobile-coach';
 const STYLE_ID = 'sovereign-mobile-workspace-order-style';
 const ACTIVE_MARKER = 'data-sovereign-active-workspace';
+const ACTIVE_TEST_IDS = new Set([
+  'repo-snapshot-container',
+  'builder-container',
+]);
 const ACTIVE_TITLES = [
   'repository snapshot',
   'github repo setup',
   'sovereign action builder',
+  'ideenfabrik',
+  'chat auftrag',
   'generated files review',
   'generated file diff',
   'live monitor',
@@ -76,9 +82,15 @@ function isMoreMenu(element: Element): boolean {
   return text.includes('mehr bereiche') || text.includes('logs, speicher, checks');
 }
 
+function hasActiveWorkspaceTestId(element: Element): boolean {
+  const testId = element.getAttribute('data-testid');
+  return Boolean(testId && ACTIVE_TEST_IDS.has(testId));
+}
+
 function isActiveWorkspace(element: Element): boolean {
   if (!visible(element)) return false;
   if (isCoach(element) || isTitle(element) || isPrimaryNav(element) || isAutomationPanel(element) || isMoreMenu(element)) return false;
+  if (hasActiveWorkspaceTestId(element)) return true;
   const text = norm(element.textContent ?? '');
   if (!text) return false;
   return ACTIVE_TITLES.some((title) => text.includes(title));
