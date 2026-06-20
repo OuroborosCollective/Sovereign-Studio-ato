@@ -14,6 +14,23 @@ describe('sovereignAutoViewRouter', () => {
     })).toMatchObject({ shouldSwitch: false, tab: 'repo' });
   });
 
+  it('does not use telemetry as an early planning auto-switch trigger', () => {
+    const decision = decideSovereignAutoView({
+      mode: 'full-auto-draft-pr',
+      activeStep: null,
+      activeTab: 'repo',
+      repoReady: true,
+      hasPackage: false,
+      hasActiveTelemetry: true,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'idle',
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: false, tab: 'repo' });
+    expect(decision.reason).toContain('No auto view change');
+  });
+
   it('keeps runtime-owned views visible while work is active', () => {
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
@@ -46,7 +63,7 @@ describe('sovereignAutoViewRouter', () => {
     })).toMatchObject({ shouldSwitch: false, tab: 'workflow' });
   });
 
-  it('returns to files after successful workflow when a package exists', () => {
+  it('returns to files after successful workflow only when workflow is the active view', () => {
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
@@ -56,6 +73,22 @@ describe('sovereignAutoViewRouter', () => {
       isWatchingWorkflow: false,
       workflowStatus: 'green',
     })).toMatchObject({ shouldSwitch: true, tab: 'files' });
+  });
+
+  it('does not bounce the planning workspace back to generated files review', () => {
+    const decision = decideSovereignAutoView({
+      mode: 'full-auto-draft-pr',
+      activeStep: null,
+      activeTab: 'builder',
+      hasPackage: true,
+      hasActiveTelemetry: true,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'green',
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: false, tab: 'builder' });
+    expect(decision.reason).toContain('planning workspace');
   });
 
   it('keeps the user-selected builder workspace visible even with the product App input shape', () => {
