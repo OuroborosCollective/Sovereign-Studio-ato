@@ -35,7 +35,6 @@ import {
   type SourceFileSnapshot,
 } from './features/product/runtime/generatedFileDiffPreview';
 import { assertGeneratedFileReviewSafe, reviewGeneratedFiles } from './features/product/runtime/generatedFileReview';
-import { getRepoSnapshotStatus } from './features/product/runtime/sovereignFunctionalGuards';
 import { assertCanPublishPackage } from './features/product/runtime/appPublishRuntime';
 import { buildRuntimeValidationCoverageReport } from './features/product/runtime/runtimeValidationCoverage';
 import {
@@ -88,7 +87,7 @@ import type { SovereignImplementationPackage } from './features/product/runtime/
 import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
-import { deriveCoachStateFromRuntime, useCoachRuntimeBridge, type CoachRuntimeState } from './features/product/hooks/useCoachRuntimeBridge';
+import { deriveCoachStateFromRuntime, useCoachRuntimeBridge } from './features/product/hooks/useCoachRuntimeBridge';
 import { useSetupState, publishSetupStateToWindow } from './features/github/hooks/useSetupState';
 import { wallClockMs } from './mobile-operator-coach';
 
@@ -198,6 +197,9 @@ const App: React.FC = () => {
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
   const lastAutoViewReasonRef = useRef('');
 
+  const githubRepoState = useGithubRepo();
+  const setupState = useSetupState(githubRepoState);
+
   const {
     repoUrl,
     setRepoUrl,
@@ -208,13 +210,11 @@ const App: React.FC = () => {
     repoStatus,
     isRepoBusy,
     repoFiles,
+    repoSnapshotStatus,
     loadRepoTree,
     restoreRepoSnapshot,
     clearRepoSnapshot,
-  } = useGithubRepo();
-
-  // Unified Setup State - Single Source of Truth for Repo/PAT detection
-  const setupState = useSetupState();
+  } = setupState;
 
   // Publish Setup State to window for Coach consumption
   useEffect(() => {
@@ -224,7 +224,6 @@ const App: React.FC = () => {
 
   const safeRepoFiles = Array.isArray(repoFiles) ? repoFiles : [];
   const safeDiffSources = Array.isArray(diffSources) ? diffSources : [];
-  const repoSnapshotStatus = getRepoSnapshotStatus(safeRepoFiles);
   const runtimeBusy = Boolean(sequentialRuntime.activeStep);
   const currentMission = normalizeMission(mission);
   const packageInputKey = buildAutomationRunKey({
@@ -659,7 +658,7 @@ const App: React.FC = () => {
       });
 
       if (!githubToken.trim()) {
-        throw new Error('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
+        throw new Error('GitHub Zugang fehlt. Draft PR wird nur mit bewusst eingegebenem Zugangswert erstellt.');
       }
 
       setIsPublishing(true);
