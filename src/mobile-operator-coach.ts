@@ -61,6 +61,19 @@ const ACCEPTED = ['workflow accepted', 'workflow queued', 'mission accepted', 'a
 const STOPPERS = ['validation_failed', 'draft pr failed', 'build failed', 'workflow failed', 'critical blocker', 'typeerror', 'referenceerror', 'syntaxerror', 'fatal', 'error:', 'fehlgeschlagen'];
 const HARMLESS = ['0 failed', '0 errors', 'no error', 'no errors', 'workflow: idle', 'no active step; 0 completed step(s), 0 failed step(s)'];
 const FACES = ['_@=@_', '○¤○', '^-_-^', '[>->_]', ',.;@-@;.,', '｡◕‿◕｡'];
+const SOURCE_PRIORITY: Record<CoachSource, number> = {
+  'dom-fallback': 10,
+  unknown: 10,
+  repo: 25,
+  'remote-memory': 35,
+  'pattern-memory': 35,
+  telemetry: 45,
+  metrics: 50,
+  workflow: 60,
+  repair: 65,
+  runtime: 80,
+  'runtime-library': 90,
+};
 
 let lastValidState: ExternalCoachState | null = null;
 let lastRuntimeState: ExternalCoachState | null = null;
@@ -101,9 +114,24 @@ function record(value: unknown): value is AnyRecord {
 }
 
 function source(value: unknown, fallback: CoachSource): CoachSource {
-  return value === 'runtime-library' || value === 'workflow' || value === 'repair' || value === 'telemetry' || value === 'metrics' || value === 'pattern-memory' || value === 'remote-memory' || value === 'runtime' || value === 'repo' || value === 'dom-fallback'
+  return value === 'runtime-library' || value === 'workflow' || value === 'repair' || value === 'telemetry' || value === 'metrics' || value === 'pattern-memory' || value === 'remote-memory' || value === 'runtime' || value === 'repo' || value === 'dom-fallback' || value === 'unknown'
     ? value
     : fallback;
+}
+
+function sourcePriority(state: ExternalCoachState | null | undefined): number {
+  return SOURCE_PRIORITY[state?.source ?? 'unknown'] ?? SOURCE_PRIORITY.unknown;
+}
+
+function isFresh(state: ExternalCoachState): boolean {
+  return wallClockMs() - (state.updatedAt ?? wallClockMs()) < STALLED_AFTER_MS;
+}
+
+function shouldKeepCurrent(current: ExternalCoachState, incoming: ExternalCoachState): boolean {
+  if (incoming.source === current.source && incoming.tick !== undefined && current.tick !== undefined && incoming.tick < current.tick) return true;
+  if (current.lamp === 'red' && incoming.lamp !== 'red' && incoming.thinking) return true;
+  if (sourcePriority(incoming) < sourcePriority(current) && isFresh(current)) return true;
+  return false;
 }
 
 function has(sourceText: string, tokens: string[]): boolean {
@@ -184,10 +212,9 @@ function accept(value: unknown, fallbackSource: CoachSource): ExternalCoachState
   const incoming = normalizeState(value, fallbackSource);
   if (!incoming) return null;
   const current = lastRuntimeState ?? lastValidState ?? stored();
-  if (current && incoming.source === current.source && incoming.tick !== undefined && current.tick !== undefined && incoming.tick < current.tick) return current;
-  if (current?.lamp === 'red' && incoming.lamp !== 'red' && incoming.thinking) return current;
+  if (current && shouldKeepCurrent(current, incoming)) return current;
   const accepted = remember(incoming);
-  lastRuntimeState = accepted;
+  if (accepted.source !== 'dom-fallback') lastRuntimeState = accepted;
   scheduleRender();
   return accepted;
 }
@@ -348,7 +375,7 @@ function lines(state: ExternalCoachState, coachMode: string): string[] {
   const prefix = `${coachMode} $ ${face(state.title)}`;
   if (state.lamp === 'red') return [`${prefix} stopper erkannt`, 'repair.scan(tick:auto) => blocked', `reason: ${state.message}`, `next: ${state.action}`];
   if (state.thinking) return [`${prefix} thinking loop aktiv`, 'read.signals(tick:auto) => ok', `status: ${state.message}`];
-  return [`${prefix} monitor.update()`, `source:${state.source ?? 'dom'} tick:${state.tick ?? 'auto'}${state.hash ? ` hash:${state.hash}` : ''}`, `lamp:${state.lamp} thinking:${String(state.thinking)}`, `message: ${state.message}`, `next: ${state.action}`];
+  return [`${prefix} monitor.update()`, `source:${state.source ?? 'dom'} priority:${sourcePriority(state)} tick:${state.tick ?? 'auto'}${state.hash ? ` hash:${state.hash}` : ''}`, `lamp:${state.lamp} thinking:${String(state.thinking)}`, `message: ${state.message}`, `next: ${state.action}`];
 }
 
 function rootAfter(nav: Element): HTMLElement {
