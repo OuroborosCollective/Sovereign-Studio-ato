@@ -201,7 +201,7 @@ export function evaluateSovereignAutoViewConditions(
 
 function canRunSuggestionSwitch(input: SovereignAutoViewInput): boolean {
   if (isSovereignAutoViewManualOverrideActive(input)) return false;
-  // planningConfirmed gates suggestion switching: user must confirm before auto-routing takes over.
+  // planningConfirmed=false blocks suggestion switching until the user confirms the plan.
   if (input.planningConfirmed === false) return false;
   if (isSovereignAutoViewUserInactive(input)) return true;
   return isSovereignAutoViewConfidenceMatched(input);
