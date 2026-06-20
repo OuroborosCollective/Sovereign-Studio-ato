@@ -1,3 +1,6 @@
+import { getLatestSovereignHealthReport } from './sovereignHealth';
+import { getSovereignHealthRuntimeGate } from './sovereignFunctionalGuards';
+
 export type SovereignAutomationMode = 'manual' | 'auto-review' | 'full-auto-draft-pr';
 export type SovereignAutomationHealthStatus = 'green' | 'warning' | 'red' | 'idle';
 
@@ -93,21 +96,48 @@ export function isPlaceholderAutomationRunKey(value: string): boolean {
   return value.includes(PLACEHOLDER_MISSION_TOKEN);
 }
 
-function healthBlocksAutomation(input: SovereignAutomationInputs): boolean {
-  if (input.healthAllowed === undefined) return false;
-  if (input.healthAllowed) return false;
-  return input.healthStatus === 'red' || input.healthStatus === 'idle' || input.healthStatus === undefined;
+function resolveHealthGate(input: SovereignAutomationInputs): {
+  allowed: boolean;
+  status?: SovereignAutomationHealthStatus;
+  reason?: string;
+} | null {
+  if (input.healthAllowed !== undefined) {
+    return {
+      allowed: input.healthAllowed,
+      status: input.healthStatus,
+      reason: input.healthReason,
+    };
+  }
+
+  const latestReport = getLatestSovereignHealthReport();
+  if (!latestReport) return null;
+  const gate = getSovereignHealthRuntimeGate(latestReport);
+  return {
+    allowed: gate.allowed,
+    status: gate.status,
+    reason: gate.reason,
+  };
+}
+
+function healthBlocksAutomation(input: SovereignAutomationInputs): string | null {
+  const gate = resolveHealthGate(input);
+  if (!gate || gate.allowed) return null;
+  if (gate.status === 'red' || gate.status === 'idle' || gate.status === undefined) {
+    return gate.reason || `Automation blocked by ${gate.status ?? 'unknown'} runtime readiness.`;
+  }
+  return null;
 }
 
 export function decideSovereignAutomation(input: SovereignAutomationInputs): SovereignAutomationDecision {
   if (input.mode === 'manual') return { shouldBuildPackage: false, shouldPublishDraftPr: false };
   if (input.isBusy) return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Automation is waiting for the current action to finish.' };
   if (!input.repoReady) return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Automation needs a loaded repository snapshot.' };
-  if (healthBlocksAutomation(input)) {
+  const healthBlockedReason = healthBlocksAutomation(input);
+  if (healthBlockedReason) {
     return {
       shouldBuildPackage: false,
       shouldPublishDraftPr: false,
-      blockedReason: input.healthReason || `Automation blocked by ${input.healthStatus ?? 'unknown'} runtime readiness.`,
+      blockedReason: healthBlockedReason,
     };
   }
   if (!input.hasMission) return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Automation needs a concrete mission.' };
