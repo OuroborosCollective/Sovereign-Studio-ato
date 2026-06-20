@@ -33,6 +33,7 @@ def releaseStorePassword = project.findProperty('android.injected.signing.store.
 def releaseKeyAlias = project.findProperty('android.injected.signing.key.alias') ?: System.getenv('ANDROID_KEY_ALIAS')
 def releaseKeyPassword = project.findProperty('android.injected.signing.key.password') ?: System.getenv('ANDROID_KEY_PASSWORD') ?: releaseStorePassword
 def releaseSigningConfigured = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { hasText(it) }
+def skipWebAssetBuild = providers.gradleProperty('android.skipWebAssetBuild').orElse('true')
 
 tasks.register('verifyAndroidWebAssets') {
     group = 'verification'
