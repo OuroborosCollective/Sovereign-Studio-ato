@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   clearDurableRepoSnapshot,
   createDurableRepoSnapshot,
@@ -18,6 +18,11 @@ import {
   type SovereignDependencyLifecycleState,
 } from '../../product/runtime/sovereignDependencyLifecycle';
 import { publishSovereignDependencyCoachSignal } from '../../product/runtime/sovereignDependencyCoachBridge';
+import {
+  MOBILE_REPO_SETUP_EVENT,
+  parseMobileRepoSetupDetail,
+  type MobileRepoSetupDetail,
+} from '../../../mobile-setup-bridge';
 
 export interface LoadRepoTreeOptions {
   repoUrl?: string;
@@ -26,6 +31,10 @@ export interface LoadRepoTreeOptions {
 }
 
 const GITHUB_REPO_DEPENDENCY_KEY = 'github-repo-tree';
+
+type MobileRepoSetupAckWindow = Window & typeof globalThis & {
+  __sovereignMobileRepoSetupAck?: string;
+};
 
 function createGithubRepoDependency(): SovereignDependencyLifecycleState {
   return createSovereignDependencyLifecycleState(
@@ -49,6 +58,11 @@ function persistSnapshot(input: { repoUrl: string; repoBranch: string; repoStatu
   saveDurableRepoSnapshot(window.localStorage, createDurableRepoSnapshot(input));
 }
 
+function acknowledgeMobileRepoSetup(detail: MobileRepoSetupDetail): void {
+  if (typeof window === 'undefined') return;
+  (window as MobileRepoSetupAckWindow).__sovereignMobileRepoSetupAck = detail.requestId;
+}
+
 export const useGithubRepo = () => {
   const [initialSnapshot] = useState(readInitialSnapshot);
   const [repoUrl, setRepoUrl] = useState(initialSnapshot?.repoUrl ?? '');
@@ -58,6 +72,7 @@ export const useGithubRepo = () => {
   const [repoStatus, setRepoStatus] = useState(initialSnapshot ? `${initialSnapshot.repoStatus} [durable restored]` : 'Noch kein echtes Repo geladen.');
   const [isRepoBusy, setIsRepoBusy] = useState(false);
   const [githubDependencyLifecycle, setGithubDependencyLifecycle] = useState(createGithubRepoDependency);
+  const handledMobileRepoSetupRequestsRef = useRef<Set<string>>(new Set());
 
   const restoreRepoSnapshot = (next: {
     repoUrl: string;
@@ -204,6 +219,29 @@ export const useGithubRepo = () => {
       setIsRepoBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleMobileRepoSetup = (event: Event): void => {
+      const detail = parseMobileRepoSetupDetail((event as CustomEvent<unknown>).detail);
+      if (!detail) return;
+
+      acknowledgeMobileRepoSetup(detail);
+      if (handledMobileRepoSetupRequestsRef.current.has(detail.requestId)) return;
+      handledMobileRepoSetupRequestsRef.current.add(detail.requestId);
+
+      void loadRepoTree({
+        repoUrl: detail.repoUrl,
+        repoBranch: detail.repoBranch,
+        githubToken: detail.accessValue,
+      });
+    };
+
+    window.addEventListener(MOBILE_REPO_SETUP_EVENT, handleMobileRepoSetup);
+    return () => window.removeEventListener(MOBILE_REPO_SETUP_EVENT, handleMobileRepoSetup);
+    // Listener must always use the current repo hook state and loadRepoTree implementation.
+  }, [loadRepoTree]);
 
   return {
     repoUrl,
