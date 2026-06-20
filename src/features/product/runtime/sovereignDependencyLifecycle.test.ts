@@ -1,113 +1,83 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-
-interface DependencyNode {
-  id: string;
-  deps: string[];
-  resolved: boolean;
-}
-
-function resolveDependencies(nodes: Map<string, DependencyNode>): {
-  resolved: string[];
-  cycle: string[] | null;
-} {
-  const resolved: string[] = [];
-  const visiting = new Set<string>();
-
-  function visit(id: string, path: string[]): string[] | null {
-    if (resolved.includes(id)) return null;
-    if (visiting.has(id)) {
-      const cycleStart = path.indexOf(id);
-      return [...path.slice(cycleStart), id];
-    }
-
-    visiting.add(id);
-    const node = nodes.get(id);
-    if (!node) {
-      visiting.delete(id);
-      return null;
-    }
-
-    for (const dep of node.deps) {
-      const cycle = visit(dep, [...path, id]);
-      if (cycle) return cycle;
-    }
-
-    resolved.push(id);
-    visiting.delete(id);
-    return null;
-  }
-
-  for (const id of nodes.keys()) {
-    const cycle = visit(id, []);
-    if (cycle) return { resolved, cycle };
-  }
-
-  return { resolved, cycle: null };
-}
+import { describe, expect, it } from 'vitest';
+import {
+  canUseSovereignDependency,
+  createSovereignDependencyLifecycleState,
+  recordSovereignDependencyFailure,
+  recordSovereignDependencySuccess,
+  refreshSovereignDependencyLifecycle,
+  startSovereignDependencyCheck,
+} from './sovereignDependencyLifecycle';
 
 describe('sovereignDependencyLifecycle', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
+  it('starts idle and can begin a dependency check', () => {
+    const initial = createSovereignDependencyLifecycleState('github-api', 'github');
+    const started = startSovereignDependencyCheck(initial, {}, 1000).state;
+
+    expect(initial.phase).toBe('idle');
+    expect(started.phase).toBe('checking');
+    expect(started.checkedAt).toBe(1000);
+    expect(canUseSovereignDependency(started, {}, 1001)).toBe(true);
   });
 
-  it('resolves linear dependency chain', () => {
-    const nodes = new Map<string, DependencyNode>([
-      ['a', { id: 'a', deps: ['b'], resolved: false }],
-      ['b', { id: 'b', deps: ['c'], resolved: false }],
-      ['c', { id: 'c', deps: [], resolved: false }],
-    ]);
+  it('records success and marks stale dependencies as degraded', () => {
+    const ready = recordSovereignDependencySuccess(
+      startSovereignDependencyCheck(createSovereignDependencyLifecycleState('workflow-watch', 'workflow'), {}, 1000).state,
+      'Workflow API reachable.',
+      1100,
+    ).state;
+    const stale = refreshSovereignDependencyLifecycle(ready, { staleAfterMs: 1000 }, 3000).state;
 
-    const { resolved, cycle } = resolveDependencies(nodes);
-    expect(cycle).toBeNull();
-    expect(resolved).toEqual(['c', 'b', 'a']);
+    expect(ready.phase).toBe('ready');
+    expect(stale.phase).toBe('degraded');
+    expect(stale.message).toContain('stale');
   });
 
-  it('detects circular dependency', () => {
-    const nodes = new Map<string, DependencyNode>([
-      ['a', { id: 'a', deps: ['b'], resolved: false }],
-      ['b', { id: 'b', deps: ['c'], resolved: false }],
-      ['c', { id: 'c', deps: ['a'], resolved: false }],
-    ]);
+  it('opens the dependency circuit after repeated failures', () => {
+    const policy = { failureThreshold: 2, cooldownMs: 1000, halfOpenMaxAttempts: 1, staleAfterMs: 5000 };
+    const first = recordSovereignDependencyFailure(
+      createSovereignDependencyLifecycleState('remote-gateway', 'remote-memory'),
+      policy,
+      'Gateway timeout.',
+      1000,
+    ).state;
+    const second = recordSovereignDependencyFailure(first, policy, 'Gateway timeout again.', 1100).state;
 
-    const { resolved, cycle } = resolveDependencies(nodes);
-    expect(cycle).toEqual(['a', 'b', 'c', 'a']);
-    expect(resolved.length).toBeLessThan(3);
+    expect(first.phase).toBe('degraded');
+    expect(second.phase).toBe('blocked');
+    expect(second.circuit.phase).toBe('open');
+    expect(canUseSovereignDependency(second, policy, 1200)).toBe(false);
   });
 
-  it('resolves diamond dependency pattern', () => {
-    const nodes = new Map<string, DependencyNode>([
-      ['a', { id: 'a', deps: ['b', 'c'], resolved: false }],
-      ['b', { id: 'b', deps: ['d'], resolved: false }],
-      ['c', { id: 'c', deps: ['d'], resolved: false }],
-      ['d', { id: 'd', deps: [], resolved: false }],
-    ]);
+  it('allows half-open recovery after cooldown and closes on success', () => {
+    const policy = { failureThreshold: 1, cooldownMs: 1000, halfOpenMaxAttempts: 1, staleAfterMs: 5000 };
+    const blocked = recordSovereignDependencyFailure(
+      createSovereignDependencyLifecycleState('pattern-store', 'pattern-memory'),
+      policy,
+      'Store failed.',
+      1000,
+    ).state;
+    const recovering = refreshSovereignDependencyLifecycle(blocked, policy, 2500).state;
+    const started = startSovereignDependencyCheck(recovering, policy, 2500).state;
+    const ready = recordSovereignDependencySuccess(started, 'Pattern store recovered.', 2600).state;
 
-    const { resolved, cycle } = resolveDependencies(nodes);
-    expect(cycle).toBeNull();
-    expect(resolved).toContain('d');
-    expect(resolved).toContain('b');
-    expect(resolved).toContain('c');
-    expect(resolved).toContain('a');
+    expect(recovering.phase).toBe('recovering');
+    expect(started.phase).toBe('recovering');
+    expect(ready.phase).toBe('ready');
+    expect(ready.circuit.phase).toBe('closed');
+    expect(ready.circuit.failures).toBe(0);
   });
 
-  it('handles independent packages', () => {
-    const nodes = new Map<string, DependencyNode>([
-      ['pkg-a', { id: 'pkg-a', deps: [], resolved: false }],
-      ['pkg-b', { id: 'pkg-b', deps: [], resolved: false }],
-      ['pkg-c', { id: 'pkg-c', deps: [], resolved: false }],
-    ]);
+  it('keeps an open dependency blocked during cooldown', () => {
+    const policy = { failureThreshold: 1, cooldownMs: 10_000, halfOpenMaxAttempts: 1, staleAfterMs: 5000 };
+    const blocked = recordSovereignDependencyFailure(
+      createSovereignDependencyLifecycleState('github-pr', 'github'),
+      policy,
+      'GitHub unavailable.',
+      1000,
+    ).state;
+    const refreshed = refreshSovereignDependencyLifecycle(blocked, policy, 5000).state;
 
-    const { resolved, cycle } = resolveDependencies(nodes);
-    expect(cycle).toBeNull();
-    expect(resolved).toHaveLength(3);
-  });
-
-  it('handles self-referencing package', () => {
-    const nodes = new Map<string, DependencyNode>([
-      ['self', { id: 'self', deps: ['self'], resolved: false }],
-    ]);
-
-    const { resolved, cycle } = resolveDependencies(nodes);
-    expect(cycle).toContain('self');
+    expect(refreshed.phase).toBe('blocked');
+    expect(canUseSovereignDependency(refreshed, policy, 5000)).toBe(false);
   });
 });
