@@ -58,12 +58,11 @@ describe('sovereignAutoViewRouter', () => {
     })).toMatchObject({ shouldSwitch: true, tab: 'files' });
   });
 
-  it('keeps the user-selected builder workspace visible even when a package already exists', () => {
+  it('keeps the user-selected builder workspace visible even with the product App input shape', () => {
     const decision = decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
       activeTab: 'builder',
-      repoReady: true,
       hasPackage: true,
       isPublishing: false,
       isWatchingWorkflow: false,
