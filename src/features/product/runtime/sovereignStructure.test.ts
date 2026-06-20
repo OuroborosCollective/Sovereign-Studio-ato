@@ -110,8 +110,11 @@ describe('sovereign runtime structure', () => {
       mode: 'full-auto-draft-pr',
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
       repoBranch: 'main',
+      githubTokenPresent: true,
+      repoReady: snapshot.ready,
       mission: 'Bitte mobile UX verbessern und Logs direkt sichtbar machen.',
       repoFileCount: repoFiles.length,
+      healthStatus: 'green',
     });
     const automation = decideSovereignAutomation({
       mode: 'full-auto-draft-pr',
@@ -121,6 +124,8 @@ describe('sovereign runtime structure', () => {
       isBusy: false,
       hasPackage: false,
       nextAutoRunKey: automationRunKey,
+      healthAllowed: true,
+      healthStatus: 'green',
     });
     expect(automation.shouldPublishDraftPr).toBe(true);
 
