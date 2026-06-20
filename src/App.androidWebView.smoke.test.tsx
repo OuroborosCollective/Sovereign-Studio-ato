@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
@@ -37,7 +37,7 @@ function openWorkspace(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
 }
 
-describe('Android WebView setup smoke', () => {
+describe('App setup flow smoke', () => {
   it('keeps Full Auto blocked until a real repository snapshot exists', async () => {
     openWorkspace();
 
@@ -46,7 +46,7 @@ describe('Android WebView setup smoke', () => {
     expect(await screen.findByText('Automation needs a loaded repository snapshot.')).toBeDefined();
   });
 
-  it('publishes direct Repo/PAT UI input into the setup bridge', async () => {
+  it('publishes direct Repo access UI input into the setup bridge', async () => {
     const listener = vi.fn();
     window.addEventListener('sovereign:setup-state', listener);
 
@@ -56,7 +56,7 @@ describe('Android WebView setup smoke', () => {
       target: { value: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato' },
     });
     fireEvent.change(screen.getByLabelText('GitHub private access'), {
-      target: { value: 'token-for-test-only' },
+      target: { value: 'access-value-for-test' },
     });
 
     await waitFor(() => {
@@ -73,12 +73,13 @@ describe('Android WebView setup smoke', () => {
     window.removeEventListener('sovereign:setup-state', listener);
   });
 
-  it('keeps Pattern Memory count visible in the mobile monitor path', async () => {
+  it('keeps Pattern Memory count visible in the monitor region', async () => {
     openWorkspace();
 
     fireEvent.click(screen.getByRole('button', { name: 'Live Monitor' }));
 
-    expect(await screen.findByText('Patterns: 0')).toBeDefined();
-    expect(screen.getByText('Pattern Memory')).toBeDefined();
+    const monitor = await screen.findByTestId('operator-monitor');
+    expect(within(monitor).getByText('Patterns: 0')).toBeDefined();
+    expect(within(monitor).getByRole('heading', { name: 'Pattern Memory' })).toBeDefined();
   });
 });
