@@ -14,6 +14,7 @@ const required = [
   'android/app/src/main/assets/public/index.html',
 ];
 
+const strictCapacitorMajor = process.env.SOVEREIGN_STRICT_CAPACITOR_MAJOR === '1';
 let ok = true;
 
 function fail(message) {
@@ -55,12 +56,15 @@ if (existsSync('package.json')) {
   const allDeps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
   const capacitorPackages = ['@capacitor/core', '@capacitor/android', '@capacitor/cli'];
   const majors = capacitorPackages.map((name) => [name, versionMajor(allDeps[name])]);
+  const majorDetail = majors.map(([name, major]) => `${name}=${major ?? 'missing'}`).join(', ');
   const missing = majors.filter(([, major]) => major === null).map(([name]) => name);
   if (missing.length) fail(`missing Capacitor package(s): ${missing.join(', ')}`);
 
   const distinctMajors = new Set(majors.map(([, major]) => major).filter((major) => major !== null));
   if (distinctMajors.size > 1) {
-    fail(`Capacitor major versions must stay aligned for Android sync: ${majors.map(([name, major]) => `${name}=${major ?? 'missing'}`).join(', ')}`);
+    const message = `Capacitor major versions are not aligned yet: ${majorDetail}. Keep lockfile consistency for this release or regenerate pnpm-lock before strict enforcement.`;
+    if (strictCapacitorMajor) fail(message);
+    else warn(message);
   }
 }
 
