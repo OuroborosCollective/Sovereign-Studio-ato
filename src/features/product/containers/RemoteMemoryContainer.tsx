@@ -26,6 +26,14 @@ import type { RemoteMemoryUpdateIntakeResult } from '../runtime/remoteMemoryUpda
 import type { SolutionPatternStore } from '../runtime/solutionPatternMemory';
 import type { SovereignTelemetryEvent, SovereignTelemetryLevel, SovereignTelemetryStage } from '../runtime/sovereignTelemetry';
 import { remoteMemoryErrorMessage } from '../runtime/remoteMemoryContainerRuntime';
+import {
+  createSovereignDependencyLifecycleState,
+  recordSovereignDependencyFailure,
+  recordSovereignDependencySuccess,
+  startSovereignDependencyCheck,
+  type SovereignDependencyLifecycleState,
+} from '../runtime/sovereignDependencyLifecycle';
+import { publishSovereignDependencyCoachSignal } from '../runtime/sovereignDependencyCoachBridge';
 
 export type RemoteMemoryContainerTelemetry = (
   stage: SovereignTelemetryStage,
@@ -43,6 +51,14 @@ export interface RemoteMemoryContainerProps {
   onSolutionPatternStoreChange: (store: SolutionPatternStore) => void;
   mission: string;
   onTelemetry: RemoteMemoryContainerTelemetry;
+}
+
+function createRemoteMemoryDependency(): SovereignDependencyLifecycleState {
+  return createSovereignDependencyLifecycleState(
+    'remote-memory-gateway',
+    'remote-memory',
+    'Remote Memory has not been checked yet.',
+  );
 }
 
 export function RemoteMemoryContainer({
@@ -65,13 +81,25 @@ export function RemoteMemoryContainer({
   const [searchResult, setSearchResult] = useState<ExternalMemorySearchResult | null>(null);
   const [updates, setUpdates] = useState<ExternalMemoryPullUpdatesResult | null>(null);
   const [intake, setIntake] = useState<RemoteMemoryUpdateIntakeResult | null>(null);
+  const [remoteMemoryDependency, setRemoteMemoryDependency] = useState(createRemoteMemoryDependency);
+
+  const publishRemoteDependency = (next: SovereignDependencyLifecycleState) => {
+    setRemoteMemoryDependency(next);
+    publishSovereignDependencyCoachSignal(next);
+  };
 
   const withBusy = async <T,>(task: () => Promise<T>): Promise<T | null> => {
     setBusy(true);
+    const started = startSovereignDependencyCheck(remoteMemoryDependency).state;
+    publishRemoteDependency(started);
     try {
-      return await task();
+      const result = await task();
+      publishRemoteDependency(recordSovereignDependencySuccess(started, 'Remote Memory operation completed.').state);
+      return result;
     } catch (error) {
-      onTelemetry('memory', 'error', 'remote-memory:failed', remoteMemoryErrorMessage(error));
+      const message = remoteMemoryErrorMessage(error);
+      publishRemoteDependency(recordSovereignDependencyFailure(started, {}, message).state);
+      onTelemetry('memory', 'error', 'remote-memory:failed', message);
       return null;
     } finally {
       setBusy(false);
