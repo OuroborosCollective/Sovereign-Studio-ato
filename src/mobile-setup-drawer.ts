@@ -17,6 +17,28 @@ const OUTCOME_RETRY_LIMIT = 180;
 const RETRY_DELAY_MS = 120;
 const OUTCOME_DELAY_MS = 240;
 
+const REPO_INPUT_SELECTORS = [
+  '[data-testid="github-repo-url-input"]',
+  '[data-mobile-role="github-repo-url-input"]',
+  'input[name="github-repo-url"]',
+  'input[name="repoUrl"]',
+  'input[id="github-repo-url-input"]',
+  'input[aria-label="GitHub Repository URL"]',
+  'input[placeholder*="github.com"]',
+  'input[type="url"]',
+] as const;
+
+const ACCESS_INPUT_SELECTORS = [
+  '[data-testid="github-token-input"]',
+  '[data-mobile-role="github-token-input"]',
+  'input[name="github-token"]',
+  'input[name="accessValue"]',
+  'input[id="github-token-input"]',
+  'input[aria-label="GitHub private access"]',
+  'input[placeholder*="GitHub Zugang"]',
+  'input[type="password"]',
+] as const;
+
 type MobileWindow = Window & typeof globalThis & { [INSTALL_FLAG]?: boolean };
 type RepoSetupStage = Parameters<typeof createMobileRepoSetupState>[1];
 
@@ -128,10 +150,41 @@ function setNativeInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-function inputByLabel(label: string): HTMLInputElement | null {
-  return Array.from(document.querySelectorAll<HTMLInputElement>(`input[aria-label="${label}"]`)).find(
-    (input) => !input.closest(`#${DRAWER_ID}`),
-  ) ?? null;
+function queryAppInput(selectors: readonly string[]): HTMLInputElement | null {
+  for (const selector of selectors) {
+    const input = Array.from(document.querySelectorAll<HTMLInputElement>(selector)).find(
+      (candidate) => !candidate.closest(`#${DRAWER_ID}`),
+    );
+    if (input) return input;
+  }
+  return null;
+}
+
+function visibleTextFor(input: HTMLInputElement): string {
+  const labelText = input.closest('label')?.textContent ?? '';
+  return `${input.getAttribute('aria-label') ?? ''} ${input.getAttribute('placeholder') ?? ''} ${input.name} ${input.id} ${labelText}`.toLowerCase();
+}
+
+function findRepoUrlInput(): HTMLInputElement | null {
+  const direct = queryAppInput(REPO_INPUT_SELECTORS);
+  if (direct) return direct;
+
+  return Array.from(document.querySelectorAll<HTMLInputElement>('input')).find((input) => {
+    if (input.closest(`#${DRAWER_ID}`)) return false;
+    const text = visibleTextFor(input);
+    return text.includes('repository url') || text.includes('repo url') || text.includes('github.com');
+  }) ?? null;
+}
+
+function findAccessInput(): HTMLInputElement | null {
+  const direct = queryAppInput(ACCESS_INPUT_SELECTORS);
+  if (direct) return direct;
+
+  return Array.from(document.querySelectorAll<HTMLInputElement>('input')).find((input) => {
+    if (input.closest(`#${DRAWER_ID}`)) return false;
+    const text = visibleTextFor(input);
+    return text.includes('private access') || text.includes('token') || text.includes('zugang');
+  }) ?? null;
 }
 
 function validateRepoUrl(url: string): RepoUrlValidation {
@@ -213,8 +266,8 @@ function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, s
   window.setTimeout(() => {
     if (!isActiveSession(sessionId)) return;
 
-    const repo = inputByLabel('GitHub Repository URL');
-    const access = inputByLabel('GitHub private access');
+    const repo = findRepoUrlInput();
+    const access = findAccessInput();
 
     if (!repo && attempt < INPUT_RETRY_LIMIT) {
       setSessionStatus(sessionId, 'Waiting for Repo tab inputs.', 'submitted');
