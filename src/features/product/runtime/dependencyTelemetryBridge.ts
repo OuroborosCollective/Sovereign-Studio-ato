@@ -17,6 +17,15 @@ function cleanLevel(value: unknown): SovereignTelemetryLevel {
   return LEVELS.includes(value as SovereignTelemetryLevel) ? value as SovereignTelemetryLevel : 'info';
 }
 
+function isPrimitiveTelemetryValue(value: unknown): value is PrimitiveTelemetryValue {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  );
+}
+
 function stageFromSource(value: unknown): SovereignTelemetryStage | null {
   if (value === 'github') return 'github';
   if (value === 'workflow') return 'workflow';
@@ -37,9 +46,8 @@ function cleanDetails(value: unknown): Record<string, PrimitiveTelemetryValue> |
   const details: Record<string, PrimitiveTelemetryValue> = {};
   for (const [key, item] of Object.entries(record)) {
     const cleanKey = key.trim();
-    if (!cleanKey) continue;
-    if (typeof item === 'string' || typeof item === 'boolean' || item === null) details[cleanKey] = item;
-    if (typeof item === 'number' && Number.isFinite(item)) details[cleanKey] = item;
+    if (!cleanKey || !isPrimitiveTelemetryValue(item)) continue;
+    details[cleanKey] = item;
   }
   return Object.keys(details).length ? details : undefined;
 }
