@@ -244,7 +244,10 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (!canRunSuggestionSwitch(input)) return keepCurrent(input, 'Manual override or recent user activity paused suggestion-only auto switching.');
 
   if (input.repoReady && !input.hasPackage && input.mode !== 'manual' && (input.activeTab === 'repo' || input.activeTab === 'telemetry')) {
-    return switchTo(input, 'builder', 'Repository ready - show Builder so the user can enter the concrete mission.');
+    return switchTo(input, 'builder', 'Repository ready - show Builder for the next step.');
+  }
+  if (!input.hasPackage && input.mode !== 'manual' && input.activeTab === 'telemetry' && input.hasActiveTelemetry) {
+    return switchTo(input, 'builder', 'Status view is informational - return to Builder.');
   }
   if (input.workflowStatus === 'green' && input.hasPackage) {
     return input.hasDiffSources
