@@ -248,7 +248,7 @@ describe('mobile workflow guidance', () => {
     document.head.innerHTML = '';
   });
 
-  it('moves secondary areas into a mobile more menu and prefers guarded full auto', async () => {
+  it('moves secondary areas into a mobile more menu and keeps automation manual until user chooses', async () => {
     const { installMobileMoreMenu } = await loadGuidanceModules();
 
     installMobileMoreMenu();
@@ -269,7 +269,7 @@ describe('mobile workflow guidance', () => {
     expectHiddenButton('Telemetry');
     expectHiddenButton('Live Monitor');
 
-    expect(selectByLabel('Automation Mode').value).toBe('full-auto-draft-pr');
+    expect(selectByLabel('Automation Mode').value).toBe('manual');
   });
 
   it('keeps mobile more menu installation idempotent', async () => {
@@ -283,7 +283,7 @@ describe('mobile workflow guidance', () => {
 
     expect(document.querySelectorAll(`#${MORE_MENU_ID}`)).toHaveLength(1);
     expect(document.querySelectorAll('select[aria-label="Mehr Bereiche"]')).toHaveLength(1);
-    expect(selectByLabel('Automation Mode').value).toBe('full-auto-draft-pr');
+    expect(selectByLabel('Automation Mode').value).toBe('manual');
   });
 
   it('routes every secondary menu selection back through existing shell buttons', async () => {
@@ -545,7 +545,7 @@ describe('mobile workflow guidance', () => {
 
     expectSingleGuidanceRoots();
 
-    expect(selectByLabel('Automation Mode').value).toBe('full-auto-draft-pr');
+    expect(selectByLabel('Automation Mode').value).toBe('manual');
     expect(getCoach().textContent).toContain('Sovereign Bot');
     expect(getDrawerRoot().textContent).toContain('Repo Setup');
   });
@@ -614,7 +614,7 @@ describe('mobile workflow guidance', () => {
 
     expectSingleGuidanceRoots();
 
-    expect(selectByLabel('Automation Mode').value).toBe('full-auto-draft-pr');
+    expect(selectByLabel('Automation Mode').value).toBe('manual');
     expect(getCoach().className).toContain('green');
     expect(getDrawerRoot().textContent).toContain('Repo Setup');
   });
