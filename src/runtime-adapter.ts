@@ -1,3 +1,5 @@
+import { installSovereignDependencyBrowserSurface } from './features/product/runtime/sovereignDependencyBrowserSurface';
+
 /**
  * Runtime adapter for mobile fallback.
  *
@@ -70,5 +72,6 @@ function scheduleMobilePaneFallback(): void {
 }
 
 scheduleMobilePaneFallback();
+installSovereignDependencyBrowserSurface();
 
 export {};
