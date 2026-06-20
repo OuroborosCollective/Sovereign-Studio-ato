@@ -35,7 +35,7 @@ const PLACEHOLDER_MISSION_TOKEN = '|README + Update History|';
 export function describeAutomationMode(mode: SovereignAutomationMode): string {
   if (mode === 'manual') return 'Manual mode: user clicks each action.';
   if (mode === 'auto-review') return 'Auto Review: build and review generated files after a valid repo snapshot exists.';
-  return 'Full Auto Draft PR: build, review and create a guarded Draft PR when repo, mission and PAT are available.';
+  return 'Full Auto Draft PR: waits for the user to submit a concrete Auftrag, then reviews and creates a guarded Draft PR.';
 }
 
 /**
@@ -156,8 +156,16 @@ export function decideSovereignAutomation(input: SovereignAutomationInputs): Sov
     return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Full Auto Draft PR needs a GitHub PAT.' };
   }
 
+  if (!input.hasPackage) {
+    return {
+      shouldBuildPackage: false,
+      shouldPublishDraftPr: false,
+      blockedReason: 'Full Auto wartet auf deine Bestaetigung: Auftrag in Produktion geben.',
+    };
+  }
+
   return {
-    shouldBuildPackage: !input.hasPackage,
+    shouldBuildPackage: false,
     shouldPublishDraftPr: true,
   };
 }

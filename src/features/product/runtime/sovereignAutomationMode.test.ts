@@ -109,7 +109,24 @@ describe('sovereignAutomationMode', () => {
     }).blockedReason).toContain('PAT');
   });
 
-  it('allows full auto draft PR when all inputs are ready', () => {
+  it('waits for user-confirmed package before full auto continues', () => {
+    const decision = decideSovereignAutomation({
+      mode: 'full-auto-draft-pr',
+      repoReady: true,
+      hasMission: true,
+      hasToken: true,
+      isBusy: false,
+      hasPackage: false,
+      nextAutoRunKey: 'x',
+      healthAllowed: true,
+      healthStatus: 'green',
+    });
+
+    expect(decision).toMatchObject({ shouldBuildPackage: false, shouldPublishDraftPr: false });
+    expect(decision.blockedReason).toContain('Auftrag in Produktion geben');
+  });
+
+  it('allows full auto draft PR when all inputs are ready and a package exists', () => {
     expect(decideSovereignAutomation({
       mode: 'full-auto-draft-pr',
       repoReady: true,

@@ -58,6 +58,22 @@ describe('sovereignAutoViewRouter', () => {
     })).toMatchObject({ shouldSwitch: true, tab: 'files' });
   });
 
+  it('keeps the user-selected builder workspace visible even with the product App input shape', () => {
+    const decision = decideSovereignAutoView({
+      mode: 'full-auto-draft-pr',
+      activeStep: null,
+      activeTab: 'builder',
+      hasPackage: true,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'idle',
+      hasActiveTelemetry: true,
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: false, tab: 'builder' });
+    expect(decision.reason).toContain('Builder');
+  });
+
   it('routes failed workflow checks into repair instead of leaving the old editor visible', () => {
     const decision = decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
