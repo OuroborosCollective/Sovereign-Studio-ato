@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installMobileWorkbenchConsole } from './mobile-workbench-console';
-import { decideMobileWorkflow } from './mobile-workflow-orchestrator';
+import {
+  collectMobileWorkbenchVisibleText,
+  installMobileWorkbenchConsole,
+  shouldAutoOpenWorkbenchTarget,
+} from './mobile-workbench-console';
+import { decideMobileWorkflow, type MobileWorkflowOrchestratorDecision } from './mobile-workflow-orchestrator';
 
 function mountShell(extra = '') {
   document.body.innerHTML = `
@@ -35,6 +39,19 @@ function mountShellWithCoachAnchor(extra = '') {
       </div>
     </div>
   `;
+}
+
+function decision(overrides: Partial<MobileWorkflowOrchestratorDecision>): MobileWorkflowOrchestratorDecision {
+  return {
+    lamp: 'green',
+    mode: 'review-log',
+    title: 'Ergebnis bereit',
+    summary: 'Die erzeugten Dateien sind bereit.',
+    targetNav: 'Files',
+    autoOpenTarget: true,
+    lines: ['pattern = result-review'],
+    ...overrides,
+  };
 }
 
 describe('mobile-workbench-console', () => {
@@ -125,15 +142,14 @@ describe('mobile-workbench-console', () => {
       globalThis.window = originalWindow;
     });
 
-    it('updates on interval', () => {
-      mountShellWithCoachAnchor('<section>repo fehlt</section>');
+    it('updates on interval without reading its own previous decision text', () => {
+      mountShellWithCoachAnchor('<section data-test-section="state">repo fehlt</section>');
       installMobileWorkbenchConsole();
       vi.advanceTimersByTime(2000);
       const workbench1 = document.getElementById('sovereign-mobile-workbench-console');
       const content1 = workbench1?.textContent;
 
-      // Change content
-      const section = document.querySelector('section:nth-of-type(2)');
+      const section = document.querySelector('[data-test-section="state"]');
       if (section) section.textContent = 'package-build running';
 
       vi.advanceTimersByTime(2000);
@@ -141,6 +157,28 @@ describe('mobile-workbench-console', () => {
       const content2 = workbench2?.textContent;
 
       expect(content1).not.toBe(content2);
+      expect(collectMobileWorkbenchVisibleText(document.body)).not.toContain('pattern =');
+    });
+  });
+
+  describe('visible text collection', () => {
+    it('does not read workbench, coach, or setup drawer text as source state', () => {
+      document.body.innerHTML = `
+        <main>
+          <button>Repo</button>
+          <section>Repository Snapshot geladen</section>
+        </main>
+        <section id="sovereign-mobile-workbench-console">pattern = result-review files = ready</section>
+        <section id="sovereign-mobile-coach">Sovereign Bot · Ergebnis bereit</section>
+        <section id="sovereign-mobile-setup-drawer">GitHub Repo Setup</section>
+      `;
+
+      const text = collectMobileWorkbenchVisibleText(document.body);
+
+      expect(text).toContain('Repository Snapshot geladen');
+      expect(text).not.toContain('pattern = result-review');
+      expect(text).not.toContain('Sovereign Bot · Ergebnis bereit');
+      expect(text).not.toContain('GitHub Repo Setup');
     });
   });
 
@@ -150,10 +188,7 @@ describe('mobile-workbench-console', () => {
       installMobileWorkbenchConsole();
       vi.advanceTimersByTime(2000);
       const workbench = document.getElementById('sovereign-mobile-workbench-console');
-      // After HTML escaping, raw HTML tags should not be rendered as tags
-      // The escaped version should appear as text, not parsed HTML
       expect(workbench?.innerHTML).toBeTruthy();
-      // Verify the escaped content is present without unescaped HTML tags
       expect(workbench?.textContent).not.toContain('<b>bold</b>');
     });
 
@@ -162,10 +197,7 @@ describe('mobile-workbench-console', () => {
       installMobileWorkbenchConsole();
       vi.advanceTimersByTime(2000);
       const workbench = document.getElementById('sovereign-mobile-workbench-console');
-      // After HTML escaping, quotes should be converted to &quot; or &#39;
-      // The browser may normalize these, so we check the raw innerHTML
       expect(workbench?.innerHTML).toBeTruthy();
-      // Verify content is present without unescaped quotes in text content
       expect(workbench?.textContent).not.toContain('"quotes"');
     });
   });
@@ -185,7 +217,6 @@ describe('mobile-workbench-console', () => {
       installMobileWorkbenchConsole();
       vi.advanceTimersByTime(2000);
 
-      // Should not throw even though other buttons are missing
       expect(true).toBe(true);
     });
 
@@ -199,6 +230,7 @@ describe('mobile-workbench-console', () => {
               <button>Files</button>
             </div>
             <section id="sovereign-mobile-coach">Coach</section>
+            <section data-test-section="state">package-build running</section>
           </div>
         </div>
       `;
@@ -209,16 +241,33 @@ describe('mobile-workbench-console', () => {
 
       installMobileWorkbenchConsole();
       vi.advanceTimersByTime(2000);
-
-      // Change to same content to trigger re-render
-      const section = document.querySelector('section:nth-of-type(2)');
-      if (section) section.textContent = 'package-build running';
-
       vi.advanceTimersByTime(2400);
       vi.advanceTimersByTime(2000);
 
-      // Navigation should be throttled (not more than 2 clicks)
-      expect(clickCount).toBeLessThanOrEqual(2);
+      expect(clickCount).toBeLessThanOrEqual(1);
+    });
+
+    it('does not auto-navigate for passive result review suggestions', () => {
+      mountShellWithCoachAnchor('<section>self review: accepted generated-output-accepted</section>');
+      let clickCount = 0;
+      document.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => clickCount++);
+      });
+
+      installMobileWorkbenchConsole();
+      vi.advanceTimersByTime(4000);
+
+      expect(clickCount).toBe(0);
+      expect(document.getElementById('sovereign-mobile-workbench-console')?.textContent).toContain('result-review');
+    });
+  });
+
+  describe('auto-open guard', () => {
+    it('only auto-opens active work or red stopper targets', () => {
+      expect(shouldAutoOpenWorkbenchTarget(decision({ mode: 'review-log', lamp: 'green', targetNav: 'Files' }))).toBe(false);
+      expect(shouldAutoOpenWorkbenchTarget(decision({ mode: 'nocode-plan', lamp: 'yellow', targetNav: 'Builder' }))).toBe(false);
+      expect(shouldAutoOpenWorkbenchTarget(decision({ mode: 'matrix-work', lamp: 'green', targetNav: 'Live Monitor' }))).toBe(true);
+      expect(shouldAutoOpenWorkbenchTarget(decision({ mode: 'repair-log', lamp: 'red', targetNav: 'Repair' }))).toBe(true);
     });
   });
 

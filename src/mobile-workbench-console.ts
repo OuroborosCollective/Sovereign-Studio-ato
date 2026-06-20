@@ -1,12 +1,54 @@
-import { assertMobileWorkflowDecisionValid, decideMobileWorkflow } from './mobile-workflow-orchestrator';
+import { assertMobileWorkflowDecisionValid, decideMobileWorkflow, type MobileWorkflowOrchestratorDecision } from './mobile-workflow-orchestrator';
 
 const ROOT_ID = 'sovereign-mobile-workbench-console';
 const STYLE_ID = 'sovereign-mobile-workbench-style';
+const MOBILE_COACH_ID = 'sovereign-mobile-coach';
+const MOBILE_SETUP_ID = 'sovereign-mobile-setup-drawer';
+const TEXT_NODE = 4;
+const ACCEPT = 1;
+const REJECT = 2;
+const AUTO_OPEN_COOLDOWN_MS = 6_000;
+
 let lastTarget = '';
 let lastTargetAt = 0;
+let lastDecisionSignature = '';
+
+function ignoredSelector(): string {
+  return `#${ROOT_ID}, #${MOBILE_COACH_ID}, #${MOBILE_SETUP_ID}, #${STYLE_ID}, script, style, noscript`;
+}
+
+function closestElement(node: Node): Element | null {
+  return node instanceof Element ? node : node.parentElement;
+}
+
+function shouldReadTextNode(node: Node): number {
+  const element = closestElement(node);
+  if (!element) return REJECT;
+  return element.closest(ignoredSelector()) ? REJECT : ACCEPT;
+}
+
+export function collectMobileWorkbenchVisibleText(root: ParentNode | null = document.body): string {
+  if (!root || typeof document === 'undefined') return '';
+
+  const parts: string[] = [];
+  const walker = document.createTreeWalker(
+    root,
+    TEXT_NODE,
+    { acceptNode: shouldReadTextNode },
+  );
+
+  let node = walker.nextNode();
+  while (node) {
+    const value = node.nodeValue?.trim();
+    if (value) parts.push(value);
+    node = walker.nextNode();
+  }
+
+  return parts.join('\n');
+}
 
 function pageText(): string {
-  return document.body?.textContent ?? '';
+  return collectMobileWorkbenchVisibleText(document.body);
 }
 
 function escapeHtml(value: string): string {
@@ -19,12 +61,16 @@ function escapeHtml(value: string): string {
 }
 
 function findNavButton(label: string): HTMLButtonElement | null {
-  return Array.from(document.querySelectorAll('button')).find((item) => (item.textContent ?? '').trim().toLowerCase() === label.toLowerCase()) ?? null;
+  const wanted = label.toLowerCase();
+  return Array.from(document.querySelectorAll('button')).find((item) => {
+    if (item.closest(ignoredSelector())) return false;
+    return (item.textContent ?? '').trim().toLowerCase() === wanted;
+  }) ?? null;
 }
 
 function goTo(label: string): void {
   const now = Date.now();
-  if (lastTarget === label && now - lastTargetAt < 2400) return;
+  if (lastTarget === label && now - lastTargetAt < AUTO_OPEN_COOLDOWN_MS) return;
   const button = findNavButton(label);
   if (!button) return;
   lastTarget = label;
@@ -33,7 +79,7 @@ function goTo(label: string): void {
 }
 
 function anchorShell(): Element | null {
-  return document.getElementById('sovereign-mobile-coach') ?? document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
+  return document.getElementById(MOBILE_COACH_ID) ?? document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
 }
 
 function installStyle(): void {
@@ -57,6 +103,15 @@ function installStyle(): void {
   document.head.appendChild(style);
 }
 
+export function shouldAutoOpenWorkbenchTarget(decision: MobileWorkflowOrchestratorDecision): boolean {
+  if (!decision.autoOpenTarget || !decision.targetNav) return false;
+  return decision.mode === 'matrix-work' || decision.lamp === 'red';
+}
+
+function decisionSignature(decision: MobileWorkflowOrchestratorDecision): string {
+  return `${decision.lamp}|${decision.mode}|${decision.title}|${decision.targetNav ?? 'none'}|${decision.lines.join('\n')}`;
+}
+
 function render(): void {
   try {
     installStyle();
@@ -71,7 +126,15 @@ function render(): void {
 
     const decision = decideMobileWorkflow({ visibleText: pageText() });
     assertMobileWorkflowDecisionValid(decision);
-    if (decision.autoOpenTarget && decision.targetNav && findNavButton(decision.targetNav)) goTo(decision.targetNav);
+
+    const signature = decisionSignature(decision);
+    const changed = signature !== lastDecisionSignature;
+    lastDecisionSignature = signature;
+
+    if (changed && shouldAutoOpenWorkbenchTarget(decision)) {
+      goTo(decision.targetNav as string);
+    }
+
     root.className = decision.lamp;
     const dots = decision.mode === 'matrix-work' ? '<span class="dots"></span>' : '';
     const target = decision.targetNav ? `→ ${escapeHtml(decision.targetNav)}` : 'bereit';
