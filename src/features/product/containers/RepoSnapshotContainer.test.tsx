@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RepoSnapshotContainer } from './RepoSnapshotContainer';
 
 function baseProps() {
@@ -22,6 +22,10 @@ function baseProps() {
     onClearView: vi.fn(),
   };
 }
+
+afterEach(() => {
+  delete window.__sovereignSetupState;
+});
 
 describe('RepoSnapshotContainer', () => {
   it('renders status, memory hints and file list', () => {
@@ -65,5 +69,25 @@ describe('RepoSnapshotContainer', () => {
     expect(screen.getByRole('button', { name: /Save Session/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Restore Session/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Clear View/i })).toBeDisabled();
+  });
+
+  it('publishes current repo setup state to the coach bridge', async () => {
+    const listener = vi.fn();
+    window.addEventListener('sovereign:setup-state', listener);
+
+    render(<RepoSnapshotContainer {...baseProps()} accessValue="token-for-test-only" />);
+
+    await waitFor(() => {
+      expect(window.__sovereignSetupState).toMatchObject({
+        hasToken: true,
+        tokenStatus: 'valid',
+        repoReady: true,
+        setupPhase: 'repo-loaded',
+        isBusy: false,
+      });
+    });
+    expect(listener).toHaveBeenCalled();
+
+    window.removeEventListener('sovereign:setup-state', listener);
   });
 });

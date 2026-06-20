@@ -88,169 +88,9 @@ import type { SovereignImplementationPackage } from './features/product/runtime/
 import { UserSession } from './shared/types/user';
 import { makeId } from './shared/utils/crypto';
 import { LoginView } from './components/LoginView';
+import { deriveCoachStateFromRuntime, useCoachRuntimeBridge, type CoachRuntimeState } from './features/product/hooks/useCoachRuntimeBridge';
+import { useSetupState, publishSetupStateToWindow } from './features/github/hooks/useSetupState';
 import { wallClockMs } from './mobile-operator-coach';
-
-// Coach State Types - für Runtime-Integration
-type CoachLamp = 'green' | 'yellow' | 'red';
-type CoachSource = 'runtime-library' | 'workflow' | 'repair' | 'telemetry' | 'pattern-memory' | 'remote-memory' | 'runtime' | 'repo' | 'dom-fallback' | 'unknown';
-
-interface CoachRuntimeState {
-  lamp: CoachLamp;
-  title: string;
-  message: string;
-  action: string;
-  thinking: boolean;
-  source: CoachSource;
-  tick: number;
-  updatedAt: number;
-}
-
-// Leitet Coach-State aus echtem Runtime ab - keine Mocks, keine Stubs
-function deriveCoachStateFromRuntime(
-  sequentialRuntime: SequentialRuntimeState,
-  repoReady: boolean,
-  hasPackage: boolean,
-  workflowStatus?: string,
-  isPublishing?: boolean,
-  isWatchingWorkflow?: boolean,
-  hasActivePatterns?: boolean
-): CoachRuntimeState {
-  const now = wallClockMs();
-  
-  // 1. Wenn gerade ein Step läuft
-  if (sequentialRuntime.activeStep) {
-    const step = sequentialRuntime.activeStep;
-    const stepRecord = sequentialRuntime.steps[step];
-    
-    if (stepRecord?.status === 'running') {
-      const stepLabels: Record<string, string> = {
-        'repo-load': 'Repository wird geladen',
-        'package-build': 'Package wird erstellt',
-        'diff-load': 'Diff-Quellen werden geladen',
-        'draft-pr-publish': 'Draft PR wird erstellt',
-        'workflow-watch': 'Workflow wird beobachtet',
-        'repair-plan': 'Repair-Plan wird erstellt'
-      };
-      return {
-        lamp: 'green',
-        title: stepLabels[step] || `Schritt: ${step}`,
-        message: stepRecord.message || 'Prozess läuft...',
-        action: 'Bitte warten',
-        thinking: true,
-        source: 'runtime-library',
-        tick: now,
-        updatedAt: now
-      };
-    }
-    
-    if (stepRecord?.status === 'failed') {
-      return {
-        lamp: 'red',
-        title: 'Schritt fehlgeschlagen',
-        message: stepRecord.message || 'Ein Prozessschritt ist fehlgeschlagen.',
-        action: 'Repair prüfen',
-        thinking: false,
-        source: 'runtime-library',
-        tick: now,
-        updatedAt: now
-      };
-    }
-  }
-  
-  // 2. Wenn Repo nicht geladen
-  if (!repoReady) {
-    return {
-      lamp: 'yellow',
-      title: 'Repository laden',
-      message: 'Bitte GitHub-URL eingeben und Repository laden.',
-      action: 'Zuerst Repo laden',
-      thinking: false,
-      source: 'repo',
-      tick: now,
-      updatedAt: now
-    };
-  }
-  
-  // 3. Wenn Draft PR erstellt wird
-  if (isPublishing) {
-    return {
-      lamp: 'green',
-      title: 'Draft PR wird erstellt',
-      message: 'Branch und Commit werden erstellt...',
-      action: 'Bitte warten',
-      thinking: true,
-      source: 'workflow',
-      tick: now,
-      updatedAt: now
-    };
-  }
-  
-  // 4. Wenn Workflow beobachtet wird
-  if (isWatchingWorkflow) {
-    return {
-      lamp: 'green',
-      title: 'Workflow wird beobachtet',
-      message: 'CI/CD Checks werden überwacht...',
-      action: 'Bitte warten',
-      thinking: true,
-      source: 'workflow',
-      tick: now,
-      updatedAt: now
-    };
-  }
-  
-  // 5. Wenn Workflow fehlgeschlagen
-  if (workflowStatus === 'red') {
-    return {
-      lamp: 'red',
-      title: 'Workflow fehlgeschlagen',
-      message: 'Die CI/CD Checks sind fehlgeschlagen.',
-      action: 'Repair prüfen',
-      thinking: false,
-      source: 'workflow',
-      tick: now,
-      updatedAt: now
-    };
-  }
-  
-  // 6. Wenn Package bereit
-  if (hasPackage) {
-    if (workflowStatus === 'green') {
-      return {
-        lamp: 'green',
-        title: 'Fertig!',
-        message: 'Package erstellt und Workflow erfolgreich.',
-        action: 'Diff prüfen',
-        thinking: false,
-        source: 'runtime-library',
-        tick: now,
-        updatedAt: now
-      };
-    }
-    return {
-      lamp: 'green',
-      title: 'Package bereit',
-      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
-      action: 'Weiter mit Diff',
-      thinking: false,
-      source: 'runtime-library',
-      tick: now,
-      updatedAt: now
-    };
-  }
-  
-  // 7. Default: bereit für Auftrag
-  return {
-    lamp: 'green',
-    title: 'Bereit für Auftrag',
-    message: 'Repository ist geladen. Auftrag eingeben und Package erstellen.',
-    action: 'Package bauen',
-    thinking: false,
-    source: 'runtime-library',
-    tick: now,
-    updatedAt: now
-  };
-}
 
 type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
@@ -373,6 +213,15 @@ const App: React.FC = () => {
     clearRepoSnapshot,
   } = useGithubRepo();
 
+  // Unified Setup State - Single Source of Truth for Repo/PAT detection
+  const setupState = useSetupState();
+
+  // Publish Setup State to window for Coach consumption
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    publishSetupStateToWindow(setupState);
+  }, [setupState]);
+
   const safeRepoFiles = Array.isArray(repoFiles) ? repoFiles : [];
   const safeDiffSources = Array.isArray(diffSources) ? diffSources : [];
   const repoSnapshotStatus = getRepoSnapshotStatus(safeRepoFiles);
@@ -419,18 +268,8 @@ const App: React.FC = () => {
     activePatternCount > 0
   );
 
-  // Expose Coach-State an Fenster für mobile-operator-coach
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    // Setze globalen Coach-State
-    (window as any).__sovereignRuntimeCoachState = coachState;
-    
-    // Broadcast Event für Coach-Update
-    window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
-      detail: coachState
-    }));
-  }, [coachState]);
+  // Expose Coach-State für mobile-operator-coach
+  useCoachRuntimeBridge({ coachState });
 
   const pushTelemetry = (
     stage: Parameters<typeof createTelemetryEvent>[0],
