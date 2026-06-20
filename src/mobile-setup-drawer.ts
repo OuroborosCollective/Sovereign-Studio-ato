@@ -40,7 +40,10 @@ const ACCESS_INPUT_SELECTORS = [
   'input[type="password"]',
 ] as const;
 
-type MobileWindow = Window & typeof globalThis & { [INSTALL_FLAG]?: boolean };
+type MobileWindow = Window & typeof globalThis & {
+  [INSTALL_FLAG]?: boolean;
+  Capacitor?: unknown;
+};
 type RepoSetupStage = Parameters<typeof createMobileRepoSetupState>[1];
 
 interface SetupDraft {
@@ -101,6 +104,11 @@ function writeDraft(draft: SetupDraft): void {
 
 function isActiveSession(sessionId: number): boolean {
   return sessionId === activeSessionId;
+}
+
+function isDirectFallbackRuntime(): boolean {
+  const userAgent = window.navigator?.userAgent ?? '';
+  return /android/i.test(userAgent) || Boolean(mobileWindow().Capacitor);
 }
 
 function writeStage(detail: MobileRepoSetupDetail, stage: RepoSetupStage, message: string): void {
@@ -358,7 +366,14 @@ function clickLoadRepoWhenReady(draft: SetupDraft, detail: MobileRepoSetupDetail
   }
 
   if (attempt >= LOAD_RETRY_LIMIT) {
-    void loadRepoDirectly(draft, detail, sessionId);
+    if (isDirectFallbackRuntime()) {
+      void loadRepoDirectly(draft, detail, sessionId);
+      return;
+    }
+
+    if (setSessionStatus(sessionId, 'Repository load button was not found or remained disabled.', 'failed')) {
+      writeStage(detail, 'failed', 'Repository load button was not found or remained disabled.');
+    }
     return;
   }
 
@@ -383,7 +398,14 @@ function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, s
     }
 
     if (!repo) {
-      void loadRepoDirectly(draft, detail, sessionId);
+      if (isDirectFallbackRuntime()) {
+        void loadRepoDirectly(draft, detail, sessionId);
+        return;
+      }
+
+      if (setSessionStatus(sessionId, 'Repo URL input was not found.', 'failed')) {
+        writeStage(detail, 'failed', 'Repo URL input was not found.');
+      }
       return;
     }
 
