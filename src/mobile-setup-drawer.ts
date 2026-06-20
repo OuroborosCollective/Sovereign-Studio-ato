@@ -39,7 +39,10 @@ const ACCESS_INPUT_SELECTORS = [
   'input[type="password"]',
 ] as const;
 
-type MobileWindow = Window & typeof globalThis & { [INSTALL_FLAG]?: boolean };
+type MobileWindow = Window & typeof globalThis & {
+  [INSTALL_FLAG]?: boolean;
+  __sovereignMobileRepoSetupAck?: string;
+};
 type RepoSetupStage = Parameters<typeof createMobileRepoSetupState>[1];
 
 interface SetupDraft {
@@ -89,6 +92,10 @@ function writeDraft(draft: SetupDraft): void {
 
 function isActiveSession(sessionId: number): boolean {
   return sessionId === activeSessionId;
+}
+
+function appBridgeAcknowledged(detail: MobileRepoSetupDetail): boolean {
+  return mobileWindow().__sovereignMobileRepoSetupAck === detail.requestId;
 }
 
 function writeStage(detail: MobileRepoSetupDetail, stage: RepoSetupStage, message: string): void {
@@ -276,6 +283,14 @@ function applyDraftToRepoTab(draft: SetupDraft, detail: MobileRepoSetupDetail, s
     }
 
     if (!repo) {
+      if (appBridgeAcknowledged(detail)) {
+        if (setSessionStatus(sessionId, 'Repo setup accepted by app bridge.', 'loading')) {
+          writeStage(detail, 'received', 'Repo setup accepted by app bridge.');
+        }
+        watchRepoLoadOutcome(detail, sessionId);
+        return;
+      }
+
       if (setSessionStatus(sessionId, 'Repo URL input was not found.', 'failed')) {
         writeStage(detail, 'failed', 'Repo URL input was not found.');
       }
