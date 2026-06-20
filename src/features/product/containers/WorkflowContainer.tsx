@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { WorkflowWatchPanel } from '../components/WorkflowWatchPanel';
 import { WorkflowRepairPanel } from '../components/WorkflowRepairPanel';
 import type { WorkflowWatchReport } from '../runtime/workflowWatch';
 import type { WorkflowRepairPlan } from '../runtime/workflowRepairPlan';
+import { publishSovereignDependencyCoachSignal } from '../runtime/sovereignDependencyCoachBridge';
 import {
   deriveWorkflowContainerState,
   type WorkflowContainerMode,
@@ -37,6 +38,12 @@ export function WorkflowContainer({
     report,
     repairPlan,
   });
+
+  useEffect(() => {
+    const dependency = report?.dependencyLifecycle;
+    if (!dependency) return;
+    publishSovereignDependencyCoachSignal(dependency);
+  }, [report?.dependencyLifecycle]);
 
   if (mode === 'repair') {
     return (
