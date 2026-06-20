@@ -8,6 +8,7 @@
 import { useEffect } from 'react';
 import { wallClockMs } from '../../../mobile-operator-coach';
 import type { SequentialRuntimeState } from '../runtime/sequentialRuntimeGuard';
+import type { SovereignHealthStatus } from '../runtime/sovereignHealth';
 
 // Coach State Types
 export type CoachLamp = 'green' | 'yellow' | 'red';
@@ -24,6 +25,40 @@ export interface CoachRuntimeState {
   updatedAt: number;
 }
 
+export interface RuntimeReadinessGateInput {
+  allowed: boolean;
+  status: SovereignHealthStatus;
+  reason: string;
+}
+
+function deriveHealthGateCoachState(healthGate: RuntimeReadinessGateInput, now: number): CoachRuntimeState | null {
+  if (healthGate.allowed) return null;
+
+  if (healthGate.status === 'red') {
+    return {
+      lamp: 'red',
+      title: 'Health Gate blockiert',
+      message: healthGate.reason,
+      action: 'Telemetry und Health prüfen',
+      thinking: false,
+      source: 'telemetry',
+      tick: now,
+      updatedAt: now,
+    };
+  }
+
+  return {
+    lamp: 'yellow',
+    title: 'Health Gate wartet',
+    message: healthGate.reason,
+    action: 'Readiness prüfen',
+    thinking: false,
+    source: 'telemetry',
+    tick: now,
+    updatedAt: now,
+  };
+}
+
 // Leitet Coach-State aus echtem Runtime ab - keine Mocks, keine Stubs
 export function deriveCoachStateFromRuntime(
   sequentialRuntime: SequentialRuntimeState,
@@ -32,7 +67,8 @@ export function deriveCoachStateFromRuntime(
   workflowStatus?: string,
   isPublishing?: boolean,
   isWatchingWorkflow?: boolean,
-  hasActivePatterns?: boolean
+  hasActivePatterns?: boolean,
+  healthGate?: RuntimeReadinessGateInput,
 ): CoachRuntimeState {
   const now = wallClockMs();
   
@@ -89,6 +125,9 @@ export function deriveCoachStateFromRuntime(
       updatedAt: now
     };
   }
+
+  const healthGateCoachState = healthGate ? deriveHealthGateCoachState(healthGate, now) : null;
+  if (healthGateCoachState) return healthGateCoachState;
   
   // 3. Wenn Draft PR erstellt wird
   if (isPublishing) {
