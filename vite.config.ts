@@ -4,6 +4,8 @@ import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(() => {
+  const enableSourcemaps = process.env.VITE_BUILD_SOURCEMAP === 'true';
+
   return {
     base: './',
     plugins: [
@@ -31,7 +33,7 @@ export default defineConfig(() => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
-      sourcemap: true,
+      sourcemap: enableSourcemaps,
       rollupOptions: {
         output: {
           manualChunks(id) {
