@@ -3,10 +3,14 @@ import type { SovereignDependencyCoachSignal } from './sovereignDependencyCoachB
 const STYLE_ID = 'sovereign-dependency-surface-style';
 const PANEL_ID = 'sovereign-dependency-surface';
 const MAX_SIGNALS = 8;
+const MAX_TELEMETRY = 25;
+const SIGNALS_STORAGE_KEY = 'sovereign-dependency-signals';
+const TELEMETRY_STORAGE_KEY = 'sovereign-dependency-telemetry';
 
 type BrowserWindow = Window & typeof globalThis & {
   __sovereignDependencySignals?: SovereignDependencyCoachSignal[];
   __sovereignDependencyTelemetry?: Array<Record<string, unknown>>;
+  __sovereignDependencySurfaceInstalled?: boolean;
 };
 
 function canUseDom(): boolean {
@@ -15,6 +19,46 @@ function canUseDom(): boolean {
 
 function asBrowserWindow(): BrowserWindow | null {
   return canUseDom() ? window as BrowserWindow : null;
+}
+
+function readSessionJson(key: string): unknown {
+  if (!canUseDom()) return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionJson(key: string, value: unknown): void {
+  if (!canUseDom()) return;
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage is best-effort only. The window snapshot still remains active.
+  }
+}
+
+function isSignal(value: unknown): value is SovereignDependencyCoachSignal {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<SovereignDependencyCoachSignal>;
+  return (
+    (item.lamp === 'green' || item.lamp === 'yellow' || item.lamp === 'red') &&
+    typeof item.title === 'string' &&
+    typeof item.message === 'string' &&
+    typeof item.action === 'string' &&
+    typeof item.source === 'string' &&
+    typeof item.dependencyKey === 'string' &&
+    typeof item.dependencyPhase === 'string' &&
+    typeof item.telemetryLevel === 'string' &&
+    typeof item.telemetryLabel === 'string' &&
+    typeof item.telemetryMessage === 'string'
+  );
+}
+
+function normalizeSignals(value: unknown): SovereignDependencyCoachSignal[] {
+  return Array.isArray(value) ? value.filter(isSignal).slice(0, MAX_SIGNALS) : [];
 }
 
 function installStyle(): void {
@@ -54,22 +98,31 @@ function installStyle(): void {
   document.head.appendChild(style);
 }
 
-function readSignals(): SovereignDependencyCoachSignal[] {
+export function readSovereignDependencySignals(): SovereignDependencyCoachSignal[] {
   const win = asBrowserWindow();
-  return Array.isArray(win?.__sovereignDependencySignals) ? win.__sovereignDependencySignals : [];
+  if (!win) return [];
+
+  const memorySignals = normalizeSignals(win.__sovereignDependencySignals);
+  if (memorySignals.length > 0) return memorySignals;
+
+  const storedSignals = normalizeSignals(readSessionJson(SIGNALS_STORAGE_KEY));
+  win.__sovereignDependencySignals = storedSignals;
+  return storedSignals;
 }
 
-function writeSignals(next: SovereignDependencyCoachSignal[]): void {
+export function writeSovereignDependencySignals(next: SovereignDependencyCoachSignal[]): SovereignDependencyCoachSignal[] {
   const win = asBrowserWindow();
-  if (!win) return;
-  win.__sovereignDependencySignals = next.slice(0, MAX_SIGNALS);
+  const safeSignals = normalizeSignals(next);
+  if (!win) return safeSignals;
+
+  win.__sovereignDependencySignals = safeSignals;
+  writeSessionJson(SIGNALS_STORAGE_KEY, safeSignals);
+  return safeSignals;
 }
 
-function upsertSignal(signal: SovereignDependencyCoachSignal): SovereignDependencyCoachSignal[] {
-  const previous = readSignals().filter((item) => item.dependencyKey !== signal.dependencyKey);
-  const next = [signal, ...previous].slice(0, MAX_SIGNALS);
-  writeSignals(next);
-  return next;
+export function upsertSovereignDependencySignal(signal: SovereignDependencyCoachSignal): SovereignDependencyCoachSignal[] {
+  const previous = readSovereignDependencySignals().filter((item) => item.dependencyKey !== signal.dependencyKey);
+  return writeSovereignDependencySignals([signal, ...previous].slice(0, MAX_SIGNALS));
 }
 
 function levelSymbol(signal: SovereignDependencyCoachSignal): string {
@@ -94,44 +147,86 @@ function ensurePanel(): HTMLElement | null {
   return panel;
 }
 
-function renderSignals(signals: SovereignDependencyCoachSignal[]): void {
+function appendText(parent: HTMLElement, tagName: keyof HTMLElementTagNameMap, text: string, className?: string): HTMLElement {
+  const element = document.createElement(tagName);
+  if (className) element.className = className;
+  element.textContent = text;
+  parent.appendChild(element);
+  return element;
+}
+
+export function renderSovereignDependencySignals(signals: SovereignDependencyCoachSignal[]): void {
   installStyle();
   const panel = ensurePanel();
   if (!panel) return;
 
-  const cards = signals.map((signal) => `
-    <article class="dependency-card" data-dependency-key="${signal.dependencyKey}">
-      <strong>${signal.source} / ${signal.dependencyPhase}</strong>
-      <span>${levelSymbol(signal)} · ${signal.title}</span>
-      <p>${signal.message}</p>
-    </article>
-  `).join('');
+  panel.replaceChildren();
+  appendText(panel, 'h3', 'Dependency Status');
+  const grid = document.createElement('div');
+  grid.className = 'dependency-grid';
+  panel.appendChild(grid);
 
-  panel.innerHTML = `
-    <h3>Dependency Status</h3>
-    <div class="dependency-grid">${cards || '<p>No dependency signals yet.</p>'}</div>
-  `;
+  if (signals.length === 0) {
+    appendText(grid, 'p', 'No dependency signals yet.');
+    return;
+  }
+
+  for (const signal of signals) {
+    const card = document.createElement('article');
+    card.className = 'dependency-card';
+    card.setAttribute('data-dependency-key', signal.dependencyKey);
+    appendText(card, 'strong', `${signal.source} / ${signal.dependencyPhase}`);
+    appendText(card, 'span', `${levelSymbol(signal)} · ${signal.title}`);
+    appendText(card, 'p', signal.message);
+    grid.appendChild(card);
+  }
 }
 
-function recordTelemetry(detail: unknown): void {
+export function recordSovereignDependencyTelemetry(detail: unknown): Array<Record<string, unknown>> {
   const win = asBrowserWindow();
-  if (!win) return;
-  const previous = Array.isArray(win.__sovereignDependencyTelemetry) ? win.__sovereignDependencyTelemetry : [];
-  win.__sovereignDependencyTelemetry = [detail as Record<string, unknown>, ...previous].slice(0, 25);
+  const previous = Array.isArray(win?.__sovereignDependencyTelemetry)
+    ? win.__sovereignDependencyTelemetry
+    : Array.isArray(readSessionJson(TELEMETRY_STORAGE_KEY))
+      ? readSessionJson(TELEMETRY_STORAGE_KEY) as Array<Record<string, unknown>>
+      : [];
+  const next = [detail as Record<string, unknown>, ...previous].slice(0, MAX_TELEMETRY);
+
+  if (win) win.__sovereignDependencyTelemetry = next;
+  writeSessionJson(TELEMETRY_STORAGE_KEY, next);
+  return next;
 }
 
 export function installSovereignDependencyBrowserSurface(): void {
-  if (!canUseDom()) return;
+  const win = asBrowserWindow();
+  if (!win) return;
+  if (win.__sovereignDependencySurfaceInstalled) return;
+  win.__sovereignDependencySurfaceInstalled = true;
 
   window.addEventListener('sovereign:dependency-lifecycle-state', (event) => {
     const detail = (event as CustomEvent<SovereignDependencyCoachSignal>).detail;
-    if (!detail?.dependencyKey) return;
-    renderSignals(upsertSignal(detail));
+    if (!isSignal(detail)) return;
+    renderSovereignDependencySignals(upsertSovereignDependencySignal(detail));
   });
 
   window.addEventListener('sovereign:dependency-telemetry-event', (event) => {
-    recordTelemetry((event as CustomEvent).detail);
+    recordSovereignDependencyTelemetry((event as CustomEvent).detail);
   });
 
-  window.setTimeout(() => renderSignals(readSignals()), 0);
+  window.setTimeout(() => renderSovereignDependencySignals(readSovereignDependencySignals()), 0);
+}
+
+export function resetSovereignDependencyBrowserSurfaceForTests(): void {
+  const win = asBrowserWindow();
+  if (!win) return;
+  delete win.__sovereignDependencySignals;
+  delete win.__sovereignDependencyTelemetry;
+  delete win.__sovereignDependencySurfaceInstalled;
+  try {
+    window.sessionStorage.removeItem(SIGNALS_STORAGE_KEY);
+    window.sessionStorage.removeItem(TELEMETRY_STORAGE_KEY);
+  } catch {
+    // Storage cleanup is best-effort in non-browser test environments.
+  }
+  document.getElementById(PANEL_ID)?.remove();
+  document.getElementById(STYLE_ID)?.remove();
 }
