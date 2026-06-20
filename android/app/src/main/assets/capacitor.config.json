@@ -3,10 +3,7 @@
 	"appName": "NOCode Studio",
 	"webDir": "dist",
 	"server": {
-		"androidScheme": "https",
-		"allowNavigation": [
-			"*"
-		]
+		"androidScheme": "https"
 	},
 	"android": {
 		"backgroundColor": "#f4f4f4",
@@ -19,9 +16,6 @@
 				"profile",
 				"email"
 			],
-			"clientId": "REPLACE_WITH_VITE_GOOGLE_CLIENT_ID",
-			"androidClientId": "REPLACE_WITH_VITE_GOOGLE_ANDROID_CLIENT_ID",
-			"serverClientId": "REPLACE_WITH_VITE_GOOGLE_SERVER_CLIENT_ID",
 			"forceCodeForRefreshToken": true
 		},
 		"SplashScreen": {
