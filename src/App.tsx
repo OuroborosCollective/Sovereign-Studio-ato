@@ -18,6 +18,7 @@ import { RuntimeValidationCoveragePanel } from './features/product/components/Ru
 import { ScanFindingRegistryPanel } from './features/product/components/ScanFindingRegistryPanel';
 import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
+import { SovereignTabErrorBoundary } from './features/product/components/SovereignTabErrorBoundary';
 import {
   AUTOMATION_MODE_LABELS,
   buildAutomationRunKey,
@@ -1015,165 +1016,201 @@ const App: React.FC = () => {
       </section>
 
       {activeTab === 'monitor' ? (
-        <section
-          className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
-          data-testid="operator-monitor"
+        <SovereignTabErrorBoundary
+          tabId="monitor"
+          tabLabel="Monitor"
+          onDismiss={() => setActiveTab('repo')}
         >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="font-bold">Live Monitor</h2>
-              <p className="mt-1 text-xs text-slate-400">
-                Optionale Operator-Zentrale für Runtime Guards, Pattern Memory, Remote Memory und Telemetry. Der Release-Workflow startet bewusst im Repo-Tab.
+          <section
+            className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
+            data-testid="operator-monitor"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-bold">Live Monitor</h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  Optionale Operator-Zentrale für Runtime Guards, Pattern Memory, Remote Memory und Telemetry. Der Release-Workflow startet bewusst im Repo-Tab.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button type="button" onClick={() => setActiveTab('repo')}>Repo laden</button>
+                <button type="button" onClick={() => setActiveTab('remote')}>Remote Memory</button>
+                <button type="button" onClick={() => setActiveTab('telemetry')}>Telemetry öffnen</button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 text-xs md:grid-cols-4">
+              <div className="rounded bg-slate-900/70 p-3">Repo: {repoSnapshotStatus.ready ? 'ready' : 'not ready'}</div>
+              <div className="rounded bg-slate-900/70 p-3">Runtime: {sequentialRuntime.activeStep ?? 'idle'}</div>
+              <div className="rounded bg-slate-900/70 p-3">Workflow: {workflowReport?.status ?? 'idle'}</div>
+              <div className="rounded bg-slate-900/70 p-3">Patterns: {activePatternCount}</div>
+            </div>
+
+            <div className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
+              <h3 className="font-bold uppercase tracking-wide text-slate-200">Remote Memory Snapshot</h3>
+              <p className="mt-2">
+                Enabled: {remoteMemoryConfig.enabled ? 'yes' : 'no'} · Mode: {remoteMemoryConfig.mode} · Workspace: {remoteMemoryConfig.workspaceId} · Collection: {remoteMemoryConfig.collectionName}
               </p>
+              <p className="mt-1 text-slate-500">Remote Memory bleibt optional und consent-gated. Änderungen laufen im Remote-Memory-Tab.</p>
             </div>
 
-            <div className="flex flex-wrap gap-2 text-xs">
-              <button type="button" onClick={() => setActiveTab('repo')}>Repo laden</button>
-              <button type="button" onClick={() => setActiveTab('remote')}>Remote Memory</button>
-              <button type="button" onClick={() => setActiveTab('telemetry')}>Telemetry öffnen</button>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-2 text-xs md:grid-cols-4">
-            <div className="rounded bg-slate-900/70 p-3">Repo: {repoSnapshotStatus.ready ? 'ready' : 'not ready'}</div>
-            <div className="rounded bg-slate-900/70 p-3">Runtime: {sequentialRuntime.activeStep ?? 'idle'}</div>
-            <div className="rounded bg-slate-900/70 p-3">Workflow: {workflowReport?.status ?? 'idle'}</div>
-            <div className="rounded bg-slate-900/70 p-3">Patterns: {activePatternCount}</div>
-          </div>
-
-          <div className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
-            <h3 className="font-bold uppercase tracking-wide text-slate-200">Remote Memory Snapshot</h3>
-            <p className="mt-2">
-              Enabled: {remoteMemoryConfig.enabled ? 'yes' : 'no'} · Mode: {remoteMemoryConfig.mode} · Workspace: {remoteMemoryConfig.workspaceId} · Collection: {remoteMemoryConfig.collectionName}
-            </p>
-            <p className="mt-1 text-slate-500">Remote Memory bleibt optional und consent-gated. Änderungen laufen im Remote-Memory-Tab.</p>
-          </div>
-
-          <SequentialRuntimePanel state={sequentialRuntime} />
-          <RuntimeValidationCoveragePanel report={coverageReport} />
-          <ScanFindingRegistryPanel registry={scanRegistry} />
-          <PatternMemoryContainer store={solutionPatternStore} onClear={resetPatternMemory} />
-          <TelemetryContainer state={telemetry} expanded={telemetryExpanded} onExpandedChange={setTelemetryExpanded} />
-        </section>
+            <SequentialRuntimePanel state={sequentialRuntime} />
+            <RuntimeValidationCoveragePanel report={coverageReport} />
+            <ScanFindingRegistryPanel registry={scanRegistry} />
+            <PatternMemoryContainer store={solutionPatternStore} onClear={resetPatternMemory} />
+            <TelemetryContainer state={telemetry} expanded={telemetryExpanded} onExpandedChange={setTelemetryExpanded} />
+          </section>
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'repo' ? (
-        <RepoSnapshotContainer
-          repoUrl={repoUrl}
-          repoBranch={repoBranch}
-          accessValue={githubToken}
-          repoStatus={repoStatus}
-          isRepoBusy={isRepoBusy}
-          runtimeBusy={runtimeBusy}
-          repoFiles={safeRepoFiles}
-          memoryHints={solutionPatternHints}
-          onRepoUrlChange={setRepoUrl}
-          onRepoBranchChange={setRepoBranch}
-          onAccessValueChange={setGithubToken}
-          onLoadRepo={() => { void handleLoadRepoTree(); }}
-          onSaveView={saveCurrentSession}
-          onRestoreView={restoreSession}
-          onClearView={clearSession}
-        />
+        <SovereignTabErrorBoundary tabId="repo" tabLabel="Repo">
+          <RepoSnapshotContainer
+            repoUrl={repoUrl}
+            repoBranch={repoBranch}
+            accessValue={githubToken}
+            repoStatus={repoStatus}
+            isRepoBusy={isRepoBusy}
+            runtimeBusy={runtimeBusy}
+            repoFiles={safeRepoFiles}
+            memoryHints={solutionPatternHints}
+            onRepoUrlChange={setRepoUrl}
+            onRepoBranchChange={setRepoBranch}
+            onAccessValueChange={setGithubToken}
+            onLoadRepo={() => { void handleLoadRepoTree(); }}
+            onSaveView={saveCurrentSession}
+            onRestoreView={restoreSession}
+            onClearView={clearSession}
+          />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'readiness' ? (
-        <RepoReadinessPanel repoUrl={repoUrl} files={safeRepoFiles} status={repoStatus} />
+        <SovereignTabErrorBoundary tabId="readiness" tabLabel="Readiness">
+          <RepoReadinessPanel repoUrl={repoUrl} files={safeRepoFiles} status={repoStatus} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'integrity' ? (
-        <RepoFileIntegrityMatrix files={safeRepoFiles} />
+        <SovereignTabErrorBoundary tabId="integrity" tabLabel="Integrity">
+          <RepoFileIntegrityMatrix files={safeRepoFiles} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'findings' ? (
-        <ScanFindingRegistryPanel registry={scanRegistry} />
+        <SovereignTabErrorBoundary tabId="findings" tabLabel="Findings">
+          <ScanFindingRegistryPanel registry={scanRegistry} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'builder' ? (
-        <BuilderContainer
-          mission={mission}
-          repoReady={repoSnapshotStatus.ready}
-          repoReason={repoSnapshotStatus.reason}
-          repoBusy={isRepoBusy}
-          runtimeBusy={runtimeBusy}
-          isPublishing={isPublishing}
-          sovereignSummary={sovereignSummary}
-          sovereignPreview={sovereignPreview}
-          onMissionChange={setMission}
-          onGenerateIdeas={generateRepoIdeas}
-          onGenerateErrorWorkflow={generateErrorWorkflow}
-          onPublishDraftPr={() => { void publishDraftPr(); }}
-        />
+        <SovereignTabErrorBoundary tabId="builder" tabLabel="Builder">
+          <BuilderContainer
+            mission={mission}
+            repoReady={repoSnapshotStatus.ready}
+            repoReason={repoSnapshotStatus.reason}
+            repoBusy={isRepoBusy}
+            runtimeBusy={runtimeBusy}
+            isPublishing={isPublishing}
+            sovereignSummary={sovereignSummary}
+            sovereignPreview={sovereignPreview}
+            onMissionChange={setMission}
+            onGenerateIdeas={generateRepoIdeas}
+            onGenerateErrorWorkflow={generateErrorWorkflow}
+            onPublishDraftPr={() => { void publishDraftPr(); }}
+          />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'files' ? (
-        <GeneratedFileReviewPanel pkg={lastPackage} />
+        <SovereignTabErrorBoundary tabId="files" tabLabel="Files">
+          <GeneratedFileReviewPanel pkg={lastPackage} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'diff' ? (
-        <GeneratedFileDiffPreviewPanel
-          report={diffReport}
-          isLoading={isLoadingDiffSources || runtimeBusy}
-          onLoadSources={() => { void loadGeneratedFileSources(); }}
-        />
+        <SovereignTabErrorBoundary tabId="diff" tabLabel="Diff">
+          <GeneratedFileDiffPreviewPanel
+            report={diffReport}
+            isLoading={isLoadingDiffSources || runtimeBusy}
+            onLoadSources={() => { void loadGeneratedFileSources(); }}
+          />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'workflow' ? (
-        <WorkflowContainer
-          mode="watch"
-          report={workflowReport}
-          repairPlan={repairPlan}
-          isWatching={isWatchingWorkflow}
-          runtimeBusy={runtimeBusy}
-          hasDraftCommit={Boolean(lastDraftCommitSha)}
-          onWatch={() => { void watchLatestWorkflow(); }}
-          onUseRepairMission={useRepairMission}
-        />
+        <SovereignTabErrorBoundary tabId="workflow" tabLabel="Workflow">
+          <WorkflowContainer
+            mode="watch"
+            report={workflowReport}
+            repairPlan={repairPlan}
+            isWatching={isWatchingWorkflow}
+            runtimeBusy={runtimeBusy}
+            hasDraftCommit={Boolean(lastDraftCommitSha)}
+            onWatch={() => { void watchLatestWorkflow(); }}
+            onUseRepairMission={useRepairMission}
+          />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'repair' ? (
-        <WorkflowContainer
-          mode="repair"
-          report={workflowReport}
-          repairPlan={repairPlan}
-          isWatching={isWatchingWorkflow}
-          runtimeBusy={runtimeBusy}
-          hasDraftCommit={Boolean(lastDraftCommitSha)}
-          onWatch={() => { void watchLatestWorkflow(); }}
-          onUseRepairMission={useRepairMission}
-        />
+        <SovereignTabErrorBoundary tabId="repair" tabLabel="Repair">
+          <WorkflowContainer
+            mode="repair"
+            report={workflowReport}
+            repairPlan={repairPlan}
+            isWatching={isWatchingWorkflow}
+            runtimeBusy={runtimeBusy}
+            hasDraftCommit={Boolean(lastDraftCommitSha)}
+            onWatch={() => { void watchLatestWorkflow(); }}
+            onUseRepairMission={useRepairMission}
+          />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'health' ? (
-        <SovereignHealthPanel report={healthReport} />
+        <SovereignTabErrorBoundary tabId="health" tabLabel="Health">
+          <SovereignHealthPanel report={healthReport} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'runtime' ? (
-        <SequentialRuntimePanel state={sequentialRuntime} />
+        <SovereignTabErrorBoundary tabId="runtime" tabLabel="Runtime">
+          <SequentialRuntimePanel state={sequentialRuntime} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'coverage' ? (
-        <RuntimeValidationCoveragePanel report={coverageReport} />
+        <SovereignTabErrorBoundary tabId="coverage" tabLabel="Coverage">
+          <RuntimeValidationCoveragePanel report={coverageReport} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'memory' ? (
-        <PatternMemoryContainer store={solutionPatternStore} onClear={resetPatternMemory} />
+        <SovereignTabErrorBoundary tabId="memory" tabLabel="Pattern Memory">
+          <PatternMemoryContainer store={solutionPatternStore} onClear={resetPatternMemory} />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'remote' ? (
-        <RemoteMemoryContainer
-          config={remoteMemoryConfig}
-          onConfigChange={setRemoteMemoryConfig}
-          scanRegistry={scanRegistry}
-          solutionPatternStore={solutionPatternStore}
-          onSolutionPatternStoreChange={setSolutionPatternStore}
-          mission={mission}
-          onTelemetry={pushTelemetry}
-        />
+        <SovereignTabErrorBoundary tabId="remote" tabLabel="Remote Memory">
+          <RemoteMemoryContainer
+            config={remoteMemoryConfig}
+            onConfigChange={setRemoteMemoryConfig}
+            scanRegistry={scanRegistry}
+            solutionPatternStore={solutionPatternStore}
+            onSolutionPatternStoreChange={setSolutionPatternStore}
+            mission={mission}
+            onTelemetry={pushTelemetry}
+          />
+        </SovereignTabErrorBoundary>
       ) : null}
 
       {activeTab === 'telemetry' ? (
-        <TelemetryContainer state={telemetry} expanded={telemetryExpanded} onExpandedChange={setTelemetryExpanded} />
+        <SovereignTabErrorBoundary tabId="telemetry" tabLabel="Telemetry">
+          <TelemetryContainer state={telemetry} expanded={telemetryExpanded} onExpandedChange={setTelemetryExpanded} />
+        </SovereignTabErrorBoundary>
       ) : null}
     </div>
   );
