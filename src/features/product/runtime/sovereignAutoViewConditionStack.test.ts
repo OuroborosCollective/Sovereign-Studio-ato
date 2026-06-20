@@ -35,8 +35,8 @@ describe('sovereignAutoViewRouter condition stack', () => {
     expect(decision.reason).toContain('paused');
   });
 
-  it('allows suggestion switches after inactivity', () => {
-    expect(decideSovereignAutoView({
+  it('does not use inactivity alone to bounce planning into generated file review', () => {
+    const decision = decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
       activeTab: 'repo',
@@ -47,7 +47,10 @@ describe('sovereignAutoViewRouter condition stack', () => {
       nowMs: 9_000,
       lastUserInteractionAt: 1_000,
       autoSwitchInactivityMs: 3_000,
-    })).toMatchObject({ shouldSwitch: true, tab: 'files' });
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: false, tab: 'repo' });
+    expect(decision.reason).toContain('No auto view change');
   });
 
   it('evaluates signal, completed tab, inactivity and clear override conditions', () => {
