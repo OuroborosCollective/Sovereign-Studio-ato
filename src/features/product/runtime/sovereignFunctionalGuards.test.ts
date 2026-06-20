@@ -3,9 +3,12 @@ import {
   assertGeneratedPackageReady,
   assertLoadedRepoSnapshot,
   assertSafeGeneratedFiles,
+  assertSovereignHealthAllowsRuntimeOutput,
   buildRepoSnapshotSummary,
   getRepoSnapshotStatus,
+  getSovereignHealthRuntimeGate,
 } from './sovereignFunctionalGuards';
+import type { SovereignHealthReport } from './sovereignHealth';
 import type { SovereignImplementationPackage } from './sovereignRuntime';
 
 function packageWithFiles(paths: string[]): SovereignImplementationPackage {
@@ -31,6 +34,18 @@ function packageWithFiles(paths: string[]): SovereignImplementationPackage {
     suggestions: [],
     providerRoutes: [{ id: 'mlvoca', label: 'Mlvoca', status: 'primary', requiresApiKey: false, requiresUserOptIn: false }],
     requestedWork: 'readme-docs',
+  };
+}
+
+function health(status: SovereignHealthReport['status']): SovereignHealthReport {
+  return {
+    status,
+    criticalRisks: status === 'red' ? 1 : 0,
+    totalIssues: status === 'green' ? 0 : 1,
+    repairsLogged: 0,
+    branchDelta: status === 'green' ? 0 : 0.5,
+    summary: `Health ${status}`,
+    recommendations: [`${status} recommendation`],
   };
 }
 
@@ -66,5 +81,19 @@ describe('sovereignFunctionalGuards', () => {
       { path: 'README.md', type: 'blob' },
       { path: 'src', type: 'tree' },
     ])).toBe('Snapshot: 2 entries (1 files, 1 folders).');
+  });
+
+  it('blocks guarded output for red or idle health', () => {
+    expect(getSovereignHealthRuntimeGate(health('red')).allowed).toBe(false);
+    expect(getSovereignHealthRuntimeGate(health('idle')).allowed).toBe(false);
+    expect(() => assertSovereignHealthAllowsRuntimeOutput(health('red'))).toThrow('Health red');
+    expect(() => assertSovereignHealthAllowsRuntimeOutput(health('idle'))).toThrow('Health idle');
+  });
+
+  it('allows guarded output for warning or green health', () => {
+    expect(getSovereignHealthRuntimeGate(health('warning')).allowed).toBe(true);
+    expect(getSovereignHealthRuntimeGate(health('green')).allowed).toBe(true);
+    expect(() => assertSovereignHealthAllowsRuntimeOutput(health('warning'))).not.toThrow();
+    expect(() => assertSovereignHealthAllowsRuntimeOutput(health('green'))).not.toThrow();
   });
 });
