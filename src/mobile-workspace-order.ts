@@ -7,6 +7,7 @@ type WorkspaceWindow = Window &
 
 const COACH_ID = 'sovereign-mobile-coach';
 const STYLE_ID = 'sovereign-mobile-workspace-order-style';
+const ACTIVE_MARKER = 'data-sovereign-active-workspace';
 const ACTIVE_TITLES = [
   'repository snapshot',
   'github repo setup',
@@ -29,6 +30,12 @@ const ACTIVE_TITLES = [
 
 function norm(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isMobileViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (typeof window.matchMedia === 'function') return window.matchMedia('(max-width: 767px)').matches;
+  return window.innerWidth <= 767;
 }
 
 function visible(element: Element | null | undefined): element is HTMLElement {
@@ -111,6 +118,16 @@ function moveAfter(anchor: HTMLElement, element: HTMLElement | null): HTMLElemen
   return element;
 }
 
+function markActiveWorkspace(shell: HTMLElement, active: HTMLElement | null): void {
+  for (const child of directChildren(shell)) {
+    if (child === active) {
+      if (child.getAttribute(ACTIVE_MARKER) !== 'true') child.setAttribute(ACTIVE_MARKER, 'true');
+    } else if (child.hasAttribute(ACTIVE_MARKER)) {
+      child.removeAttribute(ACTIVE_MARKER);
+    }
+  }
+}
+
 function installStyle(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -125,6 +142,7 @@ function installStyle(): void {
 
 export function orderMobileWorkspace(): boolean {
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  if (!isMobileViewport()) return false;
   const shell = appShell();
   if (!shell) return false;
 
@@ -134,18 +152,16 @@ export function orderMobileWorkspace(): boolean {
   const coach = findCoach(shell);
   const active = findActiveWorkspace(shell);
   const automation = findAutomation(shell);
-  const nav = findPrimaryNav(shell);
+  findPrimaryNav(shell);
   const more = findMoreMenu(shell);
 
   if (!title || !coach) return false;
 
-  for (const child of directChildren(shell)) child.removeAttribute('data-sovereign-active-workspace');
-  if (active) active.setAttribute('data-sovereign-active-workspace', 'true');
+  markActiveWorkspace(shell, active);
 
-  let anchor = moveAfter(title, coach);
+  let anchor = coach;
   anchor = moveAfter(anchor, active);
   anchor = moveAfter(anchor, automation);
-  anchor = moveAfter(anchor, nav);
   moveAfter(anchor, more);
 
   return true;
@@ -167,7 +183,6 @@ export function installMobileWorkspaceOrder(): void {
   win.__sovereignMobileWorkspaceOrderInstalled = true;
 
   window.setTimeout(orderMobileWorkspace, 0);
-  window.setInterval(orderMobileWorkspace, 350);
 
   if (!win.__sovereignMobileWorkspaceOrderObserver && document.body) {
     win.__sovereignMobileWorkspaceOrderObserver = new MutationObserver(scheduleOrder);
@@ -175,7 +190,7 @@ export function installMobileWorkspaceOrder(): void {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['class', 'hidden', 'style', 'data-role', 'data-sovereign-active-workspace'],
+      attributeFilter: ['class', 'hidden', 'style', 'data-role'],
     });
   }
 }
