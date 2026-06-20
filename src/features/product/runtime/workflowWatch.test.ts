@@ -59,6 +59,24 @@ describe('workflowWatch', () => {
     expect(report.checks).toHaveLength(2);
     expect(report.status).toBe('red');
     expect(report.fixes.join(' ')).toContain('failed check logs');
+    expect(report.dependencyLifecycle?.phase).toBe('ready');
+    expect(report.dependencyLifecycle?.kind).toBe('workflow');
+    expect(validateWorkflowWatchReport(report).valid).toBe(true);
+  });
+
+  it('marks workflow dependency degraded when GitHub endpoints fail', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ message: 'server busy' }, false, 503));
+
+    const report = await fetchWorkflowWatchReport({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      commitSha: 'abc',
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    expect(report.status).toBe('unknown');
+    expect(report.warnings.join(' ')).toContain('503');
+    expect(report.dependencyLifecycle?.phase).toBe('degraded');
+    expect(report.dependencyLifecycle?.lastFailureAt).toBeGreaterThan(0);
     expect(validateWorkflowWatchReport(report).valid).toBe(true);
   });
 
