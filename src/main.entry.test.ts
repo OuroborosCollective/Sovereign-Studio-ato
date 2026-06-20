@@ -56,6 +56,6 @@ describe('main app entry', () => {
     expect(css).toContain('--accent-2');
     expect(css).toContain('Release shell');
     expect(css).toContain('Container runtime');
-    expect(css).toContain('Signed Android artifacts');
+    expect(css).toContain('Android phones, foldables and tablets only');
   });
 });
