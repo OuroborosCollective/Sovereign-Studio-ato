@@ -1,3 +1,4 @@
+import { canSovereignProductTemplateAutoOpen, type SovereignProductTemplateAutoNavigationReason } from './features/product/runtime/sovereignProductTemplate';
 import { assertMobileWorkflowDecisionValid, decideMobileWorkflow, type MobileWorkflowOrchestratorDecision } from './mobile-workflow-orchestrator';
 
 const ROOT_ID = 'sovereign-mobile-workbench-console';
@@ -103,9 +104,19 @@ function installStyle(): void {
   document.head.appendChild(style);
 }
 
+export function classifyWorkbenchAutoNavigationReason(
+  decision: MobileWorkflowOrchestratorDecision,
+): SovereignProductTemplateAutoNavigationReason {
+  if (decision.lamp === 'red') return 'red-stopper';
+  if (decision.mode === 'matrix-work') return 'active-work';
+  if (decision.mode === 'review-log') return 'passive-review';
+  if (decision.mode === 'nocode-plan') return 'awaiting-intent';
+  return 'side-channel';
+}
+
 export function shouldAutoOpenWorkbenchTarget(decision: MobileWorkflowOrchestratorDecision): boolean {
   if (!decision.autoOpenTarget || !decision.targetNav) return false;
-  return decision.mode === 'matrix-work' || decision.lamp === 'red';
+  return canSovereignProductTemplateAutoOpen(classifyWorkbenchAutoNavigationReason(decision));
 }
 
 function decisionSignature(decision: MobileWorkflowOrchestratorDecision): string {
