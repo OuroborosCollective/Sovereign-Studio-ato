@@ -1,13 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { orderMobileWorkspace } from './mobile-workspace-order';
+import { installMobileWorkspaceOrder, orderMobileWorkspace } from './mobile-workspace-order';
+
+function setViewport(width: number): void {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('767px') ? width <= 767 : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
 
 describe('mobile workspace order', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
+    setViewport(390);
   });
 
-  it('places the active workspace directly below the coach and moves controls underneath', () => {
+  it('places the active workspace directly below the installed coach without moving the nav/coach pair', () => {
     document.body.innerHTML = `
       <div id="root">
         <div class="min-h-screen">
@@ -34,7 +52,7 @@ describe('mobile workspace order', () => {
       return 'other';
     });
 
-    expect(order).toEqual(['title', 'coach', 'active', 'automation', 'nav', 'more']);
+    expect(order).toEqual(['title', 'nav', 'coach', 'active', 'automation', 'more']);
     expect(document.querySelector('.active')?.getAttribute('data-sovereign-active-workspace')).toBe('true');
   });
 
@@ -43,9 +61,9 @@ describe('mobile workspace order', () => {
       <div id="root">
         <div class="min-h-screen">
           <h1>Sovereign Canvas Tool</h1>
+          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
           <section id="sovereign-mobile-coach"><div>Sovereign Bot</div></section>
           <section class="automation"><h2>Automation Mode</h2><select><option>Manual</option></select></section>
-          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
         </div>
       </div>
     `;
@@ -61,6 +79,41 @@ describe('mobile workspace order', () => {
       return 'other';
     });
 
-    expect(order).toEqual(['title', 'coach', 'automation', 'nav']);
+    expect(order).toEqual(['title', 'nav', 'coach', 'automation']);
+  });
+
+  it('does not reorder desktop layouts', () => {
+    setViewport(1024);
+    document.body.innerHTML = `
+      <div id="root">
+        <div class="min-h-screen">
+          <h1>Sovereign Canvas Tool</h1>
+          <section class="active"><h2>Sovereign Action Builder</h2></section>
+          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
+          <section id="sovereign-mobile-coach"><div>Sovereign Bot</div></section>
+        </div>
+      </div>
+    `;
+
+    expect(orderMobileWorkspace()).toBe(false);
+
+    const shell = document.querySelector('#root > div')!;
+    expect(Array.from(shell.children).map((child) => child.className || child.id || child.tagName.toLowerCase())).toEqual([
+      '',
+      'active',
+      'nav',
+      'sovereign-mobile-coach',
+    ]);
+  });
+
+  it('does not observe the active workspace marker it writes', () => {
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe');
+    document.body.innerHTML = '<div id="root"><div class="min-h-screen"><h1>Sovereign Canvas Tool</h1></div></div>';
+
+    installMobileWorkspaceOrder();
+
+    expect(observe).toHaveBeenCalledWith(document.body, expect.objectContaining({
+      attributeFilter: ['class', 'hidden', 'style', 'data-role'],
+    }));
   });
 });
