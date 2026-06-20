@@ -246,6 +246,9 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (input.repoReady && !input.hasPackage && input.mode !== 'manual' && (input.activeTab === 'repo' || input.activeTab === 'telemetry')) {
     return switchTo(input, 'builder', 'Repository ready - show Builder for the next step.');
   }
+  if (!input.hasPackage && input.mode !== 'manual' && input.activeTab === 'repo' && input.hasActiveTelemetry) {
+    return switchTo(input, 'builder', 'Repo status activity detected - show Builder for the next step.');
+  }
   if (!input.hasPackage && input.mode !== 'manual' && input.activeTab === 'telemetry' && input.hasActiveTelemetry) {
     return switchTo(input, 'builder', 'Status view is informational - return to Builder.');
   }
