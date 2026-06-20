@@ -1,113 +1,59 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-
-interface CircuitBreakerState {
-  failures: number;
-  lastFailure: number;
-  state: 'closed' | 'open' | 'half-open';
-}
-
-function createCircuitBreaker(threshold = 5, timeout = 30000) {
-  const breaker: CircuitBreakerState = {
-    failures: 0,
-    lastFailure: 0,
-    state: 'closed',
-  };
-
-  return {
-    async call<T>(fn: () => Promise<T>): Promise<T> {
-      if (breaker.state === 'open') {
-        if (Date.now() - breaker.lastFailure > timeout) {
-          breaker.state = 'half-open';
-        } else {
-          throw new Error(`Circuit breaker open`);
-        }
-      }
-      try {
-        const result = await fn();
-        breaker.failures = 0;
-        breaker.state = 'closed';
-        return result;
-      } catch (error) {
-        breaker.failures++;
-        breaker.lastFailure = Date.now();
-        if (breaker.failures >= threshold) {
-          breaker.state = 'open';
-        }
-        throw error;
-      }
-    },
-    getState: () => ({ ...breaker }),
-  };
-}
+import { describe, expect, it } from 'vitest';
+import {
+  canAttemptSovereignCircuit,
+  createSovereignCircuitState,
+  recordSovereignCircuitAttempt,
+  recordSovereignCircuitFailure,
+  recordSovereignCircuitSuccess,
+  refreshSovereignCircuitState,
+} from './sovereignCircuitLifecycle';
 
 describe('sovereignCircuitLifecycle', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
+  it('starts closed and allows attempts', () => {
+    const state = createSovereignCircuitState('tab:repo');
+
+    expect(state.phase).toBe('closed');
+    expect(canAttemptSovereignCircuit(state)).toBe(true);
   });
 
-  it('starts in closed state', () => {
-    const breaker = createCircuitBreaker();
-    expect(breaker.getState().state).toBe('closed');
+  it('opens after the configured failure threshold', () => {
+    const policy = { failureThreshold: 2, cooldownMs: 1000, halfOpenMaxAttempts: 1 };
+    const first = recordSovereignCircuitFailure(createSovereignCircuitState('tab:remote'), policy, 1000).state;
+    const second = recordSovereignCircuitFailure(first, policy, 1100).state;
+
+    expect(first.phase).toBe('closed');
+    expect(second.phase).toBe('open');
+    expect(canAttemptSovereignCircuit(second, policy, 1200)).toBe(false);
   });
 
-  it('allows successful calls to pass through', async () => {
-    const breaker = createCircuitBreaker();
-    const result = await breaker.call(() => Promise.resolve('success'));
-    expect(result).toBe('success');
-    expect(breaker.getState().state).toBe('closed');
+  it('transitions to half-open after cooldown', () => {
+    const policy = { failureThreshold: 1, cooldownMs: 1000, halfOpenMaxAttempts: 1 };
+    const open = recordSovereignCircuitFailure(createSovereignCircuitState('tab:workflow'), policy, 1000).state;
+    const refreshed = refreshSovereignCircuitState(open, policy, 2500).state;
+
+    expect(open.phase).toBe('open');
+    expect(refreshed.phase).toBe('half-open');
+    expect(canAttemptSovereignCircuit(refreshed, policy, 2500)).toBe(true);
   });
 
-  it('opens after threshold failures', async () => {
-    const breaker = createCircuitBreaker(3);
+  it('limits half-open probe attempts', () => {
+    const policy = { failureThreshold: 1, cooldownMs: 1000, halfOpenMaxAttempts: 1 };
+    const open = recordSovereignCircuitFailure(createSovereignCircuitState('tab:workflow'), policy, 1000).state;
+    const refreshed = refreshSovereignCircuitState(open, policy, 2500).state;
+    const attempted = recordSovereignCircuitAttempt(refreshed, policy, 2500).state;
 
-    for (let i = 0; i < 3; i++) {
-      await expect(
-        breaker.call(() => Promise.reject(new Error('failure')))
-      ).rejects.toThrow('failure');
-    }
-
-    await expect(
-      breaker.call(() => Promise.resolve('should not reach'))
-    ).rejects.toThrow('Circuit breaker open');
+    expect(attempted.halfOpenAttempts).toBe(1);
+    expect(canAttemptSovereignCircuit(attempted, policy, 2501)).toBe(false);
   });
 
-  it('transitions to half-open after timeout', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2024, 0, 1, 12, 0, 0));
+  it('closes and resets after a successful render', () => {
+    const policy = { failureThreshold: 1, cooldownMs: 1000, halfOpenMaxAttempts: 1 };
+    const open = recordSovereignCircuitFailure(createSovereignCircuitState('tab:diff'), policy, 1000).state;
+    const closed = recordSovereignCircuitSuccess(open).state;
 
-    const breaker = createCircuitBreaker(2, 1000);
-
-    // Trigger failures to open the circuit
-    await expect(
-      breaker.call(() => Promise.reject(new Error('f1')))
-    ).rejects.toThrow('f1');
-    await expect(
-      breaker.call(() => Promise.reject(new Error('f2')))
-    ).rejects.toThrow('f2');
-
-    expect(breaker.getState().state).toBe('open');
-
-    // Advance time past the timeout
-    vi.setSystemTime(new Date(2024, 0, 1, 12, 0, 2));
-
-    // Now the next call should transition to half-open and succeed
-    const result = await breaker.call(() => Promise.resolve('recovered'));
-    expect(result).toBe('recovered');
-    expect(breaker.getState().state).toBe('closed');
-
-    vi.useRealTimers();
-  });
-
-  it('resets failure count on successful call', async () => {
-    const breaker = createCircuitBreaker(2);
-
-    await expect(
-      breaker.call(() => Promise.reject(new Error('fail')))
-    ).rejects.toThrow('fail');
-
-    expect(breaker.getState().failures).toBe(1);
-
-    await breaker.call(() => Promise.resolve('ok'));
-    expect(breaker.getState().failures).toBe(0);
+    expect(closed.phase).toBe('closed');
+    expect(closed.failures).toBe(0);
+    expect(closed.openedAt).toBeNull();
+    expect(closed.lastFailureAt).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { SovereignTabErrorBoundary } from './SovereignTabErrorBoundary';
@@ -11,6 +11,10 @@ const ThrowError = ({ message = 'Test error' }: { message?: string }) => {
 describe('SovereignTabErrorBoundary', () => {
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('renders children when no error occurs', () => {
@@ -62,7 +66,6 @@ describe('SovereignTabErrorBoundary', () => {
   });
 
   it('masks secrets in error messages', () => {
-    // Use a properly formatted GitHub PAT (30+ chars after ghp_)
     const secret = 'ghp_1234567890abcdefghijklmnopqrstuvwx';
 
     render(
@@ -92,7 +95,23 @@ describe('SovereignTabErrorBoundary', () => {
       <SovereignTabErrorBoundary tabId="empty" tabLabel="Empty Tab" />
     );
 
-    // Should render without crashing, no error UI should show since no error occurred
     expect(document.body.textContent).toBe('');
+  });
+
+  it('opens the tab circuit when the configured threshold is reached', () => {
+    render(
+      <SovereignTabErrorBoundary
+        tabId="circuit"
+        tabLabel="Circuit Tab"
+        policy={{ failureThreshold: 1, cooldownMs: 30_000, halfOpenMaxAttempts: 1 }}
+      >
+        <ThrowError message="Circuit failure" />
+      </SovereignTabErrorBoundary>
+    );
+
+    const fallback = screen.getByTestId('sovereign-tab-error-boundary');
+    expect(fallback.getAttribute('data-tab-id')).toBe('circuit');
+    expect(fallback.getAttribute('data-circuit-phase')).toBe('open');
+    expect(screen.getByRole('button', { name: 'Retry tab' })).toBeDefined();
   });
 });
