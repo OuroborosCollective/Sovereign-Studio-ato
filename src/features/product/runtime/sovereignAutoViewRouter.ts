@@ -240,6 +240,9 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (input.isWatchingWorkflow) return switchTo(input, 'workflow', 'Workflow watch is running and should stay visible.');
   if (input.workflowStatus === 'red') return switchTo(input, 'repair', 'Red workflow status should surface the repair view.');
   if (input.workflowStatus === 'pending' || input.workflowStatus === 'unknown') return switchTo(input, 'workflow', 'Non-final workflow status should stay on workflow watch.');
+  if (input.activeTab === 'builder' && input.repoReady && !input.activeStep && !input.isPublishing && !input.isWatchingWorkflow) {
+    return keepCurrent(input, 'Builder was selected by the user and remains the active planning workspace.');
+  }
   if (SIDE_TABS.has(input.activeTab) && input.mode === 'manual') return keepCurrent(input, 'Manual mode keeps intentional side tabs visible when nothing is running.');
   if (!canRunSuggestionSwitch(input)) return keepCurrent(input, 'Manual override or recent user activity paused suggestion-only auto switching.');
 
