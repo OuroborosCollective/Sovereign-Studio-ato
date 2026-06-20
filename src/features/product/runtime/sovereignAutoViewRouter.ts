@@ -160,6 +160,10 @@ export function isSovereignAutoViewUserInactive(
   thresholdMs = input.autoSwitchInactivityMs ?? DEFAULT_AUTO_SWITCH_INACTIVITY_MS,
 ): boolean {
   const nowMs = normalizeNowMs(input);
+  // recentUserInteractionUntil takes precedence: if set and still in the future, user is considered active.
+  if (nowMs !== null && isFiniteNumber(input.recentUserInteractionUntil) && input.recentUserInteractionUntil > nowMs) {
+    return false;
+  }
   if (nowMs === null || !isFiniteNumber(input.lastUserInteractionAt)) return true;
   return nowMs - input.lastUserInteractionAt >= thresholdMs;
 }
@@ -197,6 +201,8 @@ export function evaluateSovereignAutoViewConditions(
 
 function canRunSuggestionSwitch(input: SovereignAutoViewInput): boolean {
   if (isSovereignAutoViewManualOverrideActive(input)) return false;
+  // planningConfirmed gates suggestion switching: user must confirm before auto-routing takes over.
+  if (input.planningConfirmed === false) return false;
   if (isSovereignAutoViewUserInactive(input)) return true;
   return isSovereignAutoViewConfidenceMatched(input);
 }
