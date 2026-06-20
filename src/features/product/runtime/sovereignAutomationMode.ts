@@ -1,4 +1,5 @@
 export type SovereignAutomationMode = 'manual' | 'auto-review' | 'full-auto-draft-pr';
+export type SovereignAutomationHealthStatus = 'green' | 'warning' | 'red' | 'idle';
 
 export interface SovereignAutomationInputs {
   mode: SovereignAutomationMode;
@@ -9,6 +10,9 @@ export interface SovereignAutomationInputs {
   hasPackage: boolean;
   lastAutoRunKey?: string;
   nextAutoRunKey: string;
+  healthAllowed?: boolean;
+  healthStatus?: SovereignAutomationHealthStatus;
+  healthReason?: string;
 }
 
 export interface SovereignAutomationDecision {
@@ -56,6 +60,7 @@ export function buildAutomationRunKey(input: {
   solutionPatternVersion?: string | null;
   lastBlockingErrorHash?: string | null;
   previewHash?: string;
+  healthStatus?: SovereignAutomationHealthStatus;
 }): string {
   const parts = [
     // Mode
@@ -67,6 +72,8 @@ export function buildAutomationRunKey(input: {
     input.githubTokenPresent ? 'has-token' : 'no-token',
     // Repo ready state
     input.repoReady ? 'ready' : 'not-ready',
+    // Health state
+    input.healthStatus ?? 'health-unknown',
     // File count
     String(input.repoFileCount),
     // Mission
@@ -86,10 +93,23 @@ export function isPlaceholderAutomationRunKey(value: string): boolean {
   return value.includes(PLACEHOLDER_MISSION_TOKEN);
 }
 
+function healthBlocksAutomation(input: SovereignAutomationInputs): boolean {
+  if (input.healthAllowed === undefined) return false;
+  if (input.healthAllowed) return false;
+  return input.healthStatus === 'red' || input.healthStatus === 'idle' || input.healthStatus === undefined;
+}
+
 export function decideSovereignAutomation(input: SovereignAutomationInputs): SovereignAutomationDecision {
   if (input.mode === 'manual') return { shouldBuildPackage: false, shouldPublishDraftPr: false };
   if (input.isBusy) return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Automation is waiting for the current action to finish.' };
   if (!input.repoReady) return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Automation needs a loaded repository snapshot.' };
+  if (healthBlocksAutomation(input)) {
+    return {
+      shouldBuildPackage: false,
+      shouldPublishDraftPr: false,
+      blockedReason: input.healthReason || `Automation blocked by ${input.healthStatus ?? 'unknown'} runtime readiness.`,
+    };
+  }
   if (!input.hasMission) return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Automation needs a concrete mission.' };
   if (isPlaceholderAutomationRunKey(input.nextAutoRunKey)) {
     return { shouldBuildPackage: false, shouldPublishDraftPr: false, blockedReason: 'Automation wartet auf einen konkreten Auftrag. README + Update History ist nur ein Platzhalter.' };
