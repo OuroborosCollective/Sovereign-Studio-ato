@@ -51,6 +51,7 @@ export interface SovereignAutoViewInput {
   mode: SovereignAutomationMode;
   activeStep: SequentialRuntimeStep | null;
   activeTab: SovereignAutoViewTab;
+  repoReady?: boolean;
   hasPackage: boolean;
   hasDiffSources?: boolean;
   isPublishing: boolean;
@@ -132,6 +133,7 @@ function hasCompletedTab(input: SovereignAutoViewInput, tab: SovereignAutoViewTa
 function deriveActiveSignals(input: SovereignAutoViewInput): Set<SovereignAutoViewSignal> {
   const signals = new Set<SovereignAutoViewSignal>(input.activeSignals ?? []);
 
+  if (input.repoReady) signals.add('repo-ready');
   if (input.activeStep) signals.add('runtime-active');
   if (input.isPublishing) signals.add('publishing');
   if (input.isWatchingWorkflow) signals.add('workflow-watch');
@@ -241,6 +243,9 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (SIDE_TABS.has(input.activeTab) && input.mode === 'manual') return keepCurrent(input, 'Manual mode keeps intentional side tabs visible when nothing is running.');
   if (!canRunSuggestionSwitch(input)) return keepCurrent(input, 'Manual override or recent user activity paused suggestion-only auto switching.');
 
+  if (input.repoReady && !input.hasPackage && input.mode !== 'manual' && (input.activeTab === 'repo' || input.activeTab === 'telemetry')) {
+    return switchTo(input, 'builder', 'Repository ready - show Builder so the user can enter the concrete mission.');
+  }
   if (input.workflowStatus === 'green' && input.hasPackage) {
     return input.hasDiffSources
       ? switchTo(input, 'diff', 'Green workflow with diff sources loaded - show the diff.')
