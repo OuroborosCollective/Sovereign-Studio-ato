@@ -1,7 +1,7 @@
 import type { RepoFile } from '../../github/types';
 import type { SovereignHealthReport } from './sovereignHealth';
 import type { SovereignImplementationPackage } from './sovereignRuntime';
-import { assertSovereignHealthAllowsRuntimeOutput } from './sovereignFunctionalGuards';
+import { getSovereignHealthRuntimeGate, type SovereignHealthRuntimeGate } from './sovereignFunctionalGuards';
 
 export interface PublishGateContext {
   repoFiles: RepoFile[];
@@ -10,35 +10,52 @@ export interface PublishGateContext {
 
 export interface PublishGateResult {
   allowed: boolean;
+  status: SovereignHealthReport['status'];
+  reason: string;
+  recommendations: string[];
   blockedReason?: string;
 }
 
-/**
- * Health gate: blocks publish when system health is red/idle.
- * Use this as part of the publish guard chain.
- */
-export function assertCanPublishPackage(
-  pkg: SovereignImplementationPackage,
-  ctx: PublishGateContext
-): void {
-  // Health gate - system must not be red/idle
-  assertSovereignHealthAllowsRuntimeOutput(ctx.healthReport);
+const MAX_RECOMMENDATIONS = 3;
+
+function compactRecommendations(items: string[]): string[] {
+  return items.map((item) => item.trim()).filter(Boolean).slice(0, MAX_RECOMMENDATIONS);
 }
 
-/**
- * Non-throwing version that returns validation result.
- */
+export function formatPublishGateMessage(gate: SovereignHealthRuntimeGate): string {
+  const recommendations = compactRecommendations(gate.warnings);
+  if (!recommendations.length) return gate.reason;
+  return `${gate.reason} Next: ${recommendations.join(' | ')}`;
+}
+
+export function evaluateCanPublishPackage(
+  pkg: SovereignImplementationPackage,
+  ctx: PublishGateContext,
+): PublishGateResult {
+  void pkg;
+  const gate = getSovereignHealthRuntimeGate(ctx.healthReport);
+  const reason = formatPublishGateMessage(gate);
+
+  return {
+    allowed: gate.allowed,
+    status: gate.status,
+    reason,
+    recommendations: compactRecommendations(gate.warnings),
+    blockedReason: gate.allowed ? undefined : reason,
+  };
+}
+
+export function assertCanPublishPackage(
+  pkg: SovereignImplementationPackage,
+  ctx: PublishGateContext,
+): void {
+  const result = evaluateCanPublishPackage(pkg, ctx);
+  if (!result.allowed) throw new Error(result.reason);
+}
+
 export function canPublishPackage(
   pkg: SovereignImplementationPackage,
-  ctx: PublishGateContext
+  ctx: PublishGateContext,
 ): PublishGateResult {
-  try {
-    assertCanPublishPackage(pkg, ctx);
-    return { allowed: true };
-  } catch (error) {
-    return {
-      allowed: false,
-      blockedReason: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return evaluateCanPublishPackage(pkg, ctx);
 }
