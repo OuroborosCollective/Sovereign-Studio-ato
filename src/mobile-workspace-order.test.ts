@@ -99,7 +99,7 @@ describe('mobile workspace order', () => {
 
     const shell = document.querySelector('#root > div')!;
     expect(Array.from(shell.children).map((child) => child.className || child.id || child.tagName.toLowerCase())).toEqual([
-      '',
+      'h1',
       'active',
       'nav',
       'sovereign-mobile-coach',
