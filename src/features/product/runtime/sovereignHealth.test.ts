@@ -5,6 +5,36 @@ import {
   getLatestSovereignHealthReport,
 } from './sovereignHealth';
 import { appendTelemetryEvent, createInitialTelemetryState, createTelemetryEvent } from './sovereignTelemetry';
+import type { GeneratedFileReviewReport } from './generatedFileReview';
+
+function highRiskGeneratedReview(): GeneratedFileReviewReport {
+  return {
+    files: [{
+      path: 'dist/generated.js',
+      reason: 'forbidden generated path',
+      lineCount: 1,
+      charCount: 1,
+      risk: 'high',
+      flags: ['forbidden-path'],
+      preview: 'x',
+    }],
+    totalFiles: 1,
+    totalLines: 1,
+    totalChars: 1,
+    highRiskCount: 1,
+    mediumRiskCount: 0,
+    planOnlyCount: 0,
+    actionableFileCount: 0,
+    selfReview: {
+      accepted: false,
+      rewriteRequired: true,
+      reason: 'high-risk generated output',
+      learningSignal: 'high-risk-output-rejected',
+      rewritePlan: ['Remove forbidden paths.'],
+    },
+    summary: '1 high-risk generated file.',
+  };
+}
 
 describe('sovereignHealth', () => {
   beforeEach(() => {
@@ -23,13 +53,26 @@ describe('sovereignHealth', () => {
     expect(getLatestSovereignHealthReport()?.status).toBe('green');
   });
 
-  it('turns red for high-risk repo paths', () => {
+  it('keeps high-risk existing repo paths as warnings instead of red blockers', () => {
     const report = buildSovereignHealthReport({
-      repoFiles: [{ path: '.env', type: 'blob' }],
+      repoFiles: [{ path: 'dist/generated.js', type: 'blob' }],
+      telemetry: createInitialTelemetryState(),
+    });
+    expect(report.status).toBe('warning');
+    expect(report.criticalRisks).toBe(0);
+    expect(report.totalIssues).toBeGreaterThan(0);
+    expect(report.branchDelta).toBe(0.5);
+    expect(report.recommendations.join(' ')).toContain('do not block planning');
+  });
+
+  it('turns red for high-risk generated output', () => {
+    const report = buildSovereignHealthReport({
+      repoFiles: [{ path: 'README.md', type: 'blob' }],
+      generatedFileReview: highRiskGeneratedReview(),
       telemetry: createInitialTelemetryState(),
     });
     expect(report.status).toBe('red');
-    expect(report.criticalRisks).toBeGreaterThan(0);
+    expect(report.criticalRisks).toBe(1);
   });
 
   it('turns warning for pending workflow checks', () => {
