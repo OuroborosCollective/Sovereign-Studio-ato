@@ -12,7 +12,7 @@
         android:usesCleartextTraffic="${usesCleartextTraffic}"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
-        tools:targetApi="34">
+        tools:targetApi="35">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:name=".MainActivity"
@@ -34,7 +34,7 @@
 
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.action.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="sovereign" />
             </intent-filter>
