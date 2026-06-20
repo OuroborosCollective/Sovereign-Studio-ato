@@ -7,6 +7,7 @@ import { installMobileOperatorCoach } from './mobile-operator-coach';
 import { installMobileMoreMenu } from './mobile-more-menu';
 import { installMobileSetupDrawer } from './mobile-setup-drawer';
 import { installMobileWorkbenchConsole } from './mobile-workbench-console';
+import { installMobileWorkspaceOrder } from './mobile-workspace-order';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import './runtime-adapter';
 import './index.css';
@@ -138,6 +139,7 @@ function installMobileRuntimeModules(): void {
   installMobileMoreMenu();
   installMobileSetupDrawer();
   installMobileWorkbenchConsole();
+  installMobileWorkspaceOrder();
 }
 
 function installCodeWorkspacePersistenceRuntime(): void {
