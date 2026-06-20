@@ -1,5 +1,12 @@
 import { buildGitHubHeaders } from '../../github/githubAuthSession';
 import { parseGithubRepoUrl } from '../../github/utils';
+import {
+  createSovereignDependencyLifecycleState,
+  recordSovereignDependencyFailure,
+  recordSovereignDependencySuccess,
+  startSovereignDependencyCheck,
+  type SovereignDependencyLifecycleState,
+} from './sovereignDependencyLifecycle';
 
 export type WorkflowWatchStatus = 'idle' | 'pending' | 'green' | 'red' | 'unknown';
 
@@ -30,6 +37,7 @@ export interface WorkflowWatchReport {
   warnings: string[];
   fixes: string[];
   summary: string;
+  dependencyLifecycle?: SovereignDependencyLifecycleState;
 }
 
 export interface WorkflowWatchValidationReport {
@@ -76,6 +84,14 @@ function hasSecret(value: string): boolean {
     pattern.lastIndex = 0;
     return pattern.test(value);
   });
+}
+
+function createWorkflowDependency(): SovereignDependencyLifecycleState {
+  return createSovereignDependencyLifecycleState(
+    'github-workflow-watch',
+    'workflow',
+    'GitHub workflow checks have not been watched yet.',
+  );
 }
 
 function mapStatus(value?: string | null): WorkflowWatchStatus {
@@ -143,7 +159,7 @@ export function validateWorkflowWatchReport(report: WorkflowWatchReport): Workfl
     warnings.push(...checkReport.warnings.map((warning) => `${check.name || 'check'}: ${warning}`));
   }
 
-  if ([report.commitSha ?? '', report.branch ?? '', report.summary, ...report.errors, ...report.warnings, ...report.fixes].some(hasSecret)) {
+  if ([report.commitSha ?? '', report.branch ?? '', report.summary, ...report.errors, ...report.warnings, ...report.fixes, report.dependencyLifecycle?.message ?? ''].some(hasSecret)) {
     errors.push('Workflow report contains unredacted secret-like content.');
   }
 
@@ -179,6 +195,7 @@ export function buildLocalWorkflowWatchReport(input: {
   errors?: string[];
   warnings?: string[];
   checkedAt?: number;
+  dependencyLifecycle?: SovereignDependencyLifecycleState;
 }): WorkflowWatchReport {
   const checks = input.checks ?? [];
   const errors = input.errors ?? [];
@@ -195,6 +212,7 @@ export function buildLocalWorkflowWatchReport(input: {
     warnings,
     fixes,
     summary: `${checks.length} workflow check(s), ${errors.length} error(s), ${warnings.length} warning(s). Status: ${status}.`,
+    dependencyLifecycle: input.dependencyLifecycle,
   } satisfies WorkflowWatchReport;
 
   assertWorkflowWatchReportValid(report);
@@ -223,6 +241,8 @@ export async function fetchWorkflowWatchReport(input: WorkflowWatchInput): Promi
   const checks: WorkflowCheckItem[] = [];
   const errors: string[] = [];
   const warnings: string[] = [];
+  let dependencyLifecycle = startSovereignDependencyCheck(createWorkflowDependency()).state;
+  let dependencyFailed = false;
 
   try {
     const statusResponse = await fetcher(`${apiBase}/commits/${encodeURIComponent(input.commitSha)}/status`, { headers });
@@ -240,10 +260,16 @@ export async function fetchWorkflowWatchReport(input: WorkflowWatchInput): Promi
         });
       }
     } else if (statusResponse.status !== 404) {
-      warnings.push(`Commit status endpoint returned ${statusResponse.status}.`);
+      dependencyFailed = true;
+      const message = `Commit status endpoint returned ${statusResponse.status}.`;
+      warnings.push(message);
+      dependencyLifecycle = recordSovereignDependencyFailure(dependencyLifecycle, {}, message).state;
     }
   } catch (error) {
-    warnings.push(error instanceof Error ? error.message : 'Commit status request failed.');
+    dependencyFailed = true;
+    const message = error instanceof Error ? error.message : 'Commit status request failed.';
+    warnings.push(message);
+    dependencyLifecycle = recordSovereignDependencyFailure(dependencyLifecycle, {}, message).state;
   }
 
   try {
@@ -262,10 +288,20 @@ export async function fetchWorkflowWatchReport(input: WorkflowWatchInput): Promi
         });
       }
     } else if (checksResponse.status !== 404) {
-      warnings.push(`Check-runs endpoint returned ${checksResponse.status}.`);
+      dependencyFailed = true;
+      const message = `Check-runs endpoint returned ${checksResponse.status}.`;
+      warnings.push(message);
+      dependencyLifecycle = recordSovereignDependencyFailure(dependencyLifecycle, {}, message).state;
     }
   } catch (error) {
-    warnings.push(error instanceof Error ? error.message : 'Check-runs request failed.');
+    dependencyFailed = true;
+    const message = error instanceof Error ? error.message : 'Check-runs request failed.';
+    warnings.push(message);
+    dependencyLifecycle = recordSovereignDependencyFailure(dependencyLifecycle, {}, message).state;
+  }
+
+  if (!dependencyFailed) {
+    dependencyLifecycle = recordSovereignDependencySuccess(dependencyLifecycle, 'GitHub workflow watch endpoints responded.').state;
   }
 
   return buildLocalWorkflowWatchReport({
@@ -274,5 +310,6 @@ export async function fetchWorkflowWatchReport(input: WorkflowWatchInput): Promi
     checks,
     errors,
     warnings,
+    dependencyLifecycle,
   });
 }
