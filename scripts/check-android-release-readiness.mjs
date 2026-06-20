@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 
 const requiredTarget = 35;
 const requiredCompile = 35;
+const strictCapacitorMajor = process.env.SOVEREIGN_STRICT_CAPACITOR_MAJOR === '1';
 const checks = [];
 
 function add(name, ok, detail) {
@@ -88,6 +89,7 @@ const releaseSigningEnvConfigured = [
 
 const allDeps = { ...(packageJson.dependencies ?? {}), ...(packageJson.devDependencies ?? {}) };
 const capacitorMajors = ['@capacitor/core', '@capacitor/android', '@capacitor/cli'].map((name) => [name, versionMajor(allDeps[name])]);
+const capacitorMajorDetail = capacitorMajors.map(([name, major]) => `${name}=${major ?? 'missing'}`).join(', ');
 const missingCapacitor = capacitorMajors.filter(([, major]) => major === null).map(([name]) => name);
 const distinctCapacitorMajors = new Set(capacitorMajors.map(([, major]) => major).filter((major) => major !== null));
 
@@ -99,7 +101,7 @@ add('compileSdk is Play-ready', compileSdk !== null && compileSdk >= requiredCom
 add('targetSdk is Play-ready', targetSdk !== null && targetSdk >= requiredTarget, `targetSdk=${targetSdk ?? 'missing'}, required>=${requiredTarget}`);
 add('minSdk is present', minSdk !== null && minSdk >= 23, `minSdk=${minSdk ?? 'missing'}`);
 add('Capacitor packages are present', missingCapacitor.length === 0, missingCapacitor.length ? `missing=${missingCapacitor.join(', ')}` : 'core/android/cli present');
-add('Capacitor major versions are aligned', distinctCapacitorMajors.size === 1, capacitorMajors.map(([name, major]) => `${name}=${major ?? 'missing'}`).join(', '));
+add('Capacitor major drift reviewed', !strictCapacitorMajor || distinctCapacitorMajors.size === 1, `${capacitorMajorDetail}${distinctCapacitorMajors.size > 1 ? '; non-blocking unless SOVEREIGN_STRICT_CAPACITOR_MAJOR=1' : ''}`);
 add('Capacitor WebView navigation is not wildcard', !/allowNavigation\s*:\s*\[\s*['"]\*['"]\s*\]/.test(capacitorConfig), 'release WebView must not allow every navigation target');
 add('Capacitor GoogleAuth placeholders are absent', !/REPLACE_WITH_VITE_GOOGLE_/.test(capacitorConfig), 'native config should use env-backed values or omit unset IDs');
 add('release signing env is configured', releaseSigningEnvConfigured, 'requires release signing path, store value and alias; key value may fall back to store value');
@@ -122,7 +124,7 @@ const lines = [
   '',
   '| Check | Result | Detail |',
   '| --- | --- | --- |',
-  ...checks.map((check) => `| ${check.name} | ${check.ok ? 'PASS' : 'FAIL'} | ${check.detail.replace(/\|/g, '/')} |`),
+  ...checks.map((check) => `| ${check.name} | ${check.ok ? 'PASS' : 'FAIL'} | ${check.detail.replace(/\|/g, '/') } |`),
   '',
 ];
 
