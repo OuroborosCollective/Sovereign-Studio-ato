@@ -1,163 +1,187 @@
 // @vitest-environment jsdom
-/**
- * App Setup State Integration Test
- * 
- * Verifies that App.tsx correctly publishes __sovereignSetupState
- * for Coach consumption without manual window setting.
- */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// Import the function directly to test it
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { publishSetupStateToWindow, type SetupState } from './features/github/hooks/useSetupState';
+import type { RepoFile } from './features/github/types';
+import {
+  createSovereignDependencyLifecycleState,
+  type SovereignDependencyLifecycleState,
+} from './features/product/runtime/sovereignDependencyLifecycle';
 
-const originalDispatchEvent = window.dispatchEvent;
-let dispatchEventCalls: Event[] = [];
+function createLifecycle(summary = 'GitHub setup state test.'): SovereignDependencyLifecycleState {
+  return createSovereignDependencyLifecycleState('github-repo-tree', 'github', summary);
+}
+
+function createSetupState(overrides: Partial<SetupState> = {}): SetupState {
+  const repoFiles: RepoFile[] = [{ path: 'README.md', type: 'blob', size: 100 }];
+
+  return {
+    repoUrl: 'https://github.com/owner/repo',
+    setRepoUrl: vi.fn(),
+    repoBranch: 'main',
+    setRepoBranch: vi.fn(),
+    githubToken: 'token-for-test-only',
+    setGithubToken: vi.fn(),
+    hasToken: true,
+    tokenStatus: 'valid',
+    redactedToken: 'toke…only',
+    repoFiles,
+    repoStatus: '1 echte Repo-Einträge geladen',
+    isRepoBusy: false,
+    repoSnapshotStatus: {
+      ready: true,
+      fileCount: 1,
+      reason: '1 repository entries loaded.',
+    },
+    setupPhase: 'repo-loaded',
+    loadRepoTree: vi.fn(async () => undefined),
+    restoreRepoSnapshot: vi.fn(),
+    clearRepoSnapshot: vi.fn(),
+    githubDependencyLifecycle: createLifecycle(),
+    dependencyPhase: 'ready',
+    dependencyHealthy: true,
+    ...overrides,
+  };
+}
 
 describe('App Setup State Integration', () => {
-  beforeEach(() => {
-    dispatchEventCalls = [];
-    window.dispatchEvent = vi.fn((event: Event) => {
-      dispatchEventCalls.push(event);
-      return true;
-    });
-  });
-
   afterEach(() => {
-    window.dispatchEvent = originalDispatchEvent;
-    vi.clearAllMocks();
+    delete window.__sovereignSetupState;
+    vi.restoreAllMocks();
   });
 
-  it('App publishes __sovereignSetupState to window with correct structure', () => {
-    const setupState = {
-      repoUrl: 'https://github.com/owner/repo',
-      setRepoUrl: vi.fn(),
-      repoBranch: 'main',
-      setRepoBranch: vi.fn(),
-      githubToken: 'ghp_test1234567890abcdef',
-      setGithubToken: vi.fn(),
-      repoFiles: [{ path: 'README.md', type: 'blob', size: 100 }],
-      repoStatus: '100 echte Repo-Einträge geladen',
-      isRepoBusy: false,
-      githubDependencyLifecycle: { phase: 'ready' as const },
-      loadRepoTree: vi.fn(),
-      restoreRepoSnapshot: vi.fn(),
-      clearRepoSnapshot: vi.fn(),
-      hasToken: true,
-      tokenStatus: 'valid' as const,
-      redactedToken: 'ghp_…cdef',
-      repoSnapshotStatus: { ready: true, fileCount: 1, reason: 'OK' },
-      setupPhase: 'repo-loaded' as const,
-      dependencyPhase: 'ready',
-      dependencyHealthy: true,
-    } as SetupState;
+  it('publishes __sovereignSetupState to window with repo-loaded structure', () => {
+    publishSetupStateToWindow(createSetupState());
 
-    publishSetupStateToWindow(setupState);
-
-    // Verify window state
-    expect(window.__sovereignSetupState).toBeDefined();
-    expect(window.__sovereignSetupState?.hasToken).toBe(true);
-    expect(window.__sovereignSetupState?.tokenStatus).toBe('valid');
-    expect(window.__sovereignSetupState?.setupPhase).toBe('repo-loaded');
-    expect(window.__sovereignSetupState?.repoReady).toBe(true);
-  });
-
-  it('publishSetupStateToWindow dispatches sovereign:setup-state event', () => {
-    const setupState = {
-      repoUrl: '',
-      setRepoUrl: vi.fn(),
-      repoBranch: '',
-      setRepoBranch: vi.fn(),
-      githubToken: '',
-      setGithubToken: vi.fn(),
-      repoFiles: [],
-      repoStatus: 'Noch kein echtes Repo geladen.',
-      isRepoBusy: false,
-      githubDependencyLifecycle: { phase: 'idle' as const },
-      loadRepoTree: vi.fn(),
-      restoreRepoSnapshot: vi.fn(),
-      clearRepoSnapshot: vi.fn(),
-      hasToken: false,
-      tokenStatus: 'none' as const,
-      redactedToken: '<no-token>',
-      repoSnapshotStatus: { ready: false, fileCount: 0, reason: 'No files' },
-      setupPhase: 'no-repo' as const,
-      dependencyPhase: 'idle',
-      dependencyHealthy: true,
-    } as SetupState;
-
-    publishSetupStateToWindow(setupState);
-
-    expect(dispatchEventCalls.some(e => e.type === 'sovereign:setup-state')).toBe(true); // eslint-disable-line @typescript-eslint/no-explicit-any
-  });
-
-  it('Coach reads window.__sovereignSetupState with repo-ready state', () => {
-    window.__sovereignSetupState = {
+    expect(window.__sovereignSetupState).toMatchObject({
       hasToken: true,
       tokenStatus: 'valid',
       repoReady: true,
       setupPhase: 'repo-loaded',
       isBusy: false,
-      status: '500 echte Repo-Einträge geladen',
-      redactedToken: 'ghp_…cdef',
+      status: '1 echte Repo-Einträge geladen',
+      redactedToken: 'toke…only',
       dependencyHealthy: true,
-      updatedAt: Date.now(),
-    };
-
-    // Verify Coach can read this state
-    expect(window.__sovereignSetupState).toBeDefined();
-    expect(window.__sovereignSetupState?.repoReady).toBe(true);
-    expect(window.__sovereignSetupState?.setupPhase).toBe('repo-loaded');
+    });
+    expect(typeof window.__sovereignSetupState?.updatedAt).toBe('number');
   });
 
-  it('Coach reads window.__sovereignSetupState with no-repo state', () => {
-    window.__sovereignSetupState = {
+  it('dispatches sovereign:setup-state event', () => {
+    const listener = vi.fn();
+    window.addEventListener('sovereign:setup-state', listener);
+
+    publishSetupStateToWindow(createSetupState({
+      repoUrl: '',
+      githubToken: '',
+      hasToken: false,
+      tokenStatus: 'none',
+      redactedToken: '<no-token>',
+      repoFiles: [],
+      repoStatus: 'Noch kein echtes Repo geladen.',
+      repoSnapshotStatus: {
+        ready: false,
+        fileCount: 0,
+        reason: 'Load a real repository tree before generating Sovereign packages.',
+      },
+      setupPhase: 'no-repo',
+      dependencyPhase: 'idle',
+      dependencyHealthy: true,
+      githubDependencyLifecycle: createLifecycle('GitHub repository tree has not been checked yet.'),
+    }));
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
       hasToken: false,
       tokenStatus: 'none',
       repoReady: false,
       setupPhase: 'no-repo',
-      isBusy: false,
-      status: 'Noch kein echtes Repo geladen.',
-      redactedToken: '<no-token>',
       dependencyHealthy: true,
-      updatedAt: Date.now(),
-    };
+    });
+
+    window.removeEventListener('sovereign:setup-state', listener);
+  });
+
+  it('publishes repo-ready state for coach consumption', () => {
+    publishSetupStateToWindow(createSetupState({
+      repoFiles: [{ path: 'src/App.tsx', type: 'blob', size: 500 }],
+      repoStatus: '500 echte Repo-Einträge geladen',
+      repoSnapshotStatus: {
+        ready: true,
+        fileCount: 1,
+        reason: '1 repository entries loaded.',
+      },
+      setupPhase: 'repo-loaded',
+    }));
+
+    expect(window.__sovereignSetupState?.repoReady).toBe(true);
+    expect(window.__sovereignSetupState?.setupPhase).toBe('repo-loaded');
+    expect(window.__sovereignSetupState?.status).toBe('500 echte Repo-Einträge geladen');
+  });
+
+  it('publishes no-repo state for coach consumption', () => {
+    publishSetupStateToWindow(createSetupState({
+      repoUrl: '',
+      githubToken: '',
+      hasToken: false,
+      tokenStatus: 'none',
+      redactedToken: '<no-token>',
+      repoFiles: [],
+      repoStatus: 'Noch kein echtes Repo geladen.',
+      repoSnapshotStatus: {
+        ready: false,
+        fileCount: 0,
+        reason: 'Load a real repository tree before generating Sovereign packages.',
+      },
+      setupPhase: 'no-repo',
+      dependencyPhase: 'idle',
+      dependencyHealthy: true,
+      githubDependencyLifecycle: createLifecycle('GitHub repository tree has not been checked yet.'),
+    }));
 
     expect(window.__sovereignSetupState?.setupPhase).toBe('no-repo');
     expect(window.__sovereignSetupState?.repoReady).toBe(false);
+    expect(window.__sovereignSetupState?.hasToken).toBe(false);
   });
 
-  it('Coach reads window.__sovereignSetupState with loading state', () => {
-    window.__sovereignSetupState = {
-      hasToken: true,
-      tokenStatus: 'valid',
-      repoReady: false,
+  it('publishes loading state for coach consumption', () => {
+    publishSetupStateToWindow(createSetupState({
+      repoFiles: [],
+      repoStatus: 'Lade Repository...',
+      isRepoBusy: true,
+      repoSnapshotStatus: {
+        ready: false,
+        fileCount: 0,
+        reason: 'Repository load in progress.',
+      },
       setupPhase: 'repo-loading',
-      isBusy: true,
-      status: 'Lade Repository...',
-      redactedToken: 'ghp_…cdef',
-      dependencyHealthy: true,
-      updatedAt: Date.now(),
-    };
+    }));
 
     expect(window.__sovereignSetupState?.isBusy).toBe(true);
     expect(window.__sovereignSetupState?.setupPhase).toBe('repo-loading');
+    expect(window.__sovereignSetupState?.repoReady).toBe(false);
   });
 
-  it('Coach reads window.__sovereignSetupState with error state', () => {
-    window.__sovereignSetupState = {
+  it('publishes error state for coach consumption', () => {
+    publishSetupStateToWindow(createSetupState({
+      githubToken: '',
       hasToken: false,
       tokenStatus: 'expired',
-      repoReady: false,
-      setupPhase: 'repo-error',
-      isBusy: false,
-      status: 'GitHub Token fehlt',
       redactedToken: '<no-token>',
-      dependencyHealthy: true,
-      updatedAt: Date.now(),
-    };
+      repoFiles: [],
+      repoStatus: 'GitHub Zugang fehlt',
+      repoSnapshotStatus: {
+        ready: false,
+        fileCount: 0,
+        reason: 'Repository could not be loaded.',
+      },
+      setupPhase: 'repo-error',
+      dependencyPhase: 'open',
+      dependencyHealthy: false,
+      githubDependencyLifecycle: createLifecycle('GitHub dependency is unavailable.'),
+    }));
 
     expect(window.__sovereignSetupState?.setupPhase).toBe('repo-error');
     expect(window.__sovereignSetupState?.tokenStatus).toBe('expired');
+    expect(window.__sovereignSetupState?.dependencyHealthy).toBe(false);
   });
 });
