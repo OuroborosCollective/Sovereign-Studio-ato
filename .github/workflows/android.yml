@@ -3,16 +3,23 @@ name: Android Build
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NPM_CONFIG_LEGACY_PEER_DEPS: true
 
+concurrency:
+  group: android-build
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 35
 
     steps:
       - name: Checkout repository
@@ -25,10 +32,16 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Run release unit tests
+        run: npm run test:unit
 
       - name: Build Web App
-        run: npm run build
+        run: npm run build:web
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -37,19 +50,27 @@ jobs:
           java-version: '21'
           cache: gradle
 
-      - name: Sync Capacitor
+      - name: Sync Capacitor Android project
         run: npx cap sync android
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
-      - name: Build Android APK Debug
+      - name: Build Android APKs
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew --no-daemon clean assembleDebug assembleRelease --stacktrace
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
