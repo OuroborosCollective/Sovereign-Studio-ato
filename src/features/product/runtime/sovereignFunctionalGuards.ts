@@ -1,4 +1,5 @@
 import type { RepoFile } from '../../github/types';
+import type { SovereignHealthReport } from './sovereignHealth';
 import type { ImplementationFile, SovereignImplementationPackage } from './sovereignRuntime';
 
 const FORBIDDEN_OUTPUT_PREFIXES = ['.git/', 'node_modules/', 'dist/', 'build/'];
@@ -8,6 +9,13 @@ export interface RepoSnapshotStatus {
   ready: boolean;
   fileCount: number;
   reason: string;
+}
+
+export interface SovereignHealthRuntimeGate {
+  allowed: boolean;
+  status: SovereignHealthReport['status'];
+  reason: string;
+  warnings: string[];
 }
 
 export function normalizeRepoPath(path: string): string {
@@ -84,6 +92,33 @@ export function assertDocsPackageShape(pkg: SovereignImplementationPackage): voi
   if (missing.length) {
     throw new Error(`Sovereign docs package missing required files: ${missing.join(', ')}`);
   }
+}
+
+export function getSovereignHealthRuntimeGate(report: SovereignHealthReport): SovereignHealthRuntimeGate {
+  const warnings = report.recommendations.filter((item) => item.trim().length > 0);
+
+  if (report.status === 'red' || report.status === 'idle') {
+    return {
+      allowed: false,
+      status: report.status,
+      reason: `Health ${report.status} prevents guarded output: ${report.summary}`,
+      warnings,
+    };
+  }
+
+  return {
+    allowed: true,
+    status: report.status,
+    reason: report.status === 'warning'
+      ? `Health warning allows guarded output with review: ${report.summary}`
+      : `Health green allows guarded output: ${report.summary}`,
+    warnings,
+  };
+}
+
+export function assertSovereignHealthAllowsRuntimeOutput(report: SovereignHealthReport): void {
+  const gate = getSovereignHealthRuntimeGate(report);
+  if (!gate.allowed) throw new Error(gate.reason);
 }
 
 export function assertGeneratedPackageReady(pkg: SovereignImplementationPackage, repoFiles?: RepoFile[]): void {
