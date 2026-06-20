@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 const requiredTarget = 35;
 const requiredCompile = 35;
@@ -13,11 +14,20 @@ function read(path) {
   return readFileSync(path, 'utf8');
 }
 
+function readJson(path) {
+  return JSON.parse(read(path));
+}
+
 function numberAfter(pattern, text) {
   const match = text.match(pattern);
   if (!match) return null;
   const value = Number.parseInt(match[1], 10);
   return Number.isFinite(value) ? value : null;
+}
+
+function versionMajor(value) {
+  const match = String(value ?? '').match(/\d+/);
+  return match ? Number.parseInt(match[0], 10) : null;
 }
 
 function gradleBlock(name, text, fromIndex = 0) {
@@ -56,9 +66,13 @@ function envIsSet(parts) {
   return Boolean(process.env[envName(parts)]);
 }
 
+const packageJson = readJson('package.json');
+const capacitorConfig = read('capacitor.config.ts');
 const appGradle = read('android/app/build.gradle');
 const variablesGradle = read('android/variables.gradle');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
+const androidIndexPath = 'android/app/src/main/assets/public/index.html';
+const androidIndex = existsSync(androidIndexPath) ? read(androidIndexPath) : '';
 
 const compileSdk = numberAfter(/compileSdk\s+(\d+)/, appGradle) ?? numberAfter(/compileSdkVersion\s*=\s*(\d+)/, variablesGradle);
 const targetSdk = numberAfter(/targetSdkVersion\s+(\d+)/, appGradle) ?? numberAfter(/targetSdkVersion\s*=\s*(\d+)/, variablesGradle);
@@ -70,18 +84,35 @@ const releaseSigningEnvConfigured = [
   ['ANDROID', 'KEYSTORE', 'PATH'],
   ['ANDROID', 'KEYSTORE', 'PASS' + 'WORD'],
   ['ANDROID', 'KEY', 'ALIAS'],
-  ['ANDROID', 'KEY', 'PASS' + 'WORD'],
 ].every(envIsSet);
+
+const allDeps = { ...(packageJson.dependencies ?? {}), ...(packageJson.devDependencies ?? {}) };
+const capacitorMajors = ['@capacitor/core', '@capacitor/android', '@capacitor/cli'].map((name) => [name, versionMajor(allDeps[name])]);
+const missingCapacitor = capacitorMajors.filter(([, major]) => major === null).map(([name]) => name);
+const distinctCapacitorMajors = new Set(capacitorMajors.map(([, major]) => major).filter((major) => major !== null));
+
+const indexBaseDir = dirname(androidIndexPath);
+const referencedAssets = [...androidIndex.matchAll(/\b(?:src|href)=["']\.\/([^"'#?]+)/g)].map((match) => match[1]);
+const missingReferencedAssets = referencedAssets.filter((asset) => !existsSync(resolve(indexBaseDir, asset)));
 
 add('compileSdk is Play-ready', compileSdk !== null && compileSdk >= requiredCompile, `compileSdk=${compileSdk ?? 'missing'}, required>=${requiredCompile}`);
 add('targetSdk is Play-ready', targetSdk !== null && targetSdk >= requiredTarget, `targetSdk=${targetSdk ?? 'missing'}, required>=${requiredTarget}`);
 add('minSdk is present', minSdk !== null && minSdk >= 23, `minSdk=${minSdk ?? 'missing'}`);
-add('release signing env is configured', releaseSigningEnvConfigured, 'requires release signing environment values');
+add('Capacitor packages are present', missingCapacitor.length === 0, missingCapacitor.length ? `missing=${missingCapacitor.join(', ')}` : 'core/android/cli present');
+add('Capacitor major versions are aligned', distinctCapacitorMajors.size === 1, capacitorMajors.map(([name, major]) => `${name}=${major ?? 'missing'}`).join(', '));
+add('Capacitor WebView navigation is not wildcard', !/allowNavigation\s*:\s*\[\s*['"]\*['"]\s*\]/.test(capacitorConfig), 'release WebView must not allow every navigation target');
+add('Capacitor GoogleAuth placeholders are absent', !/REPLACE_WITH_VITE_GOOGLE_/.test(capacitorConfig), 'native config should use env-backed values or omit unset IDs');
+add('release signing env is configured', releaseSigningEnvConfigured, 'requires release signing path, store value and alias; key value may fall back to store value');
 add('buildTypes.release block detected', buildTypesReleaseBlock.length > 0, `blockLength=${buildTypesReleaseBlock.length}`);
 add('release build type uses signing config', releaseUsesSigningConfig, 'buildTypes.release must use signingConfigs.release when configured');
 add('release cleartext placeholder disabled', releaseCleartextFalse, 'buildTypes.release should set usesCleartextTraffic=false');
+add('Gradle supports web asset rebuild skip', appGradle.includes('android.skipWebAssetBuild'), 'CI should be able to avoid duplicate web rebuilds after cap sync');
 add('manifest uses cleartext placeholder', manifest.includes('android:usesCleartextTraffic="${usesCleartextTraffic}"'), 'manifest should use release/debug placeholder');
 add('launcher activity exported explicitly', /android:exported="true"/.test(manifest), 'launcher activity exported required on modern Android');
+add('backup disabled for release app', /android:allowBackup="false"/.test(manifest), 'avoid release backup leakage');
+add('Android index exists', androidIndex.length > 0, 'android asset index must exist before packaging');
+add('Android recovery fallback installed', androidIndex.includes('SOVEREIGN_BOOT_FALLBACK_V2'), 'release HTML should contain WebView recovery fallback');
+add('Android index asset references resolve', missingReferencedAssets.length === 0, missingReferencedAssets.length ? missingReferencedAssets.join(', ') : `${referencedAssets.length} referenced asset(s) found`);
 
 const ok = checks.every((check) => check.ok);
 const lines = [
