@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RepoFileList } from '../../github/components/RepoFileList';
 import type { RepoFile } from '../../github/types';
 import { buildRepoSnapshotSummary, getRepoSnapshotStatus } from '../runtime/sovereignFunctionalGuards';
@@ -19,6 +19,45 @@ export interface RepoSnapshotContainerProps {
   onSaveView: () => void;
   onRestoreView: () => void;
   onClearView: () => void;
+}
+
+function redactAccessValue(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '<no-token>';
+  if (trimmed.length <= 8) return '<set>';
+  return `${trimmed.slice(0, 4)}…${trimmed.slice(-4)}`;
+}
+
+function setupPhase(input: { ready: boolean; busy: boolean; repoUrl: string; repoStatus: string }): 'no-repo' | 'repo-loading' | 'repo-loaded' | 'repo-error' {
+  if (input.busy) return 'repo-loading';
+  if (input.ready) return 'repo-loaded';
+  if (!input.repoUrl.trim() || input.repoStatus.includes('Noch kein') || input.repoStatus.includes('fehlt')) return 'no-repo';
+  return 'repo-error';
+}
+
+function publishRepoSetupState(input: {
+  repoUrl: string;
+  accessValue: string;
+  repoStatus: string;
+  busy: boolean;
+  ready: boolean;
+}): void {
+  if (typeof window === 'undefined') return;
+
+  const detail = {
+    hasToken: input.accessValue.trim().length > 0,
+    tokenStatus: input.accessValue.trim().length > 0 ? 'valid' as const : 'none' as const,
+    repoReady: input.ready,
+    setupPhase: setupPhase({ ready: input.ready, busy: input.busy, repoUrl: input.repoUrl, repoStatus: input.repoStatus }),
+    isBusy: input.busy,
+    status: input.repoStatus,
+    redactedToken: redactAccessValue(input.accessValue),
+    dependencyHealthy: true,
+    updatedAt: Date.now(),
+  };
+
+  window.__sovereignSetupState = detail;
+  window.dispatchEvent(new CustomEvent('sovereign:setup-state', { detail }));
 }
 
 export function RepoSnapshotContainer({
@@ -44,6 +83,16 @@ export function RepoSnapshotContainer({
   const canLoad = !busy && repoUrl.trim().length > 0;
   const canSave = !busy && status.ready;
   const summary = repoFiles.length ? buildRepoSnapshotSummary(repoFiles) : repoStatus;
+
+  useEffect(() => {
+    publishRepoSetupState({
+      repoUrl,
+      accessValue,
+      repoStatus,
+      busy,
+      ready: status.ready,
+    });
+  }, [accessValue, busy, repoStatus, repoUrl, status.ready]);
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="repo-snapshot-container">
