@@ -103,7 +103,6 @@ const ALL_KNOWN_TABS = new Set<SovereignAutoViewTab>([
 ]);
 
 const VALID_WORKFLOW_STATUSES: WorkflowWatchStatus[] = ['idle', 'pending', 'green', 'red', 'unknown'];
-const MAIN_FLOW_TABS = new Set<SovereignAutoViewTab>(['repo', 'builder', 'files', 'diff', 'workflow', 'repair']);
 const SIDE_TABS = new Set<SovereignAutoViewTab>([
   'memory',
   'remote',
@@ -240,35 +239,28 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (input.isWatchingWorkflow) return switchTo(input, 'workflow', 'Workflow watch is running and should stay visible.');
   if (input.workflowStatus === 'red') return switchTo(input, 'repair', 'Red workflow status should surface the repair view.');
   if (input.workflowStatus === 'pending' || input.workflowStatus === 'unknown') return switchTo(input, 'workflow', 'Non-final workflow status should stay on workflow watch.');
-  if (input.activeTab === 'builder' && !input.activeStep && !input.isPublishing && !input.isWatchingWorkflow) {
+
+  if (input.activeTab === 'builder') {
     return keepCurrent(input, 'Builder was selected by the user and remains the active planning workspace.');
   }
-  if (SIDE_TABS.has(input.activeTab) && input.mode === 'manual') return keepCurrent(input, 'Manual mode keeps intentional side tabs visible when nothing is running.');
-  if (!canRunSuggestionSwitch(input)) return keepCurrent(input, 'Manual override or recent user activity paused suggestion-only auto switching.');
 
-  if (input.repoReady && !input.hasPackage && input.mode !== 'manual' && (input.activeTab === 'repo' || input.activeTab === 'telemetry')) {
-    return switchTo(input, 'builder', 'Repository ready - show Builder for the next step.');
+  if (SIDE_TABS.has(input.activeTab)) {
+    return keepCurrent(input, 'Intentional side tabs stay visible when no runtime step owns the view.');
   }
-  if (!input.hasPackage && input.mode !== 'manual' && input.activeTab === 'repo' && input.hasActiveTelemetry) {
-    return switchTo(input, 'builder', 'Repo status activity detected - show Builder for the next step.');
+
+  if (!canRunSuggestionSwitch(input)) {
+    return keepCurrent(input, 'Manual override or recent user activity paused suggestion-only auto switching.');
   }
-  if (!input.hasPackage && input.mode !== 'manual' && input.activeTab === 'telemetry' && input.hasActiveTelemetry) {
-    return switchTo(input, 'builder', 'Status view is informational - return to Builder.');
-  }
-  if (input.workflowStatus === 'green' && input.hasPackage) {
+
+  if (input.workflowStatus === 'green' && input.hasPackage && input.activeTab === 'workflow') {
     return input.hasDiffSources
       ? switchTo(input, 'diff', 'Green workflow with diff sources loaded - show the diff.')
       : switchTo(input, 'files', 'Green workflow with generated package - show files view.');
   }
-  if (input.hasPackage && input.hasDiffSources && input.workflowStatus === 'idle') return switchTo(input, 'diff', 'Package ready with diff sources - review the generated diff.');
-  if (input.hasPackage && input.mode !== 'manual') return switchTo(input, 'files', 'Auto mode generated package is ready for review.');
-  if (input.hasPackage && input.workflowStatus === 'idle' && input.mode === 'manual') {
-    return MAIN_FLOW_TABS.has(input.activeTab)
-      ? switchTo(input, 'workflow', 'Package ready in manual mode - you can start workflow from here.')
-      : keepCurrent(input, 'Manual mode keeps side tabs visible after package generation.');
-  }
-  if (input.hasActivePatterns && input.hasPackage) return switchTo(input, 'memory', 'Active patterns available with package - show learned patterns.');
-  if (input.hasActiveTelemetry && input.activeTab === 'telemetry') return keepCurrent(input, 'Telemetry is already visible.');
 
-  return keepCurrent(input, 'No auto view change required.');
+  if (input.hasPackage && input.hasDiffSources && input.workflowStatus === 'idle' && input.activeTab === 'files') {
+    return switchTo(input, 'diff', 'Files were reviewed and diff sources are loaded - show the diff.');
+  }
+
+  return keepCurrent(input, 'No auto view change required without an active runtime step or explicit workflow state.');
 }
