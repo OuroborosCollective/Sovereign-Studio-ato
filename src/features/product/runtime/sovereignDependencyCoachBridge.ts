@@ -120,6 +120,17 @@ export function publishSovereignDependencyCoachSignal(
   const signal = buildSovereignDependencyCoachSignal(dependency);
 
   if (typeof window !== 'undefined') {
+    const runtimeCoachState = {
+      lamp: signal.lamp,
+      title: signal.title,
+      message: signal.message,
+      action: signal.action,
+      thinking: signal.thinking,
+      source: signal.source,
+      updatedAt: nowMs,
+    };
+
+    (window as Window & typeof globalThis & { __sovereignRuntimeCoachState?: unknown }).__sovereignRuntimeCoachState = runtimeCoachState;
     window.dispatchEvent(new CustomEvent('sovereign:dependency-lifecycle-state', { detail: { ...signal, updatedAt: nowMs } }));
     window.dispatchEvent(new CustomEvent('sovereign:dependency-telemetry-event', {
       detail: {
@@ -134,17 +145,7 @@ export function publishSovereignDependencyCoachSignal(
         },
       },
     }));
-    window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
-      detail: {
-        lamp: signal.lamp,
-        title: signal.title,
-        message: signal.message,
-        action: signal.action,
-        thinking: signal.thinking,
-        source: signal.source,
-        updatedAt: nowMs,
-      },
-    }));
+    window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', { detail: runtimeCoachState }));
   }
 
   return signal;
