@@ -36,6 +36,7 @@ import {
 } from './features/product/runtime/generatedFileDiffPreview';
 import { assertGeneratedFileReviewSafe, reviewGeneratedFiles } from './features/product/runtime/generatedFileReview';
 import { getRepoSnapshotStatus } from './features/product/runtime/sovereignFunctionalGuards';
+import { assertCanPublishPackage } from './features/product/runtime/appPublishRuntime';
 import { buildRuntimeValidationCoverageReport } from './features/product/runtime/runtimeValidationCoverage';
 import {
   applyScanFindings,
@@ -810,8 +811,13 @@ const App: React.FC = () => {
 
   const publishDraftPrForPackage = async (pkg: SovereignImplementationPackage): Promise<boolean> => {
     const result = await runSequentialStep('draft-pr-publish', async () => {
+      // Guard: all publish preconditions must pass (file review + health gate)
       const review = reviewGeneratedFiles(pkg.files);
       assertGeneratedFileReviewSafe(review);
+      assertCanPublishPackage(pkg, {
+        repoFiles: safeRepoFiles,
+        healthReport,
+      });
 
       if (!githubToken.trim()) {
         throw new Error('GitHub PAT fehlt. Draft PR wird nur mit bewusst eingegebenem Token erstellt.');
