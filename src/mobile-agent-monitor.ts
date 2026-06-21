@@ -42,7 +42,7 @@ type MobileAgentWindow = Window & typeof globalThis & {
   __sovereignSetupState?: SetupStateLike;
 };
 
-const ROOT_ID = 'sovereign-mobile-agent-monitor';
+const ROOT_ID = 'sovereign-mobile-coach';
 const STYLE_ID = 'sovereign-mobile-agent-monitor-style';
 const SETUP_ID = 'sovereign-mobile-setup-drawer';
 const STORAGE_KEY = 'sovereign-mobile-agent-monitor-log';
@@ -351,7 +351,7 @@ function render(): void {
   root.className = state.lamp;
   root.innerHTML = `
     <div class="agent-head">
-      <div><div class="agent-title">Agenten-Monitor</div><div class="agent-badge">Coach · Live Log · Actions</div></div>
+      <div><div class="agent-title">Agenten-Monitor · Sovereign Bot</div><div class="agent-badge">Coach · Live Log · Actions</div></div>
       <div class="agent-face">${escapeHtml(face(`${state.title}${state.message}`))}</div>
     </div>
     <div class="agent-log" data-agent-log="true">
