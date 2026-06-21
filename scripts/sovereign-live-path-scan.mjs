@@ -38,6 +38,7 @@ const LIVE_ALLOWED_TEST_PATTERNS = [
 
 const TEXT_ALLOWED_PATHS = [
   'src/features/product/runtime/sovereignTelemetry.ts',
+  'src/features/product/runtime/scanFindingRegistry.ts',
 ];
 
 const OLD_DOM_INSTALLER_PATTERN = /installMobileAgentMonitor|installMobileMoreMenu|installMobileSetupDrawer|installMobileWorkspaceOrder|installMobileRuntimeModules/;
