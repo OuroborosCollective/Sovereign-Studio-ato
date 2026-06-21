@@ -21,6 +21,22 @@ export interface RepoSnapshotContainerProps {
   onClearView: () => void;
 }
 
+type CoachLamp = 'green' | 'yellow' | 'red';
+
+type RuntimeCoachState = {
+  lamp: CoachLamp;
+  title: string;
+  message: string;
+  action: string;
+  thinking: boolean;
+  source: string;
+  updatedAt: number;
+};
+
+type CoachWindow = Window & typeof globalThis & {
+  __sovereignRuntimeCoachState?: RuntimeCoachState;
+};
+
 function redactAccessValue(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '<no-token>';
@@ -58,6 +74,95 @@ function publishRepoSetupState(input: {
 
   window.__sovereignSetupState = detail;
   window.dispatchEvent(new CustomEvent('sovereign:setup-state', { detail }));
+}
+
+function formatCoachTime(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '--:--:--';
+  return new Date(value).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function coachLampClassName(lamp: CoachLamp): string {
+  if (lamp === 'red') return 'bg-rose-400 shadow-rose-400/40';
+  if (lamp === 'yellow') return 'bg-amber-300 shadow-amber-300/40';
+  return 'bg-emerald-400 shadow-emerald-400/40';
+}
+
+function defaultCoachState(): RuntimeCoachState {
+  return {
+    lamp: 'yellow',
+    title: 'Coach wartet',
+    message: 'Runtime-Coach wird initialisiert.',
+    action: 'Repo prüfen',
+    thinking: false,
+    source: 'runtime-library',
+    updatedAt: Date.now(),
+  };
+}
+
+function ReactCoachMonitor(): React.ReactElement {
+  const [coachState, setCoachState] = useState<RuntimeCoachState>(() => {
+    if (typeof window === 'undefined') return defaultCoachState();
+    return (window as CoachWindow).__sovereignRuntimeCoachState ?? defaultCoachState();
+  });
+  const [log, setLog] = useState<RuntimeCoachState[]>(() => [coachState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleCoachState = (event: Event): void => {
+      const detail = (event as CustomEvent<RuntimeCoachState>).detail;
+      if (!detail || !detail.title || !detail.message) return;
+
+      setCoachState(detail);
+      setLog((current) => {
+        const previous = current[0];
+        if (previous && previous.title === detail.title && previous.message === detail.message && previous.action === detail.action) {
+          return current;
+        }
+        return [detail, ...current].slice(0, 4);
+      });
+    };
+
+    const current = (window as CoachWindow).__sovereignRuntimeCoachState;
+    if (current) handleCoachState(new CustomEvent('sovereign:runtime-coach-state', { detail: current }));
+
+    window.addEventListener('sovereign:runtime-coach-state', handleCoachState as EventListener);
+    return () => window.removeEventListener('sovereign:runtime-coach-state', handleCoachState as EventListener);
+  }, []);
+
+  return (
+    <section className="mb-4 rounded-2xl border border-cyan-400/25 bg-slate-950/75 p-4 text-sm text-slate-100 shadow-lg shadow-cyan-950/20" data-testid="react-coach-monitor">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-black">Agenten-Monitor · Sovereign Bot</h2>
+          <p className="mt-1 text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Coach · Live Log · Runtime</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-xs text-slate-200">
+          <span className={`h-3 w-3 rounded-full shadow ${coachLampClassName(coachState.lamp)}`} />
+          <span>{coachState.thinking ? 'arbeitet' : 'bereit'}</span>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <strong>{coachState.title}</strong>
+          <span className="text-xs text-slate-400">{coachState.source} · {formatCoachTime(coachState.updatedAt)}</span>
+        </div>
+        <p className="mt-2 text-sm leading-5 text-slate-300">{coachState.message}</p>
+        <p className="mt-2 text-xs font-bold text-cyan-200">Aktion: {coachState.action}</p>
+      </div>
+
+      <div className="mt-3 max-h-36 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300">
+        {log.map((entry, index) => (
+          <div key={`${entry.updatedAt}-${entry.title}-${index}`} className={index === 0 ? 'pb-2' : 'border-t border-slate-800 py-2'}>
+            <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${coachLampClassName(entry.lamp)}`} />
+            <span className="font-mono text-slate-400">{formatCoachTime(entry.updatedAt)} · {entry.source}</span>
+            <span className="ml-2">{entry.title}: {entry.message}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 const inputClassName = 'mt-2 block w-full min-w-0 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-base leading-6 text-slate-50 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400/20';
@@ -99,6 +204,8 @@ export function RepoSnapshotContainer({
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="repo-snapshot-container">
+      <ReactCoachMonitor />
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-bold">Repository Snapshot</h2>
