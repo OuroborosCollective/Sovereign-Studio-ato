@@ -47,6 +47,18 @@ describe('maskSecrets', () => {
     expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIzaSy****');
   });
 
+  it('masks various GitHub token prefixes', () => {
+    expect(maskSecrets('gho_1234567890abcdefghijklmnopqrstuvwx')).toBe('gho_****');
+    expect(maskSecrets('ghu_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghu_****');
+    expect(maskSecrets('ghs_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghs_****');
+    expect(maskSecrets('ghr_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghr_****');
+  });
+
+  it('masks Groq API keys', () => {
+    const secret = 'gsk_1234567890abcdefghijklmnopqrstuvwxyz1234';
+    expect(maskSecrets(`Using ${secret}`)).toBe('Using gsk_****');
+  });
+
   it('leaves normal text untouched', () => {
     const text = 'This is a normal error message with no secrets.';
     expect(maskSecrets(text)).toBe(text);

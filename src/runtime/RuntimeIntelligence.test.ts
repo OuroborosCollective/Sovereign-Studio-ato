@@ -930,7 +930,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(events);
 
     expect(serialized).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz1234567890');
-    expect(serialized).toContain('[OPENAI_KEY]');
+    expect(serialized).toContain('[AI_KEY]');
   });
 
   it('redacts authorization headers and bearer tokens', async () => {

@@ -95,9 +95,11 @@ export const SCAN_FINDING_CATEGORIES: ScanFindingCategory[] = [
 export const SCAN_FINDING_SEVERITIES: ScanFindingSeverity[] = ['low', 'medium', 'high', 'critical'];
 
 const SECRET_PATTERNS = [
-  /ghp_[A-Za-z0-9_]{8,}/g,
+  /(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{8,}/g,
   /github_pat_[A-Za-z0-9_]+/g,
+  /AIzaSy[A-Za-z0-9_-]{30,}/g,
   /sk-[A-Za-z0-9_-]{12,}/g,
+  /gsk_[A-Za-z0-9_-]{12,}/g,
   /Bearer\s+[A-Za-z0-9._~+/=-]{10,}/gi,
   /password\s*[:=]\s*[^\s]+/gi,
   /token\s*[:=]\s*[^\s]+/gi,

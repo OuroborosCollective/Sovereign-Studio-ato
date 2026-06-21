@@ -299,7 +299,8 @@ const REDACTION_PATTERNS: { pattern: RegExp; replacement: string }[] = [
   { pattern: /ghs_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
   { pattern: /ghr_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
   { pattern: /AIza[a-zA-Z0-9_-]{30,}/g, replacement: '[GEMINI_KEY]' },
-  { pattern: /sk-[a-zA-Z0-9_-]{20,}/g, replacement: '[OPENAI_KEY]' },
+  { pattern: /sk-[a-zA-Z0-9_-]{20,}/g, replacement: '[AI_KEY]' },
+  { pattern: /gsk_[a-zA-Z0-9_-]{20,}/g, replacement: '[GROQ_KEY]' },
   {
     pattern: /api[_-]?key["']?\s*[:=]\s*["']?[a-zA-Z0-9_-]{20,}/gi,
     replacement: 'api_key=[API_KEY]',

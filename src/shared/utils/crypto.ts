@@ -9,14 +9,14 @@ export function maskSecrets(text: string): string {
 
   let masked = text;
 
-  // GitHub Personal Access Tokens (Classic and Fine-grained)
-  masked = masked.replace(/ghp_[a-zA-Z0-9]{30,40}/g, 'ghp_****');
+  // GitHub Personal Access Tokens (Classic, Fine-grained, and other scopes)
+  masked = masked.replace(/(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9]{30,40}/g, '$1_****');
   masked = masked.replace(/github_pat_[a-zA-Z0-9]{20,30}_[a-zA-Z0-9]{50,90}/g, 'github_pat_****');
 
-  // Google Cloud API Keys
+  // Google Cloud / Gemini API Keys
   masked = masked.replace(/AIzaSy[a-zA-Z0-9_-]{30,40}/g, 'AIzaSy****');
 
-  // AI provider style keys
+  // AI provider style keys (OpenAI, Anthropic, Groq)
   masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,100}/g, 'sk-****');
   masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,100}/g, 'gsk_****');
 

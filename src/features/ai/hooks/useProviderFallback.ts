@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { maskSecrets } from '../../../shared/utils/crypto';
 import { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError } from '../providerManager';
 import { geminiService } from '../geminiService';
 
@@ -123,9 +124,9 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
       return response;
 
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = maskSecrets(err instanceof Error ? err.message : String(err));
       setError(errorMsg);
-      throw err;
+      throw new Error(errorMsg);
     } finally {
       setIsLoading(false);
     }
