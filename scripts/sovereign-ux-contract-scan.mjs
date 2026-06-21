@@ -128,10 +128,16 @@ function writeReport() {
 function run() {
   requireFile('src/index.css', 'Shared CSS and design tokens are required.');
   requireFile('src/App.tsx', 'App shell is required for global UX flow.');
+  requireFile('src/main.tsx', 'App entry is required for boot-path style imports.');
+  requireFile('src/styles/arelogic-brand.css', 'ARELogic visual tokens must be part of the app style contract.');
   requireFile('src/features/product/containers/RepoSnapshotContainer.tsx', 'Repo UX container is required.');
   requireFile('src/features/product/containers/BuilderContainer.tsx', 'Builder UX container is required.');
   requireFile('src/features/product/runtime/sovereignProductTemplate.ts', 'Product template UX contract is required.');
   requireFile('src/features/product/runtime/sovereignStyleContract.ts', 'Product style contract is required.');
+  requireFile('src/features/product/runtime/sovereignComponentContracts.ts', 'Product component contract is required.');
+  requireFile('src/features/product/runtime/arelogicBrandContract.ts', 'ARELogic brand contract is required.');
+
+  requireText('src/main.tsx', /\.\/styles\/arelogic-brand\.css/, 'main:brand-css-import', 'App entry must import ARELogic visual tokens after the base style layer.');
 
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repository Snapshot/, 'repo:title-visible', 'Repo card title must be visible.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Load Repo/, 'repo:load-action-visible', 'Repo load action must be visible.');
@@ -160,6 +166,26 @@ function run() {
   requireText('src/features/product/runtime/sovereignStyleContract.ts', /SOVEREIGN_TAB_STYLE_CONTRACT/, 'style:tab-contract', 'Style contract must expose tab style metadata.');
   requireText('src/features/product/runtime/sovereignStyleContract.ts', /dataRole/, 'style:data-role-contract', 'Style contract must expose stable data roles.');
   requireText('src/features/product/runtime/sovereignStyleContract.ts', /mobilePriority/, 'style:mobile-priority-contract', 'Style contract must expose mobile priorities.');
+
+  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_APP_SHELL_CONTRACT/, 'component:app-shell-contract', 'Component contract must expose app shell contract.');
+  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_TABBAR_CONTRACT/, 'component:tabbar-contract', 'Component contract must expose tabbar contract.');
+  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_ACTION_BUTTON_CONTRACT/, 'component:action-button-contract', 'Component contract must expose action button contract.');
+  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_TEST_ID_PATTERN/, 'component:test-id-pattern', 'Component contract must expose test id pattern.');
+
+  requireText('src/features/product/runtime/arelogicBrandContract.ts', /ARELOGIC_BRAND_PRIORITY/, 'brand:priority-contract', 'Brand contract must expose priority ordering.');
+  requireText('src/features/product/runtime/arelogicBrandContract.ts', /runtime-contracts[\s\S]*accessibility-contracts[\s\S]*component-contracts[\s\S]*brand-visual-layer/, 'brand:priority-order', 'Brand visuals must remain behind runtime, accessibility and component contracts.');
+  requireText('src/features/product/runtime/arelogicBrandContract.ts', /ARELOGIC_BRAND_TOKENS/, 'brand:token-contract', 'Brand contract must expose token definitions.');
+  requireText('src/features/product/runtime/arelogicBrandContract.ts', /--are-void/, 'brand:void-token-contract', 'Brand contract must expose ARE void token.');
+  requireText('src/features/product/runtime/arelogicBrandContract.ts', /--are-ion/, 'brand:ion-token-contract', 'Brand contract must expose ARE ion token.');
+  requireText('src/features/product/runtime/arelogicBrandContract.ts', /--are-matter/, 'brand:matter-token-contract', 'Brand contract must expose ARE matter token.');
+  requireText('src/features/product/runtime/arelogicBrandContract.ts', /SOVEREIGN_APP_CLASSES/, 'brand:sovereign-style-link', 'Brand contract must attach to Sovereign style contracts instead of replacing them.');
+
+  requireText('src/styles/arelogic-brand.css', /--are-void/, 'brand-css:void-token', 'Brand CSS must expose ARE void token.');
+  requireText('src/styles/arelogic-brand.css', /--are-ion/, 'brand-css:ion-token', 'Brand CSS must expose ARE ion token.');
+  requireText('src/styles/arelogic-brand.css', /--are-matter/, 'brand-css:matter-token', 'Brand CSS must expose ARE matter token.');
+  requireText('src/styles/arelogic-brand.css', /\.sovereign-app-shell/, 'brand-css:shell-binding', 'Brand CSS must bind through existing Sovereign shell class.');
+  requireText('src/styles/arelogic-brand.css', /\.sovereign-tab-active/, 'brand-css:tab-binding', 'Brand CSS must bind through existing Sovereign tab class.');
+  requireText('src/styles/arelogic-brand.css', /\.sovereign-status-dot-green/, 'brand-css:status-binding', 'Brand CSS must bind through existing Sovereign status classes.');
 
   requireText('src/index.css', /:root/, 'css:root-tokens', 'CSS root tokens must exist.');
   requireText('src/index.css', /--surface-1/, 'css:surface-token', 'Surface design token must exist.');
