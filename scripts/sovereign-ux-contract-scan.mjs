@@ -131,6 +131,7 @@ function run() {
   requireFile('src/features/product/containers/RepoSnapshotContainer.tsx', 'Repo UX container is required.');
   requireFile('src/features/product/containers/BuilderContainer.tsx', 'Builder UX container is required.');
   requireFile('src/features/product/runtime/sovereignProductTemplate.ts', 'Product template UX contract is required.');
+  requireFile('src/features/product/runtime/sovereignStyleContract.ts', 'Product style contract is required.');
 
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repository Snapshot/, 'repo:title-visible', 'Repo card title must be visible.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Load Repo/, 'repo:load-action-visible', 'Repo load action must be visible.');
@@ -155,6 +156,11 @@ function run() {
   requireText('src/features/product/runtime/sovereignProductTemplate.ts', /diff/, 'template:diff-tab', 'Product template must expose diff tab.');
   requireText('src/features/product/runtime/sovereignProductTemplate.ts', /monitor|telemetry/, 'template:monitor-or-telemetry-tab', 'Product template must expose monitor or telemetry visibility.');
 
+  requireText('src/features/product/runtime/sovereignStyleContract.ts', /SOVEREIGN_APP_CLASSES/, 'style:app-classes-contract', 'Style contract must expose app class names.');
+  requireText('src/features/product/runtime/sovereignStyleContract.ts', /SOVEREIGN_TAB_STYLE_CONTRACT/, 'style:tab-contract', 'Style contract must expose tab style metadata.');
+  requireText('src/features/product/runtime/sovereignStyleContract.ts', /dataRole/, 'style:data-role-contract', 'Style contract must expose stable data roles.');
+  requireText('src/features/product/runtime/sovereignStyleContract.ts', /mobilePriority/, 'style:mobile-priority-contract', 'Style contract must expose mobile priorities.');
+
   requireText('src/index.css', /:root/, 'css:root-tokens', 'CSS root tokens must exist.');
   requireText('src/index.css', /--surface-1/, 'css:surface-token', 'Surface design token must exist.');
   requireText('src/index.css', /--accent/, 'css:accent-token', 'Accent design token must exist.');
@@ -165,6 +171,14 @@ function run() {
   requireText('src/index.css', /@media \(max-width: 767px\)/, 'css:mobile-media-query', 'Mobile media query must exist.');
   requireText('src/index.css', /border-radius/, 'css:card-rounding', 'Card/pill visual rounding must be defined.');
   requireText('src/index.css', /box-shadow/, 'css:depth', 'Visual depth/shadow must be defined.');
+  requireText('src/index.css', /\.sovereign-app-shell/, 'css:app-shell-class', 'Stable app shell class must exist.');
+  requireText('src/index.css', /\.sovereign-app-title/, 'css:app-title-class', 'Stable app title class must exist.');
+  requireText('src/index.css', /\.sovereign-tabbar/, 'css:tabbar-class', 'Stable tabbar class must exist.');
+  requireText('src/index.css', /\.sovereign-tab\b/, 'css:tab-class', 'Stable tab class must exist.');
+  requireText('src/index.css', /\.sovereign-tab-active/, 'css:active-tab-class', 'Stable active tab class must exist.');
+  requireText('src/index.css', /\.sovereign-card/, 'css:card-class', 'Stable card class must exist.');
+  requireText('src/index.css', /\.sovereign-select/, 'css:select-class', 'Stable select class must exist.');
+  requireText('src/index.css', /\.sovereign-status-pill/, 'css:status-pill-class', 'Stable status pill class must exist.');
 
   if (exists('src/global-runtime-monitor.tsx')) {
     requireText('src/global-runtime-monitor.tsx', /Agenten-Monitor|Sovereign Bot|Next Action|Log anzeigen|Log einklappen/, 'monitor:global-copy', 'Global monitor must provide readable status copy and log controls.');
@@ -177,6 +191,9 @@ function run() {
     warn('monitor:global-missing', 'Global monitor is absent. Repo-local monitor may still be present, but global one-log UX is preferred.');
     warnText('src/features/product/containers/RepoSnapshotContainer.tsx', /Agenten-Monitor/, 'monitor:repo-local-copy', 'Repo-local monitor copy should exist if no global monitor exists.');
   }
+
+  warnText('src/App.tsx', /sovereign-app-shell/, 'app:stable-shell-class-bound', 'App shell should bind stable shell class in a follow-up PR.');
+  warnText('src/App.tsx', /sovereign-tabbar/, 'app:stable-tabbar-class-bound', 'App tabbar should bind stable tabbar class in a follow-up PR.');
 
   requireOneOf(
     ['src/App.tsx', 'src/global-runtime-monitor.tsx', 'src/features/product/containers/RepoSnapshotContainer.tsx'],
