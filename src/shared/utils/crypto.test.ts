@@ -14,6 +14,13 @@ describe('maskSecrets', () => {
     expect(maskSecrets(text)).toBe('Could not authenticate with github_pat_****');
   });
 
+  it('masks GitHub token variants', () => {
+    expect(maskSecrets('gho_1234567890abcdefghijklmnopqrstuvwx')).toBe('gho_****');
+    expect(maskSecrets('ghu_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghu_****');
+    expect(maskSecrets('ghs_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghs_****');
+    expect(maskSecrets('ghr_1234567890abcdefghijklmnopqrstuvwx')).toBe('ghr_****');
+  });
+
   it('masks Google API keys', () => {
     const secret = 'AIzaSyA-1234567890_abcdefghijklmnopqrst';
     const text = `API key ${secret} is invalid`;
@@ -39,6 +46,8 @@ describe('maskSecrets', () => {
   it('masks label-based credentials', () => {
     expect(maskSecrets('password: my-secret-password')).toBe('password: ****');
     expect(maskSecrets('token=ghp_12345')).toBe('token: ****');
+    expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key: ****');
+    expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token: ****');
     expect(maskSecrets('secret: somevalue')).toBe('secret: ****');
   });
 
