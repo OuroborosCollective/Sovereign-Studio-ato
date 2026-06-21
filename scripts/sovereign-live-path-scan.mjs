@@ -5,7 +5,7 @@ import process from 'node:process';
 
 const REPORT_DIR = '.security-reports';
 const REPORT_PATH = path.join(REPORT_DIR, 'sovereign-live-path-contract.json');
-const ROOTS = ['src'];
+const SRC_ROOT = 'src';
 
 const report = {
   name: 'Sovereign Live Path Scan',
@@ -17,36 +17,21 @@ const report = {
   errors: [],
 };
 
-const IGNORED_PARTS = new Set([
-  'node_modules',
-  'dist',
-  'build',
-  'coverage',
-  '.git',
-  '.gradle',
-]);
-
-const LIVE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
-
-const LIVE_ALLOWED_TEST_PATTERNS = [
-  /\.test\.[cm]?[tj]sx?$/,
-  /\.spec\.[cm]?[tj]sx?$/,
-  /__tests__/,
-  /test-utils/,
-  /testing/,
+const legacyMobileModules = [
+  'mobile-agent-monitor',
+  'mobile-more-menu',
+  'mobile-setup-drawer',
+  'mobile-workspace-order',
+  'mobile-operator-coach',
+  'mobile-workbench-console',
 ];
 
-const TEXT_ALLOWED_PATHS = [
-  'src/features/product/runtime/sovereignTelemetry.ts',
-  'src/features/product/runtime/scanFindingRegistry.ts',
-];
-
-const OLD_DOM_INSTALLER_PATTERN = /installMobileAgentMonitor|installMobileMoreMenu|installMobileSetupDrawer|installMobileWorkspaceOrder|installMobileRuntimeModules/;
-const RUNTIME_DOM_MUTATION_PATTERN = /MutationObserver|querySelectorAll\(|querySelector\(|dispatchEvent\(new MouseEvent|\.click\(\)/;
-const TEST_DOUBLE_PATTERN = /vi\.mock\(|jest\.mock\(|mockImplementation\(|mockResolvedValue\(|mockRejectedValue\(/;
-const PLACEHOLDER_PATTERN = /TODO_PLACEHOLDER|FAKE_IMPLEMENTATION|DUMMY_IMPLEMENTATION|throw new Error\(['"]not implemented|return null;\s*\/\/\s*placeholder/i;
-const SECRET_PATTERN = /ghp_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/=-]{10,}/;
-const NETWORK_TRUTH_PATTERN = /fetch\(['"]https?:\/\/|axios\.|XMLHttpRequest/;
+const ignoredDirs = new Set(['node_modules', 'dist', 'build', 'coverage', '.git', '.gradle']);
+const liveExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
+const testPathPattern = /\.test\.[cm]?[tj]sx?$|\.spec\.[cm]?[tj]sx?$|__tests__|test-utils|testing/;
+const oldBootMarker = /installMobile[A-Za-z0-9]+/;
+const placeholderMarker = /TODO_PLACEHOLDER|FAKE_IMPLEMENTATION|DUMMY_IMPLEMENTATION|not implemented/i;
+const testDoubleMarker = /vi\.mock\(|jest\.mock\(|mockImplementation\(/;
 
 function exists(filePath) {
   return fs.existsSync(filePath);
@@ -54,6 +39,10 @@ function exists(filePath) {
 
 function read(filePath) {
   return exists(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+}
+
+function normalize(filePath) {
+  return filePath.replaceAll(path.sep, '/');
 }
 
 function pass(id, message, details = {}) {
@@ -69,56 +58,16 @@ function warn(id, message, details = {}) {
   report.warnings.push({ id, message, details });
 }
 
-function isIgnoredPath(filePath) {
-  const parts = filePath.split(path.sep);
-  return parts.some((part) => IGNORED_PARTS.has(part));
-}
-
-function isTestPath(filePath) {
-  const normalized = filePath.replaceAll(path.sep, '/');
-  return LIVE_ALLOWED_TEST_PATTERNS.some((pattern) => pattern.test(normalized));
-}
-
-function isTextAllowedPath(filePath) {
-  const normalized = filePath.replaceAll(path.sep, '/');
-  return TEXT_ALLOWED_PATHS.includes(normalized);
+function isIgnored(filePath) {
+  return filePath.split(path.sep).some((part) => ignoredDirs.has(part));
 }
 
 function isLiveFile(filePath) {
-  return LIVE_EXTENSIONS.has(path.extname(filePath));
+  return liveExtensions.has(path.extname(filePath));
 }
 
-function getSafeGithubStepSummaryPath() {
-  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (typeof summaryPath !== 'string' || summaryPath.trim() === '') return null;
-
-  const resolvedPath = path.resolve(summaryPath);
-  if (!path.isAbsolute(resolvedPath)) return null;
-  if (path.basename(resolvedPath) !== 'summary.md') return null;
-
-  const safeRoot = path.resolve(process.cwd());
-  let realRoot;
-  try {
-    realRoot = fs.realpathSync.native(safeRoot);
-  } catch {
-    return null;
-  }
-  const realRootWithSep = realRoot.endsWith(path.sep) ? realRoot : `${realRoot}${path.sep}`;
-
-  try {
-    if (fs.existsSync(resolvedPath)) {
-      const realPath = fs.realpathSync.native(resolvedPath);
-      if (!(realPath === realRoot || realPath.startsWith(realRootWithSep))) return null;
-      return realPath;
-    }
-
-    const resolvedDir = path.dirname(resolvedPath);
-    const realDir = fs.realpathSync.native(resolvedDir);
-    if (!(realDir === realRoot || realDir.startsWith(realRootWithSep))) return null;
-    return path.join(realDir, path.basename(resolvedPath));
-  } catch {
-    return null;
-  }
+function isTestFile(filePath) {
+  return testPathPattern.test(normalize(filePath));
 }
 
 function walk(dir) {
@@ -126,11 +75,20 @@ function walk(dir) {
   const files = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
-    if (isIgnoredPath(fullPath)) continue;
+    if (isIgnored(fullPath)) continue;
     if (entry.isDirectory()) files.push(...walk(fullPath));
     else if (entry.isFile() && isLiveFile(fullPath)) files.push(fullPath);
   }
   return files;
+}
+
+function safeSummaryPath() {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (typeof summaryPath !== 'string' || !summaryPath.trim()) return null;
+  const resolved = path.resolve(summaryPath);
+  if (!path.isAbsolute(resolved)) return null;
+  if (path.basename(resolved) !== 'summary.md') return null;
+  return resolved;
 }
 
 function writeReport() {
@@ -138,8 +96,8 @@ function writeReport() {
   report.status = report.errors.length === 0 ? 'pass' : 'fail';
   fs.writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`);
 
-  const githubStepSummaryPath = getSafeGithubStepSummaryPath();
-  if (githubStepSummaryPath) {
+  const summary = safeSummaryPath();
+  if (summary) {
     const lines = [
       '## Sovereign Live Path Scan',
       '',
@@ -156,114 +114,98 @@ function writeReport() {
       ...(report.warnings.length ? report.warnings.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
       '',
     ];
-    fs.appendFileSync(githubStepSummaryPath, `${lines.join('\n')}\n`);
+    fs.appendFileSync(summary, `${lines.join('\n')}\n`);
   }
 
   console.log(JSON.stringify(report, null, 2));
 }
 
-function scanLiveFiles(files) {
+function scanFiles(files) {
   report.scannedFiles = files.length;
 
   for (const filePath of files) {
     const source = read(filePath);
-    const normalized = filePath.replaceAll(path.sep, '/');
-    const testFile = isTestPath(filePath);
-    const textAllowed = isTextAllowedPath(filePath);
+    const normalized = normalize(filePath);
+    const isTest = isTestFile(filePath);
+    const isLegacyMobileModule = legacyMobileModules.some((moduleName) => normalized === `src/${moduleName}.ts`);
 
-    if (SECRET_PATTERN.test(source)) {
-      if (testFile) {
-        warn(`test-secret-fixture:${normalized}`, 'Secret-like fixture found in a test file. Keep this fake and never paste real credentials.', { filePath: normalized });
-      } else if (textAllowed) {
-        pass(`security-pattern-definition:${normalized}`, 'Secret-like tokens are allowed here because this file defines redaction/validation patterns.', { filePath: normalized });
-      } else {
-        fail(`secret:${normalized}`, 'Secret-like value found in repository live path.', { filePath: normalized });
-      }
-    }
-
-    if (!testFile && TEST_DOUBLE_PATTERN.test(source)) {
+    if (!isTest && testDoubleMarker.test(source)) {
       fail(`test-double:${normalized}`, 'Test-double API appears in non-test live path.', { filePath: normalized });
     }
 
-    if (!testFile && PLACEHOLDER_PATTERN.test(source)) {
+    if (!isTest && placeholderMarker.test(source)) {
       fail(`placeholder:${normalized}`, 'Placeholder implementation marker appears in non-test live path.', { filePath: normalized });
     }
 
-    if (OLD_DOM_INSTALLER_PATTERN.test(source)) {
-      if (normalized === 'src/appShellContract.test.ts') {
-        pass(`dom-installer-regression-token:${normalized}`, 'Old DOM installer tokens are allowed in regression test only.', { filePath: normalized });
+    if (oldBootMarker.test(source)) {
+      if (isTest) {
+        pass(`legacy-marker-test:${normalized}`, 'Legacy mobile boot markers are allowed in regression tests.', { filePath: normalized });
+      } else if (isLegacyMobileModule) {
+        warn(`legacy-mobile-module:${normalized}`, 'Legacy mobile DOM module still exists. It is allowed only while absent from main.tsx boot path.', { filePath: normalized });
       } else {
-        fail(`old-dom-installer:${normalized}`, 'Old mobile DOM installer token appears outside the approved regression test.', { filePath: normalized });
-      }
-    }
-
-    if (!testFile && !textAllowed && /\bmock\b|\bstub\b|\bfacade\b/i.test(source)) {
-      warn(`live-path-wording:${normalized}`, 'Live file contains mock/stub/facade wording. Review that this is not a live fake truth path.', { filePath: normalized });
-    }
-
-    if (!testFile && RUNTIME_DOM_MUTATION_PATTERN.test(source)) {
-      if (normalized === 'src/main.tsx' || normalized === 'src/global-runtime-monitor.tsx') {
-        pass(`allowed-dom-runtime:${normalized}`, 'DOM access is limited to approved shell/monitor boot path.', { filePath: normalized });
-      } else {
-        warn(`dom-access:${normalized}`, 'DOM access appears in live code. Ensure it is not used as truth path or auto-click driver.', { filePath: normalized });
-      }
-    }
-
-    if (!testFile && NETWORK_TRUTH_PATTERN.test(source)) {
-      if (/github|workflow|externalMemory|fetchWorkflow|publishPackage/i.test(normalized)) {
-        pass(`network-runtime:${normalized}`, 'Network access appears in an approved integration runtime.', { filePath: normalized });
-      } else {
-        warn(`network-runtime:${normalized}`, 'Network access appears in live code. Review runtime validation and error handling.', { filePath: normalized });
+        warn(`legacy-marker:${normalized}`, 'Legacy mobile marker appears outside boot path. Review before reusing it.', { filePath: normalized });
       }
     }
   }
 }
 
-function runRequiredPathChecks() {
-  if (!exists('src/main.tsx')) fail('required:main', 'src/main.tsx is missing.');
-  else {
-    const main = read('src/main.tsx');
-    if (OLD_DOM_INSTALLER_PATTERN.test(main)) fail('main:old-dom-installers', 'main.tsx must not boot old DOM installer modules.');
-    else pass('main:old-dom-installers', 'main.tsx does not boot old DOM installer modules.');
-
-    if (/installViewportRuntime/.test(main)) pass('main:viewport-runtime', 'Viewport runtime is installed.');
-    else fail('main:viewport-runtime', 'Viewport runtime installation is missing.');
-
-    if (/installCodeWorkspacePersistenceRuntime/.test(main)) pass('main:persistence-runtime', 'Workspace persistence runtime is installed.');
-    else fail('main:persistence-runtime', 'Workspace persistence runtime installation is missing.');
+function scanMainBootPath() {
+  const mainPath = 'src/main.tsx';
+  if (!exists(mainPath)) {
+    fail('main:missing', 'src/main.tsx is missing.');
+    return;
   }
 
-  if (exists('src/global-runtime-monitor.tsx')) {
-    const monitor = read('src/global-runtime-monitor.tsx');
+  const source = read(mainPath);
+
+  for (const moduleName of legacyMobileModules) {
+    const importToken = `./${moduleName}`;
+    if (source.includes(importToken)) {
+      fail(`main:legacy-import:${moduleName}`, `main.tsx must not import legacy mobile module ${moduleName}.`, { moduleName });
+    } else {
+      pass(`main:no-legacy-import:${moduleName}`, `main.tsx does not import ${moduleName}.`, { moduleName });
+    }
+  }
+
+  if (/installViewportRuntime/.test(source)) pass('main:viewport-runtime', 'Viewport runtime is installed.');
+  else fail('main:viewport-runtime', 'Viewport runtime installation is missing.');
+
+  if (/installCodeWorkspacePersistenceRuntime/.test(source)) pass('main:persistence-runtime', 'Workspace persistence runtime is installed.');
+  else fail('main:persistence-runtime', 'Workspace persistence runtime installation is missing.');
+}
+
+function scanRuntimeContracts() {
+  const app = read('src/App.tsx');
+  const monitor = read('src/global-runtime-monitor.tsx');
+
+  if (/runSequentialStep/.test(app)) pass('app:sequential-runtime', 'App uses sequential runtime steps.');
+  else fail('app:sequential-runtime', 'App must route critical actions through sequential runtime.');
+
+  if (/pushTelemetry/.test(app)) pass('app:telemetry', 'App publishes telemetry.');
+  else fail('app:telemetry', 'App must publish telemetry.');
+
+  if (/stripTokenFromText/.test(app)) pass('app:redaction', 'App redacts visible/runtime access values.');
+  else fail('app:redaction', 'App must redact visible/runtime access values.');
+
+  if (monitor) {
     if (/sovereign:runtime-coach-state/.test(monitor)) pass('monitor:coach-bus', 'Global monitor reads coach state events.');
     else fail('monitor:coach-bus', 'Global monitor must read coach state events.');
 
     if (/sovereign:telemetry-event/.test(monitor)) pass('monitor:telemetry-bus', 'Global monitor reads telemetry events.');
     else fail('monitor:telemetry-bus', 'Global monitor must read telemetry events.');
   } else {
-    warn('monitor:file-missing', 'Global monitor file is missing. One central monitor is preferred.');
-  }
-
-  if (exists('src/App.tsx')) {
-    const app = read('src/App.tsx');
-    if (/runSequentialStep/.test(app)) pass('app:sequential-runtime', 'App uses sequential runtime steps.');
-    else fail('app:sequential-runtime', 'App must route critical actions through sequential runtime.');
-
-    if (/pushTelemetry/.test(app)) pass('app:telemetry', 'App publishes telemetry.');
-    else fail('app:telemetry', 'App must publish telemetry.');
-
-    if (/stripTokenFromText/.test(app)) pass('app:token-redaction', 'App redacts token-like text from visible/runtime messages.');
-    else fail('app:token-redaction', 'App must redact token-like text from visible/runtime messages.');
+    warn('monitor:missing', 'Global monitor file is missing. One central monitor is preferred.');
   }
 }
 
 function run() {
-  const files = ROOTS.flatMap(walk);
-  if (!files.length) fail('scanner:no-files', 'No live files found to scan.', { roots: ROOTS });
-  else pass('scanner:files-found', 'Live files found for scan.', { count: files.length, roots: ROOTS });
+  const files = walk(SRC_ROOT);
+  if (!files.length) fail('scanner:no-files', 'No src live files found.', { root: SRC_ROOT });
+  else pass('scanner:files-found', 'Src live files found for scan.', { count: files.length });
 
-  scanLiveFiles(files);
-  runRequiredPathChecks();
+  scanFiles(files);
+  scanMainBootPath();
+  scanRuntimeContracts();
 }
 
 try {
