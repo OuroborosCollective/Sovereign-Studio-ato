@@ -226,6 +226,7 @@ installCodeWorkspacePersistenceRuntime();
 initPostHog();
 initGoogleAuth();
 bootApp();
+installMobileRuntimeModules();
 
 const scheduleMobileRuntime = (): void => {
   if (typeof window === 'undefined') return;
