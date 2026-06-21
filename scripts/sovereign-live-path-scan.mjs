@@ -137,7 +137,11 @@ function scanLiveFiles(files) {
     const textAllowed = isTextAllowedPath(filePath);
 
     if (SECRET_PATTERN.test(source)) {
-      fail(`secret:${normalized}`, 'Secret-like value found in repository live path.', { filePath: normalized });
+      if (testFile) {
+        warn(`test-secret-fixture:${normalized}`, 'Secret-like fixture found in a test file. Keep this fake and never paste real credentials.', { filePath: normalized });
+      } else {
+        fail(`secret:${normalized}`, 'Secret-like value found in repository live path.', { filePath: normalized });
+      }
     }
 
     if (!testFile && TEST_DOUBLE_PATTERN.test(source)) {
