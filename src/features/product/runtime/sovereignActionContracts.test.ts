@@ -48,11 +48,13 @@ describe('sovereign action contracts', () => {
     }
   });
 
-  it('has valid action kinds', () => {
+  it('has valid action kinds and stable patterns', () => {
     const validKinds = ['primary', 'secondary', 'destructive', 'diagnostic', 'navigation'];
 
     for (const contract of SOVEREIGN_ACTION_CONTRACTS) {
       expect(validKinds).toContain(contract.kind);
+      expect(contract.dataRole).toMatch(/^action-[a-z][a-z0-9-]*$/);
+      expect(contract.testId).toMatch(/^[a-z][a-z0-9-]*__[a-z][a-z0-9-]*$/);
     }
   });
 });
@@ -122,8 +124,8 @@ describe('sovereign action contracts: repair-log', () => {
     expect(SOVEREIGN_ACTION_REPAIR_LOG.dataRole).toBe('action-repair-log');
   });
 
-  it('is destructive kind', () => {
-    expect(SOVEREIGN_ACTION_REPAIR_LOG.kind).toBe('destructive');
+  it('is diagnostic kind', () => {
+    expect(SOVEREIGN_ACTION_REPAIR_LOG.kind).toBe('diagnostic');
   });
 
   it('requires repo', () => {
@@ -138,38 +140,39 @@ describe('sovereign action contracts: repair-log', () => {
 describe('sovereign action contracts: repository-dependent actions', () => {
   it('marks save-session as requiring repo', () => {
     const contract = getSovereignActionContract('save-session');
-    expect(contract?.requiresRepo).toBe(true);
+    expect(contract.requiresRepo).toBe(true);
   });
 
-  it('marks analyze-mission as requiring repo', () => {
+  it('marks analyze-mission as requiring repo and diagnostic kind', () => {
     const contract = getSovereignActionContract('analyze-mission');
-    expect(contract?.requiresRepo).toBe(true);
+    expect(contract.requiresRepo).toBe(true);
+    expect(contract.kind).toBe('diagnostic');
   });
 
   it('marks start-task as requiring repo', () => {
     const contract = getSovereignActionContract('start-task');
-    expect(contract?.requiresRepo).toBe(true);
+    expect(contract.requiresRepo).toBe(true);
   });
 });
 
 describe('sovereign action contracts: navigation and secondary actions', () => {
   it('marks monitor-toggle as navigation kind', () => {
     const contract = getSovereignActionContract('monitor-toggle');
-    expect(contract?.kind).toBe('navigation');
+    expect(contract.kind).toBe('navigation');
   });
 
   it('marks restore-session as secondary kind', () => {
     const contract = getSovereignActionContract('restore-session');
-    expect(contract?.kind).toBe('secondary');
+    expect(contract.kind).toBe('secondary');
   });
 
   it('marks clear-view as secondary kind', () => {
     const contract = getSovereignActionContract('clear-view');
-    expect(contract?.kind).toBe('secondary');
+    expect(contract.kind).toBe('secondary');
   });
 
   it('monitor-toggle does not require repo', () => {
     const contract = getSovereignActionContract('monitor-toggle');
-    expect(contract?.requiresRepo).toBe(false);
+    expect(contract.requiresRepo).toBe(false);
   });
 });
