@@ -116,6 +116,171 @@ button {
   min-width: 0;
 }
 
+#sovereign-global-runtime-monitor-root {
+  padding: calc(var(--safe-top) + 0.75rem) max(0.9rem, var(--safe-right)) 0 max(0.9rem, var(--safe-left));
+}
+
+.sovereign-global-monitor {
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  border-radius: 1.35rem;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(34, 211, 238, 0.18), transparent 30%),
+    linear-gradient(135deg, rgba(2, 6, 23, 0.96), rgba(15, 23, 42, 0.92));
+  box-shadow: 0 18px 45px rgba(8, 47, 73, 0.22);
+  color: rgb(226, 232, 240);
+  margin: 0 auto 0.85rem;
+  max-width: 72rem;
+  padding: 1rem;
+}
+
+.sovereign-monitor-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.sovereign-monitor-head h2 {
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.2;
+  margin: 0.1rem 0 0;
+}
+
+.sovereign-eyebrow {
+  color: rgb(165, 243, 252);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.sovereign-monitor-toggle {
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.54);
+  color: rgb(207, 250, 254);
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-height: 2.15rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.sovereign-monitor-status {
+  align-items: flex-start;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.72);
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.8rem;
+  padding: 0.85rem;
+}
+
+.sovereign-status-dot {
+  border-radius: 999px;
+  box-shadow: 0 0 20px currentColor;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 0.8rem;
+  margin-top: 0.2rem;
+  width: 0.8rem;
+}
+
+.sovereign-status-dot-green {
+  background: var(--good);
+  color: rgba(52, 211, 153, 0.42);
+}
+
+.sovereign-status-dot-yellow {
+  background: var(--warn);
+  color: rgba(251, 191, 36, 0.42);
+}
+
+.sovereign-status-dot-red {
+  background: var(--bad);
+  color: rgba(251, 113, 133, 0.42);
+}
+
+.sovereign-monitor-copy {
+  min-width: 0;
+}
+
+.sovereign-monitor-copy strong,
+.sovereign-monitor-copy span,
+.sovereign-monitor-copy p,
+.sovereign-monitor-copy em {
+  display: block;
+}
+
+.sovereign-monitor-copy strong {
+  color: rgb(248, 250, 252);
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.sovereign-monitor-copy span {
+  color: rgb(148, 163, 184);
+  font-size: 0.72rem;
+  margin-top: 0.16rem;
+}
+
+.sovereign-monitor-copy p {
+  color: rgb(203, 213, 225);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  margin: 0.42rem 0 0;
+}
+
+.sovereign-monitor-copy em {
+  color: rgb(103, 232, 249);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+  margin-top: 0.42rem;
+}
+
+.sovereign-monitor-log {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 1rem;
+  background: rgba(2, 6, 23, 0.66);
+  margin-top: 0.75rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  padding: 0.55rem;
+}
+
+.sovereign-monitor-line {
+  align-items: flex-start;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.62rem 0.2rem;
+}
+
+.sovereign-monitor-line:first-child {
+  border-top: 0;
+}
+
+.sovereign-monitor-line span:not(.sovereign-status-dot) {
+  color: rgb(148, 163, 184);
+  display: block;
+  font-size: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.sovereign-monitor-line p {
+  color: rgb(203, 213, 225);
+  font-size: 0.79rem;
+  line-height: 1.4;
+  margin: 0.16rem 0 0;
+}
+
+[data-testid="repo-snapshot-container"] [data-testid="react-coach-monitor"] {
+  display: none;
+}
+
 @media (max-width: 767px) {
   #root > div.min-h-screen {
     padding-left: max(0.9rem, var(--safe-left));

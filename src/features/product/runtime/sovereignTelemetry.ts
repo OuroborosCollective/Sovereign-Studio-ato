@@ -32,6 +32,10 @@ export interface SovereignTelemetryValidationReport {
   summary: string;
 }
 
+type TelemetryWindow = Window & typeof globalThis & {
+  __sovereignTelemetryEvents?: SovereignTelemetryEvent[];
+};
+
 const MAX_EVENTS = 120;
 const MAX_TEXT = 1200;
 const TELEMETRY_LEVELS: SovereignTelemetryLevel[] = ['info', 'success', 'warning', 'error'];
@@ -71,6 +75,15 @@ function validateDetails(details?: SovereignTelemetryEvent['details']): string[]
     if (typeof value === 'number' && !Number.isFinite(value)) errors.push(`Telemetry detail ${key} is not a finite number.`);
   }
   return errors;
+}
+
+function publishTelemetryEvent(event: SovereignTelemetryEvent, maxEvents = MAX_EVENTS): void {
+  if (typeof window === 'undefined') return;
+
+  const win = window as TelemetryWindow;
+  const current = Array.isArray(win.__sovereignTelemetryEvents) ? win.__sovereignTelemetryEvents : [];
+  win.__sovereignTelemetryEvents = [...current, event].slice(-Math.max(1, maxEvents));
+  window.dispatchEvent(new CustomEvent('sovereign:telemetry-event', { detail: event }));
 }
 
 export function validateTelemetryEvent(event: SovereignTelemetryEvent): SovereignTelemetryValidationReport {
@@ -179,6 +192,7 @@ export function appendTelemetryEvent(
     },
   } satisfies SovereignTelemetryState;
   assertTelemetryStateValid(next);
+  publishTelemetryEvent(event, maxEvents);
   return next;
 }
 

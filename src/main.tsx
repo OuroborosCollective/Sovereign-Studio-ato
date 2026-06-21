@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { installGlobalRuntimeMonitor } from './global-runtime-monitor';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import './runtime-adapter';
 import './index.css';
@@ -204,6 +205,7 @@ function bootApp(): void {
 installIdleCallbackFallback();
 installViewportRuntime();
 installCodeWorkspacePersistenceRuntime();
+installGlobalRuntimeMonitor();
 initPostHog();
 initGoogleAuth();
 bootApp();
