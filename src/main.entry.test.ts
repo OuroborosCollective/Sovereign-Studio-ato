@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { SOVEREIGN_PRODUCT_TEMPLATE } from './features/product/runtime/sovereignProductTemplate';
 
 function readSource(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -15,28 +16,27 @@ describe('main app entry', () => {
     expect(main).not.toContain('<ProductMagicApp />');
   });
 
-  it('keeps visible container app navigation and runtime surfaces available', () => {
+  it('derives tabs from the Product Template as single source of truth', () => {
     const app = readSource('./App.tsx');
 
-    for (const label of [
-      'Repo',
-      'Builder',
-      'Files',
-      'Diff',
-      'Workflow',
-      'Repair',
-      'Remote Memory',
-      'Pattern Memory',
-      'Telemetry',
-      'Live Monitor',
-      'Readiness',
-      'Integrity',
-      'Findings',
-      'Health',
-      'Runtime',
-      'Coverage',
-    ]) {
-      expect(app).toContain(`label: '${label}'`);
+    // App should import the Product Template
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE');
+    // App should use startTab from template
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
+    // All visible tabs from the template should be available
+    const visibleTabs = SOVEREIGN_PRODUCT_TEMPLATE.tabs.filter((t) => t.userVisible);
+    expect(visibleTabs.length).toBeGreaterThan(0);
+    // Check that the template is used to derive tabs
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
+  });
+
+  it('keeps visible container app navigation and runtime surfaces available via Product Template', () => {
+    const app = readSource('./App.tsx');
+
+    // All visible tabs from the Product Template should be handled in app rendering
+    const visibleTabs = SOVEREIGN_PRODUCT_TEMPLATE.tabs.filter((t) => t.userVisible);
+    for (const tab of visibleTabs) {
+      expect(app).toContain(`'${tab.id}'`);
     }
   });
 
