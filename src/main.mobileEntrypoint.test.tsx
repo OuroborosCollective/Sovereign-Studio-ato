@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
     render,
     createRoot: vi.fn(() => ({ render })),
     posthogInit: vi.fn(),
+    installGlobalRuntimeMonitor: vi.fn(),
     restoreCanvasStateMirror: vi.fn(async () => undefined),
     flushCanvasStateMirror: vi.fn(async () => undefined),
     warn: vi.fn(),
@@ -32,6 +33,10 @@ vi.mock('./App', () => ({
 
 vi.mock('./components/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+}));
+
+vi.mock('./global-runtime-monitor', () => ({
+  installGlobalRuntimeMonitor: mocks.installGlobalRuntimeMonitor,
 }));
 
 vi.mock('./store', () => ({
@@ -76,7 +81,7 @@ beforeEach(() => {
 });
 
 describe('mobile entrypoint runtime boot', () => {
-  it('installs viewport and persistence then renders the React root', async () => {
+  it('installs viewport, monitor and persistence then renders the React root', async () => {
     await import('./main');
 
     const win = window as TestWindow;
@@ -97,15 +102,17 @@ describe('mobile entrypoint runtime boot', () => {
       dispatch: true,
       clearInvalid: true,
     });
+    expect(mocks.installGlobalRuntimeMonitor).toHaveBeenCalledOnce();
     expect(mocks.createRoot).toHaveBeenCalledWith(document.getElementById('root'));
     expect(mocks.render).toHaveBeenCalledOnce();
   });
 
-  it('warns and skips React boot when root container is missing', async () => {
+  it('warns and skips React boot when root container is missing while monitor install remains safe', async () => {
     document.body.innerHTML = '';
 
     await import('./main');
 
+    expect(mocks.installGlobalRuntimeMonitor).toHaveBeenCalledOnce();
     expect(mocks.warn).toHaveBeenCalledWith('React root container #root not found.');
     expect(mocks.createRoot).not.toHaveBeenCalled();
   });
