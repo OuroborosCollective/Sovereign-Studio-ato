@@ -58,7 +58,7 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
   it('surfaces latest telemetry health report without an explicit gate argument', () => {
     const telemetry = appendTelemetryEvent(
       createInitialTelemetryState(),
-      createTelemetryEvent('github', 'error', 'dependency:github:blocked', 'GitHub dependency unavailable.', undefined, 1_000),
+      createTelemetryEvent('github', 'error', 'dependency:github:blocked', 'GitHub dependency unavailable.', undefined, 1000),
     );
 
     buildSovereignHealthReport({
@@ -108,17 +108,8 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
 
   describe('sequential runtime step states', () => {
     it('shows running state for repo-load step', () => {
-      const runtime = startSequentialStep(
-        createSequentialRuntimeState(),
-        'repo-load',
-        { repoReady: false },
-      );
-
-      const state = deriveCoachStateFromRuntime(
-        runtime,
-        false,
-        false,
-      );
+      const runtime = startSequentialStep(createSequentialRuntimeState(), 'repo-load', { repoReady: false });
+      const state = deriveCoachStateFromRuntime(runtime, false, false);
 
       expect(state).toMatchObject({
         lamp: 'green',
@@ -128,17 +119,8 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
     });
 
     it('shows running state for package-build step', () => {
-      const runtime = startSequentialStep(
-        createSequentialRuntimeState(),
-        'package-build',
-        { repoReady: true },
-      );
-
-      const state = deriveCoachStateFromRuntime(
-        runtime,
-        true,
-        false,
-      );
+      const runtime = startSequentialStep(createSequentialRuntimeState(), 'package-build', { repoReady: true });
+      const state = deriveCoachStateFromRuntime(runtime, true, false);
 
       expect(state).toMatchObject({
         lamp: 'green',
@@ -148,13 +130,7 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
     });
 
     it('shows failed state when a step has failed', () => {
-      const runtime = startSequentialStep(
-        createSequentialRuntimeState(),
-        'package-build',
-        { repoReady: true },
-      );
-
-      // Simulate failure - need to include the 'step' field
+      const runtime = startSequentialStep(createSequentialRuntimeState(), 'package-build', { repoReady: true });
       const failed = {
         ...runtime,
         steps: {
@@ -163,12 +139,7 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
         },
         activeStep: 'package-build' as const,
       };
-
-      const state = deriveCoachStateFromRuntime(
-        failed,
-        true,
-        false,
-      );
+      const state = deriveCoachStateFromRuntime(failed, true, false);
 
       expect(state).toMatchObject({
         lamp: 'red',
@@ -180,14 +151,7 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
 
   describe('workflow states', () => {
     it('shows publishing state when isPublishing is true', () => {
-      const state = deriveCoachStateFromRuntime(
-        createSequentialRuntimeState(),
-        true,
-        false,
-        undefined,
-        true, // isPublishing
-        false,
-      );
+      const state = deriveCoachStateFromRuntime(createSequentialRuntimeState(), true, false, undefined, true, false);
 
       expect(state).toMatchObject({
         lamp: 'green',
@@ -197,14 +161,7 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
     });
 
     it('shows watching workflow state', () => {
-      const state = deriveCoachStateFromRuntime(
-        createSequentialRuntimeState(),
-        true,
-        false,
-        undefined,
-        false,
-        true, // isWatchingWorkflow
-      );
+      const state = deriveCoachStateFromRuntime(createSequentialRuntimeState(), true, false, undefined, false, true);
 
       expect(state).toMatchObject({
         lamp: 'green',
@@ -214,12 +171,7 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
     });
 
     it('shows red when workflow status is red', () => {
-      const state = deriveCoachStateFromRuntime(
-        createSequentialRuntimeState(),
-        true,
-        false,
-        'red',
-      );
+      const state = deriveCoachStateFromRuntime(createSequentialRuntimeState(), true, false, 'red');
 
       expect(state).toMatchObject({
         lamp: 'red',
@@ -228,31 +180,48 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
         action: 'Repair prüfen',
       });
     });
-  });
 
-  describe('package states', () => {
-    it('shows green when package is ready and workflow is green', () => {
+    it('routes pending workflow to workflow instead of stale package diff guidance', () => {
       const state = deriveCoachStateFromRuntime(
         createSequentialRuntimeState(),
         true,
-        true, // hasPackage
-        'green',
+        true,
+        'pending',
+        false,
+        false,
+        false,
+        {
+          allowed: true,
+          status: 'green',
+          reason: 'Health green allows guarded output.',
+        },
       );
+
+      expect(state).toMatchObject({
+        lamp: 'yellow',
+        title: 'Workflow wartet',
+        action: 'Workflow prüfen',
+        source: 'workflow',
+        thinking: false,
+      });
+      expect(state.message).not.toContain('Diff und Files prüfen');
+    });
+  });
+
+  describe('package states', () => {
+    it('shows green workflow complete when package is ready and workflow is green', () => {
+      const state = deriveCoachStateFromRuntime(createSequentialRuntimeState(), true, true, 'green');
 
       expect(state).toMatchObject({
         lamp: 'green',
         thinking: false,
-        source: 'runtime-library',
+        source: 'workflow',
+        title: 'Workflow grün',
       });
     });
 
-    it('shows ready for review when package is ready', () => {
-      const state = deriveCoachStateFromRuntime(
-        createSequentialRuntimeState(),
-        true,
-        true, // hasPackage
-        'idle',
-      );
+    it('shows ready for review when package is ready and workflow has no active status', () => {
+      const state = deriveCoachStateFromRuntime(createSequentialRuntimeState(), true, true, 'idle');
 
       expect(state).toMatchObject({
         lamp: 'green',
@@ -265,17 +234,7 @@ describe('useCoachRuntimeBridge runtime derivation', () => {
 
   describe('pattern memory states', () => {
     it('includes pattern memory status in state derivation', () => {
-      const state = deriveCoachStateFromRuntime(
-        createSequentialRuntimeState(),
-        true,
-        false,
-        undefined,
-        false,
-        false,
-        true, // hasActivePatterns
-      );
-
-      // State should be derived successfully even with active patterns
+      const state = deriveCoachStateFromRuntime(createSequentialRuntimeState(), true, false, undefined, false, false, true);
       expect(state.source).toBeTruthy();
     });
   });
