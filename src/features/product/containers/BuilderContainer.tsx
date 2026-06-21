@@ -47,6 +47,10 @@ const IDEA_OPTIONS: IdeaOption[] = [
   },
 ];
 
+const primaryButtonClassName = 'rounded-2xl border border-cyan-300/40 bg-cyan-500/15 px-4 py-3 text-sm font-black text-cyan-50 shadow-lg shadow-cyan-950/20 disabled:cursor-not-allowed disabled:opacity-45';
+const secondaryButtonClassName = 'rounded-2xl border border-slate-600 bg-slate-900/80 px-4 py-3 text-sm font-bold text-slate-100 disabled:cursor-not-allowed disabled:opacity-45';
+const dangerButtonClassName = 'rounded-2xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-100 disabled:cursor-not-allowed disabled:opacity-45';
+
 function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
   if (!clean) return option.text;
@@ -111,18 +115,24 @@ export function BuilderContainer({
   };
 
   return (
-    <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="builder-container">
+    <section className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200" data-testid="builder-container">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-bold">Ideenfabrik · Chat Auftrag</h2>
-          <p className="mt-1 text-xs text-slate-400">Klicke eine Option an, ergänze deinen Wunsch in einfachen Worten und lass daraus einen ausführbaren Auftrag bauen.</p>
+          <h2 className="font-black">Ideenfabrik · Chat Auftrag</h2>
+          <p className="mt-1 text-xs text-slate-400">Schritt 2: Wunsch eintragen, Auftrag analysieren und danach Auftrag starten.</p>
         </div>
         <span className={repoReady ? 'rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200' : 'rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200'}>
           {repoReady ? 'Repo snapshot ready' : 'Repo snapshot required'}
         </span>
       </div>
 
-      <p className="mt-2 text-xs text-slate-400">{repoReason}</p>
+      <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+        <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-emerald-100">1 · Repo ist die Quelle</div>
+        <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 p-3 text-cyan-100">2 · Auftrag analysieren</div>
+        <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/10 p-3 text-indigo-100">3 · Auftrag starten</div>
+      </div>
+
+      <p className="mt-3 text-xs text-slate-400">{repoReason}</p>
       {state.disabledReason ? <p className="mt-1 text-xs text-amber-300">{state.disabledReason}</p> : null}
 
       <div className="mt-4 flex flex-wrap gap-2" aria-label="Ideenfabrik Optionen">
@@ -141,7 +151,7 @@ export function BuilderContainer({
       <label className="mt-4 block">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Chatfeld für Nutzerwunsch</span>
         <textarea
-          className="mt-2 min-h-28 w-full rounded border border-slate-700 bg-slate-900 p-2 text-sm"
+          className="mt-2 min-h-28 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-base leading-6"
           value={wishText}
           onChange={(event) => setWishText(event.target.value)}
           placeholder="Schreib einfach: mach die App verständlicher, zeig Logs, prüfe Buildfehler, mach einen Draft PR..."
@@ -149,11 +159,11 @@ export function BuilderContainer({
         />
       </label>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" onClick={analyzeWish}>Vorschlag analysieren</button>
-        <button onClick={onGenerateIdeas} disabled={generateDisabled} type="button">Auftrag in Produktion geben</button>
-        <button onClick={onGenerateErrorWorkflow} disabled={generateDisabled} type="button">Fehlerlog reparieren</button>
-        <button onClick={onPublishDraftPr} disabled={publishDisabled} type="button">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <button className={secondaryButtonClassName} type="button" onClick={analyzeWish}>2 · Auftrag analysieren</button>
+        <button className={primaryButtonClassName} onClick={onGenerateIdeas} disabled={generateDisabled} type="button">3 · Auftrag starten</button>
+        <button className={dangerButtonClassName} onClick={onGenerateErrorWorkflow} disabled={generateDisabled} type="button">Fehlerlog reparieren</button>
+        <button className={secondaryButtonClassName} onClick={onPublishDraftPr} disabled={publishDisabled} type="button">
           {builderPublishLabel(isPublishing)}
         </button>
       </div>
@@ -161,7 +171,7 @@ export function BuilderContainer({
       <label className="mt-4 block">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Analysierter ausführbarer Auftrag</span>
         <textarea
-          className="mt-2 min-h-36 w-full rounded border border-slate-700 bg-slate-900 p-2 text-sm"
+          className="mt-2 min-h-36 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm leading-6"
           value={mission}
           onChange={(event) => onMissionChange(event.target.value)}
           placeholder="Hier erscheint nach Analyse der ausführbare Auftrag. Du kannst ihn vor Produktion noch ändern."
@@ -169,11 +179,11 @@ export function BuilderContainer({
         />
       </label>
 
-      <pre className="mt-3 whitespace-pre-wrap rounded bg-black/40 p-3 text-xs text-slate-300">{sovereignSummary}</pre>
+      <pre className="mt-3 whitespace-pre-wrap rounded-xl bg-black/40 p-3 text-xs text-slate-300">{sovereignSummary}</pre>
       {state.hasPreview ? (
         <details className="mt-3">
           <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-slate-400">Brain preview</summary>
-          <pre className="mt-2 max-h-96 overflow-auto rounded bg-black/40 p-3 text-[11px] text-slate-300">{sovereignPreview}</pre>
+          <pre className="mt-2 max-h-96 overflow-auto rounded-xl bg-black/40 p-3 text-[11px] text-slate-300">{sovereignPreview}</pre>
         </details>
       ) : null}
     </section>
