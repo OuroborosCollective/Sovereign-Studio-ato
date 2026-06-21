@@ -171,8 +171,8 @@ function run() {
 
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /sovereign:setup-state/, 'repo:setup-state-event', 'Repo setup publishes setup-state events.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /onLoadRepo/, 'repo:load-handler-prop', 'Repo container exposes load handler.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile role.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"/, 'repo:mobile-access-input', 'Access input keeps Android/mobile role.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
   requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren/, 'builder:analyze-visible', 'Builder exposes Auftrag analysieren.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten/, 'builder:start-visible', 'Builder exposes Auftrag starten.');
