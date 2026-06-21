@@ -36,6 +36,7 @@ describe('sovereign release guide runtime', () => {
   it('keeps progress on 5 percent steps', () => {
     const progress = deriveReleaseGuideProgress(input({
       title: 'Package bereit',
+      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
       action: 'Weiter mit Diff',
     }));
 
@@ -43,13 +44,24 @@ describe('sovereign release guide runtime', () => {
     expect(progress).toBe(70);
   });
 
-  it('detects repo and builder targets', () => {
-    expect(inferReleaseGuideTab(input({ action: 'Load Repo' }))).toBe('repo');
-    expect(inferReleaseGuideTab(input({ action: 'Auftrag analysieren' }))).toBe('builder');
+  it('detects repo and builder targets without mixed default guidance', () => {
+    expect(inferReleaseGuideTab(input({
+      title: 'Repository laden',
+      message: 'Bitte GitHub-URL eingeben und Repository laden.',
+      action: 'Load Repo',
+    }))).toBe('repo');
+
+    expect(inferReleaseGuideTab(input({
+      title: 'Bereit für Auftrag',
+      message: 'Repository ist geladen. Auftrag eingeben und Package erstellen.',
+      action: 'Auftrag analysieren',
+    }))).toBe('builder');
   });
 
   it('locks next while thinking', () => {
     const state = deriveReleaseGuideState(input({
+      title: 'Package bereit',
+      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
       action: 'Weiter mit Diff',
       thinking: true,
     }));
