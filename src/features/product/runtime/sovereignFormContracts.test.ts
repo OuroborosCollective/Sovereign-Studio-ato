@@ -43,11 +43,13 @@ describe('sovereign form contracts', () => {
     }
   });
 
-  it('has valid input types', () => {
+  it('has valid input types and stable patterns', () => {
     const validInputTypes = ['text', 'url', 'password', 'email', 'number', 'textarea', 'select'];
 
     for (const contract of SOVEREIGN_FORM_CONTRACTS) {
       expect(validInputTypes).toContain(contract.inputType);
+      expect(contract.dataRole).toMatch(/^(input|textarea|select)-[a-z][a-z0-9-]*$/);
+      expect(contract.testId).toMatch(/^[a-z][a-z0-9-]*__[a-z][a-z0-9-]*$/);
     }
   });
 });
