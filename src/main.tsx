@@ -7,6 +7,7 @@ import { installGlobalRuntimeMonitor } from './global-runtime-monitor';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import './runtime-adapter';
 import './index.css';
+import './styles/arelogic-brand.css';
 
 type IdleDeadlineLike = {
   didTimeout: boolean;
