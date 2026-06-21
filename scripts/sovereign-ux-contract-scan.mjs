@@ -60,6 +60,24 @@ function countMatches(filePath, pattern) {
   return [...source.matchAll(regex)].length;
 }
 
+function getSafeGithubStepSummaryPath() {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (typeof summaryPath !== 'string' || summaryPath.trim() === '') return null;
+
+  const resolvedSummaryPath = path.resolve(summaryPath);
+  const runnerTemp = process.env.RUNNER_TEMP;
+
+  // In GitHub Actions, summary file is expected under RUNNER_TEMP.
+  // If RUNNER_TEMP is unavailable, fall back to allowing only absolute normalized path.
+  if (typeof runnerTemp === 'string' && runnerTemp.trim() !== '') {
+    const resolvedRunnerTemp = path.resolve(runnerTemp);
+    const relative = path.relative(resolvedRunnerTemp, resolvedSummaryPath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  }
+
+  return resolvedSummaryPath;
+}
+
 function requireAtLeast(filePath, pattern, min, id, message) {
   const count = countMatches(filePath, pattern);
   if (count >= min) pass(id, message, { filePath, count, min });
@@ -83,7 +101,8 @@ function writeReport() {
   report.status = report.errors.length === 0 ? 'pass' : 'fail';
   fs.writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`);
 
-  if (process.env.GITHUB_STEP_SUMMARY) {
+  const githubStepSummaryPath = getSafeGithubStepSummaryPath();
+  if (githubStepSummaryPath) {
     const lines = [
       '## Sovereign UX Contract Scan',
       '',
@@ -99,7 +118,11 @@ function writeReport() {
       ...(report.warnings.length ? report.warnings.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
       '',
     ];
-    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+    fs.appendFileSync(githubStepSummaryPath, `${lines.join('\n')}\n`);
+  } else if (process.env.GITHUB_STEP_SUMMARY) {
+    warn('github-step-summary-path', 'Skipping unsafe GITHUB_STEP_SUMMARY path.', {
+      providedPath: process.env.GITHUB_STEP_SUMMARY,
+    });
   }
 
   console.log(JSON.stringify(report, null, 2));
