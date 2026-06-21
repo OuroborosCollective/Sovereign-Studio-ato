@@ -25,6 +25,7 @@ function baseProps() {
 
 afterEach(() => {
   delete window.__sovereignSetupState;
+  delete (window as typeof window & { __sovereignRuntimeCoachState?: unknown }).__sovereignRuntimeCoachState;
 });
 
 describe('RepoSnapshotContainer', () => {
@@ -34,6 +35,46 @@ describe('RepoSnapshotContainer', () => {
     expect(screen.getByTestId('repo-snapshot-container')).toBeDefined();
     expect(screen.getByText(/Snapshot: 1 entries/i)).toBeDefined();
     expect(screen.getByText(/Remote Aha Memory/i)).toBeDefined();
+  });
+
+  it('renders the runtime coach monitor without DOM installers', () => {
+    (window as typeof window & { __sovereignRuntimeCoachState?: unknown }).__sovereignRuntimeCoachState = {
+      lamp: 'green',
+      title: 'Bereit für Auftrag',
+      message: 'Repository ist geladen. Auftrag eingeben und Package erstellen.',
+      action: 'Package bauen',
+      thinking: false,
+      source: 'runtime-library',
+      updatedAt: 1_700_000_000_000,
+    };
+
+    render(<RepoSnapshotContainer {...baseProps()} />);
+
+    expect(screen.getByTestId('react-coach-monitor')).toBeDefined();
+    expect(screen.getByText('Agenten-Monitor · Sovereign Bot')).toBeDefined();
+    expect(screen.getByText('Bereit für Auftrag')).toBeDefined();
+    expect(screen.getByText(/Aktion: Package bauen/i)).toBeDefined();
+  });
+
+  it('updates coach monitor from runtime coach events', async () => {
+    render(<RepoSnapshotContainer {...baseProps()} />);
+
+    window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
+      detail: {
+        lamp: 'red',
+        title: 'Runtime Stopper',
+        message: 'Runtime wartet auf einen sicheren nächsten Schritt.',
+        action: 'Telemetry und Health prüfen',
+        thinking: false,
+        source: 'telemetry',
+        updatedAt: 1_700_000_001_000,
+      },
+    }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Runtime Stopper')).toBeDefined();
+      expect(screen.getByText(/Telemetry und Health prüfen/i)).toBeDefined();
+    });
   });
 
   it('emits input changes and button actions', () => {
