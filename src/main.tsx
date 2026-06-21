@@ -227,10 +227,3 @@ initPostHog();
 initGoogleAuth();
 bootApp();
 installMobileRuntimeModules();
-
-const scheduleMobileRuntime = (): void => {
-  if (typeof window === 'undefined') return;
-  window.setTimeout(installMobileRuntimeModules, 800);
-};
-
-scheduleMobileRuntime();
