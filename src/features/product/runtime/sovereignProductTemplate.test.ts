@@ -31,14 +31,13 @@ describe('sovereign product template contract', () => {
     expect(() => assertSovereignProductTemplateValid()).not.toThrow();
   });
 
-  it('locks the main product flow to repo -> builder -> files -> diff -> workflow', () => {
+  it('locks the Android primary product flow to repo -> builder -> files -> diff', () => {
     expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('repo');
     expect(SOVEREIGN_PRODUCT_TEMPLATE.primaryFlow).toEqual([
       'repo',
       'builder',
       'files',
       'diff',
-      'workflow',
     ]);
 
     for (const [index, tab] of SOVEREIGN_PRODUCT_TEMPLATE.primaryFlow.entries()) {
@@ -49,11 +48,13 @@ describe('sovereign product template contract', () => {
     }
   });
 
-  it('keeps operator and diagnostics out of the main flow', () => {
+  it('keeps workflow, operator and diagnostics out of the main flow', () => {
     const sideAndDiagnostic = [
       ...SOVEREIGN_PRODUCT_TEMPLATE.sideTabs,
       ...SOVEREIGN_PRODUCT_TEMPLATE.diagnosticTabs,
     ];
+
+    expect(SOVEREIGN_PRODUCT_TEMPLATE.sideTabs).toContain('workflow');
 
     for (const tab of sideAndDiagnostic) {
       const definition = getSovereignProductTemplateTab(tab);
@@ -81,14 +82,14 @@ describe('sovereign product template contract', () => {
     expect(report.errors.join(' | ')).toContain('Template must start in repo tab');
   });
 
-  it('rejects template drift away from the locked main flow order', () => {
+  it('rejects template drift away from the locked Android primary flow order', () => {
     const broken = cloneTemplate();
-    broken.primaryFlow = ['repo', 'files', 'builder', 'diff', 'workflow'];
+    broken.primaryFlow = ['repo', 'files', 'builder', 'diff'];
 
     const report = validateSovereignProductTemplate(broken);
 
     expect(report.valid).toBe(false);
-    expect(report.errors.join(' | ')).toContain('Primary flow must be repo > builder > files > diff > workflow');
+    expect(report.errors.join(' | ')).toContain('Primary flow must be repo > builder > files > diff');
   });
 
   it('rejects passive auto-navigation as a product-template violation', () => {
