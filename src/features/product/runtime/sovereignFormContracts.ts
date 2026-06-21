@@ -8,8 +8,15 @@
 
 export type FormFieldInputType = 'text' | 'url' | 'password' | 'email' | 'number' | 'textarea' | 'select';
 
+export type SovereignFormContractId =
+  | 'repo-url'
+  | 'repo-branch'
+  | 'private-access'
+  | 'mission'
+  | 'automation-mode';
+
 export interface SovereignFormContract {
-  id: string;
+  id: SovereignFormContractId;
   label: string;
   dataRole: string;
   testId: string;
@@ -26,6 +33,16 @@ export interface SovereignFormContractReport {
   warnings: string[];
   summary: string;
 }
+
+const FORM_DATA_ROLE_PATTERN = /^(input|textarea|select)-[a-z][a-z0-9-]*$/;
+const FORM_TEST_ID_PATTERN = /^[a-z][a-z0-9-]*__[a-z][a-z0-9-]*$/;
+const REQUIRED_FORM_IDS: SovereignFormContractId[] = [
+  'repo-url',
+  'repo-branch',
+  'private-access',
+  'mission',
+  'automation-mode',
+];
 
 /**
  * Repository URL input field contract.
@@ -58,7 +75,7 @@ export const SOVEREIGN_FORM_REPO_BRANCH: SovereignFormContract = {
 };
 
 /**
- * Private access (token) input field contract.
+ * Private access input field contract.
  * This field is marked as sensitive and enforces password input type.
  */
 export const SOVEREIGN_FORM_PRIVATE_ACCESS: SovereignFormContract = {
@@ -115,8 +132,10 @@ function unique<T>(values: readonly T[]): T[] {
   return Array.from(new Set(values));
 }
 
-export function getSovereignFormContract(id: string): SovereignFormContract | undefined {
-  return SOVEREIGN_FORM_CONTRACTS.find((contract) => contract.id === id);
+export function getSovereignFormContract(id: SovereignFormContractId): SovereignFormContract {
+  const contract = SOVEREIGN_FORM_CONTRACTS.find((candidate) => candidate.id === id);
+  if (!contract) throw new Error(`Unknown Sovereign form contract: ${id}`);
+  return contract;
 }
 
 export function validateSovereignFormContracts(): SovereignFormContractReport {
@@ -151,8 +170,14 @@ export function validateSovereignFormContracts(): SovereignFormContractReport {
     if (!contract.dataRole.trim()) {
       errors.push(`${contract.id}: dataRole must not be empty.`);
     }
+    if (!FORM_DATA_ROLE_PATTERN.test(contract.dataRole)) {
+      errors.push(`${contract.id}: dataRole must match ${FORM_DATA_ROLE_PATTERN}.`);
+    }
     if (!contract.testId.trim()) {
       errors.push(`${contract.id}: testId must not be empty.`);
+    }
+    if (!FORM_TEST_ID_PATTERN.test(contract.testId)) {
+      errors.push(`${contract.id}: testId must match ${FORM_TEST_ID_PATTERN}.`);
     }
     if (!contract.ariaLabel.trim()) {
       errors.push(`${contract.id}: ariaLabel must not be empty.`);
@@ -173,11 +198,13 @@ export function validateSovereignFormContracts(): SovereignFormContractReport {
       if (contract.autoComplete !== 'off') {
         errors.push(`${contract.id}: sensitive field must use autoComplete 'off'.`);
       }
+      if (contract.required) {
+        warnings.push(`${contract.id}: sensitive field should not be required unless explicitly necessary.`);
+      }
     }
   }
 
-  const requiredFormIds = ['repo-url', 'private-access'];
-  for (const requiredId of requiredFormIds) {
+  for (const requiredId of REQUIRED_FORM_IDS) {
     if (!ids.includes(requiredId)) {
       errors.push(`Missing required form contract: ${requiredId}.`);
     }
