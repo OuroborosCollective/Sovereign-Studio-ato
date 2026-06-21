@@ -35,6 +35,11 @@ interface MobileAgentLogEntry {
   text: string;
 }
 
+interface AgentAction {
+  label: string;
+  targetLabels: string[];
+}
+
 type AnyRecord = Record<string, unknown>;
 
 type MobileAgentWindow = Window & typeof globalThis & {
@@ -55,11 +60,20 @@ const RENDER_INTERVAL_MS = 1000;
 const INITIAL_DELAY_MS = 650;
 const STALE_THINKING_MS = 90_000;
 const AUTO_OPEN_COOLDOWN_MS = 6_000;
+const FOLLOW_UP_CLICK_DELAY_MS = 180;
 const TEXT_NODE = 4;
 const ACCEPT = 1;
 const REJECT = 2;
 
-const ACTIONS = ['Repo', 'Builder', 'Files', 'Diff', 'Workflow', 'Repair'] as const;
+const ACTIONS: AgentAction[] = [
+  { label: 'Auftrag planen', targetLabels: ['Builder'] },
+  { label: 'Package bauen', targetLabels: ['Auftrag in Produktion geben', 'Builder'] },
+  { label: 'Files prüfen', targetLabels: ['Files'] },
+  { label: 'Diff prüfen', targetLabels: ['Diff'] },
+  { label: 'Workflow', targetLabels: ['Workflow'] },
+  { label: 'Repair', targetLabels: ['Repair'] },
+];
+
 const FACES = ['^-_-^', '｡◕‿◕｡', '○¤○', '[>->_]', '_@=@_'];
 const RUNTIME_EVENT_NAMES = [
   'sovereign:runtime-coach-state',
@@ -67,12 +81,14 @@ const RUNTIME_EVENT_NAMES = [
   'sovereign:metrics-state',
   'sovereign:workflow-state',
   'sovereign:telemetry-state',
+  'sovereign:setup-state',
 ] as const;
 
 let entries: MobileAgentLogEntry[] = [];
 let lastSignature = '';
 let lastTarget = '';
 let lastTargetAt = 0;
+let lastStableState: MobileAgentCoachState | null = null;
 
 function now(): number {
   return Date.now();
@@ -86,10 +102,14 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function norm(value: string): string {
+  return value.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/\s+/g, ' ').trim();
+}
+
 function bool(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   if (typeof value !== 'string') return undefined;
-  const normalized = value.trim().toLowerCase();
+  const normalized = norm(value);
   if (['1', 'true', 'yes', 'on', 'running', 'busy', 'active'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'off', 'idle', 'ready', 'done'].includes(normalized)) return false;
   return undefined;
@@ -167,81 +187,7 @@ function normalizeCoachState(value: unknown): MobileAgentCoachState | null {
     updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : now(),
     targetNav: text(value.targetNav),
     autoOpenTarget: bool(value.autoOpenTarget),
-  };
-}
-
-function deriveEventCoachState(value: unknown): MobileAgentCoachState | null {
-  const normalized = normalizeCoachState(value);
-  if (normalized) return normalized;
-  if (!record(value)) return null;
-
-  const status = text(value.status).toLowerCase();
-  const message = text(value.message) || text(value.summary) || text(value.reason) || text(value.error);
-  const running = ['running', 'busy', 'active', 'pending'].includes(status);
-  const failed = ['failed', 'failure', 'error', 'red', 'blocked'].includes(status) || Boolean(text(value.error));
-
-  if (failed) {
-    return {
-      lamp: 'red',
-      title: 'Runtime Stopper',
-      message: message || 'Ein Runtime-Signal meldet einen Stopper.',
-      action: 'Repair pruefen.',
-      thinking: false,
-      source: 'runtime-event',
-      updatedAt: now(),
-      targetNav: 'Repair',
-      autoOpenTarget: true,
-      autoOpenReason: 'red-stopper',
-    };
-  }
-
-  if (running) {
-    return {
-      lamp: 'green',
-      title: 'Runtime arbeitet',
-      message: message || 'Ein Runtime-Signal ist aktiv.',
-      action: 'Live Monitor pruefen.',
-      thinking: true,
-      source: 'runtime-event',
-      updatedAt: now(),
-      targetNav: 'Live Monitor',
-      autoOpenTarget: true,
-      autoOpenReason: 'active-work',
-    };
-  }
-
-  if (message) {
-    return {
-      lamp: 'yellow',
-      title: 'Runtime Signal',
-      message,
-      action: 'Status pruefen.',
-      thinking: false,
-      source: 'runtime-event',
-      updatedAt: now(),
-    };
-  }
-
-  return null;
-}
-
-function withStaleThinkingGuard(state: MobileAgentCoachState): MobileAgentCoachState {
-  if (!state.thinking) return state;
-  const updatedAt = state.updatedAt ?? now();
-  if (now() - updatedAt <= STALE_THINKING_MS) return state;
-
-  return {
-    ...state,
-    lamp: 'yellow',
-    title: 'Aktivitaet ohne neues Runtime-Signal',
-    message: `${state.title}: ${state.message}`,
-    action: 'Repair oder Live Monitor pruefen.',
-    thinking: false,
-    source: state.source ?? 'stale-runtime',
-    updatedAt,
-    targetNav: 'Repair',
-    autoOpenTarget: true,
-    autoOpenReason: 'red-stopper',
+    autoOpenReason: value.autoOpenReason === 'active-work' || value.autoOpenReason === 'red-stopper' || value.autoOpenReason === 'passive-review' || value.autoOpenReason === 'awaiting-intent' || value.autoOpenReason === 'side-channel' || value.autoOpenReason === 'manual' ? value.autoOpenReason : undefined,
   };
 }
 
@@ -266,8 +212,8 @@ function setupCoachState(setup: SetupStateLike | undefined): MobileAgentCoachSta
     return {
       lamp: 'red',
       title: 'Repo Setup braucht Aufmerksamkeit',
-      message: setup.status || 'GitHub Repo oder Zugriff ist noch nicht gueltig.',
-      action: 'Repo/PAT pruefen und erneut laden.',
+      message: setup.status || 'GitHub Repo oder Zugriff ist noch nicht gültig.',
+      action: 'Repo/PAT prüfen und erneut laden.',
       thinking: false,
       source: 'setup',
       updatedAt: setup.updatedAt ?? now(),
@@ -280,24 +226,122 @@ function setupCoachState(setup: SetupStateLike | undefined): MobileAgentCoachSta
   if (setup.repoReady) {
     return {
       lamp: 'green',
-      title: 'Repository geladen',
-      message: setup.status || 'Repo Snapshot ist bereit.',
-      action: 'Auftrag eingeben oder Package bauen.',
+      title: 'Bereit für Auftrag',
+      message: setup.status || 'Repository ist geladen. Jetzt Auftrag planen oder Package bauen.',
+      action: 'Auftrag planen oder Package bauen.',
       thinking: false,
       source: 'setup',
       updatedAt: setup.updatedAt ?? now(),
+      targetNav: 'Builder',
+      autoOpenTarget: false,
     };
   }
 
   return {
     lamp: 'yellow',
-    title: 'Repo Setup bereit',
-    message: setup.hasToken ? 'Privater Zugriff ist gesetzt. Repo laden.' : 'Repo URL und PAT eintragen.',
+    title: 'Repository laden',
+    message: setup.hasToken ? 'GitHub-Zugang ist gesetzt. Bitte Repository laden.' : 'Bitte GitHub-URL eingeben und Repository laden.',
     action: 'Repo laden.',
     thinking: false,
-    source: 'setup',
+    source: 'repo',
     updatedAt: setup.updatedAt ?? now(),
   };
+}
+
+function deriveEventCoachState(value: unknown): MobileAgentCoachState | null {
+  const normalized = normalizeCoachState(value);
+  if (normalized) return normalized;
+  if (!record(value)) return null;
+
+  const status = norm(text(value.status));
+  const message = text(value.message) || text(value.summary) || text(value.reason) || text(value.error);
+  const running = ['running', 'busy', 'active', 'pending'].includes(status);
+  const failed = ['failed', 'failure', 'error', 'red', 'blocked'].includes(status) || Boolean(text(value.error));
+
+  if (failed) {
+    return {
+      lamp: 'red',
+      title: 'Runtime Stopper',
+      message: message || 'Ein Runtime-Signal meldet einen Stopper.',
+      action: 'Repair prüfen.',
+      thinking: false,
+      source: 'runtime-event',
+      updatedAt: now(),
+      targetNav: 'Repair',
+      autoOpenTarget: true,
+      autoOpenReason: 'red-stopper',
+    };
+  }
+
+  if (running) {
+    return {
+      lamp: 'green',
+      title: 'Runtime arbeitet',
+      message: message || 'Ein Runtime-Signal ist aktiv.',
+      action: 'Live Monitor prüfen.',
+      thinking: true,
+      source: 'runtime-event',
+      updatedAt: now(),
+      targetNav: 'Live Monitor',
+      autoOpenTarget: true,
+      autoOpenReason: 'active-work',
+    };
+  }
+
+  if (message) {
+    return {
+      lamp: 'yellow',
+      title: 'Runtime Signal',
+      message,
+      action: 'Status prüfen.',
+      thinking: false,
+      source: 'runtime-event',
+      updatedAt: now(),
+    };
+  }
+
+  return null;
+}
+
+function withStaleThinkingGuard(state: MobileAgentCoachState): MobileAgentCoachState {
+  if (!state.thinking) return state;
+  const updatedAt = state.updatedAt ?? now();
+  if (now() - updatedAt <= STALE_THINKING_MS) return state;
+
+  return {
+    ...state,
+    lamp: 'yellow',
+    title: 'Aktivität ohne neues Runtime-Signal',
+    message: `${state.title}: ${state.message}`,
+    action: 'Repair oder Live Monitor prüfen.',
+    thinking: false,
+    source: state.source ?? 'stale-runtime',
+    updatedAt,
+    targetNav: 'Repair',
+    autoOpenTarget: true,
+    autoOpenReason: 'red-stopper',
+  };
+}
+
+function isRepoReadyState(state: MobileAgentCoachState | null | undefined): boolean {
+  if (!state) return false;
+  const combined = norm(`${state.title} ${state.message} ${state.action}`);
+  return combined.includes('bereit fuer auftrag') || combined.includes('repository ist geladen') || combined.includes('repo snapshot ist bereit') || combined.includes('repo snapshot ready');
+}
+
+function isRepoLoadPromptState(state: MobileAgentCoachState | null | undefined): boolean {
+  if (!state) return false;
+  const combined = norm(`${state.title} ${state.message} ${state.action}`);
+  return combined.includes('repository laden') || combined.includes('repo laden') || combined.includes('github-url eingeben') || combined.includes('keinen lokalen code-stand') || combined.includes('kein gespeicherter code');
+}
+
+function shouldPreferSetupReady(setup: MobileAgentCoachState | null, runtime: MobileAgentCoachState | null): boolean {
+  if (!isRepoReadyState(setup)) return false;
+  if (!runtime) return true;
+  if (runtime.lamp === 'red') return false;
+  if (runtime.thinking) return false;
+  if (isRepoLoadPromptState(runtime)) return true;
+  return runtime.lamp === 'yellow' && runtime.source !== 'runtime-library';
 }
 
 function classifyWorkflowAutoOpenReason(decision: MobileWorkflowOrchestratorDecision): SovereignProductTemplateAutoNavigationReason {
@@ -316,7 +360,7 @@ function workflowCoachState(): MobileAgentCoachState {
       lamp: decision.lamp,
       title: decision.title,
       message: decision.summary,
-      action: decision.targetNav ? `${decision.targetNav} pruefen.` : 'Naechsten Schritt waehlen.',
+      action: decision.targetNav ? `${decision.targetNav} prüfen.` : 'Nächsten Schritt wählen.',
       thinking: decision.mode === 'matrix-work',
       source: decision.mode,
       updatedAt: now(),
@@ -329,7 +373,7 @@ function workflowCoachState(): MobileAgentCoachState {
       lamp: 'yellow',
       title: 'Agent Monitor wartet',
       message: 'Noch kein stabiler Runtime-Zustand erkannt.',
-      action: 'Repo oder Auftrag pruefen.',
+      action: 'Repo oder Auftrag prüfen.',
       thinking: false,
       source: 'monitor',
       updatedAt: now(),
@@ -339,13 +383,18 @@ function workflowCoachState(): MobileAgentCoachState {
 
 function currentCoachState(): MobileAgentCoachState {
   const win = window as MobileAgentWindow;
-  const state = normalizeCoachState(win.__sovereignRuntimeCoachState)
+  const setup = setupCoachState(win.__sovereignSetupState);
+  const runtime = normalizeCoachState(win.__sovereignRuntimeCoachState)
     ?? normalizeCoachState(win.__sovereignCoachState)
-    ?? normalizeCoachState(win.__sovereignMobileCoachState)
-    ?? setupCoachState(win.__sovereignSetupState)
-    ?? workflowCoachState();
+    ?? normalizeCoachState(win.__sovereignMobileCoachState);
 
-  return withStaleThinkingGuard(state);
+  const selected = shouldPreferSetupReady(setup, runtime)
+    ? setup
+    : runtime ?? setup ?? workflowCoachState();
+
+  const guarded = withStaleThinkingGuard(selected);
+  lastStableState = guarded;
+  return guarded;
 }
 
 function loadEntries(): MobileAgentLogEntry[] {
@@ -370,13 +419,29 @@ function saveEntries(): void {
   }
 }
 
+function pruneEntriesForState(state: MobileAgentCoachState, current: MobileAgentLogEntry[]): MobileAgentLogEntry[] {
+  if (!isRepoReadyState(state)) return current;
+  return current.filter((entry) => {
+    const entryText = norm(entry.text);
+    return !entryText.includes('repository laden')
+      && !entryText.includes('repo setup bereit')
+      && !entryText.includes('kein gespeicherter code')
+      && !entryText.includes('keinen lokalen code-stand');
+  });
+}
+
 function appendEntry(state: MobileAgentCoachState): void {
   const signature = `${state.lamp}|${state.source ?? 'agent'}|${state.title}|${state.message}|${state.action}|${state.thinking}`;
-  if (signature === lastSignature) return;
+  const current = pruneEntriesForState(state, loadEntries());
+  if (signature === lastSignature) {
+    entries = current.slice(-MAX_LOG_ENTRIES);
+    saveEntries();
+    return;
+  }
   lastSignature = signature;
 
   entries = [
-    ...loadEntries(),
+    ...current,
     {
       id: `${state.updatedAt ?? now()}-${hash(signature)}`,
       ts: state.updatedAt ?? now(),
@@ -389,17 +454,33 @@ function appendEntry(state: MobileAgentCoachState): void {
 }
 
 function findActionButton(label: string): HTMLButtonElement | null {
-  const wanted = label.toLowerCase();
+  const wanted = norm(label);
   return Array.from(document.querySelectorAll('button')).find((button) => {
     if (button.closest(ignoredSelector())) return false;
-    return (button.textContent ?? '').trim().toLowerCase() === wanted;
+    const candidate = norm(`${button.textContent ?? ''} ${button.getAttribute('aria-label') ?? ''}`);
+    return candidate === wanted || candidate.includes(wanted);
   }) ?? null;
 }
 
-function triggerAction(label: string): void {
-  const button = findActionButton(label);
-  if (!button) return;
+function clickButton(button: HTMLButtonElement): void {
   button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+}
+
+function triggerAction(label: string): void {
+  const action = ACTIONS.find((item) => item.label === label) ?? { label, targetLabels: [label] };
+  for (const targetLabel of action.targetLabels) {
+    const button = findActionButton(targetLabel);
+    if (button) {
+      clickButton(button);
+      if (label === 'Package bauen' && targetLabel === 'Builder') {
+        window.setTimeout(() => {
+          const production = findActionButton('Auftrag in Produktion geben');
+          if (production && !production.disabled) clickButton(production);
+        }, FOLLOW_UP_CLICK_DELAY_MS);
+      }
+      return;
+    }
+  }
 }
 
 function maybeAutoOpenTarget(state: MobileAgentCoachState): void {
@@ -435,8 +516,8 @@ function installStyle(): void {
     #${ROOT_ID} .agent-meta { display:block; color:#94a3b8; font-size:.64rem; font-weight:800; }
     #${ROOT_ID} .agent-thinking { display:flex; align-items:center; justify-content:space-between; gap:.65rem; padding:.58rem .78rem; border-top:1px solid rgba(148,163,184,.13); font-size:.76rem; color:#cbd5e1; }
     #${ROOT_ID} .agent-face { color:#67e8f9; font-weight:950; white-space:nowrap; }
-    #${ROOT_ID} .agent-actions { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:.42rem; padding:.68rem .78rem .78rem; border-top:1px solid rgba(148,163,184,.13); }
-    #${ROOT_ID} .agent-actions button { border:1px solid rgba(34,211,238,.28); border-radius:.78rem; background:rgba(8,47,73,.62); color:#e0f2fe; padding:.55rem .35rem; font-size:.72rem; font-weight:950; }
+    #${ROOT_ID} .agent-actions { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:.42rem; padding:.68rem .78rem .78rem; border-top:1px solid rgba(148,163,184,.13); }
+    #${ROOT_ID} .agent-actions button { border:1px solid rgba(34,211,238,.28); border-radius:.78rem; background:rgba(8,47,73,.62); color:#e0f2fe; padding:.62rem .35rem; font-size:.72rem; font-weight:950; }
     #${ROOT_ID} .agent-actions button:active { transform:scale(.98); }
     #${ROOT_ID}.red { border-color:rgba(251,113,133,.48); }
     #${ROOT_ID}.green { border-color:rgba(52,211,153,.4); }
@@ -488,7 +569,7 @@ function render(): void {
       <span>${escapeHtml(state.action)}</span>
     </div>
     <div class="agent-actions">
-      ${ACTIONS.map((action) => `<button type="button" data-agent-action="${escapeHtml(action)}">${escapeHtml(action)}</button>`).join('')}
+      ${ACTIONS.map((action) => `<button type="button" data-agent-action="${escapeHtml(action.label)}">${escapeHtml(action.label)}</button>`).join('')}
     </div>
   `;
 
@@ -500,6 +581,14 @@ function handleRuntimeEvent(event: Event): void {
   const detail = event instanceof CustomEvent ? event.detail : undefined;
   const state = deriveEventCoachState(detail);
   if (!state) return;
+
+  const setup = setupCoachState((window as MobileAgentWindow).__sovereignSetupState);
+  if (shouldPreferSetupReady(setup, state)) {
+    (window as MobileAgentWindow).__sovereignRuntimeCoachState = setup;
+    appendEntry(setup);
+    render();
+    return;
+  }
 
   const mobileWindow = window as MobileAgentWindow;
   mobileWindow.__sovereignRuntimeCoachState = state;
