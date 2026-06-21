@@ -10,10 +10,10 @@ const mocks = vi.hoisted(() => {
     render,
     createRoot: vi.fn(() => ({ render })),
     posthogInit: vi.fn(),
-    installMobileOperatorCoach: vi.fn(),
+    installMobileAgentMonitor: vi.fn(),
     installMobileMoreMenu: vi.fn(),
     installMobileSetupDrawer: vi.fn(),
-    installMobileWorkbenchConsole: vi.fn(),
+    installMobileWorkspaceOrder: vi.fn(),
     restoreCanvasStateMirror: vi.fn(async () => undefined),
     flushCanvasStateMirror: vi.fn(async () => undefined),
     warn: vi.fn(),
@@ -38,8 +38,8 @@ vi.mock('./components/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
 }));
 
-vi.mock('./mobile-operator-coach', () => ({
-  installMobileOperatorCoach: mocks.installMobileOperatorCoach,
+vi.mock('./mobile-agent-monitor', () => ({
+  installMobileAgentMonitor: mocks.installMobileAgentMonitor,
 }));
 
 vi.mock('./mobile-more-menu', () => ({
@@ -50,8 +50,8 @@ vi.mock('./mobile-setup-drawer', () => ({
   installMobileSetupDrawer: mocks.installMobileSetupDrawer,
 }));
 
-vi.mock('./mobile-workbench-console', () => ({
-  installMobileWorkbenchConsole: mocks.installMobileWorkbenchConsole,
+vi.mock('./mobile-workspace-order', () => ({
+  installMobileWorkspaceOrder: mocks.installMobileWorkspaceOrder,
 }));
 
 vi.mock('./store', () => ({
@@ -119,10 +119,10 @@ describe('mobile entrypoint runtime boot', () => {
     expect(document.documentElement.classList.contains('regular-height')).toBe(true);
     expect(document.getElementById('sovereign-mobile-runtime-style')).toBeDefined();
 
-    expect(mocks.installMobileOperatorCoach).toHaveBeenCalledOnce();
+    expect(mocks.installMobileAgentMonitor).toHaveBeenCalledOnce();
     expect(mocks.installMobileMoreMenu).toHaveBeenCalledOnce();
     expect(mocks.installMobileSetupDrawer).toHaveBeenCalledOnce();
-    expect(mocks.installMobileWorkbenchConsole).toHaveBeenCalledOnce();
+    expect(mocks.installMobileWorkspaceOrder).toHaveBeenCalledOnce();
 
     expect(mocks.restoreCanvasStateMirror).toHaveBeenCalledWith({
       dispatch: true,
@@ -133,13 +133,13 @@ describe('mobile entrypoint runtime boot', () => {
     expect(mocks.render).toHaveBeenCalledOnce();
   });
 
-  it('warns and skips React boot when root container is missing', async () => {
+  it('warns and skips React boot when root container is missing while mobile runtime remains guarded', async () => {
     document.body.innerHTML = '';
 
     await import('./main');
 
     expect(mocks.warn).toHaveBeenCalledWith('React root container #root not found.');
     expect(mocks.createRoot).not.toHaveBeenCalled();
-    expect(mocks.installMobileOperatorCoach).toHaveBeenCalledOnce();
+    expect(mocks.installMobileAgentMonitor).toHaveBeenCalledOnce();
   });
 });
