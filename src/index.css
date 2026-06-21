@@ -59,10 +59,12 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+.sovereign-app-shell,
 #root > div.min-h-screen {
   min-height: 100vh;
 }
 
+.sovereign-app-title,
 #root > div.min-h-screen > h1 {
   border: 1px solid rgba(34, 211, 238, 0.18);
   border-radius: 1.25rem;
@@ -73,6 +75,7 @@ button {
   letter-spacing: 0.01em;
 }
 
+.sovereign-tabbar,
 #root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 1.25rem;
@@ -85,10 +88,12 @@ button {
   scrollbar-width: none;
 }
 
+.sovereign-tabbar::-webkit-scrollbar,
 #root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b::-webkit-scrollbar {
   display: none;
 }
 
+.sovereign-tab,
 #root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b > button {
   border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 999px;
@@ -100,6 +105,7 @@ button {
   white-space: nowrap;
 }
 
+.sovereign-tab-active,
 #root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b > button.font-bold {
   border-color: rgba(34, 211, 238, 0.62);
   background: linear-gradient(135deg, rgba(34, 211, 238, 0.18), rgba(99, 102, 241, 0.2));
@@ -114,6 +120,39 @@ button {
   display: grid;
   grid-template-columns: 1fr;
   min-width: 0;
+}
+
+.sovereign-card,
+.sovereign-automation-panel,
+.sovereign-diagnostic-panel {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 1.1rem;
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: 0 14px 34px rgba(2, 6, 23, 0.2);
+  color: rgb(226, 232, 240);
+}
+
+.sovereign-select {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.95);
+  color: rgb(226, 232, 240);
+  min-height: 2.55rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.sovereign-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sovereign-status-pill {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.85rem;
+  background: rgba(15, 23, 42, 0.75);
+  color: rgb(203, 213, 225);
+  padding: 0.75rem;
 }
 
 #sovereign-global-runtime-monitor-root {
@@ -282,11 +321,13 @@ button {
 }
 
 @media (max-width: 767px) {
+  .sovereign-app-shell,
   #root > div.min-h-screen {
     padding-left: max(0.9rem, var(--safe-left));
     padding-right: max(0.9rem, var(--safe-right));
   }
 
+  .sovereign-tabbar,
   #root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b {
     flex-wrap: nowrap;
   }
@@ -297,6 +338,7 @@ button {
     min-height: 100svh;
   }
 
+  .sovereign-app-shell,
   #root > div.min-h-screen {
     min-height: 100svh;
   }
