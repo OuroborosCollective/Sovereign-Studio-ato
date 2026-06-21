@@ -1,0 +1,165 @@
+:root {
+  --are-void: #050816;
+  --are-deep: #080D1E;
+  --are-surface: #0C1428;
+  --are-overlay: #111B35;
+  --are-ion: #00C8FF;
+  --are-ion-dim: rgba(0, 200, 255, 0.15);
+  --are-ion-glow: rgba(0, 200, 255, 0.35);
+  --are-ion-trace: rgba(0, 200, 255, 0.07);
+  --are-matter: #7B5EA7;
+  --are-matter-dim: rgba(123, 94, 167, 0.2);
+  --are-matter-glow: rgba(123, 94, 167, 0.4);
+  --are-signal: #00FF9C;
+  --are-signal-dim: rgba(0, 255, 156, 0.2);
+  --are-warn: #F59E0B;
+  --are-warn-dim: rgba(245, 158, 11, 0.2);
+  --are-danger: #FF4466;
+  --are-danger-dim: rgba(255, 68, 102, 0.2);
+  --are-text-primary: #CDD6F4;
+  --are-text-secondary: #8892B0;
+  --are-text-bright: #E8EDF8;
+  --are-border: rgba(0, 200, 255, 0.15);
+  --are-border-active: rgba(0, 200, 255, 0.55);
+  --are-shadow-panel: 0 0 0 1px var(--are-border), 0 4px 30px rgba(0, 0, 0, 0.6), 0 0 40px rgba(0, 200, 255, 0.04);
+  --are-shadow-active: 0 0 0 1px var(--are-border-active), 0 0 20px var(--are-ion-glow), 0 0 60px rgba(0, 200, 255, 0.12);
+}
+
+.arelogic-runtime-surface,
+.sovereign-app-shell {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(0, 200, 255, 0.08), transparent 34%),
+    radial-gradient(circle at 92% 12%, rgba(123, 94, 167, 0.1), transparent 36%),
+    var(--are-void);
+  color: var(--are-text-primary);
+}
+
+.arelogic-panel-frame,
+.sovereign-card,
+.sovereign-automation-panel,
+.sovereign-diagnostic-panel,
+.sovereign-global-monitor {
+  position: relative;
+  background:
+    linear-gradient(135deg, rgba(12, 20, 40, 0.88), rgba(5, 8, 22, 0.92)),
+    var(--are-surface);
+  border-color: var(--are-border);
+  box-shadow: var(--are-shadow-panel);
+}
+
+.arelogic-panel-frame::before,
+.arelogic-panel-frame::after,
+.sovereign-card::before,
+.sovereign-card::after,
+.sovereign-automation-panel::before,
+.sovereign-automation-panel::after,
+.sovereign-diagnostic-panel::before,
+.sovereign-diagnostic-panel::after,
+.sovereign-global-monitor::before,
+.sovereign-global-monitor::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: var(--are-ion);
+  border-style: solid;
+  pointer-events: none;
+}
+
+.arelogic-panel-frame::before,
+.sovereign-card::before,
+.sovereign-automation-panel::before,
+.sovereign-diagnostic-panel::before,
+.sovereign-global-monitor::before {
+  top: -1px;
+  left: -1px;
+  border-radius: 6px 0 0 0;
+  border-width: 2px 0 0 2px;
+}
+
+.arelogic-panel-frame::after,
+.sovereign-card::after,
+.sovereign-automation-panel::after,
+.sovereign-diagnostic-panel::after,
+.sovereign-global-monitor::after {
+  right: -1px;
+  bottom: -1px;
+  border-radius: 0 0 6px 0;
+  border-width: 0 2px 2px 0;
+}
+
+.arelogic-hud-label,
+.sovereign-eyebrow {
+  color: var(--are-ion);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(0, 200, 255, 0.42);
+}
+
+.arelogic-status-badge,
+.sovereign-status-pill {
+  border-color: rgba(0, 200, 255, 0.2);
+  background: rgba(0, 200, 255, 0.07);
+  color: var(--are-text-primary);
+}
+
+.arelogic-action-surface,
+.sovereign-action-button,
+.sovereign-monitor-toggle {
+  border-color: rgba(0, 200, 255, 0.34);
+  background: rgba(0, 200, 255, 0.08);
+  color: var(--are-ion);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sovereign-action-button:hover,
+.sovereign-monitor-toggle:hover {
+  border-color: var(--are-ion);
+  box-shadow: 0 0 0 1px rgba(0, 200, 255, 0.4), 0 0 20px rgba(0, 200, 255, 0.18);
+  color: var(--are-text-bright);
+}
+
+.sovereign-tab-active {
+  border-color: var(--are-border-active);
+  box-shadow: var(--are-shadow-active);
+  color: var(--are-text-bright);
+}
+
+.sovereign-status-dot-green {
+  background: var(--are-signal);
+  color: rgba(0, 255, 156, 0.42);
+}
+
+.sovereign-status-dot-yellow {
+  background: var(--are-warn);
+  color: rgba(245, 158, 11, 0.42);
+}
+
+.sovereign-status-dot-red {
+  background: var(--are-danger);
+  color: rgba(255, 68, 102, 0.42);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sovereign-status-dot-green,
+  .sovereign-status-dot-yellow,
+  .sovereign-status-dot-red {
+    animation: arelogic-pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes arelogic-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 6px rgba(0, 0, 0, 0);
+  }
+}
