@@ -52,7 +52,7 @@ describe('BuilderContainer', () => {
     fireEvent.change(screen.getByLabelText(/Ideenfabrik Wunschfeld/i), {
       target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Vorschlag analysieren' }));
+    fireEvent.click(screen.getByRole('button', { name: /Auftrag analysieren/i }));
 
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Ideenfabrik Auftrag'));
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('mobile UX verbessern'));
@@ -64,7 +64,7 @@ describe('BuilderContainer', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Auftrag in Produktion geben' }));
+    fireEvent.click(screen.getByRole('button', { name: /Auftrag starten/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Fehlerlog reparieren' }));
     fireEvent.click(screen.getByRole('button', { name: /Draft PR erstellen/i }));
 
@@ -85,7 +85,7 @@ describe('BuilderContainer', () => {
   it('blocks production actions while repo is not ready', () => {
     render(<BuilderContainer {...baseProps()} repoReady={false} />);
 
-    expect(screen.getByRole('button', { name: 'Auftrag in Produktion geben' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Auftrag starten/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Fehlerlog reparieren' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Draft PR erstellen/i })).toBeDisabled();
     expect(screen.getByText(/not ready/i)).toBeDefined();
