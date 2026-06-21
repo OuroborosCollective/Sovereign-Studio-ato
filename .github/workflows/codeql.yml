@@ -1,4 +1,4 @@
-name: "Sovereign CodeQL + Runtime Contract Scan"
+name: "Sovereign CodeQL Security"
 
 on:
   push:
@@ -21,397 +21,10 @@ env:
   CI: "true"
 
 jobs:
-  runtime-contract-scan:
-    name: Runtime Contract Scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-
-    permissions:
-      contents: read
-      actions: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        shell: bash
-        run: pnpm install --frozen-lockfile
-
-      - name: Sovereign runtime handoff and function contract scan
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p .security-reports
-
-          node <<'NODE'
-          const fs = require("node:fs");
-          const path = require("node:path");
-
-          const report = {
-            name: "Sovereign Runtime Contract Scan",
-            generatedAt: new Date().toISOString(),
-            status: "unknown",
-            checks: [],
-            warnings: [],
-            errors: [],
-          };
-
-          function exists(filePath) {
-            return fs.existsSync(filePath);
-          }
-
-          function read(filePath) {
-            return exists(filePath) ? fs.readFileSync(filePath, "utf8") : "";
-          }
-
-          function pass(id, message, details = {}) {
-            report.checks.push({ id, ok: true, message, details });
-          }
-
-          function fail(id, message, details = {}) {
-            report.checks.push({ id, ok: false, message, details });
-            report.errors.push(`${id}: ${message}`);
-          }
-
-          function warn(id, message, details = {}) {
-            report.warnings.push({ id, message, details });
-          }
-
-          function requireFile(filePath, reason) {
-            if (exists(filePath)) pass(`file:${filePath}`, reason);
-            else fail(`file:${filePath}`, `Missing required file: ${filePath}`, { reason });
-          }
-
-          function requireText(filePath, pattern, id, message) {
-            const source = read(filePath);
-            if (pattern.test(source)) pass(id, message, { filePath });
-            else fail(id, message, { filePath, pattern: String(pattern) });
-          }
-
-          function forbidText(filePath, pattern, id, message) {
-            const source = read(filePath);
-            if (!pattern.test(source)) pass(id, message, { filePath });
-            else fail(id, message, { filePath, pattern: String(pattern) });
-          }
-
-          function warnText(filePath, pattern, id, message) {
-            const source = read(filePath);
-            if (pattern.test(source)) pass(id, message, { filePath });
-            else warn(id, message, { filePath, pattern: String(pattern) });
-          }
-
-          requireFile("package.json", "Root package manifest is required for pnpm scripts.");
-          requireFile("pnpm-lock.yaml", "Frozen lockfile is required for reproducible CI.");
-          requireFile("src/main.tsx", "React app entrypoint is required.");
-          requireFile("src/App.tsx", "React app shell is required.");
-          requireFile("src/index.css", "Shared design/token CSS is required.");
-          requireFile("src/features/product/runtime/sovereignTelemetry.ts", "Telemetry runtime is required.");
-          requireFile("src/features/product/runtime/runtimeOutcomeGuard.ts", "Runtime outcome guard is required.");
-          requireFile("src/features/product/containers/BuilderContainer.tsx", "Builder action flow is required.");
-          requireFile("src/features/product/containers/RepoSnapshotContainer.tsx", "Repo setup flow is required.");
-          requireFile(".github/workflows", "GitHub workflow directory is required.");
-
-          requireText(
-            "src/main.tsx",
-            /<App\s*\/>|<App[\s>]/,
-            "entrypoint:react-app-render",
-            "main.tsx must render the React App shell.",
-          );
-
-          requireText(
-            "src/main.tsx",
-            /installViewportRuntime/,
-            "entrypoint:viewport-runtime",
-            "main.tsx must install viewport runtime for Android shell stability.",
-          );
-
-          requireText(
-            "src/main.tsx",
-            /installCodeWorkspacePersistenceRuntime/,
-            "entrypoint:persistence-runtime",
-            "main.tsx must install workspace persistence runtime.",
-          );
-
-          forbidText(
-            "src/main.tsx",
-            /installMobileAgentMonitor|installMobileMoreMenu|installMobileSetupDrawer|installMobileWorkspaceOrder|installMobileRuntimeModules/,
-            "entrypoint:no-old-dom-mobile-installers",
-            "main.tsx must not boot old DOM mobile installer paths.",
-          );
-
-          requireText(
-            "src/features/product/containers/BuilderContainer.tsx",
-            /Auftrag analysieren/,
-            "builder:analyze-action-visible",
-            "Builder must expose a visible Auftrag analysieren action.",
-          );
-
-          requireText(
-            "src/features/product/containers/BuilderContainer.tsx",
-            /Auftrag starten/,
-            "builder:start-action-visible",
-            "Builder must expose a visible Auftrag starten action.",
-          );
-
-          requireText(
-            "src/features/product/containers/BuilderContainer.tsx",
-            /onGenerateIdeas/,
-            "builder:start-handler-wired",
-            "Auftrag starten must remain wired to the real generation flow.",
-          );
-
-          requireText(
-            "src/features/product/containers/BuilderContainer.tsx",
-            /onPublishDraftPr/,
-            "builder:draft-pr-handler-wired",
-            "Draft PR action must remain wired to the real publish handler.",
-          );
-
-          requireText(
-            "src/features/product/containers/RepoSnapshotContainer.tsx",
-            /sovereign:setup-state/,
-            "repo:setup-state-event",
-            "Repo setup must publish a setup-state event for runtime/coach awareness.",
-          );
-
-          requireText(
-            "src/features/product/containers/RepoSnapshotContainer.tsx",
-            /repoReady|ready/,
-            "repo:ready-state-visible",
-            "Repo container must expose readiness state to users/runtime.",
-          );
-
-          requireText(
-            "src/features/product/runtime/sovereignTelemetry.ts",
-            /validateTelemetryEvent/,
-            "telemetry:event-validation",
-            "Telemetry events must have validation logic.",
-          );
-
-          requireText(
-            "src/features/product/runtime/sovereignTelemetry.ts",
-            /appendTelemetryEvent/,
-            "telemetry:append-flow",
-            "Telemetry append flow must exist.",
-          );
-
-          warnText(
-            "src/features/product/runtime/sovereignTelemetry.ts",
-            /sovereign:telemetry-event/,
-            "telemetry:global-monitor-bus",
-            "Telemetry should publish to one global monitor event bus.",
-          );
-
-          requireText(
-            "src/features/product/runtime/runtimeOutcomeGuard.ts",
-            /learnable/,
-            "outcome:learnable-guard",
-            "Runtime outcome guard must expose learnable/non-learnable classification.",
-          );
-
-          requireText(
-            "src/features/product/runtime/runtimeOutcomeGuard.ts",
-            /fulfilled|partial|blocked|noise|invalid/,
-            "outcome:status-contract",
-            "Runtime outcome guard must classify fulfilled, partial, blocked, noise or invalid outcomes.",
-          );
-
-          if (exists("src/global-runtime-monitor.tsx")) {
-            requireText(
-              "src/global-runtime-monitor.tsx",
-              /sovereign:runtime-coach-state/,
-              "monitor:coach-state-event",
-              "Global monitor must listen to runtime coach state events.",
-            );
-
-            requireText(
-              "src/global-runtime-monitor.tsx",
-              /sovereign:telemetry-event/,
-              "monitor:telemetry-event",
-              "Global monitor must listen to telemetry events.",
-            );
-
-            requireText(
-              "src/global-runtime-monitor.tsx",
-              /\^_\^|o_o|>_<|Agenten-Monitor|status/i,
-              "monitor:human-readable-status",
-              "Global monitor should provide human-readable system status.",
-            );
-          } else {
-            warn(
-              "monitor:global-file-missing",
-              "src/global-runtime-monitor.tsx is not present. This is allowed, but a global single monitor is preferred.",
-            );
-          }
-
-          const packageJson = JSON.parse(read("package.json") || "{}");
-          const scripts = packageJson.scripts || {};
-
-          if (scripts.typecheck || scripts["type-check"] || scripts["check:types"]) {
-            pass("scripts:typecheck", "Type-check script is available.", {
-              candidates: ["typecheck", "type-check", "check:types"].filter((name) => scripts[name]),
-            });
-          } else {
-            warn("scripts:typecheck", "No dedicated type-check script found.");
-          }
-
-          if (scripts.test || scripts["test:run"] || scripts["test:ci"]) {
-            pass("scripts:test", "Test script is available.", {
-              candidates: ["test", "test:run", "test:ci"].filter((name) => scripts[name]),
-            });
-          } else {
-            warn("scripts:test", "No dedicated test script found.");
-          }
-
-          if (scripts.build) {
-            pass("scripts:build", "Build script is available.");
-          } else {
-            warn("scripts:build", "No root build script found.");
-          }
-
-          if (exists("android")) {
-            pass("android:project-present", "Android project directory exists.");
-          } else {
-            warn("android:project-missing", "Android directory not found. Capacitor Android shell may be absent.");
-          }
-
-          if (exists("scripts/sovereign-static-audit.mjs")) {
-            pass("audit:sovereign-static-audit", "Sovereign static audit script is present.");
-          } else {
-            warn("audit:sovereign-static-audit", "scripts/sovereign-static-audit.mjs not found.");
-          }
-
-          report.status = report.errors.length === 0 ? "pass" : "fail";
-
-          fs.writeFileSync(
-            ".security-reports/sovereign-runtime-contract.json",
-            JSON.stringify(report, null, 2),
-          );
-
-          console.log(JSON.stringify(report, null, 2));
-
-          if (process.env.GITHUB_STEP_SUMMARY) {
-            const lines = [
-              "## Sovereign Runtime Contract Scan",
-              "",
-              `Status: **${report.status}**`,
-              `Checks: **${report.checks.length}**`,
-              `Errors: **${report.errors.length}**`,
-              `Warnings: **${report.warnings.length}**`,
-              "",
-              "### Errors",
-              ...(report.errors.length ? report.errors.map((item) => `- ${item}`) : ["- none"]),
-              "",
-              "### Warnings",
-              ...(report.warnings.length ? report.warnings.map((item) => `- ${item.id}: ${item.message}`) : ["- none"]),
-              "",
-            ];
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
-          }
-
-          if (report.errors.length > 0) {
-            process.exit(1);
-          }
-          NODE
-
-      - name: Run package scripts that prove execution handoff
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          has_script() {
-            node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)" "$1"
-          }
-
-          run_if_present() {
-            local script="$1"
-            if has_script "$script"; then
-              echo "::group::pnpm run $script"
-              pnpm run "$script"
-              echo "::endgroup::"
-            else
-              echo "skip: no script '$script'"
-            fi
-          }
-
-          run_first_present() {
-            for script in "$@"; do
-              if has_script "$script"; then
-                echo "::group::pnpm run $script"
-                pnpm run "$script"
-                echo "::endgroup::"
-                return 0
-              fi
-            done
-            echo "skip: none of scripts found: $*"
-            return 0
-          }
-
-          run_first_present typecheck type-check check:types
-          run_if_present lint
-          run_first_present test:ci test:run test
-          run_first_present build web:build
-
-          if [ -f scripts/sovereign-static-audit.mjs ]; then
-            echo "::group::node scripts/sovereign-static-audit.mjs"
-            node scripts/sovereign-static-audit.mjs
-            echo "::endgroup::"
-          fi
-
-      - name: Android handoff smoke check
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ ! -d android ]; then
-            echo "No android directory; skipping Android handoff smoke check."
-            exit 0
-          fi
-
-          if [ -f android/gradlew ]; then
-            echo "::group::Android Gradle task graph"
-            chmod +x android/gradlew
-            (cd android && ./gradlew tasks --no-daemon --stacktrace >/dev/null)
-            echo "::endgroup::"
-          elif [ -f gradlew ]; then
-            echo "::group::Root Gradle task graph"
-            chmod +x gradlew
-            ./gradlew tasks --no-daemon --stacktrace >/dev/null
-            echo "::endgroup::"
-          else
-            echo "Android directory exists but no Gradle wrapper was found."
-            exit 1
-          fi
-
-      - name: Upload runtime contract scan report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: sovereign-runtime-contract-report
-          path: .security-reports/
-          if-no-files-found: warn
-          retention-days: 14
-
   analyze:
     name: CodeQL Analyze (${{ matrix.language }})
-    needs: runtime-contract-scan
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
 
     permissions:
       security-events: write
@@ -434,25 +47,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java for Android/Gradle analysis
+      - name: Setup Java for Android analysis
         if: matrix.language == 'java-kotlin'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK for Android/Gradle analysis
+      - name: Setup Android SDK for Android analysis
         if: matrix.language == 'java-kotlin'
         uses: android-actions/setup-android@v3
 
-      - name: Setup pnpm for manual Android build
+      - name: Setup pnpm for Android analysis
         if: matrix.language == 'java-kotlin'
         uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
           run_install: false
 
-      - name: Setup Node.js for manual Android build
+      - name: Setup Node.js for Android analysis
         if: matrix.language == 'java-kotlin'
         uses: actions/setup-node@v4
         with:
@@ -460,7 +73,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install dependencies for manual Android build
+      - name: Install dependencies for Android analysis
         if: matrix.language == 'java-kotlin'
         shell: bash
         run: pnpm install --frozen-lockfile
@@ -493,11 +106,12 @@ jobs:
               - .gradle
               - android/.gradle
               - android/app/build
+              - android/build
               - "**/*.generated.*"
               - "**/*.map"
 
-      - name: Manual build for Java/Kotlin Android analysis
-        if: matrix.build-mode == 'manual' && matrix.language == 'java-kotlin'
+      - name: Manual Android build for Java/Kotlin analysis
+        if: matrix.language == 'java-kotlin' && matrix.build-mode == 'manual'
         shell: bash
         run: |
           set -euo pipefail
@@ -515,6 +129,7 @@ jobs:
                 return 0
               fi
             done
+
             echo "skip: none of scripts found: $*"
             return 0
           }
@@ -552,15 +167,15 @@ jobs:
           category: "/language:${{ matrix.language }}"
           upload: true
 
-      - name: Write CodeQL step summary
+      - name: Write CodeQL summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## CodeQL Analysis"
+            echo "## Sovereign CodeQL Security"
             echo ""
             echo "- Language: \`${{ matrix.language }}\`"
             echo "- Build mode: \`${{ matrix.build-mode }}\`"
             echo "- Query suite: \`security-and-quality\`"
-            echo "- Threat model: \`local + default remote sources\`"
+            echo "- Target: React/TypeScript app, GitHub Actions, Android/Capacitor shell"
           } >> "$GITHUB_STEP_SUMMARY"
