@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import type { SovereignTelemetryEvent } from './features/product/runtime/sovereignTelemetry';
 
 type CoachLamp = 'green' | 'yellow' | 'red';
@@ -23,6 +24,7 @@ type GlobalRuntimeWindow = Window & typeof globalThis & {
 
 const HOST_ID = 'sovereign-global-runtime-monitor-root';
 const MAX_LOG_ENTRIES = 24;
+const monitorContainerContract = getSovereignContainerContract('global-runtime-monitor');
 
 function defaultCoachState(): RuntimeCoachState {
   return {
@@ -120,7 +122,12 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   const visibleLog = useMemo(() => log.slice(0, expanded ? MAX_LOG_ENTRIES : 5), [expanded, log]);
 
   return (
-    <section className="sovereign-global-monitor" data-testid="global-runtime-monitor" aria-label="Sovereign global runtime monitor">
+    <section
+      className={monitorContainerContract.rootClass}
+      data-role={monitorContainerContract.dataRole}
+      data-testid={monitorContainerContract.testId}
+      aria-label={monitorContainerContract.ariaLabel}
+    >
       <div className="sovereign-monitor-head">
         <div>
           <div className="sovereign-eyebrow">Coach · Live Log · Aktionen</div>
