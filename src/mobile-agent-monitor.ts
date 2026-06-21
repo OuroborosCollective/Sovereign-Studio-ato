@@ -1,4 +1,5 @@
-import { assertMobileWorkflowDecisionValid, decideMobileWorkflow } from './mobile-workflow-orchestrator';
+import { canSovereignProductTemplateAutoOpen, type SovereignProductTemplateAutoNavigationReason } from './features/product/runtime/sovereignProductTemplate';
+import { assertMobileWorkflowDecisionValid, decideMobileWorkflow, type MobileWorkflowOrchestratorDecision } from './mobile-workflow-orchestrator';
 
 export type MobileAgentLamp = 'green' | 'yellow' | 'red';
 
@@ -10,6 +11,9 @@ export interface MobileAgentCoachState {
   thinking: boolean;
   source?: string;
   updatedAt?: number;
+  targetNav?: string;
+  autoOpenTarget?: boolean;
+  autoOpenReason?: SovereignProductTemplateAutoNavigationReason;
 }
 
 interface SetupStateLike {
@@ -49,15 +53,26 @@ const STORAGE_KEY = 'sovereign-mobile-agent-monitor-log';
 const MAX_LOG_ENTRIES = 80;
 const RENDER_INTERVAL_MS = 1000;
 const INITIAL_DELAY_MS = 650;
+const STALE_THINKING_MS = 90_000;
+const AUTO_OPEN_COOLDOWN_MS = 6_000;
 const TEXT_NODE = 4;
 const ACCEPT = 1;
 const REJECT = 2;
 
 const ACTIONS = ['Repo', 'Builder', 'Files', 'Diff', 'Workflow', 'Repair'] as const;
 const FACES = ['^-_-^', '｡◕‿◕｡', '○¤○', '[>->_]', '_@=@_'];
+const RUNTIME_EVENT_NAMES = [
+  'sovereign:runtime-coach-state',
+  'sovereign:runtime-state',
+  'sovereign:metrics-state',
+  'sovereign:workflow-state',
+  'sovereign:telemetry-state',
+] as const;
 
 let entries: MobileAgentLogEntry[] = [];
 let lastSignature = '';
+let lastTarget = '';
+let lastTargetAt = 0;
 
 function now(): number {
   return Date.now();
@@ -150,6 +165,83 @@ function normalizeCoachState(value: unknown): MobileAgentCoachState | null {
     thinking: bool(value.thinking) ?? false,
     source: text(value.source) || 'runtime',
     updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : now(),
+    targetNav: text(value.targetNav),
+    autoOpenTarget: bool(value.autoOpenTarget),
+  };
+}
+
+function deriveEventCoachState(value: unknown): MobileAgentCoachState | null {
+  const normalized = normalizeCoachState(value);
+  if (normalized) return normalized;
+  if (!record(value)) return null;
+
+  const status = text(value.status).toLowerCase();
+  const message = text(value.message) || text(value.summary) || text(value.reason) || text(value.error);
+  const running = ['running', 'busy', 'active', 'pending'].includes(status);
+  const failed = ['failed', 'failure', 'error', 'red', 'blocked'].includes(status) || Boolean(text(value.error));
+
+  if (failed) {
+    return {
+      lamp: 'red',
+      title: 'Runtime Stopper',
+      message: message || 'Ein Runtime-Signal meldet einen Stopper.',
+      action: 'Repair pruefen.',
+      thinking: false,
+      source: 'runtime-event',
+      updatedAt: now(),
+      targetNav: 'Repair',
+      autoOpenTarget: true,
+      autoOpenReason: 'red-stopper',
+    };
+  }
+
+  if (running) {
+    return {
+      lamp: 'green',
+      title: 'Runtime arbeitet',
+      message: message || 'Ein Runtime-Signal ist aktiv.',
+      action: 'Live Monitor pruefen.',
+      thinking: true,
+      source: 'runtime-event',
+      updatedAt: now(),
+      targetNav: 'Live Monitor',
+      autoOpenTarget: true,
+      autoOpenReason: 'active-work',
+    };
+  }
+
+  if (message) {
+    return {
+      lamp: 'yellow',
+      title: 'Runtime Signal',
+      message,
+      action: 'Status pruefen.',
+      thinking: false,
+      source: 'runtime-event',
+      updatedAt: now(),
+    };
+  }
+
+  return null;
+}
+
+function withStaleThinkingGuard(state: MobileAgentCoachState): MobileAgentCoachState {
+  if (!state.thinking) return state;
+  const updatedAt = state.updatedAt ?? now();
+  if (now() - updatedAt <= STALE_THINKING_MS) return state;
+
+  return {
+    ...state,
+    lamp: 'yellow',
+    title: 'Aktivitaet ohne neues Runtime-Signal',
+    message: `${state.title}: ${state.message}`,
+    action: 'Repair oder Live Monitor pruefen.',
+    thinking: false,
+    source: state.source ?? 'stale-runtime',
+    updatedAt,
+    targetNav: 'Repair',
+    autoOpenTarget: true,
+    autoOpenReason: 'red-stopper',
   };
 }
 
@@ -164,6 +256,9 @@ function setupCoachState(setup: SetupStateLike | undefined): MobileAgentCoachSta
       thinking: true,
       source: 'setup',
       updatedAt: setup.updatedAt ?? now(),
+      targetNav: 'Live Monitor',
+      autoOpenTarget: true,
+      autoOpenReason: 'active-work',
     };
   }
 
@@ -176,6 +271,9 @@ function setupCoachState(setup: SetupStateLike | undefined): MobileAgentCoachSta
       thinking: false,
       source: 'setup',
       updatedAt: setup.updatedAt ?? now(),
+      targetNav: 'Repo',
+      autoOpenTarget: true,
+      autoOpenReason: 'red-stopper',
     };
   }
 
@@ -202,6 +300,14 @@ function setupCoachState(setup: SetupStateLike | undefined): MobileAgentCoachSta
   };
 }
 
+function classifyWorkflowAutoOpenReason(decision: MobileWorkflowOrchestratorDecision): SovereignProductTemplateAutoNavigationReason {
+  if (decision.lamp === 'red') return 'red-stopper';
+  if (decision.mode === 'matrix-work') return 'active-work';
+  if (decision.mode === 'review-log') return 'passive-review';
+  if (decision.mode === 'nocode-plan') return 'awaiting-intent';
+  return 'side-channel';
+}
+
 function workflowCoachState(): MobileAgentCoachState {
   try {
     const decision = decideMobileWorkflow({ visibleText: collectMobileAgentVisibleText() });
@@ -214,6 +320,9 @@ function workflowCoachState(): MobileAgentCoachState {
       thinking: decision.mode === 'matrix-work',
       source: decision.mode,
       updatedAt: now(),
+      targetNav: decision.targetNav,
+      autoOpenTarget: decision.autoOpenTarget,
+      autoOpenReason: classifyWorkflowAutoOpenReason(decision),
     };
   } catch {
     return {
@@ -230,11 +339,13 @@ function workflowCoachState(): MobileAgentCoachState {
 
 function currentCoachState(): MobileAgentCoachState {
   const win = window as MobileAgentWindow;
-  return normalizeCoachState(win.__sovereignRuntimeCoachState)
+  const state = normalizeCoachState(win.__sovereignRuntimeCoachState)
     ?? normalizeCoachState(win.__sovereignCoachState)
     ?? normalizeCoachState(win.__sovereignMobileCoachState)
     ?? setupCoachState(win.__sovereignSetupState)
     ?? workflowCoachState();
+
+  return withStaleThinkingGuard(state);
 }
 
 function loadEntries(): MobileAgentLogEntry[] {
@@ -291,8 +402,19 @@ function triggerAction(label: string): void {
   button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 }
 
+function maybeAutoOpenTarget(state: MobileAgentCoachState): void {
+  if (!state.autoOpenTarget || !state.targetNav || !state.autoOpenReason) return;
+  if (!canSovereignProductTemplateAutoOpen(state.autoOpenReason)) return;
+
+  const nowMs = now();
+  if (lastTarget === state.targetNav && nowMs - lastTargetAt < AUTO_OPEN_COOLDOWN_MS) return;
+  lastTarget = state.targetNav;
+  lastTargetAt = nowMs;
+  triggerAction(state.targetNav);
+}
+
 function anchorShell(): Element | null {
-  return document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)') ?? document.getElementById('root');
+  return document.querySelector('#root > div.min-h-screen > div:nth-of-type(1)');
 }
 
 function installStyle(): void {
@@ -335,7 +457,6 @@ function render(): void {
   if (!root) {
     root = document.createElement('section');
     root.id = ROOT_ID;
-    anchor.insertAdjacentElement('afterend', root);
     root.addEventListener('click', (event) => {
       const target = event.target instanceof HTMLElement ? event.target.closest<HTMLButtonElement>('button[data-agent-action]') : null;
       const action = target?.dataset.agentAction;
@@ -343,8 +464,13 @@ function render(): void {
     });
   }
 
+  if (root.previousElementSibling !== anchor) {
+    anchor.insertAdjacentElement('afterend', root);
+  }
+
   const state = currentCoachState();
   appendEntry(state);
+  maybeAutoOpenTarget(state);
   const logEntries = loadEntries();
   const thinking = state.thinking ? `<span class="dots">denkt</span>` : 'bereit';
 
@@ -370,11 +496,26 @@ function render(): void {
   if (log) log.scrollTop = log.scrollHeight;
 }
 
+function handleRuntimeEvent(event: Event): void {
+  const detail = event instanceof CustomEvent ? event.detail : undefined;
+  const state = deriveEventCoachState(detail);
+  if (!state) return;
+
+  const mobileWindow = window as MobileAgentWindow;
+  mobileWindow.__sovereignRuntimeCoachState = state;
+  appendEntry(withStaleThinkingGuard(state));
+  render();
+}
+
 export function installMobileAgentMonitor(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   const mobileWindow = window as MobileAgentWindow;
   if (mobileWindow.__sovereignMobileAgentMonitorInstalled) return;
   mobileWindow.__sovereignMobileAgentMonitorInstalled = true;
+
+  for (const eventName of RUNTIME_EVENT_NAMES) {
+    window.addEventListener(eventName, handleRuntimeEvent);
+  }
 
   window.setTimeout(render, INITIAL_DELAY_MS);
   mobileWindow.__sovereignMobileAgentMonitorInterval = window.setInterval(render, RENDER_INTERVAL_MS);
