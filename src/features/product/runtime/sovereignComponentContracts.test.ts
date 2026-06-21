@@ -31,6 +31,7 @@ describe('sovereign component contracts', () => {
 
   it('requires the project test id pattern context__action', () => {
     expect(createSovereignTestId('repo', 'load')).toBe('repo__load');
+    expect(createSovereignTestId('tabbar', 'repo')).toBe('tabbar__repo');
     expect(() => createSovereignTestId('Repo', 'Load')).toThrow();
     expect(() => createSovereignTestId('repo', 'load_now')).toThrow();
   });

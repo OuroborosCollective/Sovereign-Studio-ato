@@ -76,7 +76,8 @@ describe('App setup flow smoke', () => {
   it('keeps Pattern Memory count visible in the monitor region', async () => {
     openWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Live Monitor' }));
+    // Tab buttons now use role="tab" with aria-label for accessibility
+    fireEvent.click(screen.getByRole('tab', { name: 'Open Live Monitor tab' }));
 
     const monitor = await screen.findByTestId('operator-monitor');
     expect(within(monitor).getByText('Patterns: 0')).toBeDefined();

@@ -93,6 +93,13 @@ import { wallClockMs } from './mobile-operator-coach';
 import {
   SOVEREIGN_PRODUCT_TEMPLATE,
 } from './features/product/runtime/sovereignProductTemplate';
+import {
+  SOVEREIGN_APP_CLASSES,
+  getSovereignTabStyle,
+} from './features/product/runtime/sovereignStyleContract';
+import {
+  createSovereignTestId,
+} from './features/product/runtime/sovereignComponentContracts';
 
 type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
@@ -100,9 +107,31 @@ const DEFAULT_MISSION = 'README + Update History';
 
 // Tabs are derived from the Product Template as the single source of truth.
 // This ensures the app shell always matches the product contract.
-const tabs: Array<{ id: SovereignTab; label: string }> = SOVEREIGN_PRODUCT_TEMPLATE.tabs
+// Each tab object includes contract-bound styling and accessibility properties.
+const tabs: Array<{
+  id: SovereignTab;
+  label: string;
+  cssClass: string;
+  activeCssClass: string;
+  dataRole: string;
+  ariaLabel: string;
+  mobilePriority: number;
+  testId: string;
+}> = SOVEREIGN_PRODUCT_TEMPLATE.tabs
   .filter((tab) => tab.userVisible)
-  .map((tab) => ({ id: tab.id as SovereignTab, label: tab.label }));
+  .map((tab) => {
+    const style = getSovereignTabStyle(tab.id);
+    return {
+      id: tab.id as SovereignTab,
+      label: tab.label,
+      cssClass: style.cssClass,
+      activeCssClass: style.activeCssClass,
+      dataRole: style.dataRole,
+      ariaLabel: style.ariaLabel,
+      mobilePriority: style.mobilePriority,
+      testId: createSovereignTestId('tabbar', tab.id),
+    };
+  });
 
 const automationModes: SovereignAutomationMode[] = ['manual', 'auto-review', 'full-auto-draft-pr'];
 
@@ -822,14 +851,19 @@ const App: React.FC = () => {
   if (!user) return <LoginView onLogin={login} />;
 
   return (
-    <div className="min-h-screen p-4">
-      <h1 className="font-bold">Sovereign Canvas Tool</h1>
+    <div className={`${SOVEREIGN_APP_CLASSES.shell} min-h-screen p-4`} data-role="sovereign-app-shell" data-testid="app-shell__root">
+      <h1 className={`${SOVEREIGN_APP_CLASSES.title} font-bold`} data-role="sovereign-app-title">Sovereign Canvas Tool</h1>
 
-      <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-800 pb-2">
+      <div className={`${SOVEREIGN_APP_CLASSES.tabbar} mt-4 flex flex-wrap gap-2 border-b border-slate-800 pb-2`} role="tablist" aria-label="Sovereign workspace tabs" data-role="sovereign-tabbar" data-testid="tabbar__root">
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={activeTab === tab.id ? 'font-bold underline' : ''}
+            role="tab"
+            aria-label={tab.ariaLabel}
+            aria-selected={activeTab === tab.id}
+            data-role={tab.dataRole}
+            data-testid={tab.testId}
+            className={activeTab === tab.id ? `${tab.cssClass} ${tab.activeCssClass}` : tab.cssClass}
             onClick={() => handleUserTabClick(tab.id)}
             type="button"
           >
@@ -838,7 +872,7 @@ const App: React.FC = () => {
         ))}
       </div>
 
-      <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
+      <section className={`${SOVEREIGN_APP_CLASSES.card} ${SOVEREIGN_APP_CLASSES.automationPanel} mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200`} data-role="sovereign-automation-panel" data-testid="automation__panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-bold">Automation Mode</h2>
@@ -848,7 +882,10 @@ const App: React.FC = () => {
           <select
             value={automationMode}
             onChange={(event) => changeAutomationMode(event.target.value as SovereignAutomationMode)}
-            className="rounded border border-slate-700 bg-slate-900 p-2 text-sm"
+            className={`${SOVEREIGN_APP_CLASSES.select} rounded border border-slate-700 bg-slate-900 p-2 text-sm`}
+            aria-label="Automation mode"
+            data-role="automation-mode-select"
+            data-testid="automation__mode-select"
           >
             {automationModes.map((mode) => (
               <option key={mode} value={mode}>

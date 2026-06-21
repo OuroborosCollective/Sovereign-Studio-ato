@@ -40,11 +40,12 @@ describe('App', () => {
     expect(screen.getByText('Sovereign Canvas Tool')).toBeDefined();
     expect(screen.getByText('Automation Mode')).toBeDefined();
 
-    expect(screen.getByRole('button', { name: 'Repo' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Builder' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Remote Memory' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Pattern Memory' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Telemetry' })).toBeDefined();
+    // Tab buttons now use role="tab" with aria-label for accessibility
+    expect(screen.getByRole('tab', { name: 'Open Repo tab' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'Open Builder tab' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'Open Remote Memory tab' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'Open Pattern Memory tab' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'Open Telemetry tab' })).toBeDefined();
 
     expect(screen.getByPlaceholderText('https://github.com/owner/repository')).toBeDefined();
   });
