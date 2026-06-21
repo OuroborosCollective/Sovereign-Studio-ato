@@ -97,18 +97,28 @@ function getSafeGithubStepSummaryPath() {
   if (path.basename(resolvedPath) !== 'summary.md') return null;
 
   const safeRoot = path.resolve(process.cwd());
-  const safeRootWithSep = safeRoot.endsWith(path.sep) ? safeRoot : `${safeRoot}${path.sep}`;
-
-  if (fs.existsSync(resolvedPath)) {
-    const realRoot = fs.realpathSync(safeRoot);
-    const realPath = fs.realpathSync(resolvedPath);
-    const realRootWithSep = realRoot.endsWith(path.sep) ? realRoot : `${realRoot}${path.sep}`;
-    if (!(realPath === realRoot || realPath.startsWith(realRootWithSep))) return null;
-    return realPath;
+  let realRoot;
+  try {
+    realRoot = fs.realpathSync.native(safeRoot);
+  } catch {
+    return null;
   }
+  const realRootWithSep = realRoot.endsWith(path.sep) ? realRoot : `${realRoot}${path.sep}`;
 
-  if (!(resolvedPath === safeRoot || resolvedPath.startsWith(safeRootWithSep))) return null;
-  return resolvedPath;
+  try {
+    if (fs.existsSync(resolvedPath)) {
+      const realPath = fs.realpathSync.native(resolvedPath);
+      if (!(realPath === realRoot || realPath.startsWith(realRootWithSep))) return null;
+      return realPath;
+    }
+
+    const resolvedDir = path.dirname(resolvedPath);
+    const realDir = fs.realpathSync.native(resolvedDir);
+    if (!(realDir === realRoot || realDir.startsWith(realRootWithSep))) return null;
+    return path.join(realDir, path.basename(resolvedPath));
+  } catch {
+    return null;
+  }
 }
 
 function walk(dir) {
