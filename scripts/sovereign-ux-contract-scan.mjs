@@ -267,6 +267,11 @@ function run() {
   } else {
     pass('ux:monitor-surface-count', 'Monitor surface count is acceptable.', { repoMonitorCount, globalMonitorExists });
   }
+
+  // Fragile selector warnings (gate against regression)
+  warnText('src/index.css', /#root > div\.min-h-screen/, 'css:no-root-fallback', 'CSS should use contract classes (.sovereign-app-shell) instead of fragile root selectors.');
+  warnText('src/index.css', /nth-of-type/, 'css:no-nth-of-type', 'CSS should use contract selectors instead of nth-of-type patterns.');
+  warnText('src/main.tsx', /#root > div/, 'main:no-root-fallback', 'main.tsx should use contract class selectors instead of fragile root selectors.');
 }
 
 try {
