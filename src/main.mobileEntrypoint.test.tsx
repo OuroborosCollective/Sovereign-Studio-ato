@@ -10,10 +10,6 @@ const mocks = vi.hoisted(() => {
     render,
     createRoot: vi.fn(() => ({ render })),
     posthogInit: vi.fn(),
-    installMobileAgentMonitor: vi.fn(),
-    installMobileMoreMenu: vi.fn(),
-    installMobileSetupDrawer: vi.fn(),
-    installMobileWorkspaceOrder: vi.fn(),
     restoreCanvasStateMirror: vi.fn(async () => undefined),
     flushCanvasStateMirror: vi.fn(async () => undefined),
     warn: vi.fn(),
@@ -38,36 +34,22 @@ vi.mock('./components/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
 }));
 
-vi.mock('./mobile-agent-monitor', () => ({
-  installMobileAgentMonitor: mocks.installMobileAgentMonitor,
-}));
-
-vi.mock('./mobile-more-menu', () => ({
-  installMobileMoreMenu: mocks.installMobileMoreMenu,
-}));
-
-vi.mock('./mobile-setup-drawer', () => ({
-  installMobileSetupDrawer: mocks.installMobileSetupDrawer,
-}));
-
-vi.mock('./mobile-workspace-order', () => ({
-  installMobileWorkspaceOrder: mocks.installMobileWorkspaceOrder,
-}));
-
 vi.mock('./store', () => ({
   restoreCanvasStateMirror: mocks.restoreCanvasStateMirror,
   flushCanvasStateMirror: mocks.flushCanvasStateMirror,
 }));
 
-function resetMobileWindowFlags(): void {
-  const win = window as Window & typeof globalThis & {
-    __sovereignViewportRuntimeInstalled?: boolean;
-    __sovereignMobileRuntimeInstalled?: boolean;
-    __sovereignCodeWorkspacePersistenceInstalled?: boolean;
-    requestIdleCallback?: unknown;
-    cancelIdleCallback?: unknown;
-    global?: unknown;
-  };
+type TestWindow = Window & typeof globalThis & {
+  __sovereignViewportRuntimeInstalled?: boolean;
+  __sovereignMobileRuntimeInstalled?: boolean;
+  __sovereignCodeWorkspacePersistenceInstalled?: boolean;
+  requestIdleCallback?: unknown;
+  cancelIdleCallback?: unknown;
+  global?: unknown;
+};
+
+function resetWindowFlags(): void {
+  const win = window as TestWindow;
 
   delete win.__sovereignViewportRuntimeInstalled;
   delete win.__sovereignMobileRuntimeInstalled;
@@ -84,7 +66,7 @@ beforeEach(() => {
   document.head.innerHTML = '';
   document.body.innerHTML = '<div id="root"></div>';
   document.documentElement.className = '';
-  resetMobileWindowFlags();
+  resetWindowFlags();
 
   Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true });
   Object.defineProperty(window, 'innerHeight', { value: 844, configurable: true });
@@ -94,24 +76,16 @@ beforeEach(() => {
 });
 
 describe('mobile entrypoint runtime boot', () => {
-  it('installs viewport, mobile modules, persistence and renders React root', async () => {
+  it('installs viewport and persistence then renders the React root', async () => {
     await import('./main');
 
-    const win = window as Window & typeof globalThis & {
-      __sovereignViewportRuntimeInstalled?: boolean;
-      __sovereignMobileRuntimeInstalled?: boolean;
-      __sovereignCodeWorkspacePersistenceInstalled?: boolean;
-      requestIdleCallback?: unknown;
-      cancelIdleCallback?: unknown;
-      global?: unknown;
-    };
+    const win = window as TestWindow;
 
     expect(win.global).toBe(window);
     expect(typeof win.requestIdleCallback).toBe('function');
     expect(typeof win.cancelIdleCallback).toBe('function');
-
     expect(win.__sovereignViewportRuntimeInstalled).toBe(true);
-    expect(win.__sovereignMobileRuntimeInstalled).toBe(true);
+    expect(win.__sovereignMobileRuntimeInstalled).toBeUndefined();
     expect(win.__sovereignCodeWorkspacePersistenceInstalled).toBe(true);
 
     expect(document.documentElement.classList.contains('device-phone')).toBe(true);
@@ -119,27 +93,20 @@ describe('mobile entrypoint runtime boot', () => {
     expect(document.documentElement.classList.contains('regular-height')).toBe(true);
     expect(document.getElementById('sovereign-mobile-runtime-style')).toBeDefined();
 
-    expect(mocks.installMobileAgentMonitor).toHaveBeenCalledOnce();
-    expect(mocks.installMobileMoreMenu).toHaveBeenCalledOnce();
-    expect(mocks.installMobileSetupDrawer).toHaveBeenCalledOnce();
-    expect(mocks.installMobileWorkspaceOrder).toHaveBeenCalledOnce();
-
     expect(mocks.restoreCanvasStateMirror).toHaveBeenCalledWith({
       dispatch: true,
       clearInvalid: true,
     });
-
     expect(mocks.createRoot).toHaveBeenCalledWith(document.getElementById('root'));
     expect(mocks.render).toHaveBeenCalledOnce();
   });
 
-  it('warns and skips React boot when root container is missing while mobile runtime remains guarded', async () => {
+  it('warns and skips React boot when root container is missing', async () => {
     document.body.innerHTML = '';
 
     await import('./main');
 
     expect(mocks.warn).toHaveBeenCalledWith('React root container #root not found.');
     expect(mocks.createRoot).not.toHaveBeenCalled();
-    expect(mocks.installMobileAgentMonitor).toHaveBeenCalledOnce();
   });
 });
