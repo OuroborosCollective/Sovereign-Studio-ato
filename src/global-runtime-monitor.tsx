@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
+import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
 import type { SovereignTelemetryEvent } from './features/product/runtime/sovereignTelemetry';
 
 type CoachLamp = 'green' | 'yellow' | 'red';
@@ -133,7 +134,15 @@ function GlobalRuntimeMonitor(): React.ReactElement {
           <div className="sovereign-eyebrow">Coach · Live Log · Aktionen</div>
           <h2>Agenten-Monitor · Sovereign Bot</h2>
         </div>
-        <button type="button" className="sovereign-monitor-toggle" onClick={() => setExpanded((value) => !value)}>
+        <button
+          type="button"
+          className="sovereign-monitor-toggle"
+          onClick={() => setExpanded((value) => !value)}
+          data-role={SOVEREIGN_ACTION_MONITOR_TOGGLE.dataRole}
+          data-testid={SOVEREIGN_ACTION_MONITOR_TOGGLE.testId}
+          aria-label={SOVEREIGN_ACTION_MONITOR_TOGGLE.ariaLabel}
+          data-state="idle"
+        >
           {expanded ? 'Log einklappen' : 'Log anzeigen'}
         </button>
       </div>
