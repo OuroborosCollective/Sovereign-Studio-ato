@@ -96,6 +96,18 @@ function getSafeGithubStepSummaryPath() {
   if (!path.isAbsolute(resolvedPath)) return null;
   if (path.basename(resolvedPath) !== 'summary.md') return null;
 
+  const safeRoot = path.resolve(process.cwd());
+  const safeRootWithSep = safeRoot.endsWith(path.sep) ? safeRoot : `${safeRoot}${path.sep}`;
+
+  if (fs.existsSync(resolvedPath)) {
+    const realRoot = fs.realpathSync(safeRoot);
+    const realPath = fs.realpathSync(resolvedPath);
+    const realRootWithSep = realRoot.endsWith(path.sep) ? realRoot : `${realRoot}${path.sep}`;
+    if (!(realPath === realRoot || realPath.startsWith(realRootWithSep))) return null;
+    return realPath;
+  }
+
+  if (!(resolvedPath === safeRoot || resolvedPath.startsWith(safeRootWithSep))) return null;
   return resolvedPath;
 }
 
