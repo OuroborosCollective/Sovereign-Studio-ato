@@ -1,6 +1,6 @@
 /**
  * Coach Runtime Bridge Hook
- * 
+ *
  * Extracts coach state derivation from App.tsx for better maintainability.
  * Publishes coach state to window for mobile-operator-coach consumption.
  */
@@ -11,7 +11,6 @@ import type { SequentialRuntimeState } from '../runtime/sequentialRuntimeGuard';
 import { getLatestSovereignHealthReport, type SovereignHealthStatus } from '../runtime/sovereignHealth';
 import { getSovereignHealthRuntimeGate } from '../runtime/sovereignFunctionalGuards';
 
-// Coach State Types
 export type CoachLamp = 'green' | 'yellow' | 'red';
 export type CoachSource = 'runtime-library' | 'workflow' | 'repair' | 'telemetry' | 'pattern-memory' | 'remote-memory' | 'runtime' | 'repo' | 'dom-fallback' | 'unknown';
 
@@ -35,12 +34,17 @@ export interface RuntimeReadinessGateInput {
 function latestHealthGate(): RuntimeReadinessGateInput | null {
   const report = getLatestSovereignHealthReport();
   if (!report) return null;
+
   const gate = getSovereignHealthRuntimeGate(report);
   return {
     allowed: gate.allowed,
     status: gate.status,
     reason: gate.reason,
   };
+}
+
+function normalizeWorkflowStatus(value?: string): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
 function deriveHealthGateCoachState(healthGate: RuntimeReadinessGateInput, now: number): CoachRuntimeState | null {
@@ -71,7 +75,62 @@ function deriveHealthGateCoachState(healthGate: RuntimeReadinessGateInput, now: 
   };
 }
 
-// Leitet Coach-State aus echtem Runtime ab - keine Mocks, keine Stubs
+function deriveWorkflowCoachState(workflowStatus: string, now: number): CoachRuntimeState | null {
+  if (workflowStatus === 'red' || workflowStatus === 'failed' || workflowStatus === 'failure' || workflowStatus === 'error') {
+    return {
+      lamp: 'red',
+      title: 'Workflow fehlgeschlagen',
+      message: 'Die CI/CD Checks sind fehlgeschlagen.',
+      action: 'Repair prüfen',
+      thinking: false,
+      source: 'workflow',
+      tick: now,
+      updatedAt: now,
+    };
+  }
+
+  if (workflowStatus === 'pending' || workflowStatus === 'queued' || workflowStatus === 'in_progress' || workflowStatus === 'waiting' || workflowStatus === 'requested') {
+    return {
+      lamp: 'yellow',
+      title: 'Workflow wartet',
+      message: 'GitHub Checks laufen oder stehen aus. Der nächste sichere Bereich ist Workflow, nicht Diff.',
+      action: 'Workflow prüfen',
+      thinking: false,
+      source: 'workflow',
+      tick: now,
+      updatedAt: now,
+    };
+  }
+
+  if (workflowStatus === 'unknown') {
+    return {
+      lamp: 'yellow',
+      title: 'Workflow prüfen',
+      message: 'GitHub Checks sind noch nicht eindeutig. Bitte Workflow ansehen statt weiter durch Diff zu springen.',
+      action: 'Workflow prüfen',
+      thinking: false,
+      source: 'workflow',
+      tick: now,
+      updatedAt: now,
+    };
+  }
+
+  if (workflowStatus === 'green' || workflowStatus === 'success' || workflowStatus === 'completed') {
+    return {
+      lamp: 'green',
+      title: 'Workflow grün',
+      message: 'Package erstellt und Workflow erfolgreich.',
+      action: 'Draft/Release prüfen',
+      thinking: false,
+      source: 'workflow',
+      tick: now,
+      updatedAt: now,
+    };
+  }
+
+  return null;
+}
+
 export function deriveCoachStateFromRuntime(
   sequentialRuntime: SequentialRuntimeState,
   repoReady: boolean,
@@ -83,12 +142,11 @@ export function deriveCoachStateFromRuntime(
   healthGate?: RuntimeReadinessGateInput,
 ): CoachRuntimeState {
   const now = wallClockMs();
-  
-  // 1. Wenn gerade ein Step läuft
+
   if (sequentialRuntime.activeStep) {
     const step = sequentialRuntime.activeStep;
     const stepRecord = sequentialRuntime.steps[step];
-    
+
     if (stepRecord?.status === 'running') {
       const stepLabels: Record<string, string> = {
         'repo-load': 'Repository wird geladen',
@@ -96,8 +154,9 @@ export function deriveCoachStateFromRuntime(
         'diff-load': 'Diff-Quellen werden geladen',
         'draft-pr-publish': 'Draft PR wird erstellt',
         'workflow-watch': 'Workflow wird beobachtet',
-        'repair-plan': 'Repair-Plan wird erstellt'
+        'repair-plan': 'Repair-Plan wird erstellt',
       };
+
       return {
         lamp: 'green',
         title: stepLabels[step] || `Schritt: ${step}`,
@@ -106,10 +165,10 @@ export function deriveCoachStateFromRuntime(
         thinking: true,
         source: 'runtime-library',
         tick: now,
-        updatedAt: now
+        updatedAt: now,
       };
     }
-    
+
     if (stepRecord?.status === 'failed') {
       return {
         lamp: 'red',
@@ -119,12 +178,11 @@ export function deriveCoachStateFromRuntime(
         thinking: false,
         source: 'runtime-library',
         tick: now,
-        updatedAt: now
+        updatedAt: now,
       };
     }
   }
-  
-  // 2. Wenn Repo nicht geladen
+
   if (!repoReady) {
     return {
       lamp: 'yellow',
@@ -134,14 +192,14 @@ export function deriveCoachStateFromRuntime(
       thinking: false,
       source: 'repo',
       tick: now,
-      updatedAt: now
+      updatedAt: now,
     };
   }
 
-  const healthGateCoachState = healthGate ? deriveHealthGateCoachState(healthGate, now) : latestHealthGate() ? deriveHealthGateCoachState(latestHealthGate() as RuntimeReadinessGateInput, now) : null;
+  const resolvedHealthGate = healthGate ?? latestHealthGate();
+  const healthGateCoachState = resolvedHealthGate ? deriveHealthGateCoachState(resolvedHealthGate, now) : null;
   if (healthGateCoachState) return healthGateCoachState;
-  
-  // 3. Wenn Draft PR erstellt wird
+
   if (isPublishing) {
     return {
       lamp: 'green',
@@ -151,11 +209,10 @@ export function deriveCoachStateFromRuntime(
       thinking: true,
       source: 'workflow',
       tick: now,
-      updatedAt: now
+      updatedAt: now,
     };
   }
-  
-  // 4. Wenn Workflow beobachtet wird
+
   if (isWatchingWorkflow) {
     return {
       lamp: 'green',
@@ -165,51 +222,26 @@ export function deriveCoachStateFromRuntime(
       thinking: true,
       source: 'workflow',
       tick: now,
-      updatedAt: now
+      updatedAt: now,
     };
   }
-  
-  // 5. Wenn Workflow fehlgeschlagen
-  if (workflowStatus === 'red') {
-    return {
-      lamp: 'red',
-      title: 'Workflow fehlgeschlagen',
-      message: 'Die CI/CD Checks sind fehlgeschlagen.',
-      action: 'Repair prüfen',
-      thinking: false,
-      source: 'workflow',
-      tick: now,
-      updatedAt: now
-    };
-  }
-  
-  // 6. Wenn Package bereit
+
+  const workflowCoachState = deriveWorkflowCoachState(normalizeWorkflowStatus(workflowStatus), now);
+  if (workflowCoachState) return workflowCoachState;
+
   if (hasPackage) {
-    if (workflowStatus === 'green') {
-      return {
-        lamp: 'green',
-        title: 'Fertig!',
-        message: 'Package erstellt und Workflow erfolgreich.',
-        action: 'Diff prüfen',
-        thinking: false,
-        source: 'runtime-library',
-        tick: now,
-        updatedAt: now
-      };
-    }
     return {
       lamp: 'green',
       title: 'Package bereit',
       message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
       action: 'Weiter mit Diff',
       thinking: false,
-      source: 'runtime-library',
+      source: hasActivePatterns ? 'pattern-memory' : 'runtime-library',
       tick: now,
-      updatedAt: now
+      updatedAt: now,
     };
   }
-  
-  // 7. Default: bereit für Auftrag
+
   return {
     lamp: 'green',
     title: 'Bereit für Auftrag',
@@ -218,7 +250,7 @@ export function deriveCoachStateFromRuntime(
     thinking: false,
     source: 'runtime-library',
     tick: now,
-    updatedAt: now
+    updatedAt: now,
   };
 }
 
@@ -229,13 +261,11 @@ export interface UseCoachRuntimeBridgeOptions {
 export function useCoachRuntimeBridge({ coachState }: UseCoachRuntimeBridgeOptions): void {
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    
-    // Setze globalen Coach-State
+
     (window as typeof window & { __sovereignRuntimeCoachState?: CoachRuntimeState }).__sovereignRuntimeCoachState = coachState;
-    
-    // Broadcast Event für Coach-Update
+
     window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
-      detail: coachState
+      detail: coachState,
     }));
   }, [coachState]);
 }
