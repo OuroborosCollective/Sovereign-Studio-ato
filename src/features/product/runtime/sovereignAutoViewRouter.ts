@@ -205,6 +205,12 @@ function canRunSuggestionSwitch(input: SovereignAutoViewInput): boolean {
   return isSovereignAutoViewConfidenceMatched(input);
 }
 
+function canRunPackageReviewSwitch(input: SovereignAutoViewInput): boolean {
+  if (isSovereignAutoViewManualOverrideActive(input)) return false;
+  if (isSovereignAutoViewUserInactive(input)) return true;
+  return isSovereignAutoViewConfidenceMatched(input);
+}
+
 function keepCurrent(input: SovereignAutoViewInput, reason: string): SovereignAutoViewDecision {
   return { shouldSwitch: false, tab: input.activeTab, reason };
 }
@@ -252,7 +258,7 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
     input.mode !== 'manual'
     && input.hasPackage
     && (input.activeTab === 'builder' || input.activeTab === 'files')
-    && canRunSuggestionSwitch(input)
+    && canRunPackageReviewSwitch(input)
   ) {
     return switchTo(
       input,
