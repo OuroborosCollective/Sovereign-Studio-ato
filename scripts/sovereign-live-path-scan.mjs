@@ -139,6 +139,8 @@ function scanLiveFiles(files) {
     if (SECRET_PATTERN.test(source)) {
       if (testFile) {
         warn(`test-secret-fixture:${normalized}`, 'Secret-like fixture found in a test file. Keep this fake and never paste real credentials.', { filePath: normalized });
+      } else if (textAllowed) {
+        pass(`security-pattern-definition:${normalized}`, 'Secret-like tokens are allowed here because this file defines redaction/validation patterns.', { filePath: normalized });
       } else {
         fail(`secret:${normalized}`, 'Secret-like value found in repository live path.', { filePath: normalized });
       }
