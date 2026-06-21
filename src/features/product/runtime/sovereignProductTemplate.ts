@@ -68,15 +68,16 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   version: 1,
   productName: 'Sovereign Studio',
   startTab: 'repo',
-  primaryFlow: ['repo', 'builder', 'files', 'diff', 'workflow'],
-  sideTabs: ['repair', 'remote', 'memory', 'telemetry', 'monitor'],
+  primaryFlow: ['repo', 'builder', 'files', 'diff'],
+  sideTabs: ['workflow', 'repair', 'remote', 'memory', 'telemetry', 'monitor'],
   diagnosticTabs: ['readiness', 'integrity', 'findings', 'health', 'runtime', 'coverage'],
   autoNavigationAllowlist: ['active-work', 'red-stopper'],
   invariants: [
     'Repo is always the first screen and the first template phase.',
     'Builder follows only after repository context exists or the user explicitly opens planning.',
     'Files and Diff are review surfaces, not startup surfaces.',
-    'Workflow and Repair are diagnostic/action surfaces, not passive planning fallbacks.',
+    'Workflow and Repair are side/stopper surfaces, not passive planning fallbacks.',
+    'The Android primary navigation is Repo, Builder, Files and Diff only.',
     'Passive review, awaiting-intent and side-channel states must not auto-open tabs.',
     'Only active work or red stopper states may auto-open a target view.',
     'Coach, setup drawer and workbench are guidance layers; they must not become state sources for themselves.',
@@ -86,7 +87,7 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
     { id: 'builder', label: 'Builder', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
     { id: 'files', label: 'Files', group: 'primary', phase: 'package-review', mainFlowIndex: 2, autoOpenAllowed: false, userVisible: true },
     { id: 'diff', label: 'Diff', group: 'primary', phase: 'diff-review', mainFlowIndex: 3, autoOpenAllowed: false, userVisible: true },
-    { id: 'workflow', label: 'Workflow', group: 'primary', phase: 'draft-pr-workflow', mainFlowIndex: 4, autoOpenAllowed: true, userVisible: true },
+    { id: 'workflow', label: 'Workflow', group: 'side', phase: 'draft-pr-workflow', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
     { id: 'repair', label: 'Repair', group: 'side', phase: 'repair-diagnostics', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
     { id: 'remote', label: 'Remote Memory', group: 'side', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
     { id: 'memory', label: 'Pattern Memory', group: 'side', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
@@ -148,8 +149,8 @@ export function validateSovereignProductTemplate(
   if (sideMissing.length) errors.push(`Side tabs reference unknown tabs: ${sideMissing.join(', ')}`);
   if (diagnosticMissing.length) errors.push(`Diagnostic tabs reference unknown tabs: ${diagnosticMissing.join(', ')}`);
 
-  if (contract.primaryFlow.join('>') !== 'repo>builder>files>diff>workflow') {
-    errors.push('Primary flow must be repo > builder > files > diff > workflow.');
+  if (contract.primaryFlow.join('>') !== 'repo>builder>files>diff') {
+    errors.push('Primary flow must be repo > builder > files > diff.');
   }
 
   for (const [index, tab] of contract.primaryFlow.entries()) {

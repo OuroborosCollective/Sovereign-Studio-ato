@@ -14,6 +14,14 @@ const required = [
   'android/app/src/main/assets/public/index.html',
 ];
 
+const forbiddenEntrypointDomInstallers = [
+  'installMobileAgentMonitor',
+  'installMobileMoreMenu',
+  'installMobileSetupDrawer',
+  'installMobileWorkspaceOrder',
+  'installMobileRuntimeModules',
+];
+
 const strictCapacitorMajor = process.env.SOVEREIGN_STRICT_CAPACITOR_MAJOR === '1';
 let ok = true;
 
@@ -47,8 +55,12 @@ if (existsSync('src/main.tsx')) {
   const main = read('src/main.tsx');
   if (!main.includes("import App from './App'")) fail('src/main.tsx must import the current App shell.');
   if (!main.includes('<App />')) fail('src/main.tsx must render the current App shell.');
-  if (!main.includes('installMobileAgentMonitor')) fail('src/main.tsx must install the Android agent monitor runtime.');
+  if (!main.includes('installViewportRuntime')) fail('src/main.tsx must install the Android viewport runtime.');
   if (!main.includes('restoreCanvasStateMirror')) fail('src/main.tsx must restore mobile workspace persistence before boot.');
+
+  for (const token of forbiddenEntrypointDomInstallers) {
+    if (main.includes(token)) fail(`src/main.tsx must not boot DOM-mutating mobile installer: ${token}.`);
+  }
 }
 
 if (existsSync('package.json')) {
