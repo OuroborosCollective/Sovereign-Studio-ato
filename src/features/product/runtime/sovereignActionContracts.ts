@@ -8,8 +8,19 @@
 
 export type ActionKind = 'primary' | 'secondary' | 'destructive' | 'diagnostic' | 'navigation';
 
+export type SovereignActionContractId =
+  | 'load-repo'
+  | 'save-session'
+  | 'restore-session'
+  | 'clear-view'
+  | 'analyze-mission'
+  | 'start-task'
+  | 'repair-log'
+  | 'draft-pr'
+  | 'monitor-toggle';
+
 export interface SovereignActionContract {
-  id: string;
+  id: SovereignActionContractId;
   label: string;
   dataRole: string;
   testId: string;
@@ -25,6 +36,20 @@ export interface SovereignActionContractReport {
   warnings: string[];
   summary: string;
 }
+
+const ACTION_DATA_ROLE_PATTERN = /^action-[a-z][a-z0-9-]*$/;
+const ACTION_TEST_ID_PATTERN = /^[a-z][a-z0-9-]*__[a-z][a-z0-9-]*$/;
+const REQUIRED_ACTION_IDS: SovereignActionContractId[] = [
+  'load-repo',
+  'save-session',
+  'restore-session',
+  'clear-view',
+  'analyze-mission',
+  'start-task',
+  'repair-log',
+  'draft-pr',
+  'monitor-toggle',
+];
 
 /**
  * Load repository action contract.
@@ -91,7 +116,7 @@ export const SOVEREIGN_ACTION_ANALYZE_MISSION: SovereignActionContract = {
   dataRole: 'action-analyze-mission',
   testId: 'builder__analyze-mission',
   ariaLabel: 'Auftrag analysieren',
-  kind: 'primary',
+  kind: 'diagnostic',
   requiresRepo: true,
   canBeBusy: true,
 };
@@ -119,7 +144,7 @@ export const SOVEREIGN_ACTION_REPAIR_LOG: SovereignActionContract = {
   dataRole: 'action-repair-log',
   testId: 'builder__repair-log',
   ariaLabel: 'Fehlerlog reparieren',
-  kind: 'destructive',
+  kind: 'diagnostic',
   requiresRepo: true,
   canBeBusy: true,
 };
@@ -168,8 +193,10 @@ function unique<T>(values: readonly T[]): T[] {
   return Array.from(new Set(values));
 }
 
-export function getSovereignActionContract(id: string): SovereignActionContract | undefined {
-  return SOVEREIGN_ACTION_CONTRACTS.find((contract) => contract.id === id);
+export function getSovereignActionContract(id: SovereignActionContractId): SovereignActionContract {
+  const contract = SOVEREIGN_ACTION_CONTRACTS.find((candidate) => candidate.id === id);
+  if (!contract) throw new Error(`Unknown Sovereign action contract: ${id}`);
+  return contract;
 }
 
 export function validateSovereignActionContracts(): SovereignActionContractReport {
@@ -206,8 +233,14 @@ export function validateSovereignActionContracts(): SovereignActionContractRepor
     if (!contract.dataRole.trim()) {
       errors.push(`${contract.id}: dataRole must not be empty.`);
     }
+    if (!ACTION_DATA_ROLE_PATTERN.test(contract.dataRole)) {
+      errors.push(`${contract.id}: dataRole must match ${ACTION_DATA_ROLE_PATTERN}.`);
+    }
     if (!contract.testId.trim()) {
       errors.push(`${contract.id}: testId must not be empty.`);
+    }
+    if (!ACTION_TEST_ID_PATTERN.test(contract.testId)) {
+      errors.push(`${contract.id}: testId must match ${ACTION_TEST_ID_PATTERN}.`);
     }
     if (!contract.ariaLabel.trim()) {
       errors.push(`${contract.id}: ariaLabel must not be empty.`);
@@ -217,30 +250,29 @@ export function validateSovereignActionContracts(): SovereignActionContractRepor
       errors.push(`${contract.id}: unknown action kind ${contract.kind}.`);
     }
 
-    if (contract.kind === 'destructive' && !contract.id.includes('repair') && !contract.id.includes('clear')) {
-      warnings.push(`${contract.id}: destructive action should have repair or clear semantics.`);
+    if (contract.id === 'analyze-mission' && contract.kind !== 'diagnostic') {
+      errors.push('analyze-mission must be classified as diagnostic.');
     }
-
-    if (contract.kind === 'diagnostic' && !contract.id.includes('analyze') && !contract.id.includes('repair')) {
-      warnings.push(`${contract.id}: diagnostic action should have analyze or repair semantics.`);
+    if (contract.id === 'repair-log' && contract.kind !== 'diagnostic') {
+      errors.push('repair-log must be classified as diagnostic.');
+    }
+    if (contract.id === 'clear-view' && !['secondary', 'destructive'].includes(contract.kind)) {
+      errors.push('clear-view must be classified as secondary or destructive.');
+    }
+    if (contract.id === 'draft-pr' && !contract.requiresRepo) {
+      errors.push('draft-pr must require a loaded repository.');
     }
   }
 
-  const requiredActionIds = ['load-repo', 'save-session', 'restore-session', 'clear-view', 'draft-pr'];
-  for (const requiredId of requiredActionIds) {
+  for (const requiredId of REQUIRED_ACTION_IDS) {
     if (!ids.includes(requiredId)) {
       errors.push(`Missing required action contract: ${requiredId}.`);
     }
   }
 
-  const destructiveActions = SOVEREIGN_ACTION_CONTRACTS.filter((contract) => contract.kind === 'destructive');
-  if (destructiveActions.length === 0) {
-    warnings.push('No destructive action contracts defined.');
-  }
-
   const repoDependentActions = SOVEREIGN_ACTION_CONTRACTS.filter((contract) => contract.requiresRepo);
-  if (repoDependentActions.length < 3) {
-    warnings.push('Fewer than 3 repository-dependent actions defined.');
+  if (repoDependentActions.length < 5) {
+    warnings.push('Fewer than 5 repository-dependent actions defined.');
   }
 
   return {
