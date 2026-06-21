@@ -1,0 +1,35 @@
+:root {
+  --are-void: #050816;
+  --are-deep: #080D1E;
+  --are-surface: #0C1428;
+  --are-ion: #00C8FF;
+  --are-matter: #7B5EA7;
+  --are-signal: #00FF9C;
+  --are-warn: #F59E0B;
+  --are-alert: #FF4466;
+  --are-text-primary: #CDD6F4;
+  --are-text-secondary: #8892B0;
+  --are-text-bright: #E8EDF8;
+}
+
+.sovereign-app-shell {
+  background: var(--are-void);
+  color: var(--are-text-primary);
+}
+
+.sovereign-tab-active {
+  border-color: var(--are-ion);
+  color: var(--are-text-bright);
+}
+
+.sovereign-status-dot-green {
+  background: var(--are-signal);
+}
+
+.sovereign-status-dot-yellow {
+  background: var(--are-warn);
+}
+
+.sovereign-status-dot-red {
+  background: var(--are-alert);
+}
