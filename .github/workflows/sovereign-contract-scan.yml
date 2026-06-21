@@ -1,0 +1,248 @@
+name: "Sovereign Runtime Contract Scan"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: sovereign-contract-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9.12.2"
+  CI: "true"
+
+jobs:
+  contract-scan:
+    name: Runtime, UX and Live-Path Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare report directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .security-reports
+
+      - name: Run TypeScript type check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          has_script() {
+            node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)" "$1"
+          }
+
+          run_first_present() {
+            for script in "$@"; do
+              if has_script "$script"; then
+                echo "::group::pnpm run $script"
+                pnpm run "$script"
+                echo "::endgroup::"
+                return 0
+              fi
+            done
+
+            echo "No TypeScript type-check script found."
+            exit 1
+          }
+
+          run_first_present type-check typecheck check:types
+
+      - name: Run lint only when ESLint flat config exists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          has_script() {
+            node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)" "$1"
+          }
+
+          has_eslint_flat_config() {
+            [ -f eslint.config.js ] || [ -f eslint.config.mjs ] || [ -f eslint.config.cjs ]
+          }
+
+          if has_script lint; then
+            if has_eslint_flat_config; then
+              echo "::group::pnpm run lint"
+              pnpm run lint
+              echo "::endgroup::"
+            else
+              echo "skip: lint script exists but no eslint.config.js/mjs/cjs exists for ESLint 9"
+            fi
+          else
+            echo "skip: no lint script"
+          fi
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          has_script() {
+            node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)" "$1"
+          }
+
+          run_first_present() {
+            for script in "$@"; do
+              if has_script "$script"; then
+                echo "::group::pnpm run $script"
+                pnpm run "$script"
+                echo "::endgroup::"
+                return 0
+              fi
+            done
+
+            echo "No test script found."
+            exit 1
+          }
+
+          run_first_present test:ci test:run test
+
+      - name: Run web build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          has_script() {
+            node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)" "$1"
+          }
+
+          run_first_present() {
+            for script in "$@"; do
+              if has_script "$script"; then
+                echo "::group::pnpm run $script"
+                pnpm run "$script"
+                echo "::endgroup::"
+                return 0
+              fi
+            done
+
+            echo "No build script found."
+            exit 1
+          }
+
+          run_first_present build web:build
+
+      - name: Run Sovereign runtime contract scan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f scripts/sovereign-contract-scan.mjs ]; then
+            echo "Missing scripts/sovereign-contract-scan.mjs"
+            exit 1
+          fi
+
+          echo "::group::Sovereign runtime contract scan"
+          node scripts/sovereign-contract-scan.mjs
+          echo "::endgroup::"
+
+      - name: Run Sovereign UX contract scan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f scripts/sovereign-ux-contract-scan.mjs ]; then
+            echo "Missing scripts/sovereign-ux-contract-scan.mjs"
+            exit 1
+          fi
+
+          echo "::group::Sovereign UX contract scan"
+          node scripts/sovereign-ux-contract-scan.mjs
+          echo "::endgroup::"
+
+      - name: Run Sovereign live-path scan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f scripts/sovereign-live-path-scan.mjs ]; then
+            echo "Missing scripts/sovereign-live-path-scan.mjs"
+            exit 1
+          fi
+
+          echo "::group::Sovereign live-path scan"
+          node scripts/sovereign-live-path-scan.mjs
+          echo "::endgroup::"
+
+      - name: Android handoff smoke check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -d android ]; then
+            echo "No android directory; skipping Android handoff smoke check."
+            exit 0
+          fi
+
+          if [ -f android/gradlew ]; then
+            echo "::group::Android Gradle task graph"
+            chmod +x android/gradlew
+            (cd android && ./gradlew tasks --no-daemon --stacktrace >/dev/null)
+            echo "::endgroup::"
+          elif [ -f gradlew ]; then
+            echo "::group::Root Gradle task graph"
+            chmod +x gradlew
+            ./gradlew tasks --no-daemon --stacktrace >/dev/null
+            echo "::endgroup::"
+          else
+            echo "Android directory exists but no Gradle wrapper was found."
+            exit 1
+          fi
+
+      - name: Write Sovereign contract summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Sovereign Runtime Contract Scan"
+            echo ""
+            echo "- Type-check: completed before this summary if the job reached this step"
+            echo "- Tests: completed before this summary if the job reached this step"
+            echo "- Build: completed before this summary if the job reached this step"
+            echo "- Runtime contract scan: \`scripts/sovereign-contract-scan.mjs\`"
+            echo "- UX contract scan: \`scripts/sovereign-ux-contract-scan.mjs\`"
+            echo "- Live-path scan: \`scripts/sovereign-live-path-scan.mjs\`"
+            echo "- Reports: \`.security-reports/\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Sovereign contract reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sovereign-contract-scan-reports
+          path: .security-reports/**
+          if-no-files-found: warn
+          retention-days: 14
