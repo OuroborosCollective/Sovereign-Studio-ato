@@ -310,4 +310,87 @@ describe('mobile-workbench-console', () => {
       expect(workbench?.textContent).toContain('Repo');
     });
   });
+
+  describe('no-loop stability', () => {
+    it('does not read own output text as state', () => {
+      mountShellWithCoachAnchor('<section id="sovereign-mobile-workbench-console">pattern = active-work running</section>');
+      installMobileWorkbenchConsole();
+      vi.advanceTimersByTime(2000);
+      
+      const text = collectMobileWorkbenchVisibleText(document.body);
+      expect(text).not.toContain('pattern = active-work running');
+    });
+
+    it('does not read coach text as state', () => {
+      mountShellWithCoachAnchor('<section id="sovereign-mobile-coach">Sovereign Bot · Ergebnis bereit</section>');
+      installMobileWorkbenchConsole();
+      vi.advanceTimersByTime(2000);
+      
+      const text = collectMobileWorkbenchVisibleText(document.body);
+      expect(text).not.toContain('Sovereign Bot');
+    });
+
+    it('does not read setup drawer text as state', () => {
+      mountShellWithCoachAnchor('<section id="sovereign-mobile-setup-drawer">GitHub Repo Setup</section>');
+      installMobileWorkbenchConsole();
+      vi.advanceTimersByTime(2000);
+      
+      const text = collectMobileWorkbenchVisibleText(document.body);
+      expect(text).not.toContain('GitHub Repo Setup');
+    });
+
+    it('stable under rapid interval updates', () => {
+      mountShellWithCoachAnchor('<section>runtime ready</section>');
+      installMobileWorkbenchConsole();
+      
+      for (let i = 0; i < 10; i++) {
+        vi.advanceTimersByTime(1500);
+      }
+      
+      const workbench = document.getElementById('sovereign-mobile-workbench-console');
+      expect(workbench).toBeTruthy();
+    });
+
+    it('does not create infinite navigation loop', () => {
+      mountShellWithCoachAnchor('<section>package-build running is building</section>');
+      let clickCount = 0;
+      document.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => clickCount++);
+      });
+      
+      installMobileWorkbenchConsole();
+      
+      for (let i = 0; i < 10; i++) {
+        vi.advanceTimersByTime(1500);
+      }
+      
+      expect(clickCount).toBeLessThanOrEqual(2);
+    });
+  });
+
+  describe('template contract integration', () => {
+    it('maps active-work pattern to allowed auto-navigation', () => {
+      const result = decideMobileWorkflow({ visibleText: 'package-build running' });
+      const reason = classifyWorkbenchAutoNavigationReason(result);
+      expect(canSovereignProductTemplateAutoOpen(reason)).toBe(true);
+    });
+
+    it('maps red-stopper pattern to allowed auto-navigation', () => {
+      const result = decideMobileWorkflow({ visibleText: 'validation_failed build failed' });
+      const reason = classifyWorkbenchAutoNavigationReason(result);
+      expect(canSovereignProductTemplateAutoOpen(reason)).toBe(true);
+    });
+
+    it('maps passive-review pattern to blocked auto-navigation', () => {
+      const result = decideMobileWorkflow({ visibleText: 'self review: accepted generated files ready' });
+      const reason = classifyWorkbenchAutoNavigationReason(result);
+      expect(canSovereignProductTemplateAutoOpen(reason)).toBe(false);
+    });
+
+    it('maps awaiting-intent pattern to blocked auto-navigation', () => {
+      const result = decideMobileWorkflow({ visibleText: 'repo fehlt noch kein echtes repo' });
+      const reason = classifyWorkbenchAutoNavigationReason(result);
+      expect(canSovereignProductTemplateAutoOpen(reason)).toBe(false);
+    });
+  });
 });
