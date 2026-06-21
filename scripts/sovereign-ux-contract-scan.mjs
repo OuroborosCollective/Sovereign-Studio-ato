@@ -64,16 +64,13 @@ function getSafeGithubStepSummaryPath() {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   if (typeof summaryPath !== 'string' || summaryPath.trim() === '') return null;
 
-  const resolvedSummaryPath = path.resolve(summaryPath);
   const runnerTemp = process.env.RUNNER_TEMP;
+  if (typeof runnerTemp !== 'string' || runnerTemp.trim() === '') return null;
 
-  // In GitHub Actions, summary file is expected under RUNNER_TEMP.
-  // If RUNNER_TEMP is unavailable, fall back to allowing only absolute normalized path.
-  if (typeof runnerTemp === 'string' && runnerTemp.trim() !== '') {
-    const resolvedRunnerTemp = path.resolve(runnerTemp);
-    const relative = path.relative(resolvedRunnerTemp, resolvedSummaryPath);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
-  }
+  const resolvedSummaryPath = path.resolve(summaryPath);
+  const resolvedRunnerTemp = path.resolve(runnerTemp);
+  const relative = path.relative(resolvedRunnerTemp, resolvedSummaryPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
 
   return resolvedSummaryPath;
 }
