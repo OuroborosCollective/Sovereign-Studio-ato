@@ -143,24 +143,65 @@ function run() {
   requireFile('src/features/product/runtime/sovereignComponentContracts.ts', 'Product component contract is required.');
   requireFile('src/features/product/runtime/arelogicBrandContract.ts', 'ARELogic brand contract is required.');
 
+  // Form contracts validation
+  requireFile('src/features/product/runtime/sovereignFormContracts.ts', 'Form contracts file is required.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_REPO_URL/, 'form:repo-url-contract', 'Repo URL form contract must exist.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_PRIVATE_ACCESS/, 'form:private-access-contract', 'Private access form contract must exist.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_BRANCH|SOVEREIGN_FORM_REPO_BRANCH/, 'form:branch-contract', 'Branch form contract must exist.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /SOVEREIGN_FORM_MISSION/, 'form:mission-contract', 'Mission form contract must exist.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /sensitive:\s*true/, 'form:sensitive-flag', 'Sensitive fields must be marked as sensitive.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /inputType:\s*['"]password['"]/, 'form:password-type', 'Private access must use password input type.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /autoComplete:\s*['"]off['"]/, 'form:autocomplete-off', 'Private access must use autocomplete off.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /testId:\s*['"]repo-url__input['"]/, 'form:repo-url-test-id', 'Repo URL must have stable test-id.');
+  requireText('src/features/product/runtime/sovereignFormContracts.ts', /testId:\s*['"]private-access__input['"]/, 'form:private-access-test-id', 'Private access must have stable test-id.');
+
+  // Action contracts validation
+  requireFile('src/features/product/runtime/sovereignActionContracts.ts', 'Action contracts file is required.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_LOAD_REPO/, 'action:load-repo-contract', 'Load repo action contract must exist.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_SAVE_SESSION/, 'action:save-session-contract', 'Save session action contract must exist.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_RESTORE_SESSION/, 'action:restore-session-contract', 'Restore session action contract must exist.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_CLEAR_VIEW/, 'action:clear-view-contract', 'Clear view action contract must exist.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_DRAFT_PR/, 'action:draft-pr-contract', 'Draft PR action contract must exist.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_REPAIR_LOG/, 'action:repair-log-contract', 'Repair log action contract must exist.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /SOVEREIGN_ACTION_MONITOR_TOGGLE/, 'action:monitor-toggle-contract', 'Monitor toggle action contract must exist.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /testId:\s*['"]repo-snapshot__load-repo['"]/, 'action:load-repo-test-id', 'Load repo must have stable test-id.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /testId:\s*['"]builder__draft-pr['"]/, 'action:draft-pr-test-id', 'Draft PR must have stable test-id.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /kind:\s*['"]primary['"]/, 'action:primary-kind', 'Primary actions must be classified as primary.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /kind:\s*['"]destructive['"]/, 'action:destructive-kind', 'Destructive actions must be classified as destructive.');
+  requireText('src/features/product/runtime/sovereignActionContracts.ts', /requiresRepo:\s*(true|false)/, 'action:requires-repo-flag', 'Actions must have requiresRepo flag.');
+
   requireText('src/main.tsx', /\.\/styles\/arelogic-brand\.css/, 'main:brand-css-import', 'App entry must import ARELogic visual tokens after the base style layer.');
 
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repository Snapshot/, 'repo:title-visible', 'Repo card title must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Load Repo/, 'repo:load-action-visible', 'Repo load action must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Save Session/, 'repo:save-action-visible', 'Session save action must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Restore Session/, 'repo:restore-action-visible', 'Session restore action must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Clear View/, 'repo:clear-action-visible', 'Clear view action must be visible.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_LOAD_REPO/, 'repo:load-action-visible', 'Repo load action must be bound to contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-action-visible', 'Session save action must be bound to contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_RESTORE_SESSION/, 'repo:restore-action-visible', 'Session restore action must be bound to contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_CLEAR_VIEW/, 'repo:clear-action-visible', 'Clear view action must be bound to contract.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible.');
 
   requireText('src/features/product/containers/BuilderContainer.tsx', /Ideenfabrik/, 'builder:title-visible', 'Builder title must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren/, 'builder:analyze-visible', 'Analyze action must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten/, 'builder:start-visible', 'Start action must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Fehlerlog reparieren/, 'builder:repair-visible', 'Repair action must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Draft PR/, 'builder:draft-visible', 'Draft PR action must be visible.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_START_TASK/, 'builder:start-visible', 'Start action must be bound to contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-visible', 'Draft PR action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Schritt 2|2 ·/, 'builder:step-two-guidance', 'Builder must guide the user through analysis step.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Schritt 3|3 ·/, 'builder:step-three-guidance', 'Builder must guide the user through start step.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /disabledReason/, 'builder:disabled-reason', 'Builder must expose disabled reason from runtime state.');
+
+  // Container and contract binding validation
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /getSovereignContainerContract\(['"]repo-snapshot['"]\)/, 'repo:container-contract-bound', 'Repo snapshot must use container contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_FORM_REPO_URL/, 'repo:repo-url-form-bound', 'Repo snapshot must bind repo URL form contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_FORM_PRIVATE_ACCESS/, 'repo:private-access-form-bound', 'Repo snapshot must bind private access form contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_LOAD_REPO/, 'repo:load-repo-action-bound', 'Repo snapshot must bind load repo action contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-session-action-bound', 'Repo snapshot must bind save session action contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /type=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.inputType/, 'repo:private-access-password-type', 'Private access must use password type from contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /autoComplete=\{\s*SOVEREIGN_FORM_PRIVATE_ACCESS\.autoComplete/, 'repo:private-access-autocomplete-off', 'Private access must use autocomplete off from contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_FORM_MISSION/, 'builder:mission-form-bound', 'Builder must bind mission form contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-mission-action-bound', 'Builder must bind analyze mission action contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-pr-action-bound', 'Builder must bind draft PR action contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-log-action-bound', 'Builder must bind repair log action contract.');
+  requireText('src/global-runtime-monitor.tsx', /SOVEREIGN_ACTION_MONITOR_TOGGLE/, 'monitor:monitor-toggle-bound', 'Global monitor must bind monitor toggle action contract.');
 
   requireText('src/features/product/runtime/sovereignProductTemplate.ts', /repo/, 'template:repo-tab', 'Product template must expose repo tab.');
   requireText('src/features/product/runtime/sovereignProductTemplate.ts', /builder/, 'template:builder-tab', 'Product template must expose builder tab.');

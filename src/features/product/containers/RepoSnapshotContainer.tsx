@@ -2,6 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { RepoFileList } from '../../github/components/RepoFileList';
 import type { RepoFile } from '../../github/types';
 import { buildRepoSnapshotSummary, getRepoSnapshotStatus } from '../runtime/sovereignFunctionalGuards';
+import { getSovereignContainerContract } from '../runtime/sovereignContainerContracts';
+import {
+  SOVEREIGN_FORM_REPO_URL,
+  SOVEREIGN_FORM_REPO_BRANCH,
+  SOVEREIGN_FORM_PRIVATE_ACCESS,
+} from '../runtime/sovereignFormContracts';
+import {
+  SOVEREIGN_ACTION_LOAD_REPO,
+  SOVEREIGN_ACTION_SAVE_SESSION,
+  SOVEREIGN_ACTION_RESTORE_SESSION,
+  SOVEREIGN_ACTION_CLEAR_VIEW,
+} from '../runtime/sovereignActionContracts';
+
+const repoContainerContract = getSovereignContainerContract('repo-snapshot');
 
 export interface RepoSnapshotContainerProps {
   repoUrl: string;
@@ -203,7 +217,12 @@ export function RepoSnapshotContainer({
   }, [accessValue, busy, repoStatus, repoUrl, status.ready]);
 
   return (
-    <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="repo-snapshot-container">
+    <section
+      className={`${repoContainerContract.rootClass} mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200`}
+      data-role={repoContainerContract.dataRole}
+      data-testid={repoContainerContract.testId}
+      aria-label={repoContainerContract.ariaLabel}
+    >
       <ReactCoachMonitor />
 
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -219,50 +238,56 @@ export function RepoSnapshotContainer({
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <label className="block min-w-0 rounded-2xl border border-cyan-400/35 bg-cyan-500/10 p-3 md:col-span-2">
-          <span className="block text-xs font-black uppercase tracking-wide text-cyan-100">GitHub Repository URL</span>
+          <span className="block text-xs font-black uppercase tracking-wide text-cyan-100">{SOVEREIGN_FORM_REPO_URL.label}</span>
           <input
-            id="github-repo-url-input"
-            name="github-repo-url"
-            data-testid="github-repo-url-input"
-            data-mobile-role="github-repo-url-input"
+            id={SOVEREIGN_FORM_REPO_URL.id}
+            name={SOVEREIGN_FORM_REPO_URL.id}
+            data-role={SOVEREIGN_FORM_REPO_URL.dataRole}
+            data-testid={SOVEREIGN_FORM_REPO_URL.testId}
             className={inputClassName}
             value={repoUrl}
             onChange={(event) => onRepoUrlChange(event.target.value)}
             placeholder="https://github.com/owner/repository"
-            aria-label="GitHub Repository URL"
-            autoComplete="url"
-            type="url"
+            aria-label={SOVEREIGN_FORM_REPO_URL.ariaLabel}
+            autoComplete={SOVEREIGN_FORM_REPO_URL.autoComplete}
+            type={SOVEREIGN_FORM_REPO_URL.inputType}
           />
           <span className="mt-2 block text-[11px] leading-4 text-cyan-100/80">Pflichtfeld. Ohne geladenes Repo bleibt Produktion blockiert.</span>
         </label>
 
         <label className="block min-w-0 rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
-          <span className="block text-xs font-black uppercase tracking-wide text-slate-300">Branch</span>
+          <span className="block text-xs font-black uppercase tracking-wide text-slate-300">{SOVEREIGN_FORM_REPO_BRANCH.label}</span>
           <input
+            id={SOVEREIGN_FORM_REPO_BRANCH.id}
+            name={SOVEREIGN_FORM_REPO_BRANCH.id}
+            data-role={SOVEREIGN_FORM_REPO_BRANCH.dataRole}
+            data-testid={SOVEREIGN_FORM_REPO_BRANCH.testId}
             className={inputClassName}
             value={repoBranch}
             onChange={(event) => onRepoBranchChange(event.target.value)}
             placeholder="leer = Default Branch"
-            aria-label="Repository branch"
+            aria-label={SOVEREIGN_FORM_REPO_BRANCH.ariaLabel}
+            autoComplete={SOVEREIGN_FORM_REPO_BRANCH.autoComplete}
+            type={SOVEREIGN_FORM_REPO_BRANCH.inputType}
           />
           <span className="mt-2 block text-[11px] text-slate-500">Leer lassen fuer Default.</span>
         </label>
 
         <label className="block min-w-0 rounded-2xl border border-amber-400/35 bg-amber-500/10 p-3 md:col-span-3">
-          <span className="block text-xs font-black uppercase tracking-wide text-amber-100">GitHub Private Access</span>
+          <span className="block text-xs font-black uppercase tracking-wide text-amber-100">{SOVEREIGN_FORM_PRIVATE_ACCESS.label}</span>
           <input
-            id="github-token-input"
-            name="github-token"
-            data-testid="github-token-input"
-            data-mobile-role="github-token-input"
+            id={SOVEREIGN_FORM_PRIVATE_ACCESS.id}
+            name={SOVEREIGN_FORM_PRIVATE_ACCESS.id}
+            data-role={SOVEREIGN_FORM_PRIVATE_ACCESS.dataRole}
+            data-testid={SOVEREIGN_FORM_PRIVATE_ACCESS.testId}
             className={inputClassName}
             value={accessValue}
             onFocus={() => setShowAccessHelp(true)}
             onChange={(event) => onAccessValueChange(event.target.value)}
             placeholder="Privater GitHub Zugang fuer private Repos"
-            aria-label="GitHub private access"
-            type="password"
-            autoComplete="off"
+            aria-label={SOVEREIGN_FORM_PRIVATE_ACCESS.ariaLabel}
+            type={SOVEREIGN_FORM_PRIVATE_ACCESS.inputType}
+            autoComplete={SOVEREIGN_FORM_PRIVATE_ACCESS.autoComplete}
           />
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] leading-4 text-amber-100/85">
             <span>Nur noetig fuer private Repos oder Draft PRs.</span>
@@ -277,10 +302,54 @@ export function RepoSnapshotContainer({
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 md:flex md:flex-wrap">
-        <button className={actionButtonClassName} onClick={onLoadRepo} disabled={!canLoad} type="button">1 · Load Repo</button>
-        <button className={actionButtonClassName} onClick={onSaveView} disabled={!canSave} type="button">Save Session</button>
-        <button className={actionButtonClassName} onClick={onRestoreView} disabled={busy} type="button">Restore Session</button>
-        <button className={actionButtonClassName} onClick={onClearView} disabled={busy} type="button">Clear View</button>
+        <button
+          className={actionButtonClassName}
+          onClick={onLoadRepo}
+          disabled={!canLoad}
+          type="button"
+          data-role={SOVEREIGN_ACTION_LOAD_REPO.dataRole}
+          data-testid={SOVEREIGN_ACTION_LOAD_REPO.testId}
+          aria-label={SOVEREIGN_ACTION_LOAD_REPO.ariaLabel}
+          data-state={canLoad ? 'idle' : 'disabled'}
+        >
+          1 · {SOVEREIGN_ACTION_LOAD_REPO.label}
+        </button>
+        <button
+          className={actionButtonClassName}
+          onClick={onSaveView}
+          disabled={!canSave}
+          type="button"
+          data-role={SOVEREIGN_ACTION_SAVE_SESSION.dataRole}
+          data-testid={SOVEREIGN_ACTION_SAVE_SESSION.testId}
+          aria-label={SOVEREIGN_ACTION_SAVE_SESSION.ariaLabel}
+          data-state={canSave ? 'idle' : 'disabled'}
+        >
+          {SOVEREIGN_ACTION_SAVE_SESSION.label}
+        </button>
+        <button
+          className={actionButtonClassName}
+          onClick={onRestoreView}
+          disabled={busy}
+          type="button"
+          data-role={SOVEREIGN_ACTION_RESTORE_SESSION.dataRole}
+          data-testid={SOVEREIGN_ACTION_RESTORE_SESSION.testId}
+          aria-label={SOVEREIGN_ACTION_RESTORE_SESSION.ariaLabel}
+          data-state={busy ? 'disabled' : 'idle'}
+        >
+          {SOVEREIGN_ACTION_RESTORE_SESSION.label}
+        </button>
+        <button
+          className={actionButtonClassName}
+          onClick={onClearView}
+          disabled={busy}
+          type="button"
+          data-role={SOVEREIGN_ACTION_CLEAR_VIEW.dataRole}
+          data-testid={SOVEREIGN_ACTION_CLEAR_VIEW.testId}
+          aria-label={SOVEREIGN_ACTION_CLEAR_VIEW.ariaLabel}
+          data-state={busy ? 'disabled' : 'idle'}
+        >
+          {SOVEREIGN_ACTION_CLEAR_VIEW.label}
+        </button>
       </div>
 
       <p className="mt-3 text-xs text-slate-400">{summary}</p>

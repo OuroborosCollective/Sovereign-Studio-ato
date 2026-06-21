@@ -4,6 +4,13 @@ import {
   deriveBuilderContainerState,
 } from '../runtime/builderContainerRuntime';
 import { getSovereignContainerContract } from '../runtime/sovereignContainerContracts';
+import { SOVEREIGN_FORM_MISSION } from '../runtime/sovereignFormContracts';
+import {
+  SOVEREIGN_ACTION_ANALYZE_MISSION,
+  SOVEREIGN_ACTION_START_TASK,
+  SOVEREIGN_ACTION_REPAIR_LOG,
+  SOVEREIGN_ACTION_DRAFT_PR,
+} from '../runtime/sovereignActionContracts';
 
 export interface BuilderContainerProps {
   mission: string;
@@ -156,21 +163,66 @@ export function BuilderContainer({
       </div>
 
       <label className="mt-4 block">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Chatfeld für Nutzerwunsch</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">{SOVEREIGN_FORM_MISSION.label}</span>
         <textarea
+          id={SOVEREIGN_FORM_MISSION.id}
+          name={SOVEREIGN_FORM_MISSION.id}
+          data-role={SOVEREIGN_FORM_MISSION.dataRole}
+          data-testid={SOVEREIGN_FORM_MISSION.testId}
           className="mt-2 min-h-28 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-base leading-6"
           value={wishText}
           onChange={(event) => setWishText(event.target.value)}
           placeholder="Schreib einfach: mach die App verständlicher, zeig Logs, prüfe Buildfehler, mach einen Draft PR..."
-          aria-label="Ideenfabrik Wunschfeld"
+          aria-label={SOVEREIGN_FORM_MISSION.ariaLabel}
         />
       </label>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <button className={secondaryButtonClassName} type="button" onClick={analyzeWish}>2 · Auftrag analysieren</button>
-        <button className={primaryButtonClassName} onClick={onGenerateIdeas} disabled={generateDisabled} type="button">3 · Auftrag starten</button>
-        <button className={dangerButtonClassName} onClick={onGenerateErrorWorkflow} disabled={generateDisabled} type="button">Fehlerlog reparieren</button>
-        <button className={secondaryButtonClassName} onClick={onPublishDraftPr} disabled={publishDisabled} type="button">
+        <button
+          className={secondaryButtonClassName}
+          type="button"
+          onClick={analyzeWish}
+          data-role={SOVEREIGN_ACTION_ANALYZE_MISSION.dataRole}
+          data-testid={SOVEREIGN_ACTION_ANALYZE_MISSION.testId}
+          aria-label={SOVEREIGN_ACTION_ANALYZE_MISSION.ariaLabel}
+          data-state={generateDisabled ? 'disabled' : 'idle'}
+        >
+          2 · {SOVEREIGN_ACTION_ANALYZE_MISSION.label}
+        </button>
+        <button
+          className={primaryButtonClassName}
+          onClick={onGenerateIdeas}
+          disabled={generateDisabled}
+          type="button"
+          data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
+          data-testid={SOVEREIGN_ACTION_START_TASK.testId}
+          aria-label={SOVEREIGN_ACTION_START_TASK.ariaLabel}
+          data-state={generateDisabled ? 'disabled' : 'idle'}
+        >
+          3 · {SOVEREIGN_ACTION_START_TASK.label}
+        </button>
+        <button
+          className={dangerButtonClassName}
+          onClick={onGenerateErrorWorkflow}
+          disabled={generateDisabled}
+          type="button"
+          data-role={SOVEREIGN_ACTION_REPAIR_LOG.dataRole}
+          data-testid={SOVEREIGN_ACTION_REPAIR_LOG.testId}
+          aria-label={SOVEREIGN_ACTION_REPAIR_LOG.ariaLabel}
+          data-state={generateDisabled ? 'disabled' : 'idle'}
+        >
+          {SOVEREIGN_ACTION_REPAIR_LOG.label}
+        </button>
+        <button
+          className={secondaryButtonClassName}
+          onClick={onPublishDraftPr}
+          disabled={publishDisabled}
+          type="button"
+          data-role={SOVEREIGN_ACTION_DRAFT_PR.dataRole}
+          data-testid={SOVEREIGN_ACTION_DRAFT_PR.testId}
+          aria-label={builderPublishLabel(isPublishing)}
+          data-state={publishDisabled ? 'disabled' : 'idle'}
+        >
           {builderPublishLabel(isPublishing)}
         </button>
       </div>
