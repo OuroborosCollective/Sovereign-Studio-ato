@@ -63,21 +63,54 @@ describe('sovereignAutoViewRouter', () => {
     })).toMatchObject({ shouldSwitch: false, tab: 'workflow' });
   });
 
-  it('returns to files after successful workflow only when workflow is the active view', () => {
+  it('routes package-ready auto-review flow from builder to diff loader', () => {
+    const decision = decideSovereignAutoView({
+      mode: 'auto-review',
+      activeStep: null,
+      activeTab: 'builder',
+      hasPackage: true,
+      hasDiffSources: false,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'idle',
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'diff' });
+    expect(decision.reason).toContain('diff loader');
+  });
+
+  it('routes package-ready auto flow from files to diff once source snapshots exist', () => {
+    const decision = decideSovereignAutoView({
+      mode: 'full-auto-draft-pr',
+      activeStep: null,
+      activeTab: 'files',
+      hasPackage: true,
+      hasDiffSources: true,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'idle',
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'diff' });
+    expect(decision.reason).toContain('source snapshots');
+  });
+
+  it('returns to diff after successful workflow when workflow is the active view', () => {
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
       activeTab: 'workflow',
       hasPackage: true,
+      hasDiffSources: true,
       isPublishing: false,
       isWatchingWorkflow: false,
       workflowStatus: 'green',
-    })).toMatchObject({ shouldSwitch: true, tab: 'files' });
+    })).toMatchObject({ shouldSwitch: true, tab: 'diff' });
   });
 
-  it('does not bounce the planning workspace back to generated files review', () => {
+  it('does not bounce the manual planning workspace without a guide or auto mode', () => {
     const decision = decideSovereignAutoView({
-      mode: 'full-auto-draft-pr',
+      mode: 'manual',
       activeStep: null,
       activeTab: 'builder',
       hasPackage: true,
@@ -91,9 +124,9 @@ describe('sovereignAutoViewRouter', () => {
     expect(decision.reason).toContain('planning workspace');
   });
 
-  it('keeps the user-selected builder workspace visible even with the product App input shape', () => {
+  it('keeps the user-selected builder workspace visible in manual mode with the product App input shape', () => {
     const decision = decideSovereignAutoView({
-      mode: 'full-auto-draft-pr',
+      mode: 'manual',
       activeStep: null,
       activeTab: 'builder',
       hasPackage: true,
