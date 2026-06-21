@@ -147,6 +147,37 @@ button {
   gap: 0.5rem;
 }
 
+.sovereign-action-button {
+  align-items: center;
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.54);
+  color: rgb(207, 250, 254);
+  display: inline-flex;
+  font-weight: 800;
+  gap: 0.4rem;
+  justify-content: center;
+  min-height: 2.55rem;
+  padding: 0.55rem 0.85rem;
+}
+
+.sovereign-action-button[data-state="busy"],
+.sovereign-action-button[aria-busy="true"] {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.sovereign-action-button[data-state="disabled"],
+.sovereign-action-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sovereign-action-button[data-state="error"] {
+  border-color: rgba(251, 113, 133, 0.72);
+  color: rgb(254, 205, 211);
+}
+
 .sovereign-status-pill {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 0.85rem;
