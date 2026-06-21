@@ -28,13 +28,6 @@ const REQUIRED_CONTAINER_TOKENS = [
   'PatternMemoryContainer',
 ];
 
-const REQUIRED_MOBILE_INSTALLERS = [
-  'installMobileOperatorCoach',
-  'installMobileMoreMenu',
-  'installMobileSetupDrawer',
-  'installMobileWorkbenchConsole',
-];
-
 function read(path: string): string {
   expect(existsSync(path), `${path} must exist`).toBe(true);
   return readFileSync(path, 'utf8');
@@ -107,14 +100,16 @@ describe('current Sovereign app shell contract', () => {
     expectContainsAll(main, ["import './runtime-adapter'", "import './index.css'"]);
   });
 
-  it('keeps mobile runtime installers imported and executed from main.tsx', () => {
+  it('keeps one mobile agent panel installer in the mobile runtime path', () => {
     const main = read(MAIN_PATH);
 
-    expectContainsAll(main, REQUIRED_MOBILE_INSTALLERS);
-
-    for (const installer of REQUIRED_MOBILE_INSTALLERS) {
-      expectRegex(main, new RegExp(`${installer}\\s*\\(`), `${installer} invocation`);
-    }
+    expect(main).toContain("import { installMobileAgentMonitor } from './mobile-agent-monitor'");
+    expect(main).toContain('installMobileAgentMonitor();');
+    expect(main).toContain('installMobileMoreMenu();');
+    expect(main).toContain('installMobileSetupDrawer();');
+    expect(main).toContain('installMobileWorkspaceOrder();');
+    expect(main).not.toContain("import { installMobileOperatorCoach }");
+    expect(main).not.toContain("import { installMobileWorkbenchConsole }");
   });
 
   it('keeps the core container imports reachable from App.tsx', () => {
@@ -127,9 +122,7 @@ describe('current Sovereign app shell contract', () => {
   it('starts in the repo workflow via Product Template instead of monitor-first or side-channel-first mode', () => {
     const app = read(APP_PATH);
 
-    // App should derive startTab from the Product Template
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
-    // startTab must be 'repo'
     expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('repo');
 
     expectContainsNone(app, [
@@ -144,9 +137,7 @@ describe('current Sovereign app shell contract', () => {
   it('derives tabs from Product Template as single source of truth', () => {
     const app = read(APP_PATH);
 
-    // App should use Product Template to derive tabs
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
-    // All primary flow tab IDs should be referenced
     const primaryTabs = SOVEREIGN_PRODUCT_TEMPLATE.tabs.filter((t) => t.group === 'primary');
     for (const tab of primaryTabs) {
       expect(app).toContain(`'${tab.id}'`);
@@ -156,7 +147,6 @@ describe('current Sovereign app shell contract', () => {
   it('keeps repo and builder before side-channel memory surfaces in Product Template', () => {
     const app = read(APP_PATH);
 
-    // Verify the template structure
     const repoTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'repo');
     const builderTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'builder');
     const remoteTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'remote');
@@ -166,7 +156,6 @@ describe('current Sovereign app shell contract', () => {
     expect(builderTab?.mainFlowIndex).toBeLessThan(remoteTab?.mainFlowIndex ?? 999);
     expect(builderTab?.mainFlowIndex).toBeLessThan(memoryTab?.mainFlowIndex ?? 999);
 
-    // Verify app uses template
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE');
   });
 
@@ -190,7 +179,6 @@ describe('current Sovereign app shell contract', () => {
     expect(telemetryTab?.group).toBe('side');
     expect(telemetryTab?.label).toBe('Telemetry');
 
-    // App should derive tabs from template
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
     expect(app).not.toContain('telemetryGate');
     expect(app).not.toContain('TelemetryGate');

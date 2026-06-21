@@ -47,7 +47,7 @@ if (existsSync('src/main.tsx')) {
   const main = read('src/main.tsx');
   if (!main.includes("import App from './App'")) fail('src/main.tsx must import the current App shell.');
   if (!main.includes('<App />')) fail('src/main.tsx must render the current App shell.');
-  if (!main.includes('installMobileOperatorCoach')) fail('src/main.tsx must install the Android operator coach runtime.');
+  if (!main.includes('installMobileAgentMonitor')) fail('src/main.tsx must install the Android agent monitor runtime.');
   if (!main.includes('restoreCanvasStateMirror')) fail('src/main.tsx must restore mobile workspace persistence before boot.');
 }
 

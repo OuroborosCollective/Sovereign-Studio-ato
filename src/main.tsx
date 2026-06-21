@@ -3,10 +3,9 @@ import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { installMobileOperatorCoach } from './mobile-operator-coach';
+import { installMobileAgentMonitor } from './mobile-agent-monitor';
 import { installMobileMoreMenu } from './mobile-more-menu';
 import { installMobileSetupDrawer } from './mobile-setup-drawer';
-import { installMobileWorkbenchConsole } from './mobile-workbench-console';
 import { installMobileWorkspaceOrder } from './mobile-workspace-order';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import './runtime-adapter';
@@ -135,10 +134,9 @@ function installMobileRuntimeModules(): void {
 
   mobileWindow.__sovereignMobileRuntimeInstalled = true;
 
-  installMobileOperatorCoach();
+  installMobileAgentMonitor();
   installMobileMoreMenu();
   installMobileSetupDrawer();
-  installMobileWorkbenchConsole();
   installMobileWorkspaceOrder();
 }
 
@@ -224,8 +222,8 @@ function bootApp(): void {
 
 installIdleCallbackFallback();
 installViewportRuntime();
-installMobileRuntimeModules();
 installCodeWorkspacePersistenceRuntime();
 initPostHog();
 initGoogleAuth();
 bootApp();
+installMobileRuntimeModules();
