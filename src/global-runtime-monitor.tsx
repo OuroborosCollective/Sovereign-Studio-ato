@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
-import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
 import {
   deriveReleaseGuideState,
   type ReleaseGuideTab,
@@ -166,22 +165,14 @@ function GlobalRuntimeMonitor(): React.ReactElement {
         <div className="sovereign-helper-title-row">
           <span className="sovereign-helper-avatar" aria-hidden="true">{guide.mood}</span>
           <div>
-            <div className="sovereign-eyebrow">Coach · Live Log · Aktionen</div>
+            <div className="sovereign-eyebrow">Coach · Live Log · drei Aktionen</div>
             <h2>Agenten-Monitor · Sovereign Helper</h2>
             <p className="sovereign-helper-subtitle">{guide.helperTitle}</p>
           </div>
         </div>
-        <button
-          type="button"
-          className="sovereign-monitor-toggle"
-          data-role={SOVEREIGN_ACTION_MONITOR_TOGGLE.dataRole}
-          data-testid={SOVEREIGN_ACTION_MONITOR_TOGGLE.testId}
-          aria-label={SOVEREIGN_ACTION_MONITOR_TOGGLE.ariaLabel}
-          data-state="locked-open"
-          onClick={confirmStep}
-        >
-          Log bleibt offen
-        </button>
+        <span className="sovereign-monitor-pill" data-state="single-window">
+          Log führt den Ablauf
+        </span>
       </div>
 
       <div className="sovereign-monitor-status">
