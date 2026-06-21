@@ -88,6 +88,17 @@ function isLiveFile(filePath) {
   return LIVE_EXTENSIONS.has(path.extname(filePath));
 }
 
+function getSafeGithubStepSummaryPath() {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (typeof summaryPath !== 'string' || summaryPath.trim() === '') return null;
+
+  const resolvedPath = path.resolve(summaryPath);
+  if (!path.isAbsolute(resolvedPath)) return null;
+  if (path.basename(resolvedPath) !== 'summary.md') return null;
+
+  return resolvedPath;
+}
+
 function walk(dir) {
   if (!exists(dir)) return [];
   const files = [];
@@ -105,7 +116,8 @@ function writeReport() {
   report.status = report.errors.length === 0 ? 'pass' : 'fail';
   fs.writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`);
 
-  if (process.env.GITHUB_STEP_SUMMARY) {
+  const githubStepSummaryPath = getSafeGithubStepSummaryPath();
+  if (githubStepSummaryPath) {
     const lines = [
       '## Sovereign Live Path Scan',
       '',
@@ -122,7 +134,7 @@ function writeReport() {
       ...(report.warnings.length ? report.warnings.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
       '',
     ];
-    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+    fs.appendFileSync(githubStepSummaryPath, `${lines.join('\n')}\n`);
   }
 
   console.log(JSON.stringify(report, null, 2));
