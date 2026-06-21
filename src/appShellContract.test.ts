@@ -28,13 +28,6 @@ const REQUIRED_CONTAINER_TOKENS = [
   'PatternMemoryContainer',
 ];
 
-const REQUIRED_MOBILE_INSTALLERS = [
-  'installMobileAgentMonitor',
-  'installMobileMoreMenu',
-  'installMobileSetupDrawer',
-  'installMobileWorkspaceOrder',
-];
-
 function read(path: string): string {
   expect(existsSync(path), `${path} must exist`).toBe(true);
   return readFileSync(path, 'utf8');
@@ -107,16 +100,16 @@ describe('current Sovereign app shell contract', () => {
     expectContainsAll(main, ["import './runtime-adapter'", "import './index.css'"]);
   });
 
-  it('keeps one unified mobile agent monitor instead of separate coach and workbench UIs', () => {
+  it('keeps one mobile agent panel installer in the mobile runtime path', () => {
     const main = read(MAIN_PATH);
 
-    expectContainsAll(main, REQUIRED_MOBILE_INSTALLERS);
-    expect(main).not.toContain('installMobileOperatorCoach');
-    expect(main).not.toContain('installMobileWorkbenchConsole');
-
-    for (const installer of REQUIRED_MOBILE_INSTALLERS) {
-      expectRegex(main, new RegExp(`${installer}\\s*\\(`), `${installer} invocation`);
-    }
+    expect(main).toContain("import { installMobileAgentMonitor } from './mobile-agent-monitor'");
+    expect(main).toContain('installMobileAgentMonitor();');
+    expect(main).toContain('installMobileMoreMenu();');
+    expect(main).toContain('installMobileSetupDrawer();');
+    expect(main).toContain('installMobileWorkspaceOrder();');
+    expect(main).not.toContain("import { installMobileOperatorCoach }");
+    expect(main).not.toContain("import { installMobileWorkbenchConsole }");
   });
 
   it('keeps the core container imports reachable from App.tsx', () => {
