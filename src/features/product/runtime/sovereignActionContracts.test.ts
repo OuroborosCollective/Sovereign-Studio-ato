@@ -166,9 +166,9 @@ describe('sovereign action contracts: navigation and secondary actions', () => {
     expect(contract.kind).toBe('secondary');
   });
 
-  it('marks clear-view as secondary kind', () => {
+  it('marks clear-view as destructive kind', () => {
     const contract = getSovereignActionContract('clear-view');
-    expect(contract.kind).toBe('secondary');
+    expect(contract.kind).toBe('destructive');
   });
 
   it('monitor-toggle does not require repo', () => {
