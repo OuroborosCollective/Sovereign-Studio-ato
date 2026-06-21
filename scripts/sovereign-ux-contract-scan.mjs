@@ -173,18 +173,18 @@ function run() {
   requireText('src/main.tsx', /\.\/styles\/arelogic-brand\.css/, 'main:brand-css-import', 'App entry must import ARELogic visual tokens after the base style layer.');
 
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repository Snapshot/, 'repo:title-visible', 'Repo card title must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Load Repo/, 'repo:load-action-visible', 'Repo load action must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Save Session/, 'repo:save-action-visible', 'Session save action must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Restore Session/, 'repo:restore-action-visible', 'Session restore action must be visible.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Clear View/, 'repo:clear-action-visible', 'Clear view action must be visible.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_LOAD_REPO/, 'repo:load-action-visible', 'Repo load action must be bound to contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-action-visible', 'Session save action must be bound to contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_RESTORE_SESSION/, 'repo:restore-action-visible', 'Session restore action must be bound to contract.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /SOVEREIGN_ACTION_CLEAR_VIEW/, 'repo:clear-action-visible', 'Clear view action must be bound to contract.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible.');
 
   requireText('src/features/product/containers/BuilderContainer.tsx', /Ideenfabrik/, 'builder:title-visible', 'Builder title must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren/, 'builder:analyze-visible', 'Analyze action must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten/, 'builder:start-visible', 'Start action must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Fehlerlog reparieren/, 'builder:repair-visible', 'Repair action must be visible.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Draft PR/, 'builder:draft-visible', 'Draft PR action must be visible.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_START_TASK/, 'builder:start-visible', 'Start action must be bound to contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-visible', 'Draft PR action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Schritt 2|2 ·/, 'builder:step-two-guidance', 'Builder must guide the user through analysis step.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Schritt 3|3 ·/, 'builder:step-three-guidance', 'Builder must guide the user through start step.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /disabledReason/, 'builder:disabled-reason', 'Builder must expose disabled reason from runtime state.');
