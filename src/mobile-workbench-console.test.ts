@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  classifyWorkbenchAutoNavigationReason,
   collectMobileWorkbenchVisibleText,
   installMobileWorkbenchConsole,
   shouldAutoOpenWorkbenchTarget,
 } from './mobile-workbench-console';
+import { canSovereignProductTemplateAutoOpen } from './features/product/runtime/sovereignProductTemplate';
 import { decideMobileWorkflow, type MobileWorkflowOrchestratorDecision } from './mobile-workflow-orchestrator';
 
 function mountShell(extra = '') {
@@ -268,6 +270,18 @@ describe('mobile-workbench-console', () => {
       expect(shouldAutoOpenWorkbenchTarget(decision({ mode: 'nocode-plan', lamp: 'yellow', targetNav: 'Builder' }))).toBe(false);
       expect(shouldAutoOpenWorkbenchTarget(decision({ mode: 'matrix-work', lamp: 'green', targetNav: 'Live Monitor' }))).toBe(true);
       expect(shouldAutoOpenWorkbenchTarget(decision({ mode: 'repair-log', lamp: 'red', targetNav: 'Repair' }))).toBe(true);
+    });
+
+    it('classifies auto-open reasons through the product template contract', () => {
+      const activeReason = classifyWorkbenchAutoNavigationReason(decision({ mode: 'matrix-work', lamp: 'green' }));
+      const stopperReason = classifyWorkbenchAutoNavigationReason(decision({ mode: 'repair-log', lamp: 'red' }));
+      const reviewReason = classifyWorkbenchAutoNavigationReason(decision({ mode: 'review-log', lamp: 'green' }));
+      const intentReason = classifyWorkbenchAutoNavigationReason(decision({ mode: 'nocode-plan', lamp: 'yellow' }));
+
+      expect(canSovereignProductTemplateAutoOpen(activeReason)).toBe(true);
+      expect(canSovereignProductTemplateAutoOpen(stopperReason)).toBe(true);
+      expect(canSovereignProductTemplateAutoOpen(reviewReason)).toBe(false);
+      expect(canSovereignProductTemplateAutoOpen(intentReason)).toBe(false);
     });
   });
 
