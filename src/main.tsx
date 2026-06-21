@@ -3,10 +3,6 @@ import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { installMobileAgentMonitor } from './mobile-agent-monitor';
-import { installMobileMoreMenu } from './mobile-more-menu';
-import { installMobileSetupDrawer } from './mobile-setup-drawer';
-import { installMobileWorkspaceOrder } from './mobile-workspace-order';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import './runtime-adapter';
 import './index.css';
@@ -34,7 +30,6 @@ type MobileWindow = Window &
     requestIdleCallback?: (callback: IdleCallbackLike) => number;
     cancelIdleCallback?: (handle: number) => void;
     __sovereignViewportRuntimeInstalled?: boolean;
-    __sovereignMobileRuntimeInstalled?: boolean;
     __sovereignCodeWorkspacePersistenceInstalled?: boolean;
   };
 
@@ -126,20 +121,6 @@ function installViewportRuntime(): void {
   }
 }
 
-function installMobileRuntimeModules(): void {
-  if (typeof window === 'undefined') return;
-
-  const mobileWindow = window as MobileWindow;
-  if (mobileWindow.__sovereignMobileRuntimeInstalled) return;
-
-  mobileWindow.__sovereignMobileRuntimeInstalled = true;
-
-  installMobileAgentMonitor();
-  installMobileMoreMenu();
-  installMobileSetupDrawer();
-  installMobileWorkspaceOrder();
-}
-
 function installCodeWorkspacePersistenceRuntime(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -226,4 +207,3 @@ installCodeWorkspacePersistenceRuntime();
 initPostHog();
 initGoogleAuth();
 bootApp();
-installMobileRuntimeModules();
