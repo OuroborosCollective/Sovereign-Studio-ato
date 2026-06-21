@@ -79,6 +79,22 @@ describe('sovereignAutoViewRouter', () => {
     expect(decision.reason).toContain('diff loader');
   });
 
+  it('does not let planningConfirmed=false block package-ready diff review', () => {
+    const decision = decideSovereignAutoView({
+      mode: 'auto-review',
+      activeStep: null,
+      activeTab: 'builder',
+      hasPackage: true,
+      hasDiffSources: false,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'idle',
+      planningConfirmed: false,
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'diff' });
+  });
+
   it('routes package-ready auto flow from files to diff once source snapshots exist', () => {
     const decision = decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
