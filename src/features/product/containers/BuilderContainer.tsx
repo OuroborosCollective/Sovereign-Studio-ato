@@ -3,6 +3,7 @@ import {
   builderPublishLabel,
   deriveBuilderContainerState,
 } from '../runtime/builderContainerRuntime';
+import { getSovereignContainerContract } from '../runtime/sovereignContainerContracts';
 
 export interface BuilderContainerProps {
   mission: string;
@@ -47,9 +48,10 @@ const IDEA_OPTIONS: IdeaOption[] = [
   },
 ];
 
-const primaryButtonClassName = 'rounded-2xl border border-cyan-300/40 bg-cyan-500/15 px-4 py-3 text-sm font-black text-cyan-50 shadow-lg shadow-cyan-950/20 disabled:cursor-not-allowed disabled:opacity-45';
-const secondaryButtonClassName = 'rounded-2xl border border-slate-600 bg-slate-900/80 px-4 py-3 text-sm font-bold text-slate-100 disabled:cursor-not-allowed disabled:opacity-45';
-const dangerButtonClassName = 'rounded-2xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-100 disabled:cursor-not-allowed disabled:opacity-45';
+const builderContainerContract = getSovereignContainerContract('builder');
+const primaryButtonClassName = 'sovereign-action-button rounded-2xl border border-cyan-300/40 bg-cyan-500/15 px-4 py-3 text-sm font-black text-cyan-50 shadow-lg shadow-cyan-950/20 disabled:cursor-not-allowed disabled:opacity-45';
+const secondaryButtonClassName = 'sovereign-action-button rounded-2xl border border-slate-600 bg-slate-900/80 px-4 py-3 text-sm font-bold text-slate-100 disabled:cursor-not-allowed disabled:opacity-45';
+const dangerButtonClassName = 'sovereign-action-button rounded-2xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-100 disabled:cursor-not-allowed disabled:opacity-45';
 
 function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
@@ -115,7 +117,12 @@ export function BuilderContainer({
   };
 
   return (
-    <section className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200" data-testid="builder-container">
+    <section
+      className={`${builderContainerContract.rootClass} mt-4 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200`}
+      data-role={builderContainerContract.dataRole}
+      data-testid={builderContainerContract.testId}
+      aria-label={builderContainerContract.ariaLabel}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-black">Ideenfabrik · Chat Auftrag</h2>
