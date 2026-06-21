@@ -102,7 +102,7 @@ export const SOVEREIGN_ACTION_CLEAR_VIEW: SovereignActionContract = {
   dataRole: 'action-clear-view',
   testId: 'repo-snapshot__clear-view',
   ariaLabel: 'Clear View',
-  kind: 'secondary',
+  kind: 'destructive',
   requiresRepo: false,
   canBeBusy: true,
 };
