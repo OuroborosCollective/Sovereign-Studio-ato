@@ -56,6 +56,10 @@ const VIEW_CLASSES = [
 
 const SAFE_TAB_ID = /^[a-z][a-z0-9-]*$/;
 
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/\s+/g, ' ').trim();
+}
+
 function bindViewportClasses(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -132,6 +136,53 @@ function installViewportRuntime(): void {
   }
 }
 
+function isReleaseGuideButtonVisible(button: HTMLButtonElement): boolean {
+  const style = window.getComputedStyle(button);
+  return style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && style.opacity !== '0'
+    && button.getClientRects().length > 0;
+}
+
+function findReleaseGuideTargetButton(targetTab: string): HTMLButtonElement | null {
+  const target = normalize(targetTab);
+  const selectors = [
+    `[data-testid="tabbar__${targetTab}"]`,
+    `[data-role="sovereign-tab-${targetTab}"]`,
+    `.sovereign-tab-${targetTab}`,
+  ];
+
+  for (const selector of selectors) {
+    const button = document.querySelector<HTMLButtonElement>(selector);
+    if (button) return button;
+  }
+
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
+    const text = normalize(button.textContent ?? '');
+    const aria = normalize(button.getAttribute('aria-label') ?? '');
+    const role = normalize(button.getAttribute('data-role') ?? '');
+    const testId = normalize(button.getAttribute('data-testid') ?? '');
+
+    return text === target
+      || aria === `open ${target} tab`
+      || role === `sovereign-tab-${target}`
+      || testId === `tabbar__${target}`;
+  }) ?? null;
+}
+
+function activateReleaseGuideTarget(button: HTMLButtonElement, type?: ReleaseGuideCommandDetail['type']): void {
+  button.classList.add('sovereign-next-step-highlight');
+  window.setTimeout(() => button.classList.remove('sovereign-next-step-highlight'), 2800);
+
+  if (isReleaseGuideButtonVisible(button)) {
+    button.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }
+
+  if (type !== 'confirm') {
+    button.click();
+  }
+}
+
 function installReleaseGuideCommandRuntime(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -144,16 +195,10 @@ function installReleaseGuideCommandRuntime(): void {
     const targetTab = detail?.targetTab?.trim();
     if (!targetTab || !SAFE_TAB_ID.test(targetTab)) return;
 
-    const button = document.querySelector<HTMLButtonElement>(`[data-testid="tabbar__${targetTab}"]`);
+    const button = findReleaseGuideTargetButton(targetTab);
     if (!button) return;
 
-    button.classList.add('sovereign-next-step-highlight');
-    window.setTimeout(() => button.classList.remove('sovereign-next-step-highlight'), 2800);
-    button.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-
-    if (detail?.type !== 'confirm') {
-      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    }
+    activateReleaseGuideTarget(button, detail?.type);
   });
 }
 
