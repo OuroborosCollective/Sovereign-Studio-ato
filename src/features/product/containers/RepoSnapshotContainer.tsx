@@ -60,6 +60,9 @@ function publishRepoSetupState(input: {
   window.dispatchEvent(new CustomEvent('sovereign:setup-state', { detail }));
 }
 
+const inputClassName = 'mt-2 block w-full min-w-0 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-base leading-6 text-slate-50 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400/20';
+const actionButtonClassName = 'rounded-xl border border-cyan-400/25 bg-cyan-950/50 px-3 py-3 text-sm font-black text-cyan-50 disabled:cursor-not-allowed disabled:opacity-45';
+
 export function RepoSnapshotContainer({
   repoUrl,
   repoBranch,
@@ -99,7 +102,7 @@ export function RepoSnapshotContainer({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-bold">Repository Snapshot</h2>
-          <p className="mt-1 text-xs text-slate-400">Schritt 1: Repository laden. Danach erst Auftrag bauen und Automation starten.</p>
+          <p className="mt-1 text-xs text-slate-400">Schritt 1: Repository laden. Danach Auftrag planen und Package bauen.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
           <span className={status.ready ? 'rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-200' : 'rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-amber-200'}>{status.ready ? 'Repo geladen' : 'Repo fehlt'}</span>
@@ -108,14 +111,14 @@ export function RepoSnapshotContainer({
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <label className="block rounded-2xl border border-cyan-400/35 bg-cyan-500/10 p-3 md:col-span-2">
-          <span className="text-xs font-black uppercase tracking-wide text-cyan-100">GitHub Repository URL</span>
+        <label className="block min-w-0 rounded-2xl border border-cyan-400/35 bg-cyan-500/10 p-3 md:col-span-2">
+          <span className="block text-xs font-black uppercase tracking-wide text-cyan-100">GitHub Repository URL</span>
           <input
             id="github-repo-url-input"
             name="github-repo-url"
             data-testid="github-repo-url-input"
             data-mobile-role="github-repo-url-input"
-            className="mt-2 text-base"
+            className={inputClassName}
             value={repoUrl}
             onChange={(event) => onRepoUrlChange(event.target.value)}
             placeholder="https://github.com/owner/repository"
@@ -126,20 +129,26 @@ export function RepoSnapshotContainer({
           <span className="mt-2 block text-[11px] leading-4 text-cyan-100/80">Pflichtfeld. Ohne geladenes Repo bleibt Produktion blockiert.</span>
         </label>
 
-        <label className="block rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
-          <span className="text-xs font-black uppercase tracking-wide text-slate-300">Branch</span>
-          <input className="mt-2" value={repoBranch} onChange={(event) => onRepoBranchChange(event.target.value)} placeholder="leer = Default Branch" aria-label="Repository branch" />
+        <label className="block min-w-0 rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
+          <span className="block text-xs font-black uppercase tracking-wide text-slate-300">Branch</span>
+          <input
+            className={inputClassName}
+            value={repoBranch}
+            onChange={(event) => onRepoBranchChange(event.target.value)}
+            placeholder="leer = Default Branch"
+            aria-label="Repository branch"
+          />
           <span className="mt-2 block text-[11px] text-slate-500">Leer lassen fuer Default.</span>
         </label>
 
-        <label className="block rounded-2xl border border-amber-400/35 bg-amber-500/10 p-3 md:col-span-3">
-          <span className="text-xs font-black uppercase tracking-wide text-amber-100">GitHub Private Access</span>
+        <label className="block min-w-0 rounded-2xl border border-amber-400/35 bg-amber-500/10 p-3 md:col-span-3">
+          <span className="block text-xs font-black uppercase tracking-wide text-amber-100">GitHub Private Access</span>
           <input
             id="github-token-input"
             name="github-token"
             data-testid="github-token-input"
             data-mobile-role="github-token-input"
-            className="mt-2 text-base"
+            className={inputClassName}
             value={accessValue}
             onFocus={() => setShowAccessHelp(true)}
             onChange={(event) => onAccessValueChange(event.target.value)}
@@ -160,11 +169,11 @@ export function RepoSnapshotContainer({
         </label>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button onClick={onLoadRepo} disabled={!canLoad} type="button">1 · Load Repo</button>
-        <button onClick={onSaveView} disabled={!canSave} type="button">Save Session</button>
-        <button onClick={onRestoreView} disabled={busy} type="button">Restore Session</button>
-        <button onClick={onClearView} disabled={busy} type="button">Clear View</button>
+      <div className="mt-4 grid grid-cols-2 gap-2 md:flex md:flex-wrap">
+        <button className={actionButtonClassName} onClick={onLoadRepo} disabled={!canLoad} type="button">1 · Load Repo</button>
+        <button className={actionButtonClassName} onClick={onSaveView} disabled={!canSave} type="button">Save Session</button>
+        <button className={actionButtonClassName} onClick={onRestoreView} disabled={busy} type="button">Restore Session</button>
+        <button className={actionButtonClassName} onClick={onClearView} disabled={busy} type="button">Clear View</button>
       </div>
 
       <p className="mt-3 text-xs text-slate-400">{summary}</p>
