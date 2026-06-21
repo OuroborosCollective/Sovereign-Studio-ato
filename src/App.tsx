@@ -1,5 +1,5 @@
 import './runtime-adapter';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { buildGitHubHeaders, stripTokenFromText } from './features/github/githubAuthSession';
 import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
@@ -250,38 +250,47 @@ const App: React.FC = () => {
   const safeDiffSources = Array.isArray(diffSources) ? diffSources : [];
   const runtimeBusy = Boolean(sequentialRuntime.activeStep);
   const currentMission = normalizeMission(mission);
-  const packageInputKey = buildAutomationRunKey({
+  const packageInputKey = useMemo(() => buildAutomationRunKey({
     mode: 'manual',
     repoUrl,
     repoBranch,
     mission: currentMission,
     repoFileCount: safeRepoFiles.length,
-  });
-  const automationRunKey = buildAutomationRunKey({
+  }), [repoUrl, repoBranch, currentMission, safeRepoFiles.length]);
+
+  const automationRunKey = useMemo(() => buildAutomationRunKey({
     mode: automationMode,
     repoUrl,
     repoBranch,
     mission: currentMission,
     repoFileCount: safeRepoFiles.length,
-  });
-  const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
-  const latestGeneratedReview = lastPackage ? reviewGeneratedFiles(lastPackage.files) : null;
-  const diffReport = lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, safeDiffSources) : null;
-  const repairPlan = buildWorkflowRepairPlan(workflowReport);
-  const healthReport = buildSovereignHealthReport({
+  }), [automationMode, repoUrl, repoBranch, currentMission, safeRepoFiles.length]);
+
+  const hasFreshPackage = useMemo(() => Boolean(lastPackage && lastPackageKey === packageInputKey), [lastPackage, lastPackageKey, packageInputKey]);
+
+  const latestGeneratedReview = useMemo(() => lastPackage ? reviewGeneratedFiles(lastPackage.files) : null, [lastPackage]);
+
+  const diffReport = useMemo(() => lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, safeDiffSources) : null, [lastPackage, safeDiffSources]);
+
+  const repairPlan = useMemo(() => buildWorkflowRepairPlan(workflowReport), [workflowReport]);
+
+  const healthReport = useMemo(() => buildSovereignHealthReport({
     repoFiles: safeRepoFiles,
     generatedFileReview: latestGeneratedReview,
     workflowWatch: workflowReport,
     telemetry,
-  });
-  const coverageReport = buildRuntimeValidationCoverageReport();
-  const solutionPatternHints = formatSolutionPatternHints(solutionPatternStore);
-  const activePatternCount = Array.isArray(solutionPatternStore.patterns)
+  }), [safeRepoFiles, latestGeneratedReview, workflowReport, telemetry]);
+
+  const coverageReport = useMemo(() => buildRuntimeValidationCoverageReport(), []);
+
+  const solutionPatternHints = useMemo(() => formatSolutionPatternHints(solutionPatternStore), [solutionPatternStore]);
+
+  const activePatternCount = useMemo(() => Array.isArray(solutionPatternStore.patterns)
     ? solutionPatternStore.patterns.filter((pattern) => pattern.status === 'active').length
-    : 0;
+    : 0, [solutionPatternStore.patterns]);
 
   // Coach-State aus echtem Runtime ableiten - für mobile-operator-coach
-  const coachState = deriveCoachStateFromRuntime(
+  const coachState = useMemo(() => deriveCoachStateFromRuntime(
     sequentialRuntime,
     repoSnapshotStatus.ready,
     Boolean(lastPackage),
@@ -289,12 +298,20 @@ const App: React.FC = () => {
     isPublishing,
     isWatchingWorkflow,
     activePatternCount > 0
-  );
+  ), [
+    sequentialRuntime,
+    repoSnapshotStatus.ready,
+    lastPackage,
+    workflowReport?.status,
+    isPublishing,
+    isWatchingWorkflow,
+    activePatternCount,
+  ]);
 
   // Expose Coach-State für mobile-operator-coach
   useCoachRuntimeBridge({ coachState });
 
-  const pushTelemetry = (
+  const pushTelemetry = useCallback((
     stage: Parameters<typeof createTelemetryEvent>[0],
     level: Parameters<typeof createTelemetryEvent>[1],
     label: string,
@@ -302,7 +319,7 @@ const App: React.FC = () => {
     details?: Parameters<typeof createTelemetryEvent>[4],
   ) => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
-  };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
