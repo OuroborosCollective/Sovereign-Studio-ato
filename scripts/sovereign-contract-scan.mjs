@@ -120,7 +120,17 @@ function writeReport() {
       ...(report.warnings.length ? report.warnings.map((item) => `- ${item.id}: ${item.message}`) : ['- none']),
       '',
     ];
-    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+    const summaryPath = path.resolve(process.env.GITHUB_STEP_SUMMARY);
+    const workspaceRoot = path.resolve(process.cwd());
+    const relative = path.relative(workspaceRoot, summaryPath);
+    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+      fs.appendFileSync(summaryPath, `${lines.join('\n')}\n`);
+    } else {
+      warn('scanner:invalid-summary-path', 'Skipping unsafe GITHUB_STEP_SUMMARY path.', {
+        summaryPath,
+        workspaceRoot,
+      });
+    }
   }
 
   console.log(JSON.stringify(report, null, 2));
