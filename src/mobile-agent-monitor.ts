@@ -116,11 +116,13 @@ function shouldReadTextNode(node: Node): number {
   return element.closest(ignoredSelector()) ? REJECT : ACCEPT;
 }
 
-export function collectMobileAgentVisibleText(root: ParentNode | null = document.body): string {
-  if (!root || typeof document === 'undefined') return '';
+export function collectMobileAgentVisibleText(root?: ParentNode | null): string {
+  if (typeof document === 'undefined') return '';
+  const safeRoot = root ?? document.body;
+  if (!safeRoot) return '';
 
   const parts: string[] = [];
-  const walker = document.createTreeWalker(root, TEXT_NODE, { acceptNode: shouldReadTextNode });
+  const walker = document.createTreeWalker(safeRoot, TEXT_NODE, { acceptNode: shouldReadTextNode });
   let node = walker.nextNode();
 
   while (node) {
@@ -202,7 +204,7 @@ function setupCoachState(setup: SetupStateLike | undefined): MobileAgentCoachSta
 
 function workflowCoachState(): MobileAgentCoachState {
   try {
-    const decision = decideMobileWorkflow({ visibleText: collectMobileAgentVisibleText(document.body) });
+    const decision = decideMobileWorkflow({ visibleText: collectMobileAgentVisibleText() });
     assertMobileWorkflowDecisionValid(decision);
     return {
       lamp: decision.lamp,
