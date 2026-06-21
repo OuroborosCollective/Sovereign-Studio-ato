@@ -220,7 +220,7 @@ export function BuilderContainer({
           type="button"
           data-role={SOVEREIGN_ACTION_DRAFT_PR.dataRole}
           data-testid={SOVEREIGN_ACTION_DRAFT_PR.testId}
-          aria-label={SOVEREIGN_ACTION_DRAFT_PR.ariaLabel}
+          aria-label={builderPublishLabel(isPublishing)}
           data-state={publishDisabled ? 'disabled' : 'idle'}
         >
           {builderPublishLabel(isPublishing)}

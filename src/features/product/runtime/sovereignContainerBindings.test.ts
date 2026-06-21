@@ -48,7 +48,11 @@ describe('sovereign container source bindings', () => {
     const contract = getSovereignContainerContract('repo-snapshot');
 
     expect(source).toContain('Repository Snapshot');
-    expect(source).toContain('data-testid="repo-snapshot-container"');
+    expect(source).toContain("getSovereignContainerContract('repo-snapshot')");
+    expect(source).toContain('repoContainerContract.rootClass');
+    expect(source).toContain('repoContainerContract.dataRole');
+    expect(source).toContain('repoContainerContract.testId');
+    expect(source).toContain('repoContainerContract.ariaLabel');
     expect(contract.testId).toBe('repo-snapshot-container');
   });
 });
