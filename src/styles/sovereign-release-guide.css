@@ -132,24 +132,22 @@
   box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.42), 0 0 24px rgba(34, 211, 238, 0.3);
 }
 
-@media (max-width: 767px) {
-  .sovereign-tabbar {
-    block-size: 1px !important;
-    border: 0 !important;
-    clip: rect(0 0 0 0) !important;
-    clip-path: inset(50%) !important;
-    inline-size: 1px !important;
-    margin: 0 !important;
-    overflow: hidden !important;
-    padding: 0 !important;
-    pointer-events: none !important;
-    position: absolute !important;
-    white-space: nowrap !important;
-  }
+.sovereign-tabbar {
+  block-size: 1px !important;
+  border: 0 !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  inline-size: 1px !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  white-space: nowrap !important;
+}
 
-  .sovereign-app-title {
-    margin-block-start: 0.75rem;
-  }
+.sovereign-app-title {
+  margin-block-start: 0.75rem;
 }
 
 @media (max-width: 420px) {
