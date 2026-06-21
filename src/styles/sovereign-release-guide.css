@@ -1,0 +1,130 @@
+.sovereign-helper-title-row {
+  align-items: center;
+  display: flex;
+  gap: 0.72rem;
+  min-width: 0;
+}
+
+.sovereign-helper-avatar {
+  align-items: center;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.66);
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.18);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 1.15rem;
+  height: 2.45rem;
+  justify-content: center;
+  width: 2.45rem;
+}
+
+.sovereign-helper-subtitle {
+  color: rgba(203, 213, 225, 0.82);
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin: 0.18rem 0 0;
+}
+
+.sovereign-helper-panel {
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.72);
+  margin-top: 0.75rem;
+  padding: 0.82rem;
+}
+
+.sovereign-helper-copy strong,
+.sovereign-helper-copy span {
+  display: block;
+}
+
+.sovereign-helper-copy strong {
+  color: rgb(224, 242, 254);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.sovereign-helper-copy span {
+  color: rgb(148, 163, 184);
+  font-size: 0.72rem;
+  margin-top: 0.24rem;
+}
+
+.sovereign-monitor-progress {
+  margin-top: 0.75rem;
+}
+
+.sovereign-monitor-progress-head {
+  align-items: center;
+  color: rgb(148, 163, 184);
+  display: flex;
+  font-size: 0.72rem;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.sovereign-monitor-progress-head strong {
+  color: rgb(103, 232, 249);
+  font-weight: 900;
+}
+
+.sovereign-monitor-progress-track {
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.72);
+  height: 0.55rem;
+  margin-top: 0.42rem;
+  overflow: hidden;
+}
+
+.sovereign-monitor-progress-fill {
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.85), rgba(52, 211, 153, 0.95));
+  height: 100%;
+  transition: width 280ms ease;
+}
+
+.sovereign-guide-actions {
+  display: grid;
+  gap: 0.48rem;
+  grid-template-columns: 0.82fr 1fr 1.18fr;
+  margin-top: 0.75rem;
+}
+
+.sovereign-guide-button {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: rgb(226, 232, 240);
+  font-size: 0.76rem;
+  font-weight: 900;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.sovereign-guide-button-primary {
+  border-color: rgba(34, 211, 238, 0.58);
+  background: rgba(8, 47, 73, 0.82);
+  color: rgb(236, 254, 255);
+}
+
+.sovereign-guide-button:disabled,
+.sovereign-guide-button[aria-disabled="true"] {
+  opacity: 0.48;
+}
+
+.sovereign-monitor-toggle[data-state="locked-open"] {
+  border-color: rgba(52, 211, 153, 0.36);
+  color: rgb(187, 247, 208);
+}
+
+.sovereign-next-step-highlight {
+  border-color: rgba(34, 211, 238, 0.9);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.42), 0 0 24px rgba(34, 211, 238, 0.3);
+}
+
+@media (max-width: 420px) {
+  .sovereign-guide-actions {
+    grid-template-columns: 1fr;
+  }
+}

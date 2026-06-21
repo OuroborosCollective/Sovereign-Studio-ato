@@ -160,7 +160,6 @@ export function isSovereignAutoViewUserInactive(
   thresholdMs = input.autoSwitchInactivityMs ?? DEFAULT_AUTO_SWITCH_INACTIVITY_MS,
 ): boolean {
   const nowMs = normalizeNowMs(input);
-  // recentUserInteractionUntil takes precedence: if set and still in the future, user is considered active.
   if (nowMs !== null && isFiniteNumber(input.recentUserInteractionUntil) && input.recentUserInteractionUntil > nowMs) {
     return false;
   }
@@ -201,8 +200,13 @@ export function evaluateSovereignAutoViewConditions(
 
 function canRunSuggestionSwitch(input: SovereignAutoViewInput): boolean {
   if (isSovereignAutoViewManualOverrideActive(input)) return false;
-  // planningConfirmed=false blocks suggestion switching until the user confirms the plan.
   if (input.planningConfirmed === false) return false;
+  if (isSovereignAutoViewUserInactive(input)) return true;
+  return isSovereignAutoViewConfidenceMatched(input);
+}
+
+function canRunPackageReviewSwitch(input: SovereignAutoViewInput): boolean {
+  if (isSovereignAutoViewManualOverrideActive(input)) return false;
   if (isSovereignAutoViewUserInactive(input)) return true;
   return isSovereignAutoViewConfidenceMatched(input);
 }
@@ -250,6 +254,21 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (input.workflowStatus === 'red') return switchTo(input, 'repair', 'Red workflow status should surface the repair view.');
   if (input.workflowStatus === 'pending' || input.workflowStatus === 'unknown') return switchTo(input, 'workflow', 'Non-final workflow status should stay on workflow watch.');
 
+  if (
+    input.mode !== 'manual'
+    && input.hasPackage
+    && (input.activeTab === 'builder' || input.activeTab === 'files')
+    && canRunPackageReviewSwitch(input)
+  ) {
+    return switchTo(
+      input,
+      'diff',
+      input.hasDiffSources
+        ? 'Package and source snapshots are ready - show the diff.'
+        : 'Package is ready - show the diff loader so source snapshots can be loaded.',
+    );
+  }
+
   if (input.activeTab === 'builder') {
     return keepCurrent(input, 'Builder was selected by the user and remains the active planning workspace.');
   }
@@ -265,7 +284,7 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (input.workflowStatus === 'green' && input.hasPackage && input.activeTab === 'workflow') {
     return input.hasDiffSources
       ? switchTo(input, 'diff', 'Green workflow with diff sources loaded - show the diff.')
-      : switchTo(input, 'files', 'Green workflow with generated package - show files view.');
+      : switchTo(input, 'diff', 'Green workflow with generated package - show the diff loader.');
   }
 
   if (input.hasPackage && input.hasDiffSources && input.workflowStatus === 'idle' && input.activeTab === 'files') {

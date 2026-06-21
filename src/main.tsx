@@ -8,6 +8,7 @@ import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import './runtime-adapter';
 import './index.css';
 import './styles/arelogic-brand.css';
+import './styles/sovereign-release-guide.css';
 
 type IdleDeadlineLike = {
   didTimeout: boolean;
@@ -26,6 +27,11 @@ type GoogleAuthModule = {
   };
 };
 
+type ReleaseGuideCommandDetail = {
+  type?: 'back' | 'confirm' | 'next';
+  targetTab?: string | null;
+};
+
 type MobileWindow = Window &
   typeof globalThis & {
     global?: Window & typeof globalThis;
@@ -33,6 +39,7 @@ type MobileWindow = Window &
     cancelIdleCallback?: (handle: number) => void;
     __sovereignViewportRuntimeInstalled?: boolean;
     __sovereignCodeWorkspacePersistenceInstalled?: boolean;
+    __sovereignReleaseGuideCommandRuntimeInstalled?: boolean;
   };
 
 const VIEW_CLASSES = [
@@ -46,6 +53,8 @@ const VIEW_CLASSES = [
   'compact-ui',
   'comfortable-ui',
 ] as const;
+
+const SAFE_TAB_ID = /^[a-z][a-z0-9-]*$/;
 
 function bindViewportClasses(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -121,6 +130,31 @@ function installViewportRuntime(): void {
     ].join('\n');
     document.head.appendChild(style);
   }
+}
+
+function installReleaseGuideCommandRuntime(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  const mobileWindow = window as MobileWindow;
+  if (mobileWindow.__sovereignReleaseGuideCommandRuntimeInstalled) return;
+  mobileWindow.__sovereignReleaseGuideCommandRuntimeInstalled = true;
+
+  window.addEventListener('sovereign:release-guide-command', (event: Event) => {
+    const detail = (event as CustomEvent<ReleaseGuideCommandDetail>).detail;
+    const targetTab = detail?.targetTab?.trim();
+    if (!targetTab || !SAFE_TAB_ID.test(targetTab)) return;
+
+    const button = document.querySelector<HTMLButtonElement>(`[data-testid="tabbar__${targetTab}"]`);
+    if (!button) return;
+
+    button.classList.add('sovereign-next-step-highlight');
+    window.setTimeout(() => button.classList.remove('sovereign-next-step-highlight'), 2800);
+    button.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+
+    if (detail?.type !== 'confirm') {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }
+  });
 }
 
 function installCodeWorkspacePersistenceRuntime(): void {
@@ -205,6 +239,7 @@ function bootApp(): void {
 
 installIdleCallbackFallback();
 installViewportRuntime();
+installReleaseGuideCommandRuntime();
 installCodeWorkspacePersistenceRuntime();
 installGlobalRuntimeMonitor();
 initPostHog();

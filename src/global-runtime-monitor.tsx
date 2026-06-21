@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
+import {
+  deriveReleaseGuideState,
+  type ReleaseGuideTab,
+} from './features/product/runtime/sovereignReleaseGuide';
 import type { SovereignTelemetryEvent } from './features/product/runtime/sovereignTelemetry';
 
 type CoachLamp = 'green' | 'yellow' | 'red';
@@ -14,6 +18,11 @@ type RuntimeCoachState = {
   thinking: boolean;
   source: string;
   updatedAt: number;
+};
+
+type ReleaseGuideCommand = {
+  type: 'back' | 'confirm' | 'next';
+  targetTab: ReleaseGuideTab | null;
 };
 
 type GlobalRuntimeWindow = Window & typeof globalThis & {
@@ -84,6 +93,11 @@ function seedLog(win: GlobalRuntimeWindow): RuntimeCoachState[] {
   return [coach, ...telemetry].slice(0, MAX_LOG_ENTRIES);
 }
 
+function publishGuideCommand(command: ReleaseGuideCommand): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', { detail: command }));
+}
+
 function GlobalRuntimeMonitor(): React.ReactElement {
   const [coachState, setCoachState] = useState<RuntimeCoachState>(() => {
     if (typeof window === 'undefined') return defaultCoachState();
@@ -93,7 +107,9 @@ function GlobalRuntimeMonitor(): React.ReactElement {
     if (typeof window === 'undefined') return [defaultCoachState()];
     return seedLog(window as GlobalRuntimeWindow);
   });
-  const [expanded, setExpanded] = useState(false);
+  const [confirmedAt, setConfirmedAt] = useState<number | null>(null);
+
+  const guide = useMemo(() => deriveReleaseGuideState(coachState), [coachState]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -120,7 +136,24 @@ function GlobalRuntimeMonitor(): React.ReactElement {
     };
   }, []);
 
-  const visibleLog = useMemo(() => log.slice(0, expanded ? MAX_LOG_ENTRIES : 5), [expanded, log]);
+  const visibleLog = useMemo(() => log.slice(0, MAX_LOG_ENTRIES), [log]);
+
+  const confirmStep = (): void => {
+    const now = Date.now();
+    setConfirmedAt(now);
+    publishGuideCommand({ type: 'confirm', targetTab: guide.targetTab });
+    setLog((current) => appendUnique(current, {
+      lamp: 'green',
+      title: 'Schritt bestätigt',
+      message: guide.targetTab
+        ? `Bestätigt. Ich markiere ${guide.targetTab} als nächsten sicheren Bereich.`
+        : 'Bestätigt. Ich warte auf den nächsten sicheren Schritt.',
+      action: guide.nextEnabled ? guide.nextLabel : 'Weiter beobachten',
+      thinking: false,
+      source: 'release-guide',
+      updatedAt: now,
+    }));
+  };
 
   return (
     <section
@@ -130,20 +163,24 @@ function GlobalRuntimeMonitor(): React.ReactElement {
       aria-label={monitorContainerContract.ariaLabel}
     >
       <div className="sovereign-monitor-head">
-        <div>
-          <div className="sovereign-eyebrow">Coach · Live Log · Aktionen</div>
-          <h2>Agenten-Monitor · Sovereign Bot</h2>
+        <div className="sovereign-helper-title-row">
+          <span className="sovereign-helper-avatar" aria-hidden="true">{guide.mood}</span>
+          <div>
+            <div className="sovereign-eyebrow">Coach · Live Log · Aktionen</div>
+            <h2>Agenten-Monitor · Sovereign Helper</h2>
+            <p className="sovereign-helper-subtitle">{guide.helperTitle}</p>
+          </div>
         </div>
         <button
           type="button"
           className="sovereign-monitor-toggle"
-          onClick={() => setExpanded((value) => !value)}
           data-role={SOVEREIGN_ACTION_MONITOR_TOGGLE.dataRole}
           data-testid={SOVEREIGN_ACTION_MONITOR_TOGGLE.testId}
           aria-label={SOVEREIGN_ACTION_MONITOR_TOGGLE.ariaLabel}
-          data-state="idle"
+          data-state="locked-open"
+          onClick={confirmStep}
         >
-          {expanded ? 'Log einklappen' : 'Log anzeigen'}
+          Log bleibt offen
         </button>
       </div>
 
@@ -157,19 +194,56 @@ function GlobalRuntimeMonitor(): React.ReactElement {
         </div>
       </div>
 
-      {expanded ? (
-        <div className="sovereign-monitor-log" data-testid="global-runtime-monitor-log">
-          {visibleLog.map((entry, index) => (
-            <div key={`${entry.updatedAt}-${entry.title}-${index}`} className="sovereign-monitor-line">
-              <span className={lampClassName(entry.lamp)} />
-              <div>
-                <span>{formatTime(entry.updatedAt)} · {entry.source}</span>
-                <p>{entry.title}: {entry.message}</p>
-              </div>
-            </div>
-          ))}
+      <div className="sovereign-helper-panel" data-testid="release-guide__panel">
+        <div className="sovereign-helper-copy">
+          <strong>{guide.helperMessage}</strong>
+          <span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Bereit für den nächsten Klick.'}</span>
         </div>
-      ) : null}
+        <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsfortschritt ${guide.progress}%`}>
+          <div className="sovereign-monitor-progress-head">
+            <span>Arbeitsfortschritt</span>
+            <strong>{guide.progressLabel}</strong>
+          </div>
+          <div className="sovereign-monitor-progress-track">
+            <div className="sovereign-monitor-progress-fill" style={{ width: `${guide.progress}%` }} />
+          </div>
+        </div>
+        <div className="sovereign-guide-actions" data-testid="release-guide__actions">
+          <button
+            className="sovereign-guide-button"
+            type="button"
+            onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })}
+            data-testid="release-guide__back"
+          >
+            Zurück
+          </button>
+          <button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">
+            {guide.confirmLabel}
+          </button>
+          <button
+            className="sovereign-guide-button sovereign-guide-button-primary"
+            type="button"
+            onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })}
+            disabled={!guide.nextEnabled}
+            aria-disabled={!guide.nextEnabled}
+            data-testid="release-guide__next"
+          >
+            {guide.nextLabel}
+          </button>
+        </div>
+      </div>
+
+      <div className="sovereign-monitor-log" data-testid="global-runtime-monitor-log">
+        {visibleLog.map((entry, index) => (
+          <div key={`${entry.updatedAt}-${entry.title}-${index}`} className="sovereign-monitor-line">
+            <span className={lampClassName(entry.lamp)} />
+            <div>
+              <span>{formatTime(entry.updatedAt)} · {entry.source}</span>
+              <p>{entry.title}: {entry.message}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
