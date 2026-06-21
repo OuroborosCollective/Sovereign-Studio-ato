@@ -59,13 +59,11 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
-.sovereign-app-shell,
-#root > div.min-h-screen {
+.sovereign-app-shell {
   min-height: 100vh;
 }
 
-.sovereign-app-title,
-#root > div.min-h-screen > h1 {
+.sovereign-app-title {
   border: 1px solid rgba(34, 211, 238, 0.18);
   border-radius: 1.25rem;
   background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(8, 47, 73, 0.72));
@@ -75,8 +73,7 @@ button {
   letter-spacing: 0.01em;
 }
 
-.sovereign-tabbar,
-#root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b {
+.sovereign-tabbar {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 1.25rem;
   background: rgba(15, 23, 42, 0.72);
@@ -88,13 +85,11 @@ button {
   scrollbar-width: none;
 }
 
-.sovereign-tabbar::-webkit-scrollbar,
-#root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b::-webkit-scrollbar {
+.sovereign-tabbar::-webkit-scrollbar {
   display: none;
 }
 
-.sovereign-tab,
-#root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b > button {
+.sovereign-tab {
   border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.86);
@@ -105,8 +100,7 @@ button {
   white-space: nowrap;
 }
 
-.sovereign-tab-active,
-#root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b > button.font-bold {
+.sovereign-tab-active {
   border-color: rgba(34, 211, 238, 0.62);
   background: linear-gradient(135deg, rgba(34, 211, 238, 0.18), rgba(99, 102, 241, 0.2));
   box-shadow: 0 8px 24px rgba(34, 211, 238, 0.14);
@@ -352,14 +346,12 @@ button {
 }
 
 @media (max-width: 767px) {
-  .sovereign-app-shell,
-  #root > div.min-h-screen {
+  .sovereign-app-shell {
     padding-left: max(0.9rem, var(--safe-left));
     padding-right: max(0.9rem, var(--safe-right));
   }
 
-  .sovereign-tabbar,
-  #root > div.min-h-screen > div.mt-4.flex.flex-wrap.gap-2.border-b {
+  .sovereign-tabbar {
     flex-wrap: nowrap;
   }
 }
@@ -369,8 +361,7 @@ button {
     min-height: 100svh;
   }
 
-  .sovereign-app-shell,
-  #root > div.min-h-screen {
+  .sovereign-app-shell {
     min-height: 100svh;
   }
 }
