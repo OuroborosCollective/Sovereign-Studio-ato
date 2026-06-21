@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { SOVEREIGN_PRODUCT_TEMPLATE } from './features/product/runtime/sovereignProductTemplate';
 
 const MAIN_PATH = 'src/main.tsx';
 const APP_PATH = 'src/App.tsx';
@@ -32,18 +33,6 @@ const REQUIRED_MOBILE_INSTALLERS = [
   'installMobileMoreMenu',
   'installMobileSetupDrawer',
   'installMobileWorkbenchConsole',
-];
-
-const REQUIRED_PRIMARY_TABS = [
-  "{ id: 'repo', label: 'Repo' }",
-  "{ id: 'builder', label: 'Builder' }",
-  "{ id: 'files', label: 'Files' }",
-  "{ id: 'diff', label: 'Diff' }",
-  "{ id: 'workflow', label: 'Workflow' }",
-  "{ id: 'repair', label: 'Repair' }",
-  "{ id: 'remote', label: 'Remote Memory' }",
-  "{ id: 'memory', label: 'Pattern Memory' }",
-  "{ id: 'telemetry', label: 'Telemetry' }",
 ];
 
 function read(path: string): string {
@@ -135,10 +124,13 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(app, FORBIDDEN_LEGACY_SHELL_TOKENS);
   });
 
-  it('starts in the repo workflow instead of monitor-first or side-channel-first mode', () => {
+  it('starts in the repo workflow via Product Template instead of monitor-first or side-channel-first mode', () => {
     const app = read(APP_PATH);
 
-    expect(app).toContain("useState<SovereignTab>('repo')");
+    // App should derive startTab from the Product Template
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
+    // startTab must be 'repo'
+    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('repo');
 
     expectContainsNone(app, [
       "useState<SovereignTab>('monitor')",
@@ -149,40 +141,57 @@ describe('current Sovereign app shell contract', () => {
     ]);
   });
 
-  it('keeps the primary operator tabs present and named consistently', () => {
+  it('derives tabs from Product Template as single source of truth', () => {
     const app = read(APP_PATH);
 
-    expectContainsAll(app, REQUIRED_PRIMARY_TABS);
+    // App should use Product Template to derive tabs
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
+    // All primary flow tab IDs should be referenced
+    const primaryTabs = SOVEREIGN_PRODUCT_TEMPLATE.tabs.filter((t) => t.group === 'primary');
+    for (const tab of primaryTabs) {
+      expect(app).toContain(`'${tab.id}'`);
+    }
   });
 
-  it('keeps repo and builder before side-channel memory surfaces', () => {
+  it('keeps repo and builder before side-channel memory surfaces in Product Template', () => {
     const app = read(APP_PATH);
 
-    expectOrder(app, [
-      "{ id: 'repo', label: 'Repo' }",
-      "{ id: 'builder', label: 'Builder' }",
-      "{ id: 'remote', label: 'Remote Memory' }",
-      "{ id: 'memory', label: 'Pattern Memory' }",
-    ]);
+    // Verify the template structure
+    const repoTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'repo');
+    const builderTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'builder');
+    const remoteTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'remote');
+    const memoryTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'memory');
+
+    expect(repoTab?.mainFlowIndex).toBeLessThan(builderTab?.mainFlowIndex ?? 999);
+    expect(builderTab?.mainFlowIndex).toBeLessThan(remoteTab?.mainFlowIndex ?? 999);
+    expect(builderTab?.mainFlowIndex).toBeLessThan(memoryTab?.mainFlowIndex ?? 999);
+
+    // Verify app uses template
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE');
   });
 
-  it('keeps files and diff before workflow execution surfaces', () => {
+  it('keeps files and diff before workflow execution surfaces in Product Template', () => {
     const app = read(APP_PATH);
 
-    expectOrder(app, [
-      "{ id: 'repo', label: 'Repo' }",
-      "{ id: 'builder', label: 'Builder' }",
-      "{ id: 'files', label: 'Files' }",
-      "{ id: 'diff', label: 'Diff' }",
-      "{ id: 'workflow', label: 'Workflow' }",
-    ]);
+    const filesTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'files');
+    const diffTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'diff');
+    const workflowTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'workflow');
+
+    expect(filesTab?.mainFlowIndex).toBeLessThan(diffTab?.mainFlowIndex ?? 999);
+    expect(diffTab?.mainFlowIndex).toBeLessThan(workflowTab?.mainFlowIndex ?? 999);
+
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE');
   });
 
-  it('keeps telemetry as a side-channel tab instead of a startup gate', () => {
+  it('keeps telemetry as a side-channel tab via Product Template instead of a startup gate', () => {
     const app = read(APP_PATH);
 
-    expect(app).toContain("{ id: 'telemetry', label: 'Telemetry' }");
-    expect(app).not.toContain("useState<SovereignTab>('telemetry')");
+    const telemetryTab = SOVEREIGN_PRODUCT_TEMPLATE.tabs.find((t) => t.id === 'telemetry');
+    expect(telemetryTab?.group).toBe('side');
+    expect(telemetryTab?.label).toBe('Telemetry');
+
+    // App should derive tabs from template
+    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
     expect(app).not.toContain('telemetryGate');
     expect(app).not.toContain('TelemetryGate');
   });
@@ -191,7 +200,6 @@ describe('current Sovereign app shell contract', () => {
     const app = read(APP_PATH);
 
     expect(app).toContain('RepoSnapshotContainer');
-    expect(app).toContain("{ id: 'repo', label: 'Repo' }");
     expect(app).not.toContain('FakeSnapshot');
     expect(app).not.toContain('mockSnapshot');
     expect(app).not.toContain('MockSnapshot');

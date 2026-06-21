@@ -90,31 +90,24 @@ import { LoginView } from './components/LoginView';
 import { deriveCoachStateFromRuntime, useCoachRuntimeBridge } from './features/product/hooks/useCoachRuntimeBridge';
 import { useSetupState, publishSetupStateToWindow } from './features/github/hooks/useSetupState';
 import { wallClockMs } from './mobile-operator-coach';
+import {
+  SOVEREIGN_PRODUCT_TEMPLATE,
+} from './features/product/runtime/sovereignProductTemplate';
 
 type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
 const DEFAULT_MISSION = 'README + Update History';
 
-const tabs: Array<{ id: SovereignTab; label: string }> = [
-  { id: 'repo', label: 'Repo' },
-  { id: 'builder', label: 'Builder' },
-  { id: 'files', label: 'Files' },
-  { id: 'diff', label: 'Diff' },
-  { id: 'workflow', label: 'Workflow' },
-  { id: 'repair', label: 'Repair' },
-  { id: 'remote', label: 'Remote Memory' },
-  { id: 'memory', label: 'Pattern Memory' },
-  { id: 'telemetry', label: 'Telemetry' },
-  { id: 'monitor', label: 'Live Monitor' },
-  { id: 'readiness', label: 'Readiness' },
-  { id: 'integrity', label: 'Integrity' },
-  { id: 'findings', label: 'Findings' },
-  { id: 'health', label: 'Health' },
-  { id: 'runtime', label: 'Runtime' },
-  { id: 'coverage', label: 'Coverage' },
-];
+// Tabs are derived from the Product Template as the single source of truth.
+// This ensures the app shell always matches the product contract.
+const tabs: Array<{ id: SovereignTab; label: string }> = SOVEREIGN_PRODUCT_TEMPLATE.tabs
+  .filter((tab) => tab.userVisible)
+  .map((tab) => ({ id: tab.id as SovereignTab, label: tab.label }));
 
 const automationModes: SovereignAutomationMode[] = ['manual', 'auto-review', 'full-auto-draft-pr'];
+
+// Start tab is derived from the Product Template contract.
+const startTab: SovereignTab = SOVEREIGN_PRODUCT_TEMPLATE.startTab as SovereignTab;
 
 function decodeBase64Utf8(value: string): string {
   const binary = atob(value.replace(/\s/g, ''));
@@ -176,7 +169,7 @@ const App: React.FC = () => {
   const [isLoadingDiffSources, setIsLoadingDiffSources] = useState(false);
   const [isWatchingWorkflow, setIsWatchingWorkflow] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [activeTab, setActiveTab] = useState<SovereignTab>('repo');
+  const [activeTab, setActiveTab] = useState<SovereignTab>(startTab);
   const [telemetryExpanded, setTelemetryExpanded] = useState(true);
   const [telemetry, setTelemetry] = useState(() => createInitialTelemetryState());
   const [scanRegistry, setScanRegistry] = useState(() => createScanFindingRegistry());
