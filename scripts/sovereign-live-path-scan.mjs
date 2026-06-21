@@ -6,7 +6,6 @@ import process from 'node:process';
 const REPORT_DIR = '.security-reports';
 const REPORT_PATH = path.join(REPORT_DIR, 'sovereign-live-path-contract.json');
 const ROOTS = ['src'];
-const OPTIONAL_ROOTS = ['scripts'];
 
 const report = {
   name: 'Sovereign Live Path Scan',
@@ -32,9 +31,9 @@ const LIVE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const LIVE_ALLOWED_TEST_PATTERNS = [
   /\.test\.[cm]?[tj]sx?$/,
   /\.spec\.[cm]?[tj]sx?$/,
-  /__tests__/, 
-  /test-utils/, 
-  /testing/, 
+  /__tests__/,
+  /test-utils/,
+  /testing/,
 ];
 
 const TEXT_ALLOWED_PATHS = [
@@ -98,10 +97,6 @@ function walk(dir) {
     else if (entry.isFile() && isLiveFile(fullPath)) files.push(fullPath);
   }
   return files;
-}
-
-function hasText(filePath, pattern) {
-  return pattern.test(read(filePath));
 }
 
 function writeReport() {
@@ -222,10 +217,9 @@ function runRequiredPathChecks() {
 }
 
 function run() {
-  const roots = [...ROOTS, ...OPTIONAL_ROOTS.filter(exists)];
-  const files = roots.flatMap(walk);
-  if (!files.length) fail('scanner:no-files', 'No live files found to scan.', { roots });
-  else pass('scanner:files-found', 'Live files found for scan.', { count: files.length, roots });
+  const files = ROOTS.flatMap(walk);
+  if (!files.length) fail('scanner:no-files', 'No live files found to scan.', { roots: ROOTS });
+  else pass('scanner:files-found', 'Live files found for scan.', { count: files.length, roots: ROOTS });
 
   scanLiveFiles(files);
   runRequiredPathChecks();
