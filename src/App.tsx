@@ -8,6 +8,7 @@ import { GeneratedFileDiffPreviewPanel } from './features/product/components/Gen
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
 import { RemoteMemoryContainer } from './features/product/containers/RemoteMemoryContainer';
 import { BuilderContainer } from './features/product/containers/BuilderContainer';
+import { RepoInsightPanelBridge } from './features/product/components/RepoInsightPanelBridge';
 import { WorkflowContainer } from './features/product/containers/WorkflowContainer';
 import { RepoSnapshotContainer } from './features/product/containers/RepoSnapshotContainer';
 import { TelemetryContainer } from './features/product/containers/TelemetryContainer';
@@ -1004,6 +1005,16 @@ const App: React.FC = () => {
             onGenerateIdeas={generateRepoIdeas}
             onGenerateErrorWorkflow={generateErrorWorkflow}
             onPublishDraftPr={() => { void publishDraftPr(); }}
+          />
+          <RepoInsightPanelBridge
+            repoFiles={safeRepoFiles}
+            scanRegistry={scanRegistry}
+            workflowReport={workflowReport}
+            solutionPatternStore={solutionPatternStore}
+            currentMission={mission}
+            onSuggestionClick={(suggestion) => {
+              setMission(suggestion.whyUseful);
+            }}
           />
         </SovereignTabErrorBoundary>
       ) : null}

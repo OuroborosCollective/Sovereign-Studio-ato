@@ -33,6 +33,7 @@ export interface UseRepoInsightBridgeOptions {
   repoBranch?: string;
   scanRegistry?: ScanFindingRegistry | null;
   workflowReport?: WorkflowWatchReport | null;
+  solutionPatternStore?: unknown | null;
   currentMission?: string;
   autoAnalyze?: boolean;
 }
