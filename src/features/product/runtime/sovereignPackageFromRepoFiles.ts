@@ -11,6 +11,10 @@ import {
   runtimeAssertSovereignPackage,
   type SovereignImplementationPackage,
 } from './sovereignRuntime';
+import { runSovereignLlmRuntime } from './sovereignLlmRuntime';
+import { assertSovereignBrainResult } from '../brain/sovereignBrainContract';
+import { assertPushableBrain } from '../llm/llmRuntimeChecks';
+import { toImplementationFiles } from '../brain/sovereignBrainContract';
 
 export interface BuildSovereignPackageFromRepoFilesInput {
   mission: string;
@@ -19,6 +23,17 @@ export interface BuildSovereignPackageFromRepoFilesInput {
   cards?: Card[];
   settings?: ProjectSettings;
   previousPreview?: string;
+  memoryContext?: string[];
+  runtimeEvents?: string[];
+  allowUserKeyRoutes?: boolean;
+  userKeys?: {
+    gemini?: string;
+    groq?: string;
+    huggingface?: string;
+    together?: string;
+    openrouter?: string;
+    pollinations?: string;
+  };
 }
 
 const EXACT_PLACEHOLDER_MISSIONS = new Set([
@@ -176,4 +191,67 @@ export function summarizeSovereignPackage(pkg: SovereignImplementationPackage, r
     `Brain: ${pkg.brain.analysis.severity} / ${pkg.brain.plan.estimatedComplexity}`,
     `Files: ${pkg.files.map((file) => file.path).join(', ')}`,
   ].filter(Boolean).join('\n');
+}
+
+/**
+ * Build sovereign package using LLM-first approach
+ * This function tries to use LLM providers first, falling back to local safe mode if needed
+ */
+export async function buildSovereignPackageFromRepoFilesWithLlm(
+  input: BuildSovereignPackageFromRepoFilesInput,
+): Promise<SovereignImplementationPackage> {
+  assertLoadedRepoSnapshot(input.repoFiles);
+
+  const effectiveMission = resolveAutonomousSovereignMission(input.mission, input.repoFiles);
+  assertConcreteSovereignMission(effectiveMission);
+
+  // Try LLM runtime first
+  const llmResult = await runSovereignLlmRuntime({
+    mission: effectiveMission,
+    repoPaths: input.repoFiles.map((file) => file.path),
+    selectedFilePath: input.selectedFilePath ?? 'README.md',
+    previousPreview: input.previousPreview,
+    memoryContext: input.memoryContext ?? [],
+    runtimeEvents: input.runtimeEvents ?? [],
+    allowUserKeyRoutes: input.allowUserKeyRoutes ?? false,
+    userKeys: input.userKeys,
+  });
+
+  if (llmResult.ok && llmResult.brain) {
+    // LLM succeeded, use its result
+    assertSovereignBrainResult(llmResult.brain);
+    assertPushableBrain(llmResult.providerId as any, effectiveMission, llmResult.brain);
+
+    // Convert brain result to implementation files
+    const implementationFiles = toImplementationFiles(llmResult.brain);
+
+    // Build package from LLM result
+    const pkg: SovereignImplementationPackage = {
+      id: `pkg-${Date.now()}`,
+      architecture: {
+        summary: llmResult.brain.perception.architecture,
+        modules: [],
+      },
+      brain: llmResult.brain,
+      files: implementationFiles,
+    };
+
+    runtimeAssertSovereignPackage(pkg);
+    assertGeneratedPackageReady(pkg, input.repoFiles);
+    return pkg;
+  }
+
+  // LLM failed, fall back to local safe mode
+  const pkg = buildSovereignImplementationPackage({
+    blueprint: effectiveMission,
+    cards: input.cards ?? starterCards(),
+    settings: input.settings ?? defaultSettings,
+    selectedFilePath: input.selectedFilePath ?? 'README.md',
+    repoPaths: input.repoFiles.map((file) => file.path),
+    previousPreview: input.previousPreview,
+  });
+
+  runtimeAssertSovereignPackage(pkg);
+  assertGeneratedPackageReady(pkg, input.repoFiles);
+  return pkg;
 }

@@ -80,8 +80,10 @@ import {
 } from './features/product/runtime/sovereignTelemetry';
 import {
   buildSovereignPackageFromRepoFiles,
+  buildSovereignPackageFromRepoFilesWithLlm,
   summarizeSovereignPackage,
 } from './features/product/runtime/sovereignPackageFromRepoFiles';
+import { buildSovereignMemoryContext } from './features/product/runtime/sovereignMemoryContext';
 import { buildWorkflowRepairPlan } from './features/product/runtime/workflowRepairPlan';
 import { fetchWorkflowWatchReport, type WorkflowWatchReport } from './features/product/runtime/workflowWatch';
 import type { SovereignImplementationPackage } from './features/product/runtime/sovereignRuntime';
@@ -414,20 +416,35 @@ const App: React.FC = () => {
     }
   };
 
-  const buildPackageCore = (
+  const buildPackageCore = async (
     nextMission: string,
     nextPackageKey = packageInputKey,
-  ): SovereignImplementationPackage | null => {
+  ): Promise<SovereignImplementationPackage | null> => {
     try {
       const cleanMission = normalizeMission(nextMission);
       pushTelemetry('package', 'info', 'package:build-start', 'Building Sovereign package.', { files: safeRepoFiles.length });
 
-      const missionWithAha = solutionPatternHints ? `${cleanMission}\n\n${solutionPatternHints}` : cleanMission;
-      const pkg = buildSovereignPackageFromRepoFiles({
+      // Build memory context for LLM
+      const memoryContext = await buildSovereignMemoryContext({
+        mission: cleanMission,
+        repoPaths: safeRepoFiles.map((file) => file.path),
+        config: remoteMemoryConfig,
+        solutionPatternStore,
+      });
+
+      const missionWithAha = memoryContext.contextLines.length > 0 
+        ? `${cleanMission}\n\n${memoryContext.contextLines.join('\n\n')}` 
+        : cleanMission;
+
+      // Use LLM-aware package builder
+      const pkg = await buildSovereignPackageFromRepoFilesWithLlm({
         mission: missionWithAha,
         repoFiles: safeRepoFiles,
         selectedFilePath: 'README.md',
         previousPreview: sovereignPreview,
+        memoryContext: memoryContext.contextLines,
+        runtimeEvents: telemetry.events.map((event) => `${event.stage}:${event.level}:${event.label}`),
+        allowUserKeyRoutes: true,
       });
 
       const review = reviewGeneratedFiles(pkg.files);
@@ -439,7 +456,7 @@ const App: React.FC = () => {
       setDiffSources([]);
 
       setSovereignSummary(
-        `${summarizeSovereignPackage(pkg, safeRepoFiles)}\n${review.summary}${solutionPatternHints ? `\n${solutionPatternHints}` : ''}`,
+        `${summarizeSovereignPackage(pkg, safeRepoFiles)}\n${review.summary}${memoryContext.contextLines.length > 0 ? `\n${memoryContext.summary}` : ''}`,
       );
 
       setSovereignPreview(JSON.stringify({
@@ -447,7 +464,7 @@ const App: React.FC = () => {
         brain: pkg.brain,
         files: pkg.files.map((file) => ({ path: file.path, reason: file.reason })),
         fileReview: review,
-        remoteAhaMemory: solutionPatternHints,
+        remoteAhaMemory: memoryContext.contextLines.length > 0 ? memoryContext.contextLines.join('\n\n') : undefined,
         suggestions: pkg.suggestions,
       }, null, 2));
 
@@ -475,7 +492,7 @@ const App: React.FC = () => {
     nextMission: string,
     nextPackageKey = packageInputKey,
   ): Promise<SovereignImplementationPackage | null> => runSequentialStep('package-build', async () => {
-    const pkg = buildPackageCore(nextMission, nextPackageKey);
+    const pkg = await buildPackageCore(nextMission, nextPackageKey);
     if (!pkg) throw new Error('Package build failed.');
     return pkg;
   });
