@@ -23,7 +23,6 @@ export interface ProviderKeyValidationReport {
   invalidProviders: string[];
 }
 
-// Key format patterns
 const KEY_PATTERNS: Record<string, { pattern: RegExp; prefix: string; minLength: number }> = {
   pollinations: {
     pattern: /^pollinations_[a-zA-Z0-9]+$/,
@@ -57,11 +56,7 @@ const KEY_PATTERNS: Record<string, { pattern: RegExp; prefix: string; minLength:
   },
 };
 
-/**
- * Validate a single API key format
- */
 export function validateProviderKey(providerId: string, key: string | undefined): ProviderKeyValidation {
-  // Empty check
   if (!key || key.trim() === '') {
     return {
       providerId,
@@ -74,7 +69,6 @@ export function validateProviderKey(providerId: string, key: string | undefined)
   const trimmedKey = key.trim();
   const pattern = KEY_PATTERNS[providerId];
 
-  // If no pattern defined, accept any non-empty key
   if (!pattern) {
     return {
       providerId,
@@ -84,17 +78,6 @@ export function validateProviderKey(providerId: string, key: string | undefined)
     };
   }
 
-  // Length check
-  if (trimmedKey.length < pattern.minLength) {
-    return {
-      providerId,
-      code: 'invalid_format',
-      message: `${providerId}: Key too short (min ${pattern.minLength} chars)`,
-      isValid: false,
-    };
-  }
-
-  // Prefix check
   if (!trimmedKey.startsWith(pattern.prefix)) {
     return {
       providerId,
@@ -104,7 +87,15 @@ export function validateProviderKey(providerId: string, key: string | undefined)
     };
   }
 
-  // Pattern match
+  if (trimmedKey.length < pattern.minLength) {
+    return {
+      providerId,
+      code: 'invalid_format',
+      message: `${providerId}: Key too short (min ${pattern.minLength} chars)`,
+      isValid: false,
+    };
+  }
+
   if (!pattern.pattern.test(trimmedKey)) {
     return {
       providerId,
@@ -122,9 +113,6 @@ export function validateProviderKey(providerId: string, key: string | undefined)
   };
 }
 
-/**
- * Validate all user API keys
- */
 export function validateUserApiKeys(keys: UserApiKeys): ProviderKeyValidationReport {
   const validations: ProviderKeyValidation[] = [];
   const validProviders: string[] = [];
@@ -161,27 +149,20 @@ export function validateUserApiKeys(keys: UserApiKeys): ProviderKeyValidationRep
   };
 }
 
-/**
- * Get only the validated keys for runtime use
- */
 export function getValidatedKeys(keys: UserApiKeys): UserApiKeys {
   const report = validateUserApiKeys(keys);
-  
   const validated: UserApiKeys = {};
-  
+
   for (const validProvider of report.validProviders) {
     const key = keys[validProvider as keyof UserApiKeys];
     if (key) {
-      (validated as any)[validProvider] = key;
+      (validated as Record<string, string>)[validProvider] = key;
     }
   }
-  
+
   return validated;
 }
 
-/**
- * Check if a specific provider should be used
- */
 export function shouldUseProvider(providerId: string, keys: UserApiKeys): boolean {
   const validation = validateProviderKey(providerId, keys[providerId as keyof UserApiKeys]);
   return validation.isValid;
