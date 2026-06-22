@@ -61,6 +61,10 @@ export interface BuildImplementationInput {
 const EXISTING_ROUTE_INFO: Record<string, LlmRouteDescriptor> = {
   mlvoca: { id: 'mlvoca', label: 'Existing Mlvoca route', status: 'primary', requiresApiKey: false, requiresUserOptIn: false },
   pollinations: { id: 'pollinations', label: 'Existing Pollinations route', status: 'enabled', requiresApiKey: false, requiresUserOptIn: false },
+  groq: { id: 'groq', label: 'Groq route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
+  huggingface: { id: 'huggingface', label: 'HuggingFace route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
+  together: { id: 'together', label: 'Together AI route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
+  openrouter: { id: 'openrouter', label: 'OpenRouter route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
   'optional-user-keys': { id: 'optional-user-keys', label: 'Optional user-key routes', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
 };
 
