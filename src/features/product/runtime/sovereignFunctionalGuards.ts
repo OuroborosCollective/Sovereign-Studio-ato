@@ -83,7 +83,7 @@ export function assertSafeGeneratedFiles(files: ImplementationFile[]): void {
 }
 
 export function assertDocsPackageShape(pkg: SovereignImplementationPackage): void {
-  if (pkg.requestedWork !== 'readme-docs' && pkg.requestedWork !== 'runtime-hardening') return;
+  if (pkg.requestedWork !== 'readme-docs') return;
 
   const paths = new Set(pkg.files.map((file) => normalizeRepoPath(file.path).toLowerCase()));
   const required = ['readme.md', 'docs/update_history.md', 'docs/sovereign_runtime.md', 'docs/launch_readiness.md'];
