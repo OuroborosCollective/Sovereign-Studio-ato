@@ -1,5 +1,6 @@
 import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 import { resolveProductWithLlmRevolver } from '../llm/productLlmRevolver';
+import { buildSovereignLlmPrompt as buildAdapterSovereignLlmPrompt } from '../llm/llmAdapter';
 import { defaultSettings, starterCards } from '../constants';
 import type { Card, ProjectSettings } from '../types';
 
@@ -11,6 +12,7 @@ export interface SovereignLlmRuntimeInput {
   memoryContext: string[];
   runtimeEvents: string[];
   allowUserKeyRoutes?: boolean;
+  allowExternalNoKey?: boolean;
   userKeys?: {
     gemini?: string;
     groq?: string;
@@ -42,97 +44,100 @@ export interface SovereignLlmRuntimeResult {
   error?: string;
 }
 
-/**
- * Run the sovereign LLM runtime with fallback chain using the existing revolver
- */
+function userKeysWhenAllowed(input: SovereignLlmRuntimeInput): SovereignLlmRuntimeInput['userKeys'] {
+  return input.allowUserKeyRoutes ? input.userKeys : undefined;
+}
+
 export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): Promise<SovereignLlmRuntimeResult> {
-  // Convert our attempt tracking to the revolver event system
   const attempts: SovereignLlmRuntimeAttempt[] = [];
-  
+  const allowedUserKeys = userKeysWhenAllowed(input);
+
   const result = await resolveProductWithLlmRevolver({
     mission: input.mission,
     repoPaths: input.repoPaths,
     selectedFilePath: input.selectedFilePath,
     cards: input.cards ?? starterCards(),
     settings: input.settings ?? defaultSettings,
+    codeContext: input.previousPreview,
     memoryContext: input.memoryContext,
     runtimeEvents: input.runtimeEvents,
-    pollinationsApiKey: input.userKeys?.pollinations,
-    groqApiKey: input.userKeys?.groq,
-    huggingfaceApiKey: input.userKeys?.huggingface,
-    togetherApiKey: input.userKeys?.together,
-    openrouterApiKey: input.userKeys?.openrouter,
-    geminiApiKey: input.userKeys?.gemini,
-    allowExternalNoKey: input.allowUserKeyRoutes,
+    pollinationsApiKey: allowedUserKeys?.pollinations,
+    groqApiKey: allowedUserKeys?.groq,
+    huggingfaceApiKey: allowedUserKeys?.huggingface,
+    togetherApiKey: allowedUserKeys?.together,
+    openrouterApiKey: allowedUserKeys?.openrouter,
+    geminiApiKey: allowedUserKeys?.gemini,
+    allowExternalNoKey: input.allowExternalNoKey ?? true,
+    allowOptInRoutes: false,
   }, {
     onEvent: (event) => {
-      // Convert revolver events to our attempt tracking
-      switch (event.type) {
-        case 'provider:trying':
-          attempts.push({
-            providerId: event.providerId!,
-            status: 'trying',
-            message: event.message,
-          });
-          break;
-        case 'provider:success':
-          // Update the last attempt
-          if (attempts.length > 0) {
-            const lastAttempt = attempts[attempts.length - 1];
-            if (lastAttempt.providerId === event.providerId) {
-              attempts[attempts.length - 1] = {
-                ...lastAttempt,
-                status: 'success',
-                message: event.message,
-              };
-            }
-          }
-          break;
-        case 'provider:failed':
-          // Update the last attempt
-          if (attempts.length > 0) {
-            const lastAttempt = attempts[attempts.length - 1];
-            if (lastAttempt.providerId === event.providerId) {
-              attempts[attempts.length - 1] = {
-                ...lastAttempt,
-                status: 'failed',
-                message: event.message,
-              };
-            }
-          }
-          break;
-        case 'provider:skipped':
-          attempts.push({
-            providerId: event.providerId!,
-            status: 'skipped',
-            message: event.message,
-          });
-          break;
+      if (event.type === 'provider:trying') {
+        attempts.push({
+          providerId: event.providerId ?? 'unknown',
+          status: 'trying',
+          message: event.message,
+        });
+        return;
       }
-    }
+
+      if (event.type === 'provider:success' || event.type === 'provider:failed') {
+        const index = attempts.findLastIndex((attempt) => attempt.providerId === event.providerId && attempt.status === 'trying');
+        const nextStatus = event.type === 'provider:success' ? 'success' : 'failed';
+        if (index >= 0) {
+          attempts[index] = {
+            ...attempts[index],
+            status: nextStatus,
+            message: event.message,
+          };
+          return;
+        }
+
+        attempts.push({
+          providerId: event.providerId ?? 'unknown',
+          status: nextStatus,
+          message: event.message,
+        });
+        return;
+      }
+
+      if (event.type === 'provider:skipped') {
+        attempts.push({
+          providerId: event.providerId ?? 'unknown',
+          status: 'skipped',
+          message: event.message,
+        });
+      }
+    },
   });
 
   if (result.ok) {
     return {
       ok: true,
-      source: 'llm-revolver',
+      source: result.result.providerId === 'local-safe' ? 'local-safe' : 'llm-revolver',
       providerId: result.result.providerId,
       brain: result.result.brain,
       raw: result.result.raw,
       attempts,
     };
-  } else {
-    return {
-      ok: false,
-      source: 'local-safe',
-      providerId: 'local-safe',
-      attempts,
-      error: result.failure.message,
-    };
   }
+
+  return {
+    ok: false,
+    source: 'local-safe',
+    providerId: 'local-safe',
+    attempts,
+    error: result.failure.message,
+  };
 }
 
-export function buildSovereignLlmPrompt(input: any): string {
-  // This is now handled by the adapters, but kept for backward compatibility
-  return '';
+export function buildSovereignLlmPrompt(input: SovereignLlmRuntimeInput): string {
+  return buildAdapterSovereignLlmPrompt({
+    mission: input.mission,
+    repoPaths: input.repoPaths,
+    selectedFilePath: input.selectedFilePath,
+    codeContext: input.previousPreview,
+    allowExternalNoKey: input.allowExternalNoKey ?? true,
+    memoryContext: input.memoryContext,
+    runtimeEvents: input.runtimeEvents,
+  });
 }
