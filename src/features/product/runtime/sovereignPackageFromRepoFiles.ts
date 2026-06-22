@@ -21,20 +21,84 @@ export interface BuildSovereignPackageFromRepoFilesInput {
   previousPreview?: string;
 }
 
-const PLACEHOLDER_MISSIONS = [
-  'README + Update History',
-  'Beschreibe deine Idee oder deinen Auftrag.',
-  'Starte mit diesem Auftrag.',
+const EXACT_PLACEHOLDER_MISSIONS = new Set([
+  'readme + update history',
+  'beschreibe deine idee oder deinen auftrag.',
+  'starte mit diesem auftrag.',
   'awaiting-intent',
   'repo-setup',
+  'workflow fehleranalyse + runtime check + test plan',
+  'fehler',
+  'ideen',
+  'plan',
+  'test plan',
+  'mach weiter',
+  'mach was',
+  'mach irgendwas',
+  'weiter',
+]);
+
+const PLACEHOLDER_SUBSTRINGS = [
+  'placeholder',
+  'awaiting intent',
+  'concrete user mission is required',
 ];
+
+const AUTONOMOUS_MISSION_TARGETS = [
+  'src/App.tsx',
+  'src/global-runtime-monitor.tsx',
+  'src/features/product/runtime/sovereignReleaseGuide.ts',
+  'src/features/product/runtime/sovereignPackageFromRepoFiles.ts',
+  'src/features/product/components/RepoInsightPanelBridge.tsx',
+  'src/features/product/runtime/sovereignReleaseGuide.test.ts',
+  'src/features/product/runtime/sovereignPackageFromRepoFiles.test.ts',
+];
+
+function normalizeMissionText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isPlaceholderSovereignMission(mission: string): boolean {
+  const normalized = normalizeMissionText(mission);
+  if (normalized.length < 12) return true;
+  if (EXACT_PLACEHOLDER_MISSIONS.has(normalized)) return true;
+  return PLACEHOLDER_SUBSTRINGS.some((placeholder) => normalized.includes(placeholder));
+}
+
+function existingTargets(repoFiles: RepoFile[]): string[] {
+  const paths = new Set(repoFiles.map((file) => file.path));
+  const preferred = AUTONOMOUS_MISSION_TARGETS.filter((path) => paths.has(path));
+  if (preferred.length > 0) return preferred;
+
+  const fallback = repoFiles
+    .map((file) => file.path)
+    .filter((path) => path.startsWith('src/') || path.startsWith('tests/') || path === 'README.md')
+    .slice(0, 5);
+
+  return fallback.length > 0 ? fallback : ['README.md', 'docs/SOVEREIGN_RUNTIME.md'];
+}
 
 export function hasConcreteSovereignMission(mission: string): boolean {
   const normalized = mission.trim();
-  if (normalized.length < 12) return false;
-  const lower = normalized.toLowerCase();
-  if (PLACEHOLDER_MISSIONS.some((placeholder) => lower.includes(placeholder.toLowerCase()))) return false;
-  return /\b(add|build|fix|implement|create|update|wire|connect|harden|test|remove|refactor|repair|behebe|baue|erstelle|verbinde|haerte|teste|repariere|aktualisiere|pruefe|pruefen|ergaenze|ergaenzt|erweitere|erweiterung)\b/i.test(normalized);
+  if (isPlaceholderSovereignMission(normalized)) return false;
+  return /\b(add|build|fix|implement|create|update|wire|connect|harden|test|remove|refactor|repair|behebe|baue|erstelle|verbinde|haerte|teste|repariere|aktualisiere|pruefe|pruefen|ergaenze|ergaenzt|erweitere|erweiterung|stabilisiere|ersetze|plane)\b/i.test(normalized);
+}
+
+export function resolveAutonomousSovereignMission(mission: string, repoFiles: RepoFile[]): string {
+  const trimmed = mission.trim();
+  if (hasConcreteSovereignMission(trimmed)) return trimmed;
+
+  const targets = existingTargets(repoFiles);
+  return [
+    'Implementiere eine autonome Runtime-Stabilisierung fuer die geladene Sovereign-Studio-App.',
+    `Zielpfade: ${targets.join(', ')}`,
+    'Konkrete Arbeit:',
+    '1. Ersetze Placeholder-/Prozent-Fortschritt durch einen systembasierten Schrittplan von 0/6 bis 6/6 bis zum Draft PR.',
+    '2. Stelle sicher, dass die UI nur die echte Runtime-Wahrheit spiegelt und keine eigene Fortschrittsanalyse ausfuehrt.',
+    '3. Nutze Repo-Insight-Ergebnisse, um aus Default- oder Placeholder-Auftraegen automatisch eine sichere ausfuehrbare Mission abzuleiten.',
+    '4. Halte den Guard gegen Plan-only Draft PRs, leere Patches und verbotene Pfade aktiv.',
+    '5. Ergaenze oder aktualisiere passende Vitest-Abdeckung fuer autonome Mission und Schrittplan-Anzeige.',
+  ].join('\n');
 }
 
 export function assertConcreteSovereignMission(mission: string): void {
@@ -47,10 +111,12 @@ export function buildSovereignPackageFromRepoFiles(
   input: BuildSovereignPackageFromRepoFilesInput,
 ): SovereignImplementationPackage {
   assertLoadedRepoSnapshot(input.repoFiles);
-  assertConcreteSovereignMission(input.mission);
+
+  const effectiveMission = resolveAutonomousSovereignMission(input.mission, input.repoFiles);
+  assertConcreteSovereignMission(effectiveMission);
 
   const pkg = buildSovereignImplementationPackage({
-    blueprint: input.mission.trim(),
+    blueprint: effectiveMission,
     cards: input.cards ?? starterCards(),
     settings: input.settings ?? defaultSettings,
     selectedFilePath: input.selectedFilePath ?? 'README.md',
