@@ -3,6 +3,10 @@ import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 export type LlmProviderId =
   | 'mlvoca'
   | 'pollinations'
+  | 'groq'
+  | 'huggingface'
+  | 'together'
+  | 'openrouter'
   | 'optional-user-keys'
   | 'ovh-anonymous-code-chat'
   | 'ovh-anonymous-fixed-model'
