@@ -48,6 +48,14 @@ function userKeysWhenAllowed(input: SovereignLlmRuntimeInput): SovereignLlmRunti
   return input.allowUserKeyRoutes ? input.userKeys : undefined;
 }
 
+function lastTryingAttemptIndex(attempts: SovereignLlmRuntimeAttempt[], providerId?: string): number {
+  for (let index = attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = attempts[index];
+    if (attempt.providerId === providerId && attempt.status === 'trying') return index;
+  }
+  return -1;
+}
+
 export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): Promise<SovereignLlmRuntimeResult> {
   const attempts: SovereignLlmRuntimeAttempt[] = [];
   const allowedUserKeys = userKeysWhenAllowed(input);
@@ -81,7 +89,7 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
       }
 
       if (event.type === 'provider:success' || event.type === 'provider:failed') {
-        const index = attempts.findLastIndex((attempt) => attempt.providerId === event.providerId && attempt.status === 'trying');
+        const index = lastTryingAttemptIndex(attempts, event.providerId);
         const nextStatus = event.type === 'provider:success' ? 'success' : 'failed';
         if (index >= 0) {
           attempts[index] = {
