@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 import { runSovereignLlmRuntime } from './sovereignLlmRuntime';
 
 vi.mock('../llm/productLlmRevolver', () => ({
@@ -7,13 +8,17 @@ vi.mock('../llm/productLlmRevolver', () => ({
 
 import { resolveProductWithLlmRevolver } from '../llm/productLlmRevolver';
 
-function mockBrain() {
+function mockBrain(): SovereignBrainResult {
   return {
     perception: { domain: 'test', intent: 'test', architecture: 'test', confidence: 0.9 },
     analysis: { severity: 'medium', issues: [], rootCause: 'test', systemicRisk: 'low' },
     plan: { strategy: 'test', phases: [], estimatedComplexity: 'low' },
-    execution: { patches: [{ file: 'src/index.ts', type: 'replace', description: 'test patch', code: 'export const testRuntime = true;' }] },
-    learning: { patterns: [], rules: [], architectureUpgrade: '' },
+    execution: {
+      patches: [{ file: 'src/index.ts', type: 'replace', description: 'test patch', code: 'export const testRuntime = true;' }],
+      integrationNotes: 'Mock integration notes.',
+      testStrategy: 'Mock test strategy.',
+    },
+    learning: { patterns: [], rules: [], architectureUpgrade: 'Mock upgrade.' },
   };
 }
 
