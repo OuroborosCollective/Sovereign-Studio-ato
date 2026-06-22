@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import { getSovereignActionContract } from './features/product/runtime/sovereignActionContracts';
@@ -110,6 +110,7 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   });
   const [confirmedAt, setConfirmedAt] = useState<number | null>(null);
   const [monitorVisible, setMonitorVisible] = useState(true);
+  const lastAutoCommandKeyRef = useRef('');
 
   const guide = useMemo(() => deriveReleaseGuideState(coachState), [coachState]);
 
@@ -141,6 +142,21 @@ function GlobalRuntimeMonitor(): React.ReactElement {
       window.removeEventListener('sovereign:telemetry-event', handleTelemetry as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (!guide.nextEnabled || !guide.targetTab) return undefined;
+
+    const commandKey = `${guide.targetTab}:${coachState.title}:${coachState.action}:${coachState.updatedAt}`;
+    if (lastAutoCommandKeyRef.current === commandKey) return undefined;
+    lastAutoCommandKeyRef.current = commandKey;
+
+    const handle = window.setTimeout(() => {
+      publishGuideCommand({ type: 'next', targetTab: guide.targetTab });
+    }, 180);
+
+    return () => window.clearTimeout(handle);
+  }, [coachState.action, coachState.title, coachState.updatedAt, guide.nextEnabled, guide.targetTab]);
 
   const visibleLog = useMemo(() => log.slice(0, MAX_LOG_ENTRIES), [log]);
 
@@ -189,7 +205,7 @@ function GlobalRuntimeMonitor(): React.ReactElement {
           {monitorVisible ? '▲' : '▼'}
         </button>
         <span className="sovereign-monitor-pill" data-state="single-window">
-          Log führt den Ablauf
+          Arbeitet automatisch
         </span>
       </div>
 
@@ -208,7 +224,7 @@ function GlobalRuntimeMonitor(): React.ReactElement {
           <div className="sovereign-helper-panel" data-testid="release-guide__panel">
             <div className="sovereign-helper-copy">
               <strong>{guide.helperMessage}</strong>
-              <span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Bereit für den nächsten Klick.'}</span>
+              <span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Ich leite den nächsten sicheren Schritt automatisch ein.'}</span>
             </div>
             <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsfortschritt ${guide.progress}%`}>
               <div className="sovereign-monitor-progress-head">
