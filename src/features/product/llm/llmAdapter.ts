@@ -34,8 +34,7 @@ export interface LlmAdapterContext {
   logs?: string[];
   allowExternalNoKey?: boolean;
   allowOptInRoutes?: boolean;
-  signal?: AbortSignal;
-}
+  {'mission': 'string;\n  repoPaths: string[];\n  selectedFilePath: string;\n  codeContext?: string;\n  logs?: string[];\n  allowExternalNoKey?: boolean;\n  allowOptInRoutes?: boolean;\n  signal?: AbortSignal;\n  memoryContext?: string[];\n  runtimeEvents?: string[];'}
 
 export interface LlmAdapterResult {
   providerId: LlmProviderId;
