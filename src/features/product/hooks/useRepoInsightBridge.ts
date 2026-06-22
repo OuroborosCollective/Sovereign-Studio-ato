@@ -10,6 +10,7 @@ import { wallClockMs } from '../../../mobile-operator-coach';
 import type { RepoFile } from '../../github/types';
 import type { ScanFindingRegistry } from '../runtime/scanFindingRegistry';
 import type { WorkflowWatchReport } from '../runtime/workflowWatch';
+import type { SolutionPatternStore } from '../runtime/solutionPatternMemory';
 import type {
   RepoInsightEngineInput,
   RepoInsightEngineOutput,
@@ -33,7 +34,7 @@ export interface UseRepoInsightBridgeOptions {
   repoBranch?: string;
   scanRegistry?: ScanFindingRegistry | null;
   workflowReport?: WorkflowWatchReport | null;
-  solutionPatternStore?: unknown | null;
+  solutionPatternStore?: SolutionPatternStore | null;
   currentMission?: string;
   autoAnalyze?: boolean;
 }
@@ -55,8 +56,6 @@ function deriveCoachStateFromInsight(
   output: RepoInsightEngineOutput | null,
   isLoading: boolean,
 ): UseRepoInsightBridgeResult['coachState'] {
-  const now = wallClockMs();
-
   if (isLoading) {
     return {
       lamp: 'green',
@@ -87,9 +86,7 @@ function deriveCoachStateFromInsight(
         ? 'Vorschläge bereit'
         : 'Analyse abgeschlossen',
     message: output.coachMessage,
-    action: output.recommendedMission
-      ? 'Empfohlene Aufgabe ansehen'
-      : 'Vorschläge prüfen',
+    action: output.recommendedMission ? 'Empfohlene Aufgabe ansehen' : 'Vorschläge prüfen',
     thinking: false,
     source: 'repo',
   };
@@ -104,6 +101,7 @@ export function useRepoInsightBridge(
     repoBranch,
     scanRegistry,
     workflowReport,
+    solutionPatternStore,
     currentMission,
     autoAnalyze = true,
   } = options;
@@ -117,11 +115,7 @@ export function useRepoInsightBridge(
 
   const analyze = useCallback(() => {
     if (repoFiles.length === 0) {
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: 'No repository files to analyze.',
-      }));
+      setState((prev) => ({ ...prev, isLoading: false, error: 'No repository files to analyze.' }));
       return;
     }
 
@@ -134,11 +128,10 @@ export function useRepoInsightBridge(
       scanRegistry: scanRegistry ?? null,
       workflowReport: workflowReport ?? null,
       telemetry: null,
-      solutionPatternStore: null,
+      solutionPatternStore: solutionPatternStore ?? null,
       currentMission: currentMission ?? '',
     };
 
-    // Run analysis synchronously (it's fast)
     const result = createRepoInsightSuggestions(input);
 
     setState({
@@ -147,16 +140,12 @@ export function useRepoInsightBridge(
       error: result.error,
       lastAnalyzedFiles: repoFiles.length,
     });
-  }, [repoFiles, repoUrl, repoBranch, scanRegistry, workflowReport, currentMission]);
+  }, [repoFiles, repoUrl, repoBranch, scanRegistry, workflowReport, solutionPatternStore, currentMission]);
 
-  // Auto-analyze when inputs change
   useEffect(() => {
-    if (autoAnalyze && repoFiles.length > 0) {
-      analyze();
-    }
+    if (autoAnalyze && repoFiles.length > 0) analyze();
   }, [autoAnalyze, analyze, repoFiles.length]);
 
-  // Publish coach state to window
   const coachState = deriveCoachStateFromInsight(state.output, state.isLoading);
 
   useEffect(() => {
@@ -175,8 +164,8 @@ export function useRepoInsightBridge(
 
   const getSuggestionMission = useCallback(
     (suggestion: RepoInsightSuggestion): string => {
-      const affectedFiles = suggestion.affectedFiles.slice(0, 2).join(', ');
-      return `${suggestion.title} in ${affectedFiles}`;
+      const affectedFiles = suggestion.affectedFiles.slice(0, 5).join(', ') || 'passende Projektdateien';
+      return `${suggestion.title}\nBetroffene Dateien/Ordner: ${affectedFiles}\nNutzen: ${suggestion.expectedBenefit}`;
     },
     [],
   );
