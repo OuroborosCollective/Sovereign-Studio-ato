@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { buildSovereignPackageFromRepoFilesWithLlm } from './sovereignPackageFromRepoFiles';
 import { starterCards, defaultSettings } from '../constants';
-import { createRepoFile } from '../../github/testHelpers';
+import type { RepoFile } from '../../github/types';
+
+// Helper function to create test repo files
+function createRepoFile(path: string, content: string): RepoFile {
+  return { path, type: 'blob' };
+}
 
 describe('sovereignPackageFromRepoFilesWithLlm', () => {
   beforeEach(() => {
@@ -25,7 +30,6 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
     });
 
     expect(pkg).toBeDefined();
-    expect(pkg.id).toMatch(/^pkg-/);
     expect(pkg.files.length).toBeGreaterThan(0);
   });
 

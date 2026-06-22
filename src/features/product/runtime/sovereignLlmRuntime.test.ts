@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runSovereignLlmRuntime } from './sovereignLlmRuntime';
+import { runSovereignLlmRuntime, buildSovereignLlmPrompt } from './sovereignLlmRuntime';
 
 describe('sovereignLlmRuntime', () => {
   beforeEach(() => {
@@ -42,7 +42,7 @@ describe('sovereignLlmRuntime', () => {
       allowUserKeyRoutes: false,
     };
 
-    const prompt = runSovereignLlmRuntime.buildSovereignLlmPrompt(input);
+    const prompt = buildSovereignLlmPrompt(input);
     
     expect(prompt).toContain('Create a new feature');
     expect(prompt).toContain('src/App.tsx');
