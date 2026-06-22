@@ -1,23 +1,24 @@
-import { callMlvoCa } from '../../../../ai/providerManager';
+import { callGroq } from '../../../../ai/providerManager';
 import { assertSovereignBrainResult, parseSovereignBrainJson } from '../../../brain/sovereignBrainContract';
 import { assertPushableBrain } from '../../llmRuntimeChecks';
 import type { LlmAdapter, LlmAdapterContext, LlmAdapterResult } from '../llmAdapter';
 import { buildSovereignLlmPrompt } from '../llmAdapter';
 
-export function createMlvocaAdapter(): LlmAdapter {
+export function createGroqAdapter(apiKey: string): LlmAdapter {
   return {
-    id: 'mlvoca',
-    label: 'Mlvoca free provider',
-    kind: 'no-key',
-    priority: 0,
-    enabled: true,
+    id: 'groq',
+    label: 'Groq API provider',
+    kind: 'user-key',
+    priority: 2,
+    enabled: !!apiKey,
     async run(context: LlmAdapterContext): Promise<LlmAdapterResult> {
       // Build prompt with memory context and runtime information
       const prompt = buildSovereignLlmPrompt(context);
       
       try {
-        const response = await callMlvoCa(
-          'deepseek-r1:1.5b',
+        const response = await callGroq(
+          apiKey,
+          'llama-3.1-8b-instant',
           prompt,
           { temperature: 0.2, maxOutputTokens: 4096 }
         );
@@ -25,15 +26,15 @@ export function createMlvocaAdapter(): LlmAdapter {
         // Parse and validate the response
         const parsed = parseSovereignBrainJson(response.text);
         assertSovereignBrainResult(parsed);
-        assertPushableBrain('mlvoca', context.mission, parsed);
+        assertPushableBrain('groq', context.mission, parsed);
         
         return {
-          providerId: 'mlvoca',
+          providerId: 'groq',
           brain: parsed,
           raw: response.text,
         };
       } catch (error) {
-        throw new Error(`MLVOCA provider failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        throw new Error(`Groq provider failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     },
   };

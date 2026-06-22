@@ -1,7 +1,7 @@
 import type { Card, ProjectSettings } from '../types';
 import type { LlmAdapter, LlmAdapterContext, LlmRevolverOptions, LlmRevolverResult } from './llmAdapter';
 import { resolveWithLlmRevolver } from './llmRevolver';
-import { createLocalSafeAdapter } from './adapters/localSafeAdapter';
+import { buildSovereignLlmAdapters } from './sovereignLlmAdapters';
 
 export interface ProductLlmRevolverInput {
   mission: string;
@@ -14,13 +14,25 @@ export interface ProductLlmRevolverInput {
   plugins?: LlmAdapter[];
   allowExternalNoKey?: boolean;
   allowOptInRoutes?: boolean;
+  groqApiKey?: string;
+  huggingfaceApiKey?: string;
+  togetherApiKey?: string;
+  openrouterApiKey?: string;
+  geminiApiKey?: string;
+  memoryContext?: string[];
+  runtimeEvents?: string[];
 }
 
 export function buildProductAdapters(input: ProductLlmRevolverInput): LlmAdapter[] {
-  return [
-    ...(input.plugins ?? []),
-    createLocalSafeAdapter({ cards: input.cards, settings: input.settings }),
-  ].sort((a, b) => a.priority - b.priority);
+  return buildSovereignLlmAdapters({
+    groqApiKey: input.groqApiKey,
+    huggingfaceApiKey: input.huggingfaceApiKey,
+    togetherApiKey: input.togetherApiKey,
+    openrouterApiKey: input.openrouterApiKey,
+    geminiApiKey: input.geminiApiKey,
+    cards: input.cards,
+    settings: input.settings,
+  });
 }
 
 export async function resolveProductWithLlmRevolver(
@@ -35,6 +47,8 @@ export async function resolveProductWithLlmRevolver(
     logs: input.logs,
     allowExternalNoKey: input.allowExternalNoKey,
     allowOptInRoutes: input.allowOptInRoutes,
+    memoryContext: input.memoryContext,
+    runtimeEvents: input.runtimeEvents,
   };
 
   return resolveWithLlmRevolver(buildProductAdapters(input), context, options);

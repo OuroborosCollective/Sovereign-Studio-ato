@@ -34,7 +34,43 @@ export interface LlmAdapterContext {
   logs?: string[];
   allowExternalNoKey?: boolean;
   allowOptInRoutes?: boolean;
-  {'mission': 'string;\n  repoPaths: string[];\n  selectedFilePath: string;\n  codeContext?: string;\n  logs?: string[];\n  allowExternalNoKey?: boolean;\n  allowOptInRoutes?: boolean;\n  signal?: AbortSignal;\n  memoryContext?: string[];\n  runtimeEvents?: string[];'}
+  signal?: AbortSignal;
+  memoryContext?: string[];
+  runtimeEvents?: string[];
+}
+
+export function buildSovereignLlmPrompt(context: LlmAdapterContext): string {
+  return [
+    'You are the LLM runtime of Sovereign Studio, a no-code repository automation tool.',
+    'Return ONLY valid JSON matching the SovereignBrainResult TypeScript interface.',
+    'Do not return markdown.',
+    'Do not explain outside JSON.',
+    'The user may use vague natural language. Normalize it into concrete repository work.',
+    'Use repository paths, runtime events and memory context.',
+    'execution.patches is mandatory.',
+    'Each patch must include: file, type, description, code.',
+    'Allowed patch types: replace, insert, delete, create.',
+    'Do not return plan-only output.',
+    'Do not touch .env, credentials, private keys, node_modules, dist or build output.',
+    'Prefer real changes in src/, tests/, android/, scripts/, .github/workflows/, README.md or docs/.',
+    'Runtime guards are authoritative. Your output will be rejected if it violates them.',
+    '',
+    'USER MISSION:',
+    context.mission,
+    '',
+    'SELECTED FILE:',
+    context.selectedFilePath,
+    '',
+    'REMOTE MEMORY CONTEXT:',
+    context.memoryContext?.join('\n') || 'none',
+    '',
+    'RUNTIME EVENTS:',
+    context.runtimeEvents?.join('\n') || 'none',
+    '',
+    'REPOSITORY PATHS:',
+    context.repoPaths.slice(0, 220).join('\n') || 'none',
+  ].join('\n');
+}
 
 export interface LlmAdapterResult {
   providerId: LlmProviderId;
