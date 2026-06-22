@@ -2,51 +2,25 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import { getSovereignActionContract } from './features/product/runtime/sovereignActionContracts';
-import {
-  deriveReleaseGuideState,
-  type ReleaseGuideTab,
-} from './features/product/runtime/sovereignReleaseGuide';
+import { deriveReleaseGuideState, type ReleaseGuideTab } from './features/product/runtime/sovereignReleaseGuide';
 import type { SovereignTelemetryEvent } from './features/product/runtime/sovereignTelemetry';
 
 type CoachLamp = 'green' | 'yellow' | 'red';
-
-type RuntimeCoachState = {
-  lamp: CoachLamp;
-  title: string;
-  message: string;
-  action: string;
-  thinking: boolean;
-  source: string;
-  updatedAt: number;
-};
-
-type ReleaseGuideCommand = {
-  type: 'back' | 'confirm' | 'next';
-  targetTab: ReleaseGuideTab | null;
-};
-
-type GlobalRuntimeWindow = Window & typeof globalThis & {
-  __sovereignGlobalRuntimeMonitorInstalled?: boolean;
-  __sovereignGlobalRuntimeMonitorRoot?: Root;
-  __sovereignRuntimeCoachState?: RuntimeCoachState;
-  __sovereignTelemetryEvents?: SovereignTelemetryEvent[];
-};
+type RuntimeCoachState = { lamp: CoachLamp; title: string; message: string; action: string; thinking: boolean; source: string; updatedAt: number };
+type ReleaseGuideCommand = { type: 'back' | 'confirm' | 'next'; targetTab: ReleaseGuideTab | null };
+type GlobalRuntimeWindow = Window & typeof globalThis & { __sovereignGlobalRuntimeMonitorInstalled?: boolean; __sovereignGlobalRuntimeMonitorRoot?: Root; __sovereignRuntimeCoachState?: RuntimeCoachState; __sovereignTelemetryEvents?: SovereignTelemetryEvent[] };
+type StepState = 'done' | 'current' | 'waiting' | 'halted';
+type Step = { index: number; label: string; state: StepState };
+type StepPlan = { current: number; total: number; label: string; steps: Step[] };
 
 const HOST_ID = 'sovereign-global-runtime-monitor-root';
 const MAX_LOG_ENTRIES = 24;
+const STEP_LABELS = ['Repo laden', 'Aufgabe analysieren', 'Package bauen', 'Files/Diff pruefen', 'PR vorbereiten', 'Workflow pruefen'] as const;
 const monitorContainerContract = getSovereignContainerContract('global-runtime-monitor');
 const monitorToggleContract = getSovereignActionContract('monitor-toggle');
 
 function defaultCoachState(): RuntimeCoachState {
-  return {
-    lamp: 'yellow',
-    title: 'Sovereign bereit',
-    message: 'Repo laden, Auftrag analysieren und danach Auftrag starten.',
-    action: 'Repo oder Builder prüfen',
-    thinking: false,
-    source: 'runtime-shell',
-    updatedAt: Date.now(),
-  };
+  return { lamp: 'yellow', title: 'Sovereign bereit', message: 'Repo laden, Auftrag analysieren und danach Auftrag starten.', action: 'Repo oder Builder prüfen', thinking: false, source: 'runtime-shell', updatedAt: Date.now() };
 }
 
 function formatTime(value: number): string {
@@ -67,30 +41,18 @@ function telemetryLevelLamp(level: SovereignTelemetryEvent['level']): CoachLamp 
 }
 
 function compactTelemetry(event: SovereignTelemetryEvent): RuntimeCoachState {
-  return {
-    lamp: telemetryLevelLamp(event.level),
-    title: event.label,
-    message: event.message,
-    action: event.stage,
-    thinking: event.level === 'info',
-    source: event.stage,
-    updatedAt: event.timestamp,
-  };
+  return { lamp: telemetryLevelLamp(event.level), title: event.label, message: event.message, action: event.stage, thinking: event.level === 'info', source: event.stage, updatedAt: event.timestamp };
 }
 
 function appendUnique(entries: RuntimeCoachState[], entry: RuntimeCoachState): RuntimeCoachState[] {
   const previous = entries[0];
-  if (previous && previous.title === entry.title && previous.message === entry.message && previous.action === entry.action) {
-    return entries;
-  }
+  if (previous && previous.title === entry.title && previous.message === entry.message && previous.action === entry.action) return entries;
   return [entry, ...entries].slice(0, MAX_LOG_ENTRIES);
 }
 
 function seedLog(win: GlobalRuntimeWindow): RuntimeCoachState[] {
   const coach = win.__sovereignRuntimeCoachState ?? defaultCoachState();
-  const telemetry = Array.isArray(win.__sovereignTelemetryEvents)
-    ? win.__sovereignTelemetryEvents.slice(-8).reverse().map(compactTelemetry)
-    : [];
+  const telemetry = Array.isArray(win.__sovereignTelemetryEvents) ? win.__sovereignTelemetryEvents.slice(-8).reverse().map(compactTelemetry) : [];
   return [coach, ...telemetry].slice(0, MAX_LOG_ENTRIES);
 }
 
@@ -99,44 +61,68 @@ function publishGuideCommand(command: ReleaseGuideCommand): void {
   window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', { detail: command }));
 }
 
+function norm(value: string): string { return value.toLowerCase().replace(/\s+/g, ' ').trim(); }
+function hasAny(source: string, tokens: string[]): boolean { return tokens.some((token) => source.includes(token)); }
+
+function currentStep(coach: RuntimeCoachState): number {
+  const source = norm(`${coach.title} ${coach.message} ${coach.action} ${coach.source}`);
+  if (hasAny(source, ['workflow green', 'completed', 'success', 'fertig'])) return 6;
+  if (hasAny(source, ['workflow-watch', 'workflow pruefen', 'workflow prüfen', 'ci', 'checks'])) return 6;
+  if (hasAny(source, ['draft-pr-publish', 'draft pr erstellt', 'pull request', 'pr erstellt'])) return 5;
+  if (hasAny(source, ['diff-load', 'source snapshots', 'generated file diff', 'files und diff', 'files pruefen', 'files prüfen'])) return 4;
+  if (hasAny(source, ['package bereit', 'package wurde erstellt', 'generated file', 'files:'])) return 4;
+  if (hasAny(source, ['package-build', 'building sovereign package', 'package bauen', 'paket wird vorbereitet'])) return 3;
+  if (hasAny(source, ['auftrag analysieren', 'ideenfabrik', 'builder', 'mission', 'repo ist analysiert'])) return 2;
+  if (hasAny(source, ['repo geladen', 'repository ist geladen', 'repository snapshot', 'repo snapshot ready', 'repository bereit'])) return 1;
+  if (hasAny(source, ['repo fehlt', 'repository laden', 'load repo', 'noch kein repository'])) return 0;
+  return coach.thinking ? 2 : coach.lamp === 'green' ? 1 : 0;
+}
+
+function stepPlan(coach: RuntimeCoachState): StepPlan {
+  const total = STEP_LABELS.length;
+  const current = Math.max(0, Math.min(total, currentStep(coach)));
+  const steps = STEP_LABELS.map((label, offset): Step => {
+    const index = offset + 1;
+    let state: StepState = 'waiting';
+    if (index < current || current >= total) state = 'done';
+    if (index === current && current < total) state = coach.lamp === 'red' ? 'halted' : 'current';
+    return { index, label, state };
+  });
+  return { current, total, label: current === 0 ? `0/${total} · Start wartet auf Repo` : `${current}/${total} · ${STEP_LABELS[current - 1] ?? 'Fertig'}`, steps };
+}
+
+function stepClassName(state: StepState): string {
+  if (state === 'done') return 'rounded bg-emerald-500/30 px-2 py-1 text-emerald-100';
+  if (state === 'current') return 'rounded bg-cyan-500/30 px-2 py-1 text-cyan-100';
+  if (state === 'halted') return 'rounded bg-rose-500/30 px-2 py-1 text-rose-100';
+  return 'rounded bg-slate-800 px-2 py-1 text-slate-400';
+}
+
 function GlobalRuntimeMonitor(): React.ReactElement {
-  const [coachState, setCoachState] = useState<RuntimeCoachState>(() => {
-    if (typeof window === 'undefined') return defaultCoachState();
-    return (window as GlobalRuntimeWindow).__sovereignRuntimeCoachState ?? defaultCoachState();
-  });
-  const [log, setLog] = useState<RuntimeCoachState[]>(() => {
-    if (typeof window === 'undefined') return [defaultCoachState()];
-    return seedLog(window as GlobalRuntimeWindow);
-  });
+  const [coachState, setCoachState] = useState<RuntimeCoachState>(() => typeof window === 'undefined' ? defaultCoachState() : (window as GlobalRuntimeWindow).__sovereignRuntimeCoachState ?? defaultCoachState());
+  const [log, setLog] = useState<RuntimeCoachState[]>(() => typeof window === 'undefined' ? [defaultCoachState()] : seedLog(window as GlobalRuntimeWindow));
   const [confirmedAt, setConfirmedAt] = useState<number | null>(null);
   const [monitorVisible, setMonitorVisible] = useState(true);
   const lastAutoCommandKeyRef = useRef('');
-
   const guide = useMemo(() => deriveReleaseGuideState(coachState), [coachState]);
-
-  const toggleMonitor = (): void => {
-    setMonitorVisible((prev) => !prev);
-  };
+  const plan = useMemo(() => stepPlan(coachState), [coachState]);
+  const visibleLog = useMemo(() => log.slice(0, MAX_LOG_ENTRIES), [log]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-
     const handleCoachState = (event: Event): void => {
       const detail = (event as CustomEvent<RuntimeCoachState>).detail;
       if (!detail || !detail.title || !detail.message) return;
       setCoachState(detail);
       setLog((current) => appendUnique(current, detail));
     };
-
     const handleTelemetry = (event: Event): void => {
       const detail = (event as CustomEvent<SovereignTelemetryEvent>).detail;
       if (!detail || !detail.label || !detail.message) return;
       setLog((current) => appendUnique(current, compactTelemetry(detail)));
     };
-
     window.addEventListener('sovereign:runtime-coach-state', handleCoachState as EventListener);
     window.addEventListener('sovereign:telemetry-event', handleTelemetry as EventListener);
-
     return () => {
       window.removeEventListener('sovereign:runtime-coach-state', handleCoachState as EventListener);
       window.removeEventListener('sovereign:telemetry-event', handleTelemetry as EventListener);
@@ -144,153 +130,49 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    if (!guide.nextEnabled || !guide.targetTab) return undefined;
-
+    if (typeof window === 'undefined' || !guide.nextEnabled || !guide.targetTab) return undefined;
     const commandKey = `${guide.targetTab}:${coachState.title}:${coachState.action}:${coachState.updatedAt}`;
     if (lastAutoCommandKeyRef.current === commandKey) return undefined;
     lastAutoCommandKeyRef.current = commandKey;
-
-    const handle = window.setTimeout(() => {
-      publishGuideCommand({ type: 'next', targetTab: guide.targetTab });
-    }, 180);
-
+    const handle = window.setTimeout(() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab }), 180);
     return () => window.clearTimeout(handle);
   }, [coachState.action, coachState.title, coachState.updatedAt, guide.nextEnabled, guide.targetTab]);
-
-  const visibleLog = useMemo(() => log.slice(0, MAX_LOG_ENTRIES), [log]);
 
   const confirmStep = (): void => {
     const now = Date.now();
     setConfirmedAt(now);
     publishGuideCommand({ type: 'confirm', targetTab: guide.targetTab });
-    setLog((current) => appendUnique(current, {
-      lamp: 'green',
-      title: 'Schritt bestätigt',
-      message: guide.targetTab
-        ? `Bestätigt. Ich markiere ${guide.targetTab} als nächsten sicheren Bereich.`
-        : 'Bestätigt. Ich warte auf den nächsten sicheren Schritt.',
-      action: guide.nextEnabled ? guide.nextLabel : 'Weiter beobachten',
-      thinking: false,
-      source: 'release-guide',
-      updatedAt: now,
-    }));
+    setLog((current) => appendUnique(current, { lamp: 'green', title: 'Schritt bestätigt', message: guide.targetTab ? `Bestätigt. Ich markiere ${guide.targetTab} als nächsten sicheren Bereich.` : 'Bestätigt. Ich warte auf den nächsten sicheren Schritt.', action: guide.nextEnabled ? guide.nextLabel : 'Weiter beobachten', thinking: false, source: 'release-guide', updatedAt: now }));
   };
 
   return (
-    <section
-      className={monitorContainerContract.rootClass}
-      data-role={monitorContainerContract.dataRole}
-      data-testid={monitorContainerContract.testId}
-      aria-label={monitorContainerContract.ariaLabel}
-    >
+    <section className={monitorContainerContract.rootClass} data-role={monitorContainerContract.dataRole} data-testid={monitorContainerContract.testId} aria-label={monitorContainerContract.ariaLabel}>
       <div className="sovereign-monitor-head">
-        <div className="sovereign-helper-title-row">
-          <span className="sovereign-helper-avatar" aria-hidden="true">{guide.mood}</span>
-          <div>
-            <div className="sovereign-eyebrow">Coach · Live Log · drei Aktionen</div>
-            <h2>Agenten-Monitor · Sovereign Helper</h2>
-            <p className="sovereign-helper-subtitle">{guide.helperTitle}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="sovereign-monitor-toggle"
-          onClick={toggleMonitor}
-          data-testid={monitorToggleContract.testId}
-          data-role={monitorToggleContract.dataRole}
-          aria-label={monitorToggleContract.ariaLabel}
-          aria-pressed={monitorVisible}
-        >
-          {monitorVisible ? '▲' : '▼'}
-        </button>
-        <span className="sovereign-monitor-pill" data-state="single-window">
-          Arbeitet automatisch
-        </span>
+        <div className="sovereign-helper-title-row"><span className="sovereign-helper-avatar" aria-hidden="true">{guide.mood}</span><div><div className="sovereign-eyebrow">Coach · Live Log · drei Aktionen</div><h2>Agenten-Monitor · Sovereign Helper</h2><p className="sovereign-helper-subtitle">{guide.helperTitle}</p></div></div>
+        <button type="button" className="sovereign-monitor-toggle" onClick={() => setMonitorVisible((prev) => !prev)} data-testid={monitorToggleContract.testId} data-role={monitorToggleContract.dataRole} aria-label={monitorToggleContract.ariaLabel} aria-pressed={monitorVisible}>{monitorVisible ? '▲' : '▼'}</button>
+        <span className="sovereign-monitor-pill" data-state="single-window">Arbeitet automatisch</span>
       </div>
-
-      {monitorVisible && (
-        <div className="sovereign-monitor-body">
-          <div className="sovereign-monitor-status">
-            <span className={lampClassName(coachState.lamp)} />
-            <div className="sovereign-monitor-copy">
-              <strong>{coachState.title}</strong>
-              <span>{formatTime(coachState.updatedAt)} · {coachState.source} · {coachState.thinking ? 'arbeitet' : 'bereit'}</span>
-              <p>{coachState.message}</p>
-              <em>Next Action: {coachState.action}</em>
-            </div>
-          </div>
-
-          <div className="sovereign-helper-panel" data-testid="release-guide__panel">
-            <div className="sovereign-helper-copy">
-              <strong>{guide.helperMessage}</strong>
-              <span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Ich leite den nächsten sicheren Schritt automatisch ein.'}</span>
-            </div>
-            <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsfortschritt ${guide.progress}%`}>
-              <div className="sovereign-monitor-progress-head">
-                <span>Arbeitsfortschritt</span>
-                <strong>{guide.progressLabel}</strong>
-              </div>
-              <div className="sovereign-monitor-progress-track">
-                <div className="sovereign-monitor-progress-fill" style={{ width: `${guide.progress}%` }} />
-              </div>
-            </div>
-            <div className="sovereign-guide-actions" data-testid="release-guide__actions">
-              <button
-                className="sovereign-guide-button"
-                type="button"
-                onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })}
-                data-testid="release-guide__back"
-              >
-                Zurück
-              </button>
-              <button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">
-                {guide.confirmLabel}
-              </button>
-              <button
-                className="sovereign-guide-button sovereign-guide-button-primary"
-                type="button"
-                onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })}
-                disabled={!guide.nextEnabled}
-                aria-disabled={!guide.nextEnabled}
-                data-testid="release-guide__next"
-              >
-                {guide.nextLabel}
-              </button>
-            </div>
-          </div>
+      {monitorVisible && <div className="sovereign-monitor-body">
+        <div className="sovereign-monitor-status"><span className={lampClassName(coachState.lamp)} /><div className="sovereign-monitor-copy"><strong>{coachState.title}</strong><span>{formatTime(coachState.updatedAt)} · {coachState.source} · {coachState.thinking ? 'arbeitet' : 'bereit'}</span><p>{coachState.message}</p><em>Next Action: {coachState.action}</em></div></div>
+        <div className="sovereign-helper-panel" data-testid="release-guide__panel">
+          <div className="sovereign-helper-copy"><strong>{guide.helperMessage}</strong><span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Ich leite den nächsten sicheren Schritt automatisch ein.'}</span></div>
+          <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsstand ${plan.label}`}><div className="sovereign-monitor-progress-head"><span>Arbeitsstand</span><strong>{plan.label}</strong></div><div className="grid gap-1 text-[10px]" style={{ gridTemplateColumns: `repeat(${plan.total}, minmax(0, 1fr))` }}>{plan.steps.map((step) => <span key={step.index} className={stepClassName(step.state)} title={step.label}>{step.index}. {step.label}</span>)}</div></div>
+          <div className="sovereign-guide-actions" data-testid="release-guide__actions"><button className="sovereign-guide-button" type="button" onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })} data-testid="release-guide__back">Zurück</button><button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">{guide.confirmLabel}</button><button className="sovereign-guide-button sovereign-guide-button-primary" type="button" onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })} disabled={!guide.nextEnabled} aria-disabled={!guide.nextEnabled} data-testid="release-guide__next">{guide.nextLabel}</button></div>
         </div>
-      )}
-
-      <div className="sovereign-monitor-log" data-testid="global-runtime-monitor-log">
-        {visibleLog.map((entry, index) => (
-          <div key={`${entry.updatedAt}-${entry.title}-${index}`} className="sovereign-monitor-line">
-            <span className={lampClassName(entry.lamp)} />
-            <div>
-              <span>{formatTime(entry.updatedAt)} · {entry.source}</span>
-              <p>{entry.title}: {entry.message}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      </div>}
+      <div className="sovereign-monitor-log" data-testid="global-runtime-monitor-log">{visibleLog.map((entry, index) => <div key={`${entry.updatedAt}-${entry.title}-${index}`} className="sovereign-monitor-line"><span className={lampClassName(entry.lamp)} /><div><span>{formatTime(entry.updatedAt)} · {entry.source}</span><p>{entry.title}: {entry.message}</p></div></div>)}</div>
     </section>
   );
 }
 
 export function installGlobalRuntimeMonitor(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
   const win = window as GlobalRuntimeWindow;
   if (win.__sovereignGlobalRuntimeMonitorInstalled) return;
-
   const appRoot = document.getElementById('root');
   const host = document.getElementById(HOST_ID) ?? document.createElement('div');
   host.id = HOST_ID;
-
-  if (!host.parentElement) {
-    document.body.insertBefore(host, appRoot ?? document.body.firstChild);
-  }
-
+  if (!host.parentElement) document.body.insertBefore(host, appRoot ?? document.body.firstChild);
   win.__sovereignGlobalRuntimeMonitorInstalled = true;
   win.__sovereignGlobalRuntimeMonitorRoot = createRoot(host);
   win.__sovereignGlobalRuntimeMonitorRoot.render(<GlobalRuntimeMonitor />);
