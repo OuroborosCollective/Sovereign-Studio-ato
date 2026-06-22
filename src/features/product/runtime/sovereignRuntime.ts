@@ -121,8 +121,8 @@ export function analyzeRepoArchitecture(repoPaths: string[]): RepoArchitectureRu
 
 export function classifyRequestedWork(blueprint: string): 'readme-docs' | 'tests' | 'runtime-hardening' | 'feature' | 'general' {
   if (includesAny(blueprint, ['readme', 'documentation', 'dokumentation', 'update history', 'changelog'])) return 'readme-docs';
-  if (includesAny(blueprint, ['test', 'vitest', 'e2e', 'smoke', 'typecheck', 'lint'])) return 'tests';
   if (includesAny(blueprint, ['runtime', 'fallback', 'llm', 'provider', 'workflow', 'github'])) return 'runtime-hardening';
+  if (includesAny(blueprint, ['test', 'vitest', 'e2e', 'smoke', 'typecheck', 'lint'])) return 'tests';
   if (includesAny(blueprint, ['build', 'implement', 'feature', 'route', 'component'])) return 'feature';
   return 'general';
 }
