@@ -4,11 +4,11 @@ import { assertPushableBrain } from '../../llmRuntimeChecks';
 import type { LlmAdapter, LlmAdapterContext, LlmAdapterResult } from '../llmAdapter';
 import { buildSovereignLlmPrompt } from '../llmAdapter';
 
-export function createPollinationsAdapter(): LlmAdapter {
+export function createPollinationsAdapter(apiKey?: string): LlmAdapter {
   return {
     id: 'pollinations',
-    label: 'Pollinations free provider',
-    kind: 'no-key',
+    label: 'Pollinations free/provider API',
+    kind: apiKey ? 'user-key' : 'no-key',
     priority: 1,
     enabled: true,
     async run(context: LlmAdapterContext): Promise<LlmAdapterResult> {
@@ -19,7 +19,8 @@ export function createPollinationsAdapter(): LlmAdapter {
         const response = await callPollinations(
           'openai',
           prompt,
-          { temperature: 0.2, maxOutputTokens: 4096 }
+          { temperature: 0.2, maxOutputTokens: 4096 },
+          apiKey
         );
         
         // Parse and validate the response

@@ -10,6 +10,7 @@ import { createLocalSafeAdapter } from './adapters/localSafeAdapter';
 import type { Card, ProjectSettings } from '../types';
 
 export interface SovereignLlmAdapterOptions {
+  pollinationsApiKey?: string;
   groqApiKey?: string;
   huggingfaceApiKey?: string;
   togetherApiKey?: string;
@@ -21,8 +22,8 @@ export interface SovereignLlmAdapterOptions {
 
 export function buildSovereignLlmAdapters(options: SovereignLlmAdapterOptions): LlmAdapter[] {
   const adapters: LlmAdapter[] = [
+    createPollinationsAdapter(options.pollinationsApiKey),
     createMlvocaAdapter(),
-    createPollinationsAdapter(),
   ];
 
   // Add user key adapters if keys are provided

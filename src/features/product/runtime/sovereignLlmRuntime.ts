@@ -57,6 +57,7 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
     settings: input.settings ?? defaultSettings,
     memoryContext: input.memoryContext,
     runtimeEvents: input.runtimeEvents,
+    pollinationsApiKey: input.userKeys?.pollinations,
     groqApiKey: input.userKeys?.groq,
     huggingfaceApiKey: input.userKeys?.huggingface,
     togetherApiKey: input.userKeys?.together,

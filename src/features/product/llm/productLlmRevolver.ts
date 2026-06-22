@@ -14,6 +14,7 @@ export interface ProductLlmRevolverInput {
   plugins?: LlmAdapter[];
   allowExternalNoKey?: boolean;
   allowOptInRoutes?: boolean;
+  pollinationsApiKey?: string;
   groqApiKey?: string;
   huggingfaceApiKey?: string;
   togetherApiKey?: string;
@@ -25,6 +26,7 @@ export interface ProductLlmRevolverInput {
 
 export function buildProductAdapters(input: ProductLlmRevolverInput): LlmAdapter[] {
   return buildSovereignLlmAdapters({
+    pollinationsApiKey: input.pollinationsApiKey,
     groqApiKey: input.groqApiKey,
     huggingfaceApiKey: input.huggingfaceApiKey,
     togetherApiKey: input.togetherApiKey,
