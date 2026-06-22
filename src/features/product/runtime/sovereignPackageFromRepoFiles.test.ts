@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSovereignPackageFromRepoFiles,
   hasConcreteSovereignMission,
+  resolveAutonomousSovereignMission,
   summarizeSovereignPackage,
 } from './sovereignPackageFromRepoFiles';
 import type { Card, ProjectSettings } from '../types';
@@ -21,12 +22,16 @@ const repoFiles = [
   { path: 'README.md', type: 'blob' as const },
   { path: 'package.json', type: 'blob' as const },
   { path: '.github/workflows/ci.yml', type: 'blob' as const },
+  { path: 'src/App.tsx', type: 'blob' as const },
+  { path: 'src/global-runtime-monitor.tsx', type: 'blob' as const },
+  { path: 'src/features/product/runtime/sovereignReleaseGuide.ts', type: 'blob' as const },
+  { path: 'src/features/product/runtime/sovereignPackageFromRepoFiles.ts', type: 'blob' as const },
   { path: 'src/features/product/runtime/repoLaunchReadiness.ts', type: 'blob' as const },
   { path: 'src/features/product/runtime/repoLaunchReadiness.test.ts', type: 'blob' as const },
 ];
 
 describe('sovereignPackageFromRepoFiles', () => {
-  it('rejects package generation without a real loaded repo snapshot', () => {
+  it('still requires loaded repo files', () => {
     expect(() => buildSovereignPackageFromRepoFiles({
       mission: 'Update README with current runtime setup',
       cards,
@@ -35,15 +40,28 @@ describe('sovereignPackageFromRepoFiles', () => {
     })).toThrow('Load a real repository tree');
   });
 
-  it('rejects placeholder missions before package build starts', () => {
+  it('turns default builder text into an executable autonomous mission', () => {
     expect(hasConcreteSovereignMission('README + Update History')).toBe(false);
-    expect(hasConcreteSovereignMission('awaiting-intent')).toBe(false);
-    expect(() => buildSovereignPackageFromRepoFiles({
+
+    const mission = resolveAutonomousSovereignMission('README + Update History', repoFiles);
+
+    expect(mission).toContain('autonome Runtime-Stabilisierung');
+    expect(mission).toContain('0/6 bis 6/6');
+    expect(mission).toContain('src/global-runtime-monitor.tsx');
+    expect(hasConcreteSovereignMission(mission)).toBe(true);
+  });
+
+  it('builds a guarded package from default builder text', () => {
+    const pkg = buildSovereignPackageFromRepoFiles({
       mission: 'README + Update History',
       cards,
       settings,
       repoFiles,
-    })).toThrow('Concrete user mission is required');
+    });
+
+    expect(pkg.requestedWork).toBe('runtime-hardening');
+    expect(pkg.brain.perception.intent).toContain('autonome Runtime-Stabilisierung');
+    expect(pkg.brain.execution.patches.length).toBeGreaterThan(0);
   });
 
   it('builds brain-gated docs package from loaded repo files and concrete mission', () => {
