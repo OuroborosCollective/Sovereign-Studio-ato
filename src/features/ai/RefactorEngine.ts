@@ -1,21 +1,5 @@
-/**
- * RefactorEngine - Central AI-powered code transformation engine
- * 
- * This is the MAIN FEATURE of Sovereign Studio.
- * It orchestrates all AI-powered code analysis and generation.
- * 
- * Key features:
- * - Uses free LLMs by default (mlvoca, Groq, etc.)
- * - Optional API keys enhance capabilities
- * - Single unified interface for all AI operations
- */
-
 import { callMlvoCa, callGroq, callHuggingFace, callTogether, callOpenRouter, callPollinations, type ProviderType } from './providerManager';
 import { geminiService } from './geminiService';
-
-// ============================================================
-// Types
-// ============================================================
 
 export interface RefactorContext {
   projectName: string;
@@ -32,6 +16,12 @@ export interface RefactorFile {
   type: 'blob' | 'tree';
   size?: number;
   language?: string;
+}
+
+export interface RefactorMemoryContext {
+  source: 'remote-memory' | 'pattern-memory' | 'runtime';
+  summary: string;
+  patterns: string[];
 }
 
 export interface RefactorPlan {
@@ -61,11 +51,25 @@ export interface RefactorOptions {
   temperature?: number;
   maxOutputTokens?: number;
   strictMode?: boolean;
+  memoryContext?: RefactorMemoryContext;
 }
 
-// ============================================================
-// RefactorEngine - Main Class
-// ============================================================
+function safeText(value: string, maxLength = 8000): string {
+  return value.trim().slice(0, maxLength);
+}
+
+function formatMemoryContext(memory: RefactorMemoryContext | null): string {
+  if (!memory) return '';
+  const summary = safeText(memory.summary, 1200);
+  const patterns = memory.patterns.map((pattern) => `- ${safeText(pattern, 400)}`).join('\n');
+  return [
+    'REMOTE MEMORY CONTEXT:',
+    `Source: ${memory.source}`,
+    summary ? `Summary: ${summary}` : '',
+    patterns ? `Patterns:\n${patterns}` : '',
+    'Use this memory only as supporting context. Runtime checks and guards remain authoritative.',
+  ].filter(Boolean).join('\n');
+}
 
 export class RefactorEngine {
   private geminiKey: string;
@@ -77,6 +81,7 @@ export class RefactorEngine {
   private currentProvider: ProviderType = 'mlvoca';
   private context: RefactorContext | null = null;
   private history: RefactorPlan[] = [];
+  private memoryContext: RefactorMemoryContext | null = null;
 
   constructor() {
     this.geminiKey = '';
@@ -86,10 +91,6 @@ export class RefactorEngine {
     this.openrouterKey = '';
     this.pollinationsKey = '';
   }
-
-  // ============================================================
-  // Configuration
-  // ============================================================
 
   setKeys(keys: {
     gemini?: string;
@@ -111,6 +112,14 @@ export class RefactorEngine {
     this.context = context;
   }
 
+  setMemoryContext(memory: RefactorMemoryContext | null) {
+    this.memoryContext = memory;
+  }
+
+  getMemoryContext(): RefactorMemoryContext | null {
+    return this.memoryContext;
+  }
+
   getCurrentProvider(): ProviderType {
     return this.currentProvider;
   }
@@ -119,17 +128,19 @@ export class RefactorEngine {
     return this.history;
   }
 
-  // ============================================================
-  // Core AI Call (with automatic fallback)
-  // ============================================================
+  private withMemory(prompt: string, options: RefactorOptions): string {
+    const memory = formatMemoryContext(options.memoryContext ?? this.memoryContext);
+    if (!memory) return prompt;
+    return `${memory}\n\nUSER TASK:\n${prompt}`;
+  }
 
   async generate(prompt: string, options: RefactorOptions = {}): Promise<string> {
-    // Try in priority order
     const providers = this.getProviderChain(options.model || 'gemini-1.5-flash');
+    const enrichedPrompt = this.withMemory(prompt, options);
 
     for (const provider of providers) {
       try {
-        const result = await this.callProvider(provider, prompt, options);
+        const result = await this.callProvider(provider, enrichedPrompt, options);
         this.currentProvider = provider.type;
         return result;
       } catch (error: any) {
@@ -144,44 +155,14 @@ export class RefactorEngine {
   private getProviderChain(model: string): Array<{ type: ProviderType; apiKey: string; model: string }> {
     const chain: Array<{ type: ProviderType; apiKey: string; model: string }> = [];
 
-    // 1. mlvoca (free, no key needed) - always first
-    chain.push({
-      type: 'mlvoca',
-      apiKey: '',
-      model: this.mapModel(model, 'mlvoca'),
-    });
+    chain.push({ type: 'mlvoca', apiKey: '', model: this.mapModel(model, 'mlvoca') });
+    chain.push({ type: 'pollinations', apiKey: this.pollinationsKey || '', model: this.mapModel(model, 'pollinations') });
 
-    // 2. Pollinations (free, optional key, fast CORS support) - second fallback
-    chain.push({
-      type: 'pollinations',
-      apiKey: this.pollinationsKey || '',
-      model: this.mapModel(model, 'pollinations'),
-    });
-
-    // 3. Gemini if key provided
-    if (this.geminiKey?.trim()) {
-      chain.push({ type: 'gemini', apiKey: this.geminiKey, model });
-    }
-
-    // 4. Groq if key provided
-    if (this.groqKey?.trim()) {
-      chain.push({ type: 'groq', apiKey: this.groqKey, model: this.mapModel(model, 'groq') });
-    }
-
-    // 5. HuggingFace if key provided
-    if (this.hfKey?.trim()) {
-      chain.push({ type: 'huggingface', apiKey: this.hfKey, model: this.mapModel(model, 'huggingface') });
-    }
-
-    // 6. Together if key provided
-    if (this.togetherKey?.trim()) {
-      chain.push({ type: 'together', apiKey: this.togetherKey, model: this.mapModel(model, 'together') });
-    }
-
-    // 7. OpenRouter if key provided
-    if (this.openrouterKey?.trim()) {
-      chain.push({ type: 'openrouter', apiKey: this.openrouterKey, model: this.mapModel(model, 'openrouter') });
-    }
+    if (this.geminiKey?.trim()) chain.push({ type: 'gemini', apiKey: this.geminiKey, model });
+    if (this.groqKey?.trim()) chain.push({ type: 'groq', apiKey: this.groqKey, model: this.mapModel(model, 'groq') });
+    if (this.hfKey?.trim()) chain.push({ type: 'huggingface', apiKey: this.hfKey, model: this.mapModel(model, 'huggingface') });
+    if (this.togetherKey?.trim()) chain.push({ type: 'together', apiKey: this.togetherKey, model: this.mapModel(model, 'together') });
+    if (this.openrouterKey?.trim()) chain.push({ type: 'openrouter', apiKey: this.openrouterKey, model: this.mapModel(model, 'openrouter') });
 
     return chain;
   }
@@ -218,52 +199,43 @@ export class RefactorEngine {
     };
 
     switch (provider.type) {
-      case 'mlvoca':
+      case 'mlvoca': {
         const mlvoca = await callMlvoCa(provider.model, prompt, opts);
         return mlvoca.text;
-
-      case 'pollinations':
+      }
+      case 'pollinations': {
         const pollinations = await callPollinations(provider.model, prompt, opts, provider.apiKey);
         return pollinations.text;
-
+      }
       case 'gemini':
         return await geminiService.generateText(provider.apiKey, prompt, {
           model: provider.model,
           temperature: opts.temperature,
           maxOutputTokens: opts.maxOutputTokens,
         });
-
-      case 'groq':
+      case 'groq': {
         const groq = await callGroq(provider.apiKey, provider.model, prompt, opts);
         return groq.text;
-
-      case 'huggingface':
+      }
+      case 'huggingface': {
         const hf = await callHuggingFace(provider.apiKey, provider.model, prompt, opts);
         return hf.text;
-
-      case 'together':
+      }
+      case 'together': {
         const together = await callTogether(provider.apiKey, provider.model, prompt, opts);
         return together.text;
-
-      case 'openrouter':
+      }
+      case 'openrouter': {
         const openrouter = await callOpenRouter(provider.apiKey, provider.model, prompt, opts);
         return openrouter.text;
-
+      }
       default:
         throw new Error(`Unknown provider: ${provider.type}`);
     }
   }
 
-  // ============================================================
-  // High-Level Operations
-  // ============================================================
-
-  /**
-   * Analyze repository and create refactor plan
-   */
   async analyzeRepo(repoUrl: string, files: RefactorFile[]): Promise<RefactorPlan> {
     const fileList = files.filter(f => f.type === 'blob').map(f => f.path).join('\n');
-    
     const prompt = `Analysiere dieses Repository und erstelle einen Refactor-Plan.
 
 REPOSITORY: ${repoUrl}
@@ -272,7 +244,7 @@ ${fileList}
 
 Gib einen strukturierten Plan zurück mit:
 1. ZUSAMMENFASSUNG: Was macht dieses Projekt?
-2. TECHNOLOGIEN: Erkannte Stack
+2. TECHNOLOGIEN: Erkannter Stack
 3. REFACTOR_TASKS: 3-5 konkrete Verbesserungen mit Priorität
 
 Format: Markdown mit ### Überschriften`;
@@ -299,13 +271,9 @@ Format: Markdown mit ### Überschriften`;
     return plan;
   }
 
-  /**
-   * Generate code based on task
-   */
   async generateCode(task: RefactorTask): Promise<string> {
     const context = this.context ? `KONTEXT:\n${this.context.projectName}\n\n` : '';
     const codeContext = task.originalCode ? `CODE:\n\`\`\`\n${task.originalCode}\n\`\`\`\n\n` : '';
-
     const prompt = `${context}${codeContext}AUFGABE: ${task.description}
 ${task.files ? `DATEIEN: ${task.files.join(', ')}` : ''}
 
@@ -314,13 +282,6 @@ Generiere den verbesserten Code. Antworte NUR mit dem Code, keine Erklärung.`;
     return await this.generate(prompt, { temperature: 0.4, maxOutputTokens: 8192 });
   }
 
-  /**
-   * Explain code
-   */
-
-  /**
-   * Apply code changes to GitHub repository
-   */
   async applyFileChange(
     owner: string,
     repo: string,
@@ -333,11 +294,9 @@ Generiere den verbesserten Code. Antworte NUR mit dem Code, keine Erklärung.`;
     if (!token) throw new Error('GitHub PAT is required to apply changes.');
 
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-
-    // Standard GitHub commit payload
     const body = {
       message: `AI Refactor: ${path}`,
-      content: btoa(unescape(encodeURIComponent(content))), // Handle UTF-8
+      content: btoa(unescape(encodeURIComponent(content))),
       sha,
       branch,
     };
@@ -372,23 +331,18 @@ Gib eine klare Erklärung in 3-5 Sätzen.`;
     return await this.generate(prompt, { temperature: 0.3 });
   }
 
-  /**
-   * Generate entire feature/module
-   */
   async generateFeature(description: string, files: string[]): Promise<string> {
-    const context = this.context 
-      ? `PROJEKT: ${this.context.projectName}\nTECHNOLOGIEN: ${this.context.technologies.join(', ')}\n\n` 
+    const context = this.context
+      ? `PROJEKT: ${this.context.projectName}\nTECHNOLOGIEN: ${this.context.technologies.join(', ')}\n\n`
       : '';
-
     const prompt = `${context}BESCHREIBUNG:\n${description}
-\nGENERIERE kompletten, produktionsreifen Code. Antworte mit Dateipfaden und Code.`;
+
+DATEIEN:\n${files.join('\n')}
+
+GENERIERE kompletten, produktionsreifen Code. Antworte mit Dateipfaden und Code.`;
 
     return await this.generate(prompt, { temperature: 0.5, maxOutputTokens: 16384 });
   }
-
-  // ============================================================
-  // Helpers
-  // ============================================================
 
   private extractTechList(analysis: string): string[] {
     const match = analysis.match(/TECHNOLOGIEN?[:\s]*([^\n]+(?:\n[^\n]+)*)/i);
@@ -405,8 +359,8 @@ Gib eine klare Erklärung in 3-5 Sätzen.`;
   private extractTasks(analysis: string): RefactorTask[] {
     const tasks: RefactorTask[] = [];
     const goals = this.extractGoals(analysis);
-    
-    goals.forEach((goal, i) => {
+
+    goals.forEach((goal) => {
       tasks.push({
         id: crypto.randomUUID(),
         type: 'refactor',
@@ -420,5 +374,4 @@ Gib eine klare Erklärung in 3-5 Sätzen.`;
   }
 }
 
-// Singleton
 export const refactorEngine = new RefactorEngine();
