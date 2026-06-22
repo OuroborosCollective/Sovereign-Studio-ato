@@ -1,15 +1,168 @@
 # Repository Agent Rules
 
-This repository is a free-first no-code code factory.
+This file is mandatory reading for every agent, model, Copilot session, automation, or human contributor working in this repository.
 
-Before finishing any change, agents must run the full green gate from `sovereign.guard.json`:
+## Project identity
 
-- audit:sovereign
-- type-check
-- test:run
-- build
+This repository is `NOCODESTUDIO Sovereign Tool / Sovereign-Studio-ato`.
 
-Do not stop after fixing only the files touched in the latest change. If the current repository has older failures, fix those too before calling the work done.
+Do not mix it with Areloria, WASD, MMORPG, ARE logic, or unrelated game paths unless the user explicitly asks for that.
+
+## Prime directive
+
+Build a runtime that produces truth.
+Do not build a UI that invents truth.
+The UI may only display verified runtime state.
+
+## Causal runtime chain
+
+Every workflow must follow this chain:
+
+1. Action starts.
+2. Action produces a result.
+3. Result creates or updates state.
+4. State allows, blocks, or routes the next action.
+5. The next action must be logically derivable from that state.
+
+Do not jump because a button was clicked, a text string is visible, or the UI looks ready.
+
+## Approved truth sources
+
+Use real runtime sources:
+
+- `sequentialRuntime`
+- `repoSnapshotStatus`
+- `repoFiles`
+- `scanRegistry`
+- `workflowReport`
+- `lastPackage`
+- `latestGeneratedReview`
+- `diffReport`
+- `telemetry`
+- `solutionPatternStore`
+- `remoteMemoryIntake`
+- `automationStatus`
+
+Do not use DOM text, page text scraping, static percentages, or visual UI state as the source of truth.
+
+## Progress rule
+
+No hard percentage progress.
+No fixed maximum step count.
+Progress must be a step plan derived from the real runtime flow.
+
+Correct pattern:
+
+```text
+currentStep / totalRuntimeSteps - current runtime action
+```
+
+The total must come from the planned runtime flow, not from a hardcoded UI list.
+
+## Placeholder mission rule
+
+Default or vague text must never enter `package-build` as-is.
+
+Examples that must be normalized or blocked before package build:
+
+- `README + Update History`
+- `Mach weiter`
+- `Fehler`
+- `Ideen`
+- `Plan`
+- `Workflow Fehleranalyse + Runtime Check + Test Plan`
+
+The tool must derive a concrete mission from repo analysis or stop in a safe yellow state with a clear next action.
+
+## Draft PR rule
+
+Draft PRs require real execution patches.
+
+Actionable targets include:
+
+- `src/`
+- `tests/`
+- `android/`
+- `scripts/`
+- `.github/workflows/`
+- real config files
+- `README.md`
+- real `docs/`
+
+Plan-only output must not count as actionable work.
+A PR containing only `docs/SOVEREIGN_PLAN.md` and generated workflow preview artifacts is not acceptable.
+
+## Live-path integrity
+
+No mocks, stubs, facades, fake snapshots, fake success states, or hardcoded green states in the live path.
+
+Test fixtures are allowed only inside tests and must stay clearly separated from production runtime code.
+
+## Runtime validation and tests
+
+Every new runtime route, state transition, guard, memory bridge, repo analysis path, package build path, draft PR path, and workflow repair path needs useful runtime checks and tests.
+
+Minimum expected coverage for new logic:
+
+- success case
+- failure case
+- invalid input case
+- state transition case
+- guard behavior case
+
+## Repo Insight rule
+
+Repo Insight is not decoration. It must produce actionable missions from real repo structure, findings, workflow state, telemetry, and memory patterns.
+
+A suggestion button must set an executable mission, not a generic explanation such as `whyUseful`.
+
+## Pattern Memory rule
+
+Learning patterns may suggest actions, but they never override runtime truth.
+A pattern must be validated against current repo state, guards, and tests before it affects output.
+
+## Error handling rule
+
+Failures must route into a repair flow, not into blind retry loops.
+
+A failed action must produce:
+
+1. recorded error result
+2. classified state
+3. safe next action
+4. repair mission or user-visible stop reason
+
+## User-experience rule
+
+The user must not need developer language.
+The tool translates vague input such as `Mach weiter` into a safe repo-derived mission or explains the next safe stop in plain language.
+
+## Completion rule
+
+Before claiming work is done, verify:
+
+- the real issue was addressed
+- the fix runs in the live path
+- tests or validation were added
+- no mock/stub/facade entered live code
+- no hardcoded UI truth was added
+- no plan-only Draft PR path was introduced
+- the flow is understandable for a non-developer user
+
+If these checks are not satisfied, report the exact blocker instead of claiming success.
+
+## Required green gate
+
+Before finishing any code change, run or explicitly report why you could not run:
+
+- `npm run audit:sovereign`
+- `npm run type-check`
+- `npm run test:run`
+- `npm run build`
+
+Do not stop after fixing only the latest touched file if older failures block the product path.
+
+## Protected product shape
 
 Protect these product rules:
 
