@@ -139,6 +139,20 @@ describe('ChatSidebar', () => {
       expect(defaultProps.onDownloadPackage).toHaveBeenCalledOnce();
     });
 
+    it('clears input when clear button is clicked', () => {
+      render(<ChatSidebar {...defaultProps} />);
+
+      const input = screen.getByRole('textbox', { name: /Chat Nachricht/i }) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: 'Test message' } });
+      expect(input.value).toBe('Test message');
+
+      const clearButton = screen.getByRole('button', { name: /Eingabe loeschen/i });
+      fireEvent.click(clearButton);
+
+      expect(input.value).toBe('');
+      expect(input).toHaveFocus();
+    });
+
     it('disables submit button when input is empty', () => {
       render(<ChatSidebar {...defaultProps} />);
 
