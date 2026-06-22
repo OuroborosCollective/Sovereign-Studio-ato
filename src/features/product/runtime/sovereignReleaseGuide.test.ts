@@ -21,16 +21,17 @@ function input(overrides: Partial<ReleaseGuideInput>): ReleaseGuideInput {
 }
 
 describe('sovereign release guide runtime', () => {
-  it('detects the diff tab from package-ready guidance', () => {
+  it('routes package-ready guidance to workflow instead of visible diff', () => {
     const state = deriveReleaseGuideState(input({
       title: 'Package bereit',
       message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
       action: 'Weiter mit Diff',
     }));
 
-    expect(state.targetTab).toBe('diff');
+    expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
-    expect(state.nextLabel).toBe('Weiter zu diff');
+    expect(state.nextLabel).toBe('Weiter zu workflow');
+    expect(state.helperMessage).toContain('Diff-Schleife');
   });
 
   it('lets an explicit workflow action win over stale diff/package text', () => {
@@ -47,7 +48,7 @@ describe('sovereign release guide runtime', () => {
     expect(state.progress).toBe(85);
   });
 
-  it('keeps progress on 5 percent steps', () => {
+  it('keeps progress on 5 percent steps without parking on diff', () => {
     const progress = deriveReleaseGuideProgress(input({
       title: 'Package bereit',
       message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
@@ -55,7 +56,7 @@ describe('sovereign release guide runtime', () => {
     }));
 
     expect(progress % 5).toBe(0);
-    expect(progress).toBe(70);
+    expect(progress).toBe(80);
   });
 
   it('detects repo and builder targets without mixed default guidance', () => {
@@ -80,7 +81,7 @@ describe('sovereign release guide runtime', () => {
       thinking: true,
     }));
 
-    expect(state.targetTab).toBe('diff');
+    expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(false);
     expect(state.waitingReason).toContain('Noch kein sicherer');
   });
