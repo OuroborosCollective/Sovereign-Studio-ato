@@ -254,10 +254,14 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (input.workflowStatus === 'red') return switchTo(input, 'repair', 'Red workflow status should surface the repair view.');
   if (input.workflowStatus === 'pending' || input.workflowStatus === 'unknown') return switchTo(input, 'workflow', 'Non-final workflow status should stay on workflow watch.');
 
+  if (input.activeTab === 'diff') {
+    return switchTo(input, 'workflow', 'Diff is an internal handoff surface and must not remain the visible workspace.');
+  }
+
   if (
     input.mode !== 'manual'
     && input.hasPackage
-    && (input.activeTab === 'builder' || input.activeTab === 'files' || input.activeTab === 'diff')
+    && (input.activeTab === 'builder' || input.activeTab === 'files')
     && canRunPackageReviewSwitch(input)
   ) {
     return switchTo(
@@ -287,10 +291,6 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
 
   if (input.hasPackage && input.hasDiffSources && input.workflowStatus === 'idle' && input.activeTab === 'files') {
     return switchTo(input, 'workflow', 'Files were reviewed and diff sources are internal - continue through workflow.');
-  }
-
-  if (input.activeTab === 'diff') {
-    return switchTo(input, 'workflow', 'Diff is an internal handoff surface and must not remain the visible workspace.');
   }
 
   return keepCurrent(input, 'No auto view change required without an active runtime step or explicit workflow state.');
