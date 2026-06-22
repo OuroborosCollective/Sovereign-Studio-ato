@@ -63,7 +63,7 @@ describe('sovereignAutoViewRouter', () => {
     })).toMatchObject({ shouldSwitch: false, tab: 'workflow' });
   });
 
-  it('routes package-ready auto-review flow from builder to diff loader', () => {
+  it('routes package-ready auto-review flow from builder to workflow instead of diff loader', () => {
     const decision = decideSovereignAutoView({
       mode: 'auto-review',
       activeStep: null,
@@ -75,11 +75,11 @@ describe('sovereignAutoViewRouter', () => {
       workflowStatus: 'idle',
     });
 
-    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'diff' });
-    expect(decision.reason).toContain('diff loader');
+    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'workflow' });
+    expect(decision.reason).toContain('diff is internal');
   });
 
-  it('does not let planningConfirmed=false block package-ready diff review', () => {
+  it('does not let planningConfirmed=false send package-ready review back to diff', () => {
     const decision = decideSovereignAutoView({
       mode: 'auto-review',
       activeStep: null,
@@ -92,10 +92,10 @@ describe('sovereignAutoViewRouter', () => {
       planningConfirmed: false,
     });
 
-    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'diff' });
+    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'workflow' });
   });
 
-  it('routes package-ready auto flow from files to diff once source snapshots exist', () => {
+  it('routes package-ready auto flow from files to workflow once source snapshots exist', () => {
     const decision = decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
@@ -107,11 +107,11 @@ describe('sovereignAutoViewRouter', () => {
       workflowStatus: 'idle',
     });
 
-    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'diff' });
+    expect(decision).toMatchObject({ shouldSwitch: true, tab: 'workflow' });
     expect(decision.reason).toContain('source snapshots');
   });
 
-  it('returns to diff after successful workflow when workflow is the active view', () => {
+  it('keeps workflow visible after successful workflow instead of returning to diff', () => {
     expect(decideSovereignAutoView({
       mode: 'full-auto-draft-pr',
       activeStep: null,
@@ -121,7 +121,7 @@ describe('sovereignAutoViewRouter', () => {
       isPublishing: false,
       isWatchingWorkflow: false,
       workflowStatus: 'green',
-    })).toMatchObject({ shouldSwitch: true, tab: 'diff' });
+    })).toMatchObject({ shouldSwitch: false, tab: 'workflow' });
   });
 
   it('does not bounce the manual planning workspace without a guide or auto mode', () => {
@@ -196,5 +196,18 @@ describe('sovereignAutoViewRouter', () => {
       isWatchingWorkflow: false,
       workflowStatus: 'idle',
     })).toMatchObject({ shouldSwitch: false, tab: 'memory' });
+  });
+
+  it('escapes an already visible diff tab back into workflow', () => {
+    expect(decideSovereignAutoView({
+      mode: 'manual',
+      activeStep: null,
+      activeTab: 'diff',
+      hasPackage: true,
+      hasDiffSources: true,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'idle',
+    })).toMatchObject({ shouldSwitch: true, tab: 'workflow' });
   });
 });
