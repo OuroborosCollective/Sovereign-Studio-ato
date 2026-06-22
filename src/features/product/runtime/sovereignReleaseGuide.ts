@@ -42,10 +42,8 @@ export interface ReleaseGuideState {
 }
 
 const TAB_PATTERNS: Array<{ tab: ReleaseGuideTab; tokens: string[] }> = [
-  { tab: 'workflow', tokens: ['workflow', 'ci', 'checks'] },
+  { tab: 'workflow', tokens: ['workflow', 'ci', 'checks', 'draft pr', 'pull request', 'diff', 'files prüfen', 'source snapshots'] },
   { tab: 'repair', tokens: ['repair', 'reparieren', 'fehlerlog'] },
-  { tab: 'diff', tokens: ['diff'] },
-  { tab: 'files', tokens: ['files', 'dateien'] },
   { tab: 'builder', tokens: ['builder', 'auftrag', 'ideenfabrik', 'mission'] },
   { tab: 'repo', tokens: ['repo', 'repository'] },
   { tab: 'remote', tokens: ['remote memory'] },
@@ -64,8 +62,8 @@ const PREVIOUS_TAB: Partial<Record<ReleaseGuideTab, ReleaseGuideTab>> = {
   repo: 'monitor',
   builder: 'repo',
   files: 'builder',
-  diff: 'files',
-  workflow: 'diff',
+  diff: 'workflow',
+  workflow: 'builder',
   repair: 'workflow',
   remote: 'repo',
   memory: 'remote',
@@ -116,18 +114,17 @@ export function deriveReleaseGuideProgress(input: ReleaseGuideInput): number {
   const action = actionTextOf(input);
 
   if (input.lamp === 'red') return step5(10);
-  if (hasAny(action, ['workflow', 'ci', 'checks'])) return step5(85);
+  if (hasAny(action, ['workflow', 'ci', 'checks', 'draft pr', 'pull request'])) return step5(85);
   if (hasAny(action, ['repair', 'reparieren', 'fehlerlog'])) return step5(90);
   if (hasAny(source, ['repo fehlt', 'repository laden', 'load repo'])) return step5(10);
   if (hasAny(source, ['repo geladen', 'repository snapshot', 'repo snapshot ready'])) return step5(25);
   if (hasAny(source, ['auftrag analysieren', 'ideenfabrik', 'builder'])) return step5(35);
   if (hasAny(source, ['auftrag starten', 'package-build', 'building'])) return step5(55);
-  if (hasAny(source, ['package bereit', 'package wurde erstellt', 'weiter mit diff'])) return step5(70);
-  if (hasAny(source, ['files prüfen', 'generated file'])) return step5(75);
-  if (hasAny(source, ['diff prüfen', 'load source snapshots'])) return step5(80);
+  if (hasAny(source, ['package bereit', 'package wurde erstellt'])) return step5(80);
+  if (hasAny(source, ['diff', 'files prüfen', 'generated file', 'load source snapshots'])) return step5(80);
   if (hasAny(source, ['workflow', 'ci'])) return step5(85);
   if (hasAny(source, ['draft pr', 'pull request'])) return step5(95);
-  if (hasAny(source, ['release', 'completed', 'success'])) return step5(100);
+  if (hasAny(source, ['release', 'completed', 'success', 'fertig'])) return step5(100);
   if (input.thinking) return step5(45);
   return input.lamp === 'green' ? step5(60) : step5(20);
 }
@@ -136,7 +133,7 @@ function progressLabel(progress: number): string {
   if (progress >= 100) return '100% · abgeschlossen';
   if (progress >= 95) return `${progress}% · Draft/Release prüfen`;
   if (progress >= 85) return `${progress}% · Workflow prüfen`;
-  if (progress >= 70) return `${progress}% · Diff und Files prüfen`;
+  if (progress >= 80) return `${progress}% · interne Prüfung abgeschlossen`;
   if (progress >= 55) return `${progress}% · Paket wird vorbereitet`;
   if (progress >= 35) return `${progress}% · Auftrag wird analysiert`;
   if (progress >= 25) return `${progress}% · Repository bereit`;
@@ -145,8 +142,9 @@ function progressLabel(progress: number): string {
 
 function helperMessage(input: ReleaseGuideInput, targetTab: ReleaseGuideTab | null, progress: number): string {
   if (input.thinking) return 'Ich arbeite gerade und halte dich sichtbar auf dem Laufenden.';
-  if (targetTab) return `Nächster sicherer Klick: ${targetTab}. Der Weiter-Button führt dich dorthin.`;
-  if (progress >= 100) return 'Fertig. Du kannst den Schritt bestätigen oder auf neue Hinweise warten.';
+  if (targetTab === 'workflow') return 'Ich überspringe die sichtbare Diff-Schleife und führe den nächsten GitHub-/Workflow-Schritt automatisch weiter.';
+  if (targetTab) return `Nächster interner Bereich: ${targetTab}. Ich steuere das automatisch.`;
+  if (progress >= 100) return 'Fertig. Ergebnis liegt vor.';
   return 'Ich warte auf den nächsten klaren Systemschritt, damit du nicht raten musst.';
 }
 
@@ -158,7 +156,7 @@ export function deriveReleaseGuideState(input: ReleaseGuideInput): ReleaseGuideS
   return {
     progress,
     progressLabel: progressLabel(progress),
-    helperTitle: input.thinking ? 'Sovereign Helper denkt gerade' : 'Sovereign Helper begleitet dich',
+    helperTitle: input.thinking ? 'Sovereign Helper arbeitet' : 'Sovereign Helper begleitet dich',
     helperMessage: helperMessage(input, targetTab, progress),
     mood: input.thinking ? '🤖💭' : input.lamp === 'green' ? '😊✨' : input.lamp === 'yellow' ? '🙂🔎' : '🛟⚠️',
     targetTab,
@@ -166,7 +164,7 @@ export function deriveReleaseGuideState(input: ReleaseGuideInput): ReleaseGuideS
     nextLabel: targetTab ? `Weiter zu ${targetTab}` : 'Weiter noch gesperrt',
     nextEnabled,
     confirmLabel: progress >= 100 ? 'Abschluss bestätigen' : 'Schritt bestätigen',
-    waitingReason: nextEnabled ? '' : 'Noch kein sicherer nächster Klick verfügbar.',
+    waitingReason: nextEnabled ? '' : 'Noch kein sicherer nächster Schritt verfügbar.',
   };
 }
 
