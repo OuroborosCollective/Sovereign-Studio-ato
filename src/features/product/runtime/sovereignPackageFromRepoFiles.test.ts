@@ -14,14 +14,13 @@ const settings: ProjectSettings = {
   packageManager: 'pnpm',
   installStrategy: 'workspace',
   linter: 'auto',
-  specialization: 'React Vite Capacitor Android GitHub Actions Free First Router',
+  specialization: 'React Vite Android Router',
   maxFixLoops: 3,
 };
 
 const repoFiles = [
   { path: 'README.md', type: 'blob' as const },
   { path: 'package.json', type: 'blob' as const },
-  { path: '.github/workflows/ci.yml', type: 'blob' as const },
   { path: 'src/App.tsx', type: 'blob' as const },
   { path: 'src/global-runtime-monitor.tsx', type: 'blob' as const },
   { path: 'src/features/product/runtime/sovereignReleaseGuide.ts', type: 'blob' as const },
@@ -46,7 +45,7 @@ describe('sovereignPackageFromRepoFiles', () => {
     const mission = resolveAutonomousSovereignMission('README + Update History', repoFiles);
 
     expect(mission).toContain('autonome Runtime-Stabilisierung');
-    expect(mission).toContain('0/6 bis 6/6');
+    expect(mission).toContain('wirklich geplanten Arbeitsschritten');
     expect(mission).toContain('src/global-runtime-monitor.tsx');
     expect(hasConcreteSovereignMission(mission)).toBe(true);
   });
