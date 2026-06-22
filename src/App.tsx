@@ -20,6 +20,9 @@ import { ScanFindingRegistryPanel } from './features/product/components/ScanFind
 import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { SovereignTabErrorBoundary } from './features/product/components/SovereignTabErrorBoundary';
+import { SettingsModal } from './features/product/components/SettingsModal';
+import { useUserApiKeys } from './features/product/hooks/useUserApiKeys';
+import type { UserApiKeys } from './features/product/components/UserKeyManager';
 import {
   AUTOMATION_MODE_LABELS,
   buildAutomationRunKey,
@@ -226,6 +229,9 @@ const App: React.FC = () => {
 
   const githubRepoState = useGithubRepo();
   const setupState = useSetupState(githubRepoState);
+  const { userApiKeys, setUserKeys } = useUserApiKeys();
+
+  const [showSettings, setShowSettings] = useState(false);
 
   const {
     repoUrl,
@@ -871,6 +877,38 @@ const App: React.FC = () => {
   return (
     <div className={`${SOVEREIGN_APP_CLASSES.shell} min-h-screen p-4`} data-role="sovereign-app-shell" data-testid="app-shell__root">
       <h1 className={`${SOVEREIGN_APP_CLASSES.title} font-bold`} data-role="sovereign-app-title">Sovereign Canvas Tool</h1>
+
+      {/* Settings Button */}
+      <div className="flex justify-end mt-4">
+        <button
+          onClick={() => setShowSettings(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-600 transition-colors"
+          aria-label="Einstellungen"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6m0 6v6M5.6 5.6l4.2 4.2m4.4 4.4l4.2 4.2M1 12h6m6 0h6M5.6 18.4l4.2-4.2m4.4-4.4l4.2-4.2"></path>
+          </svg>
+          <span className="text-sm font-medium">⚙️ Einstellungen</span>
+        </button>
+      </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal
+          repoUrl={repoUrl}
+          setRepoUrl={setRepoUrl}
+          accessKey={githubToken}
+          setAccessKey={setGithubToken}
+          geminiKey={userApiKeys.gemini || ''}
+          setGeminiKey={(val) => setUserKeys({ ...userApiKeys, gemini: val || undefined })}
+          settings={setupState.settings}
+          setSettings={setupState.setSettings}
+          setShowSettings={setShowSettings}
+          userApiKeys={userApiKeys}
+          setUserApiKeys={setUserKeys}
+        />
+      )}
 
       <div className={`${SOVEREIGN_APP_CLASSES.tabbar} mt-4 flex flex-wrap gap-2 border-b border-slate-800 pb-2`} role="tablist" aria-label="Sovereign workspace tabs" data-role="sovereign-tabbar" data-testid="tabbar__root">
         {tabs.map((tab) => (
