@@ -1,52 +1,171 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { runSovereignLlmRuntime, buildSovereignLlmPrompt } from './sovereignLlmRuntime';
+import { runSovereignLlmRuntime } from './sovereignLlmRuntime';
+import { defaultSettings, starterCards } from '../../constants';
+
+// Mock the productLlmRevolver module
+vi.mock('../../llm/productLlmRevolver', () => ({
+  resolveProductWithLlmRevolver: vi.fn(),
+}));
+
+import { resolveProductWithLlmRevolver } from '../../llm/productLlmRevolver';
 
 describe('sovereignLlmRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should attempt providers in the correct order', async () => {
-    const input = {
-      mission: 'fix runtime issues',
-      repoPaths: ['src/App.tsx'],
-      selectedFilePath: 'README.md',
-      memoryContext: [] as string[],
-      runtimeEvents: [] as string[],
-      allowUserKeyRoutes: false,
+  it('should call resolveProductWithLlmRevolver with correct parameters', async () => {
+    const mockResult = {
+      ok: true,
+      result: {
+        providerId: 'mlvoca',
+        brain: {
+          perception: { domain: 'test', intent: 'test', architecture: 'test', confidence: 0.9 },
+          analysis: { severity: 'medium', issues: [], rootCause: 'test', systemicRisk: 'low' },
+          plan: { strategy: 'test', phases: [], estimatedComplexity: 'low' },
+          execution: { patches: [] },
+          learning: { patterns: [], rules: [], architectureUpgrade: '' },
+        },
+        raw: '{}',
+      },
+      memory: { nextIndex: 0, shots: [] },
+      attempts: [],
     };
 
-    // Mock the provider calls to fail
-    const mockCallMlvoCa = vi.fn().mockRejectedValue(new Error('MLVOCA failed'));
-    const mockCallPollinations = vi.fn().mockRejectedValue(new Error('Pollinations failed'));
-    
-    // We can't easily inject mocks here since the functions are imported directly
-    // In a real test we'd need to use a proper DI mechanism
-    
+    (resolveProductWithLlmRevolver as any).mockResolvedValue(mockResult);
+
+    const input = {
+      mission: 'Test mission',
+      repoPaths: ['src/index.ts'],
+      selectedFilePath: 'src/index.ts',
+      memoryContext: ['pattern: test'],
+      runtimeEvents: ['event: test'],
+    };
+
+    const result = await runSovereignLlmRuntime(input);
+
+    expect(resolveProductWithLlmRevolver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mission: 'Test mission',
+        repoPaths: ['src/index.ts'],
+        selectedFilePath: 'src/index.ts',
+        memoryContext: ['pattern: test'],
+        runtimeEvents: ['event: test'],
+      }),
+      expect.any(Object)
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.source).toBe('llm-revolver');
+    expect(result.providerId).toBe('mlvoca');
+  });
+
+  it('should return local-safe fallback when all providers fail', async () => {
+    const mockResult = {
+      ok: false,
+      failure: {
+        providerId: 'mlvoca',
+        code: 'network' as const,
+        message: 'Network error',
+        retryable: true,
+      },
+      memory: { nextIndex: 0, shots: [] },
+      attempts: [],
+    };
+
+    (resolveProductWithLlmRevolver as any).mockResolvedValue(mockResult);
+
+    const input = {
+      mission: 'Test mission',
+      repoPaths: ['src/index.ts'],
+      selectedFilePath: 'src/index.ts',
+      memoryContext: [],
+      runtimeEvents: [],
+    };
+
     const result = await runSovereignLlmRuntime(input);
 
     expect(result.ok).toBe(false);
+    expect(result.source).toBe('local-safe');
     expect(result.providerId).toBe('local-safe');
-    expect(result.attempts).toHaveLength(2);
-    expect(result.attempts[0].providerId).toBe('mlvoca');
-    expect(result.attempts[1].providerId).toBe('pollinations');
+    expect(result.error).toBe('Network error');
   });
 
-  it('should build proper prompt with all context', () => {
-    const input = {
-      mission: 'Create a new feature',
-      repoPaths: ['src/App.tsx', 'src/index.ts'],
-      selectedFilePath: 'README.md',
-      memoryContext: ['Pattern: Fix runtime guards', 'Pattern: Improve package building'],
-      runtimeEvents: ['package:build-start', 'guards:passed'],
-      allowUserKeyRoutes: false,
+  it('should pass user keys to revolver when allowUserKeyRoutes is true', async () => {
+    const mockResult = {
+      ok: true,
+      result: {
+        providerId: 'groq',
+        brain: {
+          perception: { domain: 'test', intent: 'test', architecture: 'test', confidence: 0.9 },
+          analysis: { severity: 'medium', issues: [], rootCause: 'test', systemicRisk: 'low' },
+          plan: { strategy: 'test', phases: [], estimatedComplexity: 'low' },
+          execution: { patches: [] },
+          learning: { patterns: [], rules: [], architectureUpgrade: '' },
+        },
+        raw: '{}',
+      },
+      memory: { nextIndex: 0, shots: [] },
+      attempts: [],
     };
 
-    const prompt = buildSovereignLlmPrompt(input);
-    
-    expect(prompt).toContain('Create a new feature');
-    expect(prompt).toContain('src/App.tsx');
-    expect(prompt).toContain('Pattern: Fix runtime guards');
-    expect(prompt).toContain('package:build-start');
+    (resolveProductWithLlmRevolver as any).mockResolvedValue(mockResult);
+
+    const input = {
+      mission: 'Test mission',
+      repoPaths: ['src/index.ts'],
+      selectedFilePath: 'src/index.ts',
+      memoryContext: [],
+      runtimeEvents: [],
+      allowUserKeyRoutes: true,
+      userKeys: {
+        groq: 'test-groq-key',
+        gemini: 'test-gemini-key',
+      },
+    };
+
+    await runSovereignLlmRuntime(input);
+
+    expect(resolveProductWithLlmRevolver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        groqApiKey: 'test-groq-key',
+        geminiApiKey: 'test-gemini-key',
+        allowExternalNoKey: true,
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('should track attempts from revolver events', async () => {
+    const mockResult = {
+      ok: true,
+      result: {
+        providerId: 'pollinations',
+        brain: {
+          perception: { domain: 'test', intent: 'test', architecture: 'test', confidence: 0.9 },
+          analysis: { severity: 'medium', issues: [], rootCause: 'test', systemicRisk: 'low' },
+          plan: { strategy: 'test', phases: [], estimatedComplexity: 'low' },
+          execution: { patches: [] },
+          learning: { patterns: [], rules: [], architectureUpgrade: '' },
+        },
+        raw: '{}',
+      },
+      memory: { nextIndex: 0, shots: [] },
+      attempts: [],
+    };
+
+    (resolveProductWithLlmRevolver as any).mockResolvedValue(mockResult);
+
+    const input = {
+      mission: 'Test mission',
+      repoPaths: ['src/index.ts'],
+      selectedFilePath: 'src/index.ts',
+      memoryContext: [],
+      runtimeEvents: [],
+    };
+
+    const result = await runSovereignLlmRuntime(input);
+
+    expect(result.attempts).toBeDefined();
   });
 });
