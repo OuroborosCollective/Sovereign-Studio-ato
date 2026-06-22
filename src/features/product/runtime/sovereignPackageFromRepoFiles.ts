@@ -93,7 +93,7 @@ export function resolveAutonomousSovereignMission(mission: string, repoFiles: Re
     'Implementiere eine autonome Runtime-Stabilisierung fuer die geladene Sovereign-Studio-App.',
     `Zielpfade: ${targets.join(', ')}`,
     'Konkrete Arbeit:',
-    '1. Ersetze Placeholder-/Prozent-Fortschritt durch einen systembasierten Schrittplan von 0/6 bis 6/6 bis zum Draft PR.',
+    '1. Ersetze Placeholder-/Prozent-Fortschritt durch einen systembasierten Schrittplan, dessen Gesamtzahl aus den wirklich geplanten Arbeitsschritten entsteht.',
     '2. Stelle sicher, dass die UI nur die echte Runtime-Wahrheit spiegelt und keine eigene Fortschrittsanalyse ausfuehrt.',
     '3. Nutze Repo-Insight-Ergebnisse, um aus Default- oder Placeholder-Auftraegen automatisch eine sichere ausfuehrbare Mission abzuleiten.',
     '4. Halte den Guard gegen Plan-only Draft PRs, leere Patches und verbotene Pfade aktiv.',
