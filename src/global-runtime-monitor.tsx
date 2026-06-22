@@ -15,7 +15,6 @@ type StepPlan = { current: number; total: number; label: string; steps: Step[] }
 
 const HOST_ID = 'sovereign-global-runtime-monitor-root';
 const MAX_LOG_ENTRIES = 24;
-const STEP_LABELS = ['Repo laden', 'Aufgabe analysieren', 'Package bauen', 'Files/Diff pruefen', 'PR vorbereiten', 'Workflow pruefen'] as const;
 const monitorContainerContract = getSovereignContainerContract('global-runtime-monitor');
 const monitorToggleContract = getSovereignActionContract('monitor-toggle');
 
@@ -61,34 +60,38 @@ function publishGuideCommand(command: ReleaseGuideCommand): void {
   window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', { detail: command }));
 }
 
-function norm(value: string): string { return value.toLowerCase().replace(/\s+/g, ' ').trim(); }
-function hasAny(source: string, tokens: string[]): boolean { return tokens.some((token) => source.includes(token)); }
-
-function currentStep(coach: RuntimeCoachState): number {
-  const source = norm(`${coach.title} ${coach.message} ${coach.action} ${coach.source}`);
-  if (hasAny(source, ['workflow green', 'completed', 'success', 'fertig'])) return 6;
-  if (hasAny(source, ['workflow-watch', 'workflow pruefen', 'workflow prüfen', 'ci', 'checks'])) return 6;
-  if (hasAny(source, ['draft-pr-publish', 'draft pr erstellt', 'pull request', 'pr erstellt'])) return 5;
-  if (hasAny(source, ['diff-load', 'source snapshots', 'generated file diff', 'files und diff', 'files pruefen', 'files prüfen'])) return 4;
-  if (hasAny(source, ['package bereit', 'package wurde erstellt', 'generated file', 'files:'])) return 4;
-  if (hasAny(source, ['package-build', 'building sovereign package', 'package bauen', 'paket wird vorbereitet'])) return 3;
-  if (hasAny(source, ['auftrag analysieren', 'ideenfabrik', 'builder', 'mission', 'repo ist analysiert'])) return 2;
-  if (hasAny(source, ['repo geladen', 'repository ist geladen', 'repository snapshot', 'repo snapshot ready', 'repository bereit'])) return 1;
-  if (hasAny(source, ['repo fehlt', 'repository laden', 'load repo', 'noch kein repository'])) return 0;
-  return coach.thinking ? 2 : coach.lamp === 'green' ? 1 : 0;
+function compactLabel(entry: RuntimeCoachState): string {
+  const title = entry.title.trim();
+  if (title.length > 0) return title.length > 34 ? `${title.slice(0, 31)}...` : title;
+  const action = entry.action.trim();
+  return action.length > 0 ? action : entry.source;
 }
 
-function stepPlan(coach: RuntimeCoachState): StepPlan {
-  const total = STEP_LABELS.length;
-  const current = Math.max(0, Math.min(total, currentStep(coach)));
-  const steps = STEP_LABELS.map((label, offset): Step => {
-    const index = offset + 1;
-    let state: StepState = 'waiting';
-    if (index < current || current >= total) state = 'done';
-    if (index === current && current < total) state = coach.lamp === 'red' ? 'halted' : 'current';
-    return { index, label, state };
-  });
-  return { current, total, label: current === 0 ? `0/${total} · Start wartet auf Repo` : `${current}/${total} · ${STEP_LABELS[current - 1] ?? 'Fertig'}`, steps };
+function stepPlan(coach: RuntimeCoachState, log: RuntimeCoachState[]): StepPlan {
+  const chronological = [...log].reverse();
+  const labels: string[] = [];
+
+  for (const entry of chronological) {
+    const label = compactLabel(entry);
+    if (!label || labels[labels.length - 1] === label) continue;
+    labels.push(label);
+  }
+
+  const currentLabel = compactLabel(coach);
+  if (currentLabel && labels[labels.length - 1] !== currentLabel) labels.push(currentLabel);
+
+  const visibleLabels = labels.slice(-8);
+  const total = Math.max(1, visibleLabels.length);
+  const current = total;
+  const steps = visibleLabels.length > 0
+    ? visibleLabels.map((label, offset): Step => ({
+      index: offset + 1,
+      label,
+      state: offset + 1 < total ? 'done' : coach.lamp === 'red' ? 'halted' : 'current',
+    }))
+    : [{ index: 1, label: currentLabel || 'Runtime wartet', state: coach.lamp === 'red' ? 'halted' : 'current' }];
+
+  return { current, total, label: `${current}/${total} · ${steps[steps.length - 1]?.label ?? 'Runtime'}`, steps };
 }
 
 function stepClassName(state: StepState): string {
@@ -105,7 +108,7 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   const [monitorVisible, setMonitorVisible] = useState(true);
   const lastAutoCommandKeyRef = useRef('');
   const guide = useMemo(() => deriveReleaseGuideState(coachState), [coachState]);
-  const plan = useMemo(() => stepPlan(coachState), [coachState]);
+  const plan = useMemo(() => stepPlan(coachState, log), [coachState, log]);
   const visibleLog = useMemo(() => log.slice(0, MAX_LOG_ENTRIES), [log]);
 
   useEffect(() => {
@@ -148,9 +151,9 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   return (
     <section className={monitorContainerContract.rootClass} data-role={monitorContainerContract.dataRole} data-testid={monitorContainerContract.testId} aria-label={monitorContainerContract.ariaLabel}>
       <div className="sovereign-monitor-head">
-        <div className="sovereign-helper-title-row"><span className="sovereign-helper-avatar" aria-hidden="true">{guide.mood}</span><div><div className="sovereign-eyebrow">Coach · Live Log · drei Aktionen</div><h2>Agenten-Monitor · Sovereign Helper</h2><p className="sovereign-helper-subtitle">{guide.helperTitle}</p></div></div>
+        <div className="sovereign-helper-title-row"><span className="sovereign-helper-avatar" aria-hidden="true">{guide.mood}</span><div><div className="sovereign-eyebrow">Coach · Live Log · Systemspur</div><h2>Agenten-Monitor · Sovereign Helper</h2><p className="sovereign-helper-subtitle">{guide.helperTitle}</p></div></div>
         <button type="button" className="sovereign-monitor-toggle" onClick={() => setMonitorVisible((prev) => !prev)} data-testid={monitorToggleContract.testId} data-role={monitorToggleContract.dataRole} aria-label={monitorToggleContract.ariaLabel} aria-pressed={monitorVisible}>{monitorVisible ? '▲' : '▼'}</button>
-        <span className="sovereign-monitor-pill" data-state="single-window">Arbeitet automatisch</span>
+        <span className="sovereign-monitor-pill" data-state="single-window">Spiegelt Runtime</span>
       </div>
       {monitorVisible && <div className="sovereign-monitor-body">
         <div className="sovereign-monitor-status"><span className={lampClassName(coachState.lamp)} /><div className="sovereign-monitor-copy"><strong>{coachState.title}</strong><span>{formatTime(coachState.updatedAt)} · {coachState.source} · {coachState.thinking ? 'arbeitet' : 'bereit'}</span><p>{coachState.message}</p><em>Next Action: {coachState.action}</em></div></div>
