@@ -34,7 +34,7 @@ export function hasConcreteSovereignMission(mission: string): boolean {
   if (normalized.length < 12) return false;
   const lower = normalized.toLowerCase();
   if (PLACEHOLDER_MISSIONS.some((placeholder) => lower.includes(placeholder.toLowerCase()))) return false;
-  return /\b(add|build|fix|implement|create|update|wire|connect|harden|test|remove|refactor|repair|behebe|baue|erstelle|verbinde|haerte|teste|repariere|aktualisiere)\b/i.test(normalized);
+  return /\b(add|build|fix|implement|create|update|wire|connect|harden|test|remove|refactor|repair|behebe|baue|erstelle|verbinde|haerte|teste|repariere|aktualisiere|pruefe|pruefen|ergaenze|ergaenzt|erweitere|erweiterung)\b/i.test(normalized);
 }
 
 export function assertConcreteSovereignMission(mission: string): void {
