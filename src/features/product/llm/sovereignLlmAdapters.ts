@@ -22,28 +22,16 @@ export interface SovereignLlmAdapterOptions {
 
 export function buildSovereignLlmAdapters(options: SovereignLlmAdapterOptions): LlmAdapter[] {
   const adapters: LlmAdapter[] = [
-    createPollinationsAdapter(options.pollinationsApiKey),
     createMlvocaAdapter(),
+    createPollinationsAdapter(options.pollinationsApiKey),
   ];
 
-  // Add user key adapters if keys are provided
-  if (options.groqApiKey) {
-    adapters.push(createGroqAdapter(options.groqApiKey));
-  }
-  if (options.huggingfaceApiKey) {
-    adapters.push(createHuggingFaceAdapter(options.huggingfaceApiKey));
-  }
-  if (options.togetherApiKey) {
-    adapters.push(createTogetherAdapter(options.togetherApiKey));
-  }
-  if (options.openrouterApiKey) {
-    adapters.push(createOpenRouterAdapter(options.openrouterApiKey));
-  }
-  if (options.geminiApiKey) {
-    adapters.push(createGeminiAdapter(options.geminiApiKey));
-  }
+  if (options.groqApiKey) adapters.push(createGroqAdapter(options.groqApiKey));
+  if (options.huggingfaceApiKey) adapters.push(createHuggingFaceAdapter(options.huggingfaceApiKey));
+  if (options.togetherApiKey) adapters.push(createTogetherAdapter(options.togetherApiKey));
+  if (options.openrouterApiKey) adapters.push(createOpenRouterAdapter(options.openrouterApiKey));
+  if (options.geminiApiKey) adapters.push(createGeminiAdapter(options.geminiApiKey));
 
-  // Add local safe adapter as fallback (priority 999)
   adapters.push(createLocalSafeAdapter({
     cards: options.cards,
     settings: options.settings,
