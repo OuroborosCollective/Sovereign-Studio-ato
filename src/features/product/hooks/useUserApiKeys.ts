@@ -5,6 +5,7 @@ import { getProviderRuntimeReport, type ProviderRuntimeReport } from '../runtime
 
 export interface UseUserApiKeysReturn {
   userKeys: UserApiKeys;
+  userApiKeys: UserApiKeys;
   validatedKeys: UserApiKeys;
   setUserKeys: (keys: UserApiKeys) => void;
   hasKey: (providerId: keyof UserApiKeys) => boolean;
@@ -23,43 +24,29 @@ export function useUserApiKeys(): UseUserApiKeysReturn {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Load keys from localStorage on mount
     const stored = getStoredUserKeys();
     setUserKeysState(stored);
     setIsLoading(false);
   }, []);
 
-  // Memoized validation
-  const validationReport = useMemo(() => {
-    return validateUserApiKeys(userKeys);
-  }, [userKeys]);
+  const validationReport = useMemo(() => validateUserApiKeys(userKeys), [userKeys]);
 
-  // Get only validated keys for safe runtime use
-  const validatedKeys = useMemo(() => {
-    return getValidatedKeys(userKeys);
-  }, [userKeys]);
+  const validatedKeys = useMemo(() => getValidatedKeys(userKeys), [userKeys]);
 
-  // Provider runtime report
-  const providerReport = useMemo(() => {
-    return getProviderRuntimeReport(userKeys);
-  }, [userKeys]);
+  const providerReport = useMemo(() => getProviderRuntimeReport(userKeys), [userKeys]);
 
   const setUserKeys = useCallback((keys: UserApiKeys) => {
-    // Only save validated keys to localStorage
     const validated = getValidatedKeys(keys);
     setUserKeysState(keys);
     localStorage.setItem('sovereign-user-api-keys', JSON.stringify(validated));
   }, []);
 
   const hasKey = useCallback(
-    (providerId: keyof UserApiKeys): boolean => {
-      return !!userKeys[providerId];
-    },
-    [userKeys]
+    (providerId: keyof UserApiKeys): boolean => !!userKeys[providerId],
+    [userKeys],
   );
 
   const hasAnyKey = Object.values(userKeys).some((key) => !!key);
-
   const hasInvalidKeys = validationReport.invalidCount > 0;
 
   const clearAllKeys = useCallback(() => {
@@ -69,6 +56,7 @@ export function useUserApiKeys(): UseUserApiKeysReturn {
 
   return {
     userKeys,
+    userApiKeys: userKeys,
     validatedKeys,
     setUserKeys,
     hasKey,
