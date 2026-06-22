@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import '../styles/UserKeyManager.css';
+import { SettingsErrorBoundary } from './SettingsErrorBoundary';
 
 export interface UserApiKeys {
   pollinations?: string;
@@ -95,9 +96,9 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
   const [keys, setKeys] = useState<UserApiKeys>(storedKeys || {});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [invalidKeys, setInvalidKeys] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    // Load keys from localStorage
     const saved = localStorage.getItem('sovereign-user-api-keys');
     if (saved) {
       try {
@@ -110,16 +111,62 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
     }
   }, []);
 
+  const validateKey = (providerId: string, value: string): boolean => {
+    if (!value || value.trim() === '') return true; // Empty is OK (will use free tier)
+    
+    const patterns: Record<string, RegExp> = {
+      pollinations: /^pollinations_/,
+      groq: /^gsk_/,
+      huggingface: /^hf_/,
+      together: /^together_/,
+      openrouter: /^sk-or-v1-/,
+      gemini: /^AIza/,
+    };
+    
+    const pattern = patterns[providerId];
+    if (pattern && !pattern.test(value)) {
+      return false;
+    }
+    return true;
+  };
+
   const handleSaveKeys = () => {
-    localStorage.setItem('sovereign-user-api-keys', JSON.stringify(keys));
-    onKeysChange?.(keys);
-    setSavedMessage('✅ API-Keys gespeichert!');
-    setTimeout(() => setSavedMessage(null), 3000);
+    // Validate all keys before saving
+    const newInvalidKeys: Record<string, string> = {};
+    
+    for (const [providerId, value] of Object.entries(keys)) {
+      if (value && !validateKey(providerId, value)) {
+        newInvalidKeys[providerId] = `Ungültiges Format für ${providerId}`;
+      }
+    }
+    
+    setInvalidKeys(newInvalidKeys);
+    
+    if (Object.keys(newInvalidKeys).length === 0) {
+      // Only save validated keys
+      const validKeys: UserApiKeys = {};
+      for (const [key, value] of Object.entries(keys)) {
+        if (value && value.trim() !== '') {
+          validKeys[key as keyof UserApiKeys] = value;
+        }
+      }
+      localStorage.setItem('sovereign-user-api-keys', JSON.stringify(validKeys));
+      onKeysChange?.(validKeys);
+      setSavedMessage('✅ API-Keys gespeichert!');
+      setTimeout(() => setSavedMessage(null), 3000);
+    }
   };
 
   const handleKeyChange = (providerId: string, value: string) => {
     const newKeys = { ...keys, [providerId]: value || undefined };
     setKeys(newKeys);
+    
+    // Clear invalid state when user types
+    if (invalidKeys[providerId]) {
+      const newInvalid = { ...invalidKeys };
+      delete newInvalid[providerId];
+      setInvalidKeys(newInvalid);
+    }
   };
 
   const toggleShowKey = (providerId: string) => {
@@ -134,10 +181,24 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
     const newKeys = { ...keys };
     delete newKeys[providerId as keyof UserApiKeys];
     setKeys(newKeys);
+    if (invalidKeys[providerId]) {
+      const newInvalid = { ...invalidKeys };
+      delete newInvalid[providerId];
+      setInvalidKeys(newInvalid);
+    }
   };
 
   const getStatusBadge = (providerId: string, hasFreeTier: boolean) => {
     const hasKey = !!keys[providerId as keyof UserApiKeys];
+    const isInvalid = !!invalidKeys[providerId];
+    
+    if (isInvalid) {
+      return (
+        <span className="status-badge status-required">
+          ⚠️ Ungültiges Format
+        </span>
+      );
+    }
     
     if (hasKey) {
       return (
@@ -147,7 +208,7 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
       );
     }
     
-    if (hasFreeTier) {
+    if (hasFreeTier || providerId === 'mlvoca') {
       return (
         <span className="status-badge status-free">
           🌐 Free-Tier
@@ -163,97 +224,103 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
   };
 
   return (
-    <div className="user-key-manager">
-      <div className="key-manager-header">
-        <h3>🔐 API-Keys verwalten</h3>
-        <p className="key-manager-description">
-          Falls die kostenlosen Routen an ihr Limit kommen, kannst du hier deine eigenen API-Keys hinterlegen.
-          Deine Keys werden nur lokal gespeichert und nie an externe Server übertragen.
-        </p>
-      </div>
+    <SettingsErrorBoundary>
+      <div className="user-key-manager">
+        <div className="key-manager-header">
+          <h3>🔐 API-Keys verwalten</h3>
+          <p className="key-manager-description">
+            Falls die kostenlosen Routen an ihr Limit kommen, kannst du hier deine eigenen API-Keys hinterlegen.
+            Deine Keys werden nur lokal gespeichert und nie an externe Server übertragen.
+          </p>
+        </div>
 
-      <div className="provider-list">
-        {LLM_PROVIDERS.map((provider) => (
-          <div key={provider.id} className="provider-card">
-            <div className="provider-header">
-              <div className="provider-info">
-                <span className="provider-icon">{provider.icon}</span>
-                <div>
-                  <h4>{provider.name}</h4>
-                  <p>{provider.description}</p>
+        <div className="provider-list">
+          {LLM_PROVIDERS.map((provider) => (
+            <div key={provider.id} className={`provider-card ${invalidKeys[provider.id] ? 'provider-invalid' : ''}`}>
+              <div className="provider-header">
+                <div className="provider-info">
+                  <span className="provider-icon">{provider.icon}</span>
+                  <div>
+                    <h4>{provider.name}</h4>
+                    <p>{provider.description}</p>
+                  </div>
                 </div>
-              </div>
-              {getStatusBadge(provider.id, provider.freeTier !== 'Nicht erforderlich')}
-            </div>
-
-            <div className="provider-details">
-              <div className="free-tier-info">
-                <span className="free-tier-label">Free-Tier:</span>
-                <span className="free-tier-value">{provider.freeTier}</span>
+                {getStatusBadge(provider.id, provider.freeTier !== 'Nicht erforderlich')}
               </div>
 
-              <div className="key-input-section">
-                <div className="key-input-row">
-                  <input
-                    type={showKeys[provider.id] ? 'text' : 'password'}
-                    placeholder={provider.keyPlaceholder}
-                    value={keys[provider.id as keyof UserApiKeys] || ''}
-                    onChange={(e) => handleKeyChange(provider.id, e.target.value)}
-                    className="key-input"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleShowKey(provider.id)}
-                    className="btn-icon"
-                    title={showKeys[provider.id] ? 'Verbergen' : 'Anzeigen'}
-                  >
-                    {showKeys[provider.id] ? '🙈' : '👁️'}
-                  </button>
-                  {(keys[provider.id as keyof UserApiKeys]) && (
+              <div className="provider-details">
+                <div className="free-tier-info">
+                  <span className="free-tier-label">Free-Tier:</span>
+                  <span className="free-tier-value">{provider.freeTier}</span>
+                </div>
+
+                <div className="key-input-section">
+                  <div className="key-input-row">
+                    <input
+                      type={showKeys[provider.id] ? 'text' : 'password'}
+                      placeholder={provider.keyPlaceholder}
+                      value={keys[provider.id as keyof UserApiKeys] || ''}
+                      onChange={(e) => handleKeyChange(provider.id, e.target.value)}
+                      className={`key-input ${invalidKeys[provider.id] ? 'key-input-invalid' : ''}`}
+                    />
                     <button
                       type="button"
-                      onClick={() => clearKey(provider.id)}
-                      className="btn-icon btn-clear"
-                      title="Key löschen"
+                      onClick={() => toggleShowKey(provider.id)}
+                      className="btn-icon"
+                      title={showKeys[provider.id] ? 'Verbergen' : 'Anzeigen'}
                     >
-                      🗑️
+                      {showKeys[provider.id] ? '🙈' : '👁️'}
                     </button>
-                  )}
-                </div>
+                    {(keys[provider.id as keyof UserApiKeys]) && (
+                      <button
+                        type="button"
+                        onClick={() => clearKey(provider.id)}
+                        className="btn-icon btn-clear"
+                        title="Key löschen"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={() => openDocs(provider.docsUrl)}
-                  className="btn-docs"
-                >
-                  🔗 API-Key erstellen → {provider.name}
-                </button>
+                  {invalidKeys[provider.id] && (
+                    <p className="key-error">{invalidKeys[provider.id]}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => openDocs(provider.docsUrl)}
+                    className="btn-docs"
+                  >
+                    🔗 API-Key erstellen → {provider.name}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <div className="key-manager-footer">
-        {savedMessage && (
-          <span className="save-message">{savedMessage}</span>
-        )}
-        <button
-          type="button"
-          onClick={handleSaveKeys}
-          className="btn-save"
-        >
-          💾 Keys speichern
-        </button>
-      </div>
+        <div className="key-manager-footer">
+          {savedMessage && (
+            <span className="save-message">{savedMessage}</span>
+          )}
+          <button
+            type="button"
+            onClick={handleSaveKeys}
+            className="btn-save"
+          >
+            💾 Keys spepeichern
+          </button>
+        </div>
 
-      <div className="key-manager-warning">
-        <p>
-          ⚠️ <strong>Sicherheitshinweis:</strong> API-Keys werden nur in deinem Browser (localStorage) gespeichert.
-          Teile deine Keys niemals mit anderen.
-        </p>
+        <div className="key-manager-warning">
+          <p>
+            ⚠️ <strong>Sicherheitshinweis:</strong> API-Keys werden nur in deinem Browser (localStorage) gespeichert.
+            Teile deine Keys niemals mit anderen.
+          </p>
+        </div>
       </div>
-    </div>
+    </SettingsErrorBoundary>
   );
 }
 
