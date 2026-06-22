@@ -1,6 +1,6 @@
-import { callOpenRouter } from '../../../../ai/providerManager';
-import { assertSovereignBrainResult, parseSovereignBrainJson } from '../../../brain/sovereignBrainContract';
-import { assertPushableBrain } from '../../llmRuntimeChecks';
+import { callOpenRouter } from '../../../ai/providerManager';
+import { assertSovereignBrainResult, parseSovereignBrainJson } from '../../brain/sovereignBrainContract';
+import { assertPushableBrain } from '../llmRuntimeChecks';
 import type { LlmAdapter, LlmAdapterContext, LlmAdapterResult } from '../llmAdapter';
 import { buildSovereignLlmPrompt } from '../llmAdapter';
 
@@ -12,22 +12,20 @@ export function createOpenRouterAdapter(apiKey: string): LlmAdapter {
     priority: 5,
     enabled: !!apiKey,
     async run(context: LlmAdapterContext): Promise<LlmAdapterResult> {
-      // Build prompt with memory context and runtime information
       const prompt = buildSovereignLlmPrompt(context);
-      
+
       try {
         const response = await callOpenRouter(
           apiKey,
           'meta-llama/llama-3.1-8b-instruct:free',
           prompt,
-          { temperature: 0.2, maxOutputTokens: 4096 }
+          { temperature: 0.2, maxOutputTokens: 4096 },
         );
-        
-        // Parse and validate the response
+
         const parsed = parseSovereignBrainJson(response.text);
         assertSovereignBrainResult(parsed);
         assertPushableBrain('openrouter', context.mission, parsed);
-        
+
         return {
           providerId: 'openrouter',
           brain: parsed,
