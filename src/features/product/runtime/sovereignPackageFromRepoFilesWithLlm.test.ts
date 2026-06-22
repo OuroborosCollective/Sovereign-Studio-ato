@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RepoFile } from '../../github/types';
+import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 import { defaultSettings, starterCards } from '../constants';
 import { buildSovereignPackageFromRepoFilesWithLlm } from './sovereignPackageFromRepoFiles';
 import { runSovereignLlmRuntime } from './sovereignLlmRuntime';
@@ -12,7 +13,7 @@ function createRepoFile(path: string): RepoFile {
   return { path, type: 'blob' };
 }
 
-function validBrain() {
+function validBrain(): SovereignBrainResult {
   return {
     perception: {
       domain: 'repository automation',
