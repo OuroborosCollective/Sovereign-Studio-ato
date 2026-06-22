@@ -33,6 +33,20 @@ describe('sovereign release guide runtime', () => {
     expect(state.nextLabel).toBe('Weiter zu diff');
   });
 
+  it('lets an explicit workflow action win over stale diff/package text', () => {
+    const state = deriveReleaseGuideState(input({
+      title: 'Package bereit',
+      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
+      action: 'Workflow prüfen',
+      source: 'workflow',
+    }));
+
+    expect(state.targetTab).toBe('workflow');
+    expect(state.nextEnabled).toBe(true);
+    expect(state.nextLabel).toBe('Weiter zu workflow');
+    expect(state.progress).toBe(85);
+  });
+
   it('keeps progress on 5 percent steps', () => {
     const progress = deriveReleaseGuideProgress(input({
       title: 'Package bereit',

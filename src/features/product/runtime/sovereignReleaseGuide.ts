@@ -42,10 +42,10 @@ export interface ReleaseGuideState {
 }
 
 const TAB_PATTERNS: Array<{ tab: ReleaseGuideTab; tokens: string[] }> = [
+  { tab: 'workflow', tokens: ['workflow', 'ci', 'checks'] },
+  { tab: 'repair', tokens: ['repair', 'reparieren', 'fehlerlog'] },
   { tab: 'diff', tokens: ['diff'] },
   { tab: 'files', tokens: ['files', 'dateien'] },
-  { tab: 'workflow', tokens: ['workflow', 'ci'] },
-  { tab: 'repair', tokens: ['repair', 'reparieren', 'fehlerlog'] },
   { tab: 'builder', tokens: ['builder', 'auftrag', 'ideenfabrik', 'mission'] },
   { tab: 'repo', tokens: ['repo', 'repository'] },
   { tab: 'remote', tokens: ['remote memory'] },
@@ -79,8 +79,16 @@ const PREVIOUS_TAB: Partial<Record<ReleaseGuideTab, ReleaseGuideTab>> = {
   coverage: 'runtime',
 };
 
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function textOf(input: ReleaseGuideInput): string {
-  return `${input.title} ${input.message} ${input.action} ${input.source}`.toLowerCase().replace(/\s+/g, ' ').trim();
+  return normalize(`${input.title} ${input.message} ${input.action} ${input.source}`);
+}
+
+function actionTextOf(input: ReleaseGuideInput): string {
+  return normalize(input.action);
 }
 
 function hasAny(source: string, tokens: string[]): boolean {
@@ -92,18 +100,24 @@ function step5(value: number): number {
   return Math.round(safe / 5) * 5;
 }
 
-export function inferReleaseGuideTab(input: ReleaseGuideInput): ReleaseGuideTab | null {
-  const source = textOf(input);
+function inferTabFromText(source: string): ReleaseGuideTab | null {
   for (const entry of TAB_PATTERNS) {
     if (hasAny(source, entry.tokens)) return entry.tab;
   }
   return null;
 }
 
+export function inferReleaseGuideTab(input: ReleaseGuideInput): ReleaseGuideTab | null {
+  return inferTabFromText(actionTextOf(input)) ?? inferTabFromText(textOf(input));
+}
+
 export function deriveReleaseGuideProgress(input: ReleaseGuideInput): number {
   const source = textOf(input);
+  const action = actionTextOf(input);
 
   if (input.lamp === 'red') return step5(10);
+  if (hasAny(action, ['workflow', 'ci', 'checks'])) return step5(85);
+  if (hasAny(action, ['repair', 'reparieren', 'fehlerlog'])) return step5(90);
   if (hasAny(source, ['repo fehlt', 'repository laden', 'load repo'])) return step5(10);
   if (hasAny(source, ['repo geladen', 'repository snapshot', 'repo snapshot ready'])) return step5(25);
   if (hasAny(source, ['auftrag analysieren', 'ideenfabrik', 'builder'])) return step5(35);
