@@ -1,7 +1,7 @@
 import type { UserApiKeys } from '../components/UserKeyManager';
-import { validateUserApiKeys, getValidatedKeys, shouldUseProvider } from './apiKeyValidation';
+import { validateUserApiKeys, getValidatedKeys } from './apiKeyValidation';
 
-export type LlmProviderStatus = 
+export type LlmProviderStatus =
   | 'free_available'
   | 'user_key_available'
   | 'user_key_invalid'
@@ -24,10 +24,20 @@ export interface ProviderRuntimeReport {
   fallbackChain: string[];
 }
 
-// Provider priority order (lower = higher priority)
+const PROVIDER_IDS = [
+  'mlvoca',
+  'pollinations',
+  'groq',
+  'huggingface',
+  'together',
+  'openrouter',
+  'gemini',
+  'local-safe',
+] as const;
+
 const PROVIDER_PRIORITIES: Record<string, number> = {
-  pollinations: 1,
-  mlvoca: 2,
+  mlvoca: 1,
+  pollinations: 2,
   groq: 3,
   huggingface: 4,
   together: 5,
@@ -36,16 +46,25 @@ const PROVIDER_PRIORITIES: Record<string, number> = {
   'local-safe': 999,
 };
 
-/**
- * Get provider status with runtime checks
- */
+function byPriority(a: string, b: string): number {
+  return (PROVIDER_PRIORITIES[a] ?? 100) - (PROVIDER_PRIORITIES[b] ?? 100);
+}
+
 export function getProviderStatus(providerId: string, keys: UserApiKeys): ProviderStatus {
   const key = keys[providerId as keyof UserApiKeys];
   const priority = PROVIDER_PRIORITIES[providerId] ?? 100;
 
-  // Check if key is provided
+  if (providerId === 'local-safe') {
+    return {
+      providerId,
+      status: 'free_available',
+      label: 'local-safe (Fallback)',
+      priority,
+      isAvailable: true,
+    };
+  }
+
   if (!key || key.trim() === '') {
-    // Check if this is a free provider
     if (providerId === 'mlvoca' || providerId === 'pollinations') {
       return {
         providerId,
@@ -55,6 +74,7 @@ export function getProviderStatus(providerId: string, keys: UserApiKeys): Provid
         isAvailable: true,
       };
     }
+
     return {
       providerId,
       status: 'not_configured',
@@ -64,9 +84,8 @@ export function getProviderStatus(providerId: string, keys: UserApiKeys): Provid
     };
   }
 
-  // Key provided, validate it
   const validation = validateUserApiKeys({ ...keys, [providerId]: key });
-  const providerValidation = validation.validations.find(v => v.providerId === providerId);
+  const providerValidation = validation.validations.find((item) => item.providerId === providerId);
 
   if (providerValidation?.isValid) {
     return {
@@ -87,75 +106,46 @@ export function getProviderStatus(providerId: string, keys: UserApiKeys): Provid
   };
 }
 
-/**
- * Get runtime report for all providers
- */
 export function getProviderRuntimeReport(keys: UserApiKeys): ProviderRuntimeReport {
-  const providerIds = [
-    'pollinations',
-    'mlvoca',
-    'groq',
-    'huggingface',
-    'together',
-    'openrouter',
-    'gemini',
-    'local-safe',
-  ];
+  const providers = PROVIDER_IDS.map((providerId) => getProviderStatus(providerId, keys));
+  const freeProviders = providers
+    .filter((provider) => provider.status === 'free_available' && provider.providerId !== 'local-safe')
+    .map((provider) => provider.providerId)
+    .sort(byPriority);
+  const validUserKeyProviders = providers
+    .filter((provider) => provider.status === 'user_key_available')
+    .map((provider) => provider.providerId)
+    .sort(byPriority);
+  const invalidUserKeyProviders = providers
+    .filter((provider) => provider.status === 'user_key_invalid')
+    .map((provider) => provider.providerId)
+    .sort(byPriority);
 
-  const providers: ProviderStatus[] = [];
-  const freeProviders: string[] = [];
-  const validUserKeyProviders: string[] = [];
-  const invalidUserKeyProviders: string[] = [];
-
-  for (const providerId of providerIds) {
-    const status = getProviderStatus(providerId, keys);
-    providers.push(status);
-
-    if (status.status === 'free_available') {
-      freeProviders.push(providerId);
-    } else if (status.status === 'user_key_available') {
-      validUserKeyProviders.push(providerId);
-    } else if (status.status === 'user_key_invalid') {
-      invalidUserKeyProviders.push(providerId);
-    }
-  }
-
-  // Build fallback chain
   const fallbackChain = [
-    ...validUserKeyProviders,
     ...freeProviders,
+    ...validUserKeyProviders,
     'local-safe',
   ];
-
-  // Suggest best available provider
-  const suggestedProvider = fallbackChain[0] || 'local-safe';
 
   return {
     providers,
     freeProviders,
     validUserKeyProviders,
     invalidUserKeyProviders,
-    suggestedProvider,
+    suggestedProvider: fallbackChain[0] || 'local-safe',
     fallbackChain,
   };
 }
 
-/**
- * Runtime check: Get validated keys for safe runtime use
- */
 export function getSafeRuntimeKeys(keys: UserApiKeys): {
   keys: UserApiKeys;
   report: ProviderRuntimeReport;
   isSecure: boolean;
 } {
   const report = getProviderRuntimeReport(keys);
-  
-  // Only include keys that are validated
   const safeKeys = getValidatedKeys(keys);
-  
-  // Check if any invalid keys were provided
   const hasInvalidKeys = report.invalidUserKeyProviders.length > 0;
-  
+
   return {
     keys: safeKeys,
     report,
@@ -163,16 +153,13 @@ export function getSafeRuntimeKeys(keys: UserApiKeys): {
   };
 }
 
-/**
- * Runtime check: Verify provider availability before attempting
- */
 export function checkProviderAvailable(providerId: string, keys: UserApiKeys): {
   available: boolean;
   reason: string;
   fallback: string[];
 } {
   const report = getProviderRuntimeReport(keys);
-  const status = report.providers.find(p => p.providerId === providerId);
+  const status = report.providers.find((provider) => provider.providerId === providerId);
 
   if (!status) {
     return {
@@ -186,13 +173,13 @@ export function checkProviderAvailable(providerId: string, keys: UserApiKeys): {
     return {
       available: false,
       reason: `${providerId}: ${status.status.replace(/_/g, ' ')}`,
-      fallback: report.fallbackChain.filter(p => p !== providerId),
+      fallback: report.fallbackChain.filter((provider) => provider !== providerId),
     };
   }
 
   return {
     available: true,
     reason: `${providerId}: Ready`,
-    fallback: report.fallbackChain.filter(p => p !== providerId),
+    fallback: report.fallbackChain.filter((provider) => provider !== providerId),
   };
 }
