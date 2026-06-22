@@ -120,7 +120,7 @@ function deriveWorkflowCoachState(workflowStatus: string, now: number): CoachRun
       lamp: 'green',
       title: 'Workflow grün',
       message: 'Package erstellt und Workflow erfolgreich.',
-      action: 'Draft/Release prüfen',
+      action: 'Fertig prüfen',
       thinking: false,
       source: 'workflow',
       tick: now,
@@ -151,7 +151,7 @@ export function deriveCoachStateFromRuntime(
       const stepLabels: Record<string, string> = {
         'repo-load': 'Repository wird geladen',
         'package-build': 'Package wird erstellt',
-        'diff-load': 'Diff-Quellen werden geladen',
+        'diff-load': 'Interne Quellen werden geprüft',
         'draft-pr-publish': 'Draft PR wird erstellt',
         'workflow-watch': 'Workflow wird beobachtet',
         'repair-plan': 'Repair-Plan wird erstellt',
@@ -233,10 +233,10 @@ export function deriveCoachStateFromRuntime(
     return {
       lamp: 'green',
       title: 'Package bereit',
-      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
-      action: 'Weiter mit Diff',
+      message: 'Sovereign-Paket wurde erstellt. Die Diff-Ansicht ist nur noch intern; ich führe den nächsten GitHub-/Workflow-Schritt weiter.',
+      action: 'Workflow prüfen',
       thinking: false,
-      source: hasActivePatterns ? 'pattern-memory' : 'runtime-library',
+      source: hasActivePatterns ? 'pattern-memory' : 'workflow',
       tick: now,
       updatedAt: now,
     };
