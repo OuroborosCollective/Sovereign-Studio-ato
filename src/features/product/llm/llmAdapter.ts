@@ -7,6 +7,7 @@ export type LlmProviderId =
   | 'huggingface'
   | 'together'
   | 'openrouter'
+  | 'gemini'
   | 'optional-user-keys'
   | 'ovh-anonymous-code-chat'
   | 'ovh-anonymous-fixed-model'
