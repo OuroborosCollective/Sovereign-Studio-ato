@@ -57,7 +57,7 @@ const EXACT_PLACEHOLDER_MISSIONS = new Set([
   'weiter',
 ]);
 
-const PLACEHOLDER_SUBSTRINGS = [
+const HARD_PLACEHOLDER_SUBSTRINGS = [
   'placeholder',
   'awaiting intent',
   'concrete user mission is required',
@@ -112,11 +112,19 @@ function normalizeMissionText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-function isPlaceholderSovereignMission(mission: string): boolean {
+function isSoftPlaceholderSovereignMission(mission: string): boolean {
+  return EXACT_PLACEHOLDER_MISSIONS.has(normalizeMissionText(mission));
+}
+
+function isHardPlaceholderSovereignMission(mission: string): boolean {
   const normalized = normalizeMissionText(mission);
+  if (isSoftPlaceholderSovereignMission(normalized)) return false;
   if (normalized.length < 12) return true;
-  if (EXACT_PLACEHOLDER_MISSIONS.has(normalized)) return true;
-  return PLACEHOLDER_SUBSTRINGS.some((placeholder) => normalized.includes(placeholder));
+  return HARD_PLACEHOLDER_SUBSTRINGS.some((placeholder) => normalized.includes(placeholder));
+}
+
+function isPlaceholderSovereignMission(mission: string): boolean {
+  return isSoftPlaceholderSovereignMission(mission) || isHardPlaceholderSovereignMission(mission);
 }
 
 function existingTargets(repoFiles: RepoFile[]): string[] {
@@ -160,9 +168,16 @@ export function hasConcreteSovereignMission(mission: string): boolean {
   return hasConcreteMissionVerb(normalized);
 }
 
+function assertNoHardPlaceholderMission(mission: string): void {
+  if (isHardPlaceholderSovereignMission(mission)) {
+    throw new Error('Concrete user mission is required before package build. Hard placeholder text must not start package build.');
+  }
+}
+
 export function resolveAutonomousSovereignMission(mission: string, repoFiles: RepoFile[]): string {
   const trimmed = mission.trim();
   if (hasConcreteSovereignMission(trimmed)) return trimmed;
+  assertNoHardPlaceholderMission(trimmed);
 
   const targets = existingTargets(repoFiles);
   return [
@@ -174,6 +189,7 @@ export function resolveAutonomousSovereignMission(mission: string, repoFiles: Re
     '3. Nutze Repo-Insight-Ergebnisse, um aus Default-Auftraegen automatisch eine sichere ausfuehrbare Mission abzuleiten.',
     '4. Halte den Guard gegen Plan-only Draft PRs, leere Patches und verbotene Pfade aktiv.',
     '5. Ergaenze oder aktualisiere passende Vitest-Abdeckung fuer autonome Mission und Schrittplan-Anzeige.',
+    '6. Pruefe und verbessere Runtime-Komponenten, Tests und Guards passend zum geladenen Repository.',
   ].join('\n');
 }
 
@@ -187,6 +203,7 @@ export function buildSovereignPackageFromRepoFiles(
   input: BuildSovereignPackageFromRepoFilesInput,
 ): SovereignImplementationPackage {
   assertLoadedRepoSnapshot(input.repoFiles);
+  assertNoHardPlaceholderMission(input.mission);
 
   const effectiveMission = resolveAutonomousSovereignMission(input.mission, input.repoFiles);
   assertConcreteSovereignMission(effectiveMission);
@@ -218,6 +235,7 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
   input: BuildSovereignPackageFromRepoFilesInput,
 ): Promise<SovereignImplementationPackage> {
   assertLoadedRepoSnapshot(input.repoFiles);
+  assertNoHardPlaceholderMission(input.mission);
 
   const effectiveMission = resolveAutonomousSovereignMission(input.mission, input.repoFiles);
   assertConcreteSovereignMission(effectiveMission);
