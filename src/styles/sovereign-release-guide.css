@@ -85,10 +85,18 @@
 }
 
 .sovereign-guide-actions {
+  block-size: 1px;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   display: grid;
-  gap: 0.48rem;
-  grid-template-columns: 0.82fr 1fr 1.18fr;
-  margin-top: 0.75rem;
+  gap: 0;
+  grid-template-columns: 1fr;
+  inline-size: 1px;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
 }
 
 .sovereign-guide-button {
@@ -127,23 +135,9 @@
   white-space: nowrap;
 }
 
-.sovereign-monitor-toggle {
-  block-size: 1px;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  inline-size: 1px;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-  position: absolute;
-}
-
-.sovereign-next-step-highlight {
-  border-color: rgba(34, 211, 238, 0.9);
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.42), 0 0 24px rgba(34, 211, 238, 0.3);
-}
-
-.sovereign-tabbar {
+.sovereign-monitor-toggle,
+.sovereign-tabbar,
+[data-role="sovereign-automation-panel"] {
   block-size: 1px !important;
   border: 0 !important;
   clip: rect(0 0 0 0) !important;
@@ -158,12 +152,11 @@
   white-space: nowrap !important;
 }
 
-.sovereign-app-title {
-  margin-block-start: 0.75rem;
+.sovereign-next-step-highlight {
+  border-color: rgba(34, 211, 238, 0.9);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.42), 0 0 24px rgba(34, 211, 238, 0.3);
 }
 
-@media (max-width: 420px) {
-  .sovereign-guide-actions {
-    grid-template-columns: 1fr;
-  }
+.sovereign-app-title {
+  margin-block-start: 0.75rem;
 }
