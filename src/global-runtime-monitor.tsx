@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
+import { getSovereignActionContract } from './features/product/runtime/sovereignActionContracts';
 import {
   deriveReleaseGuideState,
   type ReleaseGuideTab,
@@ -34,6 +35,7 @@ type GlobalRuntimeWindow = Window & typeof globalThis & {
 const HOST_ID = 'sovereign-global-runtime-monitor-root';
 const MAX_LOG_ENTRIES = 24;
 const monitorContainerContract = getSovereignContainerContract('global-runtime-monitor');
+const monitorToggleContract = getSovereignActionContract('monitor-toggle');
 
 function defaultCoachState(): RuntimeCoachState {
   return {
@@ -107,8 +109,13 @@ function GlobalRuntimeMonitor(): React.ReactElement {
     return seedLog(window as GlobalRuntimeWindow);
   });
   const [confirmedAt, setConfirmedAt] = useState<number | null>(null);
+  const [monitorVisible, setMonitorVisible] = useState(true);
 
   const guide = useMemo(() => deriveReleaseGuideState(coachState), [coachState]);
+
+  const toggleMonitor = (): void => {
+    setMonitorVisible((prev) => !prev);
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -170,59 +177,74 @@ function GlobalRuntimeMonitor(): React.ReactElement {
             <p className="sovereign-helper-subtitle">{guide.helperTitle}</p>
           </div>
         </div>
+        <button
+          type="button"
+          className="sovereign-monitor-toggle"
+          onClick={toggleMonitor}
+          data-testid={monitorToggleContract.testId}
+          data-role={monitorToggleContract.dataRole}
+          aria-label={monitorToggleContract.ariaLabel}
+          aria-pressed={monitorVisible}
+        >
+          {monitorVisible ? '▲' : '▼'}
+        </button>
         <span className="sovereign-monitor-pill" data-state="single-window">
           Log führt den Ablauf
         </span>
       </div>
 
-      <div className="sovereign-monitor-status">
-        <span className={lampClassName(coachState.lamp)} />
-        <div className="sovereign-monitor-copy">
-          <strong>{coachState.title}</strong>
-          <span>{formatTime(coachState.updatedAt)} · {coachState.source} · {coachState.thinking ? 'arbeitet' : 'bereit'}</span>
-          <p>{coachState.message}</p>
-          <em>Next Action: {coachState.action}</em>
-        </div>
-      </div>
+      {monitorVisible && (
+        <div className="sovereign-monitor-body">
+          <div className="sovereign-monitor-status">
+            <span className={lampClassName(coachState.lamp)} />
+            <div className="sovereign-monitor-copy">
+              <strong>{coachState.title}</strong>
+              <span>{formatTime(coachState.updatedAt)} · {coachState.source} · {coachState.thinking ? 'arbeitet' : 'bereit'}</span>
+              <p>{coachState.message}</p>
+              <em>Next Action: {coachState.action}</em>
+            </div>
+          </div>
 
-      <div className="sovereign-helper-panel" data-testid="release-guide__panel">
-        <div className="sovereign-helper-copy">
-          <strong>{guide.helperMessage}</strong>
-          <span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Bereit für den nächsten Klick.'}</span>
-        </div>
-        <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsfortschritt ${guide.progress}%`}>
-          <div className="sovereign-monitor-progress-head">
-            <span>Arbeitsfortschritt</span>
-            <strong>{guide.progressLabel}</strong>
+          <div className="sovereign-helper-panel" data-testid="release-guide__panel">
+            <div className="sovereign-helper-copy">
+              <strong>{guide.helperMessage}</strong>
+              <span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Bereit für den nächsten Klick.'}</span>
+            </div>
+            <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsfortschritt ${guide.progress}%`}>
+              <div className="sovereign-monitor-progress-head">
+                <span>Arbeitsfortschritt</span>
+                <strong>{guide.progressLabel}</strong>
+              </div>
+              <div className="sovereign-monitor-progress-track">
+                <div className="sovereign-monitor-progress-fill" style={{ width: `${guide.progress}%` }} />
+              </div>
+            </div>
+            <div className="sovereign-guide-actions" data-testid="release-guide__actions">
+              <button
+                className="sovereign-guide-button"
+                type="button"
+                onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })}
+                data-testid="release-guide__back"
+              >
+                Zurück
+              </button>
+              <button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">
+                {guide.confirmLabel}
+              </button>
+              <button
+                className="sovereign-guide-button sovereign-guide-button-primary"
+                type="button"
+                onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })}
+                disabled={!guide.nextEnabled}
+                aria-disabled={!guide.nextEnabled}
+                data-testid="release-guide__next"
+              >
+                {guide.nextLabel}
+              </button>
+            </div>
           </div>
-          <div className="sovereign-monitor-progress-track">
-            <div className="sovereign-monitor-progress-fill" style={{ width: `${guide.progress}%` }} />
-          </div>
         </div>
-        <div className="sovereign-guide-actions" data-testid="release-guide__actions">
-          <button
-            className="sovereign-guide-button"
-            type="button"
-            onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })}
-            data-testid="release-guide__back"
-          >
-            Zurück
-          </button>
-          <button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">
-            {guide.confirmLabel}
-          </button>
-          <button
-            className="sovereign-guide-button sovereign-guide-button-primary"
-            type="button"
-            onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })}
-            disabled={!guide.nextEnabled}
-            aria-disabled={!guide.nextEnabled}
-            data-testid="release-guide__next"
-          >
-            {guide.nextLabel}
-          </button>
-        </div>
-      </div>
+      )}
 
       <div className="sovereign-monitor-log" data-testid="global-runtime-monitor-log">
         {visibleLog.map((entry, index) => (
