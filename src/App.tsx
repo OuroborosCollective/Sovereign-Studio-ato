@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { buildGitHubHeaders, stripTokenFromText } from './features/github/githubAuthSession';
 import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
+import { learnSolutionPattern } from './features/product/runtime/solutionPatternMemory';
 import { useGithubRepo } from './features/github/hooks/useGithubRepo';
 import { GeneratedFileDiffPreviewPanel } from './features/product/components/GeneratedFileDiffPreviewPanel';
 import { GeneratedFileReviewPanel } from './features/product/components/GeneratedFileReviewPanel';
@@ -477,6 +478,26 @@ const App: React.FC = () => {
       pushTelemetry('guards', 'success', 'guards:passed', 'Functional guards and generated-file review accepted package.', {
         generatedFiles: pkg.files.length,
       });
+
+      // Learn from successful package for future use
+      if (pkg.brain.execution.patches.length > 0) {
+        try {
+          const learningResult = learnSolutionPattern(solutionPatternStore, {
+            mission: cleanMission,
+            brain: pkg.brain,
+            files: pkg.files,
+            architecture: pkg.architecture,
+            providerId: pkg.brain.learning?.patterns?.[0] || 'unknown',
+          });
+
+          if (learningResult.ok) {
+            setSolutionPatternStore(learningResult.store);
+            pushTelemetry('memory', 'success', 'pattern:learned', `Learned ${learningResult.pattern.category} pattern: ${learningResult.pattern.solutionSummary}`);
+          }
+        } catch (learningError) {
+          pushTelemetry('memory', 'warning', 'pattern:learning-failed', `Pattern learning failed: ${learningError instanceof Error ? learningError.message : 'Unknown error'}`);
+        }
+      }
 
       return pkg;
     } catch (error) {
