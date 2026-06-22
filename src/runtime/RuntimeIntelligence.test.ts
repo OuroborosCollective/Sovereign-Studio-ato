@@ -750,7 +750,7 @@ describe('RuntimeIntelligence', () => {
       const serialized = JSON.stringify(runtime.flushTelemetry());
 
       expect(serialized).not.toContain('abcdefghijklmnopqrstuvwxyz1234567890');
-      expect(serialized).toContain('authorization: [REDACTED]');
+      expect(serialized).toContain('authorization: ****');
     });
   });
 
@@ -805,7 +805,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(events);
 
     expect(serialized).not.toContain('ghp_123456789012345678901234567890123456');
-    expect(serialized).toContain('[GITHUB_TOKEN]');
+    expect(serialized).toContain('ghp_****');
   });
 
   it('redacts API keys from telemetry via withGuard error', async () => {
@@ -830,7 +830,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(events);
 
     expect(serialized).not.toContain('test_api_key_1234567890abcdefghijklmnop');
-    expect(serialized).toContain('[API_KEY]');
+    expect(serialized).toContain('api_key: ****');
   });
 
   it('redacts passwords from telemetry via withGuard error', async () => {
@@ -855,7 +855,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(events);
 
     expect(serialized).not.toContain('SuperSecretPass999');
-    expect(serialized).toContain('[SECRET]');
+    expect(serialized).toContain('password: ****');
   });
 
   it('redacts GitHub fine-grained PATs', async () => {
@@ -880,7 +880,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(events);
 
     expect(serialized).not.toContain('github_pat_11AABBCCDD');
-    expect(serialized).toContain('[GITHUB_TOKEN]');
+    expect(serialized).toContain('github_pat_****');
   });
 
   it('redacts Gemini API keys', async () => {
@@ -905,7 +905,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(events);
 
     expect(serialized).not.toContain('AIzaSyBabcdefghijk1234567890abcdefgh');
-    expect(serialized).toContain('[GEMINI_KEY]');
+    expect(serialized).toContain('AIza****');
   });
 
   it('redacts OpenAI keys', async () => {
@@ -930,7 +930,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(events);
 
     expect(serialized).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz1234567890');
-    expect(serialized).toContain('[OPENAI_KEY]');
+    expect(serialized).toContain('sk-****');
   });
 
   it('redacts authorization headers and bearer tokens', async () => {
@@ -954,7 +954,7 @@ describe('RuntimeTelemetry redaction', () => {
     const serialized = JSON.stringify(runtime.flushTelemetry());
 
     expect(serialized).not.toContain('abcdefghijklmnopqrstuvwxyz1234567890');
-    expect(serialized).toContain('authorization: [REDACTED]');
+    expect(serialized).toContain('authorization: ****');
   });
 
   it('redacts nested sensitive key names even when values do not match token regexes', () => {

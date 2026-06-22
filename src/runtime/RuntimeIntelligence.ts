@@ -292,29 +292,22 @@ function normalizeVisibleText(input: unknown, maxLength: number): NormalizedRunt
 // ============================================================================
 
 const REDACTION_PATTERNS: { pattern: RegExp; replacement: string }[] = [
-  { pattern: /ghp_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /gho_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /ghu_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /github_pat_[a-zA-Z0-9_.]{22,}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /ghs_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /ghr_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /AIza[a-zA-Z0-9_-]{30,}/g, replacement: '[GEMINI_KEY]' },
-  { pattern: /sk-[a-zA-Z0-9_-]{20,}/g, replacement: '[OPENAI_KEY]' },
+  { pattern: /(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9_]{8,100}/g, replacement: '$1_****' },
+  { pattern: /github_pat_[a-zA-Z0-9_.]{10,255}/g, replacement: 'github_pat_****' },
+  { pattern: /AIza[a-zA-Z0-9_-]{30,60}/g, replacement: 'AIza****' },
+  { pattern: /sk-[a-zA-Z0-9_-]{20,120}/g, replacement: 'sk-****' },
+  { pattern: /gsk_[a-zA-Z0-9_-]{20,120}/g, replacement: 'gsk_****' },
   {
-    pattern: /api[_-]?key["']?\s*[:=]\s*["']?[a-zA-Z0-9_-]{20,}/gi,
-    replacement: 'api_key=[API_KEY]',
+    pattern: /Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi,
+    replacement: 'Bearer ****',
   },
   {
-    pattern: /Bearer\s+[a-zA-Z0-9_+\-./=]{20,}/gi,
-    replacement: 'Bearer [TOKEN]',
-  },
-  {
-    pattern: /["']?(secret|password|passwd|pwd)["']?\s*[:=]\s*["']?[a-zA-Z0-9_@#$%^&*.\-]{8,}/gi,
-    replacement: '[SECRET]',
+    pattern: /(password|token|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*[^\s,;]+/gi,
+    replacement: '$1: ****',
   },
   {
     pattern: /authorization["']?\s*[:=]\s*["']?[a-zA-Z0-9_+\-./= ]+/gi,
-    replacement: 'authorization: [REDACTED]',
+    replacement: 'authorization: ****',
   },
 ];
 

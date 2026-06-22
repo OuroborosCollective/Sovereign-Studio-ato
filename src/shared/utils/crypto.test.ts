@@ -24,7 +24,7 @@ describe('maskSecrets', () => {
   it('masks Google API keys', () => {
     const secret = 'AIzaSyA-1234567890_abcdefghijklmnopqrst';
     const text = `API key ${secret} is invalid`;
-    expect(maskSecrets(text)).toBe('API key AIzaSy**** is invalid');
+    expect(maskSecrets(text)).toBe('API key AIza**** is invalid');
   });
 
   it('masks Bearer tokens', () => {
@@ -53,7 +53,7 @@ describe('maskSecrets', () => {
 
   it('masks multiple secrets in one string', () => {
     const text = 'Keys: ghp_1234567890abcdefghijklmnopqrstuvwx and AIzaSyA-1234567890_abcdefghijklmnopqrst';
-    expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIzaSy****');
+    expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIza****');
   });
 
   it('leaves normal text untouched', () => {

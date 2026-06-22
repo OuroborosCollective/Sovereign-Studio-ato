@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { maskSecrets } from '../../../shared/utils/crypto';
 import { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError } from '../providerManager';
 import { geminiService } from '../geminiService';
 
@@ -50,9 +51,10 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
   }, []);
 
   const handleFallback = useCallback((from: ProviderType, to: ProviderType, errorMsg: string) => {
-    console.log(`🔄 Fallback: ${from} → ${to}: ${errorMsg}`);
+    const maskedMsg = maskSecrets(errorMsg);
+    console.log(`🔄 Fallback: ${from} → ${to}: ${maskedMsg}`);
     setCurrentProvider(to);
-    options.onFallback?.(from, to, errorMsg);
+    options.onFallback?.(from, to, maskedMsg);
   }, [options.onFallback]);
 
   const setProviderApiKey = useCallback((provider: ProviderType, key: string) => {
@@ -123,9 +125,9 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
       return response;
 
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = maskSecrets(err instanceof Error ? err.message : String(err));
       setError(errorMsg);
-      throw err;
+      throw new Error(errorMsg);
     } finally {
       setIsLoading(false);
     }
