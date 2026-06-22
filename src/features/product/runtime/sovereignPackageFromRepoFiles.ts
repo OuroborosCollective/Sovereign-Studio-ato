@@ -44,6 +44,41 @@ const PLACEHOLDER_SUBSTRINGS = [
   'concrete user mission is required',
 ];
 
+const CONCRETE_MISSION_VERBS = [
+  'add',
+  'build',
+  'connect',
+  'create',
+  'fix',
+  'harden',
+  'implement',
+  'refactor',
+  'remove',
+  'repair',
+  'test',
+  'update',
+  'wire',
+  'aktualisiere',
+  'baue',
+  'behebe',
+  'ergaenze',
+  'ergaenzt',
+  'erstelle',
+  'erweitere',
+  'erweiterung',
+  'haerte',
+  'implementiere',
+  'implementieren',
+  'plane',
+  'pruefe',
+  'pruefen',
+  'repariere',
+  'ersetze',
+  'stabilisiere',
+  'teste',
+  'verbinde',
+];
+
 const AUTONOMOUS_MISSION_TARGETS = [
   'src/App.tsx',
   'src/global-runtime-monitor.tsx',
@@ -78,10 +113,15 @@ function existingTargets(repoFiles: RepoFile[]): string[] {
   return fallback.length > 0 ? fallback : ['README.md', 'docs/SOVEREIGN_RUNTIME.md'];
 }
 
+function hasConcreteMissionVerb(mission: string): boolean {
+  const normalized = normalizeMissionText(mission);
+  return CONCRETE_MISSION_VERBS.some((verb) => new RegExp(`(^|[^a-z0-9_-])${verb}($|[^a-z0-9_-])`, 'i').test(normalized));
+}
+
 export function hasConcreteSovereignMission(mission: string): boolean {
   const normalized = mission.trim();
   if (isPlaceholderSovereignMission(normalized)) return false;
-  return /\b(add|build|fix|implement|create|update|wire|connect|harden|test|remove|refactor|repair|behebe|baue|erstelle|verbinde|haerte|teste|repariere|aktualisiere|pruefe|pruefen|ergaenze|ergaenzt|erweitere|erweiterung|stabilisiere|ersetze|plane)\b/i.test(normalized);
+  return hasConcreteMissionVerb(normalized);
 }
 
 export function resolveAutonomousSovereignMission(mission: string, repoFiles: RepoFile[]): string {
