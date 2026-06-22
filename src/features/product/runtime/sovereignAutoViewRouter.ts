@@ -80,7 +80,7 @@ export interface SovereignAutoViewDecision {
 const STEP_TABS: Record<SequentialRuntimeStep, SovereignAutoViewTab> = {
   'repo-load': 'repo',
   'package-build': 'builder',
-  'diff-load': 'diff',
+  'diff-load': 'workflow',
   'draft-pr-publish': 'workflow',
   'workflow-watch': 'workflow',
   'repair-plan': 'repair',
@@ -257,15 +257,15 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (
     input.mode !== 'manual'
     && input.hasPackage
-    && (input.activeTab === 'builder' || input.activeTab === 'files')
+    && (input.activeTab === 'builder' || input.activeTab === 'files' || input.activeTab === 'diff')
     && canRunPackageReviewSwitch(input)
   ) {
     return switchTo(
       input,
-      'diff',
+      'workflow',
       input.hasDiffSources
-        ? 'Package and source snapshots are ready - show the diff.'
-        : 'Package is ready - show the diff loader so source snapshots can be loaded.',
+        ? 'Package and source snapshots are ready - continue through workflow instead of parking on diff.'
+        : 'Package is ready - diff is internal, continue through workflow instead of showing the diff loader.',
     );
   }
 
@@ -282,13 +282,15 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   }
 
   if (input.workflowStatus === 'green' && input.hasPackage && input.activeTab === 'workflow') {
-    return input.hasDiffSources
-      ? switchTo(input, 'diff', 'Green workflow with diff sources loaded - show the diff.')
-      : switchTo(input, 'diff', 'Green workflow with generated package - show the diff loader.');
+    return keepCurrent(input, 'Green workflow stays on workflow/result state instead of bouncing back to diff.');
   }
 
   if (input.hasPackage && input.hasDiffSources && input.workflowStatus === 'idle' && input.activeTab === 'files') {
-    return switchTo(input, 'diff', 'Files were reviewed and diff sources are loaded - show the diff.');
+    return switchTo(input, 'workflow', 'Files were reviewed and diff sources are internal - continue through workflow.');
+  }
+
+  if (input.activeTab === 'diff') {
+    return switchTo(input, 'workflow', 'Diff is an internal handoff surface and must not remain the visible workspace.');
   }
 
   return keepCurrent(input, 'No auto view change required without an active runtime step or explicit workflow state.');
