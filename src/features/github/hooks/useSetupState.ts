@@ -5,10 +5,12 @@
  * Used by: Gear, Direct UI, Coach, GitHub-Hook, Automation Mode.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useGithubRepo } from './useGithubRepo';
 import { hasGitHubToken, createGitHubAuthSession } from '../githubAuthSession';
 import { getRepoSnapshotStatus } from '../../product/runtime/sovereignFunctionalGuards';
+import { defaultSettings } from '../../product/constants';
+import type { ProjectSettings } from '../../product/types';
 import type { RepoSnapshotStatus } from '../../product/runtime/sovereignFunctionalGuards';
 import type { RepoFile } from '../types';
 import type { SovereignDependencyLifecycleState } from '../../product/runtime/sovereignDependencyLifecycle';
@@ -40,6 +42,8 @@ export interface SetupState extends SetupStateInput {
   setupPhase: SetupPhase;
   dependencyPhase: string;
   dependencyHealthy: boolean;
+  settings: ProjectSettings;
+  setSettings: (settings: ProjectSettings) => void;
 }
 
 function deriveSetupPhase(input: {
@@ -59,6 +63,7 @@ function deriveSetupPhase(input: {
 export function useSetupState(existingGithubState?: SetupStateInput): SetupState {
   const internalGithubState = useGithubRepo();
   const githubState = existingGithubState ?? internalGithubState;
+  const [settings, setSettings] = useState<ProjectSettings>(defaultSettings);
 
   const {
     repoUrl,
@@ -115,6 +120,8 @@ export function useSetupState(existingGithubState?: SetupStateInput): SetupState
     githubDependencyLifecycle,
     dependencyPhase,
     dependencyHealthy,
+    settings,
+    setSettings,
   };
 }
 
