@@ -83,13 +83,14 @@ function stepPlan(coach: RuntimeCoachState, log: RuntimeCoachState[]): StepPlan 
   const visibleLabels = labels.slice(-8);
   const total = Math.max(1, visibleLabels.length);
   const current = total;
-  const steps = visibleLabels.length > 0
+  const fallbackState: StepState = coach.lamp === 'red' ? 'halted' : 'current';
+  const steps: Step[] = visibleLabels.length > 0
     ? visibleLabels.map((label, offset): Step => ({
       index: offset + 1,
       label,
-      state: offset + 1 < total ? 'done' : coach.lamp === 'red' ? 'halted' : 'current',
+      state: offset + 1 < total ? 'done' : fallbackState,
     }))
-    : [{ index: 1, label: currentLabel || 'Runtime wartet', state: coach.lamp === 'red' ? 'halted' : 'current' }];
+    : [{ index: 1, label: currentLabel || 'Runtime wartet', state: fallbackState }];
 
   return { current, total, label: `${current}/${total} · ${steps[steps.length - 1]?.label ?? 'Runtime'}`, steps };
 }
