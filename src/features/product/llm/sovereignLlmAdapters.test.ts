@@ -1,41 +1,38 @@
-import { describe, it, expect, vi } from 'vitest';
-import { buildSovereignLlmAdapters } from '../sovereignLlmAdapters';
-import { defaultSettings, starterCards } from '../../constants';
+import { describe, expect, it } from 'vitest';
+import { defaultSettings, starterCards } from '../constants';
+import { buildSovereignLlmAdapters } from './sovereignLlmAdapters';
 
 describe('sovereignLlmAdapters', () => {
-  it('should create mlvoca adapter by default', () => {
+  it('creates mlvoca adapter first by default', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
     });
 
-    const mlvocaAdapter = adapters.find((a) => a.id === 'mlvoca');
-    expect(mlvocaAdapter).toBeDefined();
-    expect(mlvocaAdapter?.kind).toBe('no-key');
-    expect(mlvocaAdapter?.priority).toBe(0);
-    expect(mlvocaAdapter?.enabled).toBe(true);
+    expect(adapters[0].id).toBe('mlvoca');
+    expect(adapters[0].kind).toBe('no-key');
+    expect(adapters[0].priority).toBe(0);
+    expect(adapters[0].enabled).toBe(true);
   });
 
-  it('should create pollinations adapter by default', () => {
+  it('creates pollinations adapter second by default', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
     });
 
-    const pollinationsAdapter = adapters.find((a) => a.id === 'pollinations');
-    expect(pollinationsAdapter).toBeDefined();
-    expect(pollinationsAdapter?.kind).toBe('no-key');
-    expect(pollinationsAdapter?.priority).toBe(1);
+    expect(adapters[1].id).toBe('pollinations');
+    expect(adapters[1].kind).toBe('no-key');
+    expect(adapters[1].priority).toBe(1);
   });
 
-  it('should create groq adapter only when API key is provided', () => {
+  it('creates groq adapter only when API key is provided', () => {
     const adaptersWithoutKey = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
     });
 
-    const groqWithoutKey = adaptersWithoutKey.find((a) => a.id === 'groq');
-    expect(groqWithoutKey).toBeUndefined();
+    expect(adaptersWithoutKey.find((adapter) => adapter.id === 'groq')).toBeUndefined();
 
     const adaptersWithKey = buildSovereignLlmAdapters({
       cards: starterCards(),
@@ -43,24 +40,24 @@ describe('sovereignLlmAdapters', () => {
       groqApiKey: 'test-api-key',
     });
 
-    const groqWithKey = adaptersWithKey.find((a) => a.id === 'groq');
+    const groqWithKey = adaptersWithKey.find((adapter) => adapter.id === 'groq');
     expect(groqWithKey).toBeDefined();
     expect(groqWithKey?.enabled).toBe(true);
   });
 
-  it('should create local-safe fallback adapter', () => {
+  it('creates local-safe as the final fallback adapter', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
     });
 
-    const localSafeAdapter = adapters.find((a) => a.id === 'local-safe');
-    expect(localSafeAdapter).toBeDefined();
-    expect(localSafeAdapter?.kind).toBe('local-safe');
-    expect(localSafeAdapter?.priority).toBe(999);
+    const localSafeAdapter = adapters[adapters.length - 1];
+    expect(localSafeAdapter.id).toBe('local-safe');
+    expect(localSafeAdapter.kind).toBe('local-safe');
+    expect(localSafeAdapter.priority).toBe(999);
   });
 
-  it('should include all adapters when all keys are provided', () => {
+  it('includes all adapters when all keys are provided', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
@@ -71,47 +68,44 @@ describe('sovereignLlmAdapters', () => {
       geminiApiKey: 'test-gemini-key',
     });
 
-    expect(adapters.length).toBeGreaterThanOrEqual(7);
-    expect(adapters.find((a) => a.id === 'groq')).toBeDefined();
-    expect(adapters.find((a) => a.id === 'huggingface')).toBeDefined();
-    expect(adapters.find((a) => a.id === 'together')).toBeDefined();
-    expect(adapters.find((a) => a.id === 'openrouter')).toBeDefined();
-    expect(adapters.find((a) => a.id === 'gemini')).toBeDefined();
-    expect(adapters.find((a) => a.id === 'local-safe')).toBeDefined();
+    expect(adapters.map((adapter) => adapter.id)).toEqual([
+      'mlvoca',
+      'pollinations',
+      'groq',
+      'huggingface',
+      'together',
+      'openrouter',
+      'gemini',
+      'local-safe',
+    ]);
   });
 
-  it('should maintain priority ordering (lower number = higher priority)', () => {
+  it('maintains priority ordering', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
       groqApiKey: 'test-key',
     });
 
-    // Sort by priority to verify ordering
     const sortedAdapters = [...adapters].sort((a, b) => a.priority - b.priority);
 
-    // Verify priority ordering
     expect(sortedAdapters[0].id).toBe('mlvoca');
     expect(sortedAdapters[1].id).toBe('pollinations');
     expect(sortedAdapters[2].id).toBe('groq');
-    // local-safe should be last
     expect(sortedAdapters[sortedAdapters.length - 1].id).toBe('local-safe');
   });
 });
 
 describe('LlmAdapterContext extension', () => {
-  it('should include memoryContext and runtimeEvents in context interface', async () => {
-    // This test verifies the interface has the new fields
+  it('accepts memoryContext and runtimeEvents in adapter context', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
     });
 
-    const mlvocaAdapter = adapters.find((a) => a.id === 'mlvoca');
+    const mlvocaAdapter = adapters.find((adapter) => adapter.id === 'mlvoca');
     expect(mlvocaAdapter).toBeDefined();
 
-    // Test that adapter can receive context with memory and runtime fields
-    // (This validates the interface extension without actually calling the API)
     const context = {
       mission: 'Test mission',
       repoPaths: ['src/index.ts'],
@@ -120,7 +114,8 @@ describe('LlmAdapterContext extension', () => {
       runtimeEvents: ['event: test-event'],
     };
 
-    // The adapter should accept this context without type errors
+    expect(context.memoryContext).toEqual(['pattern: test-pattern']);
+    expect(context.runtimeEvents).toEqual(['event: test-event']);
     expect(mlvocaAdapter?.run).toBeDefined();
   });
 });
