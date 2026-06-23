@@ -43,4 +43,28 @@ describe('chatSidebarRuntime', () => {
 
     expect(chatSidebarSummary(messages, suggestions)).toBe('1 message(s), 1 suggestion(s), 1 accepted.');
   });
+
+  it('masks secrets in chat messages and suggestions', () => {
+    const messages = normalizeChatMessages([
+      { id: 'm1', role: 'user', content: 'My key is sk-abcdefghijklmnopqrstuvwxyz1234567890', timestamp: 1 },
+    ] as ChatMessage[]);
+
+    const suggestions = normalizeSuggestions([
+      {
+        id: 's1',
+        type: 'feature',
+        title: 'Use ghp_1234567890abcdefghijklmnopqrstuvwx',
+        description: 'token=ghp_1234567890abcdefghijklmnopqrstuvwx',
+        priority: 'low',
+      },
+    ] as Suggestion[]);
+
+    expect(messages[0].content).toBe('My key is sk-****');
+    expect(suggestions[0].title).toBe('Use ghp_****');
+    expect(suggestions[0].description).toBe('token=****');
+  });
+
+  it('masks secrets in chat input', () => {
+    expect(normalizeChatInput('setting api_key=abc1234567890123')).toBe('setting api_key=****');
+  });
 });

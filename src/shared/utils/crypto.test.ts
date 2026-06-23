@@ -45,15 +45,30 @@ describe('maskSecrets', () => {
 
   it('masks label-based credentials', () => {
     expect(maskSecrets('password: my-secret-password')).toBe('password: ****');
-    expect(maskSecrets('token=ghp_12345')).toBe('token: ****');
-    expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key: ****');
-    expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token: ****');
+    expect(maskSecrets('token=ghp_12345')).toBe('token=****');
+    expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key=****');
+    expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token=****');
     expect(maskSecrets('secret: somevalue')).toBe('secret: ****');
   });
 
   it('masks multiple secrets in one string', () => {
     const text = 'Keys: ghp_1234567890abcdefghijklmnopqrstuvwx and AIzaSyA-1234567890_abcdefghijklmnopqrst';
     expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIzaSy****');
+  });
+
+  it('masks secrets with quotes and various labels', () => {
+    expect(maskSecrets('"password": "my-secret-password"')).toBe('"password": "****"');
+    expect(maskSecrets("'api-key': 'abc1234567890123'")).toBe("'api-key': '****'");
+    expect(maskSecrets('passwd=some-secret-123')).toBe('passwd=****');
+  });
+
+  it('masks authorization headers with and without Bearer', () => {
+    expect(maskSecrets('authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890')).toBe('authorization: Bearer ****');
+    expect(maskSecrets('authorization: Basic abcdefghijklmnopqrstuvwxyz1234567890')).toBe('authorization: ****');
+  });
+
+  it('handles modern GitHub PAT formats', () => {
+    expect(maskSecrets('github_pat_11AABBCCDD.eyJhbGciOiJIUzI1NiJ9.test_signature_here')).toBe('github_pat_****');
   });
 
   it('leaves normal text untouched', () => {

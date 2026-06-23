@@ -1,4 +1,5 @@
 import type { ChatMessage, Suggestion, SuggestionType } from '../types';
+import { maskSecrets } from '../../../shared/utils/crypto';
 
 export const CHAT_SIDEBAR_MAX_INPUT = 2000;
 export const CHAT_SIDEBAR_MAX_MESSAGE = 4000;
@@ -23,7 +24,7 @@ function safeTimestamp(value: unknown, fallback: number): number {
 }
 
 export function normalizeChatInput(value: string): string {
-  return trimText(value, CHAT_SIDEBAR_MAX_INPUT);
+  return maskSecrets(trimText(value, CHAT_SIDEBAR_MAX_INPUT));
 }
 
 export function canSubmitChatMessage(value: string): boolean {
@@ -39,7 +40,7 @@ export function normalizeChatMessages(messages: readonly ChatMessage[] | null | 
       return {
         id: safeId(message.id, `chat-${index}`),
         role,
-        content: trimText(message.content),
+        content: maskSecrets(trimText(message.content)),
         timestamp: safeTimestamp(message.timestamp, index),
       };
     })
@@ -56,8 +57,8 @@ export function normalizeSuggestions(suggestions: readonly Suggestion[] | null |
       return {
         id: safeId(suggestion.id, `suggestion-${index}`),
         type: type as SuggestionType,
-        title: trimText(suggestion.title, 240) || 'Untitled suggestion',
-        description: trimText(suggestion.description, 1000),
+        title: maskSecrets(trimText(suggestion.title, 240) || 'Untitled suggestion'),
+        description: maskSecrets(trimText(suggestion.description, 1000)),
         priority: priority as Suggestion['priority'],
         accepted: Boolean(suggestion.accepted),
       };

@@ -51,6 +51,8 @@ import {
   type MobileWorkflowPatternMatch,
 } from '../mobile-workflow-pattern-rules';
 
+import { maskSecrets } from '../shared/utils/crypto';
+
 // Predictive Layer Integration
 import {
   PredictiveLayer,
@@ -315,33 +317,6 @@ function normalizeVisibleText(input: unknown, maxLength: number): NormalizedRunt
 // Telemetry Redaction
 // ============================================================================
 
-const REDACTION_PATTERNS: { pattern: RegExp; replacement: string }[] = [
-  { pattern: /ghp_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /gho_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /ghu_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /github_pat_[a-zA-Z0-9_.]{22,}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /ghs_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /ghr_[a-zA-Z0-9]{36}/g, replacement: '[GITHUB_TOKEN]' },
-  { pattern: /AIza[a-zA-Z0-9_-]{30,}/g, replacement: '[GEMINI_KEY]' },
-  { pattern: /sk-[a-zA-Z0-9_-]{20,}/g, replacement: '[OPENAI_KEY]' },
-  {
-    pattern: /api[_-]?key["']?\s*[:=]\s*["']?[a-zA-Z0-9_-]{20,}/gi,
-    replacement: 'api_key=[API_KEY]',
-  },
-  {
-    pattern: /Bearer\s+[a-zA-Z0-9_+\-./=]{20,}/gi,
-    replacement: 'Bearer [TOKEN]',
-  },
-  {
-    pattern: /["']?(secret|password|passwd|pwd)["']?\s*[:=]\s*["']?[a-zA-Z0-9_@#$%^&*.\-]{8,}/gi,
-    replacement: '[SECRET]',
-  },
-  {
-    pattern: /authorization["']?\s*[:=]\s*["']?[a-zA-Z0-9_+\-./= ]+/gi,
-    replacement: 'authorization: [REDACTED]',
-  },
-];
-
 const SENSITIVE_KEY_PATTERN =
   /(^|_|-)(token|secret|password|passwd|pwd|auth|authorization|credential|apikey|api_key|privatekey|private_key)($|_|-)/i;
 
@@ -357,11 +332,7 @@ function redactSensitiveData(
   if (depth > maxDepth) return '[MAX_DEPTH]';
 
   if (typeof data === 'string') {
-    let result = data;
-
-    for (const { pattern, replacement } of REDACTION_PATTERNS) {
-      result = result.replace(pattern, replacement);
-    }
+    const result = maskSecrets(data);
 
     if (result.length > maxStringLength) {
       return `${result.slice(0, maxStringLength)}…[TRUNCATED]`;
