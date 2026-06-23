@@ -1,61 +1,57 @@
 /**
  * Predictive Layer React Hooks
  *
- * React hooks for integrating the predictive layer with UI components.
+ * Hooks expose predictive state as advisory runtime signals only. UI consumers
+ * must not treat confidence as proof of success.
  *
  * @module predictive/predictiveHooks
  */
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { PredictiveGuard, PredictiveGuardConfig, SafetyContext, SafetyCheckResult, DecisionOutcome } from './predictiveGuard';
-import { PredictiveLayer, PredictiveLayerSnapshot, PredictiveMetrics } from './predictiveLayer';
-
-// ============================================================================
-// Predictive Layer Context
-// ============================================================================
+import React, { useState, useCallback, useEffect, useMemo, useContext } from 'react';
+import { PredictiveGuard, type PredictiveGuardConfig, type SafetyContext, type SafetyCheckResult, type DecisionOutcome } from './predictiveGuard';
+import { PredictiveLayer } from './predictiveLayer';
+import type { PredictiveLayerSnapshot, PredictiveMetrics, PredictiveLayerConfig, Signal } from './types';
 
 export interface PredictiveLayerContextValue {
-  /** The predictive layer instance */
   layer: PredictiveLayer | null;
-  /** Whether the layer is active */
   isActive: boolean;
-  /** Current snapshot of the layer state */
   snapshot: PredictiveLayerSnapshot | null;
-  /** Current metrics */
   metrics: PredictiveMetrics | null;
-  /** Average confidence [0, 1] */
   confidence: number;
-  /** Current error rate [0, 1] */
   errorRate: number;
-  /** Whether confidence is below threshold */
   isLowConfidence: boolean;
-  /** Whether error rate is above threshold */
   isHighErrorRate: boolean;
-  /** Start the predictive layer */
   start: () => Promise<void>;
-  /** Stop the predictive layer */
   stop: () => Promise<void>;
-  /** Emit a signal */
-  emitSignal: (signal: import('./types').Signal) => void;
+  emitSignal: (signal: Signal) => void;
 }
 
 const PredictiveLayerContext = React.createContext<PredictiveLayerContextValue | null>(null);
 
 export interface UsePredictiveLayerOptions {
-  /** Initial config for the predictive layer */
-  config?: import('./predictiveLayer').PredictiveLayerConfig;
-  /** Auto-start on mount */
+  config?: PredictiveLayerConfig;
   autoStart?: boolean;
-  /** Confidence threshold for isLowConfidence */
   confidenceThreshold?: number;
-  /** Error rate threshold for isHighErrorRate */
   errorRateThreshold?: number;
 }
 
-/**
- * Hook to access the predictive layer.
- */
-export function usePredictiveLayer(options: UsePredictiveLayerOptions = {}): PredictiveLayerContextValue {
+function createNoLayerValue(): PredictiveLayerContextValue {
+  return {
+    layer: null,
+    isActive: false,
+    snapshot: null,
+    metrics: null,
+    confidence: 0,
+    errorRate: 0,
+    isLowConfidence: true,
+    isHighErrorRate: false,
+    start: async () => undefined,
+    stop: async () => undefined,
+    emitSignal: () => undefined,
+  };
+}
+
+function usePredictiveLayerInternal(options: UsePredictiveLayerOptions = {}): PredictiveLayerContextValue {
   const {
     config,
     autoStart = true,
@@ -68,79 +64,55 @@ export function usePredictiveLayer(options: UsePredictiveLayerOptions = {}): Pre
   const [metrics, setMetrics] = useState<PredictiveMetrics | null>(null);
   const [isActive, setIsActive] = useState(false);
 
-  // Initialize the predictive layer
   useEffect(() => {
-    const initLayer = async () => {
-      const newLayer = new PredictiveLayer(config);
-      setLayer(newLayer);
+    const newLayer = new PredictiveLayer(config);
+    setLayer(newLayer);
 
-      if (autoStart) {
-        await newLayer.start();
-        setIsActive(true);
-      }
-    };
-
-    initLayer();
+    if (autoStart) {
+      newLayer.start();
+      setIsActive(true);
+    }
 
     return () => {
-      if (layer) {
-        layer.stop().catch(console.error);
-      }
+      newLayer.stop();
+      setIsActive(false);
     };
-  }, []);
+  }, [config, autoStart]);
 
-  // Update snapshot and metrics periodically
   useEffect(() => {
     if (!layer) return;
 
     const updateState = () => {
-      const newSnapshot = layer.getSnapshot();
-      const newMetrics = layer.getMetrics();
-      setSnapshot(newSnapshot);
-      setMetrics(newMetrics);
+      setSnapshot(layer.getSnapshot());
+      setMetrics(layer.getMetrics());
     };
 
     updateState();
     const interval = setInterval(updateState, 1000);
-
     return () => clearInterval(interval);
   }, [layer]);
 
-  // Computed values
-  const confidence = useMemo(() => {
-    if (!snapshot) return 0;
-    return snapshot.nodes.length > 0
-      ? snapshot.nodes.reduce((sum, n) => sum + n.confidence, 0) / snapshot.nodes.length
-      : 0;
-  }, [snapshot]);
-
-  const errorRate = useMemo(() => {
-    if (!metrics || metrics.totalPredictions === 0) return 0;
-    return metrics.failedPredictions / metrics.totalPredictions;
-  }, [metrics]);
-
+  const confidence = useMemo(() => snapshot?.avgConfidence ?? 0, [snapshot]);
+  const errorRate = useMemo(() => snapshot?.errorRate ?? 0, [snapshot]);
   const isLowConfidence = confidence < confidenceThreshold;
   const isHighErrorRate = errorRate > errorRateThreshold;
 
-  // Methods
   const start = useCallback(async () => {
-    if (layer) {
-      await layer.start();
-      setIsActive(true);
-    }
+    if (!layer) return;
+    layer.start();
+    setIsActive(true);
+    setSnapshot(layer.getSnapshot());
   }, [layer]);
 
   const stop = useCallback(async () => {
-    if (layer) {
-      await layer.stop();
-      setIsActive(false);
-    }
+    if (!layer) return;
+    layer.stop();
+    setIsActive(false);
+    setSnapshot(layer.getSnapshot());
   }, [layer]);
 
-  const emitSignal = useCallback((signal: import('./types').Signal) => {
-    if (layer) {
-      layer.emitSignal(signal);
-    }
+  const emitSignal = useCallback((signal: Signal) => {
+    layer?.emitSignal(signal.node, signal.value, signal.metadata);
   }, [layer]);
 
   return {
@@ -158,97 +130,91 @@ export function usePredictiveLayer(options: UsePredictiveLayerOptions = {}): Pre
   };
 }
 
-// ============================================================================
-// Predictive Guard Context
-// ============================================================================
+export function usePredictiveLayer(options: UsePredictiveLayerOptions = {}): PredictiveLayerContextValue {
+  const context = useContext(PredictiveLayerContext);
+  return context ?? usePredictiveLayerInternal(options);
+}
+
+export interface PredictiveGuardStats {
+  totalDecisions: number;
+  blockedCount: number;
+  warnedCount: number;
+  proceededCount: number;
+  accuracy: number;
+  learnedActions: number;
+}
 
 export interface PredictiveGuardContextValue {
-  /** The guard instance */
   guard: PredictiveGuard | null;
-  /** Whether currently checking */
   isChecking: boolean;
-  /** Last check result */
   lastResult: SafetyCheckResult | null;
-  /** Guard statistics */
-  stats: { totalDecisions: number; blockedCount: number; warnedCount: number; accuracy: number } | null;
-  /** Check safety for an action */
+  stats: PredictiveGuardStats | null;
   checkSafety: (action: string, context: SafetyContext) => Promise<SafetyCheckResult>;
-  /** Whether can proceed with action */
   canProceed: (action: string, context: SafetyContext) => Promise<boolean>;
-  /** Report outcome of a decision */
   reportOutcome: (outcome: DecisionOutcome) => Promise<void>;
 }
 
 const PredictiveGuardContext = React.createContext<PredictiveGuardContextValue | null>(null);
 
 export interface UsePredictiveGuardOptions {
-  /** The predictive layer to use */
-  layer: PredictiveLayer | null;
-  /** Guard configuration */
+  layer?: PredictiveLayer | null;
   config?: Partial<PredictiveGuardConfig>;
 }
 
-/**
- * Hook to use the predictive guard.
- */
-export function usePredictiveGuard(options: UsePredictiveGuardOptions = {}): PredictiveGuardContextValue {
-  const { layer, config } = options;
+function createGuardNotInitializedResult(context: SafetyContext): SafetyCheckResult {
+  return {
+    safe: true,
+    confidence: 0,
+    successProbability: 0,
+    riskLevel: 'medium',
+    reason: `Predictive guard not initialized for ${context.action}. This is a neutral advisory state, not proof of safety.`,
+    suggestedAction: 'review',
+    similarPatterns: [],
+    recentErrors: 0,
+    traceId: '',
+  };
+}
 
+function usePredictiveGuardInternal(options: UsePredictiveGuardOptions = {}): PredictiveGuardContextValue {
+  const { layer, config } = options;
   const [guard, setGuard] = useState<PredictiveGuard | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [lastResult, setLastResult] = useState<SafetyCheckResult | null>(null);
-  const [stats, setStats] = useState<{ totalDecisions: number; blockedCount: number; warnedCount: number; accuracy: number } | null>(null);
+  const [stats, setStats] = useState<PredictiveGuardStats | null>(null);
 
-  // Initialize guard when layer is available
   useEffect(() => {
-    if (layer) {
-      const newGuard = new PredictiveGuard(layer, config);
-      setGuard(newGuard);
-
-      // Get initial stats
-      const guardStats = newGuard.getStats();
-      setStats(guardStats);
+    if (!layer) {
+      setGuard(null);
+      setStats(null);
+      return;
     }
+
+    const newGuard = new PredictiveGuard(layer, config);
+    setGuard(newGuard);
+    setStats(newGuard.getStats());
   }, [layer, config]);
 
-  // Update stats periodically
   useEffect(() => {
     if (!guard) return;
 
-    const updateStats = () => {
-      const guardStats = guard.getStats();
-      setStats(guardStats);
-    };
-
+    const updateStats = () => setStats(guard.getStats());
     updateStats();
     const interval = setInterval(updateStats, 2000);
-
     return () => clearInterval(interval);
   }, [guard]);
 
-  const checkSafety = useCallback(async (action: string, context: SafetyContext): Promise<SafetyCheckResult> => {
+  const checkSafety = useCallback(async (_action: string, context: SafetyContext): Promise<SafetyCheckResult> => {
     if (!guard) {
-      return {
-        safe: true,
-        confidence: 1,
-        successProbability: 1,
-        riskLevel: 'low',
-        reason: 'Guard not initialized',
-        suggestedAction: 'proceed',
-        similarPatterns: [],
-        recentErrors: 0,
-        traceId: '',
-      };
+      const fallback = createGuardNotInitializedResult(context);
+      setLastResult(fallback);
+      return fallback;
     }
 
     setIsChecking(true);
     try {
       const result = await guard.checkSafety(context);
       setLastResult(result);
-      
-      const guardStats = guard.getStats();
-      setStats(guardStats);
-      
+      setStats(guard.getStats());
       return result;
     } finally {
       setIsChecking(false);
@@ -261,11 +227,9 @@ export function usePredictiveGuard(options: UsePredictiveGuardOptions = {}): Pre
   }, [checkSafety]);
 
   const reportOutcome = useCallback(async (outcome: DecisionOutcome): Promise<void> => {
-    if (guard) {
-      await guard.reportDecisionOutcome(outcome);
-      const guardStats = guard.getStats();
-      setStats(guardStats);
-    }
+    if (!guard) return;
+    await guard.reportDecisionOutcome(outcome);
+    setStats(guard.getStats());
   }, [guard]);
 
   return {
@@ -279,19 +243,21 @@ export function usePredictiveGuard(options: UsePredictiveGuardOptions = {}): Pre
   };
 }
 
-// ============================================================================
-// Combined Provider
-// ============================================================================
+export function usePredictiveGuard(options: UsePredictiveGuardOptions = {}): PredictiveGuardContextValue {
+  const context = useContext(PredictiveGuardContext);
+  const layerContext = useContext(PredictiveLayerContext);
+  return context ?? usePredictiveGuardInternal({ layer: options.layer ?? layerContext?.layer ?? null, config: options.config });
+}
 
 export interface PredictiveProviderProps {
   children: React.ReactNode;
-  layerConfig?: import('./predictiveLayer').PredictiveLayerConfig;
+  layerConfig?: PredictiveLayerConfig;
   guardConfig?: Partial<PredictiveGuardConfig>;
 }
 
 export function PredictiveProvider({ children, layerConfig, guardConfig }: PredictiveProviderProps) {
-  const layerValue = usePredictiveLayer({ config: layerConfig, autoStart: true });
-  const guardValue = usePredictiveGuard({ layer: layerValue.layer, config: guardConfig });
+  const layerValue = usePredictiveLayerInternal({ config: layerConfig, autoStart: true });
+  const guardValue = usePredictiveGuardInternal({ layer: layerValue.layer, config: guardConfig });
 
   return (
     <PredictiveLayerContext.Provider value={layerValue}>
@@ -302,13 +268,6 @@ export function PredictiveProvider({ children, layerConfig, guardConfig }: Predi
   );
 }
 
-// ============================================================================
-// Convenience Hooks
-// ============================================================================
-
-/**
- * Simple hook for checking if predictions are reliable.
- */
 export function usePredictionConfidence(): { confidence: number; isLow: boolean; isHigh: boolean } {
   const { confidence, isLowConfidence, isHighErrorRate } = usePredictiveLayer();
   return {
@@ -318,14 +277,12 @@ export function usePredictionConfidence(): { confidence: number; isLow: boolean;
   };
 }
 
-/**
- * Hook for emitting signals to the predictive layer.
- */
 export function usePredictiveSignal() {
   const { emitSignal, isActive } = usePredictiveLayer();
-
   return {
     emitSignal,
     isActive,
   };
 }
+
+export { createNoLayerValue };
