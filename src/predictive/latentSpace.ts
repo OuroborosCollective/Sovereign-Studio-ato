@@ -113,7 +113,9 @@ export class LatentSpaceNavigator {
 
     const similarities: SimilarityMatch[] = [];
     for (const pattern of candidates) {
-      const score = this.cosineSimilarity(queryEmbedding, pattern.embedding, queryNorm, pattern.norm);
+      const vectorScore = this.cosineSimilarity(queryEmbedding, pattern.embedding, queryNorm, pattern.norm);
+      const scalarScore = 1 - Math.min(1, Math.abs(pattern.signalValue - value));
+      const score = Math.max(vectorScore, scalarScore);
       if (score >= threshold) {
         similarities.push({
           patternId: pattern.id,
@@ -151,7 +153,9 @@ export class LatentSpaceNavigator {
     const similarities: SimilarityMatch[] = [];
 
     for (const pattern of candidates) {
-      const score = this.cosineSimilarity(queryEmbedding, pattern.embedding, queryNorm, pattern.norm);
+      const vectorScore = this.cosineSimilarity(queryEmbedding, pattern.embedding, queryNorm, pattern.norm);
+      const scalarScore = 1 - Math.min(1, Math.abs(pattern.signalValue - value));
+      const score = Math.max(vectorScore, scalarScore);
       if (score >= threshold) {
         similarities.push({
           patternId: pattern.id,
