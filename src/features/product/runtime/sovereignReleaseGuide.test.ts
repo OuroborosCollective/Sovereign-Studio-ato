@@ -30,8 +30,8 @@ describe('sovereign release guide runtime', () => {
 
     expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
-    expect(state.nextLabel).toBe('Weiter zu workflow');
-    expect(state.helperMessage).toContain('sichtbaren Weiter-Button');
+    expect(state.nextLabel).toBe('Weiter');
+    expect(state.helperMessage).toContain('Weiter-Button');
   });
 
   it('lets an explicit workflow action win over stale diff/package text', () => {
@@ -44,7 +44,7 @@ describe('sovereign release guide runtime', () => {
 
     expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
-    expect(state.nextLabel).toBe('Weiter zu workflow');
+    expect(state.nextLabel).toBe('Weiter');
     expect(state.progress).toBe(85);
   });
 
@@ -56,7 +56,7 @@ describe('sovereign release guide runtime', () => {
       action: 'Load Repo',
     }));
 
-    expect(state.helperMessage).toContain('sichtbare');
+    expect(state.helperMessage).toContain('Weiter-Button');
     expect(state.helperMessage).not.toContain('automatisch');
   });
 

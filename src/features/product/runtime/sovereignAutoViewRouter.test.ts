@@ -171,6 +171,23 @@ describe('sovereignAutoViewRouter', () => {
     expect(decision.reason).toContain('repair');
   });
 
+
+
+  it('does not trap manual navigation on workflow while checks are pending', () => {
+    const decision = decideSovereignAutoView({
+      mode: 'manual',
+      activeStep: null,
+      activeTab: 'builder',
+      hasPackage: true,
+      isPublishing: false,
+      isWatchingWorkflow: false,
+      workflowStatus: 'pending',
+    });
+
+    expect(decision).toMatchObject({ shouldSwitch: false, tab: 'builder' });
+    expect(decision.reason).toContain('Manual mode keeps user navigation free');
+  });
+
   it('keeps user-selected side tabs available in guarded auto mode', () => {
     const input = {
       mode: 'full-auto-draft-pr' as const,

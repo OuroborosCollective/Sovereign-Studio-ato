@@ -142,8 +142,8 @@ function progressLabel(progress: number): string {
 
 function helperMessage(input: ReleaseGuideInput, targetTab: ReleaseGuideTab | null, progress: number): string {
   if (input.thinking) return 'Ich arbeite gerade und halte dich sichtbar auf dem Laufenden.';
-  if (targetTab === 'workflow') return 'Der Workflow-Bereich ist der nächste sichere Ort. Nutze den sichtbaren Weiter-Button, wenn du wechseln willst.';
-  if (targetTab) return `Nächster sicherer Bereich: ${targetTab}. Der sichtbare Button wechselt dorthin, wenn du ihn nutzt.`;
+  if (targetTab === 'workflow') return 'Der Workflow-Bereich ist der nächste sichere Ort. Nutze den sichtbaren Weiter-Button.';
+  if (targetTab) return `Nächster sicherer Bereich: ${targetTab}. Nutze den sichtbaren Weiter-Button.`;
   if (progress >= 100) return 'Fertig. Ergebnis liegt vor.';
   return 'Ich warte auf den nächsten klaren Systemschritt, damit du nicht raten musst.';
 }
@@ -161,7 +161,7 @@ export function deriveReleaseGuideState(input: ReleaseGuideInput): ReleaseGuideS
     mood: input.thinking ? '🤖💭' : input.lamp === 'green' ? '😊✨' : input.lamp === 'yellow' ? '🙂🔎' : '🛟⚠️',
     targetTab,
     previousTab: targetTab ? PREVIOUS_TAB[targetTab] ?? 'repo' : 'repo',
-    nextLabel: targetTab ? `Weiter zu ${targetTab}` : 'Weiter noch gesperrt',
+    nextLabel: targetTab ? 'Weiter' : 'Weiter noch gesperrt',
     nextEnabled,
     confirmLabel: progress >= 100 ? 'Abschluss bestätigen' : 'Schritt bestätigen',
     waitingReason: nextEnabled ? '' : 'Noch kein sicherer nächster Schritt verfügbar.',

@@ -145,6 +145,11 @@ function hasConcreteMissionVerb(mission: string): boolean {
   return CONCRETE_MISSION_VERBS.some((verb) => new RegExp(`(^|[^a-z0-9_-])${verb}($|[^a-z0-9_-])`, 'i').test(normalized));
 }
 
+function isDocumentationSovereignMission(mission: string): boolean {
+  const normalized = normalizeMissionText(mission);
+  return ['readme', 'documentation', 'dokumentation', 'docs', 'update history', 'changelog'].some((token) => normalized.includes(token));
+}
+
 function readStoredUserKeys(): BuildSovereignPackageFromRepoFilesInput['userKeys'] | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
@@ -298,6 +303,10 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
     runtimeAssertSovereignPackage(pkg);
     assertGeneratedPackageReady(pkg, input.repoFiles);
     return pkg;
+  }
+
+  if (!isDocumentationSovereignMission(effectiveMission)) {
+    throw new Error(`VALIDATION_FAILED_LLM_REQUIRED: All real LLM/code routes failed for this implementation request. local-safe is analysis-only here and will not create a fake code/security/env Draft PR. Last error: ${llmResult.error ?? 'unknown provider failure'}`);
   }
 
   const pkg = buildSovereignImplementationPackage({
