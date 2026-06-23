@@ -22,12 +22,13 @@ export function WorkflowWatchPanel({
   statusMessage,
   onWatch,
 }: WorkflowWatchPanelProps) {
-  const isBlocked = !canWatch;
   const helperText = statusMessage ?? (report ? report.summary : 'Create a Draft PR first, then watch the commit checks.');
-  const buttonLabel = isWatching
-    ? 'Watching...'
-    : isBlocked
-      ? 'Draft PR zuerst erstellen'
+  const waitingForDraft = !report && helperText.toLowerCase().includes('draft pr');
+  const isBlocked = !canWatch || waitingForDraft;
+  const buttonLabel = isBlocked
+    ? 'Draft PR zuerst erstellen'
+    : isWatching
+      ? 'Watching...'
       : 'Watch Commit Checks';
 
   return (
