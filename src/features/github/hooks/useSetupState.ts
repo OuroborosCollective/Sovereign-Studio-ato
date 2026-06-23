@@ -42,8 +42,8 @@ export interface SetupState extends SetupStateInput {
   setupPhase: SetupPhase;
   dependencyPhase: string;
   dependencyHealthy: boolean;
-  settings: ProjectSettings;
-  setSettings: (settings: ProjectSettings) => void;
+  settings?: ProjectSettings;
+  setSettings?: (settings: ProjectSettings) => void;
 }
 
 function deriveSetupPhase(input: {
