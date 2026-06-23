@@ -390,7 +390,8 @@ export class HebbianAdaptor {
 
 export function createHebbianAdaptor(config?: Partial<HebbianConfig>): HebbianAdaptor {
   return new HebbianAdaptor(config);
-}\n
+}
+
 export interface SynaptogenesisConfig {
   correlationThreshold: number;
   minSamples: number;
