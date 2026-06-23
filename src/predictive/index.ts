@@ -7,12 +7,11 @@
  * @module predictive
  */
 
-// ============================================================================
-// Types
-// ============================================================================
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { PredictiveLayer, createPredictiveLayer } from './predictiveLayer';
+import { DEFAULT_PREDICTIVE_CONFIG, type PredictiveLayerSnapshot, type Signal } from './types';
 
 export {
-  // Core types
   type Signal,
   type Prediction,
   type PredictionError,
@@ -31,23 +30,16 @@ export {
   type PredictiveTelemetryEvent,
   type PredictiveMetrics,
   type TraceId,
-  // Validation functions
   isValidSignal,
   isValidPrediction,
   isValidSynapse,
-  // Default configurations
   DEFAULT_HEBBIAN_CONFIG,
   DEFAULT_PREDICTIVE_CONFIG,
 } from './types';
 
-// ============================================================================
-// Predictive Guard (Phase 4.1)
-// ============================================================================
-
 export {
   type SafetyContext,
   type SafetyCheckResult,
-  type SafetyLevel,
   type PredictiveGuardConfig,
   type GuardThresholds,
   type DecisionOutcome,
@@ -55,10 +47,6 @@ export {
   PredictiveGuard,
   createPredictiveGuard,
 } from './predictiveGuard';
-
-// ============================================================================
-// Safety Check Functions (Phase 4.2)
-// ============================================================================
 
 export {
   DEFAULT_SAFETY_THRESHOLDS,
@@ -72,11 +60,8 @@ export {
   type ActionSafetyCheck,
   type SimilarFailure,
   type RuntimeSafetyContext,
+  type SafetyLevel,
 } from './predictiveSafety';
-
-// ============================================================================
-// Predictive Guard Hooks (Phase 4.4)
-// ============================================================================
 
 export {
   usePredictiveLayer,
@@ -91,10 +76,6 @@ export {
   type PredictiveProviderProps,
 } from './predictiveHooks';
 
-// ============================================================================
-// RuntimeIntelligence Integration (Phase 4.3)
-// ============================================================================
-
 export {
   createPredictiveRuntimeGuard,
   createBuildPredictiveGuard,
@@ -105,12 +86,14 @@ export {
   type PredictiveRuntimeGuardOptions,
 } from './runtimeIntelligenceIntegration';
 
-// ============================================================================
-// UI Components (Phase 4.4)
-// ============================================================================
-
-export { PredictiveUI, PredictiveConfidenceBar, PredictiveStatusBadge, PredictiveHealthIndicator, PredictiveWarningToast, PredictiveDecisionOverlay } from './ui/PredictiveUI';
-// ============================================================================
+export {
+  PredictiveUI,
+  PredictiveConfidenceBar,
+  PredictiveStatusBadge,
+  PredictiveHealthIndicator,
+  PredictiveWarningToast,
+  PredictiveDecisionOverlay,
+} from './ui/PredictiveUI';
 
 export {
   type SignalEmitter,
@@ -121,19 +104,11 @@ export {
   createDefaultSignalProxyConfig,
 } from './signalProxy';
 
-// ============================================================================
-// Prediction Generator
-// ============================================================================
-
 export {
   type PredictionGeneratorOptions,
   PredictionGenerator,
   createPredictionGenerator,
 } from './predictionGenerator';
-
-// ============================================================================
-// Latent Space Navigator
-// ============================================================================
 
 export {
   type LatentSpaceConfig,
@@ -141,10 +116,6 @@ export {
   LatentSpaceNavigator,
   createLatentSpace,
 } from './latentSpace';
-
-// ============================================================================
-// Error Computer
-// ============================================================================
 
 export {
   type ErrorComputerConfig,
@@ -156,21 +127,21 @@ export {
   calculateRMSE,
 } from './errorComputer';
 
-// ============================================================================
-// Hebbian Adaptor
-// ============================================================================
-
 export {
   type HebbianAdaptorStats,
+  type HebbianMathTrace,
   type SynaptogenesisConfig,
   HebbianAdaptor,
   Synaptogenesis,
   createHebbianAdaptor,
+  calculatePredictionGradient,
+  calculateErrorDrivenDelta,
+  calculateExtendedHebbianDelta,
+  applyHebbianDamping,
+  applyHebbianDecay,
+  calculateHebbianMathTrace,
+  calculateCoActivationDelta,
 } from './hebbianAdaptor';
-
-// ============================================================================
-// Predictive Layer (Main Class)
-// ============================================================================
 
 export {
   type PredictiveLayerEvents,
@@ -178,10 +149,6 @@ export {
   getDefaultPredictiveLayer,
   createPredictiveLayer,
 } from './predictiveLayer';
-
-// ============================================================================
-// Nociceptor Error Boundary
-// ============================================================================
 
 export {
   type NociceptorErrorBoundaryProps,
@@ -193,63 +160,15 @@ export {
   formatPainSignal,
 } from './nociceptorBoundary';
 
-// ============================================================================
-// Quick Start Factory
-// ============================================================================
-
-import { PredictiveLayer, createPredictiveLayer } from './predictiveLayer';
-import { DEFAULT_PREDICTIVE_CONFIG } from './types';
-
-/**
- * Quick start: Create a configured predictive layer.
- * 
- * @example
- * ```typescript
- * import { createQuickPredictiveLayer } from './predictive';
- * 
- * const layer = createQuickPredictiveLayer();
- * layer.start();
- * 
- * // Emit signals
- * layer.emitSignal('runtime.decision', 0.85, { type: 'container_decision' });
- * layer.emitSignal('runtime.error_rate', 0.05, { type: 'telemetry' });
- * ```
- */
 export function createQuickPredictiveLayer(): PredictiveLayer {
   return createPredictiveLayer(DEFAULT_PREDICTIVE_CONFIG);
 }
 
-// ============================================================================
-// React Hook (for easy integration)
-// ============================================================================
-
-import { useEffect, useState, useRef, useCallback } from 'react';
-import type { PredictiveLayerSnapshot, Signal } from './types';
-
 /**
- * React hook for using the predictive layer.
- * 
- * @example
- * ```typescript
- * import { usePredictiveLayer } from './predictive';
- * 
- * function MyComponent() {
- *   const { layer, snapshot, emit } = usePredictiveLayer();
- *   
- *   const handleDecision = () => {
- *     emit('runtime.decision', 0.85);
- *   };
- *   
- *   return (
- *     <div>
- *       <p>Confidence: {snapshot.avgConfidence.toFixed(2)}</p>
- *       <button onClick={handleDecision}>Make Decision</button>
- *     </div>
- *   );
- * }
- * ```
+ * Standalone hook for isolated predictive experiments. Product UI should prefer
+ * PredictiveProvider + usePredictiveLayer from predictiveHooks.
  */
-export function usePredictiveLayer() {
+export function useStandalonePredictiveLayer() {
   const layerRef = useRef<PredictiveLayer | null>(null);
   const [snapshot, setSnapshot] = useState<PredictiveLayerSnapshot>(() => ({
     active: false,
@@ -264,24 +183,17 @@ export function usePredictiveLayer() {
   }));
   const [events, setEvents] = useState<Signal[]>([]);
 
-  // Initialize layer
   useEffect(() => {
     if (!layerRef.current) {
       layerRef.current = createPredictiveLayer();
       layerRef.current.setEvents({
-        onSignal: (signals) => {
-          setEvents((prev) => [...prev, ...signals].slice(-100));
-        },
+        onSignal: (signals) => setEvents((prev) => [...prev, ...signals].slice(-100)),
       });
     }
 
     const layer = layerRef.current;
     layer.start();
-
-    // Update snapshot periodically
-    const interval = setInterval(() => {
-      setSnapshot(layer.getSnapshot());
-    }, 1000);
+    const interval = setInterval(() => setSnapshot(layer.getSnapshot()), 1000);
 
     return () => {
       clearInterval(interval);
@@ -289,15 +201,10 @@ export function usePredictiveLayer() {
     };
   }, []);
 
-  // Emit a signal
   const emit = useCallback((node: string, value: number, metadata?: Record<string, unknown>) => {
-    if (layerRef.current) {
-      return layerRef.current.emitSignal(node, value, metadata);
-    }
-    return null;
+    return layerRef.current?.emitSignal(node, value, metadata) ?? null;
   }, []);
 
-  // Get layer instance
   const getLayer = useCallback(() => layerRef.current, []);
 
   return {
