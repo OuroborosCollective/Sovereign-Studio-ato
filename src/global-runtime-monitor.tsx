@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
@@ -107,7 +107,6 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   const [log, setLog] = useState<RuntimeCoachState[]>(() => typeof window === 'undefined' ? [defaultCoachState()] : seedLog(window as GlobalRuntimeWindow));
   const [confirmedAt, setConfirmedAt] = useState<number | null>(null);
   const [monitorVisible, setMonitorVisible] = useState(true);
-  const lastAutoCommandKeyRef = useRef('');
   const guide = useMemo(() => deriveReleaseGuideState(coachState), [coachState]);
   const plan = useMemo(() => stepPlan(coachState, log), [coachState, log]);
   const visibleLog = useMemo(() => log.slice(0, MAX_LOG_ENTRIES), [log]);
@@ -133,14 +132,8 @@ function GlobalRuntimeMonitor(): React.ReactElement {
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !guide.nextEnabled || !guide.targetTab) return undefined;
-    const commandKey = `${guide.targetTab}:${coachState.title}:${coachState.action}:${coachState.updatedAt}`;
-    if (lastAutoCommandKeyRef.current === commandKey) return undefined;
-    lastAutoCommandKeyRef.current = commandKey;
-    const handle = window.setTimeout(() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab }), 180);
-    return () => window.clearTimeout(handle);
-  }, [coachState.action, coachState.title, coachState.updatedAt, guide.nextEnabled, guide.targetTab]);
+  // The monitor is a truth/display surface. It must not auto-click workspace tabs;
+  // users trigger navigation explicitly via the visible guide buttons.
 
   const confirmStep = (): void => {
     const now = Date.now();
@@ -159,7 +152,7 @@ function GlobalRuntimeMonitor(): React.ReactElement {
       {monitorVisible && <div className="sovereign-monitor-body">
         <div className="sovereign-monitor-status"><span className={lampClassName(coachState.lamp)} /><div className="sovereign-monitor-copy"><strong>{coachState.title}</strong><span>{formatTime(coachState.updatedAt)} · {coachState.source} · {coachState.thinking ? 'arbeitet' : 'bereit'}</span><p>{coachState.message}</p><em>Next Action: {coachState.action}</em></div></div>
         <div className="sovereign-helper-panel" data-testid="release-guide__panel">
-          <div className="sovereign-helper-copy"><strong>{guide.helperMessage}</strong><span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Ich leite den nächsten sicheren Schritt automatisch ein.'}</span></div>
+          <div className="sovereign-helper-copy"><strong>{guide.helperMessage}</strong><span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Der sichtbare Weiter-Button bleibt deine bewusste Aktion.'}</span></div>
           <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsstand ${plan.label}`}><div className="sovereign-monitor-progress-head"><span>Arbeitsstand</span><strong>{plan.label}</strong></div><div className="grid gap-1 text-[10px]" style={{ gridTemplateColumns: `repeat(${plan.total}, minmax(0, 1fr))` }}>{plan.steps.map((step) => <span key={step.index} className={stepClassName(step.state)} title={step.label}>{step.index}. {step.label}</span>)}</div></div>
           <div className="sovereign-guide-actions" data-testid="release-guide__actions"><button className="sovereign-guide-button" type="button" onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })} data-testid="release-guide__back">Zurück</button><button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">{guide.confirmLabel}</button><button className="sovereign-guide-button sovereign-guide-button-primary" type="button" onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })} disabled={!guide.nextEnabled} aria-disabled={!guide.nextEnabled} data-testid="release-guide__next">{guide.nextLabel}</button></div>
         </div>

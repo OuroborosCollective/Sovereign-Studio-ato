@@ -135,9 +135,7 @@
   white-space: nowrap;
 }
 
-.sovereign-monitor-toggle,
-.sovereign-tabbar,
-[data-role="sovereign-automation-panel"] {
+.sovereign-monitor-toggle:not([data-state="locked-open"]) {
   block-size: 1px !important;
   border: 0 !important;
   clip: rect(0 0 0 0) !important;
