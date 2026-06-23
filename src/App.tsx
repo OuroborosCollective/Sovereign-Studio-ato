@@ -111,6 +111,7 @@ import {
 type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
 const DEFAULT_MISSION = 'README + Update History';
+const AUTO_STEP_DELAY_MS = 5000;
 
 // Tabs are derived from the Product Template as the single source of truth.
 // This ensures the app shell always matches the product contract.
@@ -227,6 +228,8 @@ const App: React.FC = () => {
   const [planningConfirmed, setPlanningConfirmed] = useState(false);
   const lastAutoViewReasonRef = useRef('');
   const recentUserInteractionUntil = useRef(0);
+  const autoStepReadyAtRef = useRef(0);
+  const autoStepTimerRef = useRef<number | null>(null);
 
   const githubRepoState = useGithubRepo();
   const setupState = useSetupState(githubRepoState);
@@ -801,7 +804,12 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) return undefined;
+
+    if (autoStepTimerRef.current && typeof window !== 'undefined') {
+      window.clearTimeout(autoStepTimerRef.current);
+      autoStepTimerRef.current = null;
+    }
 
     const decision = decideSovereignAutomation({
       mode: automationMode,
@@ -816,32 +824,69 @@ const App: React.FC = () => {
 
     if (automationMode === 'manual') {
       setAutomationStatus('Manual mode is active.');
-      return;
+      return undefined;
     }
 
     if (decision.blockedReason) {
       setAutomationStatus(decision.blockedReason);
-      return;
+      return undefined;
     }
 
+    const scheduleAutoStep = (label: string, run: () => void): (() => void) | undefined => {
+      const now = wallClockMs();
+      const waitMs = Math.max(0, autoStepReadyAtRef.current - now);
+      const start = () => {
+        autoStepTimerRef.current = null;
+        run();
+      };
+
+      if (waitMs <= 0 || typeof window === 'undefined') {
+        start();
+        return undefined;
+      }
+
+      setAutomationStatus(`${label} startet in ${Math.ceil(waitMs / 1000)}s. Ich lasse die Runtime sichtbar fertig atmen.`);
+      const handle = window.setTimeout(start, waitMs);
+      autoStepTimerRef.current = handle;
+      return () => {
+        window.clearTimeout(handle);
+        if (autoStepTimerRef.current === handle) autoStepTimerRef.current = null;
+      };
+    };
+
     if (decision.shouldBuildPackage && automationMode === 'auto-review') {
-      setLastAutoRunKey(automationRunKey);
-      setAutomationStatus('Auto Review is building and reviewing generated files.');
-      pushTelemetry('workflow', 'info', 'automation:auto-review', 'Auto Review triggered package build.');
-      void buildPackage(currentMission, packageInputKey);
-      return;
+      return scheduleAutoStep('Auto Review', () => {
+        setLastAutoRunKey(automationRunKey);
+        setAutomationStatus('Auto Review baut und prueft generierte Dateien.');
+        pushTelemetry('workflow', 'info', 'automation:auto-review', 'Auto Review triggered package build.');
+        void (async () => {
+          try {
+            await buildPackage(currentMission, packageInputKey);
+          } finally {
+            autoStepReadyAtRef.current = wallClockMs() + AUTO_STEP_DELAY_MS;
+          }
+        })();
+      });
     }
 
     if (automationMode === 'full-auto-draft-pr' && decision.shouldPublishDraftPr) {
-      setLastAutoRunKey(automationRunKey);
-      setAutomationStatus('Full Auto is building, reviewing and creating a Draft PR.');
-      pushTelemetry('workflow', 'info', 'automation:full-auto', 'Full Auto triggered guarded Draft PR flow.');
+      return scheduleAutoStep('Full Auto Draft PR', () => {
+        setLastAutoRunKey(automationRunKey);
+        setAutomationStatus('Full Auto erstellt erst nach Runtime-Ruhefenster den Draft PR.');
+        pushTelemetry('workflow', 'info', 'automation:full-auto', 'Full Auto triggered guarded Draft PR flow.');
 
-      void (async () => {
-        const pkg = hasFreshPackage && lastPackage ? lastPackage : await buildPackage(currentMission, packageInputKey);
-        if (pkg) await publishDraftPrForPackage(pkg);
-      })();
+        void (async () => {
+          try {
+            const pkg = hasFreshPackage && lastPackage ? lastPackage : await buildPackage(currentMission, packageInputKey);
+            if (pkg) await publishDraftPrForPackage(pkg);
+          } finally {
+            autoStepReadyAtRef.current = wallClockMs() + AUTO_STEP_DELAY_MS;
+          }
+        })();
+      });
     }
+
+    return undefined;
     // The automation effect intentionally watches value snapshots, not helper function identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
