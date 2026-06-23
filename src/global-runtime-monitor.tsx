@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
-import { getSovereignActionContract } from './features/product/runtime/sovereignActionContracts';
+import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
 import { deriveReleaseGuideState, type ReleaseGuideTab } from './features/product/runtime/sovereignReleaseGuide';
 import type { SovereignTelemetryEvent } from './features/product/runtime/sovereignTelemetry';
 
@@ -16,7 +16,7 @@ type StepPlan = { current: number; total: number; label: string; steps: Step[] }
 const HOST_ID = 'sovereign-global-runtime-monitor-root';
 const MAX_LOG_ENTRIES = 24;
 const monitorContainerContract = getSovereignContainerContract('global-runtime-monitor');
-const monitorToggleContract = getSovereignActionContract('monitor-toggle');
+const monitorToggleContract = SOVEREIGN_ACTION_MONITOR_TOGGLE;
 
 function defaultCoachState(): RuntimeCoachState {
   return { lamp: 'yellow', title: 'Sovereign bereit', message: 'Repo laden, Auftrag analysieren und danach Auftrag starten.', action: 'Repo oder Builder prüfen', thinking: false, source: 'runtime-shell', updatedAt: Date.now() };
