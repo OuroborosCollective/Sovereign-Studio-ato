@@ -57,21 +57,17 @@ export class SignalBufferManager {
   getBuffer(bufferId: string): SignalBuffer {
     let buffer = this.buffers.get(bufferId);
     if (!buffer) {
-      buffer = this.createBuffer(bufferId);
+      buffer = {
+        id: bufferId,
+        signals: [],
+        maxSize: this.maxBufferSize,
+        oldestTimestamp: 0,
+        newestTimestamp: 0,
+        isFull: false,
+      };
       this.buffers.set(bufferId, buffer);
     }
     return buffer;
-  }
-
-  private createBuffer(id: string): SignalBuffer {
-    return {
-      id,
-      signals: [],
-      maxSize: this.maxBufferSize,
-      oldestTimestamp: 0,
-      newestTimestamp: 0,
-      isFull: false,
-    };
   }
 
   push(bufferId: string, signal: Signal): void {
@@ -98,13 +94,12 @@ export class SignalBufferManager {
       buffer.isFull = false;
     }
 
-    if (allSignals.length > 0 && this.onFlush) this.onFlush(allSignals);
+    if (allSignals.length > 0) this.onFlush?.(allSignals);
     return allSignals;
   }
 
   peek(bufferId: string): Signal[] {
-    const buffer = this.buffers.get(bufferId);
-    return buffer ? [...buffer.signals] : [];
+    return [...(this.buffers.get(bufferId)?.signals ?? [])];
   }
 
   getTotalCount(): number {
@@ -123,29 +118,18 @@ export class SignalBufferManager {
 }
 
 class RuntimeStateProxyHandler<T extends object> implements ProxyHandler<T> {
-  private nodeName: string;
-  private traceIdProvider: () => TraceId;
-  private signalBuffer: SignalBufferManager;
-  private config: SignalProxyConfig;
   private trackedValues: Map<string, unknown> = new Map();
   private flushInterval: ReturnType<typeof setInterval> | null = null;
   private interceptedPaths: Set<string> = new Set();
 
   constructor(
-    nodeName: string,
-    traceIdProvider: () => TraceId,
-    signalBuffer: SignalBufferManager,
-    config: SignalProxyConfig,
+    private readonly nodeName: string,
+    private readonly traceIdProvider: () => TraceId,
+    private readonly signalBuffer: SignalBufferManager,
+    private readonly config: SignalProxyConfig,
   ) {
-    this.nodeName = nodeName;
-    this.traceIdProvider = traceIdProvider;
-    this.signalBuffer = signalBuffer;
-    this.config = config;
-
     if (config.flushIntervalMs > 0) {
-      this.flushInterval = setInterval(() => {
-        this.signalBuffer.flush();
-      }, config.flushIntervalMs);
+      this.flushInterval = setInterval(() => this.signalBuffer.flush(), config.flushIntervalMs);
     }
   }
 
@@ -170,8 +154,7 @@ class RuntimeStateProxyHandler<T extends object> implements ProxyHandler<T> {
     if (typeof value === 'number' && Number.isFinite(value)) {
       const signal = createSignal(this.nodeName, value, this.traceIdProvider(), { property: prop, path });
       this.signalBuffer.push(this.nodeName, signal);
-      const buffer = this.signalBuffer.peek(this.nodeName);
-      if (buffer.length >= this.config.batchSize) this.signalBuffer.flush();
+      if (this.signalBuffer.peek(this.nodeName).length >= this.config.batchSize) this.signalBuffer.flush();
       this.trackedValues.set(prop, value);
     }
 
@@ -202,8 +185,7 @@ class RuntimeStateProxyHandler<T extends object> implements ProxyHandler<T> {
       });
       this.signalBuffer.push(this.nodeName, signal);
       this.trackedValues.set(prop, value);
-      const buffer = this.signalBuffer.peek(this.nodeName);
-      if (buffer.length >= this.config.batchSize) this.signalBuffer.flush();
+      if (this.signalBuffer.peek(this.nodeName).length >= this.config.batchSize) this.signalBuffer.flush();
     }
 
     return Reflect.set(target, prop, value, receiver);
@@ -223,7 +205,7 @@ class RuntimeStateProxyHandler<T extends object> implements ProxyHandler<T> {
 }
 
 export interface SignalProxyInstance<T extends object> {
-  proxy: T;
+  proxy: T & Record<string, unknown>;
   flush(): Signal[];
   peek(nodeId: string): Signal[];
   getInterceptedPaths(): string[];
@@ -238,7 +220,7 @@ export function createSignalProxy<T extends object>(
   config: SignalProxyConfig,
 ): SignalProxyInstance<T> {
   const handler = new RuntimeStateProxyHandler(nodeName, traceIdProvider, buffer, config);
-  const proxy = new Proxy(target, handler);
+  const proxy = new Proxy(target, handler) as T & Record<string, unknown>;
 
   return {
     proxy,
@@ -257,9 +239,7 @@ export class DirectSignalEmitter {
   constructor(maxBufferSize = 1000, traceIdProvider: () => TraceId = defaultTraceIdProvider) {
     this.buffer = new SignalBufferManager(maxBufferSize);
     this.traceIdProvider = traceIdProvider;
-    this.buffer.setEmitter((signals) => {
-      this.listeners.forEach((listener) => listener(signals));
-    });
+    this.buffer.setEmitter((signals) => this.listeners.forEach((listener) => listener(signals)));
   }
 
   emit(node: string, value: number, metadata?: Record<string, unknown>): Signal {
@@ -296,12 +276,13 @@ export class DirectSignalEmitter {
   }
 }
 
-export function createDefaultSignalProxyConfig(): SignalProxyConfig {
+export function createDefaultSignalProxyConfig(overrides: Partial<SignalProxyConfig> = {}): SignalProxyConfig {
   return {
     enabled: true,
     batchSize: 10,
     flushIntervalMs: 50,
     monitoredNodes: [],
     interceptAll: true,
+    ...overrides,
   };
 }
