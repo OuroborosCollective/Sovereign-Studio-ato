@@ -42,6 +42,8 @@ const MIN_WEIGHT_BOUND = 0.0;
 const DEFAULT_MAX_CONNECTIONS_PER_NODE = 10;
 const WEIGHT_EPSILON = 0.001;
 
+type HebbianRuntimeConfig = HebbianConfig & { maxConnections?: number };
+
 export interface HebbianAdaptorStats {
   totalUpdates: number;
   growthEvents: number;
@@ -50,6 +52,7 @@ export interface HebbianAdaptorStats {
   averageWeight: number;
   maxWeight: number;
   minWeight: number;
+  synapseCount: number;
 }
 
 export interface HebbianMathTrace {
@@ -73,33 +76,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function configuredMin(config: HebbianConfig): number {
+function configuredMin(config: HebbianRuntimeConfig): number {
   return finiteOr(config.weightBounds?.min, MIN_WEIGHT_BOUND);
 }
 
-function configuredMax(config: HebbianConfig): number {
+function configuredMax(config: HebbianRuntimeConfig): number {
   return finiteOr(config.weightBounds?.max, config.maxWeight ?? MAX_WEIGHT_BOUND);
 }
 
-/**
- * Local linear approximation of ∂x̂(t)/∂W.
- */
 export function calculatePredictionGradient(preSynaptic: number): number {
   return finiteOr(preSynaptic);
 }
 
-/**
- * ΔW = η · ε(t) · ∂x̂(t)/∂W
- */
-export function calculateErrorDrivenDelta(config: HebbianConfig, predictionError: number, predictionGradient: number): number {
+export function calculateErrorDrivenDelta(config: HebbianRuntimeConfig, predictionError: number, predictionGradient: number): number {
   return finiteOr(config.learningRate) * finiteOr(predictionError) * finiteOr(predictionGradient);
 }
 
-/**
- * Δw_ij = η · (x_i · x_j - w_ij · x_j²)
- */
 export function calculateExtendedHebbianDelta(
-  config: HebbianConfig,
+  config: HebbianRuntimeConfig,
   currentWeight: number,
   preSynaptic: number,
   postSynaptic: number,
@@ -110,22 +104,16 @@ export function calculateExtendedHebbianDelta(
   return finiteOr(config.learningRate) * ((xI * xJ) - (wIJ * xJ * xJ));
 }
 
-/**
- * Applies damping to prevent oscillation in repeated update cycles.
- */
-export function applyHebbianDamping(config: HebbianConfig, delta: number): number {
+export function applyHebbianDamping(config: HebbianRuntimeConfig, delta: number): number {
   return finiteOr(delta) * finiteOr(config.dampingFactor, 1);
 }
 
-/**
- * w_ij(t+1) = (1 - λ) · (w_ij(t) + Δw_ij), with λ = 1 - decayFactor.
- */
-export function applyHebbianDecay(currentWeight: number, delta: number, config: HebbianConfig): number {
+export function applyHebbianDecay(currentWeight: number, delta: number, config: HebbianRuntimeConfig): number {
   return (finiteOr(currentWeight) + finiteOr(delta)) * finiteOr(config.decayFactor, 1);
 }
 
 export function calculateHebbianMathTrace(
-  config: HebbianConfig,
+  config: HebbianRuntimeConfig,
   currentWeight: number,
   error: PredictionError,
   previousActivation: number,
@@ -155,7 +143,7 @@ export function calculateHebbianMathTrace(
   };
 }
 
-export function calculateCoActivationDelta(config: HebbianConfig, coActivationStrength: number): number {
+export function calculateCoActivationDelta(config: HebbianRuntimeConfig, coActivationStrength: number): number {
   return finiteOr(config.learningRate) * finiteOr(coActivationStrength);
 }
 
@@ -165,7 +153,7 @@ function classifyWeightEvent(delta: number): WeightUpdateResult['eventType'] {
 }
 
 export class HebbianAdaptor {
-  private config: HebbianConfig;
+  private config: HebbianRuntimeConfig;
   private synapses: Map<string, Synapse> = new Map();
   private nodes: Map<string, NeuralNode> = new Map();
   private updateCount = 0;
@@ -173,7 +161,7 @@ export class HebbianAdaptor {
   private stats: HebbianAdaptorStats;
   private lastTrace: HebbianMathTrace | null = null;
 
-  constructor(config: Partial<HebbianConfig> = {}) {
+  constructor(config: Partial<HebbianRuntimeConfig> = {}) {
     this.config = { ...DEFAULT_HEBBIAN_CONFIG, ...config };
     this.stats = this.createEmptyStats();
   }
@@ -187,11 +175,13 @@ export class HebbianAdaptor {
       averageWeight: 0,
       maxWeight: 0,
       minWeight: 1,
+      synapseCount: 0,
     };
   }
 
   registerSynapse(synapse: Synapse): void {
     this.synapses.set(synapse.id, { ...synapse });
+    this.updateStats(false);
   }
 
   registerNode(node: NeuralNode): void {
@@ -297,7 +287,7 @@ export class HebbianAdaptor {
     for (const synapse of this.synapses.values()) {
       if (synapse.targetNode === targetNodeId) incomingCount += 1;
     }
-    return incomingCount < DEFAULT_MAX_CONNECTIONS_PER_NODE;
+    return incomingCount < (this.config.maxConnections ?? DEFAULT_MAX_CONNECTIONS_PER_NODE);
   }
 
   private createSynapse(sourceNodeId: string, targetNodeId: string, initialWeight: number): Synapse {
@@ -323,21 +313,28 @@ export class HebbianAdaptor {
       this.stats.prunedSynapses += 1;
     }
 
+    this.updateStats(false);
     return toPrune.length;
   }
 
-  private updateStats(): void {
-    this.stats.totalUpdates += 1;
+  private updateStats(countUpdate = true): void {
+    if (countUpdate) this.stats.totalUpdates += 1;
     const weights = Array.from(this.synapses.values()).map((synapse) => synapse.weight);
+    this.stats.synapseCount = weights.length;
 
     if (weights.length > 0) {
       this.stats.averageWeight = weights.reduce((sum, weight) => sum + weight, 0) / weights.length;
       this.stats.maxWeight = Math.max(...weights);
       this.stats.minWeight = Math.min(...weights);
+    } else {
+      this.stats.averageWeight = 0;
+      this.stats.maxWeight = 0;
+      this.stats.minWeight = 1;
     }
   }
 
   getStats(): HebbianAdaptorStats {
+    this.updateStats(false);
     return { ...this.stats };
   }
 
@@ -384,11 +381,12 @@ export class HebbianAdaptor {
       this.synapses.set(synapse.id, { ...synapse });
       imported += 1;
     }
+    this.updateStats(false);
     return imported;
   }
 }
 
-export function createHebbianAdaptor(config?: Partial<HebbianConfig>): HebbianAdaptor {
+export function createHebbianAdaptor(config?: Partial<HebbianRuntimeConfig>): HebbianAdaptor {
   return new HebbianAdaptor(config);
 }
 
