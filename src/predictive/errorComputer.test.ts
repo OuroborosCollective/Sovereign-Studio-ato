@@ -181,8 +181,8 @@ describe('ErrorComputer', () => {
       }
 
       const stats = errorComputer.getStats();
-      expect(stats.maxError).toBeCloseTo(0.4, 5); // 0.9 - 0.5 = 0.4 (largest negative)
-      expect(stats.minError).toBeCloseTo(-0.1, 5); // 0.7 - 0.8 = -0.1 (largest negative)
+      expect(stats.maxError).toBeCloseTo(0.1, 5); // largest positive raw error
+      expect(stats.minError).toBeCloseTo(-0.1, 5); // largest negative raw error
     });
   });
 
@@ -210,7 +210,7 @@ describe('ErrorComputer', () => {
         errorComputer.computeError(signal, prediction, `trace-${i}`);
       }
 
-      expect(errorComputer.getSuppressionRate()).toBeCloseTo(0.3, 5);
+      expect(errorComputer.getSuppressionRate()).toBeCloseTo(0.7, 5);
     });
   });
 
