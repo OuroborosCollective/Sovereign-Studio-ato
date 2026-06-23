@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, Lightbulb, Loader2, CircleX } from 'lucide-react';
 import { ChatMessage, Suggestion } from '../types';
 import {
@@ -32,11 +32,14 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const safeMessages = normalizeChatMessages(chatMessages);
-  const safeSuggestions = normalizeSuggestions(suggestions);
+
+  // Memoize derived state to prevent redundant O(N) computations on every keystroke
+  const safeMessages = useMemo(() => normalizeChatMessages(chatMessages), [chatMessages]);
+  const safeSuggestions = useMemo(() => normalizeSuggestions(suggestions), [suggestions]);
+  const summary = useMemo(() => chatSidebarSummary(safeMessages, safeSuggestions), [safeMessages, safeSuggestions]);
+
   const normalizedInput = normalizeChatInput(inputValue);
   const canSubmit = canSubmitChatMessage(inputValue);
-  const summary = chatSidebarSummary(safeMessages, safeSuggestions);
 
   useEffect(() => {
     try {
