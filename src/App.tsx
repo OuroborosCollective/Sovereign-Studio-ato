@@ -112,6 +112,7 @@ type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
 const DEFAULT_MISSION = 'README + Update History';
 const AUTO_STEP_DELAY_MS = 5000;
+const USER_NAVIGATION_OVERRIDE_MS = 30_000;
 
 // Tabs are derived from the Product Template as the single source of truth.
 // This ensures the app shell always matches the product contract.
@@ -207,6 +208,7 @@ const App: React.FC = () => {
   const [lastPackageKey, setLastPackageKey] = useState('');
   const [lastDraftCommitSha, setLastDraftCommitSha] = useState('');
   const [lastDraftBranch, setLastDraftBranch] = useState('');
+  const [lastDraftPackageKey, setLastDraftPackageKey] = useState('');
   const [workflowReport, setWorkflowReport] = useState<WorkflowWatchReport | null>(null);
   const [diffSources, setDiffSources] = useState<SourceFileSnapshot[]>([]);
   const [isLoadingDiffSources, setIsLoadingDiffSources] = useState(false);
@@ -333,9 +335,35 @@ const App: React.FC = () => {
   }, [solutionPatternStore]);
 
   const handleUserTabClick = (tab: SovereignTab) => {
-    recentUserInteractionUntil.current = wallClockMs() + 3_000;
+    recentUserInteractionUntil.current = wallClockMs() + USER_NAVIGATION_OVERRIDE_MS;
     setActiveTab(tab);
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleGuideCommand = (event: Event): void => {
+      const detail = (event as CustomEvent<{ type?: string; targetTab?: SovereignTab | null }>).detail;
+      if (!detail) return;
+
+      if (detail.type === 'confirm') {
+        recentUserInteractionUntil.current = wallClockMs() + USER_NAVIGATION_OVERRIDE_MS;
+        setPlanningConfirmed(true);
+        pushTelemetry('workflow', 'info', 'release-guide:confirmed', 'User confirmed the visible coach step.');
+        return;
+      }
+
+      if ((detail.type === 'next' || detail.type === 'back') && detail.targetTab) {
+        handleUserTabClick(detail.targetTab);
+        pushTelemetry('workflow', 'info', `release-guide:${detail.type}`, `Coach navigation selected ${detail.targetTab}.`, { tab: detail.targetTab });
+      }
+    };
+
+    window.addEventListener('sovereign:release-guide-command', handleGuideCommand as EventListener);
+    return () => window.removeEventListener('sovereign:release-guide-command', handleGuideCommand as EventListener);
+    // Release guide commands are runtime events from the global coach.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const routerActiveTab: SovereignAutoViewTab = activeTab === 'monitor' ? 'repo' : activeTab;
@@ -546,6 +574,7 @@ const App: React.FC = () => {
       setDiffSources([]);
       setLastDraftCommitSha('');
       setLastDraftBranch('');
+      setLastDraftPackageKey('');
       setWorkflowReport(null);
 
       return true;
@@ -711,6 +740,7 @@ const App: React.FC = () => {
     setDiffSources([]);
     setLastDraftCommitSha('');
     setLastDraftBranch('');
+    setLastDraftPackageKey('');
     setWorkflowReport(null);
     setLastAutoRunKey('');
 
@@ -726,6 +756,7 @@ const App: React.FC = () => {
     setDiffSources([]);
     setLastDraftCommitSha('');
     setLastDraftBranch('');
+    setLastDraftPackageKey('');
     setWorkflowReport(null);
     setLastAutoRunKey('');
     setSovereignPreview('');
@@ -735,6 +766,19 @@ const App: React.FC = () => {
   };
 
   const publishDraftPrForPackage = async (pkg: SovereignImplementationPackage): Promise<boolean> => {
+    if (lastDraftCommitSha && lastDraftBranch && lastDraftPackageKey === packageInputKey) {
+      const message = [
+        'Draft PR existiert bereits fuer diesen Auftrag und Repo-Snapshot.',
+        `Branch: ${lastDraftBranch}`,
+        `Commit: ${lastDraftCommitSha}`,
+        'Ich erstelle keinen zweiten identischen Draft PR. Beobachte stattdessen die bestehenden Checks.',
+      ].join('\n');
+      setSovereignSummary(message);
+      pushTelemetry('github', 'info', 'github:draft-pr-deduped', 'Existing Draft PR reused for this exact package input.', { branch: lastDraftBranch });
+      await watchLatestWorkflow(lastDraftCommitSha, lastDraftBranch);
+      return true;
+    }
+
     const result = await runSequentialStep('draft-pr-publish', async () => {
       // Guard: all publish preconditions must pass (file review + health gate)
       const review = reviewGeneratedFiles(pkg.files);
@@ -783,6 +827,7 @@ const App: React.FC = () => {
 
     setLastDraftCommitSha(result.commitSha);
     setLastDraftBranch(result.branch);
+    setLastDraftPackageKey(packageInputKey);
     setSovereignSummary([
       'Draft PR erstellt.',
       `URL: ${result.pullRequestUrl}`,
@@ -1146,6 +1191,16 @@ const App: React.FC = () => {
 
       {activeTab === 'builder' ? (
         <SovereignTabErrorBoundary tabId="builder" tabLabel="Builder">
+          <RepoInsightPanelBridge
+            repoFiles={safeRepoFiles}
+            scanRegistry={scanRegistry}
+            workflowReport={workflowReport}
+            solutionPatternStore={solutionPatternStore}
+            currentMission={mission}
+            onSuggestionClick={(suggestion) => {
+              setMission(suggestion.whyUseful);
+            }}
+          />
           <BuilderContainer
             mission={mission}
             repoReady={repoSnapshotStatus.ready}
@@ -1159,16 +1214,6 @@ const App: React.FC = () => {
             onGenerateIdeas={generateRepoIdeas}
             onGenerateErrorWorkflow={generateErrorWorkflow}
             onPublishDraftPr={() => { void publishDraftPr(); }}
-          />
-          <RepoInsightPanelBridge
-            repoFiles={safeRepoFiles}
-            scanRegistry={scanRegistry}
-            workflowReport={workflowReport}
-            solutionPatternStore={solutionPatternStore}
-            currentMission={mission}
-            onSuggestionClick={(suggestion) => {
-              setMission(suggestion.whyUseful);
-            }}
           />
         </SovereignTabErrorBoundary>
       ) : null}
