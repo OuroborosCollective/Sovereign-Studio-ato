@@ -3,7 +3,7 @@ import { resolveProductWithLlmRevolver } from '../llm/productLlmRevolver';
 import { buildSovereignLlmPrompt as buildAdapterSovereignLlmPrompt } from '../llm/llmAdapter';
 import { defaultSettings, starterCards } from '../constants';
 import type { Card, ProjectSettings } from '../types';
-import type { LlmRevolverFailure, LlmRevolverResult } from '../llm/llmAdapter';
+import type { LlmRevolverFailure } from '../llm/llmAdapter';
 
 export interface SovereignLlmRuntimeInput {
   mission: string;
@@ -55,11 +55,6 @@ function lastTryingAttemptIndex(attempts: SovereignLlmRuntimeAttempt[], provider
     if (attempt.providerId === providerId && attempt.status === 'trying') return index;
   }
   return -1;
-}
-
-function asFailureResult(result: LlmRevolverResult): LlmRevolverFailure {
-  if (result.ok) throw new Error('Expected failed LLM revolver result.');
-  return result;
 }
 
 export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): Promise<SovereignLlmRuntimeResult> {
@@ -135,7 +130,7 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
     };
   }
 
-  const failed = asFailureResult(result);
+  const failed = result as LlmRevolverFailure;
   return {
     ok: false,
     source: 'local-safe',
