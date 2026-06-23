@@ -41,7 +41,75 @@ export {
 } from './types';
 
 // ============================================================================
-// Signal Proxy
+// Predictive Guard (Phase 4.1)
+// ============================================================================
+
+export {
+  type SafetyContext,
+  type SafetyCheckResult,
+  type SafetyLevel,
+  type PredictiveGuardConfig,
+  type GuardThresholds,
+  type DecisionOutcome,
+  type SimilarPattern,
+  PredictiveGuard,
+  createPredictiveGuard,
+} from './predictiveGuard';
+
+// ============================================================================
+// Safety Check Functions (Phase 4.2)
+// ============================================================================
+
+export {
+  DEFAULT_SAFETY_THRESHOLDS,
+  checkActionSafety,
+  checkBuildSafety,
+  checkPublishSafety,
+  checkDecisionSafety,
+  getSystemSafetyStatus,
+  safetyCheckToGuardResult,
+  predictiveGuardPreFlight,
+  type ActionSafetyCheck,
+  type SimilarFailure,
+  type RuntimeSafetyContext,
+} from './predictiveSafety';
+
+// ============================================================================
+// Predictive Guard Hooks (Phase 4.4)
+// ============================================================================
+
+export {
+  usePredictiveLayer,
+  usePredictiveGuard,
+  usePredictionConfidence,
+  usePredictiveSignal,
+  PredictiveProvider,
+  type PredictiveLayerContextValue,
+  type UsePredictiveLayerOptions,
+  type PredictiveGuardContextValue,
+  type UsePredictiveGuardOptions,
+  type PredictiveProviderProps,
+} from './predictiveHooks';
+
+// ============================================================================
+// RuntimeIntelligence Integration (Phase 4.3)
+// ============================================================================
+
+export {
+  createPredictiveRuntimeGuard,
+  createBuildPredictiveGuard,
+  createPublishPredictiveGuard,
+  createDecisionPredictiveGuard,
+  createSystemHealthPredictiveGuard,
+  createPredictiveGuardChain,
+  type PredictiveRuntimeGuardOptions,
+} from './runtimeIntelligenceIntegration';
+
+// ============================================================================
+// UI Components (Phase 4.4)
+// ============================================================================
+
+export { PredictiveUI, PredictiveConfidenceBar, PredictiveStatusBadge, PredictiveHealthIndicator, PredictiveWarningToast, PredictiveDecisionOverlay } from './ui/PredictiveUI';
 // ============================================================================
 
 export {
