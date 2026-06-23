@@ -1,18 +1,14 @@
 /**
  * Predictive Layer UI Components
  *
- * Phase 4.4: Add UI feedback for predictions
- * Visual components for displaying predictive layer status and warnings.
+ * UI displays advisory predictive signals only. It must not present confidence
+ * as proof that build, publish or repair actions succeeded.
  *
  * @module predictive/ui
  */
 
 import React, { useMemo, useEffect } from 'react';
 import type { PredictiveLayerSnapshot, PredictiveMetrics } from '../types';
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface PredictiveConfidenceBarProps {
   confidence: number;
@@ -26,7 +22,7 @@ export interface PredictiveConfidenceBarProps {
 }
 
 export interface PredictiveStatusBadgeProps {
-  status: 'safe' | 'warning' | 'danger' | 'critical' | 'inactive';
+  status: 'advisory' | 'warning' | 'danger' | 'critical' | 'inactive';
   label?: string;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -56,9 +52,10 @@ export interface PredictiveDecisionOverlayProps {
   action: string;
 }
 
-// ============================================================================
-// Confidence Bar Component
-// ============================================================================
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
 
 export function PredictiveConfidenceBar({
   confidence,
@@ -67,21 +64,23 @@ export function PredictiveConfidenceBar({
   showText = true,
   className = '',
 }: PredictiveConfidenceBarProps) {
+  const safeConfidence = clamp01(confidence);
   const color = useMemo(() => {
-    if (confidence < thresholds.danger) return 'var(--color-danger, #dc3545)';
-    if (confidence < thresholds.warning) return 'var(--color-warning, #ffc107)';
-    return 'var(--color-success, #28a745)';
-  }, [confidence, thresholds]);
+    if (safeConfidence < thresholds.danger) return 'var(--color-danger, #dc3545)';
+    if (safeConfidence < thresholds.warning) return 'var(--color-warning, #ffc107)';
+    return 'var(--color-info, #17a2b8)';
+  }, [safeConfidence, thresholds]);
 
   const bgColor = useMemo(() => {
-    if (confidence < thresholds.danger) return 'rgba(220, 53, 69, 0.2)';
-    if (confidence < thresholds.warning) return 'rgba(255, 193, 7, 0.2)';
-    return 'rgba(40, 167, 69, 0.2)';
-  }, [confidence, thresholds]);
+    if (safeConfidence < thresholds.danger) return 'rgba(220, 53, 69, 0.2)';
+    if (safeConfidence < thresholds.warning) return 'rgba(255, 193, 7, 0.2)';
+    return 'rgba(23, 162, 184, 0.2)';
+  }, [safeConfidence, thresholds]);
 
   return (
     <div
       className={`predictive-confidence-bar ${className}`}
+      aria-label="Predictive advisory confidence"
       style={{
         height: `${height}px`,
         backgroundColor: bgColor,
@@ -93,7 +92,7 @@ export function PredictiveConfidenceBar({
       <div
         style={{
           height: '100%',
-          width: `${Math.max(0, Math.min(100, confidence * 100))}%`,
+          width: `${safeConfidence * 100}%`,
           backgroundColor: color,
           transition: 'width 0.3s ease, background-color 0.3s ease',
         }}
@@ -107,19 +106,15 @@ export function PredictiveConfidenceBar({
             transform: 'translateY(-50%)',
             fontSize: '10px',
             fontWeight: 600,
-            color: color,
+            color,
           }}
         >
-          {(confidence * 100).toFixed(0)}%
+          {(safeConfidence * 100).toFixed(0)}%
         </span>
       )}
     </div>
   );
 }
-
-// ============================================================================
-// Status Badge Component
-// ============================================================================
 
 export function PredictiveStatusBadge({
   status,
@@ -133,9 +128,9 @@ export function PredictiveStatusBadge({
   };
 
   const statusConfig = {
-    safe: { color: '#28a745', bg: 'rgba(40, 167, 69, 0.15)', icon: '✓' },
+    advisory: { color: '#17a2b8', bg: 'rgba(23, 162, 184, 0.15)', icon: 'i' },
     warning: { color: '#ffc107', bg: 'rgba(255, 193, 7, 0.15)', icon: '⚠' },
-    danger: { color: '#dc3545', bg: 'rgba(220, 53, 69, 0.15)', icon: '✕' },
+    danger: { color: '#dc3545', bg: 'rgba(220, 53, 69, 0.15)', icon: '!' },
     critical: { color: '#6f42c1', bg: 'rgba(111, 66, 193, 0.15)', icon: '⚡' },
     inactive: { color: '#6c757d', bg: 'rgba(108, 117, 125, 0.15)', icon: '○' },
   };
@@ -163,37 +158,25 @@ export function PredictiveStatusBadge({
   );
 }
 
-// ============================================================================
-// Health Indicator Component
-// ============================================================================
-
 export function PredictiveHealthIndicator({
   snapshot,
   metrics,
   detailed = false,
 }: PredictiveHealthIndicatorProps) {
-  const confidence = useMemo(() => {
-    if (!snapshot || snapshot.nodes.length === 0) return 0;
-    return snapshot.avgConfidence ?? 0;
-  }, [snapshot]);
-
-  const errorRate = useMemo(() => {
-    if (!metrics || metrics.totalPredictions === 0) return 0;
-    return metrics.failedPredictions / metrics.totalPredictions;
-  }, [metrics]);
-
-  const status = useMemo(() => {
-    if (!snapshot || snapshot.nodes.length === 0) return 'inactive';
+  const confidence = useMemo(() => snapshot?.avgConfidence ?? 0, [snapshot]);
+  const errorRate = useMemo(() => snapshot?.errorRate ?? 0, [snapshot]);
+  const status = useMemo<PredictiveStatusBadgeProps['status']>(() => {
+    if (!snapshot || !snapshot.active || snapshot.nodeCount === 0) return 'inactive';
     if (confidence < 0.2 || errorRate > 0.35) return 'critical';
     if (confidence < 0.35 || errorRate > 0.2) return 'danger';
     if (confidence < 0.5 || errorRate > 0.1) return 'warning';
-    return 'safe';
+    return 'advisory';
   }, [confidence, errorRate, snapshot]);
 
   return (
     <div className="predictive-health-indicator">
       <div className="health-header">
-        <PredictiveStatusBadge status={status} label="Predictive" />
+        <PredictiveStatusBadge status={status} label="Predictive advisory" />
       </div>
 
       <PredictiveConfidenceBar confidence={confidence} className="health-confidence" />
@@ -216,15 +199,17 @@ export function PredictiveHealthIndicator({
             <span className="metric-label">Nodes</span>
             <span className="metric-value">{snapshot.nodeCount}</span>
           </div>
+          {metrics && (
+            <div className="metric-row">
+              <span className="metric-label">Cycle</span>
+              <span className="metric-value">{metrics.totalCycleMs.toFixed(1)}ms</span>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-
-// ============================================================================
-// Warning Toast Component
-// ============================================================================
 
 export function PredictiveWarningToast({
   message,
@@ -238,6 +223,7 @@ export function PredictiveWarningToast({
       const timer = setTimeout(onDismiss, autoDismissMs);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [autoDismissMs, onDismiss]);
 
   return (
@@ -246,7 +232,7 @@ export function PredictiveWarningToast({
       <div className="toast-content">
         <div className="toast-message">{message}</div>
         <div className="toast-meta">
-          Confidence: {(confidence * 100).toFixed(0)}% | Error Rate: {(errorRate * 100).toFixed(1)}%
+          Advisory confidence: {(clamp01(confidence) * 100).toFixed(0)}% | Error Rate: {(clamp01(errorRate) * 100).toFixed(1)}%
         </div>
       </div>
       {onDismiss && (
@@ -258,10 +244,6 @@ export function PredictiveWarningToast({
   );
 }
 
-// ============================================================================
-// Decision Overlay Component
-// ============================================================================
-
 export function PredictiveDecisionOverlay({
   isChecking,
   result,
@@ -270,7 +252,7 @@ export function PredictiveDecisionOverlay({
   if (!isChecking && !result) return null;
 
   const getStatusIcon = () => {
-    if (isChecking) return '🔮';
+    if (isChecking) return '🔎';
     if (!result) return '';
     switch (result.suggestedAction) {
       case 'block': return '🚫';
@@ -278,7 +260,7 @@ export function PredictiveDecisionOverlay({
       case 'review': return '👀';
       case 'proceed':
       default:
-        return '✓';
+        return 'i';
     }
   };
 
@@ -290,7 +272,7 @@ export function PredictiveDecisionOverlay({
       case 'review': return 'var(--color-info, #17a2b8)';
       case 'proceed':
       default:
-        return 'var(--color-success, #28a745)';
+        return 'var(--color-info, #17a2b8)';
     }
   };
 
@@ -301,13 +283,13 @@ export function PredictiveDecisionOverlay({
           {getStatusIcon()}
         </div>
         <div className="overlay-title">
-          {isChecking ? 'Analyzing...' : `Checking ${action}...`}
+          {isChecking ? 'Checking predictive signal...' : `Predictive advisory for ${action}`}
         </div>
         {result && (
           <div className="overlay-details">
             <div className="detail-row">
               <span>Confidence:</span>
-              <span>{(result.confidence * 100).toFixed(0)}%</span>
+              <span>{(clamp01(result.confidence) * 100).toFixed(0)}%</span>
             </div>
             <div className="detail-row">
               <span>Recommendation:</span>
@@ -317,7 +299,7 @@ export function PredictiveDecisionOverlay({
           </div>
         )}
         {isChecking && (
-          <div className="overlay-progress">
+          <div className="overlay-progress" aria-label="Predictive advisory check running">
             <div className="progress-bar">
               <div className="progress-fill" />
             </div>
@@ -327,10 +309,6 @@ export function PredictiveDecisionOverlay({
     </div>
   );
 }
-
-// ============================================================================
-// Main Export
-// ============================================================================
 
 export const PredictiveUI = {
   ConfidenceBar: PredictiveConfidenceBar,
