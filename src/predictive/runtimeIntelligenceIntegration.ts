@@ -20,6 +20,10 @@ export interface PredictiveRuntimeGuardOptions {
   warnOnly?: boolean;
 }
 
+function resolveTraceId(ctx: RuntimeContext & Record<string, unknown>, fallback: string): string {
+  return typeof ctx.traceId === 'string' && ctx.traceId.length > 0 ? ctx.traceId : fallback;
+}
+
 export function createPredictiveRuntimeGuard(options: PredictiveRuntimeGuardOptions): Guard {
   const {
     action,
@@ -33,6 +37,8 @@ export function createPredictiveRuntimeGuard(options: PredictiveRuntimeGuardOpti
     name: `predictive_${action}_guard`,
     check: async (_ctx: RuntimeContext & Record<string, unknown>): Promise<RuntimeGuardResult> => {
       const startTime = performance.now();
+      const guardName = `predictive_${action}_guard`;
+      const traceId = resolveTraceId(_ctx, `${guardName}:no-trace`);
 
       try {
         const snapshot = getSnapshot?.() ?? null;
@@ -43,7 +49,8 @@ export function createPredictiveRuntimeGuard(options: PredictiveRuntimeGuardOpti
 
         return {
           pass,
-          guardName: `predictive_${action}_guard`,
+          guardName,
+          traceId,
           reason,
           durationMs: duration,
           riskReduction: pass ? 0.2 : 0.5,
@@ -59,7 +66,8 @@ export function createPredictiveRuntimeGuard(options: PredictiveRuntimeGuardOpti
         const duration = performance.now() - startTime;
         return {
           pass: !warnOnly,
-          guardName: `predictive_${action}_guard`,
+          guardName,
+          traceId,
           reason: `Predictive guard error: ${error instanceof Error ? error.message : String(error)}`,
           durationMs: duration,
           riskReduction: 0,
@@ -108,6 +116,8 @@ export function createSystemHealthPredictiveGuard(getSnapshot?: () => Predictive
     name: 'predictive_system_health_guard',
     check: async (_ctx: RuntimeContext & Record<string, unknown>): Promise<RuntimeGuardResult> => {
       const startTime = performance.now();
+      const guardName = 'predictive_system_health_guard';
+      const traceId = resolveTraceId(_ctx, `${guardName}:no-trace`);
 
       try {
         const snapshot = getSnapshot?.() ?? null;
@@ -116,7 +126,8 @@ export function createSystemHealthPredictiveGuard(getSnapshot?: () => Predictive
 
         return {
           pass: healthStatus.isHealthy,
-          guardName: 'predictive_system_health_guard',
+          guardName,
+          traceId,
           reason: `System health: ${healthStatus.message} | Confidence: ${(healthStatus.confidence * 100).toFixed(0)}%`,
           durationMs: duration,
           riskReduction: healthStatus.isHealthy ? 0.1 : 0.4,
@@ -130,7 +141,8 @@ export function createSystemHealthPredictiveGuard(getSnapshot?: () => Predictive
         const duration = performance.now() - startTime;
         return {
           pass: false,
-          guardName: 'predictive_system_health_guard',
+          guardName,
+          traceId,
           reason: `System health check error: ${error instanceof Error ? error.message : String(error)}`,
           durationMs: duration,
           riskReduction: 0,
