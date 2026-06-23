@@ -51,6 +51,16 @@ import {
   type MobileWorkflowPatternMatch,
 } from '../mobile-workflow-pattern-rules';
 
+// Predictive Layer Integration
+import {
+  PredictiveLayer,
+  createPredictiveLayer,
+  type PredictiveLayerSnapshot,
+  type PredictiveLayerConfig,
+  type NeuralNode,
+  DEFAULT_PREDICTIVE_CONFIG,
+} from '../predictive';
+
 export type { FullPipelineBridge } from '../features/product/runtime/containerBridgeValidation';
 
 type FullPipelineBridge = ImportedFullPipelineBridge;
@@ -155,6 +165,11 @@ export interface RuntimeIntelligenceConfig {
   maxVisibleTextLength?: number;
   guardTimeoutMs?: number;
   circuitBreakerDefaults?: RuntimeCircuitBreakerDefaults;
+  predictiveLayerConfig?: Partial<PredictiveLayerConfig>;
+  /** @deprecated Predictive layer is now enabled by default. Set to false to disable. */
+  enablePredictiveLayer?: boolean;
+  /** Explicitly disable predictive layer even if added to runtime flow */
+  disablePredictiveLayer?: boolean;
 }
 
 export interface RuntimeGuardExecutionOptions {
@@ -200,6 +215,15 @@ export interface RuntimeHealthSnapshot {
     totalSignals: number;
     accepted: number;
     rejected: number;
+  };
+  predictive: {
+    active: boolean;
+    phase: string;
+    nodeCount: number;
+    synapseCount: number;
+    patternCount: number;
+    avgConfidence: number;
+    errorRate: number;
   };
   reasons: string[];
 }
@@ -949,6 +973,11 @@ export class RuntimeIntelligence {
   private readonly maxVisibleTextLength: number;
   private readonly guardTimeoutMs: number;
   private readonly circuitBreakerDefaults: Required<RuntimeCircuitBreakerDefaults>;
+  
+  // Predictive Layer Integration
+  private predictiveLayer: PredictiveLayer | null = null;
+  private predictiveEnabled: boolean = false;
+  private readonly predictiveConfig: PredictiveLayerConfig;
 
   constructor(config: RuntimeIntelligenceConfig = {}) {
     this.telemetry = config.telemetry ?? globalTelemetry;
@@ -962,10 +991,122 @@ export class RuntimeIntelligence {
       threshold: config.circuitBreakerDefaults?.threshold ?? DEFAULT_CIRCUIT_THRESHOLD,
       timeoutMs: config.circuitBreakerDefaults?.timeoutMs ?? DEFAULT_CIRCUIT_TIMEOUT_MS,
     };
+    
+    // Initialize predictive layer config
+    this.predictiveConfig = {
+      ...DEFAULT_PREDICTIVE_CONFIG,
+      ...config.predictiveLayerConfig,
+    };
+    
+    // Predictive layer is ENABLED BY DEFAULT unless explicitly disabled
+    if (config.disablePredictiveLayer !== true) {
+      this.enablePredictiveLayer(this.predictiveConfig);
+    }
   }
 
   static createTraceId(): TraceId {
     return defaultTraceIdProvider();
+  }
+
+  /**
+   * Enable the predictive layer for anticipatory predictions.
+   */
+  async enablePredictiveLayer(config?: Partial<PredictiveLayerConfig>): Promise<void> {
+    if (!this.predictiveLayer) {
+      this.predictiveLayer = createPredictiveLayer({
+        ...this.predictiveConfig,
+        ...config,
+      });
+    }
+    await this.predictiveLayer.start();
+    this.predictiveEnabled = true;
+
+    // Set up event handlers to emit signals
+    this.predictiveLayer.setEvents({
+      onPrediction: (prediction) => {
+        this.telemetry.track({
+          name: 'predictive_prediction_generated',
+          properties: {
+            node: prediction.node,
+            predictedValue: prediction.predictedValue,
+            confidence: prediction.confidence,
+            patternId: prediction.patternId,
+          },
+          timestamp: prediction.timestamp,
+          traceId: prediction.traceId,
+        });
+      },
+      onError: (error) => {
+        if (error.propagated) {
+          this.telemetry.track({
+            name: 'predictive_error_propagated',
+            properties: {
+              node: error.node,
+              error: error.error,
+              absoluteError: error.absoluteError,
+              weight: error.weight,
+            },
+            timestamp: error.timestamp,
+            traceId: error.traceId,
+          });
+        }
+      },
+      onWeightUpdate: (updates) => {
+        for (const update of updates) {
+          this.telemetry.track({
+            name: 'predictive_weight_updated',
+            properties: {
+              synapseId: update.synapseId,
+              delta: update.delta,
+              eventType: update.eventType,
+              confidence: update.confidence,
+            },
+            timestamp: runtimeNow(),
+            traceId: this.traceIdProvider(),
+          });
+        }
+      },
+    });
+
+    this.telemetry.track({
+      name: 'predictive_layer_enabled',
+      properties: {
+        nodeCount: this.predictiveLayer.getSnapshot().nodeCount,
+      },
+      timestamp: runtimeNow(),
+      traceId: this.traceIdProvider(),
+    });
+  }
+
+  /**
+   * Disable the predictive layer.
+   */
+  disablePredictiveLayer(): void {
+    if (this.predictiveLayer) {
+      this.predictiveLayer.stop();
+      this.predictiveEnabled = false;
+
+      this.telemetry.track({
+        name: 'predictive_layer_disabled',
+        properties: {},
+        timestamp: runtimeNow(),
+        traceId: this.traceIdProvider(),
+      });
+    }
+  }
+
+  /**
+   * Get the predictive layer snapshot.
+   */
+  getPredictiveSnapshot(): PredictiveLayerSnapshot | null {
+    return this.predictiveLayer?.getSnapshot() ?? null;
+  }
+
+  /**
+   * Check if predictive layer is enabled.
+   */
+  isPredictiveEnabled(): boolean {
+    return this.predictiveEnabled;
   }
 
   decide(
@@ -1272,6 +1413,35 @@ export class RuntimeIntelligence {
 
     const learning = this.getLearningStats();
 
+    // Get predictive layer snapshot if enabled
+    let predictiveSnapshot: RuntimeHealthSnapshot['predictive'] = {
+      active: false,
+      phase: 'idle',
+      nodeCount: 0,
+      synapseCount: 0,
+      patternCount: 0,
+      avgConfidence: 0,
+      errorRate: 0,
+    };
+
+    if (this.predictiveEnabled && this.predictiveLayer) {
+      const predSnapshot = this.predictiveLayer.getSnapshot();
+      predictiveSnapshot = {
+        active: predSnapshot.active,
+        phase: predSnapshot.phase,
+        nodeCount: predSnapshot.nodeCount,
+        synapseCount: predSnapshot.synapseCount,
+        patternCount: predSnapshot.patternCount,
+        avgConfidence: predSnapshot.avgConfidence,
+        errorRate: predSnapshot.errorRate,
+      };
+
+      // Warn if prediction confidence drops below 0.5
+      if (predSnapshot.avgConfidence < 0.5 && predSnapshot.active) {
+        reasons.push(`Predictive confidence low: ${(predSnapshot.avgConfidence * 100).toFixed(1)}%`);
+      }
+    }
+
     const status: RuntimeHealthSnapshot['status'] =
       openBreakers.length > 0 || !coverageValid
         ? 'red'
@@ -1290,6 +1460,7 @@ export class RuntimeIntelligence {
         gaps,
       },
       learning,
+      predictive: predictiveSnapshot,
       reasons,
     };
   }
