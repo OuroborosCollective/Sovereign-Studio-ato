@@ -10,7 +10,6 @@ on:
         type: choice
         options:
           - chromium
-          - firefox
           - webkit
           - all
 
