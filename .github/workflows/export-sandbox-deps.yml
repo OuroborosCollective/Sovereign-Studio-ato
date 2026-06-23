@@ -1,0 +1,60 @@
+name: Export Sandbox Dependencies
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9.12.2"
+  COREPACK_HOME: "${{ github.workspace }}/.corepack"
+  CI: "true"
+
+jobs:
+  export:
+    name: Build Linux dependency bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Prepare pnpm through Corepack
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${PNPM_VERSION} --activate
+          pnpm --version
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Pack dependency bundle
+        shell: bash
+        run: |
+          tar -czf sovereign-sandbox-deps-linux-node22-pnpm9.tar.gz \
+            node_modules \
+            .corepack \
+            package.json \
+            pnpm-lock.yaml \
+            pnpm-workspace.yaml \
+            tsconfig.json \
+            vite.config.ts \
+            vitest.config.ts \
+            capacitor.config.ts
+
+      - name: Upload dependency bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-sandbox-deps-linux-node22-pnpm9
+          path: sovereign-sandbox-deps-linux-node22-pnpm9.tar.gz
+          retention-days: 3
