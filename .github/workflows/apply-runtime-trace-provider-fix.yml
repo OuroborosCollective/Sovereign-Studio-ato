@@ -1,6 +1,11 @@
 name: Apply Runtime Trace Provider Fix
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-runtime-trace-provider-fix.yml
   workflow_dispatch:
 
 permissions:
@@ -45,7 +50,9 @@ jobs:
           p.write_text(s)
           PY
 
-      - run: pnpm exec vitest run src/runtime/RuntimeIntelligence.test.ts --runInBand
+      - run: pnpm exec tsc --noEmit
+
+      - run: pnpm exec vitest run src/runtime/RuntimeIntelligence.test.ts
 
       - name: Commit fix
         run: |
