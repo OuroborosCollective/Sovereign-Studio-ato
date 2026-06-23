@@ -2,6 +2,25 @@
  * Hebbian Adaptor
  *
  * Hebbian weight adaptation module for the predictive coding layer.
+ * Implements synaptic weight updates using the Hebbian learning rule.
+ *
+ * Mathematical Foundation:
+ * - Error-driven Hebbian update: ΔW = η · ε(t) · ∂x̂(t)/∂W
+ * - Extended stabilizing update: Δw_ij = η · (x_i · x_j - w_ij · x_j²)
+ * - Decay-bounded state: w_ij(t+1) = (1 - λ) · (w_ij(t) + Δw_ij), with λ = 1 - decayFactor
+ *
+ * Runtime interpretation:
+ * - x_i is the previous/source activation.
+ * - x_j is the current target/actual activation.
+ * - ε(t) is the signed prediction error.
+ * - ∂x̂(t)/∂W is approximated by the source activation for linear local prediction.
+ * - Every update is clamped to configured bounds and recorded as growth/decay.
+ *
+ * Features:
+ * - Weight bounds clamping [0.0, 1.0] by default
+ * - Damping factor to prevent oscillation
+ * - Synaptic pruning for weak connections
+ * - Batch pruning for efficiency
  *
  * @module predictive/hebbianAdaptor
  */
@@ -21,6 +40,7 @@ const DEFAULT_BATCH_PRUNE_INTERVAL = 1000;
 const MAX_WEIGHT_BOUND = 1.0;
 const MIN_WEIGHT_BOUND = 0.0;
 const DEFAULT_MAX_CONNECTIONS_PER_NODE = 10;
+const WEIGHT_EPSILON = 0.001;
 
 export interface HebbianAdaptorStats {
   totalUpdates: number;
@@ -32,6 +52,118 @@ export interface HebbianAdaptorStats {
   minWeight: number;
 }
 
+export interface HebbianMathTrace {
+  preSynaptic: number;
+  postSynaptic: number;
+  predictionError: number;
+  predictionGradient: number;
+  errorDrivenDelta: number;
+  extendedDelta: number;
+  blendedDelta: number;
+  dampedDelta: number;
+  decayedWeight: number;
+  clampedWeight: number;
+}
+
+function finiteOr(value: number, fallback = 0): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function configuredMin(config: HebbianConfig): number {
+  return finiteOr(config.weightBounds?.min, MIN_WEIGHT_BOUND);
+}
+
+function configuredMax(config: HebbianConfig): number {
+  return finiteOr(config.weightBounds?.max, config.maxWeight ?? MAX_WEIGHT_BOUND);
+}
+
+/**
+ * Local linear approximation of ∂x̂(t)/∂W.
+ */
+export function calculatePredictionGradient(preSynaptic: number): number {
+  return finiteOr(preSynaptic);
+}
+
+/**
+ * ΔW = η · ε(t) · ∂x̂(t)/∂W
+ */
+export function calculateErrorDrivenDelta(config: HebbianConfig, predictionError: number, predictionGradient: number): number {
+  return finiteOr(config.learningRate) * finiteOr(predictionError) * finiteOr(predictionGradient);
+}
+
+/**
+ * Δw_ij = η · (x_i · x_j - w_ij · x_j²)
+ */
+export function calculateExtendedHebbianDelta(
+  config: HebbianConfig,
+  currentWeight: number,
+  preSynaptic: number,
+  postSynaptic: number,
+): number {
+  const xI = finiteOr(preSynaptic);
+  const xJ = finiteOr(postSynaptic);
+  const wIJ = finiteOr(currentWeight);
+  return finiteOr(config.learningRate) * ((xI * xJ) - (wIJ * xJ * xJ));
+}
+
+/**
+ * Applies damping to prevent oscillation in repeated update cycles.
+ */
+export function applyHebbianDamping(config: HebbianConfig, delta: number): number {
+  return finiteOr(delta) * finiteOr(config.dampingFactor, 1);
+}
+
+/**
+ * w_ij(t+1) = (1 - λ) · (w_ij(t) + Δw_ij), with λ = 1 - decayFactor.
+ */
+export function applyHebbianDecay(currentWeight: number, delta: number, config: HebbianConfig): number {
+  return (finiteOr(currentWeight) + finiteOr(delta)) * finiteOr(config.decayFactor, 1);
+}
+
+export function calculateHebbianMathTrace(
+  config: HebbianConfig,
+  currentWeight: number,
+  error: PredictionError,
+  previousActivation: number,
+): HebbianMathTrace {
+  const preSynaptic = finiteOr(previousActivation);
+  const postSynaptic = finiteOr(error.actual);
+  const predictionError = finiteOr(error.error);
+  const predictionGradient = calculatePredictionGradient(preSynaptic);
+  const errorDrivenDelta = calculateErrorDrivenDelta(config, predictionError, predictionGradient);
+  const extendedDelta = calculateExtendedHebbianDelta(config, currentWeight, preSynaptic, postSynaptic);
+  const blendedDelta = (errorDrivenDelta + extendedDelta) / 2;
+  const dampedDelta = applyHebbianDamping(config, blendedDelta);
+  const decayedWeight = applyHebbianDecay(currentWeight, dampedDelta, config);
+  const clampedWeight = clamp(decayedWeight, configuredMin(config), configuredMax(config));
+
+  return {
+    preSynaptic,
+    postSynaptic,
+    predictionError,
+    predictionGradient,
+    errorDrivenDelta,
+    extendedDelta,
+    blendedDelta,
+    dampedDelta,
+    decayedWeight,
+    clampedWeight,
+  };
+}
+
+export function calculateCoActivationDelta(config: HebbianConfig, coActivationStrength: number): number {
+  return finiteOr(config.learningRate) * finiteOr(coActivationStrength);
+}
+
+function classifyWeightEvent(delta: number): WeightUpdateResult['eventType'] {
+  if (delta > WEIGHT_EPSILON) return 'growth';
+  return 'decay';
+}
+
 export class HebbianAdaptor {
   private config: HebbianConfig;
   private synapses: Map<string, Synapse> = new Map();
@@ -39,6 +171,7 @@ export class HebbianAdaptor {
   private updateCount = 0;
   private pruneCounter = 0;
   private stats: HebbianAdaptorStats;
+  private lastTrace: HebbianMathTrace | null = null;
 
   constructor(config: Partial<HebbianConfig> = {}) {
     this.config = { ...DEFAULT_HEBBIAN_CONFIG, ...config };
@@ -74,32 +207,20 @@ export class HebbianAdaptor {
     if (!synapse) return null;
 
     const previousWeight = synapse.weight;
-    const preSynaptic = previousActivation;
-    const postSynaptic = error.actual;
-    const hebbianTerm = preSynaptic * postSynaptic;
-    const antiHebbianTerm = synapse.weight * postSynaptic * postSynaptic;
-    const rawDelta = this.config.learningRate * (hebbianTerm - antiHebbianTerm);
-    const dampedDelta = rawDelta * this.config.dampingFactor;
+    const trace = calculateHebbianMathTrace(this.config, previousWeight, error, previousActivation);
+    this.lastTrace = trace;
 
-    let newWeight = previousWeight + dampedDelta;
-    newWeight *= this.config.decayFactor;
-    newWeight = this.clampWeight(newWeight);
-
-    synapse.weight = newWeight;
-    synapse.weightDelta = newWeight - previousWeight;
+    synapse.weight = trace.clampedWeight;
+    synapse.weightDelta = trace.clampedWeight - previousWeight;
     synapse.lastUpdate = Date.now();
     synapse.activationCount += 1;
     this.updateCount += 1;
 
-    let eventType: WeightUpdateResult['eventType'] = 'decay';
-    if (synapse.weightDelta > 0.001) {
-      eventType = 'growth';
-      this.stats.growthEvents += 1;
-    } else if (synapse.weightDelta < -0.001) {
-      this.stats.decayEvents += 1;
-    }
+    const eventType = classifyWeightEvent(synapse.weightDelta);
+    if (eventType === 'growth') this.stats.growthEvents += 1;
+    else this.stats.decayEvents += 1;
 
-    const confidence = Math.min(1, Math.abs(error.error));
+    const confidence = clamp(Math.abs(finiteOr(error.error)), 0, 1);
     this.updateStats();
 
     this.pruneCounter += 1;
@@ -111,7 +232,7 @@ export class HebbianAdaptor {
     return {
       synapseId,
       previousWeight,
-      newWeight,
+      newWeight: synapse.weight,
       delta: synapse.weightDelta,
       eventType,
       confidence,
@@ -134,16 +255,20 @@ export class HebbianAdaptor {
     }
 
     const previousWeight = synapse.weight;
-    const delta = this.config.learningRate * coActivationStrength;
-    let newWeight = previousWeight + delta;
-    newWeight *= this.config.decayFactor;
-    newWeight = this.clampWeight(newWeight);
+    const delta = applyHebbianDamping(this.config, calculateCoActivationDelta(this.config, coActivationStrength));
+    const decayedWeight = applyHebbianDecay(previousWeight, delta, this.config);
+    const newWeight = clamp(decayedWeight, configuredMin(this.config), configuredMax(this.config));
 
     synapse.weight = newWeight;
     synapse.weightDelta = newWeight - previousWeight;
     synapse.lastUpdate = Date.now();
     synapse.activationCount += 1;
     this.updateCount += 1;
+
+    const eventType = classifyWeightEvent(synapse.weightDelta);
+    if (eventType === 'growth') this.stats.growthEvents += 1;
+    else this.stats.decayEvents += 1;
+
     this.updateStats();
 
     return {
@@ -151,15 +276,13 @@ export class HebbianAdaptor {
       previousWeight,
       newWeight,
       delta: synapse.weightDelta,
-      eventType: 'growth',
-      confidence: coActivationStrength,
+      eventType,
+      confidence: clamp(coActivationStrength, 0, 1),
     };
   }
 
-  private clampWeight(weight: number): number {
-    const min = this.config.weightBounds?.min ?? MIN_WEIGHT_BOUND;
-    const max = this.config.weightBounds?.max ?? MAX_WEIGHT_BOUND;
-    return Math.max(min, Math.min(max, weight));
+  getLastMathTrace(): HebbianMathTrace | null {
+    return this.lastTrace ? { ...this.lastTrace } : null;
   }
 
   private findSynapse(sourceNodeId: string, targetNodeId: string): Synapse | undefined {
@@ -182,7 +305,7 @@ export class HebbianAdaptor {
       id: `syn-${sourceNodeId}-${targetNodeId}-${(this.updateCount + 1).toString(36)}`,
       sourceNode: sourceNodeId,
       targetNode: targetNodeId,
-      weight: this.clampWeight(initialWeight),
+      weight: clamp(initialWeight, configuredMin(this.config), configuredMax(this.config)),
       lastUpdate: Date.now(),
       activationCount: 0,
       weightDelta: 0,
@@ -236,13 +359,15 @@ export class HebbianAdaptor {
 
   clear(): void {
     this.synapses.clear();
+    this.nodes.clear();
     this.updateCount = 0;
     this.pruneCounter = 0;
+    this.lastTrace = null;
     this.stats = this.createEmptyStats();
   }
 
   setLearningRate(rate: number): void {
-    this.config.learningRate = Math.max(0, Math.min(1, rate));
+    this.config.learningRate = clamp(rate, 0, 1);
   }
 
   getLearningRate(): number {
@@ -265,8 +390,7 @@ export class HebbianAdaptor {
 
 export function createHebbianAdaptor(config?: Partial<HebbianConfig>): HebbianAdaptor {
   return new HebbianAdaptor(config);
-}
-
+}\n
 export interface SynaptogenesisConfig {
   correlationThreshold: number;
   minSamples: number;
