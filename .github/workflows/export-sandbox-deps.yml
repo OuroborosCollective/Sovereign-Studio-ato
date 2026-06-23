@@ -2,6 +2,17 @@ name: Export Sandbox Dependencies
 
 on:
   workflow_dispatch:
+    inputs:
+      playwright_browsers:
+        description: "Playwright browsers to bundle: chromium, firefox, webkit, or all"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - chromium
+          - firefox
+          - webkit
+          - all
 
 permissions:
   contents: read
@@ -10,17 +21,25 @@ env:
   NODE_VERSION: "22"
   PNPM_VERSION: "9.12.2"
   COREPACK_HOME: "${{ github.workspace }}/.corepack"
+  PNPM_STORE_PATH: "${{ github.workspace }}/.pnpm-store"
+  PLAYWRIGHT_BROWSERS_PATH: "${{ github.workspace }}/.ms-playwright"
+  PLAYWRIGHT_SKIP_BROWSER_GC: "1"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
   CI: "true"
+  BUNDLE_NAME: "sovereign-sandbox-dev-linux-node22-pnpm9-playwright"
+  BUNDLE_FILE: "sovereign-sandbox-dev-linux-node22-pnpm9-playwright.tar.gz"
 
 jobs:
   export:
-    name: Build Linux dependency bundle
+    name: Build Linux agent development bundle
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,31 +49,582 @@ jobs:
       - name: Prepare pnpm through Corepack
         shell: bash
         run: |
+          set -euo pipefail
+
           corepack enable
-          corepack prepare pnpm@${PNPM_VERSION} --activate
-          pnpm --version
+          corepack prepare "pnpm@${PNPM_VERSION}" --activate
+
+          echo "Node: $(node --version)"
+          echo "pnpm: $(pnpm --version)"
+          echo "Corepack home: ${COREPACK_HOME}"
+          echo "pnpm store: ${PNPM_STORE_PATH}"
+          echo "Playwright browsers: ${PLAYWRIGHT_BROWSERS_PATH}"
+
+          test "$(pnpm --version)" = "${PNPM_VERSION}"
+
+      - name: Configure pnpm store
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pnpm config set store-dir "${PNPM_STORE_PATH}"
+          pnpm config set virtual-store-dir "node_modules/.pnpm"
+
+          pnpm config get store-dir
+          pnpm config get virtual-store-dir
 
       - name: Install dependencies
         shell: bash
-        run: pnpm install --frozen-lockfile
+        run: |
+          set -euo pipefail
+
+          pnpm install --frozen-lockfile
+
+      - name: Resolve Playwright browser set
+        id: playwright
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ inputs.playwright_browsers }}" in
+            chromium)
+              echo "browsers=chromium" >> "${GITHUB_OUTPUT}"
+              ;;
+            firefox)
+              echo "browsers=firefox" >> "${GITHUB_OUTPUT}"
+              ;;
+            webkit)
+              echo "browsers=webkit" >> "${GITHUB_OUTPUT}"
+              ;;
+            all)
+              echo "browsers=chromium firefox webkit" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "::error::Unsupported playwright_browsers input: ${{ inputs.playwright_browsers }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Validate Playwright package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          function canResolve(name) {
+            try {
+              require.resolve(`${name}/package.json`, { paths: [process.cwd()] });
+              return true;
+            } catch {
+              return false;
+            }
+          }
+
+          const hasPlaywrightTest = canResolve("@playwright/test");
+          const hasPlaywright = canResolve("playwright");
+
+          if (!hasPlaywrightTest && !hasPlaywright) {
+            console.error("Playwright is not declared in this repository dependency graph.");
+            console.error("Add @playwright/test or playwright to package.json and pnpm-lock.yaml before exporting this bundle.");
+            process.exit(1);
+          }
+
+          console.log(JSON.stringify({ hasPlaywrightTest, hasPlaywright }, null, 2));
+          NODE
+
+          pnpm exec playwright --version
+
+      - name: Install Playwright browsers and Linux deps
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"
+
+          pnpm exec playwright install --with-deps ${{ steps.playwright.outputs.browsers }}
+
+          echo "Bundled Playwright browser directory:"
+          find "${PLAYWRIGHT_BROWSERS_PATH}" -maxdepth 2 -type d | sort
+          du -sh "${PLAYWRIGHT_BROWSERS_PATH}" || true
+
+      - name: Smoke test Playwright browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const { chromium, firefox, webkit } = require("playwright");
+
+          const requested = "${{ steps.playwright.outputs.browsers }}".split(/\s+/).filter(Boolean);
+          const engines = { chromium, firefox, webkit };
+
+          async function testEngine(name) {
+            const browser = await engines[name].launch({ headless: true });
+            const page = await browser.newPage();
+            await page.setContent(`
+              <!doctype html>
+              <html>
+                <head><title>sovereign-playwright-smoke</title></head>
+                <body>
+                  <main data-testid="root">Playwright runtime OK</main>
+                </body>
+              </html>
+            `);
+            const text = await page.locator("[data-testid='root']").textContent();
+            if (text !== "Playwright runtime OK") {
+              throw new Error(`${name} smoke test failed`);
+            }
+            await browser.close();
+            console.log(`${name}: ok`);
+          }
+
+          (async () => {
+            for (const name of requested) {
+              await testEngine(name);
+            }
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Validate dependency tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f package.json
+          test -f pnpm-lock.yaml
+          test -d node_modules
+          test -d node_modules/.pnpm
+          test -d "${PNPM_STORE_PATH}"
+          test -d "${COREPACK_HOME}"
+          test -d "${PLAYWRIGHT_BROWSERS_PATH}"
+
+          if find node_modules -xtype l -print -quit | grep -q .; then
+            echo "::error::Broken symlink detected inside node_modules"
+            find node_modules -xtype l -print
+            exit 1
+          fi
+
+          du -sh node_modules || true
+          du -sh "${PNPM_STORE_PATH}" || true
+          du -sh "${COREPACK_HOME}" || true
+          du -sh "${PLAYWRIGHT_BROWSERS_PATH}" || true
+
+      - name: Write agent restore and diagnostic files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > sandbox-agent-env.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          export COREPACK_HOME="${PWD}/.corepack"
+          export PNPM_STORE_PATH="${PWD}/.pnpm-store"
+          export PLAYWRIGHT_BROWSERS_PATH="${PWD}/.ms-playwright"
+          export PLAYWRIGHT_SKIP_BROWSER_GC="1"
+          export COREPACK_ENABLE_DOWNLOAD_PROMPT="0"
+          export CI="${CI:-true}"
+
+          corepack enable || true
+          corepack prepare pnpm@9.12.2 --activate
+
+          pnpm config set store-dir "${PNPM_STORE_PATH}"
+          pnpm config set virtual-store-dir "node_modules/.pnpm"
+
+          echo "Agent sandbox environment ready."
+          echo "Node: $(node --version)"
+          echo "pnpm: $(pnpm --version)"
+          echo "pnpm store: $(pnpm config get store-dir)"
+          echo "Playwright browsers: ${PLAYWRIGHT_BROWSERS_PATH}"
+
+          pnpm exec playwright --version || true
+          SH
+
+          chmod +x sandbox-agent-env.sh
+
+          cat > sandbox-agent-doctor.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "== Sovereign Agent Doctor =="
+
+          test -f package.json
+          test -f pnpm-lock.yaml
+          test -d node_modules
+          test -d node_modules/.pnpm
+          test -d .pnpm-store
+          test -d .corepack
+
+          echo
+          echo "Node:"
+          node --version
+
+          echo
+          echo "pnpm:"
+          pnpm --version
+
+          echo
+          echo "pnpm store:"
+          pnpm config get store-dir
+
+          echo
+          echo "Playwright:"
+          if pnpm exec playwright --version >/dev/null 2>&1; then
+            pnpm exec playwright --version
+          else
+            echo "Playwright CLI not available."
+          fi
+
+          echo
+          echo "Browser cache:"
+          if [ -d "${PLAYWRIGHT_BROWSERS_PATH:-.ms-playwright}" ]; then
+            du -sh "${PLAYWRIGHT_BROWSERS_PATH:-.ms-playwright}" || true
+            find "${PLAYWRIGHT_BROWSERS_PATH:-.ms-playwright}" -maxdepth 2 -type d | sort | head -120
+          else
+            echo "No Playwright browser cache found."
+          fi
+
+          echo
+          echo "Broken symlinks:"
+          if find node_modules -xtype l -print -quit | grep -q .; then
+            find node_modules -xtype l -print
+            exit 1
+          fi
+          echo "none"
+
+          echo
+          echo "Available package scripts:"
+          node -e "const p=require('./package.json'); console.log(Object.keys(p.scripts||{}).sort().join('\n') || 'none')"
+
+          echo
+          echo "Useful project files:"
+          find . \
+            -maxdepth 3 \
+            \( \
+              -name 'package.json' \
+              -o -name 'pnpm-lock.yaml' \
+              -o -name 'pnpm-workspace.yaml' \
+              -o -name 'tsconfig*.json' \
+              -o -name 'vite.config.*' \
+              -o -name 'vitest.config.*' \
+              -o -name 'playwright.config.*' \
+              -o -name 'capacitor.config.*' \
+            \) \
+            -not -path './node_modules/*' \
+            -not -path './.pnpm-store/*' \
+            -not -path './.ms-playwright/*' \
+            | sort
+
+          echo
+          echo "Doctor finished successfully."
+          SH
+
+          chmod +x sandbox-agent-doctor.sh
+
+          cat > sandbox-agent-verify.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "== Sovereign Agent Verify =="
+
+          run_script_if_present() {
+            local script="$1"
+            if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['${script}'] ? 0 : 1)"; then
+              echo
+              echo "Running pnpm run ${script}"
+              pnpm run "${script}"
+            else
+              echo
+              echo "Skipping missing script: ${script}"
+            fi
+          }
+
+          ./sandbox-agent-doctor.sh
+
+          run_script_if_present "type-check"
+          run_script_if_present "lint"
+          run_script_if_present "test"
+          run_script_if_present "build"
+          run_script_if_present "build:web"
+          run_script_if_present "test:e2e"
+          run_script_if_present "e2e"
+
+          if pnpm exec playwright --version >/dev/null 2>&1; then
+            if find . \
+              -maxdepth 6 \
+              \( -name "*.spec.ts" -o -name "*.spec.tsx" -o -name "*.e2e.ts" -o -name "*.e2e.tsx" \) \
+              -not -path "./node_modules/*" \
+              -not -path "./.pnpm-store/*" \
+              -not -path "./.ms-playwright/*" \
+              | grep -Ei "(playwright|e2e|spec)" >/dev/null 2>&1; then
+              echo
+              echo "Running Playwright tests"
+              pnpm exec playwright test
+            else
+              echo
+              echo "Playwright available, but no obvious Playwright test files detected."
+            fi
+          fi
+
+          echo
+          echo "Verify finished."
+          SH
+
+          chmod +x sandbox-agent-verify.sh
+
+          cat > sandbox-agent-README.md <<'MD'
+          # Sovereign Sandbox Agent Bundle
+
+          This bundle is intended for a local Linux agent workspace.
+
+          ## Restore
+
+          From the repository root:
+
+          ```bash
+          tar -xzf sovereign-sandbox-dev-linux-node22-pnpm9-playwright.tar.gz
+          source ./sandbox-agent-env.sh
+          ```
+
+          ## Diagnose
+
+          ```bash
+          ./sandbox-agent-doctor.sh
+          ```
+
+          ## Verify
+
+          ```bash
+          ./sandbox-agent-verify.sh
+          ```
+
+          ## Manual useful commands
+
+          ```bash
+          pnpm --version
+          pnpm exec playwright --version
+          pnpm run type-check
+          pnpm test
+          pnpm run build
+          pnpm exec playwright test
+          ```
+
+          ## UI / Playwright
+
+          Playwright browsers are bundled in:
+
+          ```bash
+          .ms-playwright
+          ```
+
+          The restore script exports:
+
+          ```bash
+          PLAYWRIGHT_BROWSERS_PATH="${PWD}/.ms-playwright"
+          PLAYWRIGHT_SKIP_BROWSER_GC=1
+          ```
+
+          ## Linux system dependencies
+
+          The tarball contains the Playwright browser binaries, not every host operating system library.
+
+          If browser launch fails on another Linux machine, install the host dependencies there:
+
+          ```bash
+          pnpm exec playwright install-deps
+          ```
+
+          Or run the agent inside a Playwright-compatible Linux container.
+
+          ## Integrity
+
+          Verify the downloaded tarball:
+
+          ```bash
+          sha256sum -c sovereign-sandbox-dev-linux-node22-pnpm9-playwright.tar.gz.sha256
+          ```
+          MD
+
+      - name: Write repo snapshot and bundle manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          {
+            echo "== Git =="
+            git rev-parse --show-toplevel
+            git rev-parse HEAD
+            git branch --show-current || true
+            git status --short
+            echo
+            echo "== Recent commits =="
+            git log --oneline -20 || true
+            echo
+            echo "== Package scripts =="
+            node -e "const p=require('./package.json'); console.log(JSON.stringify(p.scripts||{}, null, 2))"
+            echo
+            echo "== pnpm config =="
+            pnpm config list
+            echo
+            echo "== Root files =="
+            find . \
+              -maxdepth 2 \
+              -not -path './.git/*' \
+              -not -path './node_modules/*' \
+              -not -path './.pnpm-store/*' \
+              -not -path './.ms-playwright/*' \
+              -print \
+              | sort
+          } > sandbox-repo-snapshot.txt
+
+          {
+            echo "bundle=${BUNDLE_NAME}"
+            echo "created_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            echo "uname=$(uname -a)"
+            echo "node=$(node --version)"
+            echo "pnpm=$(pnpm --version)"
+            echo "playwright=$(pnpm exec playwright --version)"
+            echo "playwright_browsers=${{ steps.playwright.outputs.browsers }}"
+            echo "corepack_home=${COREPACK_HOME}"
+            echo "pnpm_store_path=${PNPM_STORE_PATH}"
+            echo "playwright_browsers_path=${PLAYWRIGHT_BROWSERS_PATH}"
+            echo "git_sha=${GITHUB_SHA}"
+            echo "git_ref=${GITHUB_REF}"
+            echo "lock_sha256=$(sha256sum pnpm-lock.yaml | awk '{print $1}')"
+          } > sandbox-deps-manifest.txt
+
+          dpkg-query -W -f='${binary:Package}=${Version}\n' | sort > sandbox-linux-packages.txt
+
+          {
+            echo "package.json:"
+            sha256sum package.json
+            echo
+            echo "pnpm-lock.yaml:"
+            sha256sum pnpm-lock.yaml
+            echo
+            echo "node_modules:"
+            find node_modules -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum
+            echo
+            echo "pnpm store:"
+            find "${PNPM_STORE_PATH}" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum
+            echo
+            echo "playwright browsers:"
+            find "${PLAYWRIGHT_BROWSERS_PATH}" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum
+          } > sandbox-content-hashes.txt
+
+          cat sandbox-deps-manifest.txt
+          cat sandbox-content-hashes.txt
 
       - name: Pack dependency bundle
         shell: bash
         run: |
-          tar -czf sovereign-sandbox-deps-linux-node22-pnpm9.tar.gz \
-            node_modules \
-            .corepack \
-            package.json \
-            pnpm-lock.yaml \
-            pnpm-workspace.yaml \
-            tsconfig.json \
-            vite.config.ts \
-            vitest.config.ts \
-            capacitor.config.ts
+          set -euo pipefail
+
+          python3 - <<'PY' > sandbox-bundle-paths.txt
+          from pathlib import Path
+          import glob
+
+          required = [
+              "node_modules",
+              ".pnpm-store",
+              ".corepack",
+              ".ms-playwright",
+              "package.json",
+              "pnpm-lock.yaml",
+              "sandbox-agent-env.sh",
+              "sandbox-agent-doctor.sh",
+              "sandbox-agent-verify.sh",
+              "sandbox-agent-README.md",
+              "sandbox-repo-snapshot.txt",
+              "sandbox-deps-manifest.txt",
+              "sandbox-content-hashes.txt",
+              "sandbox-linux-packages.txt",
+          ]
+
+          optional = [
+              "README*",
+              "docs",
+              "scripts",
+              "tests",
+              "test",
+              "e2e",
+              "coverage",
+              "playwright-report",
+              "test-results",
+              "pnpm-workspace.yaml",
+              "tsconfig.json",
+              "tsconfig.*.json",
+              "vite.config.*",
+              "vitest.config.*",
+              "capacitor.config.*",
+              "postcss.config.*",
+              "tailwind.config.*",
+              "eslint.config.*",
+              "playwright.config.*",
+              "playwright.*.config.*",
+              "web-test-runner.config.*",
+              "cypress.config.*",
+              "prettier.config.*",
+              ".prettierrc",
+              ".prettierrc.*",
+              ".editorconfig",
+              ".npmrc",
+              ".yarnrc",
+              ".yarnrc.yml",
+              ".nvmrc",
+              ".node-version",
+              ".env.example",
+              ".env.sample",
+              ".vscode/extensions.json",
+              ".vscode/settings.json",
+              ".github/workflows/*.yml",
+              ".github/workflows/*.yaml",
+          ]
+
+          missing = [item for item in required if not Path(item).exists()]
+          if missing:
+              raise SystemExit("Missing required bundle paths: " + ", ".join(missing))
+
+          seen = set()
+          paths = []
+
+          for pattern in required + optional:
+              for item in sorted(glob.glob(pattern)):
+                  path = Path(item)
+                  if path.exists() and item not in seen:
+                      seen.add(item)
+                      paths.append(item)
+
+          for item in paths:
+              print(item)
+          PY
+
+          echo "Bundle paths:"
+          cat sandbox-bundle-paths.txt
+
+          tar \
+            --sort=name \
+            --numeric-owner \
+            --owner=0 \
+            --group=0 \
+            -czf "${BUNDLE_FILE}" \
+            --files-from sandbox-bundle-paths.txt
+
+          sha256sum "${BUNDLE_FILE}" | tee "${BUNDLE_FILE}.sha256"
+          du -h "${BUNDLE_FILE}"
 
       - name: Upload dependency bundle
         uses: actions/upload-artifact@v4
         with:
-          name: sovereign-sandbox-deps-linux-node22-pnpm9
-          path: sovereign-sandbox-deps-linux-node22-pnpm9.tar.gz
+          name: sovereign-sandbox-dev-linux-node22-pnpm9-playwright
+          path: |
+            sovereign-sandbox-dev-linux-node22-pnpm9-playwright.tar.gz
+            sovereign-sandbox-dev-linux-node22-pnpm9-playwright.tar.gz.sha256
+          if-no-files-found: error
           retention-days: 3
+          compression-level: 0
