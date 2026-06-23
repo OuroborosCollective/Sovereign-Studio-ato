@@ -256,6 +256,7 @@ describe('DirectSignalEmitter', () => {
 
       emitter.emit('node-a', 0.5);
       emitter.emit('node-b', 0.6);
+      emitter.flush();
 
       expect(receivedSignals.length).toBe(2);
     });
@@ -267,6 +268,7 @@ describe('DirectSignalEmitter', () => {
       });
 
       emitter.emit('node-a', 0.5);
+      emitter.flush();
 
       unsubscribe();
 
