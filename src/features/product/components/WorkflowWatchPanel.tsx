@@ -3,6 +3,8 @@ import type { WorkflowWatchReport } from '../runtime/workflowWatch';
 export interface WorkflowWatchPanelProps {
   report: WorkflowWatchReport | null;
   isWatching: boolean;
+  canWatch?: boolean;
+  statusMessage?: string;
   onWatch: () => void;
 }
 
@@ -13,18 +15,32 @@ function statusClass(status: string): string {
   return 'text-slate-300';
 }
 
-export function WorkflowWatchPanel({ report, isWatching, onWatch }: WorkflowWatchPanelProps) {
+export function WorkflowWatchPanel({
+  report,
+  isWatching,
+  canWatch = true,
+  statusMessage,
+  onWatch,
+}: WorkflowWatchPanelProps) {
+  const isBlocked = !canWatch;
+  const helperText = statusMessage ?? (report ? report.summary : 'Create a Draft PR first, then watch the commit checks.');
+  const buttonLabel = isWatching
+    ? 'Watching...'
+    : isBlocked
+      ? 'Draft PR zuerst erstellen'
+      : 'Watch Commit Checks';
+
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-bold">Workflow Watch</h2>
           <p className="mt-1 text-xs text-slate-400">
-            {report ? report.summary : 'Create a Draft PR first, then watch the commit checks.'}
+            {helperText}
           </p>
         </div>
-        <button onClick={onWatch} disabled={isWatching} type="button">
-          {isWatching ? 'Watching...' : 'Watch Commit Checks'}
+        <button onClick={onWatch} disabled={isWatching || isBlocked} type="button">
+          {buttonLabel}
         </button>
       </div>
 
