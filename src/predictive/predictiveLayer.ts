@@ -80,10 +80,7 @@ export class PredictiveLayer {
     };
 
     this.signalBuffer = new SignalBufferManager(this.config.signal.maxBufferSize);
-    this.signalEmitter = new DirectSignalEmitter(
-      this.config.signal.maxBufferSize,
-      generateLayerTraceId,
-    );
+    this.signalEmitter = new DirectSignalEmitter(this.config.signal.maxBufferSize, generateLayerTraceId);
     this.latentSpace = createLatentSpace({
       dimension: this.config.latentSpace.dimension,
       maxPatterns: this.config.latentSpace.maxPatterns,
@@ -94,7 +91,10 @@ export class PredictiveLayer {
       threshold: this.config.error.threshold,
       propagationWeight: this.config.error.propagationWeight,
     });
-    this.hebbianAdaptor = createHebbianAdaptor(this.config.hebbian);
+    this.hebbianAdaptor = createHebbianAdaptor({
+      ...this.config.hebbian,
+      maxConnections: this.config.network.maxConnectionsPerNode,
+    });
     this.synaptogenesis = new Synaptogenesis({
       correlationThreshold: this.config.network.correlationThreshold,
       maxConnectionsPerNode: this.config.network.maxConnectionsPerNode,
@@ -103,24 +103,18 @@ export class PredictiveLayer {
 
   start(): void {
     if (this.enabled) return;
-
     this.enabled = true;
     this.setPhase('idle');
-    this.signalEmitter.subscribe((signals) => {
-      this.events.onSignal?.(signals);
-    });
+    this.signalEmitter.subscribe((signals) => this.events.onSignal?.(signals));
 
     if (this.config.signal.flushIntervalMs > 0) {
-      this.flushInterval = setInterval(() => {
-        void this.processSignalBatch();
-      }, this.config.signal.flushIntervalMs);
+      this.flushInterval = setInterval(() => void this.processSignalBatch(), this.config.signal.flushIntervalMs);
     }
   }
 
   stop(): void {
     this.enabled = false;
     this.setPhase('idle');
-
     if (this.flushInterval) {
       clearInterval(this.flushInterval);
       this.flushInterval = null;
@@ -175,18 +169,17 @@ export class PredictiveLayer {
 
       this.metrics.weightUpdateMs = performance.now() - weightStart;
       this.events.onWeightUpdate?.(weightUpdates);
-
       this.setPhase('idle');
-      const totalDuration = performance.now() - startTime;
-      this.metrics.totalCycleMs = totalDuration;
 
+      const durationMs = performance.now() - startTime;
+      this.metrics.totalCycleMs = durationMs;
       const result: PredictiveCycleResult = {
         prediction,
         error,
         weightUpdates,
         latentSpaceUpdates: [],
         predictionAccurate: !error.propagated,
-        durationMs: totalDuration,
+        durationMs,
       };
 
       this.events.onCycleComplete?.(result);
@@ -199,15 +192,9 @@ export class PredictiveLayer {
 
   async processSignalBatch(): Promise<PredictiveCycleResult[]> {
     if (!this.enabled) return [];
-
     const signals = this.signalEmitter.flush();
-    if (signals.length === 0) return [];
-
     const results: PredictiveCycleResult[] = [];
-    for (const signal of signals) {
-      results.push(await this.processSignal(signal));
-    }
-
+    for (const signal of signals) results.push(await this.processSignal(signal));
     return results;
   }
 
@@ -223,27 +210,24 @@ export class PredictiveLayer {
     this.hebbianAdaptor.registerNode(node);
   }
 
-  setEvents(events: PredictiveLayerEvents): void {
+  setEvents(events: PredictiveLayerEvents): () => void {
+    const previousEvents = { ...this.events };
     this.events = { ...this.events, ...events };
+    return () => {
+      this.events = previousEvents;
+    };
   }
 
   getSnapshot(): PredictiveLayerSnapshot {
-    const patternCount = this.latentSpace.getPatternCount();
-    const synapseCount = this.hebbianAdaptor.getSynapses().length;
     const errorStats = this.errorComputer.getStats();
-    const avgConfidence = this.predictionGenerator.getStats().avgConfidence;
-    const errorRate = errorStats.totalErrors > 0
-      ? errorStats.propagatedErrors / errorStats.totalErrors
-      : 0;
-
     return {
       active: this.enabled,
       phase: this.phase,
       nodeCount: this.nodes.size,
-      synapseCount,
-      patternCount,
-      avgConfidence,
-      errorRate,
+      synapseCount: this.hebbianAdaptor.getSynapses().length,
+      patternCount: this.latentSpace.getPatternCount(),
+      avgConfidence: this.predictionGenerator.getStats().avgConfidence,
+      errorRate: errorStats.totalErrors > 0 ? errorStats.propagatedErrors / errorStats.totalErrors : 0,
       memoryUsageBytes: this.estimateMemoryUsage(),
       timestamp: Date.now(),
     };
@@ -351,11 +335,7 @@ export class PredictiveLayer {
   }
 
   private estimateMemoryUsage(): number {
-    return (
-      this.latentSpace.estimateMemoryUsage() +
-      this.signalEmitter.getPendingCount() * 200 +
-      this.hebbianAdaptor.getSynapses().length * 100
-    );
+    return this.latentSpace.estimateMemoryUsage() + this.signalEmitter.getPendingCount() * 200 + this.hebbianAdaptor.getSynapses().length * 100;
   }
 }
 
