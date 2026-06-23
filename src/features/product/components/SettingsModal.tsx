@@ -1,6 +1,7 @@
 import React from 'react';
 import { Shield, Sparkles, Key, ExternalLink } from 'lucide-react';
-import { ProjectSettings } from '../types';
+import type { ProjectSettings } from '../types';
+import { defaultSettings } from '../constants';
 import { LLM_PROVIDERS, type UserApiKeys } from './UserKeyManager';
 
 interface SettingsModalProps {
@@ -10,16 +11,16 @@ interface SettingsModalProps {
   setAccessKey: (val: string) => void;
   geminiKey: string;
   setGeminiKey: (val: string) => void;
-  settings: ProjectSettings;
-  setSettings: (val: ProjectSettings) => void;
+  settings?: ProjectSettings;
+  setSettings?: (val: ProjectSettings) => void;
   setShowSettings: (val: boolean) => void;
   userApiKeys: UserApiKeys;
   setUserApiKeys: (keys: UserApiKeys) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
-  repoUrl, setRepoUrl, accessKey, setAccessKey, geminiKey, setGeminiKey, 
-  settings, setSettings, setShowSettings, userApiKeys, setUserApiKeys
+  repoUrl, setRepoUrl, accessKey, setAccessKey, geminiKey, setGeminiKey,
+  settings = defaultSettings, setSettings = () => undefined, setShowSettings, userApiKeys, setUserApiKeys
 }) => {
   const handleKeyChange = (providerId: string, value: string) => {
     setUserApiKeys({ ...userApiKeys, [providerId]: value || undefined });
@@ -44,9 +45,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </h3>
           <button onClick={() => setShowSettings(false)} className="text-indigo-200 hover:text-white font-bold text-lg" aria-label="Schließen">×</button>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* API Keys Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-black text-stone-500 uppercase flex items-center gap-2">
@@ -58,12 +58,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </h4>
             </div>
-            
+
             <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 text-[11px] text-emerald-900">
               🌐 Kostenlose Routen (mlvoca, pollinations) funktionieren ohne Keys. Optionale Keys ermöglichen Backup bei Limit.
             </div>
 
-            {/* Provider Key Inputs */}
             <div className="space-y-3">
               {LLM_PROVIDERS.filter(p => p.id !== 'mlvoca').map((provider) => (
                 <div key={provider.id} className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
@@ -92,7 +91,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Repository & Access Section */}
           <div className="space-y-4 pt-4 border-t border-stone-200">
             <div>
               <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Repository</label>
@@ -110,12 +108,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Project Settings */}
           <div className="space-y-3 pt-4 border-t border-stone-200">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Package Manager</label>
-                <select value={settings.packageManager} onChange={(e) => setSettings({ ...settings, packageManager: e.target.value as any })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
+                <select value={settings.packageManager} onChange={(e) => setSettings({ ...settings, packageManager: e.target.value as ProjectSettings['packageManager'] })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
                   <option value="auto">Auto-Detect</option>
                   <option value="pnpm">pnpm</option>
                   <option value="npm">npm</option>
@@ -124,7 +121,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
               <div>
                 <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Projektart</label>
-                <select value={settings.repoMode} onChange={(e) => setSettings({ ...settings, repoMode: e.target.value as any })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
+                <select value={settings.repoMode} onChange={(e) => setSettings({ ...settings, repoMode: e.target.value as ProjectSettings['repoMode'] })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none">
                   <option value="monorepo">Monorepo</option>
                   <option value="single">Single Repo</option>
                 </select>
@@ -136,7 +133,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
         </div>
-        
+
         <div className="p-4 bg-stone-50 border-t border-stone-200">
           <button onClick={() => setShowSettings(false)} className="w-full bg-stone-900 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-lg hover:bg-black transition-all">
             Speichern & Schließen
