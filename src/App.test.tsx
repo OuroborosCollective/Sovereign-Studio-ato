@@ -41,11 +41,11 @@ describe('App', () => {
     expect(screen.getByText('Automation Mode')).toBeDefined();
 
     // Tab buttons now use role="tab" with aria-label for accessibility
+    // Primary tabs are visible as buttons; secondary tabs are in "Mehr Bereiche" dropdown
     expect(screen.getByRole('tab', { name: 'Open Repo tab' })).toBeDefined();
     expect(screen.getByRole('tab', { name: 'Open Builder tab' })).toBeDefined();
-    expect(screen.getByRole('tab', { name: 'Open Remote Memory tab' })).toBeDefined();
-    expect(screen.getByRole('tab', { name: 'Open Pattern Memory tab' })).toBeDefined();
-    expect(screen.getByRole('tab', { name: 'Open Telemetry tab' })).toBeDefined();
+    // Secondary tabs (Remote Memory, Pattern Memory, Telemetry) are in the dropdown
+    expect(screen.getByTestId('tabbar__more-select')).toBeDefined();
 
     expect(screen.getByPlaceholderText('https://github.com/owner/repository')).toBeDefined();
   });

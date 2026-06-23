@@ -41,7 +41,9 @@ describe('App setup flow smoke', () => {
   it('keeps Full Auto blocked until a real repository snapshot exists', async () => {
     openWorkspace();
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'full-auto-draft-pr' } });
+    // Find the automation mode combobox specifically
+    const automationSelect = screen.getByTestId('automation__mode-select');
+    fireEvent.change(automationSelect, { target: { value: 'full-auto-draft-pr' } });
 
     expect(await screen.findByText('Automation needs a loaded repository snapshot.')).toBeDefined();
   });
@@ -77,7 +79,9 @@ describe('App setup flow smoke', () => {
     openWorkspace();
 
     // Tab buttons now use role="tab" with aria-label for accessibility
-    fireEvent.click(screen.getByRole('tab', { name: 'Open Live Monitor tab' }));
+    // Secondary tabs are in the "Mehr Bereiche" dropdown
+    const moreSelect = screen.getByTestId('tabbar__more-select');
+    fireEvent.change(moreSelect, { target: { value: 'monitor' } });
 
     const monitor = await screen.findByTestId('operator-monitor');
     expect(within(monitor).getByText('Patterns: 0')).toBeDefined();

@@ -11,8 +11,12 @@
     "build:web": "tsc && vite build && node scripts/release-html-runtime-fix.mjs && node scripts/copy-dist-to-android.mjs && node scripts/sovereign-static-audit.mjs",
     "build": "pnpm run build:web && cap sync android",
     "build:android": "pnpm run build",
-    "build:apk": "pnpm run build && cd android && ./gradlew assembleRelease -Pandroid.injected.signing.store.file=$\u0041NDROID_KEYSTORE_PATH -Pandroid.injected.signing.store.password=$\u0041NDROID_KEYSTORE_PASSWORD -Pandroid.injected.signing.key.alias=$\u0041NDROID_KEY_ALIAS -Pandroid.injected.signing.key.password=$\u0041NDROID_KEY_PASSWORD",
-    "build:aab": "pnpm run build && cd android && ./gradlew bundleRelease -Pandroid.injected.signing.store.file=$\u0041NDROID_KEYSTORE_PATH -Pandroid.injected.signing.store.password=$\u0041NDROID_KEYSTORE_PASSWORD -Pandroid.injected.signing.key.alias=$\u0041NDROID_KEY_ALIAS -Pandroid.injected.signing.key.password=$\u0041NDROID_KEY_PASSWORD",
+    "android:sync": "pnpm run build:web && pnpm exec cap sync android",
+    "android:open": "pnpm exec cap open android",
+    "android:clean": "cd android && chmod +x ./gradlew && ./gradlew clean",
+    "build:apk:debug": "pnpm run build && cd android && chmod +x ./gradlew && ./gradlew assembleDebug",
+    "build:apk": "pnpm run build && cd android && chmod +x ./gradlew && ./gradlew assembleRelease -Pandroid.injected.signing.store.file=\"$ANDROID_KEYSTORE_PATH\" -Pandroid.injected.signing.store.password=\"$ANDROID_KEYSTORE_PASSWORD\" -Pandroid.injected.signing.key.alias=\"$ANDROID_KEY_ALIAS\" -Pandroid.injected.signing.key.password=\"$ANDROID_KEY_PASSWORD\"",
+    "build:aab": "pnpm run build && cd android && chmod +x ./gradlew && ./gradlew bundleRelease -Pandroid.injected.signing.store.file=\"$ANDROID_KEYSTORE_PATH\" -Pandroid.injected.signing.store.password=\"$ANDROID_KEYSTORE_PASSWORD\" -Pandroid.injected.signing.key.alias=\"$ANDROID_KEY_ALIAS\" -Pandroid.injected.signing.key.password=\"$ANDROID_KEY_PASSWORD\"",
     "audit:sovereign": "node scripts/sovereign-static-audit.mjs",
     "generate-keystore": "node gen-key.js",
     "preview": "vite preview",
@@ -27,9 +31,11 @@
     "test:run": "vitest run",
     "postinstall": "node patch_capacitor.mjs",
     "type-check": "tsc --noEmit",
+    "verify": "pnpm run type-check && pnpm run build:web",
     "hardcode:scan": "node scripts/hardcode-scanner.mjs src",
     "smoke:ki-coach": "tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts",
-    "smoke:ki-coach:headed": "HEADED=true tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts"
+    "smoke:ki-coach:headed": "HEADED=true tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts",
+    "apk:clean-release": "pnpm run android:clean && pnpm run build:apk"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.0",

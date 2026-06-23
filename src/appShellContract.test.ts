@@ -65,6 +65,17 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
+  it('keeps the Android recovery fallback JavaScript parse-safe', () => {
+    const releaseFix = read('scripts/release-html-runtime-fix.mjs');
+    const parseSafeCommand = String.raw`npm run build:web\\nnpx cap sync android`;
+    const unsafeCommand = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
+
+    expect(releaseFix).toContain(parseSafeCommand);
+    expect(releaseFix).toContain('[data-testid="app-shell__root"]');
+    expect(releaseFix).toContain('.sovereign-login-shell');
+    expect(releaseFix).not.toContain(unsafeCommand);
+  });
+
   it('keeps product containers owned by App.tsx instead of post-boot DOM scripts', () => {
     const app = read(APP_PATH);
 
@@ -88,4 +99,25 @@ describe('current Sovereign app shell contract', () => {
     expect(main).toMatch(/clamp\(5\.35rem,\s*12vw,\s*8rem\)/);
     expect(css).not.toContain('min-width: 1440px');
   });
+
+  it('keeps the CSS for the more menu and responsive tabbar', () => {
+    const css = read(CSS_PATH);
+
+    expect(css).not.toContain('.sovereign-tabbar,\n[data-role="sovereign-automation-panel"]');
+    expect(css).toContain('.sovereign-more-menu');
+    expect(css).toContain('.sovereign-more-select');
+  });
+
+
+  it('keeps the global runtime monitor as guidance instead of auto-clicking tabs', () => {
+    const monitor = read('src/global-runtime-monitor.tsx');
+
+    expect(monitor).toContain('users trigger navigation explicitly via the visible guide buttons');
+    expect(monitor).toContain("publishGuideCommand({ type: 'next', targetTab: guide.targetTab })");
+    expect(monitor).not.toContain('setTimeout(() => publishGuideCommand');
+    expect(monitor).not.toContain('lastAutoCommandKeyRef');
+    expect(monitor).not.toContain('Ich leite den nächsten sicheren Schritt automatisch ein');
+  });
+
 });
+

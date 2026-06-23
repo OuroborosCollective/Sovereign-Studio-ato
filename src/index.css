@@ -365,3 +365,41 @@ button {
     min-height: 100svh;
   }
 }
+
+.sovereign-more-menu {
+  display: inline-flex;
+  min-width: min(100%, 10.5rem);
+}
+
+.sovereign-more-select {
+  appearance: auto;
+  cursor: pointer;
+  min-width: 10.5rem;
+}
+
+@media (max-width: 767px) {
+  .sovereign-tabbar {
+    align-items: center;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .sovereign-tabbar .sovereign-tab {
+    justify-content: center;
+    text-align: center;
+    width: 100%;
+  }
+
+  .sovereign-tabbar .sovereign-more-menu {
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .sovereign-tabbar .sovereign-more-select {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+}

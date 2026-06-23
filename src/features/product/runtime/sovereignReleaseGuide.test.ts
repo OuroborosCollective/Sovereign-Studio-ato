@@ -31,7 +31,7 @@ describe('sovereign release guide runtime', () => {
     expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
     expect(state.nextLabel).toBe('Weiter zu workflow');
-    expect(state.helperMessage).toContain('Diff-Schleife');
+    expect(state.helperMessage).toContain('sichtbaren Weiter-Button');
   });
 
   it('lets an explicit workflow action win over stale diff/package text', () => {
@@ -46,6 +46,18 @@ describe('sovereign release guide runtime', () => {
     expect(state.nextEnabled).toBe(true);
     expect(state.nextLabel).toBe('Weiter zu workflow');
     expect(state.progress).toBe(85);
+  });
+
+
+  it('does not claim that UI guidance auto-controls user navigation', () => {
+    const state = deriveReleaseGuideState(input({
+      title: 'Repository laden',
+      message: 'Bitte GitHub-URL eingeben und Repository laden.',
+      action: 'Load Repo',
+    }));
+
+    expect(state.helperMessage).toContain('sichtbare');
+    expect(state.helperMessage).not.toContain('automatisch');
   });
 
   it('keeps progress on 5 percent steps without parking on diff', () => {

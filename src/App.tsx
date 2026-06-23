@@ -142,6 +142,12 @@ const tabs: Array<{
   });
 
 const automationModes: SovereignAutomationMode[] = ['manual', 'auto-review', 'full-auto-draft-pr'];
+const PRIMARY_TAB_IDS = new Set<SovereignTab>(SOVEREIGN_PRODUCT_TEMPLATE.primaryFlow as SovereignTab[]);
+const SIDE_TAB_IDS = new Set<SovereignTab>(SOVEREIGN_PRODUCT_TEMPLATE.sideTabs as SovereignTab[]);
+const DIAGNOSTIC_TAB_IDS = new Set<SovereignTab>(SOVEREIGN_PRODUCT_TEMPLATE.diagnosticTabs as SovereignTab[]);
+const primaryTabs = tabs.filter((tab) => PRIMARY_TAB_IDS.has(tab.id));
+const sideTabs = tabs.filter((tab) => SIDE_TAB_IDS.has(tab.id));
+const diagnosticTabs = tabs.filter((tab) => DIAGNOSTIC_TAB_IDS.has(tab.id));
 
 // Start tab is derived from the Product Template contract.
 const startTab: SovereignTab = SOVEREIGN_PRODUCT_TEMPLATE.startTab as SovereignTab;
@@ -977,7 +983,7 @@ const App: React.FC = () => {
       )}
 
       <div className={`${SOVEREIGN_APP_CLASSES.tabbar} mt-4 flex flex-wrap gap-2 border-b border-slate-800 pb-2`} role="tablist" aria-label="Sovereign workspace tabs" data-role="sovereign-tabbar" data-testid="tabbar__root">
-        {tabs.map((tab) => (
+        {primaryTabs.map((tab) => (
           <button
             key={tab.id}
             role="tab"
@@ -992,6 +998,33 @@ const App: React.FC = () => {
             {tab.label}
           </button>
         ))}
+
+        <label className="sovereign-more-menu" data-testid="tabbar__more">
+          <span className="sr-only">Weitere Bereiche</span>
+          <select
+            value={PRIMARY_TAB_IDS.has(activeTab) ? '' : activeTab}
+            onChange={(event) => {
+              const nextTab = event.target.value as SovereignTab;
+              if (nextTab) handleUserTabClick(nextTab);
+            }}
+            className={`${SOVEREIGN_APP_CLASSES.select} sovereign-tab sovereign-more-select`}
+            aria-label="Weitere Bereiche öffnen"
+            data-role="sovereign-more-menu"
+            data-testid="tabbar__more-select"
+          >
+            <option value="">Mehr Bereiche</option>
+            <optgroup label="Workflow & Memory">
+              {sideTabs.map((tab) => (
+                <option key={tab.id} value={tab.id}>{tab.label}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Diagnose">
+              {diagnosticTabs.map((tab) => (
+                <option key={tab.id} value={tab.id}>{tab.label}</option>
+              ))}
+            </optgroup>
+          </select>
+        </label>
       </div>
 
       <section className={`${SOVEREIGN_APP_CLASSES.card} ${SOVEREIGN_APP_CLASSES.automationPanel} mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200`} data-role="sovereign-automation-panel" data-testid="automation__panel">
