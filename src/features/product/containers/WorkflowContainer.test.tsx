@@ -62,7 +62,7 @@ describe('WorkflowContainer', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /Watching\.\.\./i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Draft PR zuerst erstellen/i })).toBeDisabled();
     expect(screen.getByText(/Create a Draft PR before watching/i)).toBeDefined();
   });
 
