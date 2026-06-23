@@ -127,7 +127,7 @@ export class ErrorComputer {
     const absoluteError = Math.abs(error);
 
     // Determine if error should propagate
-    const propagated = absoluteError > this.threshold;
+    const propagated = absoluteError + Number.EPSILON >= this.threshold;
 
     // Calculate error weight (higher for larger errors)
     const weight = this.calculateErrorWeight(absoluteError);
@@ -309,7 +309,7 @@ export class ErrorComputer {
    * Get errors above a specific threshold.
    */
   getErrorsAboveThreshold(errors: PredictionError[], threshold: number): PredictionError[] {
-    return errors.filter((e) => e.absoluteError > threshold);
+    return errors.filter((e) => e.absoluteError + Number.EPSILON >= threshold);
   }
 
   /**
