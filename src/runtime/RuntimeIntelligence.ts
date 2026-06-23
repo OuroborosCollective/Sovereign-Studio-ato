@@ -1062,7 +1062,7 @@ export class RuntimeIntelligence {
               confidence: update.confidence,
             },
             timestamp: runtimeNow(),
-            traceId: this.traceIdProvider(),
+            traceId: defaultTraceIdProvider(),
           });
         }
       },
@@ -1074,7 +1074,7 @@ export class RuntimeIntelligence {
         nodeCount: this.predictiveLayer.getSnapshot().nodeCount,
       },
       timestamp: runtimeNow(),
-      traceId: this.traceIdProvider(),
+      traceId: defaultTraceIdProvider(),
     });
   }
 
