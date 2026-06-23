@@ -1,0 +1,60 @@
+name: Apply Runtime Trace Provider Fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9.12.2"
+  CI: "true"
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Patch RuntimeIntelligence trace provider use
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/runtime/RuntimeIntelligence.ts')
+          s = p.read_text()
+          s = s.replace('traceId: this.traceIdProvider(),\n          });\n        }\n      },\n    });\n\n    this.telemetry.track({\n      name: \'predictive_layer_enabled\'', 'traceId: defaultTraceIdProvider(),\n          });\n        }\n      },\n    });\n\n    this.telemetry.track({\n      name: \'predictive_layer_enabled\'', 1)
+          s = s.replace('traceId: this.traceIdProvider(),\n    });\n  }\n\n  /**\n   * Disable the predictive layer.', 'traceId: defaultTraceIdProvider(),\n    });\n  }\n\n  /**\n   * Disable the predictive layer.', 1)
+          p.write_text(s)
+          PY
+
+      - run: pnpm exec vitest run src/runtime/RuntimeIntelligence.test.ts --runInBand
+
+      - name: Commit fix
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/runtime/RuntimeIntelligence.ts
+          git commit -m "fix: keep predictive telemetry off inherited trace provider"
+          git push
