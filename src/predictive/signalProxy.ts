@@ -13,10 +13,16 @@ export interface SignalEmitter {
 }
 
 let signalSequence = 0;
+let fallbackTraceSequence = 0;
 
 function generateSignalId(): string {
   signalSequence = (signalSequence + 1) % Number.MAX_SAFE_INTEGER;
   return `sig-${signalSequence.toString(36).padStart(8, '0')}`;
+}
+
+function defaultTraceIdProvider(): TraceId {
+  fallbackTraceSequence = (fallbackTraceSequence + 1) % Number.MAX_SAFE_INTEGER;
+  return `pred-signal-${fallbackTraceSequence.toString(36).padStart(8, '0')}`;
 }
 
 function createSignal(
@@ -248,7 +254,7 @@ export class DirectSignalEmitter {
   private traceIdProvider: () => TraceId;
   private listeners: Set<(signals: Signal[]) => void> = new Set();
 
-  constructor(maxBufferSize = 1000, traceIdProvider: () => TraceId) {
+  constructor(maxBufferSize = 1000, traceIdProvider: () => TraceId = defaultTraceIdProvider) {
     this.buffer = new SignalBufferManager(maxBufferSize);
     this.traceIdProvider = traceIdProvider;
     this.buffer.setEmitter((signals) => {
