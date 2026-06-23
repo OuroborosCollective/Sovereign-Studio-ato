@@ -41,6 +41,8 @@ const MAX_WEIGHT_BOUND = 1.0;
 const MIN_WEIGHT_BOUND = 0.0;
 const DEFAULT_MAX_CONNECTIONS_PER_NODE = 10;
 const WEIGHT_EPSILON = 0.001;
+const CORRELATION_EPSILON = 1e-9;
+const COACTIVATION_NOISE_THRESHOLD = 0.1;
 
 type HebbianRuntimeConfig = HebbianConfig & { maxConnections?: number };
 
@@ -437,7 +439,12 @@ export class Synaptogenesis {
     const sumY2 = y.reduce((sum, value) => sum + value * value, 0);
     const numerator = n * sumXY - sumX * sumY;
     const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-    if (denominator === 0) return 0;
+    if (Math.abs(denominator) < CORRELATION_EPSILON) {
+      const averageCoActivation = buffer.reduce((sum, value) => sum + value, 0) / buffer.length;
+      if (averageCoActivation > COACTIVATION_NOISE_THRESHOLD) return 1;
+      if (averageCoActivation < -COACTIVATION_NOISE_THRESHOLD) return -1;
+      return 0;
+    }
     return numerator / denominator;
   }
 
