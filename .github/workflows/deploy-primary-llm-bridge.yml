@@ -11,6 +11,10 @@ on:
         description: Optional CORS origin, leave empty to reflect request origin
         required: false
         default: ""
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/deploy-primary-llm-bridge.yml
 
 permissions:
   contents: read
