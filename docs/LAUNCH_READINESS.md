@@ -1,4 +1,10 @@
-# Sovereign Studio
+# Launch Readiness Package: repository
+
+## Summary
+
+target/repository: 78/100 HEALTHY
+
+Constraints:
 
 Ideenfabrik Auftrag:
 README + Update History
@@ -18,32 +24,20 @@ Umsetzung:
 LOCAL PATTERN: [tags: llm-runtime, brain-gated-providers-prevent-preview-only-prs., repository-tree-analysis-must-happen-before-file-generation., launch-readiness-scoring-catches-missing-ci-and-docs-before-merge.]
 Aha: Classify request, analyze repo tree, score launch readiness, produce concrete files, validate package, then push through GitHub PR flow. (proof-backed success).
 
-## Runtime goals
+## Risk Register
 
-- Provider output is never trusted blindly.
-- Each result must pass the Sovereign five-layer brain contract.
-- README requests must update README/docs, not only generated preview artifacts.
-- GitHub push uses real repo tree analysis before branch creation.
-- Workflows are surfaced to the user before final approval.
+- **MEDIUM** License missing or not detected: Add a LICENSE file or document private/internal status.
+- **LOW** No recent commits detected: Confirm repository activity before launch.
+- **MEDIUM** Branch protection not confirmed: Require PR checks before merge on default branch.
 
-## Architecture
+## Owner Checklist
 
-node repo, README=yes, workflows=yes, tests=yes, runtime=yes
+- [x] **Lead Engineer**: Review README for accuracy.
+- [x] **DevOps**: Verify CI workflow names and required checks.
+- [x] **QA Agent**: Run and verify existing tests.
+- [ ] **Reviewer**: Review 3 readiness risk(s).
+- [ ] **Product Owner**: Prepare release notes, PR summary and follow-up questions.
 
-## Launch readiness
+## Release State
 
-target/repository: 78/100 HEALTHY
-
-## Provider order
-
-1. mlvoca - Existing Mlvoca route
-2. pollinations - Existing Pollinations route
-3. groq - Groq route
-4. huggingface - HuggingFace route
-5. together - Together AI route
-6. openrouter - OpenRouter route
-7. optional-user-keys - Optional user-key routes
-8. ovh-anonymous-code-chat - OVHcloud anonymous code_chat@latest
-9. ovh-anonymous-fixed-model - OVHcloud anonymous pinned model
-10. puter-js-opt-in - Puter.js opt-in route
-11. hf-curated-public-space - Curated Hugging Face public Space
+RELEASE STATE REACHED
