@@ -1,0 +1,18 @@
+{
+  "name": "sovereign-llm-proxy",
+  "version": "1.0.0",
+  "description": "Cloudflare Workers AI Proxy with URL secret authentication",
+  "main": "src/index.ts",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail",
+    "login": "wrangler login",
+    "logout": "wrangler logout"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240620.0",
+    "wrangler": "^3.60.0",
+    "typescript": "^5.4.0"
+  }
+}
