@@ -158,3 +158,79 @@
 .sovereign-app-title {
   margin-block-start: 0.75rem;
 }
+
+/* Android release guide must be a visible work console, not a hidden control surface. */
+.sovereign-guide-actions {
+  block-size: auto !important;
+  clip: auto !important;
+  clip-path: none !important;
+  display: grid !important;
+  gap: 0.5rem !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  inline-size: auto !important;
+  margin-top: 0.75rem !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+  pointer-events: auto !important;
+  position: static !important;
+}
+
+#sovereign-global-runtime-monitor-root {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: linear-gradient(180deg, rgb(2, 6, 23) 0%, rgba(2, 6, 23, 0.82) 88%, transparent 100%);
+}
+
+.sovereign-monitor-log {
+  max-height: clamp(8rem, 24svh, 12rem);
+  overscroll-behavior: contain;
+}
+
+.sovereign-repo-insight-panel,
+.sovereign-builder-compact {
+  scroll-margin-top: 1rem;
+}
+
+.sovereign-insight-groups {
+  max-height: clamp(16rem, 42svh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
+}
+
+.sovereign-recommended-mission-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+}
+
+.sovereign-builder-mission-output {
+  max-height: clamp(9rem, 28svh, 15rem);
+  overflow-y: auto;
+}
+
+@media (max-width: 767px) {
+  #sovereign-global-runtime-monitor-root {
+    padding-top: max(0.45rem, var(--safe-top));
+  }
+
+  .sovereign-global-monitor {
+    margin-bottom: 0.55rem;
+    padding: 0.72rem;
+  }
+
+  .sovereign-monitor-status,
+  .sovereign-helper-panel {
+    padding: 0.68rem;
+  }
+
+  .sovereign-guide-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .sovereign-guide-button {
+    min-height: 2.2rem;
+  }
+}
