@@ -9,6 +9,10 @@ body:has(.sovereign-login-shell) #sovereign-global-runtime-monitor-root {
   position: static !important;
 }
 
+.sovereign-auto-advance-hint {
+  display: none !important;
+}
+
 @media (max-width: 767px) {
   #sovereign-global-runtime-monitor-root {
     padding-inline: 0.55rem;
