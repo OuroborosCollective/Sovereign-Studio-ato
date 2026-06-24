@@ -51,6 +51,11 @@
   margin-top: 0.24rem;
 }
 
+.sovereign-auto-advance-hint {
+  color: rgb(103, 232, 249) !important;
+  font-weight: 900;
+}
+
 .sovereign-monitor-progress {
   margin-top: 0.75rem;
 }
@@ -85,18 +90,18 @@
 }
 
 .sovereign-guide-actions {
-  block-size: 1px;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  display: grid;
-  gap: 0;
-  grid-template-columns: 1fr;
-  inline-size: 1px;
-  margin: 0;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-  position: absolute;
+  block-size: auto !important;
+  clip: auto !important;
+  clip-path: none !important;
+  display: grid !important;
+  gap: 0.5rem !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  inline-size: auto !important;
+  margin-top: 0.75rem !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+  pointer-events: auto !important;
+  position: static !important;
 }
 
 .sovereign-guide-button {
@@ -136,18 +141,18 @@
 }
 
 .sovereign-monitor-toggle:not([data-state="locked-open"]) {
-  block-size: 1px !important;
-  border: 0 !important;
-  clip: rect(0 0 0 0) !important;
-  clip-path: inset(50%) !important;
-  inline-size: 1px !important;
-  margin: 0 !important;
-  opacity: 0 !important;
-  overflow: hidden !important;
-  padding: 0 !important;
-  pointer-events: none !important;
-  position: absolute !important;
-  white-space: nowrap !important;
+  align-items: center;
+  border: 1px solid rgba(34, 211, 238, 0.28) !important;
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.54);
+  color: rgb(207, 250, 254);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 900;
+  justify-content: center;
+  min-height: 2.15rem;
+  padding: 0.45rem 0.75rem !important;
+  white-space: nowrap;
 }
 
 .sovereign-next-step-highlight {
@@ -159,32 +164,97 @@
   margin-block-start: 0.75rem;
 }
 
-/* Android release guide must be a visible work console, not a hidden control surface. */
-.sovereign-guide-actions {
-  block-size: auto !important;
-  clip: auto !important;
-  clip-path: none !important;
-  display: grid !important;
-  gap: 0.5rem !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  inline-size: auto !important;
-  margin-top: 0.75rem !important;
-  opacity: 1 !important;
-  overflow: visible !important;
-  pointer-events: auto !important;
-  position: static !important;
-}
-
+/* Android workbench: fixed three zones without turning runtime state into UI fiction. */
 #sovereign-global-runtime-monitor-root {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: linear-gradient(180deg, rgb(2, 6, 23) 0%, rgba(2, 6, 23, 0.82) 88%, transparent 100%);
+  background: linear-gradient(180deg, rgb(2, 6, 23) 0%, rgba(2, 6, 23, 0.9) 88%, transparent 100%);
+  padding-bottom: 0.35rem;
+}
+
+.sovereign-global-monitor {
+  max-height: clamp(18rem, 42svh, 26rem);
+  overflow: hidden;
+}
+
+.sovereign-monitor-body {
+  max-height: clamp(10rem, 28svh, 18rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.1rem;
+}
+
+.sovereign-monitor-log-shell {
+  margin-top: 0.72rem;
+}
+
+.sovereign-monitor-filter-row {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  scrollbar-width: none;
+}
+
+.sovereign-monitor-filter-row::-webkit-scrollbar {
+  display: none;
+}
+
+.sovereign-monitor-filter-row button,
+.sovereign-health-repair-panel button {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  color: rgb(203, 213, 225);
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 900;
+  min-height: 2rem;
+  padding: 0.34rem 0.68rem;
+}
+
+.sovereign-monitor-filter-row button[data-state="active"] {
+  border-color: rgba(34, 211, 238, 0.62);
+  background: rgba(8, 47, 73, 0.82);
+  color: rgb(236, 254, 255);
 }
 
 .sovereign-monitor-log {
-  max-height: clamp(8rem, 24svh, 12rem);
+  max-height: clamp(7rem, 18svh, 11rem);
   overscroll-behavior: contain;
+}
+
+.sovereign-health-repair-panel {
+  border: 1px solid rgba(251, 113, 133, 0.32);
+  border-radius: 0.9rem;
+  background: rgba(127, 29, 29, 0.18);
+  color: rgb(254, 226, 226);
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.72rem;
+  padding: 0.72rem;
+}
+
+.sovereign-health-repair-panel strong,
+.sovereign-health-repair-panel span {
+  display: block;
+}
+
+.sovereign-health-repair-panel strong {
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.sovereign-health-repair-panel span {
+  color: rgb(254, 202, 202);
+  font-size: 0.72rem;
+}
+
+.sovereign-health-repair-panel div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 .sovereign-repo-insight-panel,
@@ -212,13 +282,23 @@
 }
 
 @media (max-width: 767px) {
+  body {
+    overflow-y: auto;
+  }
+
   #sovereign-global-runtime-monitor-root {
     padding-top: max(0.45rem, var(--safe-top));
   }
 
   .sovereign-global-monitor {
+    border-radius: 1.1rem;
     margin-bottom: 0.55rem;
+    max-height: clamp(16rem, 44svh, 24rem);
     padding: 0.72rem;
+  }
+
+  .sovereign-monitor-head {
+    align-items: center;
   }
 
   .sovereign-monitor-status,
@@ -227,10 +307,27 @@
   }
 
   .sovereign-guide-actions {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    position: sticky !important;
+    bottom: calc(var(--safe-bottom) + 0.35rem) !important;
+    z-index: 5;
+    border: 1px solid rgba(34, 211, 238, 0.16);
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.9);
+    padding: 0.35rem;
   }
 
   .sovereign-guide-button {
+    border-radius: 999px;
     min-height: 2.2rem;
+    padding-inline: 0.45rem;
+  }
+
+  .sovereign-monitor-log {
+    max-height: clamp(6rem, 16svh, 9rem);
+  }
+
+  .sovereign-insight-groups {
+    max-height: clamp(13rem, 36svh, 20rem);
   }
 }
