@@ -1,0 +1,60 @@
+name: Deploy Cloudflare Worker AI Proxy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'cloudflare-worker-ai-proxy/**'
+  workflow_dispatch:
+    inputs:
+      deploy_reason:
+        description: 'Deployment reason'
+        required: false
+        default: 'Manual deployment'
+
+jobs:
+  deploy-worker:
+    name: Deploy LLM Proxy
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cloudflare-worker-ai-proxy/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd cloudflare-worker-ai-proxy
+          npm ci
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: ./cloudflare-worker-ai-proxy
+          secrets: |
+            CF_AI_TOKEN=${{ secrets.CF_AI_TOKEN }}
+            CF_ACCOUNT_ID=${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Get Worker URL
+        run: |
+          echo "✅ Worker deployed successfully!"
+          echo "Worker URL: https://sovereign-llm-proxy.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev"
+          
+      - name: Test Worker API
+        run: |
+          curl -X POST "https://sovereign-llm-proxy.${{ secrets.CF_ACCOUNT_ID }}.workers.dev/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "@cf/meta/llama-3-8b-instruct",
+              "messages": [{"role": "user", "content": "Say hello in one word"}]
+            }' | head -c 500
