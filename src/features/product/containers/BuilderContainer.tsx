@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   builderPublishLabel,
   deriveBuilderContainerState,
@@ -63,7 +63,36 @@ const dangerButtonClassName = 'sovereign-action-button rounded-2xl border border
 function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
   if (!clean) return option.text;
+  if (clean.includes(option.text)) return clean;
   return `${clean}\n${option.text}`;
+}
+
+function normalizeMissionText(value: string): string {
+  return value.replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function collapseRepeatedAnalyzedMission(value: string): string {
+  let clean = normalizeMissionText(value).replace(/^Ideenfabrik Auftrag:\s*Ideenfabrik Auftrag:/i, 'Ideenfabrik Auftrag:');
+  const marker = '\nRepository-Kontext:';
+  const firstContext = clean.indexOf(marker);
+  const secondContext = firstContext >= 0 ? clean.indexOf(marker, firstContext + marker.length) : -1;
+  if (secondContext >= 0) clean = clean.slice(0, secondContext).trim();
+  return clean;
+}
+
+function isAnalyzedMission(value: string): boolean {
+  const clean = collapseRepeatedAnalyzedMission(value).toLowerCase();
+  return clean.startsWith('ideenfabrik auftrag:') && clean.includes('repository-kontext:') && clean.includes('umsetzung:');
+}
+
+function missionToWishText(value: string): string {
+  const clean = collapseRepeatedAnalyzedMission(value);
+  if (!clean) return '';
+  if (!isAnalyzedMission(clean)) return clean.replace(/^Ideenfabrik Auftrag:\s*/i, '').trim();
+
+  const withoutHeader = clean.replace(/^Ideenfabrik Auftrag:\s*/i, '').trim();
+  const contextIndex = withoutHeader.indexOf('\nRepository-Kontext:');
+  return (contextIndex >= 0 ? withoutHeader.slice(0, contextIndex) : withoutHeader).trim();
 }
 
 function buildAnalyzedMission(args: {
@@ -71,7 +100,10 @@ function buildAnalyzedMission(args: {
   readonly repoReady: boolean;
   readonly repoReason: string;
 }): string {
-  const wish = args.wish.trim() || 'Verbessere das Sovereign Tool so, dass es für Nutzer klar bedienbar ist.';
+  const existingMission = collapseRepeatedAnalyzedMission(args.wish);
+  if (isAnalyzedMission(existingMission)) return existingMission;
+
+  const wish = missionToWishText(args.wish) || 'Verbessere das Sovereign Tool so, dass es für Nutzer klar bedienbar ist.';
   const repoState = args.repoReady ? 'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.' : `Repo-Snapshot ist noch nicht bereit: ${args.repoReason}`;
 
   return [
@@ -105,7 +137,8 @@ export function BuilderContainer({
   onGenerateErrorWorkflow,
   onPublishDraftPr,
 }: BuilderContainerProps) {
-  const [wishText, setWishText] = useState('');
+  const [wishText, setWishText] = useState(() => missionToWishText(mission));
+  const lastMissionSeenRef = useRef(mission);
   const state = deriveBuilderContainerState({
     repoReady,
     repoBusy,
@@ -119,13 +152,21 @@ export function BuilderContainer({
   const publishDisabled = !state.canPublish;
   const analyzedMission = useMemo(() => buildAnalyzedMission({ wish: wishText, repoReady, repoReason }), [repoReady, repoReason, wishText]);
 
+  useEffect(() => {
+    if (mission === lastMissionSeenRef.current) return;
+    lastMissionSeenRef.current = mission;
+    setWishText(missionToWishText(mission));
+  }, [mission]);
+
   const analyzeWish = () => {
-    onMissionChange(analyzedMission);
+    const cleanMission = collapseRepeatedAnalyzedMission(analyzedMission);
+    lastMissionSeenRef.current = cleanMission;
+    onMissionChange(cleanMission);
   };
 
   return (
     <section
-      className={`${builderContainerContract.rootClass} mt-4 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200`}
+      className={`${builderContainerContract.rootClass} sovereign-builder-compact mt-4 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-200`}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
       aria-label={builderContainerContract.ariaLabel}
@@ -169,7 +210,7 @@ export function BuilderContainer({
           name={SOVEREIGN_FORM_MISSION.id}
           data-role={SOVEREIGN_FORM_MISSION.dataRole}
           data-testid={SOVEREIGN_FORM_MISSION.testId}
-          className="mt-2 min-h-28 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-base leading-6"
+          className="mt-2 min-h-24 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-base leading-6"
           value={wishText}
           onChange={(event) => setWishText(event.target.value)}
           placeholder="Schreib einfach: mach die App verständlicher, zeig Logs, prüfe Buildfehler, mach einen Draft PR..."
@@ -230,7 +271,7 @@ export function BuilderContainer({
       <label className="mt-4 block">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Analysierter ausführbarer Auftrag</span>
         <textarea
-          className="mt-2 min-h-36 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm leading-6"
+          className="sovereign-builder-mission-output mt-2 min-h-28 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm leading-6"
           value={mission}
           onChange={(event) => onMissionChange(event.target.value)}
           placeholder="Hier erscheint nach Analyse der ausführbare Auftrag. Du kannst ihn vor Produktion noch ändern."
