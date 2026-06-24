@@ -1,0 +1,214 @@
+name: Deploy Primary LLM Bridge
+
+on:
+  workflow_dispatch:
+    inputs:
+      bridge_name:
+        description: Cloudflare Worker name
+        required: false
+        default: sovereign-llm-bridge
+      allowed_origin:
+        description: Optional CORS origin, leave empty to reflect request origin
+        required: false
+        default: ""
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/deploy-primary-llm-bridge.yml
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: primary-llm-bridge-deploy
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  CF_ACCOUNT_ID: "4a82319180f1f1cee60d85a971c3041d"
+  CF_GATEWAY_NAME: "gatter"
+  DEFAULT_MODEL: "cerebras/zai-glm-4.7"
+  DEFAULT_UPSTREAM: "https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions"
+
+jobs:
+  deploy:
+    name: Deploy hosted bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate required secrets
+        run: |
+          test -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" || (echo "Missing repository secret CLOUDFLARE_API_TOKEN" && exit 1)
+          test -n "${{ secrets.CF_AIG_TOKEN }}" || (echo "Missing repository secret CF_AIG_TOKEN" && exit 1)
+
+      - name: Generate bridge worker
+        run: |
+          mkdir -p .sovereign-bridge
+          cat > .sovereign-bridge/bridge.ts <<'TS'
+          export interface Env {
+            AIG_TOKEN: string;
+            AIG_URL?: string;
+            AIG_MODEL?: string;
+            ALLOWED_ORIGIN?: string;
+          }
+
+          const DEFAULT_URL = 'https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions';
+          const DEFAULT_MODEL = 'cerebras/zai-glm-4.7';
+          const AUTH_HEADER = ['cf', '-aig-authorization'].join('');
+          const MAX_BODY_BYTES = 256000;
+          const MAX_MESSAGES = 24;
+          const MAX_MESSAGE_CHARS = 18000;
+
+          function corsHeaders(env: Env, request: Request): HeadersInit {
+            const origin = request.headers.get('Origin') || '*';
+            const allowedOrigin = env.ALLOWED_ORIGIN?.trim();
+            return {
+              'Access-Control-Allow-Origin': allowedOrigin || origin,
+              'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
+              'Access-Control-Allow-Headers': 'Content-Type, X-Sovereign-Client',
+              'Access-Control-Max-Age': '86400',
+              Vary: 'Origin',
+            };
+          }
+
+          function json(data: unknown, init: ResponseInit, env: Env, request: Request): Response {
+            const headers = new Headers(init.headers);
+            headers.set('Content-Type', 'application/json');
+            for (const [key, value] of Object.entries(corsHeaders(env, request))) headers.set(key, value);
+            return new Response(JSON.stringify(data), { ...init, headers });
+          }
+
+          async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
+            const contentLength = Number(request.headers.get('Content-Length') || '0');
+            if (contentLength > MAX_BODY_BYTES) throw new Error('Request body too large.');
+            const text = await request.text();
+            if (text.length > MAX_BODY_BYTES) throw new Error('Request body too large.');
+            const parsed = JSON.parse(text) as Record<string, unknown>;
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Request body must be a JSON object.');
+            return parsed;
+          }
+
+          function sanitizeMessages(value: unknown): Array<{ role: string; content: string }> {
+            if (!Array.isArray(value)) throw new Error('messages must be an array.');
+            if (value.length === 0 || value.length > MAX_MESSAGES) throw new Error(`messages must contain 1-${MAX_MESSAGES} items.`);
+
+            return value.map((item, index) => {
+              if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`messages[${index}] must be an object.`);
+              const record = item as Record<string, unknown>;
+              const role = typeof record.role === 'string' ? record.role : '';
+              const content = typeof record.content === 'string' ? record.content : '';
+              if (!['system', 'user', 'assistant'].includes(role)) throw new Error(`messages[${index}].role is invalid.`);
+              if (!content.trim()) throw new Error(`messages[${index}].content is empty.`);
+              if (content.length > MAX_MESSAGE_CHARS) throw new Error(`messages[${index}].content is too long.`);
+              return { role, content };
+            });
+          }
+
+          function normalizePayload(input: Record<string, unknown>, env: Env): Record<string, unknown> {
+            return {
+              model: typeof input.model === 'string' && input.model.trim() ? input.model.trim() : env.AIG_MODEL || DEFAULT_MODEL,
+              messages: sanitizeMessages(input.messages),
+              temperature: typeof input.temperature === 'number' ? input.temperature : 0.2,
+              max_tokens: typeof input.max_tokens === 'number' ? input.max_tokens : 4096,
+              reasoning_format: typeof input.reasoning_format === 'string' ? input.reasoning_format : 'parsed',
+            };
+          }
+
+          function upstreamUrl(env: Env): string {
+            const value = (env.AIG_URL || DEFAULT_URL).trim();
+            if (!/^https:\/\//i.test(value)) throw new Error('AIG_URL must use HTTPS.');
+            return value;
+          }
+
+          export default {
+            async fetch(request: Request, env: Env): Promise<Response> {
+              if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(env, request) });
+
+              const url = new URL(request.url);
+              if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
+                return json({ ok: true, provider: 'sovereign-llm-bridge', model: env.AIG_MODEL || DEFAULT_MODEL }, { status: 200 }, env, request);
+              }
+
+              if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed.' }, { status: 405 }, env, request);
+
+              try {
+                if (!env.AIG_TOKEN?.trim()) throw new Error('AIG_TOKEN secret is not configured.');
+                const payload = normalizePayload(await readJsonBody(request), env);
+                const upstream = await fetch(upstreamUrl(env), {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    [AUTH_HEADER]: `Bearer ${env.AIG_TOKEN.trim()}`,
+                  },
+                  body: JSON.stringify(payload),
+                });
+                const body = await upstream.text();
+                return new Response(body, {
+                  status: upstream.status,
+                  headers: {
+                    'Content-Type': upstream.headers.get('Content-Type') || 'application/json',
+                    ...corsHeaders(env, request),
+                  },
+                });
+              } catch (error) {
+                return json({ ok: false, error: error instanceof Error ? error.message : 'Bridge request failed.' }, { status: 400 }, env, request);
+              }
+            },
+          };
+          TS
+
+          cat > .sovereign-bridge/wrangler.toml <<EOF
+          name = "${{ github.event.inputs.bridge_name || 'sovereign-llm-bridge' }}"
+          main = "bridge.ts"
+          compatibility_date = "2026-06-01"
+          account_id = "${CF_ACCOUNT_ID}"
+          workers_dev = true
+
+          [vars]
+          AIG_URL = "${DEFAULT_UPSTREAM}"
+          AIG_MODEL = "${DEFAULT_MODEL}"
+          ALLOWED_ORIGIN = "${{ github.event.inputs.allowed_origin }}"
+          EOF
+
+      - name: Deploy bridge
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd .sovereign-bridge
+          npx --yes wrangler@latest deploy --config wrangler.toml 2>&1 | tee deploy.log
+          DEPLOYED_URL=$(grep -Eo 'https://[^ ]+\.workers\.dev[^ ]*' deploy.log | tail -1 | sed 's/[),.]$//')
+          test -n "$DEPLOYED_URL" || (echo "Could not parse workers.dev URL from deploy output" && cat deploy.log && exit 1)
+          echo "$DEPLOYED_URL" > ../.worker-url
+          echo "Deployed bridge: $DEPLOYED_URL"
+
+      - name: Set bridge secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd .sovereign-bridge
+          printf "%s" "${{ secrets.CF_AIG_TOKEN }}" | npx --yes wrangler@latest secret put AIG_TOKEN --name "${{ github.event.inputs.bridge_name || 'sovereign-llm-bridge' }}"
+
+      - name: Smoke test bridge
+        run: |
+          URL=$(cat .worker-url)
+          curl -fsS "$URL/health"
+
+      - name: Save app runtime URL as repository variable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          URL=$(cat .worker-url)
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/actions/variables/VITE_SOVEREIGN_LLM_PROXY_URL" -f name=VITE_SOVEREIGN_LLM_PROXY_URL -f value="$URL" \
+            || gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/variables" -f name=VITE_SOVEREIGN_LLM_PROXY_URL -f value="$URL"
+          echo "VITE_SOVEREIGN_LLM_PROXY_URL=$URL"

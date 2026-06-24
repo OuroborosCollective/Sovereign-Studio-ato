@@ -31,7 +31,7 @@ describe('sovereign release guide runtime', () => {
     expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
     expect(state.nextLabel).toBe('Weiter');
-    expect(state.helperMessage).toContain('Weiter-Button');
+    expect(state.helperMessage).toContain('sichtbaren Weiter-Button');
   });
 
   it('lets an explicit workflow action win over stale diff/package text', () => {
@@ -47,7 +47,6 @@ describe('sovereign release guide runtime', () => {
     expect(state.nextLabel).toBe('Weiter');
     expect(state.progress).toBe(85);
   });
-
 
   it('does not claim that UI guidance auto-controls user navigation', () => {
     const state = deriveReleaseGuideState(input({
