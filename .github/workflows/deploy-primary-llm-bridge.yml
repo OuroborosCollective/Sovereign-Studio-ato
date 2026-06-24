@@ -6,7 +6,7 @@ on:
       bridge_name:
         description: Cloudflare Worker name
         required: false
-        default: sovereign-llm-bridge
+        default: sovereign-llm-proxy
       allowed_origin:
         description: Optional CORS origin, leave empty to reflect request origin
         required: false
@@ -64,6 +64,7 @@ jobs:
 
           const DEFAULT_URL = 'https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions';
           const DEFAULT_MODEL = 'cerebras/zai-glm-4.7';
+          const GATEWAY_NAME = 'gatter';
           const AUTH_HEADER = ['cf', '-aig-authorization'].join('');
           const MAX_BODY_BYTES = 256000;
           const MAX_MESSAGES = 24;
@@ -136,7 +137,14 @@ jobs:
 
               const url = new URL(request.url);
               if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
-                return json({ ok: true, provider: 'sovereign-llm-bridge', model: env.AIG_MODEL || DEFAULT_MODEL }, { status: 200 }, env, request);
+                return json({
+                  ok: true,
+                  provider: 'sovereign-llm-bridge',
+                  gateway: GATEWAY_NAME,
+                  model: env.AIG_MODEL || DEFAULT_MODEL,
+                  upstreamConfigured: /^https:\/\//i.test((env.AIG_URL || DEFAULT_URL).trim()),
+                  secretConfigured: Boolean(env.AIG_TOKEN?.trim()),
+                }, { status: 200 }, env, request);
               }
 
               if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed.' }, { status: 405 }, env, request);
@@ -168,7 +176,7 @@ jobs:
           TS
 
           cat > .sovereign-bridge/wrangler.toml <<EOF
-          name = "${{ github.event.inputs.bridge_name || 'sovereign-llm-bridge' }}"
+          name = "${{ github.event.inputs.bridge_name || 'sovereign-llm-proxy' }}"
           main = "bridge.ts"
           compatibility_date = "2026-06-01"
           account_id = "${CF_ACCOUNT_ID}"
@@ -197,7 +205,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           cd .sovereign-bridge
-          printf "%s" "${{ secrets.CF_AIG_TOKEN }}" | npx --yes wrangler@latest secret put AIG_TOKEN --name "${{ github.event.inputs.bridge_name || 'sovereign-llm-bridge' }}"
+          printf "%s" "${{ secrets.CF_AIG_TOKEN }}" | npx --yes wrangler@latest secret put AIG_TOKEN --name "${{ github.event.inputs.bridge_name || 'sovereign-llm-proxy' }}"
 
       - name: Smoke test bridge
         run: |
