@@ -1,43 +1,67 @@
-# Launch Readiness Package: repository
+# Launch Readiness
 
-## Summary
+This checklist defines when Sovereign Studio can be treated as a release candidate. CI is required, and real Android smoke testing is still required after an APK is produced.
 
-target/repository: 78/100 HEALTHY
+## Current readiness model
 
-Constraints:
+A release candidate needs evidence in four areas:
 
-Ideenfabrik Auftrag:
-README + Update History
-Erstelle oder verbessere README und Update History so, dass ein normaler Nutzer versteht, was das Tool kann und wie man es benutzt.
+1. Repository truth: real repo tree loaded, no mock snapshot in the live path.
+2. Code truth: TypeScript, unit tests, web build and static audit pass on the relevant commit.
+3. Runtime truth: runtime, UX and live-path contracts confirm the app is using runtime sources.
+4. Device truth: Android artifact installs and runs on a real device or emulator.
 
-Repository-Kontext:
-Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.
+## Automated gates
 
-Umsetzung:
-- Analysiere zuerst die vorhandene Repo-Struktur und betroffene Dateien.
-- Erzeuge echte Änderungen im passenden Codepfad.
-- Halte Sovereign Tool getrennt von WASD/Science-Portal Drift.
-- Nutze Runtime-Checks, Validierungen und Tests, soweit sinnvoll.
-- Keine Mock-, Stub- oder Facade-Live-Pfade.
-- Gib am Ende klar aus, was geändert wurde und welche Checks noch offen sind.
+Required green checks for the release commit or PR head:
 
-LOCAL PATTERN: [tags: llm-runtime, brain-gated-providers-prevent-preview-only-prs., repository-tree-analysis-must-happen-before-file-generation., launch-readiness-scoring-catches-missing-ci-and-docs-before-merge.]
-Aha: Classify request, analyze repo tree, score launch readiness, produce concrete files, validate package, then push through GitHub PR flow. (proof-backed success).
+- TypeScript type check
+- Unit tests
+- Web build
+- Sovereign static and security audit
+- Runtime contract scan
+- UX contract scan
+- Live-path scan
+- Android debug APK build
 
-## Risk Register
+## Android smoke checklist
 
-- **MEDIUM** License missing or not detected: Add a LICENSE file or document private/internal status.
-- **LOW** No recent commits detected: Confirm repository activity before launch.
-- **MEDIUM** Branch protection not confirmed: Require PR checks before merge on default branch.
+Run this after downloading the APK artifact:
 
-## Owner Checklist
+- App starts without a blank screen or boot-fatal overlay.
+- Repo URL input is usable on phone and tablet layouts.
+- Secret input text is not leaked into telemetry, summaries or errors.
+- Repo loading reaches a visible ready, degraded or error state.
+- Auto Review and Full Auto stay blocked until repo, mission and credential requirements are real.
+- Automation waits for runtime busy state and does not rapid-loop through UI tabs.
+- More-menu navigation works on narrow Android WebView widths.
+- Rotation does not hide primary actions.
+- Draft PR flow creates a branch and Draft PR only after review guards pass.
+- Workflow watch displays GitHub check state from the produced commit.
 
-- [x] **Lead Engineer**: Review README for accuracy.
-- [x] **DevOps**: Verify CI workflow names and required checks.
-- [x] **QA Agent**: Run and verify existing tests.
-- [ ] **Reviewer**: Review 3 readiness risk(s).
-- [ ] **Product Owner**: Prepare release notes, PR summary and follow-up questions.
+## Risk register
 
-## Release State
+| Risk | Severity | Release action |
+| :--- | :--- | :--- |
+| Generated docs contain prompt transcripts instead of product documentation | High | Block merge and rewrite docs into user-facing content. |
+| No fresh workflow run for target commit | High | Trigger CI, release and Android checks before approval. |
+| APK built but not device-tested | Medium | Treat as build-ready, not Play-Store-ready. |
+| Branch protection not confirmed | Medium | Require PR checks before default-branch merge. |
+| License or distribution status unclear | Medium | Keep private status or document distribution policy. |
 
-RELEASE STATE REACHED
+## Owner checklist
+
+- [ ] Lead Engineer: review README and docs for accuracy.
+- [ ] DevOps: verify CI workflow names and required checks.
+- [ ] QA: run or review TypeScript, unit, build, runtime contract and Android APK results.
+- [ ] Android tester: install artifact and complete smoke checklist.
+- [ ] Product Owner: approve release notes and known limitations.
+
+## Release state language
+
+Use these labels honestly:
+
+- Not ready: required checks missing or failing.
+- CI green: automated checks passed, but Android device behavior is not proven.
+- APK candidate: Android artifact exists and is not expired.
+- Play-Store test candidate: CI is green and Android smoke test passed.
