@@ -1,38 +1,42 @@
 # Update History
 
-## Sovereign brain guarded package
+This file records user-facing Sovereign Studio changes in plain language. It is intentionally separate from generated package previews so release notes stay readable and reviewable.
 
-Request:
+## 2026-06-24 — Release-readiness documentation hardening
 
-Ideenfabrik Auftrag:
-README + Update History
-Erstelle oder verbessere README und Update History so, dass ein normaler Nutzer versteht, was das Tool kann und wie man es benutzt.
+### Changed
 
-Repository-Kontext:
-Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.
+- Restored the README as a real user entry point instead of a generated prompt transcript.
+- Added a clearer runtime-truth explanation for repo loading, package generation, Draft PR publishing and workflow watching.
+- Added a launch-readiness checklist that separates automated GitHub checks from required real Android smoke testing.
+- Documented the current provider and brain-gate rule: provider output is input, not truth, until runtime contracts and generated-file guards accept it.
 
-Umsetzung:
-- Analysiere zuerst die vorhandene Repo-Struktur und betroffene Dateien.
-- Erzeuge echte Änderungen im passenden Codepfad.
-- Halte Sovereign Tool getrennt von WASD/Science-Portal Drift.
-- Nutze Runtime-Checks, Validierungen und Tests, soweit sinnvoll.
-- Keine Mock-, Stub- oder Facade-Live-Pfade.
-- Gib am Ende klar aus, was geändert wurde und welche Checks noch offen sind.
+### Why it matters
 
-LOCAL PATTERN: [tags: llm-runtime, brain-gated-providers-prevent-preview-only-prs., repository-tree-analysis-must-happen-before-file-generation., launch-readiness-scoring-catches-missing-ci-and-docs-before-merge.]
-Aha: Classify request, analyze repo tree, score launch readiness, produce concrete files, validate package, then push through GitHub PR flow. (proof-backed success).
+A green workflow is useful, but it is not enough by itself. Release readiness must stay tied to real repository state, real TypeScript/tests/build output, real GitHub Actions results and real Android behavior.
 
-Architecture:
+### Validation target
 
-node repo, README=yes, workflows=yes, tests=yes, runtime=yes
+Before this PR can be merged, the relevant commit should show green results for:
 
-Readiness:
+- `pnpm run type-check`
+- `pnpm run test:unit`
+- `pnpm run build:web`
+- `pnpm run audit:sovereign`
+- Runtime/UX/live-path contract scan
+- Android debug APK build
 
-target/repository: 78/100 HEALTHY
+## Current product baseline
 
-Cards:
+Sovereign Studio V3 is a guarded repository workbench:
 
-- 1 Wunsch: User beschreibt das Produkt in natuerlicher Sprache.
-- 2 Free Route: No-key Anbieter zuerst, eigene Keys nur optional.
-- 3 Code: Der Agent schreibt sichtbaren Code in Dateien.
-- 4 Validate: Workflow Fehler springen zurueck in den Editor.
+1. Load a GitHub repo snapshot.
+2. Analyze readiness and risk.
+3. Build a brain-gated implementation package.
+4. Review generated files and diffs.
+5. Publish only as a Draft PR.
+6. Watch workflows and route failures into repair guidance.
+
+## Open release note
+
+Play-Store readiness still requires a real Android device or emulator smoke test after the APK artifact is produced. Automated APK build success does not prove WebView startup, layout, rotation, token masking or touch navigation on real devices.
