@@ -180,9 +180,11 @@ export function orderMobileWorkspace(): boolean {
 }
 
 function scheduleOrder(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
   const win = window as WorkspaceWindow;
   if (win.__sovereignMobileWorkspaceOrderTimer) window.clearTimeout(win.__sovereignMobileWorkspaceOrderTimer);
   win.__sovereignMobileWorkspaceOrderTimer = window.setTimeout(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
     win.__sovereignMobileWorkspaceOrderTimer = undefined;
     orderMobileWorkspace();
   }, 60);
