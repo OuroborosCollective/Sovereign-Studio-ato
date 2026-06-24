@@ -9,6 +9,7 @@ import './runtime-adapter';
 import './index.css';
 import './styles/arelogic-brand.css';
 import './styles/sovereign-release-guide.css';
+import './styles/sovereign-playtest-ux.css';
 
 type IdleDeadlineLike = {
   didTimeout: boolean;
