@@ -10,12 +10,16 @@ describe('primaryBridgeConfig', () => {
     expect(config.model).toBe('cerebras/zai-glm-4.7');
   });
 
-  it('marks runtime bridge ready only when a hosted proxy URL is present', () => {
-    const missing = resolvePrimaryBridgeConfig({ proxyUrl: '' });
-    expect(missing.ready).toBe(false);
+  it('uses the deployed hosted bridge as buyer-ready default runtime URL', () => {
+    const config = resolvePrimaryBridgeConfig();
+    expect(config.ready).toBe(true);
+    expect(config.proxyUrl).toBe('https://sovereign-llm-proxy.projectouroboroscollective.workers.dev');
+  });
 
+  it('allows release builds to override the hosted bridge URL', () => {
     const ready = resolvePrimaryBridgeConfig({ proxyUrl: 'https://sovereign-worker.example/v1/chat/completions' });
     expect(ready.ready).toBe(true);
+    expect(ready.proxyUrl).toBe('https://sovereign-worker.example/v1/chat/completions');
   });
 
   it('normalizes HTTPS proxy URLs and rejects non-HTTPS paths', () => {
