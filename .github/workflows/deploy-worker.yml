@@ -34,14 +34,16 @@ jobs:
           npm install
 
       - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: ./cloudflare-worker-ai-proxy
-          secrets: |
-            CF_AI_TOKEN=${{ secrets.CF_AI_TOKEN }}
-            CF_ACCOUNT_ID=${{ secrets.CF_ACCOUNT_ID }}
+        env:
+          CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          cd cloudflare-worker-ai-proxy
+          echo "$CF_AI_TOKEN" | npx wrangler secret put CF_AI_TOKEN --name sovereign-llm-proxy
+          echo "$CF_ACCOUNT_ID" | npx wrangler secret put CF_ACCOUNT_ID --name sovereign-llm-proxy
+          npx wrangler deploy
 
       - name: Get Worker URL
         run: |
@@ -50,7 +52,7 @@ jobs:
           
       - name: Test Worker API
         run: |
-          curl -X POST "https://sovereign-llm-proxy.${{ secrets.CF_ACCOUNT_ID }}.workers.dev/v1/chat/completions" \
+          curl -X POST "https://sovereign-llm-proxy.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev/v1/chat/completions" \
             -H "Content-Type: application/json" \
             -d '{
               "model": "@cf/meta/llama-3-8b-instruct",
