@@ -51,6 +51,12 @@ describe('maskSecrets', () => {
     expect(maskSecrets('secret: somevalue')).toBe('secret: ****');
   });
 
+  it('masks quoted label-based credentials and base64 characters', () => {
+    expect(maskSecrets('"password": "my-secret-password"')).toBe('password: ****');
+    expect(maskSecrets("'api_key': 'abc123+/~='")).toBe('api_key: ****');
+    expect(maskSecrets('token: value_with_@#$%^&*')).toBe('token: ****');
+  });
+
   it('masks multiple secrets in one string', () => {
     const text = 'Keys: ghp_1234567890abcdefghijklmnopqrstuvwx and AIzaSyA-1234567890_abcdefghijklmnopqrst';
     expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIzaSy****');
