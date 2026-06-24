@@ -10,7 +10,7 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NPM_CONFIG_LEGACY_PEER_DEPS: true
-  VITE_SOVEREIGN_LLM_PROXY_URL: ${{ vars.VITE_SOVEREIGN_LLM_PROXY_URL }}
+  VITE_SOVEREIGN_LLM_PROXY_URL: ${{ vars.VITE_SOVEREIGN_LLM_PROXY_URL || 'https://sovereign-llm-proxy.projectouroboroscollective.workers.dev' }}
   VITE_SOVEREIGN_LLM_MODEL: ${{ vars.VITE_SOVEREIGN_LLM_MODEL || 'cerebras/zai-glm-4.7' }}
 
 concurrency:
