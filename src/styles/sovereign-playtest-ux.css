@@ -1,0 +1,165 @@
+/* Playwright-tested Android cockpit overrides.
+   This layer only shapes the UI workbench; it does not create runtime truth. */
+
+body:has(.sovereign-login-shell) #sovereign-global-runtime-monitor-root {
+  display: none;
+}
+
+.sovereign-guide-actions {
+  position: static !important;
+}
+
+@media (max-width: 767px) {
+  #sovereign-global-runtime-monitor-root {
+    padding-inline: 0.55rem;
+  }
+
+  .sovereign-global-monitor {
+    max-height: clamp(12.5rem, 32svh, 17rem);
+    padding: 0.58rem;
+  }
+
+  .sovereign-helper-avatar {
+    font-size: 0.95rem;
+    height: 2rem;
+    width: 2rem;
+  }
+
+  .sovereign-helper-title-row {
+    gap: 0.5rem;
+  }
+
+  .sovereign-eyebrow {
+    font-size: 0.54rem;
+    letter-spacing: 0.12em;
+  }
+
+  .sovereign-monitor-head h2 {
+    font-size: 0.84rem;
+    line-height: 1.08;
+  }
+
+  .sovereign-helper-subtitle {
+    font-size: 0.64rem;
+  }
+
+  .sovereign-monitor-pill {
+    display: none;
+  }
+
+  .sovereign-monitor-toggle:not([data-state="locked-open"]) {
+    min-height: 1.9rem;
+    padding: 0.3rem 0.6rem !important;
+  }
+
+  .sovereign-monitor-body {
+    max-height: clamp(7.5rem, 19svh, 10.25rem);
+  }
+
+  .sovereign-monitor-status {
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.56rem;
+  }
+
+  .sovereign-status-dot {
+    height: 0.62rem;
+    width: 0.62rem;
+  }
+
+  .sovereign-monitor-copy strong {
+    font-size: 0.8rem;
+  }
+
+  .sovereign-monitor-copy span,
+  .sovereign-monitor-copy em,
+  .sovereign-monitor-copy p {
+    font-size: 0.68rem;
+    line-height: 1.28;
+  }
+
+  .sovereign-monitor-copy p {
+    margin-top: 0.25rem;
+  }
+
+  .sovereign-monitor-copy em {
+    margin-top: 0.24rem;
+  }
+
+  .sovereign-helper-panel {
+    margin-top: 0.48rem;
+    padding: 0.52rem !important;
+  }
+
+  .sovereign-helper-copy strong,
+  .sovereign-helper-copy span {
+    font-size: 0.66rem;
+    line-height: 1.22;
+  }
+
+  .sovereign-monitor-progress {
+    margin-top: 0.45rem;
+  }
+
+  .sovereign-monitor-progress-head {
+    font-size: 0.62rem;
+  }
+
+  .sovereign-monitor-progress .grid {
+    display: flex !important;
+    gap: 0.25rem;
+    overflow-x: auto;
+    padding-bottom: 0.08rem;
+    scrollbar-width: none;
+  }
+
+  .sovereign-monitor-progress .grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sovereign-monitor-progress .grid span {
+    flex: 0 0 4.8rem;
+    font-size: 0.54rem;
+    min-height: 1.65rem;
+  }
+
+  .sovereign-guide-actions {
+    border: 1px solid rgba(34, 211, 238, 0.16);
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.84);
+    gap: 0.28rem !important;
+    margin-top: 0.42rem !important;
+    padding: 0.24rem;
+  }
+
+  .sovereign-guide-button {
+    font-size: 0.64rem;
+    min-height: 1.95rem;
+  }
+
+  .sovereign-monitor-log-shell {
+    margin-top: 0.45rem;
+  }
+
+  .sovereign-monitor-filter-row button {
+    font-size: 0.64rem;
+    min-height: 1.72rem;
+    padding: 0.22rem 0.52rem;
+  }
+
+  .sovereign-monitor-log {
+    max-height: clamp(3.5rem, 8svh, 5.25rem);
+    padding: 0.35rem;
+  }
+
+  [data-testid="repo-snapshot-container"],
+  [data-testid="builder-container"],
+  [data-testid="generated-self-review"],
+  [data-testid="generated-file-diff-preview__internal"],
+  [data-testid="workflow-container"],
+  [data-testid="telemetry-container"],
+  [data-testid="pattern-memory-container"],
+  [data-testid="operator-monitor"] {
+    scroll-margin-top: clamp(13.25rem, 34svh, 18.5rem);
+  }
+}
