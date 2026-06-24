@@ -1,8 +1,3 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
 # This workflow integrates Pyre with GitHub's
 # Code Scanning feature.
 #
@@ -23,13 +18,13 @@ on:
     branches: [ "main" ]
 
 permissions:
-    contents: write
+    contents: read
+    security-events: write
 
 jobs:
   pyre:
     permissions:
-      actions: write
-      contents: write
+      contents: read
       security-events: write
     runs-on: ubuntu-latest
     steps:
@@ -37,10 +32,29 @@ jobs:
         with:
           submodules: true
 
-      - name: Run Pyre
-        uses: facebook/pyre-action@60697a7858f7cc8470d8cc494a3cf2ad6b06560d
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          # To customize these inputs:
-          # See https://github.com/facebook/pyre-action#inputs
-          repo-directory: './'
-          requirements-path: 'requirements.txt'
+          python-version: '3.11'
+
+      - name: Install Pyre
+        run: pip install pyre-check
+
+      - name: Run Pyre
+        run: |
+          pyre analyze --output-directory .pyre
+
+      - name: Upload Pyre SARIF
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pyre-sarif
+          path: .pyre/*.sarif
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: .pyre/*.sarif
+          category: pyre
