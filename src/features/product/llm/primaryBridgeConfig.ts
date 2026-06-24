@@ -2,6 +2,7 @@ const ACCOUNT_ID = '4a82319180f1f1cee60d85a971c3041d';
 const ROUTE_NAME = 'gatter';
 const HOST = ['gate', 'way.ai.', 'cloud', 'flare.com'].join('');
 const DEFAULT_URL = `https://${HOST}/v1/${ACCOUNT_ID}/${ROUTE_NAME}/compat/chat/completions`;
+const DEFAULT_PROXY_URL = 'https://sovereign-llm-proxy.projectouroboroscollective.workers.dev';
 const DEFAULT_MODEL = ['cere', 'bras/zai-glm-4.7'].join('');
 
 type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };
@@ -35,7 +36,7 @@ export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model
   const proxyUrl = overrides.proxyUrl?.trim()
     || readWindowOverride('__SOVEREIGN_LLM_PROXY_URL__')
     || readBuildEnv('VITE_SOVEREIGN_LLM_PROXY_URL')
-    || '';
+    || DEFAULT_PROXY_URL;
   const model = overrides.model?.trim()
     || readWindowOverride('__SOVEREIGN_LLM_MODEL__')
     || readBuildEnv('VITE_SOVEREIGN_LLM_MODEL')
