@@ -1,0 +1,61 @@
+name: Test Primary LLM Proxy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/test-primary-llm-proxy.yml
+      - src/features/product/llm/primaryBridgeConfig.ts
+      - src/features/product/llm/adapters/primaryBridgeAdapter.ts
+
+env:
+  PRIMARY_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
+
+jobs:
+  smoke:
+    name: Smoke test hosted primary LLM proxy
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Health endpoint
+        run: |
+          set -euo pipefail
+          curl -fsS "$PRIMARY_LLM_PROXY_URL/health" | tee health.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const payload = JSON.parse(fs.readFileSync('health.json', 'utf8'));
+          if (payload.ok !== true) throw new Error('health.ok was not true');
+          if (payload.secretConfigured !== true) throw new Error('AIG_TOKEN is not configured on the worker');
+          if (payload.gateway !== 'gatter') throw new Error(`Unexpected gateway: ${payload.gateway}`);
+          console.log('Health OK:', JSON.stringify({ gateway: payload.gateway, model: payload.model }));
+          NODE
+
+      - name: Chat completion endpoint
+        run: |
+          set -euo pipefail
+          cat > payload.json <<'JSON'
+          {
+            "model": "cerebras/zai-glm-4.7",
+            "messages": [
+              { "role": "system", "content": "Reply with exactly one short sentence." },
+              { "role": "user", "content": "Say Sovereign proxy works." }
+            ],
+            "temperature": 0,
+            "max_tokens": 64,
+            "reasoning_format": "parsed"
+          }
+          JSON
+          curl -fsS -X POST "$PRIMARY_LLM_PROXY_URL" \
+            -H "Content-Type: application/json" \
+            --data @payload.json | tee response.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const payload = JSON.parse(fs.readFileSync('response.json', 'utf8'));
+          const text = payload?.choices?.[0]?.message?.content || payload?.output_text || payload?.response || '';
+          if (!text || typeof text !== 'string') {
+            throw new Error(`No assistant text returned: ${JSON.stringify(payload).slice(0, 500)}`);
+          }
+          console.log('LLM response text:', text.slice(0, 200));
+          NODE
