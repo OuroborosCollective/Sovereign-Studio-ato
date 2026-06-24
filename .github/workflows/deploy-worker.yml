@@ -17,16 +17,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: |
-            cd cloudflare-worker-ai-proxy
-            printf '%s' "$CF_AI_TOKEN" | wrangler secret put CF_AI_TOKEN
-            printf '%s' "$CF_ACCOUNT_ID" | wrangler secret put CF_ACCOUNT_ID
-            wrangler deploy
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cloudflare-worker-ai-proxy/package-lock.json
+
+      - name: Install Wrangler
+        run: npm install -g wrangler@3
+        env:
+          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+
+      - name: Set Secrets
+        run: |
+          cd cloudflare-worker-ai-proxy
+          printf '%s' "$CF_AI_TOKEN" | wrangler secret put CF_AI_TOKEN
+          printf '%s' "$CF_ACCOUNT_ID" | wrangler secret put CF_ACCOUNT_ID
         env:
           CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy Worker
+        run: |
+          cd cloudflare-worker-ai-proxy
+          wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
