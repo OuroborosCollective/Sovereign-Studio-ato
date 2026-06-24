@@ -78,9 +78,9 @@ function hasBlockingToken(coach: RuntimeCoachState): boolean {
 }
 
 function canAutoAdvanceGuide(coach: RuntimeCoachState, targetTab: ReleaseGuideTab | null): targetTab is ReleaseGuideTab {
-  if (!targetTab || coach.thinking || coach.lamp === 'red') return false;
-  if (hasBlockingToken(coach)) return false;
-  return targetTab === 'repo' || targetTab === 'builder' || targetTab === 'files' || targetTab === 'diff';
+  void coach;
+  void targetTab;
+  return false;
 }
 
 function showRepairPanel(coach: RuntimeCoachState): boolean {
