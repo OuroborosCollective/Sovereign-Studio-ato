@@ -24,6 +24,9 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
             cd cloudflare-worker-ai-proxy
-            echo "${{ secrets.CF_AI_TOKEN }}" | wrangler secret put CF_AI_TOKEN
-            echo "${{ secrets.CF_ACCOUNT_ID }}" | wrangler secret put CF_ACCOUNT_ID
+            printf '%s' "$CF_AI_TOKEN" | wrangler secret put CF_AI_TOKEN
+            printf '%s' "$CF_ACCOUNT_ID" | wrangler secret put CF_ACCOUNT_ID
             wrangler deploy
+        env:
+          CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
