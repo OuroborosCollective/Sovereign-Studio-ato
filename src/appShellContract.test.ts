@@ -67,7 +67,7 @@ describe('current Sovereign app shell contract', () => {
 
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    const parseSafeCommand = String.raw`npm run build:web\\nnpx cap sync android`;
+    const parseSafeCommand = String.raw`npm run build:web\nnpx cap sync android`;
     const unsafeCommand = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
 
     expect(releaseFix).toContain(parseSafeCommand);
@@ -108,16 +108,16 @@ describe('current Sovereign app shell contract', () => {
     expect(css).toContain('.sovereign-more-select');
   });
 
-
-  it('keeps the global runtime monitor as guidance instead of auto-clicking tabs', () => {
+  it('keeps the global runtime monitor as guidance and only auto-focuses safe UI tabs', () => {
     const monitor = read('src/global-runtime-monitor.tsx');
 
-    expect(monitor).toContain('users trigger navigation explicitly via the visible guide buttons');
+    expect(monitor).toContain('guarded runtime actions, health gates, workflow steps and PR publishing still require visible user intent');
     expect(monitor).toContain("publishGuideCommand({ type: 'next', targetTab: guide.targetTab })");
-    expect(monitor).not.toContain('setTimeout(() => publishGuideCommand');
-    expect(monitor).not.toContain('lastAutoCommandKeyRef');
+    expect(monitor).toContain("publishGuideCommand({ type: 'next', targetTab })");
+    expect(monitor).toContain('canAutoAdvanceGuide');
+    expect(monitor).toContain('hasBlockingToken');
+    expect(monitor).not.toContain('onGenerateIdeas');
+    expect(monitor).not.toContain('publishDraftPr');
     expect(monitor).not.toContain('Ich leite den nächsten sicheren Schritt automatisch ein');
   });
-
 });
-
