@@ -56,6 +56,7 @@ describe('sovereign release guide runtime', () => {
     }));
 
     expect(state.helperMessage).toContain('sichtbare');
+    expect(state.helperMessage).toContain('Button');
     expect(state.helperMessage).not.toContain('automatisch');
   });
 
