@@ -1,0 +1,161 @@
+export type OpenHandsDeploymentMode = 'disabled' | 'external-agent-runtime';
+export type OpenHandsJobStatus = 'idle' | 'queued' | 'running' | 'waiting-for-user' | 'blocked' | 'failed' | 'completed';
+export type OpenHandsEventLevel = 'info' | 'warning' | 'error' | 'success';
+
+export interface OpenHandsEnterpriseConfigInput {
+  enabled?: boolean;
+  agentApiUrl?: string;
+  adminConsoleUrl?: string;
+  deploymentMode?: OpenHandsDeploymentMode;
+}
+
+export interface OpenHandsEnterpriseConfig {
+  enabled: boolean;
+  deploymentMode: OpenHandsDeploymentMode;
+  agentApiUrl: string;
+  adminConsoleUrl: string;
+  ready: boolean;
+  reason: string;
+}
+
+export interface OpenHandsJobRequest {
+  repoUrl: string;
+  branch: string;
+  mission: string;
+  draftPrOnly: true;
+  allowAutoMerge: false;
+  runtimeTruthRequired: true;
+  source: 'sovereign-studio';
+}
+
+export interface OpenHandsRuntimeEvent {
+  at: number;
+  level: OpenHandsEventLevel;
+  stage: string;
+  message: string;
+}
+
+export interface OpenHandsJobSnapshot {
+  jobId?: string;
+  status: OpenHandsJobStatus;
+  repoUrl?: string;
+  branch?: string;
+  draftPrUrl?: string;
+  changedFiles: string[];
+  events: OpenHandsRuntimeEvent[];
+  lastError?: string;
+}
+
+type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };
+
+function readBuildEnv(name: string): string | undefined {
+  try {
+    const value = (import.meta as ImportMetaWithEnv).env?.[name]?.trim();
+    return value && !value.startsWith('REPLACE_WITH_') ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readWindowOverride(name: string): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const value = (window as unknown as Record<string, unknown>)[name];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function isLocalUrl(value: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?($|\/)/i.test(value);
+}
+
+function isHttpsUrl(value: string): boolean {
+  return /^https:\/\//i.test(value);
+}
+
+export function resolveOpenHandsEnterpriseConfig(input: OpenHandsEnterpriseConfigInput = {}): OpenHandsEnterpriseConfig {
+  const agentApiUrl = normalizeUrl(
+    input.agentApiUrl
+      || readWindowOverride('__SOVEREIGN_OPENHANDS_AGENT_API_URL__')
+      || readBuildEnv('VITE_OPENHANDS_AGENT_API_URL')
+      || '',
+  );
+  const adminConsoleUrl = normalizeUrl(
+    input.adminConsoleUrl
+      || readWindowOverride('__SOVEREIGN_OPENHANDS_ADMIN_CONSOLE_URL__')
+      || readBuildEnv('VITE_OPENHANDS_ADMIN_CONSOLE_URL')
+      || '',
+  );
+  const enabledEnv = readWindowOverride('__SOVEREIGN_OPENHANDS_ENABLED__') || readBuildEnv('VITE_OPENHANDS_ENABLED');
+  const enabled = typeof input.enabled === 'boolean'
+    ? input.enabled
+    : enabledEnv === 'true' || Boolean(agentApiUrl);
+  const deploymentMode: OpenHandsDeploymentMode = input.deploymentMode || (enabled ? 'external-agent-runtime' : 'disabled');
+  const urlSafe = !agentApiUrl || isHttpsUrl(agentApiUrl) || isLocalUrl(agentApiUrl);
+  const ready = enabled && deploymentMode === 'external-agent-runtime' && Boolean(agentApiUrl) && urlSafe;
+
+  return {
+    enabled,
+    deploymentMode,
+    agentApiUrl,
+    adminConsoleUrl,
+    ready,
+    reason: ready
+      ? 'OpenHands Enterprise agent runtime is configured as an external worker backend.'
+      : enabled
+        ? 'OpenHands Enterprise is enabled but the agent API URL is missing or unsafe. Use HTTPS outside localhost.'
+        : 'OpenHands Enterprise is disabled. Sovereign will not call an agent backend.',
+  };
+}
+
+export function buildOpenHandsJobRequest(input: { repoUrl: string; branch?: string; mission: string }): OpenHandsJobRequest {
+  const repoUrl = input.repoUrl.trim();
+  const mission = input.mission.trim();
+  const branch = input.branch?.trim() || 'main';
+
+  if (!repoUrl) throw new Error('OpenHands job requires a repository URL.');
+  if (!mission) throw new Error('OpenHands job requires a mission.');
+
+  return {
+    repoUrl,
+    branch,
+    mission,
+    draftPrOnly: true,
+    allowAutoMerge: false,
+    runtimeTruthRequired: true,
+    source: 'sovereign-studio',
+  };
+}
+
+export function createOpenHandsIdleSnapshot(): OpenHandsJobSnapshot {
+  return {
+    status: 'idle',
+    changedFiles: [],
+    events: [],
+  };
+}
+
+export function summarizeOpenHandsJob(snapshot: OpenHandsJobSnapshot): string {
+  if (snapshot.status === 'idle') return 'OpenHands wartet auf einen echten Agentenauftrag.';
+  if (snapshot.status === 'queued') return 'OpenHands Auftrag ist in der Warteschlange.';
+  if (snapshot.status === 'running') return `OpenHands arbeitet: ${snapshot.changedFiles.length} Datei(en) gemeldet.`;
+  if (snapshot.status === 'waiting-for-user') return 'OpenHands wartet auf eine Nutzerentscheidung.';
+  if (snapshot.status === 'blocked') return snapshot.lastError || 'OpenHands ist durch ein Gate blockiert.';
+  if (snapshot.status === 'failed') return snapshot.lastError || 'OpenHands Auftrag ist fehlgeschlagen.';
+  return snapshot.draftPrUrl ? `OpenHands hat einen Draft PR erstellt: ${snapshot.draftPrUrl}` : 'OpenHands Auftrag ist abgeschlossen.';
+}
+
+export function isOpenHandsTerminalStatus(status: OpenHandsJobStatus): boolean {
+  return status === 'blocked' || status === 'failed' || status === 'completed';
+}
+
+export function maskOpenHandsSensitiveText(value: string): string {
+  return value
+    .replace(/(licenseID:\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/(Authorization:\s*)[^\n]+/gi, '$1[redacted]')
+    .replace(/(registry-password\s+)[^\s]+/gi, '$1[redacted]')
+    .replace(/(password[=:]\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/(token[=:]\s*)[^\s]+/gi, '$1[redacted]');
+}
