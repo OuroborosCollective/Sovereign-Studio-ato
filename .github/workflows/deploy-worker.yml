@@ -23,7 +23,7 @@ jobs:
           node-version: '20'
 
       - name: Install Wrangler
-        run: npm install -g wrangler@3
+        run: npm install -g wrangler
         env:
           ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
 
