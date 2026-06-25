@@ -67,14 +67,14 @@ export interface SovereignProductTemplateValidationReport {
 export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   version: 1,
   productName: 'Sovereign Studio',
-  startTab: 'repo',
+  startTab: 'builder',
   primaryFlow: ['repo', 'builder', 'files', 'diff'],
   sideTabs: ['workflow', 'repair', 'remote', 'memory', 'telemetry', 'monitor'],
   diagnosticTabs: ['readiness', 'integrity', 'findings', 'health', 'runtime', 'coverage'],
   autoNavigationAllowlist: ['active-work', 'red-stopper'],
   invariants: [
-    'Repo is always the first screen and the first template phase.',
-    'Builder follows only after repository context exists or the user explicitly opens planning.',
+    'Builder is the startup surface because it is the NoCode chat workbench.',
+    'Repo remains the first setup surface in the primary flow and may be requested by the chat when missing.',
     'Files and Diff are review surfaces, not startup surfaces.',
     'Workflow and Repair are side/stopper surfaces, not passive planning fallbacks.',
     'The Android primary navigation is Repo, Builder, Files and Diff only.',
@@ -84,7 +84,7 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   ],
   tabs: [
     { id: 'repo', label: 'Repo', group: 'primary', phase: 'repo-setup', mainFlowIndex: 0, autoOpenAllowed: true, userVisible: true },
-    { id: 'builder', label: 'Builder', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
+    { id: 'builder', label: 'Chat', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
     { id: 'files', label: 'Files', group: 'primary', phase: 'package-review', mainFlowIndex: 2, autoOpenAllowed: false, userVisible: true },
     { id: 'diff', label: 'Diff', group: 'primary', phase: 'diff-review', mainFlowIndex: 3, autoOpenAllowed: false, userVisible: true },
     { id: 'workflow', label: 'Workflow', group: 'side', phase: 'draft-pr-workflow', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
@@ -139,7 +139,7 @@ export function validateSovereignProductTemplate(
 
   if (contract.version !== 1) errors.push('Template version must be 1.');
   if (contract.productName !== 'Sovereign Studio') errors.push('Template productName must be Sovereign Studio.');
-  if (contract.startTab !== 'repo') errors.push('Template must start in repo tab.');
+  if (contract.startTab !== 'builder') errors.push('Template must start in builder chat workbench tab.');
   if (duplicateIds.length) errors.push(`Duplicate template tabs: ${unique(duplicateIds).join(', ')}`);
 
   const primaryMissing = missingFromContract(contract, contract.primaryFlow);
