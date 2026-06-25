@@ -174,8 +174,8 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren/, 'builder:analyze-visible', 'Builder exposes Auftrag analysieren.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten/, 'builder:start-visible', 'Builder exposes Auftrag starten.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren|Auftrag vorbereiten/, 'builder:analyze-visible', 'Builder exposes a visible mission analysis/preparation action.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten|Agent starten/, 'builder:start-visible', 'Builder exposes a visible task start action.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateErrorWorkflow/, 'builder:repair-handler', 'Builder keeps repair handler wired.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onPublishDraftPr/, 'builder:publish-handler', 'Builder keeps Draft PR handler wired.');
