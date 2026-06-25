@@ -2,19 +2,17 @@
  * Model Registry & Cloudflare Worker Routing
  * 
  * Defines available models and their routing configuration.
- * Supports Cloudflare Workers AI Gateway as primary router.
+ * Supports Cloudflare Workers AI Gateway as primary router with 30-min caching.
  * 
- * RECOMMENDED MODELS FOR GITHUB CODE GENERATION:
- * - Claude (via OpenRouter) - Best for code
- * - MiniMax 2.7 (via OpenRouter) - Strong Chinese model
- * - GPT-4o (via OpenRouter) - Strong general
- * - DeepSeek Coder (via Cloudflare) - Specialized for code
- * - Qwen 2.5 Coder (via Cloudflare) - Specialized for code
+ * ROUTING PRIORITY:
+ * 1. Cloudflare FREE (Qwen Coder 32B) - DEFAULT
+ * 2. Cloudflare FREE (other models)
+ * 3. Paid: MiniMax > Codestral > GPT-4 > Claude
  */
 
 export type ModelProvider = 
-  | 'cloudflare-worker'  // Cloudflare Workers AI Gateway
-  | 'openrouter'        // OpenRouter aggregator (BEST for code)
+  | 'cloudflare-worker'  // Cloudflare Workers AI Gateway (PRIMARY - Free, Cached)
+  | 'openrouter'        // OpenRouter aggregator (Paid)
   | 'groq'              // Groq (ultra low latency)
   | 'huggingface'       // HuggingFace Inference
   | 'together'          // Together AI
@@ -48,14 +46,168 @@ export interface ModelRoutingConfig {
 }
 
 /**
+ * Caching configuration for Cloudflare responses
+ * 30 minutes inactivity timeout
+ */
+export const CACHE_CONFIG = {
+  /** Cache duration in milliseconds (30 minutes) */
+  durationMs: 30 * 60 * 1000,
+  /** Inactivity timeout before cache invalidation */
+  inactivityTimeoutMs: 30 * 60 * 1000,
+  /** Enable response caching */
+  enabled: true,
+  /** Cache key prefix */
+  prefix: 'sovereign-llm-cache-',
+};
+
+/**
  * Available models in Sovereign Studio
- * PRIORITY: Code-specialized models first
+ * PRIORITY: Free Cloudflare models first, then paid models
  */
 export const MODEL_REGISTRY: ModelInfo[] = [
-  // === OPENROUTER (BEST for Code - requires user key) ===
+  // === CLOUDFLARE WORKER (FREE - DEFAULT, CACHED 30 MIN) ===
+  {
+    id: '@cf/qwen/qwen2.5-coder-32b',
+    name: 'Qwen Coder 32B ⭐ DEFAULT',
+    provider: 'cloudflare-worker',
+    contextWindow: 32000,
+    requiresUserKey: false,
+    priority: 100, // HIGHEST - Free, code-specialized, cached
+    capabilities: ['chat', 'completion', 'code'],
+    cloudflareModelId: '@cf/qwen/qwen2.5-coder-32b',
+    codeSpecialized: true,
+  },
+  {
+    id: 'deepseek-v3',
+    name: 'DeepSeek V3 (Free)',
+    provider: 'cloudflare-worker',
+    contextWindow: 64000,
+    requiresUserKey: false,
+    priority: 80,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: 'deepseek-v3',
+  },
+  {
+    id: 'llama-3.3-70b',
+    name: 'Llama 3.3 70B (Free)',
+    provider: 'cloudflare-worker',
+    contextWindow: 128000,
+    requiresUserKey: false,
+    priority: 75,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: 'llama-3.3-70b-instruct',
+  },
+  {
+    id: 'mistral-large',
+    name: 'Mistral Large (Free)',
+    provider: 'cloudflare-worker',
+    contextWindow: 128000,
+    requiresUserKey: false,
+    priority: 70,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: 'mistral-large',
+  },
+  {
+    id: 'qwen-2.5-72b',
+    name: 'Qwen 2.5 72B (Free)',
+    provider: 'cloudflare-worker',
+    contextWindow: 32768,
+    requiresUserKey: false,
+    priority: 68,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: 'qwen2.5-72b-instruct',
+  },
+  {
+    id: '@cf/meta/llama-3.1-8b-instruct',
+    name: 'Llama 3.1 8B (Fast Free)',
+    provider: 'cloudflare-worker',
+    contextWindow: 128000,
+    requiresUserKey: false,
+    priority: 60,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: '@cf/meta/llama-3.1-8b-instruct',
+  },
+  {
+    id: 'cerabras/zai-glm-4.7',
+    name: 'Cerebras ZAI-GLM (Free)',
+    provider: 'cloudflare-worker',
+    contextWindow: 32000,
+    requiresUserKey: false,
+    priority: 55,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: 'zai-glm-4.7',
+  },
+
+  // === PAID PROVIDERS (When user has API key) ===
+  
+  // MiniMax (Paid - Strong Chinese model)
+  {
+    id: 'minimax/minimax-2.7b',
+    name: 'MiniMax 2.7B (Paid)',
+    provider: 'minimax',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 90,
+    capabilities: ['chat', 'completion', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'minimax/abab6',
+    name: 'MiniMax ABAB 6 (Paid)',
+    provider: 'minimax',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 85,
+    capabilities: ['chat', 'completion'],
+  },
+  {
+    id: 'minimax/abab6.5s',
+    name: 'MiniMax ABAB 6.5S (Paid)',
+    provider: 'minimax',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 82,
+    capabilities: ['chat', 'completion'],
+  },
+
+  // OpenRouter - Codestral (Paid - Code specialized)
+  {
+    id: 'codestral:latest',
+    name: 'Codestral (Paid - Code)',
+    provider: 'openrouter',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 88,
+    capabilities: ['chat', 'completion', 'code'],
+    codeSpecialized: true,
+  },
+
+  // OpenRouter - GPT-4 (Paid)
+  {
+    id: 'openai/gpt-4o',
+    name: 'GPT-4o (Paid)',
+    provider: 'openrouter',
+    contextWindow: 128000,
+    requiresUserKey: true,
+    priority: 86,
+    capabilities: ['chat', 'completion', 'vision', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'openai/gpt-4-turbo',
+    name: 'GPT-4 Turbo (Paid)',
+    provider: 'openrouter',
+    contextWindow: 128000,
+    requiresUserKey: true,
+    priority: 84,
+    capabilities: ['chat', 'completion', 'vision', 'code'],
+    codeSpecialized: true,
+  },
+
+  // OpenRouter - Claude (Paid - Best for code)
   {
     id: 'anthropic/claude-sonnet-4-20250514',
-    name: 'Claude Sonnet 4 (Code-Optimized)',
+    name: 'Claude Sonnet 4 (Paid - Best)',
     provider: 'openrouter',
     contextWindow: 200000,
     requiresUserKey: true,
@@ -65,218 +217,87 @@ export const MODEL_REGISTRY: ModelInfo[] = [
   },
   {
     id: 'anthropic/claude-3.5-sonnet',
-    name: 'Claude 3.5 Sonnet',
+    name: 'Claude 3.5 Sonnet (Paid)',
     provider: 'openrouter',
     contextWindow: 200000,
     requiresUserKey: true,
-    priority: 90,
+    priority: 92,
     capabilities: ['chat', 'completion', 'vision', 'code'],
     codeSpecialized: true,
   },
-  {
-    id: 'openai/gpt-4o',
-    name: 'GPT-4o (Code-Optimized)',
-    provider: 'openrouter',
-    contextWindow: 128000,
-    requiresUserKey: true,
-    priority: 85,
-    capabilities: ['chat', 'completion', 'vision', 'code'],
-    codeSpecialized: true,
-  },
-  {
-    id: 'openai/gpt-4-turbo',
-    name: 'GPT-4 Turbo',
-    provider: 'openrouter',
-    contextWindow: 128000,
-    requiresUserKey: true,
-    priority: 80,
-    capabilities: ['chat', 'completion', 'vision', 'code'],
-    codeSpecialized: true,
-  },
+
+  // OpenRouter - Other code models (Paid)
   {
     id: 'deepseek/deepseek-coder-v2',
-    name: 'DeepSeek Coder V2 (Code-Specialized)',
+    name: 'DeepSeek Coder V2 (Paid)',
     provider: 'openrouter',
     contextWindow: 128000,
     requiresUserKey: true,
-    priority: 88,
+    priority: 87,
     capabilities: ['chat', 'completion', 'code'],
     codeSpecialized: true,
   },
   {
     id: 'qwen/qwen-2.5-coder-32b',
-    name: 'Qwen 2.5 Coder 32B',
+    name: 'Qwen 2.5 Coder 32B (Paid OpenRouter)',
     provider: 'openrouter',
     contextWindow: 32000,
     requiresUserKey: true,
-    priority: 82,
-    capabilities: ['chat', 'completion', 'code'],
-    codeSpecialized: true,
-  },
-  {
-    id: 'codestral:latest',
-    name: 'Codestral (Code-Specialized)',
-    provider: 'openrouter',
-    contextWindow: 32000,
-    requiresUserKey: true,
-    priority: 86,
+    priority: 83,
     capabilities: ['chat', 'completion', 'code'],
     codeSpecialized: true,
   },
 
-  // === MINIMAX (Strong Chinese model) ===
-  {
-    id: 'minimax/minimax-2.7b',
-    name: 'MiniMax 2.7B (Fast)',
-    provider: 'minimax',
-    contextWindow: 32000,
-    requiresUserKey: true,
-    priority: 75,
-    capabilities: ['chat', 'completion', 'code'],
-    codeSpecialized: true,
-  },
-  {
-    id: 'minimax/abab6',
-    name: 'MiniMax ABAB 6 (Balanced)',
-    provider: 'minimax',
-    contextWindow: 32000,
-    requiresUserKey: true,
-    priority: 72,
-    capabilities: ['chat', 'completion'],
-  },
-  {
-    id: 'minimax/abab6.5s',
-    name: 'MiniMax ABAB 6.5S (Speed)',
-    provider: 'minimax',
-    contextWindow: 32000,
-    requiresUserKey: true,
-    priority: 70,
-    capabilities: ['chat', 'completion'],
-  },
-
-  // === CLOUDFLARE WORKER (Free tier, good for general) ===
-  {
-    id: 'deepseek-v3',
-    name: 'DeepSeek V3',
-    provider: 'cloudflare-worker',
-    contextWindow: 64000,
-    requiresUserKey: false,
-    priority: 70,
-    capabilities: ['chat', 'completion'],
-    cloudflareModelId: 'deepseek-v3',
-  },
-  {
-    id: 'llama-3.3-70b',
-    name: 'Llama 3.3 70B',
-    provider: 'cloudflare-worker',
-    contextWindow: 128000,
-    requiresUserKey: false,
-    priority: 65,
-    capabilities: ['chat', 'completion'],
-    cloudflareModelId: 'llama-3.3-70b-instruct',
-  },
-  {
-    id: 'mistral-large',
-    name: 'Mistral Large',
-    provider: 'cloudflare-worker',
-    contextWindow: 128000,
-    requiresUserKey: false,
-    priority: 60,
-    capabilities: ['chat', 'completion'],
-    cloudflareModelId: 'mistral-large',
-  },
-  {
-    id: 'qwen-2.5-72b',
-    name: 'Qwen 2.5 72B',
-    provider: 'cloudflare-worker',
-    contextWindow: 32768,
-    requiresUserKey: false,
-    priority: 55,
-    capabilities: ['chat', 'completion'],
-    cloudflareModelId: 'qwen2.5-72b-instruct',
-  },
-  {
-    id: '@cf/qwen/qwen2.5-coder-32b',
-    name: 'Qwen Coder 32B (Cloudflare)',
-    provider: 'cloudflare-worker',
-    contextWindow: 32000,
-    requiresUserKey: false,
-    priority: 75, // Higher because code-specialized AND free
-    capabilities: ['chat', 'completion', 'code'],
-    cloudflareModelId: '@cf/qwen/qwen2.5-coder-32b',
-    codeSpecialized: true,
-  },
-  {
-    id: '@cf/meta/llama-3.1-8b-instruct',
-    name: 'Llama 3.1 8B (Fast)',
-    provider: 'cloudflare-worker',
-    contextWindow: 128000,
-    requiresUserKey: false,
-    priority: 45,
-    capabilities: ['chat', 'completion'],
-    cloudflareModelId: '@cf/meta/llama-3.1-8b-instruct',
-  },
-  {
-    id: 'cerabras/zai-glm-4.7',
-    name: 'Cerebras ZAI-GLM',
-    provider: 'cloudflare-worker',
-    contextWindow: 32000,
-    requiresUserKey: false,
-    priority: 40,
-    capabilities: ['chat', 'completion'],
-    cloudflareModelId: 'zai-glm-4.7',
-  },
-  
-  // === GROQ (Ultra low latency - requires user key) ===
+  // Groq (Paid - Ultra low latency)
   {
     id: 'groq/llama-3.3-70b',
-    name: 'Groq Llama 3.3 70B (Ultra Fast)',
+    name: 'Groq Llama 3.3 70B (Fast Paid)',
     provider: 'groq',
     contextWindow: 8192,
     requiresUserKey: true,
-    priority: 50,
-    capabilities: ['chat', 'completion'],
-  },
-  {
-    id: 'groq/mixtral-8x7b',
-    name: 'Groq Mixtral 8x7B (Fast)',
-    provider: 'groq',
-    contextWindow: 32000,
-    requiresUserKey: true,
-    priority: 45,
+    priority: 65,
     capabilities: ['chat', 'completion'],
   },
   {
     id: 'groq/llama-3.1-70b',
-    name: 'Groq Llama 3.1 70B',
+    name: 'Groq Llama 3.1 70B (Paid)',
     provider: 'groq',
     contextWindow: 128000,
     requiresUserKey: true,
-    priority: 48,
+    priority: 62,
+    capabilities: ['chat', 'completion'],
+  },
+  {
+    id: 'groq/mixtral-8x7b',
+    name: 'Groq Mixtral 8x7B (Fast Paid)',
+    provider: 'groq',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 60,
     capabilities: ['chat', 'completion'],
   },
 
-  // === USER-KEY PROVIDERS ===
+  // User-key providers
   {
     id: 'optional-user-keys',
-    name: 'Primary Bridge (Custom)',
+    name: 'Primary Bridge (Custom Key)',
     provider: 'optional-user-keys',
     contextWindow: 128000,
     requiresUserKey: true,
-    priority: 35,
+    priority: 50,
     capabilities: ['chat', 'completion', 'embedding', 'vision', 'code'],
   },
   {
     id: 'gemini',
-    name: 'Google Gemini',
+    name: 'Google Gemini (Paid)',
     provider: 'gemini',
     contextWindow: 2000000,
     requiresUserKey: true,
-    priority: 30,
+    priority: 45,
     capabilities: ['chat', 'completion', 'vision'],
   },
   
-  // === NO-KEY PROVIDERS (Free) ===
+  // No-key providers (Fallback)
   {
     id: 'mlvoca',
     name: 'MLVoca (No-Key)',
@@ -305,11 +326,12 @@ export const MODEL_REGISTRY: ModelInfo[] = [
 
 /**
  * Default routing configuration
- * OpenRouter (code-optimized) is PRIMARY for best code generation
+ * Cloudflare FREE is PRIMARY - Qwen Coder 32B default
+ * Paid models as fallback when user has API key
  */
 export const DEFAULT_ROUTING_CONFIG: ModelRoutingConfig = {
-  primaryProvider: 'openrouter',
-  fallbackProviders: ['minimax', 'cloudflare-worker', 'groq', 'gemini'],
+  primaryProvider: 'cloudflare-worker', // FREE - Qwen Coder 32B
+  fallbackProviders: ['minimax', 'openrouter', 'groq', 'gemini'],
   preferLowLatency: true,
 };
 
@@ -336,7 +358,7 @@ export function getCodeSpecializedModels(): ModelInfo[] {
 
 /**
  * Get best available model for routing
- * Prioritizes: code-specialized > user-key > no-key > local
+ * Prioritizes: free cloudflare > paid with key
  */
 export function getBestAvailableModel(
   userKeyConfigured: boolean,

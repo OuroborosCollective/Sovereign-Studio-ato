@@ -3,8 +3,21 @@ const ROUTE_NAME = 'gatter';
 const HOST = ['gate', 'way.ai.', 'cloud', 'flare.com'].join('');
 const DEFAULT_URL = `https://${HOST}/v1/${ACCOUNT_ID}/${ROUTE_NAME}/compat/chat/completions`;
 const DEFAULT_PROXY_URL = 'https://sovereign-llm-proxy.projectouroboroscollective.workers.dev';
-// MiniMax 2.7B - Strong Chinese model, good for code
-const DEFAULT_MODEL = 'minimax/minimax-2.7b';
+// Qwen Coder 32B via Cloudflare - Free, cached 30min, code-specialized
+const DEFAULT_MODEL = '@cf/qwen/qwen2.5-coder-32b';
+
+/**
+ * Cache configuration for LLM responses via Cloudflare
+ * 30 minutes inactivity timeout
+ */
+export const LLM_CACHE_CONFIG = {
+  /** Cache duration in milliseconds (30 minutes) */
+  durationMs: 30 * 60 * 1000,
+  /** Inactivity timeout before cache invalidation */
+  inactivityTimeoutMs: 30 * 60 * 1000,
+  /** Enable response caching */
+  enabled: true,
+};
 
 type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };
 
