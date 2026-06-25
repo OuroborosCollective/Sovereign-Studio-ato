@@ -20,6 +20,7 @@ import { RuntimeValidationCoveragePanel } from './features/product/components/Ru
 import { ScanFindingRegistryPanel } from './features/product/components/ScanFindingRegistryPanel';
 import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
+import { ModelHealthPanel } from './features/product/components/ModelHealthPanel';
 import { SovereignTabErrorBoundary } from './features/product/components/SovereignTabErrorBoundary';
 import { SettingsModal } from './features/product/components/SettingsModal';
 import { useUserApiKeys } from './features/product/hooks/useUserApiKeys';
@@ -1374,6 +1375,7 @@ const App: React.FC = () => {
       {activeTab === 'health' ? (
         <SovereignTabErrorBoundary tabId="health" tabLabel="Health">
           <SovereignHealthPanel report={healthReport} />
+          <ModelHealthPanel />
         </SovereignTabErrorBoundary>
       ) : null}
 
