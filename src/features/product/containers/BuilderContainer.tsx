@@ -25,6 +25,12 @@ export interface BuilderContainerProps {
   onGenerateIdeas: () => void;
   onGenerateErrorWorkflow: () => void;
   onPublishDraftPr: () => void;
+  // OpenHands Enterprise props
+  openhandsReady?: boolean;
+  openhandsJobStatus?: string;
+  openhandsIsRunning?: boolean;
+  onStartOpenHands?: (mission: string) => void;
+  onCancelOpenHands?: () => void;
 }
 
 interface IdeaOption {
@@ -136,6 +142,11 @@ export function BuilderContainer({
   onGenerateIdeas,
   onGenerateErrorWorkflow,
   onPublishDraftPr,
+  openhandsReady,
+  openhandsJobStatus,
+  openhandsIsRunning,
+  onStartOpenHands,
+  onCancelOpenHands,
 }: BuilderContainerProps) {
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
   const lastMissionSeenRef = useRef(mission);
@@ -267,6 +278,38 @@ export function BuilderContainer({
           {builderPublishLabel(isPublishing)}
         </button>
       </div>
+
+      {/* OpenHands Enterprise Agent Section */}
+      {openhandsReady && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-purple-500/30 bg-purple-950/30 p-3">
+          <span className="text-xs font-bold uppercase tracking-wide text-purple-300">
+            OpenHands Agent
+          </span>
+          {openhandsIsRunning ? (
+            <>
+              <span className="rounded bg-yellow-500/20 px-2 py-1 text-xs text-yellow-300">
+                {openhandsJobStatus || 'Läuft...'}
+              </span>
+              <button
+                className="dangerButtonClassName rounded px-3 py-1 text-xs"
+                onClick={onCancelOpenHands}
+                type="button"
+              >
+                Abbrechen
+              </button>
+            </>
+          ) : (
+            <button
+              className="rounded bg-purple-600/30 px-3 py-1 text-xs font-bold text-purple-200 hover:bg-purple-600/50"
+              onClick={() => onStartOpenHands?.(mission)}
+              type="button"
+              disabled={!repoReady}
+            >
+              OpenHands starten
+            </button>
+          )}
+        </div>
+      )}
 
       <label className="mt-4 block">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Analysierter ausführbarer Auftrag</span>
