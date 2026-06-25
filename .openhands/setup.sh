@@ -2,83 +2,92 @@
 # Sovereign Studio V3 - OpenHands Setup Script
 # This script runs automatically when starting an OpenHands conversation
 
-set -e  # Exit on error
+set -e
 
 echo "=========================================="
-echo "🚀 Sovereign Studio V3 - Session Setup"
+echo "Sovereign Studio V3 - Session Setup"
 echo "=========================================="
 
-# Navigate to repository root
 cd "$(dirname "$0")/.." 2>/dev/null || cd "$(git rev-parse --show-toplevel)" 2>/dev/null || { echo "Error: Could not find repository root"; exit 1; }
 
 echo ""
-echo "📂 Repository: $(basename $(pwd))"
-echo "🌿 Branch: $(git branch --show-current)"
+echo "Repository: $(basename $(pwd))"
+echo "Branch: $(git branch --show-current)"
 echo ""
 
-# Pull latest from main
-echo "📥 Pulling latest from main..."
+echo "Pulling latest from main..."
 git fetch origin main 2>/dev/null || true
 LOCAL=$(git rev-parse @)
 REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "$LOCAL")
 if [ "$LOCAL" = "$REMOTE" ]; then
-    echo "   ✅ Already up to date"
+    echo "   OK: Already up to date"
 else
-    echo "   ⚠️  Remote has new commits. Consider running 'git pull' manually."
+    echo "   Warning: Remote has new commits. Consider running 'git pull' manually."
 fi
 
 echo ""
-echo "📋 Running Green Gates..."
+echo "Running release gates..."
 
-# Run quality gates
+gate_failed=0
+
 echo ""
-echo "   1️⃣  TypeScript check..."
+echo "   1. TypeScript check..."
 if pnpm run type-check > /tmp/type-check.log 2>&1; then
-    echo "      ✅ TypeScript OK"
+    echo "      OK: TypeScript passed"
 else
-    echo "      ❌ TypeScript errors found"
+    echo "      FAIL: TypeScript errors found"
     tail -5 /tmp/type-check.log | sed 's/^/         /'
+    gate_failed=1
 fi
 
 echo ""
-echo "   2️⃣  Running tests..."
+echo "   2. Running tests..."
 if pnpm run test:run > /tmp/test-run.log 2>&1; then
-    echo "      ✅ Tests passed"
+    echo "      OK: Tests passed"
 else
-    echo "      ⚠️  Some tests failed"
-    grep -E "(FAIL|PASS|Tests:)" /tmp/test-run.log | tail -3 | sed 's/^/         /'
+    echo "      FAIL: Tests failed"
+    grep -E "(FAIL|PASS|Tests:)" /tmp/test-run.log | tail -3 | sed 's/^/         /' || true
+    gate_failed=1
 fi
 
 echo ""
-echo "   3️⃣  Building..."
+echo "   3. Building..."
 if pnpm run build:web > /tmp/build.log 2>&1; then
-    echo "      ✅ Build successful"
+    echo "      OK: Build passed"
 else
-    echo "      ⚠️  Build failed"
-    grep -E "(error|Error|ERROR)" /tmp/build.log | head -3 | sed 's/^/         /'
+    echo "      FAIL: Build failed"
+    grep -E "(error|Error|ERROR)" /tmp/build.log | head -3 | sed 's/^/         /' || true
+    gate_failed=1
 fi
 
 echo ""
-echo "   4️⃣  Static audit..."
+echo "   4. Static audit..."
 if pnpm run audit:sovereign > /tmp/audit.log 2>&1; then
-    echo "      ✅ Audit passed"
+    echo "      OK: Audit passed"
 else
-    echo "      ⚠️  Audit warnings found"
-    grep -E "(warning|Warning|violation)" /tmp/audit.log | head -3 | sed 's/^/         /' || true
+    echo "      FAIL: Audit failed"
+    grep -E "(audit|error|Error|ERROR|warning|Warning|violation)" /tmp/audit.log | head -5 | sed 's/^/         /' || true
+    gate_failed=1
 fi
 
 echo ""
 echo "=========================================="
-echo "✅ Setup complete!"
+if [ "$gate_failed" -ne 0 ]; then
+    echo "Setup blocked: one or more release gates failed."
+    echo "Fix the failing gate output above before starting a release or agent fix cycle."
+    exit 1
+fi
+
+echo "Setup complete."
 echo ""
 echo "Quick commands:"
-echo "  pnpm run dev           # Start dev server"
-echo "  pnpm run test:run      # Run all tests"
-echo "  pnpm run build:web     # Production build"
-echo "  pnpm run audit:sovereign # Run static audit"
+echo "  pnpm run dev"
+echo "  pnpm run test:run"
+echo "  pnpm run build:web"
+echo "  pnpm run audit:sovereign"
 echo ""
 echo "Key files:"
-echo "  AGENTS.md              # Agent rules"
-echo "  docs/SOVEREIGN_READER.md # Tool documentation"
-echo "  docs/SOVEREIGN_RUNTIME.md # Runtime truth path"
+echo "  AGENTS.md"
+echo "  docs/SOVEREIGN_READER.md"
+echo "  docs/SOVEREIGN_RUNTIME.md"
 echo "=========================================="
