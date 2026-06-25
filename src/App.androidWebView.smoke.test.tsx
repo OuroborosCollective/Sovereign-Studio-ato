@@ -37,11 +37,14 @@ function openWorkspace(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
 }
 
+function openRepoTab(): void {
+  fireEvent.click(screen.getByRole('tab', { name: 'Open Repo tab' }));
+}
+
 describe('App setup flow smoke', () => {
   it('keeps Full Auto blocked until a real repository snapshot exists', async () => {
     openWorkspace();
 
-    // Find the automation mode combobox specifically
     const automationSelect = screen.getByTestId('automation__mode-select');
     fireEvent.change(automationSelect, { target: { value: 'full-auto-draft-pr' } });
 
@@ -53,6 +56,7 @@ describe('App setup flow smoke', () => {
     window.addEventListener('sovereign:setup-state', listener);
 
     openWorkspace();
+    openRepoTab();
 
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repository'), {
       target: { value: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato' },
@@ -78,8 +82,6 @@ describe('App setup flow smoke', () => {
   it('keeps Pattern Memory count visible in the monitor region', async () => {
     openWorkspace();
 
-    // Tab buttons now use role="tab" with aria-label for accessibility
-    // Secondary tabs are in the "Mehr Bereiche" dropdown
     const moreSelect = screen.getByTestId('tabbar__more-select');
     fireEvent.change(moreSelect, { target: { value: 'monitor' } });
 
