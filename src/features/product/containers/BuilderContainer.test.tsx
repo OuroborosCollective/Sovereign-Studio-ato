@@ -114,7 +114,12 @@ describe('BuilderContainer', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Interne Prüfung' }));
+    // Open the details element first
+    const details = document.querySelector('details');
+    expect(details).not.toBeNull();
+    fireEvent.click(details!.querySelector('summary')!);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Interne Paketprüfung starten' }));
     fireEvent.click(screen.getByRole('button', { name: 'Fehlerlog reparieren' }));
     fireEvent.click(screen.getByRole('button', { name: /Draft PR erstellen/i }));
 
