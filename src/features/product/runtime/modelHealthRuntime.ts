@@ -1,22 +1,15 @@
 /**
  * Model Health Runtime
- * 
+ *
  * Standalone runtime for LLM model health monitoring.
- * Can be used independently from React hooks for non-UI contexts.
- * 
- * Features:
- * - Health checks with configurable timeout
- * - Latency measurement
- * - Status classification (healthy, degraded, unknown)
- * - Health report generation
+ * This module is intentionally UI-free: it probes real LLM adapters and returns
+ * a report that UI components may display.
  */
 
 import type { LlmAdapter, LlmAdapterContext } from '../llm/llmAdapter';
 
-/** Health status levels */
 export type ModelHealthStatus = 'healthy' | 'degraded' | 'unknown';
 
-/** Individual model health status */
 export interface ModelHealthStatusEntry {
   id: string;
   name: string;
@@ -29,13 +22,9 @@ export interface ModelHealthStatusEntry {
   lastError?: string;
 }
 
-/** Configuration for health checks */
 export interface ModelHealthRuntimeConfig {
-  /** Timeout per health check in ms (default: 5000) */
   timeoutMs?: number;
-  /** Latency threshold for degraded status in ms (default: 2000) */
   degradedThresholdMs?: number;
-  /** Custom test mission (default: health check) */
   testMission?: string;
 }
 
@@ -45,7 +34,6 @@ const DEFAULT_CONFIG: Required<ModelHealthRuntimeConfig> = {
   testMission: 'Respond with only: OK',
 };
 
-/** Health check result for a single adapter */
 export interface ModelHealthCheckResult {
   adapterId: string;
   adapterName: string;
@@ -58,7 +46,6 @@ export interface ModelHealthCheckResult {
   lastError?: string;
 }
 
-/** Complete health report for all models */
 export interface ModelHealthReport {
   timestamp: number;
   totalModels: number;
@@ -69,7 +56,6 @@ export interface ModelHealthReport {
   summary: string;
 }
 
-/** Runtime state for tracking health history */
 export interface ModelHealthRuntimeState {
   lastReport: ModelHealthReport | null;
   lastCheckTime: number | null;
@@ -77,9 +63,6 @@ export interface ModelHealthRuntimeState {
   consecutiveFailures: number;
 }
 
-/**
- * Create initial runtime state
- */
 export function createModelHealthRuntimeState(): ModelHealthRuntimeState {
   return {
     lastReport: null,
@@ -89,61 +72,98 @@ export function createModelHealthRuntimeState(): ModelHealthRuntimeState {
   };
 }
 
-/**
- * Build a test context for health checking an adapter
- */
-function buildHealthTestContext(adapterId: string, mission: string): LlmAdapterContext {
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+function buildHealthTestContext(args: {
+  adapterId: string;
+  mission: string;
+  signal?: AbortSignal;
+}): LlmAdapterContext {
   return {
-    mission,
+    mission: args.mission,
     repoPaths: [],
     selectedFilePath: 'HEALTH_CHECK',
-    traceId: `model-health-${adapterId}-${Date.now()}`,
     allowExternalNoKey: true,
     allowOptInRoutes: true,
+    signal: args.signal,
+    runtimeEvents: [`model-health:${args.adapterId}`],
   };
 }
 
-/**
- * Check a single adapter's health
- */
+function abortError(parent?: AbortSignal): Error {
+  return new Error(parent?.aborted ? 'Model health check aborted.' : 'Model health check timed out.');
+}
+
+function createTimeoutSignal(timeoutMs: number, parent?: AbortSignal): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
+  const onParentAbort = () => controller.abort();
+
+  if (parent) {
+    if (parent.aborted) controller.abort();
+    else parent.addEventListener('abort', onParentAbort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      globalThis.clearTimeout(timeout);
+      parent?.removeEventListener('abort', onParentAbort);
+    },
+  };
+}
+
+async function runWithAbort<T>(task: Promise<T>, signal: AbortSignal, parent?: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortError(parent);
+
+  return Promise.race([
+    task,
+    new Promise<never>((_, reject) => {
+      signal.addEventListener('abort', () => reject(abortError(parent)), { once: true });
+    }),
+  ]);
+}
+
+function disabledResult(adapter: LlmAdapter): ModelHealthCheckResult {
+  return {
+    adapterId: adapter.id,
+    adapterName: adapter.label,
+    status: 'unknown',
+    latencyMs: null,
+    lastCheck: Date.now(),
+    errorCount: 0,
+    successCount: 0,
+    isEnabled: false,
+  };
+}
+
 export async function checkModelHealth(
   adapter: LlmAdapter,
   config: Required<ModelHealthRuntimeConfig>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ModelHealthCheckResult> {
-  const startTime = performance.now();
-  const testContext = buildHealthTestContext(adapter.id, config.testMission);
+  if (!adapter.enabled) return disabledResult(adapter);
 
-  // Create abort controller for timeout
-  const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), config.timeoutMs);
-  
-  // Combine signals
-  const combinedSignal = signal
-    ? (() => {
-        const parentAbort = false;
-        return {
-          aborted: signal.aborted || parentAbort,
-          addEventListener: (type: string, listener: EventListener) => {
-            signal.addEventListener(type as 'abort', listener);
-            timeoutController.signal.addEventListener(type as 'abort', listener);
-          },
-          removeEventListener: (type: string, listener: EventListener) => {
-            signal.removeEventListener(type as 'abort', listener);
-            timeoutController.signal.removeEventListener(type as 'abort', listener);
-          },
-          dispatchEvent: (event: Event) => {
-            return signal.dispatchEvent(event) || timeoutController.signal.dispatchEvent(event);
-          },
-        } as AbortSignal;
-      })()
-    : timeoutController.signal;
+  const startTime = nowMs();
+  const timeoutSignal = createTimeoutSignal(config.timeoutMs, signal);
 
   try {
-    await adapter.run(testContext);
-    clearTimeout(timeoutId);
+    const context = buildHealthTestContext({
+      adapterId: adapter.id,
+      mission: config.testMission,
+      signal: timeoutSignal.signal,
+    });
 
-    const latencyMs = performance.now() - startTime;
+    await runWithAbort(adapter.run(context), timeoutSignal.signal, signal);
+    const latencyMs = Math.max(0, nowMs() - startTime);
+
     return {
       adapterId: adapter.id,
       adapterName: adapter.label,
@@ -152,10 +172,9 @@ export async function checkModelHealth(
       lastCheck: Date.now(),
       errorCount: 0,
       successCount: 1,
-      isEnabled: adapter.enabled,
+      isEnabled: true,
     };
   } catch (error) {
-    clearTimeout(timeoutId);
     return {
       adapterId: adapter.id,
       adapterName: adapter.label,
@@ -167,51 +186,27 @@ export async function checkModelHealth(
       isEnabled: adapter.enabled,
       lastError: error instanceof Error ? error.message : 'Health check failed',
     };
+  } finally {
+    timeoutSignal.cleanup();
   }
 }
 
-/**
- * Check all adapters and generate a health report
- */
 export async function checkAllModelsHealth(
   adapters: LlmAdapter[],
-  config: ModelHealthRuntimeRuntimeConfig = {},
-  signal?: AbortSignal
+  config: ModelHealthRuntimeConfig = {},
+  signal?: AbortSignal,
 ): Promise<ModelHealthReport> {
-  const cfg = { ...DEFAULT_CONFIG, ...config } as Required<ModelHealthRuntimeConfig>;
+  const cfg = { ...DEFAULT_CONFIG, ...config } satisfies Required<ModelHealthRuntimeConfig>;
   const results: ModelHealthCheckResult[] = [];
 
   for (const adapter of adapters) {
-    if (!adapter.enabled) {
-      results.push({
-        adapterId: adapter.id,
-        adapterName: adapter.label,
-        status: 'unknown',
-        latencyMs: null,
-        lastCheck: Date.now(),
-        errorCount: 0,
-        successCount: 0,
-        isEnabled: false,
-      });
-      continue;
-    }
-
     if (signal?.aborted) break;
-    
-    const result = await checkModelHealth(adapter, cfg, signal);
-    results.push(result);
+    results.push(await checkModelHealth(adapter, cfg, signal));
   }
 
-  const healthyCount = results.filter(r => r.status === 'healthy').length;
-  const degradedCount = results.filter(r => r.status === 'degraded').length;
-  const unknownCount = results.filter(r => r.status === 'unknown').length;
-
-  const summary = [
-    `${results.length} model(s) checked`,
-    `${healthyCount} healthy`,
-    `${degradedCount} degraded`,
-    `${unknownCount} unknown`,
-  ].join(' · ');
+  const healthyCount = results.filter((result) => result.status === 'healthy').length;
+  const degradedCount = results.filter((result) => result.status === 'degraded').length;
+  const unknownCount = results.filter((result) => result.status === 'unknown').length;
 
   return {
     timestamp: Date.now(),
@@ -220,13 +215,15 @@ export async function checkAllModelsHealth(
     degradedCount,
     unknownCount,
     results,
-    summary,
+    summary: [
+      `${results.length} model(s) checked`,
+      `${healthyCount} healthy`,
+      `${degradedCount} degraded`,
+      `${unknownCount} unknown`,
+    ].join(' · '),
   };
 }
 
-/**
- * Build a ModelHealthStatusEntry from a check result
- */
 export function buildModelHealthStatusEntry(result: ModelHealthCheckResult): ModelHealthStatusEntry {
   return {
     id: result.adapterId,
@@ -241,33 +238,20 @@ export function buildModelHealthStatusEntry(result: ModelHealthCheckResult): Mod
   };
 }
 
-/**
- * Assert that at least one model is healthy and available
- */
 export function assertModelHealthReady(report: ModelHealthReport): void {
   if (report.healthyCount === 0 && report.degradedCount === 0) {
     throw new Error(`No models available. ${report.summary}`);
   }
 }
 
-/**
- * Get the best available model from a report
- */
 export function getBestModelFromReport(report: ModelHealthReport): ModelHealthCheckResult | null {
   const available = report.results
-    .filter(r => r.isEnabled && r.status !== 'unknown')
+    .filter((result) => result.isEnabled && result.status !== 'unknown')
     .sort((a, b) => {
-      // Healthy before degraded
-      if (a.status !== b.status) {
-        return a.status === 'healthy' ? -1 : 1;
-      }
-      // Lower latency first
-      if (a.latencyMs !== null && b.latencyMs !== null) {
-        return a.latencyMs - b.latencyMs;
-      }
-      // More successes first
+      if (a.status !== b.status) return a.status === 'healthy' ? -1 : 1;
+      if (a.latencyMs !== null && b.latencyMs !== null) return a.latencyMs - b.latencyMs;
       return b.successCount - a.successCount;
     });
 
-  return available[0] || null;
+  return available[0] ?? null;
 }
