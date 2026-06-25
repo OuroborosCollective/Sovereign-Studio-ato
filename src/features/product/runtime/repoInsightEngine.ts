@@ -29,6 +29,7 @@ import type {
   SolutionPatternStore,
   SolutionPatternMatch,
 } from './solutionPatternMemory';
+import { matchSolutionPatterns } from './solutionPatternMemory';
 import type { WorkflowWatchReport } from './workflowWatch';
 
 // ============================================================================
@@ -495,6 +496,63 @@ function generateFixSuggestions(
   return suggestions;
 }
 
+/**
+ * Generate pattern matches from learned solution patterns using Hebbian-style correlation.
+ * Patterns that were successfully used are matched against current repo structure.
+ */
+function generatePatternMatches(
+  patternStore: SolutionPatternStore | null | undefined,
+  repoFiles: RepoFile[],
+): SolutionPatternMatch[] {
+  if (!patternStore || patternStore.patterns.length === 0) {
+    return [];
+  }
+
+  // Build context from repo structure
+  const repoExtensions = new Set(
+    repoFiles
+      .map((f) => {
+        const name = f.path.split('/').pop() ?? '';
+        const idx = name.lastIndexOf('.');
+        return idx >= 0 ? name.slice(idx) : '';
+      })
+      .filter(Boolean)
+  );
+
+  const repoPaths = repoFiles.map((f) => f.path);
+
+  // Match patterns using multiple queries for better coverage
+  const allMatches: SolutionPatternMatch[] = [];
+
+  // Query by file extensions present in repo
+  for (const ext of repoExtensions) {
+    const matches = matchSolutionPatterns(patternStore, {
+      filePath: `file${ext}`,
+      limit: 5,
+    });
+    allMatches.push(...matches);
+  }
+
+  // Query by repo paths
+  const pathMatches = matchSolutionPatterns(patternStore, {
+    contextSignals: repoPaths.slice(0, 50),
+    limit: 10,
+  });
+  allMatches.push(...pathMatches);
+
+  // Deduplicate by pattern ID and sort by score
+  const seen = new Set<string>();
+  const uniqueMatches: SolutionPatternMatch[] = [];
+  for (const match of allMatches.sort((a, b) => b.score - a.score)) {
+    if (!seen.has(match.pattern.id)) {
+      seen.add(match.pattern.id);
+      uniqueMatches.push(match);
+    }
+  }
+
+  return uniqueMatches.slice(0, 10);
+}
+
 function generateHardeningSuggestions(
   structure: RepoStructureAnalysis,
   scanFindings: ScanFinding[],
@@ -610,15 +668,18 @@ function generateFeatureSuggestions(
   const suggestions: RepoInsightSuggestion[] = [];
   let priority = 1;
 
-  // From successful solution patterns
-  for (const match of solutionPatterns.slice(0, 3)) {
+  // From successful solution patterns - include match score and relevance reasons
+  for (const match of solutionPatterns.slice(0, 5)) {
     const pattern = match.pattern;
-    if (pattern.confidence === 'completed' || pattern.successfulUses > 0) {
+    // Show patterns that have been used successfully OR have high match score
+    if (pattern.confidence === 'completed' || pattern.successfulUses > 0 || match.score >= 3) {
+      const scoreLabel = match.score >= 5 ? '🟢' : match.score >= 3 ? '🟡' : '🔵';
+      const successInfo = pattern.successfulUses > 0 ? ` (${pattern.successfulUses}x erfolgreich)` : '';
       suggestions.push({
         id: generateId('feature', pattern.problemSummary),
         category: 'feature',
-        title: `Erweiterung: ${sanitizeText(pattern.problemSummary, 70)}`,
-        whyUseful: `Dieses Pattern wurde ${pattern.successfulUses} Mal erfolgreich angewendet.`,
+        title: `${scoreLabel} ${sanitizeText(pattern.problemSummary, 65)}`,
+        whyUseful: `${match.aha}${successInfo}. Grund: ${match.reasons.join(', ')}.`,
         affectedFiles: [pattern.filePathHint],
         risk: 'niedrig',
         expectedBenefit: 'Bewährte Lösung wird wiederverwendet.',
@@ -882,10 +943,13 @@ export function createRepoInsightSuggestions(
     // Detect blockers
     const blockers = detectBlockers(activeFindings, workflowReport ?? null, repoFiles);
 
+    // Generate pattern matches from learned solution patterns (Hebbian-style learning)
+    const patternMatches = generatePatternMatches(solutionPatternStore, repoFiles);
+
     // Generate suggestion groups
     const fixSuggestions = generateFixSuggestions(structure, activeFindings, workflowReport ?? null);
     const hardeningSuggestions = generateHardeningSuggestions(structure, activeFindings);
-    const featureSuggestions = generateFeatureSuggestions(structure, []);
+    const featureSuggestions = generateFeatureSuggestions(structure, patternMatches);
 
     // Generate recommended mission
     const { mission, confidence } = generateRecommendedMission(
@@ -918,6 +982,10 @@ export function createRepoInsightSuggestions(
     if (structure.hasRuntime) insightFindings.push({ type: 'detected', path: 'runtime/', description: `${structure.runtimeFiles.length} Runtime-Module` });
     if (structure.hasAndroid) insightFindings.push({ type: 'detected', path: 'android/', description: `${structure.androidFiles.length} Android-Dateien` });
     if (structure.hasComponents) insightFindings.push({ type: 'detected', path: 'components/', description: `${structure.componentFiles.length} Komponenten` });
+    if (patternMatches.length > 0) {
+      const topPattern = patternMatches[0].pattern;
+      insightFindings.push({ type: 'pattern', path: topPattern.filePathHint, description: `${patternMatches.length} Pattern(s) matched, top: ${topPattern.problemSummary.slice(0, 50)}` });
+    }
 
     return {
       ok: true,
