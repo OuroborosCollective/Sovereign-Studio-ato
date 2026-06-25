@@ -162,6 +162,10 @@ export function BuilderContainer({
   const generateDisabled = !state.canGenerate;
   const publishDisabled = !state.canPublish;
   const analyzedMission = useMemo(() => buildAnalyzedMission({ wish: wishText, repoReady, repoReason }), [repoReady, repoReason, wishText]);
+  const executableOpenHandsMission = useMemo(() => {
+    const visibleMission = collapseRepeatedAnalyzedMission(mission);
+    return isAnalyzedMission(visibleMission) ? visibleMission : collapseRepeatedAnalyzedMission(analyzedMission);
+  }, [analyzedMission, mission]);
 
   useEffect(() => {
     if (mission === lastMissionSeenRef.current) return;
@@ -291,7 +295,7 @@ export function BuilderContainer({
                 {openhandsJobStatus || 'Läuft...'}
               </span>
               <button
-                className="dangerButtonClassName rounded px-3 py-1 text-xs"
+                className={`${dangerButtonClassName} rounded px-3 py-1 text-xs`}
                 onClick={onCancelOpenHands}
                 type="button"
               >
@@ -301,9 +305,9 @@ export function BuilderContainer({
           ) : (
             <button
               className="rounded bg-purple-600/30 px-3 py-1 text-xs font-bold text-purple-200 hover:bg-purple-600/50"
-              onClick={() => onStartOpenHands?.(mission)}
+              onClick={() => onStartOpenHands?.(executableOpenHandsMission)}
               type="button"
-              disabled={!repoReady}
+              disabled={!repoReady || !onStartOpenHands}
             >
               OpenHands starten
             </button>
