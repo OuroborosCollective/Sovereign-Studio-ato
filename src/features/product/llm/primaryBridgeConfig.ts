@@ -3,7 +3,8 @@ const ROUTE_NAME = 'gatter';
 const HOST = ['gate', 'way.ai.', 'cloud', 'flare.com'].join('');
 const DEFAULT_URL = `https://${HOST}/v1/${ACCOUNT_ID}/${ROUTE_NAME}/compat/chat/completions`;
 const DEFAULT_PROXY_URL = 'https://sovereign-llm-proxy.projectouroboroscollective.workers.dev';
-const DEFAULT_MODEL = 'gpt-oss-120b';
+// MiniMax 2.7B - Strong Chinese model, good for code
+const DEFAULT_MODEL = 'minimax/minimax-2.7b';
 
 type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };
 

@@ -3,15 +3,23 @@
  * 
  * Defines available models and their routing configuration.
  * Supports Cloudflare Workers AI Gateway as primary router.
+ * 
+ * RECOMMENDED MODELS FOR GITHUB CODE GENERATION:
+ * - Claude (via OpenRouter) - Best for code
+ * - MiniMax 2.7 (via OpenRouter) - Strong Chinese model
+ * - GPT-4o (via OpenRouter) - Strong general
+ * - DeepSeek Coder (via Cloudflare) - Specialized for code
+ * - Qwen 2.5 Coder (via Cloudflare) - Specialized for code
  */
 
 export type ModelProvider = 
-  | 'cloudflare-worker'  // Cloudflare Workers AI Gateway (PRIORITY)
-  | 'openrouter'        // OpenRouter aggregator
-  | 'groq'              // Groq (low latency)
+  | 'cloudflare-worker'  // Cloudflare Workers AI Gateway
+  | 'openrouter'        // OpenRouter aggregator (BEST for code)
+  | 'groq'              // Groq (ultra low latency)
   | 'huggingface'       // HuggingFace Inference
   | 'together'          // Together AI
   | 'gemini'            // Google Gemini
+  | 'minimax'           // MiniMax AI
   | 'optional-user-keys' // OpenHands Bridge
   | 'local-safe';       // Local safe inference
 
@@ -26,9 +34,11 @@ export interface ModelInfo {
   /** Priority for auto-selection (higher = preferred) */
   priority: number;
   /** Supported capabilities */
-  capabilities: ('chat' | 'completion' | 'embedding' | 'vision')[];
+  capabilities: ('chat' | 'completion' | 'embedding' | 'vision' | 'code')[];
   /** Cloudflare model identifier */
   cloudflareModelId?: string;
+  /** Specialized for code generation */
+  codeSpecialized?: boolean;
 }
 
 export interface ModelRoutingConfig {
@@ -39,18 +49,121 @@ export interface ModelRoutingConfig {
 
 /**
  * Available models in Sovereign Studio
+ * PRIORITY: Code-specialized models first
  */
 export const MODEL_REGISTRY: ModelInfo[] = [
-  // === CLOUDFLARE WORKER (PRIORITY - Primary Router) ===
+  // === OPENROUTER (BEST for Code - requires user key) ===
   {
-    id: 'gpt-oss-120b',
-    name: 'GPT-OSS 120B',
-    provider: 'cloudflare-worker',
+    id: 'anthropic/claude-sonnet-4-20250514',
+    name: 'Claude Sonnet 4 (Code-Optimized)',
+    provider: 'openrouter',
+    contextWindow: 200000,
+    requiresUserKey: true,
+    priority: 95,
+    capabilities: ['chat', 'completion', 'vision', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'anthropic/claude-3.5-sonnet',
+    name: 'Claude 3.5 Sonnet',
+    provider: 'openrouter',
+    contextWindow: 200000,
+    requiresUserKey: true,
+    priority: 90,
+    capabilities: ['chat', 'completion', 'vision', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'openai/gpt-4o',
+    name: 'GPT-4o (Code-Optimized)',
+    provider: 'openrouter',
     contextWindow: 128000,
-    requiresUserKey: false,
-    priority: 100, // HIGHEST - Primary model via Cloudflare
+    requiresUserKey: true,
+    priority: 85,
+    capabilities: ['chat', 'completion', 'vision', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'openai/gpt-4-turbo',
+    name: 'GPT-4 Turbo',
+    provider: 'openrouter',
+    contextWindow: 128000,
+    requiresUserKey: true,
+    priority: 80,
+    capabilities: ['chat', 'completion', 'vision', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'deepseek/deepseek-coder-v2',
+    name: 'DeepSeek Coder V2 (Code-Specialized)',
+    provider: 'openrouter',
+    contextWindow: 128000,
+    requiresUserKey: true,
+    priority: 88,
+    capabilities: ['chat', 'completion', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'qwen/qwen-2.5-coder-32b',
+    name: 'Qwen 2.5 Coder 32B',
+    provider: 'openrouter',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 82,
+    capabilities: ['chat', 'completion', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'codestral:latest',
+    name: 'Codestral (Code-Specialized)',
+    provider: 'openrouter',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 86,
+    capabilities: ['chat', 'completion', 'code'],
+    codeSpecialized: true,
+  },
+
+  // === MINIMAX (Strong Chinese model) ===
+  {
+    id: 'minimax/minimax-2.7b',
+    name: 'MiniMax 2.7B (Fast)',
+    provider: 'minimax',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 75,
+    capabilities: ['chat', 'completion', 'code'],
+    codeSpecialized: true,
+  },
+  {
+    id: 'minimax/abab6',
+    name: 'MiniMax ABAB 6 (Balanced)',
+    provider: 'minimax',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 72,
     capabilities: ['chat', 'completion'],
-    cloudflareModelId: 'gpt-oss-120b',
+  },
+  {
+    id: 'minimax/abab6.5s',
+    name: 'MiniMax ABAB 6.5S (Speed)',
+    provider: 'minimax',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 70,
+    capabilities: ['chat', 'completion'],
+  },
+
+  // === CLOUDFLARE WORKER (Free tier, good for general) ===
+  {
+    id: 'deepseek-v3',
+    name: 'DeepSeek V3',
+    provider: 'cloudflare-worker',
+    contextWindow: 64000,
+    requiresUserKey: false,
+    priority: 70,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: 'deepseek-v3',
   },
   {
     id: 'llama-3.3-70b',
@@ -58,7 +171,7 @@ export const MODEL_REGISTRY: ModelInfo[] = [
     provider: 'cloudflare-worker',
     contextWindow: 128000,
     requiresUserKey: false,
-    priority: 90,
+    priority: 65,
     capabilities: ['chat', 'completion'],
     cloudflareModelId: 'llama-3.3-70b-instruct',
   },
@@ -68,7 +181,7 @@ export const MODEL_REGISTRY: ModelInfo[] = [
     provider: 'cloudflare-worker',
     contextWindow: 128000,
     requiresUserKey: false,
-    priority: 85,
+    priority: 60,
     capabilities: ['chat', 'completion'],
     cloudflareModelId: 'mistral-large',
   },
@@ -78,41 +191,80 @@ export const MODEL_REGISTRY: ModelInfo[] = [
     provider: 'cloudflare-worker',
     contextWindow: 32768,
     requiresUserKey: false,
-    priority: 80,
+    priority: 55,
     capabilities: ['chat', 'completion'],
     cloudflareModelId: 'qwen2.5-72b-instruct',
   },
   {
-    id: 'deepseek-v3',
-    name: 'DeepSeek V3',
+    id: '@cf/qwen/qwen2.5-coder-32b',
+    name: 'Qwen Coder 32B (Cloudflare)',
     provider: 'cloudflare-worker',
-    contextWindow: 64000,
+    contextWindow: 32000,
     requiresUserKey: false,
-    priority: 75,
-    capabilities: ['chat', 'completion'],
-    cloudflareModelId: 'deepseek-v3',
+    priority: 75, // Higher because code-specialized AND free
+    capabilities: ['chat', 'completion', 'code'],
+    cloudflareModelId: '@cf/qwen/qwen2.5-coder-32b',
+    codeSpecialized: true,
   },
-  // Cerebras as fallback
+  {
+    id: '@cf/meta/llama-3.1-8b-instruct',
+    name: 'Llama 3.1 8B (Fast)',
+    provider: 'cloudflare-worker',
+    contextWindow: 128000,
+    requiresUserKey: false,
+    priority: 45,
+    capabilities: ['chat', 'completion'],
+    cloudflareModelId: '@cf/meta/llama-3.1-8b-instruct',
+  },
   {
     id: 'cerabras/zai-glm-4.7',
     name: 'Cerebras ZAI-GLM',
     provider: 'cloudflare-worker',
     contextWindow: 32000,
     requiresUserKey: false,
-    priority: 60,
+    priority: 40,
     capabilities: ['chat', 'completion'],
     cloudflareModelId: 'zai-glm-4.7',
   },
   
-  // === USER-KEY PROVIDERS (Secondary) ===
+  // === GROQ (Ultra low latency - requires user key) ===
+  {
+    id: 'groq/llama-3.3-70b',
+    name: 'Groq Llama 3.3 70B (Ultra Fast)',
+    provider: 'groq',
+    contextWindow: 8192,
+    requiresUserKey: true,
+    priority: 50,
+    capabilities: ['chat', 'completion'],
+  },
+  {
+    id: 'groq/mixtral-8x7b',
+    name: 'Groq Mixtral 8x7B (Fast)',
+    provider: 'groq',
+    contextWindow: 32000,
+    requiresUserKey: true,
+    priority: 45,
+    capabilities: ['chat', 'completion'],
+  },
+  {
+    id: 'groq/llama-3.1-70b',
+    name: 'Groq Llama 3.1 70B',
+    provider: 'groq',
+    contextWindow: 128000,
+    requiresUserKey: true,
+    priority: 48,
+    capabilities: ['chat', 'completion'],
+  },
+
+  // === USER-KEY PROVIDERS ===
   {
     id: 'optional-user-keys',
-    name: 'Primary Bridge',
+    name: 'Primary Bridge (Custom)',
     provider: 'optional-user-keys',
     contextWindow: 128000,
     requiresUserKey: true,
-    priority: 50,
-    capabilities: ['chat', 'completion', 'embedding', 'vision'],
+    priority: 35,
+    capabilities: ['chat', 'completion', 'embedding', 'vision', 'code'],
   },
   {
     id: 'gemini',
@@ -120,46 +272,11 @@ export const MODEL_REGISTRY: ModelInfo[] = [
     provider: 'gemini',
     contextWindow: 2000000,
     requiresUserKey: true,
-    priority: 40,
+    priority: 30,
     capabilities: ['chat', 'completion', 'vision'],
   },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    provider: 'openrouter',
-    contextWindow: 128000,
-    requiresUserKey: true,
-    priority: 30,
-    capabilities: ['chat', 'completion'],
-  },
-  {
-    id: 'groq',
-    name: 'Groq',
-    provider: 'groq',
-    contextWindow: 8192,
-    requiresUserKey: true,
-    priority: 25,
-    capabilities: ['chat', 'completion'],
-  },
-  {
-    id: 'huggingface',
-    name: 'HuggingFace',
-    provider: 'huggingface',
-    contextWindow: 4096,
-    requiresUserKey: true,
-    priority: 20,
-    capabilities: ['chat', 'completion'],
-  },
-  {
-    id: 'together',
-    name: 'Together AI',
-    provider: 'together',
-    contextWindow: 32000,
-    requiresUserKey: true,
-    priority: 15,
-    capabilities: ['chat', 'completion'],
-  },
-  // === NO-KEY PROVIDERS ===
+  
+  // === NO-KEY PROVIDERS (Free) ===
   {
     id: 'mlvoca',
     name: 'MLVoca (No-Key)',
@@ -188,11 +305,11 @@ export const MODEL_REGISTRY: ModelInfo[] = [
 
 /**
  * Default routing configuration
- * Cloudflare Worker is PRIMARY - all traffic routes through it first
+ * OpenRouter (code-optimized) is PRIMARY for best code generation
  */
 export const DEFAULT_ROUTING_CONFIG: ModelRoutingConfig = {
-  primaryProvider: 'cloudflare-worker',
-  fallbackProviders: ['optional-user-keys', 'openrouter', 'gemini'],
+  primaryProvider: 'openrouter',
+  fallbackProviders: ['minimax', 'cloudflare-worker', 'groq', 'gemini'],
   preferLowLatency: true,
 };
 
@@ -211,8 +328,15 @@ export function getModelsByProvider(provider: ModelProvider): ModelInfo[] {
 }
 
 /**
+ * Get only code-specialized models
+ */
+export function getCodeSpecializedModels(): ModelInfo[] {
+  return MODEL_REGISTRY.filter(m => m.codeSpecialized);
+}
+
+/**
  * Get best available model for routing
- * Prioritizes: cloudflare-worker > user-key > no-key > local
+ * Prioritizes: code-specialized > user-key > no-key > local
  */
 export function getBestAvailableModel(
   userKeyConfigured: boolean,
@@ -241,6 +365,25 @@ export function getBestAvailableModel(
 
   // Fallback to local-safe
   return getModelById('local-safe')!;
+}
+
+/**
+ * Get best code-generation model
+ */
+export function getBestCodeModel(userKeyConfigured: boolean): ModelInfo {
+  const codeModels = getCodeSpecializedModels();
+  
+  // Filter by availability
+  const available = codeModels.filter(m => 
+    !m.requiresUserKey || (m.requiresUserKey && userKeyConfigured)
+  );
+
+  if (available.length > 0) {
+    available.sort((a, b) => b.priority - a.priority);
+    return available[0];
+  }
+
+  return getBestAvailableModel(userKeyConfigured);
 }
 
 /**
