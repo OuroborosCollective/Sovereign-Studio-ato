@@ -29,6 +29,7 @@ import {
   ChatRuntimeError,
 } from '../runtime/chatRuntime';
 import { useRuntimeModelHealth } from '../hooks/useRuntimeModelHealth';
+import { useAllLlmAdapters } from '../contexts/LlmAdapterContext';
 import type { LlmAdapter } from '../llm/llmAdapter';
 
 // ============================================================================
@@ -155,8 +156,8 @@ function ChatStatusIndicator({ modelHealth, isChecking }: ChatStatusIndicatorPro
 // ============================================================================
 
 export interface ChatRuntimePanelProps {
-  /** LLM adapters for health monitoring */
-  adapters: LlmAdapter[];
+  /** LLM adapters for health monitoring (optional - uses context if not provided) */
+  adapters?: LlmAdapter[];
   /** Initial messages */
   initialMessages?: ChatMessage[];
   /** Callback when message is sent */
@@ -166,11 +167,14 @@ export interface ChatRuntimePanelProps {
 }
 
 export function ChatRuntimePanel({
-  adapters,
+  adapters: propAdapters,
   initialMessages = [],
   onMessageSent,
   onError,
 }: ChatRuntimePanelProps) {
+  // Get adapters from context if not provided as prop
+  const contextAdapters = useAllLlmAdapters();
+  const adapters = propAdapters ?? contextAdapters;
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);

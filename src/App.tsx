@@ -22,6 +22,7 @@ import { SequentialRuntimePanel } from './features/product/components/Sequential
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { ModelHealthPanel } from './features/product/components/ModelHealthPanel';
 import { ChatRuntimePanel } from './features/product/components/ChatRuntimePanel';
+import { LlmAdapterProvider, useAllLlmAdapters } from './features/product/contexts/LlmAdapterContext';
 import { SovereignTabErrorBoundary } from './features/product/components/SovereignTabErrorBoundary';
 import { SettingsModal } from './features/product/components/SettingsModal';
 import { useUserApiKeys } from './features/product/hooks/useUserApiKeys';
@@ -1096,6 +1097,7 @@ const App: React.FC = () => {
   if (!user) return <LoginView onLogin={login} />;
 
   return (
+    <LlmAdapterProvider>
     <div className={`${SOVEREIGN_APP_CLASSES.shell} min-h-screen p-4`} data-role="sovereign-app-shell" data-testid="app-shell__root">
       <h1 className={`${SOVEREIGN_APP_CLASSES.title} font-bold`} data-role="sovereign-app-title">Sovereign Canvas Tool</h1>
 
@@ -1329,7 +1331,7 @@ const App: React.FC = () => {
 
       {activeTab === 'chat' ? (
         <SovereignTabErrorBoundary tabId="chat" tabLabel="Chat AI">
-          <ChatRuntimePanel adapters={[]} />
+          <ChatRuntimePanel />
         </SovereignTabErrorBoundary>
       ) : null}
 
@@ -1383,7 +1385,7 @@ const App: React.FC = () => {
         <SovereignTabErrorBoundary tabId="health" tabLabel="Health">
           <SovereignHealthPanel report={healthReport} />
           <ModelHealthPanel />
-          <ChatRuntimePanel adapters={[]} />
+          <ChatRuntimePanel />
         </SovereignTabErrorBoundary>
       ) : null}
 
@@ -1425,6 +1427,7 @@ const App: React.FC = () => {
         </SovereignTabErrorBoundary>
       ) : null}
     </div>
+  </LlmAdapterProvider>
   );
 };
 
