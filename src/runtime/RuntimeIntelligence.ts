@@ -61,6 +61,31 @@ import {
   DEFAULT_PREDICTIVE_CONFIG,
 } from '../predictive';
 
+// Model Health Runtime Integration
+import {
+  checkAllModelsHealth,
+  getBestModelFromReport,
+  createModelHealthRuntimeState,
+  type ModelHealthReport,
+  type ModelHealthRuntimeState,
+} from '../features/product/runtime/modelHealthRuntime';
+
+import {
+  createModelHealthFallbackState,
+  selectFallbackModel,
+  recordModelSuccess,
+  recordModelFailure,
+  isCircuitBreakerOpen,
+  tryHalfOpen,
+  assertModelHealthReadyForOperation,
+  type ModelHealthFallbackState,
+  type ModelHealthFallbackResult,
+  type ModelHealthFallbackConfig,
+  type ModelHealthCircuitState,
+} from '../features/product/runtime/modelHealthFallback';
+
+import type { LlmAdapter } from '../features/product/llm/llmAdapter';
+
 export type { FullPipelineBridge } from '../features/product/runtime/containerBridgeValidation';
 
 type FullPipelineBridge = ImportedFullPipelineBridge;
@@ -170,6 +195,8 @@ export interface RuntimeIntelligenceConfig {
   enablePredictiveLayer?: boolean;
   /** Explicitly disable predictive layer even if added to runtime flow */
   disablePredictiveLayer?: boolean;
+  /** Model health fallback configuration */
+  modelHealthFallbackConfig?: ModelHealthFallbackConfig;
 }
 
 export interface RuntimeGuardExecutionOptions {
@@ -224,6 +251,14 @@ export interface RuntimeHealthSnapshot {
     patternCount: number;
     avgConfidence: number;
     errorRate: number;
+  };
+  modelHealth: {
+    totalModels: number;
+    healthyCount: number;
+    degradedCount: number;
+    unknownCount: number;
+    lastCheck: number | null;
+    bestModelId: string | null;
   };
   reasons: string[];
 }
@@ -979,6 +1014,14 @@ export class RuntimeIntelligence {
   private predictiveEnabled: boolean = false;
   private readonly predictiveConfig: PredictiveLayerConfig;
 
+  // Model Health Integration
+  private modelHealthState: ModelHealthRuntimeState = createModelHealthRuntimeState();
+  private modelHealthFallbackState: ModelHealthFallbackState = createModelHealthFallbackState();
+  private modelHealthAdapters: LlmAdapter[] = [];
+  private modelHealthCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly modelHealthCheckIntervalMs: number = 60000; // Check every minute
+  private readonly modelHealthFallbackConfig: Required<ModelHealthFallbackConfig>;
+
   constructor(config: RuntimeIntelligenceConfig = {}) {
     this.telemetry = config.telemetry ?? globalTelemetry;
     this.traceIdProvider = config.traceIdProvider ?? defaultTraceIdProvider;
@@ -996,6 +1039,17 @@ export class RuntimeIntelligence {
     this.predictiveConfig = {
       ...DEFAULT_PREDICTIVE_CONFIG,
       ...config.predictiveLayerConfig,
+    };
+
+    // Initialize model health fallback config
+    this.modelHealthFallbackConfig = {
+      primaryStrategy: config.modelHealthFallbackConfig?.primaryStrategy ?? 'use-any-enabled',
+      degradedStrategy: config.modelHealthFallbackConfig?.degradedStrategy ?? 'use-degraded',
+      failureThreshold: config.modelHealthFallbackConfig?.failureThreshold ?? 3,
+      cacheStaleMs: config.modelHealthFallbackConfig?.cacheStaleMs ?? 300000,
+      enableCircuitBreaker: config.modelHealthFallbackConfig?.enableCircuitBreaker ?? true,
+      circuitBreakerThreshold: config.modelHealthFallbackConfig?.circuitBreakerThreshold ?? 5,
+      circuitBreakerTimeoutMs: config.modelHealthFallbackConfig?.circuitBreakerTimeoutMs ?? 60000,
     };
     
     // Predictive layer is ENABLED BY DEFAULT unless explicitly disabled
@@ -1107,6 +1161,203 @@ export class RuntimeIntelligence {
    */
   isPredictiveEnabled(): boolean {
     return this.predictiveEnabled;
+  }
+
+  // ============================================================================
+  // Model Health Methods
+  // ============================================================================
+
+  /**
+   * Set the LLM adapters for health monitoring.
+   */
+  setModelHealthAdapters(adapters: LlmAdapter[]): void {
+    this.modelHealthAdapters = adapters;
+    this.telemetry.track({
+      name: 'model_health_adapters_updated',
+      properties: {
+        adapterCount: adapters.length,
+        adapterIds: adapters.map(a => a.id),
+      },
+      timestamp: runtimeNow(),
+      traceId: this.traceIdProvider(),
+    });
+  }
+
+  /**
+   * Start automatic model health checks.
+   */
+  startModelHealthMonitoring(): void {
+    if (this.modelHealthCheckInterval) return;
+
+    // Initial check
+    void this.checkModelHealth();
+
+    // Periodic checks
+    this.modelHealthCheckInterval = setInterval(() => {
+      void this.checkModelHealth();
+    }, this.modelHealthCheckIntervalMs);
+
+    this.telemetry.track({
+      name: 'model_health_monitoring_started',
+      properties: {
+        intervalMs: this.modelHealthCheckIntervalMs,
+      },
+      timestamp: runtimeNow(),
+      traceId: this.traceIdProvider(),
+    });
+  }
+
+  /**
+   * Stop automatic model health checks.
+   */
+  stopModelHealthMonitoring(): void {
+    if (this.modelHealthCheckInterval) {
+      clearInterval(this.modelHealthCheckInterval);
+      this.modelHealthCheckInterval = null;
+    }
+
+    this.telemetry.track({
+      name: 'model_health_monitoring_stopped',
+      properties: {},
+      timestamp: runtimeNow(),
+      traceId: this.traceIdProvider(),
+    });
+  }
+
+  /**
+   * Run a model health check now.
+   */
+  async checkModelHealth(): Promise<ModelHealthReport | null> {
+    if (this.modelHealthAdapters.length === 0) {
+      return null;
+    }
+
+    this.modelHealthState.isChecking = true;
+
+    try {
+      const report = await checkAllModelsHealth(this.modelHealthAdapters);
+      this.modelHealthState.lastReport = report;
+      this.modelHealthState.lastCheckTime = Date.now();
+      this.modelHealthState.consecutiveFailures = 0;
+
+      this.telemetry.track({
+        name: 'model_health_check_completed',
+        properties: {
+          totalModels: report.totalModels,
+          healthyCount: report.healthyCount,
+          degradedCount: report.degradedCount,
+          unknownCount: report.unknownCount,
+        },
+        timestamp: runtimeNow(),
+        traceId: this.traceIdProvider(),
+      });
+
+      return report;
+    } catch (error) {
+      this.modelHealthState.consecutiveFailures++;
+
+      this.telemetry.track({
+        name: 'model_health_check_failed',
+        properties: {
+          error: error instanceof Error ? error.message : String(error),
+          consecutiveFailures: this.modelHealthState.consecutiveFailures,
+        },
+        timestamp: runtimeNow(),
+        traceId: this.traceIdProvider(),
+      });
+
+      return null;
+    } finally {
+      this.modelHealthState.isChecking = false;
+    }
+  }
+
+  /**
+   * Get the current model health report.
+   */
+  getModelHealthReport(): ModelHealthReport | null {
+    return this.modelHealthState.lastReport;
+  }
+
+  /**
+   * Get the best available model from the last health check.
+   */
+  getBestAvailableModel(): { id: string; name: string; latencyMs: number | null } | null {
+    const report = this.modelHealthState.lastReport;
+    if (!report) return null;
+
+    const best = getBestModelFromReport(report);
+    if (!best) return null;
+
+    return {
+      id: best.adapterId,
+      name: best.adapterName,
+      latencyMs: best.latencyMs,
+    };
+  }
+
+  /**
+   * Get model health fallback result (with fallback strategy applied).
+   */
+  getModelHealthFallbackResult(): ModelHealthFallbackResult {
+    return selectFallbackModel(
+      this.modelHealthState.lastReport,
+      this.modelHealthFallbackState,
+      this.modelHealthFallbackConfig
+    );
+  }
+
+  /**
+   * Record successful model usage for fallback tracking.
+   */
+  recordModelSuccessForFallback(modelId: string): void {
+    const report = this.modelHealthState.lastReport;
+    if (!report) return;
+
+    const model = report.results.find(r => r.adapterId === modelId);
+    if (model) {
+      this.modelHealthFallbackState = recordModelSuccess(this.modelHealthFallbackState, model);
+      this.telemetry.track({
+        name: 'model_fallback_success_recorded',
+        properties: { modelId },
+        timestamp: runtimeNow(),
+        traceId: this.traceIdProvider(),
+      });
+    }
+  }
+
+  /**
+   * Record failed model usage for fallback tracking.
+   */
+  recordModelFailureForFallback(modelId: string): void {
+    const report = this.modelHealthState.lastReport;
+    if (!report) return;
+
+    const model = report.results.find(r => r.adapterId === modelId);
+    if (model) {
+      this.modelHealthFallbackState = recordModelFailure(this.modelHealthFallbackState, this.modelHealthFallbackConfig);
+      this.telemetry.track({
+        name: 'model_fallback_failure_recorded',
+        properties: { modelId, consecutiveFailures: this.modelHealthFallbackState.consecutiveFailures },
+        timestamp: runtimeNow(),
+        traceId: this.traceIdProvider(),
+      });
+    }
+  }
+
+  /**
+   * Assert model health is ready for operation (throws if not).
+   */
+  assertModelHealthReady(): void {
+    const result = this.getModelHealthFallbackResult();
+    assertModelHealthReadyForOperation(result);
+  }
+
+  /**
+   * Get the current fallback state for debugging.
+   */
+  getModelHealthFallbackState(): ModelHealthFallbackState {
+    return this.modelHealthFallbackState;
   }
 
   decide(
@@ -1442,6 +1693,27 @@ export class RuntimeIntelligence {
       }
     }
 
+    // Get model health snapshot
+    const modelHealthReport = this.modelHealthState.lastReport;
+    const modelHealth: RuntimeHealthSnapshot['modelHealth'] = {
+      totalModels: modelHealthReport?.totalModels ?? 0,
+      healthyCount: modelHealthReport?.healthyCount ?? 0,
+      degradedCount: modelHealthReport?.degradedCount ?? 0,
+      unknownCount: modelHealthReport?.unknownCount ?? 0,
+      lastCheck: this.modelHealthState.lastCheckTime,
+      bestModelId: modelHealthReport ? getBestModelFromReport(modelHealthReport)?.adapterId ?? null : null,
+    };
+
+    // Warn if no models are healthy
+    if (this.modelHealthAdapters.length > 0 && modelHealth.healthyCount === 0 && modelHealth.degradedCount === 0) {
+      reasons.push('No LLM models available (all unknown/failed)');
+    }
+
+    // Warn if too many consecutive failures
+    if (this.modelHealthState.consecutiveFailures >= 3) {
+      reasons.push(`Model health checks failing: ${this.modelHealthState.consecutiveFailures} consecutive failures`);
+    }
+
     const status: RuntimeHealthSnapshot['status'] =
       openBreakers.length > 0 || !coverageValid
         ? 'red'
@@ -1461,6 +1733,7 @@ export class RuntimeIntelligence {
       },
       learning,
       predictive: predictiveSnapshot,
+      modelHealth,
       reasons,
     };
   }
