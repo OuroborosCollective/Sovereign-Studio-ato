@@ -1,6 +1,7 @@
 export type SovereignProductTemplateTab =
   | 'repo'
   | 'builder'
+  | 'chat'
   | 'files'
   | 'diff'
   | 'workflow'
@@ -68,7 +69,7 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   version: 1,
   productName: 'Sovereign Studio',
   startTab: 'builder',
-  primaryFlow: ['repo', 'builder', 'files', 'diff'],
+  primaryFlow: ['repo', 'builder', 'chat', 'files', 'diff'],
   sideTabs: ['workflow', 'repair', 'remote', 'memory', 'telemetry', 'monitor'],
   diagnosticTabs: ['readiness', 'integrity', 'findings', 'health', 'runtime', 'coverage'],
   autoNavigationAllowlist: ['active-work', 'red-stopper'],
@@ -84,9 +85,10 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   ],
   tabs: [
     { id: 'repo', label: 'Repo', group: 'primary', phase: 'repo-setup', mainFlowIndex: 0, autoOpenAllowed: true, userVisible: true },
-    { id: 'builder', label: 'Chat', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
-    { id: 'files', label: 'Files', group: 'primary', phase: 'package-review', mainFlowIndex: 2, autoOpenAllowed: false, userVisible: true },
-    { id: 'diff', label: 'Diff', group: 'primary', phase: 'diff-review', mainFlowIndex: 3, autoOpenAllowed: false, userVisible: true },
+    { id: 'builder', label: 'Builder', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
+    { id: 'chat', label: 'Chat AI', group: 'primary', phase: 'intent-planning', mainFlowIndex: 2, autoOpenAllowed: false, userVisible: true },
+    { id: 'files', label: 'Files', group: 'primary', phase: 'package-review', mainFlowIndex: 3, autoOpenAllowed: false, userVisible: true },
+    { id: 'diff', label: 'Diff', group: 'primary', phase: 'diff-review', mainFlowIndex: 4, autoOpenAllowed: false, userVisible: true },
     { id: 'workflow', label: 'Workflow', group: 'side', phase: 'draft-pr-workflow', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
     { id: 'repair', label: 'Repair', group: 'side', phase: 'repair-diagnostics', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
     { id: 'remote', label: 'Remote Memory', group: 'side', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
@@ -149,8 +151,8 @@ export function validateSovereignProductTemplate(
   if (sideMissing.length) errors.push(`Side tabs reference unknown tabs: ${sideMissing.join(', ')}`);
   if (diagnosticMissing.length) errors.push(`Diagnostic tabs reference unknown tabs: ${diagnosticMissing.join(', ')}`);
 
-  if (contract.primaryFlow.join('>') !== 'repo>builder>files>diff') {
-    errors.push('Primary flow must be repo > builder > files > diff.');
+  if (contract.primaryFlow.join('>') !== 'repo>builder>chat>files>diff') {
+    errors.push('Primary flow must be repo > builder > chat > files > diff.');
   }
 
   for (const [index, tab] of contract.primaryFlow.entries()) {

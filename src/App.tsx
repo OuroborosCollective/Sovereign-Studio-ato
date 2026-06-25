@@ -21,6 +21,7 @@ import { ScanFindingRegistryPanel } from './features/product/components/ScanFind
 import { SequentialRuntimePanel } from './features/product/components/SequentialRuntimePanel';
 import { SovereignHealthPanel } from './features/product/components/SovereignHealthPanel';
 import { ModelHealthPanel } from './features/product/components/ModelHealthPanel';
+import { ChatRuntimePanel } from './features/product/components/ChatRuntimePanel';
 import { SovereignTabErrorBoundary } from './features/product/components/SovereignTabErrorBoundary';
 import { SettingsModal } from './features/product/components/SettingsModal';
 import { useUserApiKeys } from './features/product/hooks/useUserApiKeys';
@@ -1326,6 +1327,12 @@ const App: React.FC = () => {
         </SovereignTabErrorBoundary>
       ) : null}
 
+      {activeTab === 'chat' ? (
+        <SovereignTabErrorBoundary tabId="chat" tabLabel="Chat AI">
+          <ChatRuntimePanel adapters={[]} />
+        </SovereignTabErrorBoundary>
+      ) : null}
+
       {activeTab === 'files' ? (
         <SovereignTabErrorBoundary tabId="files" tabLabel="Files">
           <GeneratedFileReviewPanel pkg={lastPackage} />
@@ -1376,6 +1383,7 @@ const App: React.FC = () => {
         <SovereignTabErrorBoundary tabId="health" tabLabel="Health">
           <SovereignHealthPanel report={healthReport} />
           <ModelHealthPanel />
+          <ChatRuntimePanel adapters={[]} />
         </SovereignTabErrorBoundary>
       ) : null}
 
