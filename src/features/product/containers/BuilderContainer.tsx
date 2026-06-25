@@ -299,6 +299,10 @@ export function BuilderContainer({
         <div className="max-w-[92%] rounded-3xl rounded-tl-sm border border-slate-700 bg-slate-900/70 p-4 text-slate-200">
           <p className="text-xs font-black uppercase tracking-wide text-slate-400">Systemhinweis</p>
           <p className="mt-2">{repoReason}</p>
+          <div className="mt-3 space-y-1 text-xs text-slate-400" aria-label="Sovereign Chat Arbeitsfolge">
+            <p><strong className="text-slate-200">Schritt 2:</strong> Auftrag vorbereiten, Repo-Zustand prüfen und ausführbaren Runtime-Auftrag bilden.</p>
+            <p><strong className="text-slate-200">Schritt 3:</strong> Agent starten, echte OpenHands-/Runtime-Ergebnisse abwarten und Stopper klar melden.</p>
+          </div>
           {state.disabledReason ? <p className="mt-2 text-amber-300">{state.disabledReason}</p> : null}
           {sovereignSummary ? <p className="mt-2 text-slate-300">{sovereignSummary}</p> : null}
           {outcomeHints.length > 0 ? (
@@ -368,7 +372,7 @@ export function BuilderContainer({
             aria-label={SOVEREIGN_ACTION_ANALYZE_MISSION.ariaLabel}
             data-state={generateDisabled ? 'disabled' : 'idle'}
           >
-            Auftrag vorbereiten
+            Auftrag analysieren
           </button>
         )}
       </div>
