@@ -336,7 +336,7 @@ export function BuilderContainer({
           </span>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2" aria-label="Sovereign Arbeitsbereiche">
+        <div className="mt-4 flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Sovereign Arbeitsbereiche">
           {WORKBENCH_PANES.map((pane) => (
             <button
               key={pane.id}
@@ -344,8 +344,8 @@ export function BuilderContainer({
               aria-pressed={activePane === pane.id}
               className={
                 activePane === pane.id
-                  ? 'rounded-full border border-cyan-300/50 bg-slate-800 px-3 py-2 text-sm font-bold text-slate-50'
-                  : 'rounded-full border border-transparent bg-transparent px-3 py-2 text-sm font-bold text-slate-400'
+                  ? 'flex-shrink-0 rounded-full border border-cyan-300/50 bg-slate-800 px-3 py-2 text-sm font-bold text-slate-50'
+                  : 'flex-shrink-0 rounded-full border border-transparent bg-transparent px-3 py-2 text-sm font-bold text-slate-400'
               }
               onClick={() => setActivePane(pane.id)}
             >
@@ -421,7 +421,7 @@ export function BuilderContainer({
         )}
       </div>
 
-      <form className="sticky bottom-0 border-t border-slate-800/80 bg-[#090c10] p-4" onSubmit={handleComposerSubmit}>
+      <form className="sticky bottom-0 border-t border-slate-800/80 bg-[#090c10] p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" onSubmit={handleComposerSubmit}>
         <div className="rounded-3xl border border-slate-700 bg-slate-800/95 p-3 shadow-2xl shadow-black/30">
           <div className="flex items-start gap-3">
             <span className="pt-3 text-2xl text-slate-300" aria-hidden="true">📎</span>
@@ -431,7 +431,7 @@ export function BuilderContainer({
               name={SOVEREIGN_FORM_MISSION.id}
               data-role={SOVEREIGN_FORM_MISSION.dataRole}
               data-testid={SOVEREIGN_FORM_MISSION.testId}
-              className="min-h-16 flex-1 resize-none border-0 bg-transparent p-2 text-base leading-6 text-slate-50 outline-none placeholder:text-slate-400"
+              className="min-h-16 flex-1 resize-none border-0 bg-transparent p-2 text-base leading-6 text-slate-50 outline-none placeholder:text-slate-400 md:min-h-20"
               value={wishText}
               onChange={(event) => setWishText(event.target.value)}
               placeholder="What do you want to build?"
@@ -439,7 +439,7 @@ export function BuilderContainer({
             />
 
             <button
-              className="mt-1 inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-300/60 bg-slate-950 text-2xl text-slate-50 disabled:opacity-45"
+              className="mt-1 inline-flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-slate-300/60 bg-slate-950 text-2xl text-slate-50 disabled:opacity-45 active:scale-95 transition-transform"
               type="submit"
               disabled={agentDisabled}
               data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
@@ -451,11 +451,11 @@ export function BuilderContainer({
             </button>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
-            <span className="rounded-full px-2 py-1 font-bold">🛠 Tools</span>
-            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1">&lt;/&gt; Code</span>
-            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1">OpenHands</span>
-            <span className={repoReady ? 'rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-200' : 'rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-amber-200'}>
+          <div className="mt-3 flex items-center gap-2 text-xs text-slate-300 overflow-x-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <span className="rounded-full px-2 py-1 font-bold flex-shrink-0">🛠 Tools</span>
+            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 flex-shrink-0">&lt;/&gt; Code</span>
+            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 flex-shrink-0">OpenHands</span>
+            <span className={`rounded-full px-3 py-1 flex-shrink-0 ${repoReady ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border border-amber-500/30 bg-amber-500/10 text-amber-200' }`}>
               {repoReady ? 'Repo verbunden' : 'Repo fehlt'}
             </span>
           </div>
