@@ -44,9 +44,9 @@ describe('App', () => {
     expect(screen.getByRole('tab', { name: 'Open Chat tab' })).toBeDefined();
     expect(screen.getByTestId('tabbar__more-select')).toBeDefined();
 
-    expect(screen.getByText('No-Code Chat Workbench')).toBeDefined();
-    expect(screen.getByText('Sovereign Agent')).toBeDefined();
-    expect(screen.getByPlaceholderText(/Bau mir ein cooles Feature/)).toBeDefined();
+    expect(screen.getByText('Sovereign Chat')).toBeDefined();
+    expect(screen.getByText('OpenHands Runtime')).toBeDefined();
+    expect(screen.getByPlaceholderText(/What do you want to build/)).toBeDefined();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Open Repo tab' }));
     expect(screen.getByPlaceholderText('https://github.com/owner/repository')).toBeDefined();
