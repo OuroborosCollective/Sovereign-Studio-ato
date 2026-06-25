@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { deriveSovereignChatResultCards } from './sovereignChatWorkbenchResults';
+import {
+  deriveSovereignChatResultCards,
+  deriveSovereignChatResultCardsFromSummary,
+} from './sovereignChatWorkbenchResults';
 import type { OpenHandsJobSnapshot } from './openhandsEnterpriseRuntime';
 
 function snapshot(input: Partial<OpenHandsJobSnapshot>): OpenHandsJobSnapshot {
@@ -78,6 +81,26 @@ describe('sovereignChatWorkbenchResults', () => {
       expect.objectContaining({
         kind: 'completed',
         title: 'Küken hat fertig gepiepst',
+      }),
+    ]);
+  });
+
+  it('derives runtime and draft cards from a summary fallback', () => {
+    const cards = deriveSovereignChatResultCardsFromSummary(
+      'OpenHands arbeitet mit echter Runtime-ID conv_real_777: 2 Datei(en) gemeldet. Draft PR: https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/9',
+    );
+
+    expect(cards.some((card) => card.kind === 'runtime-id' && card.message.includes('conv_real_777'))).toBe(true);
+    expect(cards.some((card) => card.kind === 'draft-pr' && card.actionUrl?.endsWith('/pull/9'))).toBe(true);
+  });
+
+  it('derives stopper cards from blocked summaries', () => {
+    const cards = deriveSovereignChatResultCardsFromSummary('OpenHands ist durch ein Gate blockiert. GitHub Zugang fehlt.');
+
+    expect(cards).toEqual([
+      expect.objectContaining({
+        kind: 'stopper',
+        title: 'Stop-Gate oder Agent-Fehler',
       }),
     ]);
   });
