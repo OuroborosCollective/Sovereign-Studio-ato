@@ -13,6 +13,10 @@ import {
 } from '../runtime/sovereignActionContracts';
 import { formatCuteThinkingLabel } from '../runtime/cuteThinkingStatus';
 import type { OpenHandsJobSnapshot } from '../runtime/openhandsEnterpriseRuntime';
+import type { PredictiveLayerSnapshot } from '../../predictive/types';
+import type { SolutionPatternStore } from '../runtime/solutionPatternMemory';
+import { derivePredictiveSuggestions, deriveChatPredictiveContext } from '../runtime/chatPredictiveIntegration';
+import type { Suggestion } from '../types';
 
 type WorkbenchPane = 'planner' | 'changes' | 'code' | 'terminal' | 'browser';
 
@@ -51,6 +55,10 @@ export interface BuilderContainerProps {
   openhandsIsRunning?: boolean;
   onStartOpenHands?: (mission: string) => void;
   onCancelOpenHands?: () => void;
+  /** Predictive layer snapshot for intelligent suggestions */
+  predictiveSnapshot?: PredictiveLayerSnapshot | null;
+  /** Solution pattern store from learning */
+  patternStore?: SolutionPatternStore | null;
   /** @deprecated Internal pane state - kept for minimal backward compat */
   _activePane?: WorkbenchPane;
 }
@@ -214,11 +222,14 @@ export function BuilderContainer({
   openhandsIsRunning,
   onStartOpenHands,
   onCancelOpenHands,
+  predictiveSnapshot,
+  patternStore,
   _activePane: initialPane = 'changes',
 }: BuilderContainerProps) {
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
   const [activePane, setActivePane] = useState<WorkbenchPane>(initialPane);
   const [thinkingFrameIndex, setThinkingFrameIndex] = useState(0);
+  const [predictiveSuggestions, setPredictiveSuggestions] = useState<Suggestion[]>([]);
   const lastMissionSeenRef = useRef(mission);
   const state = deriveBuilderContainerState({
     repoReady,
@@ -244,6 +255,27 @@ export function BuilderContainer({
   }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
   const outcomeHints = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
   const agentDisabled = !repoReady || repoBusy || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
+
+  // Predictive context for runtime intelligence display
+  const predictiveContext = useMemo(() => deriveChatPredictiveContext(
+    predictiveSnapshot || null,
+    patternStore || null,
+    { repoReady, openhandsReady: !!openhandsReady, runtimeBusy }
+  ), [predictiveSnapshot, patternStore, repoReady, openhandsReady, runtimeBusy]);
+
+  // Derive predictive suggestions when input changes
+  useEffect(() => {
+    if (wishText.trim()) {
+      const suggestions = derivePredictiveSuggestions(
+        wishText,
+        predictiveSnapshot || null,
+        patternStore || null
+      );
+      setPredictiveSuggestions(suggestions);
+    } else {
+      setPredictiveSuggestions([]);
+    }
+  }, [wishText, predictiveSnapshot, patternStore]);
 
   useEffect(() => {
     if (!runtimeThinkingActive) {
@@ -393,6 +425,32 @@ export function BuilderContainer({
                 </button>
               ))}
             </div>
+
+            {/* Predictive Suggestions from Runtime Intelligence */}
+            {predictiveSuggestions.length > 0 && (
+              <div className="mt-4 border-t border-slate-800 pt-4" aria-label="Prädiktive Vorschläge">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs text-purple-400">🧠 Runtime Intelligence</span>
+                  {predictiveContext.hasPatterns && (
+                    <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[10px] text-purple-200">
+                      {patternStore?.patterns.length || 0} Patterns
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {predictiveSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onClick={() => setWishText((current) => appendOption(current, { label: suggestion.title, text: suggestion.description }))}
+                      className="rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-100 hover:border-purple-400/60"
+                    >
+                      {suggestion.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-6">
