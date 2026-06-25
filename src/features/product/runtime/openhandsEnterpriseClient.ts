@@ -22,6 +22,11 @@ export interface OpenHandsStartJobInput {
 interface RawOpenHandsJobResponse {
   jobId?: unknown;
   id?: unknown;
+  openHandsId?: unknown;
+  openhandsId?: unknown;
+  ohConvId?: unknown;
+  conversationId?: unknown;
+  sessionId?: unknown;
   status?: unknown;
   repoUrl?: unknown;
   branch?: unknown;
@@ -29,6 +34,9 @@ interface RawOpenHandsJobResponse {
   changedFiles?: unknown;
   events?: unknown;
   lastError?: unknown;
+  error?: unknown;
+  message?: unknown;
+  details?: unknown;
 }
 
 function endpoint(baseUrl: string, path: string): string {
@@ -66,16 +74,32 @@ function normalizeStatus(value: unknown): OpenHandsJobSnapshot['status'] {
   return 'idle';
 }
 
+function openHandsRuntimeId(raw: RawOpenHandsJobResponse): string | undefined {
+  return stringValue(raw.openHandsId)
+    || stringValue(raw.openhandsId)
+    || stringValue(raw.ohConvId)
+    || stringValue(raw.conversationId)
+    || stringValue(raw.sessionId);
+}
+
+function backendErrorMessage(raw: RawOpenHandsJobResponse): string | undefined {
+  return stringValue(raw.error)
+    || stringValue(raw.message)
+    || stringValue(raw.details)
+    || stringValue(raw.lastError);
+}
+
 function sanitizeSnapshot(raw: RawOpenHandsJobResponse, now: () => number): OpenHandsJobSnapshot {
   return {
     jobId: stringValue(raw.jobId) || stringValue(raw.id),
+    openHandsId: openHandsRuntimeId(raw),
     status: normalizeStatus(raw.status),
     repoUrl: stringValue(raw.repoUrl),
     branch: stringValue(raw.branch),
     draftPrUrl: stringValue(raw.draftPrUrl),
     changedFiles: stringArray(raw.changedFiles),
     events: eventArray(raw.events, now),
-    lastError: stringValue(raw.lastError),
+    lastError: stringValue(raw.lastError) || backendErrorMessage(raw),
   };
 }
 
@@ -105,7 +129,7 @@ async function requestSnapshot(args: {
   const response = await args.fetcher(args.url, args.init);
   const body = await readJson(response);
   if (!response.ok) {
-    const message = isObject(body) ? stringValue(body.error) || stringValue(body.message) : undefined;
+    const message = isObject(body) ? backendErrorMessage(body) : undefined;
     throw new Error(message || `OpenHands backend returned HTTP ${response.status}.`);
   }
   if (!isObject(body)) throw new Error('OpenHands backend returned a non-object response.');
@@ -148,10 +172,9 @@ export class OpenHandsEnterpriseClient {
 
   async getJob(jobId: string): Promise<OpenHandsJobSnapshot> {
     assertReady(this.config);
-    const cleanId = jobId.trim();
-    if (!cleanId) throw new Error('OpenHands job id is required.');
+    if (!jobId.trim()) throw new Error('OpenHands job id is required.');
     return requestSnapshot({
-      url: endpoint(this.config.agentApiUrl, `/jobs/${encodeURIComponent(cleanId)}`),
+      url: endpoint(this.config.agentApiUrl, `/jobs/${encodeURIComponent(jobId.trim())}`),
       init: {
         method: 'GET',
         headers: headers(),
@@ -163,10 +186,9 @@ export class OpenHandsEnterpriseClient {
 
   async cancelJob(jobId: string): Promise<OpenHandsJobSnapshot> {
     assertReady(this.config);
-    const cleanId = jobId.trim();
-    if (!cleanId) throw new Error('OpenHands job id is required.');
+    if (!jobId.trim()) throw new Error('OpenHands job id is required.');
     return requestSnapshot({
-      url: endpoint(this.config.agentApiUrl, `/jobs/${encodeURIComponent(cleanId)}/cancel`),
+      url: endpoint(this.config.agentApiUrl, `/jobs/${encodeURIComponent(jobId.trim())}/cancel`),
       init: {
         method: 'POST',
         headers: headers(),
