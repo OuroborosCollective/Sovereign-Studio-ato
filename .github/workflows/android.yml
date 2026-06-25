@@ -15,10 +15,6 @@ env:
   VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
   VITE_SOVEREIGN_LLM_MODEL: cerebras/zai-glm-4.7
 
-concurrency:
-  group: android-build
-  cancel-in-progress: true
-
 jobs:
   build:
     name: Build Android APK
