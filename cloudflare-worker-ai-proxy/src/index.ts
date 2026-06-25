@@ -46,10 +46,7 @@ interface ChatCompletionResponse {
   model: string;
   choices: Array<{
     index: number;
-    message: {
-      role: string;
-      content: string;
-    };
+    message: ChatMessage;
     finish_reason: string;
   }>;
   usage?: {
@@ -59,256 +56,603 @@ interface ChatCompletionResponse {
   };
 }
 
-// Rate limiting store (in-memory for demo; use KV for production)
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+interface CloudflareAIResponse {
+  result?: {
+    response?: string;
+    tool_calls?: unknown[];
+  };
+  success: boolean;
+  errors?: Array<{ message: string }>;
+}
+
+interface ProviderEndpoint {
+  name: string;
+  url: string;
+  requiresAuth: boolean;
+  authHeader?: string;
+}
 
 /**
- * Get rate limit config
+ * Provider configurations for different LLM backends
  */
-function getRateLimit(env: Env): { requests: number; windowMs: number } {
-  const config = env.RATE_LIMIT?.split(':') ?? ['100', '60000'];
+const PROVIDERS: Record<string, ProviderEndpoint> = {
+  cloudflare: {
+    name: 'Cloudflare Workers AI',
+    url: 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}',
+    requiresAuth: true,
+    authHeader: 'Bearer {token}',
+  },
+  openrouter: {
+    name: 'OpenRouter',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requiresAuth: true,
+    authHeader: 'Bearer {token}',
+  },
+  openai: {
+    name: 'OpenAI',
+    url: 'https://api.openai.com/v1/chat/completions',
+    requiresAuth: true,
+    authHeader: 'Bearer {token}',
+  },
+};
+
+/**
+ * Model routing configuration
+ */
+const MODEL_ROUTES: Record<string, { provider: string; actualModel: string }> = {
+  // Cloudflare Workers AI models
+  '@cf/meta/llama-3-8b-instruct': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3-8b-instruct' },
+  '@cf/meta/llama-3.1-8b-instruct': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.1-8b-instruct' },
+  '@cf/mistral/mistral-7b-instruct-v0.1': { provider: 'cloudflare', actualModel: '@cf/mistral/mistral-7b-instruct-v0.1' },
+  '@cf/google/gemma-7b-it': { provider: 'cloudflare', actualModel: '@cf/google/gemma-7b-it' },
+  '@cf/qwen/qwen1.5-14b-chat-awq': { provider: 'cloudflare', actualModel: '@cf/qwen/qwen1.5-14b-chat-awq' },
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b': { provider: 'cloudflare', actualModel: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b' },
+  
+  // Alias models for easier use
+  'llama-3-8b': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3-8b-instruct' },
+  'llama-3.1-8b': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.1-8b-instruct' },
+  'mistral-7b': { provider: 'cloudflare', actualModel: '@cf/mistral/mistral-7b-instruct-v0.1' },
+  'gemma-7b': { provider: 'cloudflare', actualModel: '@cf/google/gemma-7b-it' },
+  'qwen-14b': { provider: 'cloudflare', actualModel: '@cf/qwen/qwen1.5-14b-chat-awq' },
+  'deepseek-r1': { provider: 'cloudflare', actualModel: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b' },
+};
+
+/**
+ * CORS headers for all responses
+ */
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+  'Access-Control-Max-Age': '86400',
+};
+
+/**
+ * Simple in-memory rate limiter (per Worker instance)
+ */
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(clientId: string, limit: number): boolean {
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute
+  const record = rateLimitMap.get(clientId);
+  
+  if (!record || now > record.resetTime) {
+    rateLimitMap.set(clientId, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+  
+  if (record.count >= limit) {
+    return false;
+  }
+  
+  record.count++;
+  return true;
+}
+
+function getClientId(request: Request): string {
+  return request.headers.get('CF-Connecting-IP') || 
+         request.headers.get('X-Forwarded-For') || 
+         'unknown';
+}
+
+/**
+ * Convert messages to Cloudflare Workers AI format
+ */
+function formatForCloudflare(messages: ChatMessage[]): { messages: ChatMessage[] } {
+  return { messages };
+}
+
+/**
+ * Calculate approximate token count (rough estimate)
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function calculateUsage(messages: ChatMessage[], response: string) {
+  const promptTokens = messages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
+  const completionTokens = estimateTokens(response);
   return {
-    requests: parseInt(config[0], 10),
-    windowMs: parseInt(config[1] ?? '60000', 10)
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: promptTokens + completionTokens,
   };
 }
 
 /**
- * Check rate limit for a client (using IP or fallback)
+ * Create OpenAI-compatible response
  */
-function checkRateLimit(clientIp: string, env: Env): { allowed: boolean; remaining: number; resetIn: number } {
-  const { requests, windowMs } = getRateLimit(env);
-  const now = Date.now();
-  
-  const clientData = rateLimitStore.get(clientIp);
-  
-  if (!clientData || now > clientData.resetTime) {
-    rateLimitStore.set(clientIp, { count: 1, resetTime: now + windowMs });
-    return { allowed: true, remaining: requests - 1, resetIn: windowMs };
-  }
-  
-  if (clientData.count >= requests) {
-    return { 
-      allowed: false, 
-      remaining: 0, 
-      resetIn: clientData.resetTime - now 
-    };
-  }
-  
-  clientData.count++;
-  return { 
-    allowed: true, 
-    remaining: requests - clientData.count, 
-    resetIn: clientData.resetTime - now 
+function createChatResponse(
+  model: string,
+  content: string,
+  messages: ChatMessage[]
+): ChatCompletionResponse {
+  return {
+    id: `chatcmpl-${crypto.randomUUID()}`,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content,
+        },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: calculateUsage(messages, content),
   };
+}
+
+/**
+ * Create streaming response (SSE format)
+ */
+function createStreamResponse(model: string, content: string): ReadableStream {
+  const encoder = new TextEncoder();
+  const words = content.split(' ');
+  
+  return new ReadableStream({
+    async start(controller) {
+      // Initial chunk
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+        id: `chatcmpl-${crypto.randomUUID()}`,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [{
+          index: 0,
+          delta: { role: 'assistant' },
+          finish_reason: null,
+        }],
+      })}\n\n`));
+      
+      // Content chunks
+      for (let i = 0; i < words.length; i++) {
+        const chunk = words[i] + (i < words.length - 1 ? ' ' : '');
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+          id: `chatcmpl-${crypto.randomUUID()}`,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model,
+          choices: [{
+            index: 0,
+            delta: { content: chunk },
+            finish_reason: null,
+          }],
+        })}\n\n`));
+        
+        // Small delay to simulate streaming
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      
+      // Final chunk
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+        id: `chatcmpl-${crypto.randomUUID()}`,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [{
+          index: 0,
+          delta: {},
+          finish_reason: 'stop',
+        }],
+      })}\n\n`));
+      
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+}
+
+/**
+ * Call Cloudflare Workers AI
+ */
+async function callCloudflareAI(
+  env: Env,
+  model: string,
+  messages: ChatMessage[],
+  temperature?: number,
+  maxTokens?: number
+): Promise<string> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/run/${model}`;
+  
+  const payload = {
+    messages,
+    ...(temperature !== undefined && { temperature }),
+    ...(maxTokens !== undefined && { max_tokens: maxTokens }),
+  };
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.CF_AI_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Cloudflare AI error ${response.status}: ${errorText}`);
+  }
+  
+  const data = await response.json() as CloudflareAIResponse;
+  
+  if (!data.success) {
+    const errorMessage = data.errors?.map(e => e.message).join(', ') || 'Unknown error';
+    throw new Error(`Cloudflare AI failed: ${errorMessage}`);
+  }
+  
+  return data.result?.response || '';
+}
+
+/**
+ * Validate request payload
+ */
+function validateChatRequest(body: unknown): { valid: boolean; error?: string; data?: ChatCompletionRequest } {
+  if (!body || typeof body !== 'object') {
+    return { valid: false, error: 'Request body must be an object' };
+  }
+  
+  const req = body as Partial<ChatCompletionRequest>;
+  
+  if (!Array.isArray(req.messages) || req.messages.length === 0) {
+    return { valid: false, error: 'messages must be a non-empty array' };
+  }
+  
+  for (const msg of req.messages) {
+    if (!msg || typeof msg !== 'object') {
+      return { valid: false, error: 'Each message must be an object' };
+    }
+    const message = msg as ChatMessage;
+    if (!['system', 'user', 'assistant'].includes(message.role)) {
+      return { valid: false, error: 'Message role must be system, user, or assistant' };
+    }
+    if (typeof message.content !== 'string') {
+      return { valid: false, error: 'Message content must be a string' };
+    }
+  }
+  
+  if (req.temperature !== undefined && (typeof req.temperature !== 'number' || req.temperature < 0 || req.temperature > 2)) {
+    return { valid: false, error: 'temperature must be a number between 0 and 2' };
+  }
+  
+  if (req.max_tokens !== undefined && (typeof req.max_tokens !== 'number' || req.max_tokens < 1 || req.max_tokens > 32000)) {
+    return { valid: false, error: 'max_tokens must be a number between 1 and 32000' };
+  }
+  
+  return { valid: true, data: req as ChatCompletionRequest };
 }
 
 /**
  * Check if model is allowed
  */
 function isModelAllowed(model: string, env: Env): boolean {
-  if (!env.ALLOWED_MODELS) return true;
-  
-  const allowed = env.ALLOWED_MODELS.split(',').map(m => m.trim());
-  return allowed.includes(model);
-}
-
-/**
- * Convert OpenAI-style request to Cloudflare AI format
- */
-function convertToCFAIFormat(request: ChatCompletionRequest, model: string): {
-  messages: ChatMessage[];
-  model: string;
-} {
-  return {
-    messages: request.messages,
-    model: model || '@cf/meta/llama-3-8b-instruct'
-  };
-}
-
-/**
- * Convert Cloudflare AI response to OpenAI-style format
- */
-function convertToOpenAIFormat(
-  cfResponse: any, 
-  model: string, 
-  requestId: string
-): ChatCompletionResponse {
-  return {
-    id: requestId,
-    object: 'chat.completion',
-    created: Math.floor(Date.now() / 1000),
-    model: model,
-    choices: [
-      {
-        index: 0,
-        message: {
-          role: 'assistant',
-          content: cfResponse.response || cfResponse.result?.response || ''
-        },
-        finish_reason: 'stop'
-      }
-    ],
-    usage: {
-      prompt_tokens: cfResponse.usage?.prompt_tokens || 0,
-      completion_tokens: cfResponse.usage?.completion_tokens || 0,
-      total_tokens: (cfResponse.usage?.prompt_tokens || 0) + (cfResponse.usage?.completion_tokens || 0)
-    }
-  };
-}
-
-/**
- * Generate a request ID
- */
-function generateRequestId(): string {
-  return `chatcmpl-${Date.now().toString(36)}${Math.random().toString(36).substring(2, 9)}`;
-}
-
-export default {
-  async fetch(request: Request, env: Env, _ctx: unknown): Promise<Response> {
-    const startTime = Date.now();
-    
-    // Only handle POST requests
-    if (request.method !== 'POST') {
-      return new Response(
-        JSON.stringify({ error: { message: 'Method not allowed', type: 'invalid_request_error' } }),
-        { status: 405, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get client IP for rate limiting
-    const clientIp = request.headers.get('CF-Connecting-IP') || 
-                     request.headers.get('X-Forwarded-For')?.split(',')[0] || 
-                     'unknown';
-    
-    // Check rate limit
-    const rateLimit = checkRateLimit(clientIp, env);
-    if (!rateLimit.allowed) {
-      return new Response(
-        JSON.stringify({ 
-          error: { 
-            message: 'Rate limit exceeded', 
-            type: 'rate_limit_error',
-            retry_after: Math.ceil(rateLimit.resetIn / 1000)
-          } 
-        }),
-        { 
-          status: 429, 
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': String(Math.ceil(rateLimit.resetIn / 1000)),
-            'Retry-After': String(Math.ceil(rateLimit.resetIn / 1000))
-          } 
-        }
-      );
-    }
-
-    try {
-      // Parse request body
-      const body: ChatCompletionRequest = await request.json();
-      
-      // Determine model
-      const model = body.model || env.DEFAULT_MODEL || '@cf/meta/llama-3-8b-instruct';
-      
-      // Validate model
-      if (!isModelAllowed(model, env)) {
-        return new Response(
-          JSON.stringify({ 
-            error: { 
-              message: `Model '${model}' is not allowed`, 
-              type: 'invalid_request_error' 
-            } 
-          }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Validate messages
-      if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
-        return new Response(
-          JSON.stringify({ 
-            error: { 
-              message: 'messages is required and must be a non-empty array', 
-              type: 'invalid_request_error' 
-            } 
-          }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Convert to Cloudflare AI format
-      const cfRequest = convertToCFAIFormat(body, model);
-      
-      // Build Cloudflare AI API URL
-      const cfApiUrl = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/run/${model}`;
-      
-      // Forward request to Cloudflare AI
-      const cfResponse = await fetch(cfApiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${env.CF_AI_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          messages: cfRequest.messages
-        })
-      });
-
-      const duration = Date.now() - startTime;
-      
-      if (!cfResponse.ok) {
-        const errorBody = await cfResponse.text();
-        console.error(`Cloudflare AI error: ${cfResponse.status}`, errorBody);
-        
-        return new Response(
-          JSON.stringify({ 
-            error: { 
-              message: `AI service error: ${cfResponse.status}`, 
-              type: 'service_error' 
-            } 
-          }),
-          { 
-            status: 502, 
-            headers: { 
-              'Content-Type': 'application/json',
-              'X-Response-Time': String(duration)
-            } 
-          }
-        );
-      }
-
-      const cfResult = await cfResponse.json();
-      const requestId = generateRequestId();
-      
-      // Convert response to OpenAI format
-      const openAIResponse = convertToOpenAIFormat(cfResult, model, requestId);
-      
-      return new Response(
-        JSON.stringify(openAIResponse),
-        {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Request-Id': requestId,
-            'X-Response-Time': String(duration),
-            'X-RateLimit-Remaining': String(rateLimit.remaining)
-          }
-        }
-      );
-
-    } catch (error) {
-      console.error('Proxy error:', error);
-      
-      return new Response(
-        JSON.stringify({ 
-          error: { 
-            message: error instanceof Error ? error.message : 'Internal proxy error', 
-            type: 'internal_error' 
-          } 
-        }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
+  if (!env.ALLOWED_MODELS) {
+    return true; // All models allowed by default
   }
+  
+  const allowedModels = env.ALLOWED_MODELS.split(',').map(m => m.trim());
+  return allowedModels.includes(model) || allowedModels.includes(MODEL_ROUTES[model]?.actualModel);
+}
+
+/**
+ * Handle chat completions endpoint
+ */
+async function handleChatCompletions(request: Request, env: Env): Promise<Response> {
+  try {
+    // Rate limiting
+    const rateLimit = env.RATE_LIMIT ? parseInt(env.RATE_LIMIT, 10) : 60;
+    const clientId = getClientId(request);
+    
+    if (!checkRateLimit(clientId, rateLimit)) {
+      return new Response(JSON.stringify({
+        error: {
+          message: 'Rate limit exceeded',
+          type: 'rate_limit_error',
+          code: 'rate_limit_exceeded',
+        },
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    // Parse request
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({
+        error: {
+          message: 'Invalid JSON',
+          type: 'invalid_request_error',
+        },
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    // Validate request
+    const validation = validateChatRequest(body);
+    if (!validation.valid) {
+      return new Response(JSON.stringify({
+        error: {
+          message: validation.error,
+          type: 'invalid_request_error',
+        },
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    const chatRequest = validation.data!;
+    const requestedModel = chatRequest.model || env.DEFAULT_MODEL || '@cf/meta/llama-3-8b-instruct';
+    
+    // Check model allowed
+    if (!isModelAllowed(requestedModel, env)) {
+      return new Response(JSON.stringify({
+        error: {
+          message: `Model ${requestedModel} is not allowed`,
+          type: 'invalid_request_error',
+          code: 'model_not_allowed',
+        },
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    // Resolve model route
+    const route = MODEL_ROUTES[requestedModel] || { provider: 'cloudflare', actualModel: requestedModel };
+    
+    // Currently only Cloudflare is implemented
+    if (route.provider !== 'cloudflare') {
+      return new Response(JSON.stringify({
+        error: {
+          message: `Provider ${route.provider} is not yet configured`,
+          type: 'invalid_request_error',
+          code: 'provider_not_configured',
+        },
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    // Call AI provider
+    const aiResponse = await callCloudflareAI(
+      env,
+      route.actualModel,
+      chatRequest.messages,
+      chatRequest.temperature,
+      chatRequest.max_tokens
+    );
+    
+    // Return streaming or regular response
+    if (chatRequest.stream) {
+      return new Response(createStreamResponse(requestedModel, aiResponse), {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
+    
+    return new Response(JSON.stringify(createChatResponse(
+      requestedModel,
+      aiResponse,
+      chatRequest.messages
+    )), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+    
+  } catch (error) {
+    console.error('Chat completion error:', error);
+    return new Response(JSON.stringify({
+      error: {
+        message: error instanceof Error ? error.message : 'Internal server error',
+        type: 'server_error',
+      },
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+/**
+ * Handle models list endpoint
+ */
+function handleModels(env: Env): Response {
+  const models = Object.keys(MODEL_ROUTES)
+    .filter(model => isModelAllowed(model, env))
+    .map(id => ({
+      id,
+      object: 'model',
+      created: 1686935002,
+      owned_by: MODEL_ROUTES[id].provider,
+    }));
+  
+  return new Response(JSON.stringify({
+    object: 'list',
+    data: models,
+  }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+/**
+ * Handle health check endpoint
+ */
+function handleHealth(env: Env): Response {
+  const configured = !!(env.CF_AI_TOKEN && env.CF_ACCOUNT_ID);
+  
+  return new Response(JSON.stringify({
+    status: configured ? 'healthy' : 'not_configured',
+    service: 'sovereign-llm-proxy',
+    version: '1.0.0',
+    configured,
+    providers: {
+      cloudflare: configured,
+    },
+    models: Object.keys(MODEL_ROUTES).length,
+    timestamp: new Date().toISOString(),
+  }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+/**
+ * Handle root endpoint with API documentation
+ */
+function handleRoot(): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sovereign LLM Proxy</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      line-height: 1.6;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    h1 { color: #38bdf8; }
+    h2 { color: #818cf8; margin-top: 2rem; }
+    code {
+      background: #1e293b;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fbbf24;
+    }
+    pre {
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    .endpoint {
+      border-left: 4px solid #38bdf8;
+      padding-left: 16px;
+      margin: 16px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧠 Sovereign LLM Proxy</h1>
+  <p>OpenAI-compatible API proxy for Cloudflare Workers AI.</p>
+  
+  <h2>Endpoints</h2>
+  <div class="endpoint">
+    <h3>POST /v1/chat/completions</h3>
+    <p>OpenAI-compatible chat completions endpoint.</p>
+    <pre><code>{
+  "model": "llama-3-8b",
+  "messages": [
+    {"role": "user", "content": "Hello!"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 1000
+}</code></pre>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /v1/models</h3>
+    <p>List available models.</p>
+  </div>
+  
+  <div class="endpoint">
+    <h3>GET /health</h3>
+    <p>Health check endpoint.</p>
+  </div>
+  
+  <h2>Available Models</h2>
+  <ul>
+    <li><code>llama-3-8b</code> - Meta Llama 3 8B Instruct</li>
+    <li><code>llama-3.1-8b</code> - Meta Llama 3.1 8B Instruct</li>
+    <li><code>mistral-7b</code> - Mistral 7B Instruct</li>
+    <li><code>gemma-7b</code> - Google Gemma 7B IT</li>
+    <li><code>qwen-14b</code> - Qwen 1.5 14B Chat AWQ</li>
+    <li><code>deepseek-r1</code> - DeepSeek R1 Distill Qwen 32B</li>
+  </ul>
+</body>
+</html>`;
+  
+  return new Response(html, {
+    headers: { ...corsHeaders, 'Content-Type': 'text/html' },
+  });
+}
+
+/**
+ * Main Worker export
+ */
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+    
+    // Route requests
+    if (url.pathname === '/' || url.pathname === '') {
+      return handleRoot();
+    }
+    
+    if (url.pathname === '/health') {
+      return handleHealth(env);
+    }
+    
+    if (url.pathname === '/v1/models' && request.method === 'GET') {
+      return handleModels(env);
+    }
+    
+    if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
+      return handleChatCompletions(request, env);
+    }
+    
+    return new Response(JSON.stringify({
+      error: {
+        message: 'Not found',
+        type: 'not_found_error',
+      },
+    }), {
+      status: 404,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  },
 };
