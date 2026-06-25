@@ -12,6 +12,11 @@ import {
   SOVEREIGN_ACTION_DRAFT_PR,
 } from '../runtime/sovereignActionContracts';
 import { formatCuteThinkingLabel } from '../runtime/cuteThinkingStatus';
+import {
+  deriveSovereignChatResultCards,
+  type SovereignChatResultCard,
+} from '../runtime/sovereignChatWorkbenchResults';
+import type { OpenHandsJobSnapshot } from '../runtime/openhandsEnterpriseRuntime';
 
 export interface BuilderContainerProps {
   mission: string;
@@ -27,6 +32,7 @@ export interface BuilderContainerProps {
   onGenerateErrorWorkflow: () => void;
   onPublishDraftPr: () => void;
   openhandsReady?: boolean;
+  openhandsJob?: OpenHandsJobSnapshot;
   openhandsJobStatus?: string;
   openhandsIsRunning?: boolean;
   onStartOpenHands?: (mission: string) => void;
@@ -133,6 +139,37 @@ function buildAnalyzedMission(args: {
   ].join('\n');
 }
 
+function cardToneClass(card: SovereignChatResultCard): string {
+  if (card.kind === 'draft-pr') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-50';
+  if (card.kind === 'stopper') return 'border-rose-400/30 bg-rose-500/10 text-rose-50';
+  if (card.kind === 'completed') return 'border-amber-300/30 bg-amber-500/10 text-amber-50';
+  return 'border-cyan-400/25 bg-slate-950/70 text-slate-100';
+}
+
+function ResultCard({ card }: { readonly card: SovereignChatResultCard }): React.ReactElement {
+  return (
+    <div className={`rounded-2xl border p-3 text-sm ${cardToneClass(card)}`} data-result-card-kind={card.kind}>
+      <p className="text-xs font-black uppercase tracking-wide opacity-80">{card.title}</p>
+      <p className="mt-1 whitespace-pre-wrap">{card.message}</p>
+      {card.items?.length ? (
+        <ul className="mt-2 space-y-1 text-xs opacity-90">
+          {card.items.map((item) => <li key={item} className="truncate">• {item}</li>)}
+        </ul>
+      ) : null}
+      {card.actionUrl && card.actionLabel ? (
+        <a
+          className="mt-2 inline-flex rounded-full border border-current/30 px-3 py-1 text-xs font-black underline-offset-4 hover:underline"
+          href={card.actionUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {card.actionLabel}
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 export function BuilderContainer({
   mission,
   repoReady,
@@ -147,6 +184,7 @@ export function BuilderContainer({
   onGenerateErrorWorkflow,
   onPublishDraftPr,
   openhandsReady,
+  openhandsJob,
   openhandsJobStatus,
   openhandsIsRunning,
   onStartOpenHands,
@@ -177,6 +215,10 @@ export function BuilderContainer({
     active: runtimeThinkingActive,
     status: openhandsJobStatus,
   }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
+  const resultCards = useMemo(
+    () => openhandsJob ? deriveSovereignChatResultCards(openhandsJob) : [],
+    [openhandsJob],
+  );
   const agentDisabled = !repoReady || repoBusy || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
 
   useEffect(() => {
@@ -257,6 +299,11 @@ export function BuilderContainer({
           <p className="mt-2">{repoReason}</p>
           {state.disabledReason ? <p className="mt-2 text-amber-300">{state.disabledReason}</p> : null}
           {sovereignSummary ? <p className="mt-2 text-slate-300">{sovereignSummary}</p> : null}
+          {resultCards.length > 0 ? (
+            <div className="mt-3 grid gap-2" aria-label="OpenHands Ergebnis-Karten">
+              {resultCards.map((card) => <ResultCard key={`${card.kind}:${card.title}`} card={card} />)}
+            </div>
+          ) : null}
         </div>
       </div>
 
