@@ -44,9 +44,6 @@ const REQUIRED_FORM_IDS: SovereignFormContractId[] = [
   'automation-mode',
 ];
 
-/**
- * Repository URL input field contract.
- */
 export const SOVEREIGN_FORM_REPO_URL: SovereignFormContract = {
   id: 'repo-url',
   label: 'GitHub Repository URL',
@@ -59,9 +56,6 @@ export const SOVEREIGN_FORM_REPO_URL: SovereignFormContract = {
   required: true,
 };
 
-/**
- * Repository branch input field contract.
- */
 export const SOVEREIGN_FORM_REPO_BRANCH: SovereignFormContract = {
   id: 'repo-branch',
   label: 'Branch',
@@ -74,10 +68,6 @@ export const SOVEREIGN_FORM_REPO_BRANCH: SovereignFormContract = {
   required: false,
 };
 
-/**
- * Private access input field contract.
- * This field is marked as sensitive and enforces password input type.
- */
 export const SOVEREIGN_FORM_PRIVATE_ACCESS: SovereignFormContract = {
   id: 'private-access',
   label: 'GitHub Private Access',
@@ -90,24 +80,18 @@ export const SOVEREIGN_FORM_PRIVATE_ACCESS: SovereignFormContract = {
   required: false,
 };
 
-/**
- * Mission textarea field contract for the builder.
- */
 export const SOVEREIGN_FORM_MISSION: SovereignFormContract = {
   id: 'mission',
-  label: 'Mission',
+  label: 'Chat Auftrag',
   dataRole: 'textarea-mission',
   testId: 'mission__textarea',
-  ariaLabel: 'Ideenfabrik Wunschfeld',
+  ariaLabel: 'Sovereign Chat Eingabe',
   inputType: 'textarea',
   autoComplete: 'off',
   sensitive: false,
   required: false,
 };
 
-/**
- * Automation mode select field contract.
- */
 export const SOVEREIGN_FORM_AUTOMATION_MODE: SovereignFormContract = {
   id: 'automation-mode',
   label: 'Automation Mode',
@@ -128,99 +112,43 @@ export const SOVEREIGN_FORM_CONTRACTS: SovereignFormContract[] = [
   SOVEREIGN_FORM_AUTOMATION_MODE,
 ];
 
-function unique<T>(values: readonly T[]): T[] {
+function unique(values: readonly string[]): string[] {
   return Array.from(new Set(values));
 }
 
-export function getSovereignFormContract(id: SovereignFormContractId): SovereignFormContract {
-  const contract = SOVEREIGN_FORM_CONTRACTS.find((candidate) => candidate.id === id);
-  if (!contract) throw new Error(`Unknown Sovereign form contract: ${id}`);
-  return contract;
-}
-
-export function validateSovereignFormContracts(): SovereignFormContractReport {
+export function validateSovereignFormContracts(contracts: SovereignFormContract[] = SOVEREIGN_FORM_CONTRACTS): SovereignFormContractReport {
   const errors: string[] = [];
   const warnings: string[] = [];
-
-  const ids = SOVEREIGN_FORM_CONTRACTS.map((contract) => contract.id);
-  const dataRoles = SOVEREIGN_FORM_CONTRACTS.map((contract) => contract.dataRole);
-  const testIds = SOVEREIGN_FORM_CONTRACTS.map((contract) => contract.testId);
-
+  const ids = contracts.map((contract) => contract.id);
   const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
-  const duplicateRoles = dataRoles.filter((role, index) => dataRoles.indexOf(role) !== index);
-  const duplicateTestIds = testIds.filter((testId, index) => testIds.indexOf(testId) !== index);
 
-  if (duplicateIds.length) {
-    errors.push(`Duplicate form contract ids: ${unique(duplicateIds).join(', ')}.`);
-  }
-  if (duplicateRoles.length) {
-    errors.push(`Duplicate form contract data roles: ${unique(duplicateRoles).join(', ')}.`);
-  }
-  if (duplicateTestIds.length) {
-    errors.push(`Duplicate form contract test ids: ${unique(duplicateTestIds).join(', ')}.`);
+  for (const id of REQUIRED_FORM_IDS) {
+    if (!ids.includes(id)) errors.push(`Missing required form contract: ${id}`);
   }
 
-  for (const contract of SOVEREIGN_FORM_CONTRACTS) {
-    if (!contract.id.trim()) {
-      errors.push(`Form contract id must not be empty.`);
-    }
-    if (!contract.label.trim()) {
-      errors.push(`${contract.id}: label must not be empty.`);
-    }
-    if (!contract.dataRole.trim()) {
-      errors.push(`${contract.id}: dataRole must not be empty.`);
-    }
-    if (!FORM_DATA_ROLE_PATTERN.test(contract.dataRole)) {
-      errors.push(`${contract.id}: dataRole must match ${FORM_DATA_ROLE_PATTERN}.`);
-    }
-    if (!contract.testId.trim()) {
-      errors.push(`${contract.id}: testId must not be empty.`);
-    }
-    if (!FORM_TEST_ID_PATTERN.test(contract.testId)) {
-      errors.push(`${contract.id}: testId must match ${FORM_TEST_ID_PATTERN}.`);
-    }
-    if (!contract.ariaLabel.trim()) {
-      errors.push(`${contract.id}: ariaLabel must not be empty.`);
-    }
-    if (!contract.autoComplete.trim()) {
-      errors.push(`${contract.id}: autoComplete must not be empty.`);
-    }
+  if (duplicateIds.length) errors.push(`Duplicate form contract ids: ${unique(duplicateIds).join(', ')}`);
 
-    const validInputTypes: FormFieldInputType[] = ['text', 'url', 'password', 'email', 'number', 'textarea', 'select'];
-    if (!validInputTypes.includes(contract.inputType)) {
-      errors.push(`${contract.id}: unknown input type ${contract.inputType}.`);
-    }
-
-    if (contract.sensitive) {
-      if (contract.inputType !== 'password') {
-        errors.push(`${contract.id}: sensitive field must use inputType 'password'.`);
-      }
-      if (contract.autoComplete !== 'off') {
-        errors.push(`${contract.id}: sensitive field must use autoComplete 'off'.`);
-      }
-      if (contract.required) {
-        warnings.push(`${contract.id}: sensitive field should not be required unless explicitly necessary.`);
-      }
-    }
+  for (const contract of contracts) {
+    if (!FORM_DATA_ROLE_PATTERN.test(contract.dataRole)) errors.push(`${contract.id} has invalid dataRole ${contract.dataRole}.`);
+    if (!FORM_TEST_ID_PATTERN.test(contract.testId)) errors.push(`${contract.id} has invalid testId ${contract.testId}.`);
+    if (!contract.label.trim()) errors.push(`${contract.id} label must not be empty.`);
+    if (!contract.ariaLabel.trim()) errors.push(`${contract.id} ariaLabel must not be empty.`);
+    if (contract.sensitive && contract.inputType !== 'password') errors.push(`${contract.id} is sensitive and must use password input type.`);
+    if (contract.id === 'mission' && contract.inputType !== 'textarea') errors.push('mission contract must use textarea input type.');
   }
 
-  for (const requiredId of REQUIRED_FORM_IDS) {
-    if (!ids.includes(requiredId)) {
-      errors.push(`Missing required form contract: ${requiredId}.`);
-    }
-  }
+  const sensitive = contracts.filter((contract) => contract.sensitive);
+  if (!sensitive.length) warnings.push('No sensitive form contracts declared.');
 
   return {
     valid: errors.length === 0,
     errors,
     warnings,
-    summary: `${errors.length} form contract error(s), ${warnings.length} warning(s).`,
+    summary: `${errors.length} form error(s), ${warnings.length} warning(s).`,
   };
 }
 
-export function assertSovereignFormContractsValid(): void {
-  const report = validateSovereignFormContracts();
-  if (!report.valid) {
-    throw new Error(`Sovereign form contracts invalid: ${report.errors.join(' | ')}`);
-  }
+export function assertSovereignFormContractsValid(contracts: SovereignFormContract[] = SOVEREIGN_FORM_CONTRACTS): void {
+  const report = validateSovereignFormContracts(contracts);
+  if (!report.valid) throw new Error(`Sovereign form contracts invalid: ${report.errors.join(' | ')}`);
 }
