@@ -46,6 +46,10 @@ import {
   type SovereignAutoViewTab,
 } from './features/product/runtime/sovereignAutoViewRouter';
 import {
+  PredictiveProvider,
+  usePredictiveLayer,
+} from './predictive';
+import {
   buildGeneratedFileDiffReport,
   type SourceFileSnapshot,
 } from './features/product/runtime/generatedFileDiffPreview';
@@ -244,6 +248,9 @@ const App: React.FC = () => {
   const [lastAutoRunKey, setLastAutoRunKey] = useState('');
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
   const [planningConfirmed, setPlanningConfirmed] = useState(false);
+
+  // Predictive layer state
+  const { snapshot: predictiveSnapshot } = usePredictiveLayer();
 
   // OpenHands Enterprise state
   const openhandsConfig = useMemo(() => resolveOpenHandsEnterpriseConfig(), []);
@@ -1094,6 +1101,14 @@ const App: React.FC = () => {
   if (!user) return <LoginView onLogin={login} />;
 
   return (
+    <PredictiveProvider>
+      <AppContent user={user} />
+    </PredictiveProvider>
+  );
+}
+
+function AppContent({ user }: { user: unknown }) {
+  return (
     <div className={`${SOVEREIGN_APP_CLASSES.shell} min-h-screen p-4`} data-role="sovereign-app-shell" data-testid="app-shell__root">
       <h1 className={`${SOVEREIGN_APP_CLASSES.title} font-bold`} data-role="sovereign-app-title">Sovereign Canvas Tool</h1>
 
@@ -1321,6 +1336,8 @@ const App: React.FC = () => {
             openhandsIsRunning={isPollingOpenHands}
             onStartOpenHands={startOpenHandsJob}
             onCancelOpenHands={cancelOpenHandsJob}
+            predictiveSnapshot={predictiveSnapshot}
+            patternStore={solutionPatternStore}
           />
         </SovereignTabErrorBoundary>
       ) : null}
@@ -1416,6 +1433,6 @@ const App: React.FC = () => {
       ) : null}
     </div>
   );
-};
+}
 
 export default App;
