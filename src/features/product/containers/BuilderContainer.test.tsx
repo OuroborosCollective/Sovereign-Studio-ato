@@ -21,13 +21,14 @@ function baseProps() {
 }
 
 describe('BuilderContainer', () => {
-  it('renders the chat-driven ideas factory and preview', () => {
+  it('renders the chat-driven workbench and preview', () => {
     render(<BuilderContainer {...baseProps()} />);
 
     expect(screen.getByTestId('builder-container')).toBeDefined();
     expect(screen.getByText('Package summary')).toBeDefined();
-    expect(screen.getByText('Brain preview')).toBeDefined();
-    expect(screen.getByText(/Ideenfabrik/)).toBeDefined();
+    expect(screen.getByText('Files, Brain und Runtime-Preview')).toBeDefined();
+    expect(screen.getByText('No-Code Chat Workbench')).toBeDefined();
+    expect(screen.getByText('Sovereign Agent')).toBeDefined();
     expect(screen.getByLabelText(/Ideenfabrik Wunschfeld/i)).toBeDefined();
   });
 
@@ -109,17 +110,37 @@ describe('BuilderContainer', () => {
     expect(emittedMission).toContain('Verbessere mobile UX und Log-Fenster.');
   });
 
-  it('keeps the production action wired to the builder generation flow', () => {
+  it('keeps internal builder actions available inside details', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Auftrag starten/i }));
+    // Open the details element first
+    const details = document.querySelector('details');
+    expect(details).not.toBeNull();
+    fireEvent.click(details!.querySelector('summary')!);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Interne Paketprüfung starten' }));
     fireEvent.click(screen.getByRole('button', { name: 'Fehlerlog reparieren' }));
     fireEvent.click(screen.getByRole('button', { name: /Draft PR erstellen/i }));
 
     expect(props.onGenerateIdeas).toHaveBeenCalledOnce();
     expect(props.onGenerateErrorWorkflow).toHaveBeenCalledOnce();
     expect(props.onPublishDraftPr).toHaveBeenCalledOnce();
+  });
+
+  it('starts the external agent from the chat mission when ready', () => {
+    const props = {
+      ...baseProps(),
+      openhandsReady: true,
+      onStartOpenHands: vi.fn(),
+    };
+    render(<BuilderContainer {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Auftrag starten/i }));
+
+    expect(props.onStartOpenHands).toHaveBeenCalledOnce();
+    expect(props.onStartOpenHands.mock.calls[0][0]).toContain('Ideenfabrik Auftrag');
+    expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
   it('emits direct mission changes from the analyzed mission field', () => {

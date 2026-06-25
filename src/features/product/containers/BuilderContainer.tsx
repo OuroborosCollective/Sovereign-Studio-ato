@@ -12,10 +12,6 @@ import {
   SOVEREIGN_ACTION_DRAFT_PR,
 } from '../runtime/sovereignActionContracts';
 import { formatCuteThinkingLabel } from '../runtime/cuteThinkingStatus';
-import {
-  deriveSovereignChatResultCards,
-  type SovereignChatResultCard,
-} from '../runtime/sovereignChatWorkbenchResults';
 import type { OpenHandsJobSnapshot } from '../runtime/openhandsEnterpriseRuntime';
 
 export interface BuilderContainerProps {
@@ -42,6 +38,12 @@ export interface BuilderContainerProps {
 interface IdeaOption {
   readonly label: string;
   readonly text: string;
+}
+
+interface ChatOutcomeHint {
+  readonly kind: 'runtime' | 'files' | 'draft-pr' | 'stopper' | 'done';
+  readonly text: string;
+  readonly href?: string;
 }
 
 const CUTE_THINKING_FRAME_MS = 1100;
@@ -139,35 +141,38 @@ function buildAnalyzedMission(args: {
   ].join('\n');
 }
 
-function cardToneClass(card: SovereignChatResultCard): string {
-  if (card.kind === 'draft-pr') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-50';
-  if (card.kind === 'stopper') return 'border-rose-400/30 bg-rose-500/10 text-rose-50';
-  if (card.kind === 'completed') return 'border-amber-300/30 bg-amber-500/10 text-amber-50';
-  return 'border-cyan-400/25 bg-slate-950/70 text-slate-100';
+function safeHttpsUrl(value: string | undefined): string | undefined {
+  const clean = value?.trim();
+  return clean && clean.startsWith('https://') ? clean : undefined;
 }
 
-function ResultCard({ card }: { readonly card: SovereignChatResultCard }): React.ReactElement {
-  return (
-    <div className={`rounded-2xl border p-3 text-sm ${cardToneClass(card)}`} data-result-card-kind={card.kind}>
-      <p className="text-xs font-black uppercase tracking-wide opacity-80">{card.title}</p>
-      <p className="mt-1 whitespace-pre-wrap">{card.message}</p>
-      {card.items?.length ? (
-        <ul className="mt-2 space-y-1 text-xs opacity-90">
-          {card.items.map((item) => <li key={item} className="truncate">• {item}</li>)}
-        </ul>
-      ) : null}
-      {card.actionUrl && card.actionLabel ? (
-        <a
-          className="mt-2 inline-flex rounded-full border border-current/30 px-3 py-1 text-xs font-black underline-offset-4 hover:underline"
-          href={card.actionUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {card.actionLabel}
-        </a>
-      ) : null}
-    </div>
-  );
+function buildOutcomeHints(job: OpenHandsJobSnapshot | undefined): ChatOutcomeHint[] {
+  if (!job || job.status === 'idle') return [];
+  const hints: ChatOutcomeHint[] = [];
+  const files = (job.changedFiles ?? []).filter((file) => typeof file === 'string' && file.trim()).map((file) => file.trim());
+  const draftPrUrl = safeHttpsUrl(job.draftPrUrl);
+
+  if (job.openHandsId?.trim()) {
+    hints.push({ kind: 'runtime', text: `🐤 OpenHands Runtime-ID: ${job.openHandsId.trim()}` });
+  }
+
+  if (files.length > 0) {
+    hints.push({ kind: 'files', text: `${files.length} Datei(en) geändert · Details im Files-Menü` });
+  }
+
+  if (draftPrUrl) {
+    hints.push({ kind: 'draft-pr', text: 'Draft PR bereit · Öffnen', href: draftPrUrl });
+  }
+
+  if ((job.status === 'blocked' || job.status === 'failed') && job.lastError?.trim()) {
+    hints.push({ kind: 'stopper', text: job.lastError.trim() });
+  }
+
+  if (job.status === 'completed' && files.length === 0 && !draftPrUrl) {
+    hints.push({ kind: 'done', text: 'Küken hat fertig gepiepst · Keine Dateiänderung gemeldet' });
+  }
+
+  return hints;
 }
 
 export function BuilderContainer({
@@ -215,10 +220,7 @@ export function BuilderContainer({
     active: runtimeThinkingActive,
     status: openhandsJobStatus,
   }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
-  const resultCards = useMemo(
-    () => openhandsJob ? deriveSovereignChatResultCards(openhandsJob) : [],
-    [openhandsJob],
-  );
+  const outcomeHints = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
   const agentDisabled = !repoReady || repoBusy || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
 
   useEffect(() => {
@@ -299,9 +301,13 @@ export function BuilderContainer({
           <p className="mt-2">{repoReason}</p>
           {state.disabledReason ? <p className="mt-2 text-amber-300">{state.disabledReason}</p> : null}
           {sovereignSummary ? <p className="mt-2 text-slate-300">{sovereignSummary}</p> : null}
-          {resultCards.length > 0 ? (
-            <div className="mt-3 grid gap-2" aria-label="OpenHands Ergebnis-Karten">
-              {resultCards.map((card) => <ResultCard key={`${card.kind}:${card.title}`} card={card} />)}
+          {outcomeHints.length > 0 ? (
+            <div className="mt-3 space-y-1 text-xs" aria-label="OpenHands Ergebnis-Hinweise" data-testid="sovereign-chat-outcome-hints">
+              {outcomeHints.map((hint) => (
+                <p key={`${hint.kind}:${hint.text}`} data-outcome-hint-kind={hint.kind}>
+                  {hint.href ? <a className="underline underline-offset-4" href={hint.href} target="_blank" rel="noreferrer">{hint.text}</a> : hint.text}
+                </p>
+              ))}
             </div>
           ) : null}
         </div>

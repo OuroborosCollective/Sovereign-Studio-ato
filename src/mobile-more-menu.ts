@@ -285,7 +285,13 @@ function installFallbackLoop(): void {
 export function installMobileMoreMenu(): void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
   const win = runtimeWindow();
-  if (win.__sovereignMoreMenuInstalled) return;
+
+  if (win.__sovereignMoreMenuInstalled) {
+    scheduleMobileMoreMenu();
+    installFallbackLoop();
+    return;
+  }
+
   win.__sovereignMoreMenuInstalled = true;
 
   scheduleMobileMoreMenu();

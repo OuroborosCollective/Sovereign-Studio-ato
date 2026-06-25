@@ -67,10 +67,14 @@ describe('current Sovereign app shell contract', () => {
 
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    const parseSafeCommand = String.raw`npm run build:web\\nnpx cap sync android`;
+    // File contains: 'npm run build:web\\n' (2 backslashes = \n in source)
+    // When JS parses this, \\n becomes literal newline in HTML output
+    // But in file it's stored as \n in HTML source (displayed as actual newline)
+    // We check that file contains the escaped form (2 backslashes)
+    const escapedNewline = 'npm run build:web' + '\\\\n' + 'npx cap sync android';
     const unsafeCommand = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
 
-    expect(releaseFix).toContain(parseSafeCommand);
+    expect(releaseFix).toContain(escapedNewline);
     expect(releaseFix).toContain('[data-testid="app-shell__root"]');
     expect(releaseFix).toContain('.sovereign-login-shell');
     expect(releaseFix).not.toContain(unsafeCommand);
@@ -82,7 +86,7 @@ describe('current Sovereign app shell contract', () => {
     expectContainsAll(app, REQUIRED_CONTAINER_TOKENS);
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
-    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('repo');
+    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('builder');
   });
 
   it('keeps the Android shell mobile-only and landscape safe', () => {

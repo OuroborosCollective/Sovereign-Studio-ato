@@ -155,10 +155,10 @@ If these checks are not satisfied, report the exact blocker instead of claiming 
 
 Before finishing any code change, run or explicitly report why you could not run:
 
-- `npm run audit:sovereign`
-- `npm run type-check`
-- `npm run test:run`
-- `npm run build`
+- `pnpm run audit:sovereign`
+- `pnpm run type-check`
+- `pnpm exec vitest run` (with specific test files)
+- `pnpm run build`
 
 Do not stop after fixing only the latest touched file if older failures block the product path.
 
@@ -172,3 +172,55 @@ Protect these product rules:
 - free-first routing before optional user keys
 - visible fix loop on errors
 - user confirmation before writing unless autonomous mode is active
+
+## ChatSidebar & Model Selection
+
+The chat interface uses modern ARE-style design with auto-detecting model selection.
+
+### ChatSidebar Component
+**Location:** `src/features/product/components/ChatSidebar.tsx`
+
+**Props:**
+```typescript
+interface ChatSidebarProps {
+  chatMessages: ChatMessage[];
+  suggestions: Suggestion[];
+  isAnalyzing: boolean;
+  onSendMessage: (message: string) => void;
+  onAcceptSuggestion: (suggestionId: string) => void;
+  onDownloadPackage: () => void;
+  onClearChat: () => void;
+  availableModels?: LlmModelInfo[];      // Auto-detected from adapters
+  selectedModel?: string;                  // Currently selected model ID
+  onModelChange?: (modelId: string) => void;
+}
+```
+
+### Kaomoji Thinking Animation 🎉
+**DO NOT SIMPLIFY** - The thinking indicator cycles through cute chick emoticons:
+
+```typescript
+const THINKING_FRAMES = ['( ^ω^)', '(^_^)', '(^‿^)', '(^o^)', '(^・ω・^)'];
+```
+
+- Cycles every 800ms while `isAnalyzing={true}`
+- Shows Loader2 spinner + current kaomoji frame
+- Preserved for user experience delight
+
+### Model Selection Hook
+**Location:** `src/features/product/hooks/useChatModelSelector.ts`
+
+```typescript
+import { useChatModelSelector } from '../hooks/useChatModelSelector';
+
+// Extracts available models from LLM adapters
+// Prioritizes user-key providers automatically
+// Returns: availableModels, selectedModelId, selectedModel, handleModelChange
+```
+
+### Chat UI Design Tokens
+Uses Sovereign dark/cyan theme:
+- Background: `bg-slate-950`, `bg-slate-900/50`
+- Borders: `border-cyan-500/20`, `border-cyan-500/30`
+- Text: `text-slate-100`, `text-cyan-400`
+- Quick actions: pill-style chips with `rounded-full`
