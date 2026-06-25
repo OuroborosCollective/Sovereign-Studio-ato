@@ -1,36 +1,14 @@
 /**
- * Chat Runtime - Central Nervous System Contact Points
- * 
- * Entry → Process → Exit data flow with validation and error boundaries.
- * Connected to RuntimeIntelligence for telemetry, guards, and health.
- * 
- * Architecture:
- * ┌─────────────────────────────────────────────────────────────┐
- * │                    CHAT RUNTIME                          │
- * │  ┌─────────┐    ┌─────────────┐    ┌─────────┐           │
- * │  │  ENTRY  │───▶│   PROCESS  │───▶│  EXIT   │           │
- * │  │ Validation│   │ ModelHealth│    │ Render  │           │
- * │  │ Guard   │    │ OpenHands  │    │ State   │           │
- * │  └─────────┘    └─────────────┘    └─────────┘           │
- * │        │              │                │                  │
- * │        └──────────────┼────────────────┘                  │
- * │                       ▼                                   │
- * │              ┌─────────────────┐                         │
- * │              │ RuntimeIntelli. │                         │
- * │              │ - Telemetry     │                         │
- * │              │ - Health Snap   │                         │
- * │              │ - Circuit Brek │                         │
- * │              └─────────────────┘                         │
- * └─────────────────────────────────────────────────────────────┘
+ * Chat Runtime
+ *
+ * Entry -> Process -> Exit data flow for chat diagnostics.
+ * The official live user path is the BuilderContainer NoCode Chat Workbench.
+ * This runtime is deliberately honest: it validates input and may call an
+ * explicitly supplied processor, but it never fabricates LLM/OpenHands output.
  */
 
-import { runtimeIntelligence, globalTelemetry } from '../../../runtime/RuntimeIntelligence';
+import { defaultTraceIdProvider, globalTelemetry, runtimeIntelligence } from '../../../runtime/RuntimeIntelligence';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/** Chat message type */
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -39,7 +17,6 @@ export interface ChatMessage {
   metadata?: Record<string, unknown>;
 }
 
-/** Chat suggestion */
 export interface ChatSuggestion {
   id: string;
   title: string;
@@ -49,7 +26,6 @@ export interface ChatSuggestion {
   priority?: number;
 }
 
-/** Entry validation result */
 export interface ChatEntryValidation {
   valid: boolean;
   normalizedInput: string;
@@ -57,7 +33,6 @@ export interface ChatEntryValidation {
   sanitized: boolean;
 }
 
-/** Process result */
 export interface ChatProcessResult {
   success: boolean;
   response?: string;
@@ -67,7 +42,6 @@ export interface ChatProcessResult {
   guardResults?: string[];
 }
 
-/** Exit state */
 export interface ChatExitState {
   messages: ChatMessage[];
   suggestions: ChatSuggestion[];
@@ -83,21 +57,28 @@ export interface ChatExitState {
   };
 }
 
-/** Chat runtime configuration */
-export interface ChatRuntimeConfig {
-  /** Maximum message length */
-  maxMessageLength?: number;
-  /** Minimum message length */
-  minMessageLength?: number;
-  /** Enable model health check */
-  checkModelHealth?: boolean;
-  /** Enable OpenHands integration */
-  enableOpenHands?: boolean;
-  /** Timeout for model response */
-  responseTimeoutMs?: number;
+export interface ChatRuntimeModelRef {
+  modelId: string;
+  modelName: string;
+  latencyMs: number | null;
 }
 
-const DEFAULT_CONFIG: Required<ChatRuntimeConfig> = {
+export type ChatRuntimeProcessor = (input: {
+  normalizedInput: string;
+  history: ChatMessage[];
+  model: ChatRuntimeModelRef;
+}) => Promise<{ response: string; modelUsed?: string }>;
+
+export interface ChatRuntimeConfig {
+  maxMessageLength?: number;
+  minMessageLength?: number;
+  checkModelHealth?: boolean;
+  enableOpenHands?: boolean;
+  responseTimeoutMs?: number;
+  processor?: ChatRuntimeProcessor;
+}
+
+const DEFAULT_CONFIG: Required<Omit<ChatRuntimeConfig, 'processor'>> = {
   maxMessageLength: 10000,
   minMessageLength: 1,
   checkModelHealth: true,
@@ -105,38 +86,29 @@ const DEFAULT_CONFIG: Required<ChatRuntimeConfig> = {
   responseTimeoutMs: 30000,
 };
 
-// ============================================================================
-// Entry Point - Validation
-// ============================================================================
+function mergedConfig(config: ChatRuntimeConfig): Required<Omit<ChatRuntimeConfig, 'processor'>> & Pick<ChatRuntimeConfig, 'processor'> {
+  return { ...DEFAULT_CONFIG, processor: config.processor };
+}
 
-/**
- * Validate chat input at entry point
- */
-export function validateChatEntry(
-  input: string,
-  config: ChatRuntimeConfig = {}
-): ChatEntryValidation {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+function traceId(): string {
+  return defaultTraceIdProvider();
+}
+
+export function validateChatEntry(input: string, config: ChatRuntimeConfig = {}): ChatEntryValidation {
+  const cfg = mergedConfig(config);
   const errors: string[] = [];
-  
-  // Normalize input
   const normalized = input.trim();
-  
-  // Length validation
-  if (normalized.length < cfg.minMessageLength) {
-    errors.push(`Message too short (min: ${cfg.minMessageLength} chars)`);
-  }
-  
-  if (normalized.length > cfg.maxMessageLength) {
-    errors.push(`Message too long (max: ${cfg.maxMessageLength} chars)`);
-  }
-  
-  // Sanitize input
-  const sanitized = normalized
-    .replace(/[<>]/g, '') // Remove potential HTML
-    .replace(/\0/g, '');   // Remove null bytes
-    
-  // Log entry validation
+  const sanitized = normalized.replace(/[<>]/g, '').replace(/\0/g, '');
+
+  if (normalized.length < cfg.minMessageLength) errors.push(`Message too short (min: ${cfg.minMessageLength} chars)`);
+  if (normalized.length > cfg.maxMessageLength) errors.push(`Message too long (max: ${cfg.maxMessageLength} chars)`);
+
   globalTelemetry.track({
     name: 'chat_entry_validated',
     properties: {
@@ -147,9 +119,9 @@ export function validateChatEntry(
       errors,
     },
     timestamp: Date.now(),
-    traceId: runtimeIntelligence.createTraceId(),
+    traceId: traceId(),
   });
-  
+
   return {
     valid: errors.length === 0,
     normalizedInput: sanitized,
@@ -158,51 +130,28 @@ export function validateChatEntry(
   };
 }
 
-/**
- * Guard check at entry point
- */
-export async function checkChatEntryGuard(input: string): Promise<{ pass: boolean; reason?: string }> {
+export async function checkChatEntryGuard(_input: string): Promise<{ pass: boolean; reason?: string }> {
   try {
-    // Check model health
     const modelHealthResult = runtimeIntelligence.getModelHealthFallbackResult();
-    
     if (!modelHealthResult.proceed) {
-      return {
-        pass: false,
-        reason: `Model health check failed: ${modelHealthResult.reason}`,
-      };
+      return { pass: false, reason: `Model health check failed: ${modelHealthResult.reason}` };
     }
-    
-    // Check circuit breaker
+
     const fallbackState = runtimeIntelligence.getModelHealthFallbackState();
     if (fallbackState.circuitBreaker.state === 'open') {
-      return {
-        pass: false,
-        reason: 'Circuit breaker is open - too many model failures',
-      };
+      return { pass: false, reason: 'Circuit breaker is open - too many model failures' };
     }
-    
+
     return { pass: true };
   } catch (error) {
-    return {
-      pass: false,
-      reason: error instanceof Error ? error.message : 'Guard check failed',
-    };
+    return { pass: false, reason: error instanceof Error ? error.message : 'Guard check failed' };
   }
 }
 
-// ============================================================================
-// Process - Model Health & OpenHands
-// ============================================================================
-
-/**
- * Get model for chat processing
- */
-export function getChatModel(): { modelId: string; modelName: string; latencyMs: number | null } | null {
+export function getChatModel(): ChatRuntimeModelRef | null {
   const model = runtimeIntelligence.getBestAvailableModel();
-  if (model) return model;
-  
-  // Fallback to cached model
+  if (model) return { modelId: model.id, modelName: model.name, latencyMs: model.latencyMs };
+
   const fallback = runtimeIntelligence.getModelHealthFallbackResult();
   if (fallback.selectedModel) {
     return {
@@ -211,116 +160,77 @@ export function getChatModel(): { modelId: string; modelName: string; latencyMs:
       latencyMs: fallback.selectedModel.latencyMs,
     };
   }
-  
+
   return null;
 }
 
-/**
- * Process chat message through LLM
- */
 export async function processChatMessage(
   normalizedInput: string,
   history: ChatMessage[],
-  config: ChatRuntimeConfig = {}
+  config: ChatRuntimeConfig = {},
 ): Promise<ChatProcessResult> {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
-  const startTime = performance.now();
-  
+  const cfg = mergedConfig(config);
+  const startTime = nowMs();
+
   try {
-    // Get model
     const model = getChatModel();
-    if (!model) {
-      return {
-        success: false,
-        error: 'No available model for processing',
-      };
-    }
-    
-    // Build context from history
-    const contextMessages = history.slice(-10).map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
-    
-    // Log process start
+    if (!model) return { success: false, error: 'No available model for processing' };
+
     globalTelemetry.track({
       name: 'chat_process_started',
-      properties: {
-        modelId: model.modelId,
-        inputLength: normalizedInput.length,
-        historyLength: history.length,
-      },
+      properties: { modelId: model.modelId, inputLength: normalizedInput.length, historyLength: history.length },
       timestamp: Date.now(),
-      traceId: runtimeIntelligence.createTraceId(),
+      traceId: traceId(),
     });
-    
-    // Simulate processing (actual LLM call would go here)
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    const latencyMs = performance.now() - startTime;
-    
-    // Record success for fallback tracking
+
+    if (!cfg.processor) {
+      return {
+        success: false,
+        error: 'No executable chat processor configured. Use the Builder Chat Workbench/OpenHands live path.',
+        modelUsed: model.modelId,
+        latencyMs: Math.round(nowMs() - startTime),
+      };
+    }
+
+    const result = await Promise.race([
+      cfg.processor({ normalizedInput, history, model }),
+      new Promise<never>((_, reject) => {
+        globalThis.setTimeout(() => reject(new Error('Chat processor timed out.')), Math.max(1, cfg.responseTimeoutMs));
+      }),
+    ]);
+
+    const latencyMs = Math.round(nowMs() - startTime);
     runtimeIntelligence.recordModelSuccessForFallback(model.modelId);
-    
+
     return {
       success: true,
-      response: `Processed: ${normalizedInput.substring(0, 50)}...`,
-      modelUsed: model.modelId,
+      response: result.response,
+      modelUsed: result.modelUsed ?? model.modelId,
       latencyMs,
     };
-    
   } catch (error) {
-    const latencyMs = performance.now() - startTime;
+    const latencyMs = Math.round(nowMs() - startTime);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
-    // Record failure for fallback tracking
     const model = getChatModel();
-    if (model) {
-      runtimeIntelligence.recordModelFailureForFallback(model.modelId);
-    }
-    
-    // Log error
+    if (model) runtimeIntelligence.recordModelFailureForFallback(model.modelId);
+
     globalTelemetry.track({
       name: 'chat_process_error',
-      properties: {
-        error: errorMessage,
-        latencyMs,
-      },
+      properties: { error: errorMessage, latencyMs },
       timestamp: Date.now(),
-      traceId: runtimeIntelligence.createTraceId(),
+      traceId: traceId(),
     });
-    
-    return {
-      success: false,
-      error: errorMessage,
-      latencyMs,
-    };
+
+    return { success: false, error: errorMessage, latencyMs };
   }
 }
 
-// ============================================================================
-// Exit Point - State Building
-// ============================================================================
-
-/**
- * Build chat exit state
- */
-export function buildChatExitState(
-  messages: ChatMessage[],
-  result: ChatProcessResult,
-  config: ChatRuntimeConfig = {}
-): ChatExitState {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
-  
-  // Get model health
-  const model = getChatModel();
+export function buildChatExitState(messages: ChatMessage[], result: ChatProcessResult, config: ChatRuntimeConfig = {}): ChatExitState {
+  void config;
   const modelHealth = runtimeIntelligence.getModelHealthReport();
-  
-  // Build suggestions based on result
   const suggestions: ChatSuggestion[] = [];
-  
+
   if (result.success && result.modelUsed) {
-    // Add model-specific suggestions
     suggestions.push({
       id: 'model-info',
       title: `${result.modelUsed} responded`,
@@ -330,18 +240,16 @@ export function buildChatExitState(
       priority: 1,
     });
   } else {
-    // Add recovery suggestions
     suggestions.push({
       id: 'retry',
-      title: 'Retry with different model',
-      description: 'Try another available model',
-      action: 'retry',
+      title: 'Retry with the official Builder Chat Workbench',
+      description: 'Live work must go through the runtime-backed OpenHands flow.',
+      action: 'retry-builder-chat',
       accepted: false,
       priority: 10,
     });
   }
-  
-  // Log exit state
+
   globalTelemetry.track({
     name: 'chat_exit_state_built',
     properties: {
@@ -351,138 +259,71 @@ export function buildChatExitState(
       modelHealth: modelHealth?.summary ?? 'none',
     },
     timestamp: Date.now(),
-    traceId: runtimeIntelligence.createTraceId(),
+    traceId: traceId(),
   });
-  
+
   return {
     messages,
     suggestions,
+    lastMessage: messages.at(-1),
     modelHealth: {
       status: result.success ? 'healthy' : modelHealth?.healthyCount ? 'healthy' : 'unknown',
       latencyMs: result.latencyMs ?? null,
       modelId: result.modelUsed ?? null,
     },
-    openHandsStatus: {
-      status: 'idle', // Would be connected to OpenHands state
-    },
+    openHandsStatus: { status: 'idle' },
   };
 }
 
-// ============================================================================
-// Error Boundary
-// ============================================================================
-
-/**
- * Chat runtime error with recovery info
- */
 export class ChatRuntimeError extends Error {
   constructor(
     message: string,
     public readonly stage: 'entry' | 'process' | 'exit',
     public readonly recoverable: boolean,
-    public readonly context?: Record<string, unknown>
+    public readonly context?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ChatRuntimeError';
   }
 }
 
-/**
- * Assert chat runtime is healthy
- */
 export function assertChatRuntimeHealthy(): void {
   const health = runtimeIntelligence.getRuntimeHealth();
-  
   if (health.status === 'red') {
-    throw new ChatRuntimeError(
-      `Runtime health is red: ${health.reasons.join(', ')}`,
-      'process',
-      false,
-      { health }
-    );
+    throw new ChatRuntimeError(`Runtime health is red: ${health.reasons.join(', ')}`, 'process', false, { health });
   }
-  
-  // Check model health specifically
+
   const modelFallback = runtimeIntelligence.getModelHealthFallbackResult();
   if (!modelFallback.proceed) {
-    throw new ChatRuntimeError(
-      `Model health not ready: ${modelFallback.reason}`,
-      'process',
-      true,
-      { modelFallback }
-    );
+    throw new ChatRuntimeError(`Model health not ready: ${modelFallback.reason}`, 'process', true, { modelFallback });
   }
 }
 
-// ============================================================================
-// Main Chat Runtime Function
-// ============================================================================
-
-/**
- * Execute full chat runtime flow: Entry → Process → Exit
- */
 export async function executeChatRuntime(
   input: string,
   history: ChatMessage[],
-  config: ChatRuntimeConfig = {}
-): Promise<{
-  success: boolean;
-  exitState?: ChatExitState;
-  error?: ChatRuntimeError;
-}> {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
-  
-  // === ENTRY ===
+  config: ChatRuntimeConfig = {},
+): Promise<{ success: boolean; exitState?: ChatExitState; error?: ChatRuntimeError }> {
+  const cfg = mergedConfig(config);
   const validation = validateChatEntry(input, cfg);
+
   if (!validation.valid) {
-    return {
-      success: false,
-      error: new ChatRuntimeError(
-        validation.errors.join(', '),
-        'entry',
-        true,
-        { validation }
-      ),
-    };
+    return { success: false, error: new ChatRuntimeError(validation.errors.join(', '), 'entry', true, { validation }) };
   }
-  
-  // Entry guard
+
   const guardResult = await checkChatEntryGuard(input);
   if (!guardResult.pass) {
-    return {
-      success: false,
-      error: new ChatRuntimeError(
-        guardResult.reason ?? 'Entry guard failed',
-        'entry',
-        true,
-        { guardResult }
-      ),
-    };
+    return { success: false, error: new ChatRuntimeError(guardResult.reason ?? 'Entry guard failed', 'entry', true, { guardResult }) };
   }
-  
-  // === PROCESS ===
-  let processResult: ChatProcessResult;
-  
+
   try {
     assertChatRuntimeHealthy();
-    processResult = await processChatMessage(validation.normalizedInput, history, cfg);
+    const processResult = await processChatMessage(validation.normalizedInput, history, cfg);
+    return { success: processResult.success, exitState: buildChatExitState(history, processResult, cfg) };
   } catch (error) {
     return {
       success: false,
-      error: new ChatRuntimeError(
-        error instanceof Error ? error.message : 'Process failed',
-        'process',
-        true,
-        { error }
-      ),
+      error: new ChatRuntimeError(error instanceof Error ? error.message : 'Process failed', 'process', true, { error }),
     };
   }
-  
-  // === EXIT ===
-  const exitState = buildChatExitState(history, processResult, cfg);
-  
-  return {
-    success: processResult.success,
-    exitState,
-  };
 }
