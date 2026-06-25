@@ -9,34 +9,34 @@ importers:
   .:
     dependencies:
       '@capacitor/app':
-        specifier: ^6.0.0
+        specifier: ^6.0.3
         version: 6.0.3(@capacitor/core@6.2.1)
       '@capacitor/browser':
-        specifier: ^6.0.0
+        specifier: ^6.0.6
         version: 6.0.6(@capacitor/core@6.2.1)
       '@capacitor/core':
-        specifier: ^6.0.0
+        specifier: ^6.2.1
         version: 6.2.1
       '@capacitor/device':
-        specifier: ^6.0.0
+        specifier: ^6.0.3
         version: 6.0.3(@capacitor/core@6.2.1)
       '@capacitor/haptics':
-        specifier: ^6.0.0
+        specifier: ^6.0.3
         version: 6.0.3(@capacitor/core@6.2.1)
       '@capacitor/keyboard':
-        specifier: ^6.0.0
+        specifier: ^6.0.4
         version: 6.0.4(@capacitor/core@6.2.1)
       '@capacitor/preferences':
-        specifier: ^6.0.0
+        specifier: ^6.0.4
         version: 6.0.4(@capacitor/core@6.2.1)
       '@capacitor/push-notifications':
-        specifier: ^6.0.0
+        specifier: ^6.0.5
         version: 6.0.5(@capacitor/core@6.2.1)
       '@capacitor/splash-screen':
-        specifier: ^6.0.0
+        specifier: ^6.0.4
         version: 6.0.4(@capacitor/core@6.2.1)
       '@capacitor/status-bar':
-        specifier: ^6.0.0
+        specifier: ^6.0.3
         version: 6.0.3(@capacitor/core@6.2.1)
       '@capgo/capacitor-native-biometric':
         specifier: ^8.4.2
@@ -63,8 +63,8 @@ importers:
         specifier: ^4.1.14
         version: 4.3.0(vite@8.0.16(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3))
       '@tanstack/react-query':
-        specifier: ^5.66.0
-        version: 5.100.14(react@19.2.6)
+        specifier: ^5.101.1
+        version: 5.101.1(react@19.2.6)
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -103,11 +103,11 @@ importers:
         version: 5.0.14(@types/react@19.2.15)(immer@11.1.8)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     devDependencies:
       '@capacitor/android':
-        specifier: ^6.0.0
+        specifier: ^6.2.1
         version: 6.2.1(@capacitor/core@6.2.1)
       '@capacitor/cli':
-        specifier: ^8.3.3
-        version: 8.3.4(supports-color@5.5.0)
+        specifier: ^8.4.1
+        version: 8.4.1(supports-color@5.5.0)
       '@capacitor/ios':
         specifier: ^6.0.0
         version: 6.2.1(@capacitor/core@6.2.1)
@@ -250,8 +250,8 @@ packages:
     peerDependencies:
       '@capacitor/core': ^6.0.0
 
-  '@capacitor/cli@8.3.4':
-    resolution: {integrity: sha512-QEmyNdiDDVNYl0Mahm7YTVA/3t2tKcy7FWYDapeKGavS6HDNHZSjyTVwQpUXQbDZrrs/PS2Wau3Aii+LIFwm/A==}
+  '@capacitor/cli@8.4.1':
+    resolution: {integrity: sha512-t7F2s7fFHCq113xgrggrmK6ctV0/8E5YfLNVLfPHp4GCTDO+tly9fZvWPf2/sOI8lMm18dLT43qbXLRTz/OZgw==}
     engines: {node: '>=22.0.0'}
     hasBin: true
 
@@ -1100,11 +1100,11 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tanstack/query-core@5.100.14':
-    resolution: {integrity: sha512-5X41dGpxgeaHISCRW2oYwcSycZeULZzAunaudXT9ov1KOTj9xwt0CH6hbwqP1/z74ZWF7rYFnDpyYH07XFcZew==}
+  '@tanstack/query-core@5.101.1':
+    resolution: {integrity: sha512-Y6Y92dkXtNqx67m2pMSxUsA3zOCwv862JexZRP8/EPwvKXMPu9m8rv43spiXWzOUIggQ3SQApttALStzhA8B4g==}
 
-  '@tanstack/react-query@5.100.14':
-    resolution: {integrity: sha512-oOr6aRdSFEwWhzxEkD/9ZcItM3+LjBSkeVmadWKwUssAHTsqd/7bOjWrX4AbvEkoEhgAxzN0Xk6H/aYzXiYBAw==}
+  '@tanstack/react-query@5.101.1':
+    resolution: {integrity: sha512-ZnONUuQKJe1bJMStXUL1s5uKN9FcfC28j5cK+iDZcdSHtUv1wtin1cGc/Oewhf2Oc4eKY7lggtpvT/AbMmhHew==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -3069,7 +3069,7 @@ snapshots:
     dependencies:
       '@capacitor/core': 6.2.1
 
-  '@capacitor/cli@8.3.4(supports-color@5.5.0)':
+  '@capacitor/cli@8.4.1(supports-color@5.5.0)':
     dependencies:
       '@ionic/cli-framework-output': 2.2.8(supports-color@5.5.0)
       '@ionic/utils-subprocess': 3.0.1(supports-color@5.5.0)
@@ -3860,11 +3860,11 @@ snapshots:
       tailwindcss: 4.3.0
       vite: 8.0.16(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3)
 
-  '@tanstack/query-core@5.100.14': {}
+  '@tanstack/query-core@5.101.1': {}
 
-  '@tanstack/react-query@5.100.14(react@19.2.6)':
+  '@tanstack/react-query@5.101.1(react@19.2.6)':
     dependencies:
-      '@tanstack/query-core': 5.100.14
+      '@tanstack/query-core': 5.101.1
       react: 19.2.6
 
   '@testing-library/dom@10.4.1':
