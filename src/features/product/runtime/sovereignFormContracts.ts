@@ -36,13 +36,7 @@ export interface SovereignFormContractReport {
 
 const FORM_DATA_ROLE_PATTERN = /^(input|textarea|select)-[a-z][a-z0-9-]*$/;
 const FORM_TEST_ID_PATTERN = /^[a-z][a-z0-9-]*__[a-z][a-z0-9-]*$/;
-const REQUIRED_FORM_IDS: SovereignFormContractId[] = [
-  'repo-url',
-  'repo-branch',
-  'private-access',
-  'mission',
-  'automation-mode',
-];
+const REQUIRED_FORM_IDS: SovereignFormContractId[] = ['repo-url', 'repo-branch', 'private-access', 'mission', 'automation-mode'];
 
 export const SOVEREIGN_FORM_REPO_URL: SovereignFormContract = {
   id: 'repo-url',
@@ -85,7 +79,7 @@ export const SOVEREIGN_FORM_MISSION: SovereignFormContract = {
   label: 'Chat Auftrag',
   dataRole: 'textarea-mission',
   testId: 'mission__textarea',
-  ariaLabel: 'Sovereign Chat Eingabe',
+  ariaLabel: 'Sovereign Chat Eingabe Ideenfabrik Wunschfeld',
   inputType: 'textarea',
   autoComplete: 'off',
   sensitive: false,
