@@ -9,7 +9,6 @@ import './runtime-adapter';
 import './index.css';
 import './styles/arelogic-brand.css';
 import './styles/sovereign-release-guide.css';
-import './styles/sovereign-playtest-ux.css';
 
 type IdleDeadlineLike = {
   didTimeout: boolean;
@@ -41,7 +40,6 @@ type MobileWindow = Window &
     __sovereignViewportRuntimeInstalled?: boolean;
     __sovereignCodeWorkspacePersistenceInstalled?: boolean;
     __sovereignReleaseGuideCommandRuntimeInstalled?: boolean;
-    __sovereignTabContentScrollRuntimeInstalled?: boolean;
   };
 
 const VIEW_CLASSES = [
@@ -57,17 +55,6 @@ const VIEW_CLASSES = [
 ] as const;
 
 const SAFE_TAB_ID = /^[a-z][a-z0-9-]*$/;
-
-const TAB_CONTENT_SELECTORS: Record<string, string> = {
-  repo: '[data-testid="repo-snapshot-container"]',
-  builder: '[data-testid="builder-container"]',
-  files: '[data-testid="generated-self-review"]',
-  diff: '[data-testid="generated-file-diff-preview__internal"]',
-  workflow: '[data-testid="workflow-container"]',
-  telemetry: '[data-testid="telemetry-container"]',
-  memory: '[data-testid="pattern-memory-container"]',
-  monitor: '[data-testid="operator-monitor"]',
-};
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/\s+/g, ' ').trim();
@@ -183,39 +170,6 @@ function findReleaseGuideTargetButton(targetTab: string): HTMLButtonElement | nu
   }) ?? null;
 }
 
-function scrollTabContentIntoView(targetTab: string): void {
-  const selector = TAB_CONTENT_SELECTORS[targetTab];
-  if (!selector) return;
-
-  window.setTimeout(() => {
-    const target = document.querySelector<HTMLElement>(selector);
-    if (!target) return;
-    target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
-  }, 120);
-}
-
-function installTabContentScrollRuntime(): void {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
-  const mobileWindow = window as MobileWindow;
-  if (mobileWindow.__sovereignTabContentScrollRuntimeInstalled) return;
-  mobileWindow.__sovereignTabContentScrollRuntimeInstalled = true;
-
-  document.addEventListener('click', (event) => {
-    const button = (event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button[data-testid^="tabbar__"]') : null);
-    const testId = button?.getAttribute('data-testid') ?? '';
-    const targetTab = testId.startsWith('tabbar__') ? testId.slice('tabbar__'.length) : '';
-    if (targetTab && SAFE_TAB_ID.test(targetTab)) scrollTabContentIntoView(targetTab);
-  });
-
-  document.addEventListener('change', (event) => {
-    const select = event.target instanceof HTMLSelectElement ? event.target : null;
-    if (select?.getAttribute('data-testid') !== 'tabbar__more-select') return;
-    const targetTab = select.value.trim();
-    if (targetTab && SAFE_TAB_ID.test(targetTab)) scrollTabContentIntoView(targetTab);
-  });
-}
-
 function activateReleaseGuideTarget(button: HTMLButtonElement, type?: ReleaseGuideCommandDetail['type']): void {
   button.classList.add('sovereign-next-step-highlight');
   window.setTimeout(() => button.classList.remove('sovereign-next-step-highlight'), 2800);
@@ -226,8 +180,6 @@ function activateReleaseGuideTarget(button: HTMLButtonElement, type?: ReleaseGui
 
   if (type !== 'confirm') {
     button.click();
-    const testId = button.getAttribute('data-testid') ?? '';
-    if (testId.startsWith('tabbar__')) scrollTabContentIntoView(testId.slice('tabbar__'.length));
   }
 }
 
@@ -333,7 +285,6 @@ function bootApp(): void {
 installIdleCallbackFallback();
 installViewportRuntime();
 installReleaseGuideCommandRuntime();
-installTabContentScrollRuntime();
 installCodeWorkspacePersistenceRuntime();
 installGlobalRuntimeMonitor();
 initPostHog();

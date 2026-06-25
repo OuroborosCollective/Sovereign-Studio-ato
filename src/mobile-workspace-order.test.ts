@@ -25,15 +25,15 @@ describe('mobile workspace order', () => {
     setViewport(390);
   });
 
-  it('places the active chat workspace directly below the installed coach without moving the nav/coach pair', () => {
+  it('places the active workspace directly below the installed coach without moving the nav/coach pair', () => {
     document.body.innerHTML = `
       <div id="root">
         <div class="min-h-screen">
           <h1>Sovereign Canvas Tool</h1>
-          <div class="nav"><button>Repo</button><button>Chat</button><button>Files</button><button>Diff</button></div>
+          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
           <section id="sovereign-mobile-coach"><div>Sovereign Bot</div></section>
           <section class="automation"><h2>Automation Mode</h2><select><option>Full Auto Draft PR</option></select></section>
-          <section class="active"><h2>Sovereign Agent · No-Code Chat Workbench</h2><textarea></textarea></section>
+          <section class="active"><h2>Sovereign Action Builder</h2><textarea></textarea></section>
           <section class="more"><h2>Mehr Bereiche: Logs, Speicher, Checks...</h2></section>
         </div>
       </div>
@@ -61,7 +61,7 @@ describe('mobile workspace order', () => {
       <div id="root">
         <div class="min-h-screen">
           <h1>Sovereign Canvas Tool</h1>
-          <div class="nav"><button>Repo</button><button>Chat</button><button>Files</button><button>Diff</button></div>
+          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
           <section id="sovereign-mobile-coach"><div>Sovereign Bot</div></section>
           <section class="automation"><h2>Automation Mode</h2><select><option>Full Auto Draft PR</option></select></section>
           <section class="active" data-testid="builder-container"><h2>Ideenfabrik · Chat Auftrag</h2><textarea></textarea></section>
@@ -84,7 +84,7 @@ describe('mobile workspace order', () => {
       <div id="root">
         <div class="min-h-screen">
           <h1>Sovereign Canvas Tool</h1>
-          <div class="nav"><button>Repo</button><button>Chat</button><button>Files</button><button>Diff</button></div>
+          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
           <section id="sovereign-mobile-coach"><div>Sovereign Bot</div></section>
           <section class="automation"><h2>Automation Mode</h2><select><option>Manual</option></select></section>
         </div>
@@ -111,8 +111,8 @@ describe('mobile workspace order', () => {
       <div id="root">
         <div class="min-h-screen">
           <h1>Sovereign Canvas Tool</h1>
-          <section class="active"><h2>Sovereign Agent · No-Code Chat Workbench</h2></section>
-          <div class="nav"><button>Repo</button><button>Chat</button><button>Files</button><button>Diff</button></div>
+          <section class="active"><h2>Sovereign Action Builder</h2></section>
+          <div class="nav"><button>Repo</button><button>Builder</button><button>Files</button><button>Diff</button></div>
           <section id="sovereign-mobile-coach"><div>Sovereign Bot</div></section>
         </div>
       </div>

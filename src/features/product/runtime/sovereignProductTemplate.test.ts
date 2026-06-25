@@ -31,9 +31,8 @@ describe('sovereign product template contract', () => {
     expect(() => assertSovereignProductTemplateValid()).not.toThrow();
   });
 
-  it('starts in the chat workbench while keeping repo in the Android primary flow', () => {
-    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('builder');
-    expect(getSovereignProductTemplateTab('builder').label).toBe('Chat');
+  it('locks the Android primary product flow to repo -> builder -> files -> diff', () => {
+    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('repo');
     expect(SOVEREIGN_PRODUCT_TEMPLATE.primaryFlow).toEqual([
       'repo',
       'builder',
@@ -73,14 +72,14 @@ describe('sovereign product template contract', () => {
     expect(canSovereignProductTemplateAutoOpen('manual')).toBe(false);
   });
 
-  it('rejects template drift away from chat-workbench startup', () => {
+  it('rejects template drift away from repo-first startup', () => {
     const broken = cloneTemplate();
-    broken.startTab = 'repo';
+    broken.startTab = 'builder';
 
     const report = validateSovereignProductTemplate(broken);
 
     expect(report.valid).toBe(false);
-    expect(report.errors.join(' | ')).toContain('Template must start in builder chat workbench tab');
+    expect(report.errors.join(' | ')).toContain('Template must start in repo tab');
   });
 
   it('rejects template drift away from the locked Android primary flow order', () => {

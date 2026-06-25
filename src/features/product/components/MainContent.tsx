@@ -1,5 +1,5 @@
-import React, { useRef, useState, useCallback } from 'react';
-import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink, Copy, Check } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Bot, CheckCircle, Loader2, Send, CircleX, ExternalLink } from 'lucide-react';
 import { FileItem, WorkView, PipelineState, ProjectSettings } from '../types';
 
 interface MainContentProps {
@@ -40,14 +40,6 @@ export const MainContent: React.FC<MainContentProps> = ({
   targetLink
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(currentCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [currentCode]);
-
   const red = pipelineState === 'failed' || pipelineState === 'blocked';
   const green = pipelineState === 'green';
   const yellow = pipelineState === 'planning' || pipelineState === 'generating' || pipelineState === 'validating' || pipelineState === 'fixing' || pipelineState === 'revalidating';
@@ -161,31 +153,11 @@ export const MainContent: React.FC<MainContentProps> = ({
         )}
 
         <div className="flex-1 min-h-[260px] rounded-xl shadow-inner overflow-hidden flex flex-col bg-stone-950 font-mono border border-stone-800">
-          <div className="h-9 bg-stone-900 border-b border-stone-800 flex items-center justify-between px-3 text-[10px] text-stone-400">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500"/>
-              <span className="w-2.5 h-2.5 rounded-full bg-yellow-500"/>
-              <span className="w-2.5 h-2.5 rounded-full bg-green-500"/>
-              <span className="ml-2">Matrix File Editor · {derivedWorking ? 'arbeitet...' : approvalConfirmed ? 'freigegeben' : 'bereit'}</span>
-            </div>
-            <button
-              onClick={handleCopy}
-              className={`flex items-center gap-1.5 transition-colors hover:text-stone-200 ${copied ? 'text-emerald-400' : ''}`}
-              aria-label="Code kopieren"
-              title="Code kopieren"
-            >
-              {copied ? (
-                <>
-                  <Check size={12} />
-                  <span>Kopiert</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={12} />
-                  <span>Kopieren</span>
-                </>
-              )}
-            </button>
+          <div className="h-9 bg-stone-900 border-b border-stone-800 flex items-center gap-2 px-3 text-[10px] text-stone-400">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500"/>
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-500"/>
+            <span className="w-2.5 h-2.5 rounded-full bg-green-500"/>
+            <span className="ml-2">Matrix File Editor · {derivedWorking ? 'arbeitet...' : approvalConfirmed ? 'freigegeben' : 'bereit'}</span>
           </div>
           <div className="flex-1 overflow-auto p-3 text-[12px] text-stone-300 whitespace-pre leading-relaxed">{currentCode.split('\n').map((line, index) => `${String(index + 1).padStart(3, ' ')} │ ${line}`).join('\n')}</div>
         </div>

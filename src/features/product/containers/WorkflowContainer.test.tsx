@@ -17,22 +17,6 @@ const report: WorkflowWatchReport = {
   fixes: [],
 };
 
-const pendingReport: WorkflowWatchReport = {
-  status: 'pending',
-  summary: '3 workflow check(s), 0 error(s), 0 warning(s). Status: pending.',
-  commitSha: 'abc123',
-  branch: 'main',
-  checkedAt: Date.now(),
-  errors: [],
-  warnings: [],
-  checks: [
-    { name: 'unit', status: 'green' as const, source: 'check-run' as const, summary: 'ok' },
-    { name: 'android', status: 'pending' as const, source: 'check-run' as const, summary: 'running' },
-    { name: 'codeql', status: 'pending' as const, source: 'check-run' as const, summary: 'running' },
-  ],
-  fixes: ['Wait for pending checks before preparing a repair package.'],
-};
-
 const repairPlan: WorkflowRepairPlan = {
   blocked: false,
   severity: 'medium',
@@ -80,26 +64,6 @@ describe('WorkflowContainer', () => {
 
     expect(screen.getByRole('button', { name: /Draft PR zuerst erstellen/i })).toBeDisabled();
     expect(screen.getByText(/Create a Draft PR before watching/i)).toBeDefined();
-  });
-
-  it('shows pending workflow status with visible check table', () => {
-    render(
-      <WorkflowContainer
-        mode="watch"
-        report={pendingReport}
-        repairPlan={repairPlan}
-        isWatching={false}
-        runtimeBusy={false}
-        hasDraftCommit={true}
-        onWatch={vi.fn()}
-        onUseRepairMission={vi.fn()}
-      />,
-    );
-
-    // Verify workflow container is rendered with pending report
-    expect(screen.getByTestId('workflow-container')).toBeDefined();
-    // Verify repair ideas section shows for pending status
-    expect(screen.getByText(/Wait for pending checks/i)).toBeDefined();
   });
 
   it('renders repair mode and emits repair mission', () => {

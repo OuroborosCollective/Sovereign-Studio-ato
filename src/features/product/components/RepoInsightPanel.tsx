@@ -129,11 +129,6 @@ function InsightGroup({
   );
 }
 
-function compactMissionPreview(mission: string): string {
-  const oneLine = mission.replace(/\s+/g, ' ').trim();
-  return oneLine.length > 260 ? `${oneLine.slice(0, 257)}...` : oneLine;
-}
-
 function RecommendedMission({
   mission,
   confidence,
@@ -163,13 +158,13 @@ function RecommendedMission({
         onClick={onClick}
         className="w-full rounded-xl border border-violet-500/30 bg-gradient-to-r from-violet-500/10 to-purple-500/10 p-4 text-left transition-all hover:border-violet-500/60 hover:from-violet-500/20 hover:to-purple-500/20 focus:border-violet-500/70 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
       >
-        <p className="sovereign-recommended-mission-text text-sm font-medium leading-relaxed text-white">{compactMissionPreview(mission)}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <p className="text-sm font-medium leading-relaxed text-white">{mission}</p>
+        <div className="mt-3 flex items-center gap-2">
           <span className="rounded-lg bg-violet-500/30 px-3 py-1.5 text-xs font-bold text-violet-200">
-            🚀 In Builder übernehmen
+            🚀 Umsetzen lassen
           </span>
           <span className="text-xs text-slate-500">
-            Übernimmt den Auftrag ohne Kopieren
+            Klicken für AI-Vorschlag
           </span>
         </div>
       </button>
@@ -240,7 +235,7 @@ export function RepoInsightPanel({
     output.featureSuggestions.length > 0;
 
   return (
-    <section className={`sovereign-repo-insight-panel mt-4 space-y-4 rounded-3xl border p-4 ${frameClass[coachLamp]}`}>
+    <section className={`mt-4 space-y-4 rounded-3xl border p-4 ${frameClass[coachLamp]}`}>
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <div
@@ -287,7 +282,7 @@ export function RepoInsightPanel({
 
       {/* Suggestions Grid */}
       {hasSuggestions ? (
-        <div className="sovereign-insight-groups grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <InsightGroup
             category="fix"
             label="🔧 Fehler & Fixes"

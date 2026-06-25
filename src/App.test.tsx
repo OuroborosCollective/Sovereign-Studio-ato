@@ -32,7 +32,7 @@ describe('App', () => {
     expect(screen.getByText(/Ohne geladenes Repository bleibt Full Auto bewusst blockiert/)).toBeDefined();
   });
 
-  it('opens the no-code chat workbench after launch while keeping repo setup available', () => {
+  it('opens the repo-first container workspace after launch', () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
@@ -40,15 +40,13 @@ describe('App', () => {
     expect(screen.getByText('Sovereign Canvas Tool')).toBeDefined();
     expect(screen.getByText('Automation Mode')).toBeDefined();
 
+    // Tab buttons now use role="tab" with aria-label for accessibility
+    // Primary tabs are visible as buttons; secondary tabs are in "Mehr Bereiche" dropdown
     expect(screen.getByRole('tab', { name: 'Open Repo tab' })).toBeDefined();
-    expect(screen.getByRole('tab', { name: 'Open Chat tab' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'Open Builder tab' })).toBeDefined();
+    // Secondary tabs (Remote Memory, Pattern Memory, Telemetry) are in the dropdown
     expect(screen.getByTestId('tabbar__more-select')).toBeDefined();
 
-    expect(screen.getByText('No-Code Chat Workbench')).toBeDefined();
-    expect(screen.getByText('Sovereign Agent')).toBeDefined();
-    expect(screen.getByPlaceholderText(/Bau mir ein cooles Feature/)).toBeDefined();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Open Repo tab' }));
     expect(screen.getByPlaceholderText('https://github.com/owner/repository')).toBeDefined();
   });
 });

@@ -60,55 +60,6 @@ describe('BuilderContainer', () => {
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Facade-Live-Pfade'));
   });
 
-  it('syncs externally adopted insight missions into the wish field', () => {
-    const props = baseProps();
-    const { rerender } = render(<BuilderContainer {...props} mission="README + Update History" />);
-
-    const adoptedMission = [
-      'Ideenfabrik Auftrag:',
-      'Verbessere mobile UX und Log-Fenster.',
-      '',
-      'Repository-Kontext:',
-      'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.',
-      '',
-      'Umsetzung:',
-      '- Erzeuge echte Änderungen im passenden Codepfad.',
-    ].join('\n');
-    rerender(<BuilderContainer {...props} mission={adoptedMission} />);
-
-    const wishField = screen.getByLabelText(/Ideenfabrik Wunschfeld/i) as HTMLTextAreaElement;
-    expect(wishField.value).toBe('Verbessere mobile UX und Log-Fenster.');
-  });
-
-  it('does not duplicate an already analyzed mission', () => {
-    const props = baseProps();
-    const analyzedMission = [
-      'Ideenfabrik Auftrag:',
-      'Ideenfabrik Auftrag:',
-      'Verbessere mobile UX und Log-Fenster.',
-      '',
-      'Repository-Kontext:',
-      'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.',
-      '',
-      'Umsetzung:',
-      '- Erzeuge echte Änderungen im passenden Codepfad.',
-      '',
-      'Repository-Kontext:',
-      'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.',
-      '',
-      'Umsetzung:',
-      '- Erzeuge echte Änderungen im passenden Codepfad.',
-    ].join('\n');
-
-    render(<BuilderContainer {...props} mission={analyzedMission} />);
-    fireEvent.click(screen.getByRole('button', { name: /Auftrag analysieren/i }));
-
-    const emittedMission = props.onMissionChange.mock.calls[0][0] as string;
-    expect(emittedMission.match(/Ideenfabrik Auftrag:/g)).toHaveLength(1);
-    expect(emittedMission.match(/Repository-Kontext:/g)).toHaveLength(1);
-    expect(emittedMission).toContain('Verbessere mobile UX und Log-Fenster.');
-  });
-
   it('keeps the production action wired to the builder generation flow', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} />);

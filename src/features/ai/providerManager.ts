@@ -13,7 +13,6 @@
 
 import { GoogleGenerativeAI, GenerationConfig } from '@google/generative-ai';
 import { GeminiRequestOptions } from './geminiService';
-import { maskSecrets } from '../../shared/utils/crypto';
 
 // Provider Types
 export type ProviderType = 'mlvoca' | 'groq' | 'huggingface' | 'together' | 'openrouter' | 'gemini' | 'pollinations';
@@ -195,7 +194,7 @@ async function fetchWithProviderError(
 
       throw {
         provider,
-        error: maskSecrets(errorMsg),
+        error: errorMsg,
         statusCode: response.status,
         isRetryable: response.status === 429 || response.status >= 500,
       };
@@ -571,7 +570,7 @@ export class ProviderManager {
 
     // All providers failed
     const errorSummary = errors.map(e => `${e.provider}: ${e.error}`).join('; ');
-    throw new Error(`All LLM providers failed: ${maskSecrets(errorSummary)}`);
+    throw new Error(`All LLM providers failed: ${errorSummary}`);
   }
 
   /**

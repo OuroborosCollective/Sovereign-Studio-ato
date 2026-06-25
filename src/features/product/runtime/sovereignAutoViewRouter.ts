@@ -251,16 +251,6 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
   if (input.activeStep) return switchTo(input, STEP_TABS[input.activeStep], `Active runtime step ${input.activeStep} owns the ${STEP_TABS[input.activeStep]} view.`);
   if (input.isPublishing) return switchTo(input, 'workflow', 'Draft PR publishing should show the workflow/log view.');
   if (input.isWatchingWorkflow) return switchTo(input, 'workflow', 'Workflow watch is running and should stay visible.');
-
-  if (input.mode === 'manual') {
-    if (input.workflowStatus === 'red') {
-      return keepCurrent(input, 'Manual mode keeps user navigation free while the coach points to repair.');
-    }
-    if (input.workflowStatus === 'pending' || input.workflowStatus === 'unknown') {
-      return keepCurrent(input, 'Manual mode keeps user navigation free while pending workflow checks continue.');
-    }
-  }
-
   if (input.workflowStatus === 'red') return switchTo(input, 'repair', 'Red workflow status should surface the repair view.');
   if (input.workflowStatus === 'pending' || input.workflowStatus === 'unknown') return switchTo(input, 'workflow', 'Non-final workflow status should stay on workflow watch.');
 

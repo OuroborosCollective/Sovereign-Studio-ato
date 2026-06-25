@@ -84,7 +84,7 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
     expect(pkg.suggestions.join('\n')).toContain('LLM source: llm-revolver via mlvoca');
   });
 
-  it('falls back to local-safe docs package only for documentation requests when LLM runtime fails', async () => {
+  it('falls back to local-safe package when LLM runtime fails', async () => {
     vi.mocked(runSovereignLlmRuntime).mockResolvedValue({
       ok: false,
       source: 'local-safe',
@@ -94,7 +94,7 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
     });
 
     const pkg = await buildSovereignPackageFromRepoFilesWithLlm({
-      mission: 'Update README documentation for the launch flow',
+      mission: 'Create a simple hello world feature',
       repoFiles: [createRepoFile('src/index.ts')],
       cards: starterCards(),
       settings: defaultSettings,
@@ -103,25 +103,6 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
     expect(pkg).toBeDefined();
     expect(pkg.files.length).toBeGreaterThan(0);
     expect(runSovereignLlmRuntime).toHaveBeenCalledTimes(1);
-  });
-
-
-
-  it('rejects local-safe fallback for env and security implementation requests', async () => {
-    vi.mocked(runSovereignLlmRuntime).mockResolvedValue({
-      ok: false,
-      source: 'local-safe',
-      providerId: 'local-safe',
-      attempts: [{ providerId: 'mlvoca', status: 'failed', message: 'network failed' }],
-      error: 'All providers failed.',
-    });
-
-    await expect(buildSovereignPackageFromRepoFilesWithLlm({
-      mission: 'Behebe Env Datei und Sicherheitsrisiken mit echten Code-Änderungen',
-      repoFiles: [createRepoFile('src/index.ts'), createRepoFile('.github/workflows/ci.yml'), createRepoFile('.env.example')],
-      cards: starterCards(),
-      settings: defaultSettings,
-    })).rejects.toThrow('VALIDATION_FAILED_LLM_REQUIRED');
   });
 
   it('rejects placeholder missions before firing LLM runtime', async () => {

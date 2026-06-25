@@ -161,7 +161,7 @@ export function deriveReleaseGuideState(input: ReleaseGuideInput): ReleaseGuideS
     mood: input.thinking ? '🤖💭' : input.lamp === 'green' ? '😊✨' : input.lamp === 'yellow' ? '🙂🔎' : '🛟⚠️',
     targetTab,
     previousTab: targetTab ? PREVIOUS_TAB[targetTab] ?? 'repo' : 'repo',
-    nextLabel: targetTab ? 'Weiter' : 'Weiter noch gesperrt',
+    nextLabel: targetTab ? `Weiter zu ${targetTab}` : 'Weiter noch gesperrt',
     nextEnabled,
     confirmLabel: progress >= 100 ? 'Abschluss bestätigen' : 'Schritt bestätigen',
     waitingReason: nextEnabled ? '' : 'Noch kein sicherer nächster Schritt verfügbar.',

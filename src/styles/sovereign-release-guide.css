@@ -24,7 +24,6 @@
   font-size: 0.72rem;
   font-weight: 700;
   margin: 0.18rem 0 0;
-  overflow-wrap: anywhere;
 }
 
 .sovereign-helper-panel {
@@ -44,19 +43,12 @@
   color: rgb(224, 242, 254);
   font-size: 0.84rem;
   line-height: 1.4;
-  overflow-wrap: anywhere;
 }
 
 .sovereign-helper-copy span {
   color: rgb(148, 163, 184);
   font-size: 0.72rem;
   margin-top: 0.24rem;
-  overflow-wrap: anywhere;
-}
-
-.sovereign-auto-advance-hint {
-  color: rgb(103, 232, 249) !important;
-  font-weight: 900;
 }
 
 .sovereign-monitor-progress {
@@ -70,7 +62,6 @@
   font-size: 0.72rem;
   gap: 0.75rem;
   justify-content: space-between;
-  min-width: 0;
 }
 
 .sovereign-monitor-progress-head strong {
@@ -94,18 +85,18 @@
 }
 
 .sovereign-guide-actions {
-  block-size: auto !important;
-  clip: auto !important;
-  clip-path: none !important;
-  display: grid !important;
-  gap: 0.5rem !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  inline-size: auto !important;
-  margin-top: 0.75rem !important;
-  opacity: 1 !important;
-  overflow: visible !important;
-  pointer-events: auto !important;
-  position: static !important;
+  block-size: 1px;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1fr;
+  inline-size: 1px;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
 }
 
 .sovereign-guide-button {
@@ -117,7 +108,6 @@
   font-weight: 900;
   min-height: 2.4rem;
   padding: 0.45rem 0.65rem;
-  touch-action: manipulation;
 }
 
 .sovereign-guide-button-primary {
@@ -129,14 +119,6 @@
 .sovereign-guide-button:disabled,
 .sovereign-guide-button[aria-disabled="true"] {
   opacity: 0.48;
-}
-
-.sovereign-guide-button:focus-visible,
-.sovereign-monitor-filter-row button:focus-visible,
-.sovereign-health-repair-panel button:focus-visible,
-.sovereign-monitor-toggle:focus-visible {
-  outline: 2px solid rgba(103, 232, 249, 0.86);
-  outline-offset: 2px;
 }
 
 .sovereign-monitor-pill,
@@ -154,319 +136,25 @@
 }
 
 .sovereign-monitor-toggle:not([data-state="locked-open"]) {
-  align-items: center;
-  border: 1px solid rgba(34, 211, 238, 0.28) !important;
-  border-radius: 999px;
-  background: rgba(8, 47, 73, 0.54);
-  color: rgb(207, 250, 254);
-  display: inline-flex;
-  font-size: 0.78rem;
-  font-weight: 900;
-  justify-content: center;
-  min-height: 2.15rem;
-  padding: 0.45rem 0.75rem !important;
-  white-space: nowrap;
+  block-size: 1px !important;
+  border: 0 !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  inline-size: 1px !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  white-space: nowrap !important;
 }
 
 .sovereign-next-step-highlight {
   border-color: rgba(34, 211, 238, 0.9);
-  box-shadow:
-    0 0 0 1px rgba(34, 211, 238, 0.42),
-    0 0 24px rgba(34, 211, 238, 0.3);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.42), 0 0 24px rgba(34, 211, 238, 0.3);
 }
 
 .sovereign-app-title {
   margin-block-start: 0.75rem;
 }
-
-/* Android workbench: fixed three zones without turning runtime state into UI fiction. */
-#sovereign-global-runtime-monitor-root {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  background: linear-gradient(
-    180deg,
-    rgb(2, 6, 23) 0%,
-    rgba(2, 6, 23, 0.9) 88%,
-    transparent 100%
-  );
-  padding-bottom: 0.35rem;
-}
-
-.sovereign-global-monitor {
-  max-height: clamp(18rem, 42vh, 26rem);
-  max-height: clamp(18rem, 42svh, 26rem);
-  overflow: hidden;
-}
-
-.sovereign-monitor-body {
-  max-height: clamp(10rem, 28vh, 18rem);
-  max-height: clamp(10rem, 28svh, 18rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 0.1rem;
-  -webkit-overflow-scrolling: touch;
-}
-
-.sovereign-monitor-log-shell {
-  margin-top: 0.72rem;
-}
-
-.sovereign-monitor-filter-row {
-  display: flex;
-  gap: 0.4rem;
-  overflow-x: auto;
-  padding-bottom: 0.35rem;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.sovereign-monitor-filter-row::-webkit-scrollbar {
-  display: none;
-}
-
-.sovereign-monitor-filter-row button,
-.sovereign-health-repair-panel button {
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.78);
-  color: rgb(203, 213, 225);
-  flex: 0 0 auto;
-  font-size: 0.72rem;
-  font-weight: 900;
-  min-height: 2rem;
-  padding: 0.34rem 0.68rem;
-  touch-action: manipulation;
-}
-
-.sovereign-monitor-filter-row button[data-state="active"] {
-  border-color: rgba(34, 211, 238, 0.62);
-  background: rgba(8, 47, 73, 0.82);
-  color: rgb(236, 254, 255);
-}
-
-.sovereign-monitor-log {
-  max-height: clamp(7rem, 18vh, 11rem);
-  max-height: clamp(7rem, 18svh, 11rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.sovereign-health-repair-panel {
-  border: 1px solid rgba(251, 113, 133, 0.32);
-  border-radius: 0.9rem;
-  background: rgba(127, 29, 29, 0.18);
-  color: rgb(254, 226, 226);
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 0.72rem;
-  padding: 0.72rem;
-}
-
-.sovereign-health-repair-panel strong,
-.sovereign-health-repair-panel span {
-  display: block;
-}
-
-.sovereign-health-repair-panel strong {
-  font-size: 0.78rem;
-  font-weight: 900;
-}
-
-.sovereign-health-repair-panel span {
-  color: rgb(254, 202, 202);
-  font-size: 0.72rem;
-  overflow-wrap: anywhere;
-}
-
-.sovereign-health-repair-panel div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.sovereign-repo-insight-panel,
-.sovereign-builder-compact {
-  scroll-margin-top: 1rem;
-}
-
-.sovereign-insight-groups {
-  max-height: clamp(16rem, 42vh, 26rem);
-  max-height: clamp(16rem, 42svh, 26rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 0.15rem;
-  -webkit-overflow-scrolling: touch;
-}
-
-.sovereign-recommended-mission-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 6;
-  overflow: hidden;
-}
-
-.sovereign-builder-mission-output {
-  max-height: clamp(9rem, 28vh, 15rem);
-  max-height: clamp(9rem, 28svh, 15rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Android phone layout */
-@media (max-width: 767px) {
-  body {
-    overflow-y: auto;
-  }
-
-  #sovereign-global-runtime-monitor-root {
-    padding-top: max(0.45rem, var(--safe-top, env(safe-area-inset-top, 0px)));
-  }
-
-  .sovereign-global-monitor {
-    border-radius: 1.1rem;
-    margin-bottom: 0.55rem;
-    max-height: clamp(16rem, 44vh, 24rem);
-    max-height: clamp(16rem, 44svh, 24rem);
-    padding: 0.72rem;
-  }
-
-  .sovereign-monitor-head {
-    align-items: center;
-  }
-
-  .sovereign-monitor-status,
-  .sovereign-helper-panel {
-    padding: 0.68rem;
-  }
-
-  .sovereign-guide-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    position: sticky !important;
-    bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 0.35rem) !important;
-    z-index: 5;
-    border: 1px solid rgba(34, 211, 238, 0.16);
-    border-radius: 999px;
-    background: rgba(2, 6, 23, 0.9);
-    padding: 0.35rem;
-  }
-
-  .sovereign-guide-button {
-    border-radius: 999px;
-    min-height: 2.2rem;
-    padding-inline: 0.45rem;
-  }
-
-  .sovereign-monitor-log {
-    max-height: clamp(6rem, 16vh, 9rem);
-    max-height: clamp(6rem, 16svh, 9rem);
-  }
-
-  .sovereign-insight-groups {
-    max-height: clamp(13rem, 36vh, 20rem);
-    max-height: clamp(13rem, 36svh, 20rem);
-  }
-}
-
-/* Very small Android phone safety */
-@media (max-width: 420px) {
-  .sovereign-guide-actions {
-    gap: 0.35rem !important;
-    padding: 0.28rem;
-  }
-
-  .sovereign-guide-button {
-    font-size: 0.68rem;
-    min-height: 2.15rem;
-    padding-inline: 0.32rem;
-  }
-
-  .sovereign-helper-avatar {
-    height: 2.2rem;
-    width: 2.2rem;
-  }
-
-  .sovereign-helper-copy strong {
-    font-size: 0.78rem;
-  }
-
-  .sovereign-helper-copy span,
-  .sovereign-helper-subtitle {
-    font-size: 0.68rem;
-  }
-}
-
-/* Android tablet / Samsung Tab A9 tuning */
-@media (min-width: 768px) and (max-width: 1024px) and (hover: none) and (pointer: coarse) {
-  #sovereign-global-runtime-monitor-root {
-    padding-top: max(0.35rem, var(--safe-top, env(safe-area-inset-top, 0px)));
-  }
-
-  .sovereign-global-monitor {
-    border-radius: 1.15rem;
-    max-height: clamp(15rem, 38vh, 23rem);
-    max-height: clamp(15rem, 38svh, 23rem);
-    padding: 0.78rem;
-  }
-
-  .sovereign-monitor-body {
-    max-height: clamp(9rem, 25vh, 16rem);
-    max-height: clamp(9rem, 25svh, 16rem);
-  }
-
-  .sovereign-monitor-log {
-    max-height: clamp(6rem, 15vh, 10rem);
-    max-height: clamp(6rem, 15svh, 10rem);
-  }
-
-  .sovereign-guide-actions {
-    gap: 0.58rem !important;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  }
-
-  .sovereign-guide-button {
-    font-size: 0.78rem;
-    min-height: 2.55rem;
-    padding: 0.5rem 0.7rem;
-  }
-
-  .sovereign-monitor-toggle:not([data-state="locked-open"]),
-  .sovereign-monitor-pill {
-    min-height: 2.4rem;
-  }
-
-  .sovereign-insight-groups {
-    max-height: clamp(14rem, 36vh, 23rem);
-    max-height: clamp(14rem, 36svh, 23rem);
-  }
-
-  .sovereign-builder-mission-output {
-    max-height: clamp(8rem, 24vh, 14rem);
-    max-height: clamp(8rem, 24svh, 14rem);
-  }
-}
-
-/* Android tablet landscape safety */
-@media (min-width: 768px) and (max-width: 1180px) and (orientation: landscape) and (hover: none) and (pointer: coarse) {
-  .sovereign-global-monitor {
-    max-height: clamp(12rem, 46vh, 20rem);
-    max-height: clamp(12rem, 46svh, 20rem);
-  }
-
-  .sovereign-monitor-body {
-    max-height: clamp(7rem, 27vh, 13rem);
-    max-height: clamp(7rem, 27svh, 13rem);
-  }
-
-  .sovereign-monitor-log {
-    max-height: clamp(5rem, 16vh, 8rem);
-    max-height: clamp(5rem, 16svh, 8rem);
-  }
-
-  .sovereign-insight-groups {
-    max-height: clamp(11rem, 39vh, 18rem);
-    max-height: clamp(11rem, 39svh, 18rem);
-  }
-    }

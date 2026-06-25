@@ -1,6 +1,5 @@
 import { geminiService } from "./geminiService";
 import { callMlvoCa, callGroq, callHuggingFace, callTogether, type ProviderType } from "./providerManager";
-import { maskSecrets } from "../../shared/utils/crypto";
 
 export interface RepoFile {
   path: string;
@@ -75,7 +74,7 @@ VERBESSERUNGSVORSCHLÄGE:
     usedProvider = 'mlvoca';
   } catch (mlvocaError: any) {
     const errorMsg = mlvocaError?.message || String(mlvocaError);
-    onProviderSwitch?.('mlvoca', 'gemini', maskSecrets(errorMsg));
+    onProviderSwitch?.('mlvoca', 'gemini', errorMsg);
   }
 
   // Priority 2: Try Gemini if key is provided
@@ -89,7 +88,7 @@ VERBESSERUNGSVORSCHLÄGE:
       usedProvider = 'gemini';
     } catch (geminiError: any) {
       const errorMsg = geminiError?.message || String(geminiError);
-      onProviderSwitch?.('gemini', 'groq', maskSecrets(errorMsg));
+      onProviderSwitch?.('gemini', 'groq', errorMsg);
     }
   }
 
@@ -103,7 +102,7 @@ VERBESSERUNGSVORSCHLÄGE:
       rawText = response.text;
       usedProvider = 'groq';
     } catch (err: any) {
-      onProviderSwitch?.('groq', 'huggingface', maskSecrets(err?.message || String(err)));
+      onProviderSwitch?.('groq', 'huggingface', err?.message || String(err));
     }
   }
 
@@ -117,7 +116,7 @@ VERBESSERUNGSVORSCHLÄGE:
       rawText = response.text;
       usedProvider = 'huggingface';
     } catch (err: any) {
-      onProviderSwitch?.('huggingface', 'together', maskSecrets(err?.message || String(err)));
+      onProviderSwitch?.('huggingface', 'together', err?.message || String(err));
     }
   }
 
@@ -131,7 +130,7 @@ VERBESSERUNGSVORSCHLÄGE:
       rawText = response.text;
       usedProvider = 'together';
     } catch (err: any) {
-      onProviderSwitch?.('together', 'mlvoca', maskSecrets(err?.message || String(err)));
+      onProviderSwitch?.('together', 'mlvoca', err?.message || String(err));
     }
   }
 
