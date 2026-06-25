@@ -116,6 +116,12 @@ function unique(values: readonly string[]): string[] {
   return Array.from(new Set(values));
 }
 
+export function getSovereignFormContract(id: SovereignFormContractId): SovereignFormContract {
+  const contract = SOVEREIGN_FORM_CONTRACTS.find((candidate) => candidate.id === id);
+  if (!contract) throw new Error(`Unknown Sovereign form contract: ${id}`);
+  return contract;
+}
+
 export function validateSovereignFormContracts(contracts: SovereignFormContract[] = SOVEREIGN_FORM_CONTRACTS): SovereignFormContractReport {
   const errors: string[] = [];
   const warnings: string[] = [];
