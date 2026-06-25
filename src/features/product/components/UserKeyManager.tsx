@@ -268,6 +268,7 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
                       onClick={() => toggleShowKey(provider.id)}
                       className="btn-icon"
                       title={showKeys[provider.id] ? 'Verbergen' : 'Anzeigen'}
+                      aria-label={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
                     >
                       {showKeys[provider.id] ? '🙈' : '👁️'}
                     </button>
@@ -277,6 +278,7 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
                         onClick={() => clearKey(provider.id)}
                         className="btn-icon btn-clear"
                         title="Key löschen"
+                        aria-label="Key löschen"
                       >
                         🗑️
                       </button>
@@ -309,7 +311,7 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
             onClick={handleSaveKeys}
             className="btn-save"
           >
-            💾 Keys spepeichern
+            💾 Keys speichern
           </button>
         </div>
 
