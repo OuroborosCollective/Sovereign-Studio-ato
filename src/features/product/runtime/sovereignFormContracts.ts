@@ -95,10 +95,10 @@ export const SOVEREIGN_FORM_PRIVATE_ACCESS: SovereignFormContract = {
  */
 export const SOVEREIGN_FORM_MISSION: SovereignFormContract = {
   id: 'mission',
-  label: 'Mission',
+  label: 'Chat Auftrag',
   dataRole: 'textarea-mission',
   testId: 'mission__textarea',
-  ariaLabel: 'Ideenfabrik Wunschfeld',
+  ariaLabel: 'Sovereign Chat Eingabe',
   inputType: 'textarea',
   autoComplete: 'off',
   sensitive: false,
