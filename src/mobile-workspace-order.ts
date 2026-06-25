@@ -16,6 +16,8 @@ const ACTIVE_TITLES = [
   'repository snapshot',
   'github repo setup',
   'sovereign action builder',
+  'sovereign agent',
+  'no-code chat workbench',
   'ideenfabrik',
   'chat auftrag',
   'generated files review',
@@ -67,9 +69,10 @@ function isPrimaryNav(element: Element): boolean {
   if (element.closest(`#${COACH_ID}`)) return false;
   const text = norm(element.textContent ?? '');
   const buttons = Array.from(element.querySelectorAll('button')).map((button) => norm(button.textContent ?? ''));
-  const hasMainButtons = ['repo', 'builder', 'files', 'diff'].every((label) => buttons.includes(label));
+  const hasMainButtons = ['repo', 'chat', 'files', 'diff'].every((label) => buttons.includes(label))
+    || ['repo', 'builder', 'files', 'diff'].every((label) => buttons.includes(label));
   const hasLocalizedCoachButtons = ['repo', 'planen', 'dateien', 'logs'].every((label) => buttons.includes(label));
-  return hasMainButtons || hasLocalizedCoachButtons || element.getAttribute('data-role') === 'primary-nav' || text === 'repo builder files diff';
+  return hasMainButtons || hasLocalizedCoachButtons || element.getAttribute('data-role') === 'primary-nav' || text === 'repo chat files diff' || text === 'repo builder files diff';
 }
 
 function isAutomationPanel(element: Element): boolean {
