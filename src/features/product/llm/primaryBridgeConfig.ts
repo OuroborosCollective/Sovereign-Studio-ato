@@ -27,16 +27,21 @@ export interface PrimaryBridgeConfig {
   routeName: string;
   upstreamUrl: string;
   proxyUrl: string;
+  proxyKey: string;
   model: string;
   ready: boolean;
   reason: string;
 }
 
-export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model?: string } = {}): PrimaryBridgeConfig {
+export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model?: string; proxyKey?: string } = {}): PrimaryBridgeConfig {
   const proxyUrl = overrides.proxyUrl?.trim()
     || readWindowOverride('__SOVEREIGN_LLM_PROXY_URL__')
     || readBuildEnv('VITE_SOVEREIGN_LLM_PROXY_URL')
     || DEFAULT_PROXY_URL;
+  const proxyKey = overrides.proxyKey?.trim()
+    || readWindowOverride('__SOVEREIGN_LLM_PROXY_KEY__')
+    || readBuildEnv('VITE_SOVEREIGN_LLM_PROXY_KEY')
+    || '';
   const model = overrides.model?.trim()
     || readWindowOverride('__SOVEREIGN_LLM_MODEL__')
     || readBuildEnv('VITE_SOVEREIGN_LLM_MODEL')
@@ -47,6 +52,7 @@ export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model
     routeName: ROUTE_NAME,
     upstreamUrl: DEFAULT_URL,
     proxyUrl,
+    proxyKey,
     model,
     ready: proxyUrl.length > 0,
     reason: proxyUrl.length > 0
