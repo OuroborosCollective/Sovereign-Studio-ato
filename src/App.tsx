@@ -1,5 +1,5 @@
 import './runtime-adapter';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { buildGitHubHeaders, stripTokenFromText } from './features/github/githubAuthSession';
 import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
@@ -267,42 +267,46 @@ const App: React.FC = () => {
     publishSetupStateToWindow(setupState);
   }, [setupState]);
 
-  const safeRepoFiles = Array.isArray(repoFiles) ? repoFiles : [];
-  const safeDiffSources = Array.isArray(diffSources) ? diffSources : [];
+  // ⚡ Bolt: Memoize safe arrays to prevent redundant recalculations in dependent hooks
+  const safeRepoFiles = useMemo(() => Array.isArray(repoFiles) ? repoFiles : [], [repoFiles]);
+  const safeDiffSources = useMemo(() => Array.isArray(diffSources) ? diffSources : [], [diffSources]);
   const runtimeBusy = Boolean(sequentialRuntime.activeStep);
   const currentMission = normalizeMission(mission);
-  const packageInputKey = buildAutomationRunKey({
+
+  // ⚡ Bolt: Memoize expensive derived state and orchestration keys to prevent lag during mission input
+  // and redundant processing during automation runs.
+  const packageInputKey = useMemo(() => buildAutomationRunKey({
     mode: 'manual',
     repoUrl,
     repoBranch,
     mission: currentMission,
     repoFileCount: safeRepoFiles.length,
-  });
-  const automationRunKey = buildAutomationRunKey({
+  }), [repoUrl, repoBranch, currentMission, safeRepoFiles.length]);
+  const automationRunKey = useMemo(() => buildAutomationRunKey({
     mode: automationMode,
     repoUrl,
     repoBranch,
     mission: currentMission,
     repoFileCount: safeRepoFiles.length,
-  });
+  }), [automationMode, repoUrl, repoBranch, currentMission, safeRepoFiles.length]);
   const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
-  const latestGeneratedReview = lastPackage ? reviewGeneratedFiles(lastPackage.files) : null;
-  const diffReport = lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, safeDiffSources) : null;
-  const repairPlan = buildWorkflowRepairPlan(workflowReport);
-  const healthReport = buildSovereignHealthReport({
+  const latestGeneratedReview = useMemo(() => lastPackage ? reviewGeneratedFiles(lastPackage.files) : null, [lastPackage]);
+  const diffReport = useMemo(() => lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, safeDiffSources) : null, [lastPackage, safeDiffSources]);
+  const repairPlan = useMemo(() => buildWorkflowRepairPlan(workflowReport), [workflowReport]);
+  const healthReport = useMemo(() => buildSovereignHealthReport({
     repoFiles: safeRepoFiles,
     generatedFileReview: latestGeneratedReview,
     workflowWatch: workflowReport,
     telemetry,
-  });
-  const coverageReport = buildRuntimeValidationCoverageReport();
-  const solutionPatternHints = formatSolutionPatternHints(solutionPatternStore);
-  const activePatternCount = Array.isArray(solutionPatternStore.patterns)
+  }), [safeRepoFiles, latestGeneratedReview, workflowReport, telemetry]);
+  const coverageReport = useMemo(() => buildRuntimeValidationCoverageReport(), []);
+  const solutionPatternHints = useMemo(() => formatSolutionPatternHints(solutionPatternStore), [solutionPatternStore]);
+  const activePatternCount = useMemo(() => Array.isArray(solutionPatternStore.patterns)
     ? solutionPatternStore.patterns.filter((pattern) => pattern.status === 'active').length
-    : 0;
+    : 0, [solutionPatternStore.patterns]);
 
   // Coach-State aus echtem Runtime ableiten - für mobile-operator-coach
-  const coachState = deriveCoachStateFromRuntime(
+  const coachState = useMemo(() => deriveCoachStateFromRuntime(
     sequentialRuntime,
     repoSnapshotStatus.ready,
     Boolean(lastPackage),
@@ -310,12 +314,13 @@ const App: React.FC = () => {
     isPublishing,
     isWatchingWorkflow,
     activePatternCount > 0
-  );
+  ), [sequentialRuntime, repoSnapshotStatus.ready, lastPackage, workflowReport?.status, isPublishing, isWatchingWorkflow, activePatternCount]);
 
   // Expose Coach-State für mobile-operator-coach
   useCoachRuntimeBridge({ coachState });
 
-  const pushTelemetry = (
+  // ⚡ Bolt: Stabilize telemetry callback identity to prevent cascading re-renders in diagnostic components
+  const pushTelemetry = useCallback((
     stage: Parameters<typeof createTelemetryEvent>[0],
     level: Parameters<typeof createTelemetryEvent>[1],
     label: string,
@@ -323,7 +328,7 @@ const App: React.FC = () => {
     details?: Parameters<typeof createTelemetryEvent>[4],
   ) => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
-  };
+  }, [setTelemetry]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
