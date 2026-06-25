@@ -67,7 +67,7 @@ describe('current Sovereign app shell contract', () => {
 
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    const parseSafeCommand = String.raw`npm run build:web\\nnpx cap sync android`;
+    const parseSafeCommand = String.raw`npm run build:web\nnpx cap sync android`;
     const unsafeCommand = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
 
     expect(releaseFix).toContain(parseSafeCommand);
@@ -82,7 +82,7 @@ describe('current Sovereign app shell contract', () => {
     expectContainsAll(app, REQUIRED_CONTAINER_TOKENS);
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
     expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
-    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('repo');
+    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('builder');
   });
 
   it('keeps the Android shell mobile-only and landscape safe', () => {
