@@ -1,5 +1,13 @@
+type WorkersAiBinding = {
+  run(model: string, input: unknown): Promise<unknown>;
+};
+
+type WorkerFetchHandler<BindingEnv> = {
+  fetch(request: Request, env: BindingEnv): Promise<Response> | Response;
+};
+
 export interface Env {
-  AI: Ai;
+  AI: WorkersAiBinding;
   DEFAULT_MODEL?: string;
   OPENHANDS_PROXY_KEY?: string;
 }
@@ -102,7 +110,7 @@ async function chatComplete(request: Request, env: Env): Promise<Response> {
     }
 
     // Call Workers AI with messages
-    const result = await env.AI.run(model as any, { messages });
+    const result = await env.AI.run(model, { messages });
     const content = typeof result === "object" && result && "response" in result
       ? String((result as { response?: unknown }).response || "")
       : JSON.stringify(result);
@@ -215,7 +223,7 @@ async function responsesAPI(request: Request, env: Env): Promise<Response> {
     }
 
     // Call Workers AI
-    const result = await env.AI.run(model as any, { 
+    const result = await env.AI.run(model, { 
       messages: [{ role: "user", content: inputText }] 
     });
     
@@ -307,4 +315,4 @@ export default {
 
     return json({ error: { message: "Method not allowed" } }, 405);
   },
-} satisfies ExportedHandler<Env>;
+} satisfies WorkerFetchHandler<Env>;
