@@ -24,6 +24,9 @@ interface Env {
   
   // Optional: Allowed models (comma-separated)
   ALLOWED_MODELS?: string;
+
+  // Optional: Proxy API Key for authentication
+  PROXY_API_KEY?: string;
 }
 
 interface ChatMessage {
@@ -148,6 +151,25 @@ function checkRateLimit(clientId: string, limit: number): boolean {
   
   record.count++;
   return true;
+}
+
+/**
+ * Redacts sensitive credentials from strings.
+ */
+function maskSecrets(text: string): string {
+  if (!text) return text;
+  let masked = text;
+  // GitHub
+  masked = masked.replace(/(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9_]{8,100}/g, '$1_****');
+  masked = masked.replace(/github_pat_[a-zA-Z0-9_]{20,200}/g, 'github_pat_****');
+  // Google
+  masked = masked.replace(/AIzaSy[a-zA-Z0-9_-]{30,50}/g, 'AIzaSy****');
+  // AI keys
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,120}/g, 'sk-****');
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,120}/g, 'gsk_****');
+  // Bearer
+  masked = masked.replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer ****');
+  return masked;
 }
 
 function getClientId(request: Request): string {
@@ -360,6 +382,19 @@ function isModelAllowed(model: string, env: Env): boolean {
 }
 
 /**
+ * Simple authentication check
+ */
+function validateAuth(request: Request, env: Env): boolean {
+  if (!env.PROXY_API_KEY) {
+    return true; // No auth required if secret not set
+  }
+  const authHeader = request.headers.get('Authorization');
+  const apiKeyHeader = request.headers.get('X-API-Key');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : apiKeyHeader;
+  return token === env.PROXY_API_KEY;
+}
+
+/**
  * Handle chat completions endpoint
  */
 async function handleChatCompletions(request: Request, env: Env): Promise<Response> {
@@ -478,7 +513,7 @@ async function handleChatCompletions(request: Request, env: Env): Promise<Respon
     console.error('Chat completion error:', error);
     return new Response(JSON.stringify({
       error: {
-        message: error instanceof Error ? error.message : 'Internal server error',
+        message: error instanceof Error ? maskSecrets(error.message) : 'Internal server error',
         type: 'server_error',
       },
     }), {
@@ -638,10 +673,22 @@ export default {
     }
     
     if (url.pathname === '/v1/models' && request.method === 'GET') {
+      if (!validateAuth(request, env)) {
+        return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       return handleModels(env);
     }
     
     if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
+      if (!validateAuth(request, env)) {
+        return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       return handleChatCompletions(request, env);
     }
     

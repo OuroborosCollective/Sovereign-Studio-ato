@@ -256,7 +256,11 @@ export function selectFallbackModel(
   }
 
   // Fallback strategies for degraded/no models
-  switch (config.primaryStrategy) {
+  const strategy = (healthyModels.length === 0 && degradedModels.length > 0 && config.primaryStrategy !== 'block')
+    ? config.degradedStrategy
+    : config.primaryStrategy;
+
+  switch (strategy) {
     case 'block': {
       // Check cache
       if (isCachedModelValid(state, config)) {

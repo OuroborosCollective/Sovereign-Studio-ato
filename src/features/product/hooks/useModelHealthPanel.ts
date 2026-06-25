@@ -86,6 +86,9 @@ export function useModelHealthPanel(
   );
   const bestModel = useMemo(() => getBestModel(), [getBestModel]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _unused = hasAvailableModel();
+
   const onRefresh = useCallback(() => {
     checkNow();
   }, [checkNow]);
@@ -98,7 +101,7 @@ export function useModelHealthPanel(
     healthyCount,
     degradedCount,
     unknownCount,
-    hasAvailableModel,
+    hasAvailableModel: hasAvailableModel(),
     bestModel,
   };
 }

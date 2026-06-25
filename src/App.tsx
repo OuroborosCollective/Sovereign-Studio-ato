@@ -1329,7 +1329,7 @@ const App: React.FC = () => {
         </SovereignTabErrorBoundary>
       ) : null}
 
-      {activeTab === 'chat' ? (
+      {(activeTab as string) === 'chat' ? (
         <SovereignTabErrorBoundary tabId="chat" tabLabel="Chat AI">
           <ChatRuntimePanel />
         </SovereignTabErrorBoundary>

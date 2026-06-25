@@ -24,7 +24,7 @@
  * └─────────────────────────────────────────────────────────────┘
  */
 
-import { runtimeIntelligence, globalTelemetry } from '../../../runtime/RuntimeIntelligence';
+import { runtimeIntelligence, globalTelemetry, RuntimeIntelligence } from '../../../runtime/RuntimeIntelligence';
 
 // ============================================================================
 // Types
@@ -147,7 +147,7 @@ export function validateChatEntry(
       errors,
     },
     timestamp: Date.now(),
-    traceId: runtimeIntelligence.createTraceId(),
+    traceId: RuntimeIntelligence.createTraceId(),
   });
   
   return {
@@ -200,7 +200,13 @@ export async function checkChatEntryGuard(input: string): Promise<{ pass: boolea
  */
 export function getChatModel(): { modelId: string; modelName: string; latencyMs: number | null } | null {
   const model = runtimeIntelligence.getBestAvailableModel();
-  if (model) return model;
+  if (model) {
+    return {
+      modelId: model.id,
+      modelName: model.name,
+      latencyMs: model.latencyMs,
+    };
+  }
   
   // Fallback to cached model
   const fallback = runtimeIntelligence.getModelHealthFallbackResult();
@@ -251,7 +257,7 @@ export async function processChatMessage(
         historyLength: history.length,
       },
       timestamp: Date.now(),
-      traceId: runtimeIntelligence.createTraceId(),
+      traceId: RuntimeIntelligence.createTraceId(),
     });
     
     // Simulate processing (actual LLM call would go here)
@@ -287,7 +293,7 @@ export async function processChatMessage(
         latencyMs,
       },
       timestamp: Date.now(),
-      traceId: runtimeIntelligence.createTraceId(),
+      traceId: RuntimeIntelligence.createTraceId(),
     });
     
     return {
@@ -351,7 +357,7 @@ export function buildChatExitState(
       modelHealth: modelHealth?.summary ?? 'none',
     },
     timestamp: Date.now(),
-    traceId: runtimeIntelligence.createTraceId(),
+    traceId: RuntimeIntelligence.createTraceId(),
   });
   
   return {

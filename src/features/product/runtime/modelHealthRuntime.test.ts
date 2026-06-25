@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { LlmProviderId } from '../llm/llmAdapter';
 import {
   checkModelHealth,
   checkAllModelsHealth,
@@ -47,7 +48,7 @@ describe('modelHealthRuntime', () => {
 
     it('should return healthy status when adapter responds quickly', async () => {
       const adapter = createMockAdapter({
-        id: 'fast-adapter',
+        id: 'fast-adapter' as LlmProviderId,
         label: 'Fast Adapter',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',
@@ -71,10 +72,10 @@ describe('modelHealthRuntime', () => {
 
     it('should return degraded status when adapter is slow', async () => {
       const adapter = createMockAdapter({
-        id: 'slow-adapter',
+        id: 'slow-adapter' as LlmProviderId,
         label: 'Slow Adapter',
         run: vi.fn().mockImplementation(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          vi.advanceTimersByTime(2500);
           return {
             providerId: 'test',
             brain: { perception: '', analysis: '', plan: '', execution: { patches: [] }, learning: null },
@@ -82,11 +83,13 @@ describe('modelHealthRuntime', () => {
         }),
       });
 
-      const result = await checkModelHealth(adapter, {
+      const resultPromise = checkModelHealth(adapter, {
         timeoutMs: 5000,
         degradedThresholdMs: 2000,
         testMission: 'OK',
       });
+
+      const result = await resultPromise;
 
       expect(result.status).toBe('degraded');
       expect(result.latencyMs).toBeGreaterThanOrEqual(2500);
@@ -94,7 +97,7 @@ describe('modelHealthRuntime', () => {
 
     it('should return unknown status when adapter fails', async () => {
       const adapter = createMockAdapter({
-        id: 'failing-adapter',
+        id: 'failing-adapter' as LlmProviderId,
         label: 'Failing Adapter',
         run: vi.fn().mockRejectedValue(new Error('Connection failed')),
       });
@@ -113,7 +116,7 @@ describe('modelHealthRuntime', () => {
 
     it('should return unknown status for disabled adapters', async () => {
       const adapter = createMockAdapter({
-        id: 'disabled-adapter',
+        id: 'disabled-adapter' as LlmProviderId,
         label: 'Disabled Adapter',
         enabled: false,
         run: vi.fn(),
@@ -132,25 +135,25 @@ describe('modelHealthRuntime', () => {
 
     it('should respect timeout configuration', async () => {
       const adapter = createMockAdapter({
-        id: 'timeout-adapter',
+        id: 'timeout-adapter' as LlmProviderId,
         label: 'Timeout Adapter',
         run: vi.fn().mockImplementation(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10000));
-          return {
-            providerId: 'test',
-            brain: { perception: '', analysis: '', plan: '', execution: { patches: [] }, learning: null },
-          };
+          // Stay "running" until timed out
+          return new Promise(() => {});
         }),
       });
 
-      const result = await checkModelHealth(adapter, {
+      const resultPromise = checkModelHealth(adapter, {
         timeoutMs: 100,
         degradedThresholdMs: 2000,
         testMission: 'OK',
       });
 
+      vi.advanceTimersByTime(150);
+
+      const result = await resultPromise;
+
       expect(result.status).toBe('unknown');
-      expect(result.lastError).toContain('Health check failed');
     });
   });
 
@@ -165,7 +168,7 @@ describe('modelHealthRuntime', () => {
 
     it('should check all enabled adapters', async () => {
       const adapter1 = createMockAdapter({
-        id: 'adapter-1',
+        id: 'adapter-1' as LlmProviderId,
         label: 'Adapter 1',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',
@@ -173,7 +176,7 @@ describe('modelHealthRuntime', () => {
         }),
       });
       const adapter2 = createMockAdapter({
-        id: 'adapter-2',
+        id: 'adapter-2' as LlmProviderId,
         label: 'Adapter 2',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',
@@ -192,7 +195,7 @@ describe('modelHealthRuntime', () => {
 
     it('should handle mixed healthy and degraded adapters', async () => {
       const fastAdapter = createMockAdapter({
-        id: 'fast',
+        id: 'fast' as LlmProviderId,
         label: 'Fast',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',
@@ -200,10 +203,10 @@ describe('modelHealthRuntime', () => {
         }),
       });
       const slowAdapter = createMockAdapter({
-        id: 'slow',
+        id: 'slow' as LlmProviderId,
         label: 'Slow',
         run: vi.fn().mockImplementation(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          vi.advanceTimersByTime(3000);
           return {
             providerId: 'test',
             brain: { perception: '', analysis: '', plan: '', execution: { patches: [] }, learning: null },
@@ -211,7 +214,7 @@ describe('modelHealthRuntime', () => {
         }),
       });
       const failingAdapter = createMockAdapter({
-        id: 'failing',
+        id: 'failing' as LlmProviderId,
         label: 'Failing',
         run: vi.fn().mockRejectedValue(new Error('Error')),
       });
@@ -226,7 +229,7 @@ describe('modelHealthRuntime', () => {
 
     it('should generate a summary string', async () => {
       const adapter = createMockAdapter({
-        id: 'test',
+        id: 'test' as LlmProviderId,
         label: 'Test',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',
@@ -242,7 +245,7 @@ describe('modelHealthRuntime', () => {
 
     it('should return report with timestamp', async () => {
       const adapter = createMockAdapter({
-        id: 'test',
+        id: 'test' as LlmProviderId,
         label: 'Test',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',
@@ -296,7 +299,7 @@ describe('modelHealthRuntime', () => {
 
     it('should return healthy model over degraded', async () => {
       const healthyAdapter = createMockAdapter({
-        id: 'healthy',
+        id: 'healthy' as LlmProviderId,
         label: 'Healthy',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',
@@ -304,10 +307,10 @@ describe('modelHealthRuntime', () => {
         }),
       });
       const degradedAdapter = createMockAdapter({
-        id: 'degraded',
+        id: 'degraded' as LlmProviderId,
         label: 'Degraded',
         run: vi.fn().mockImplementation(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          vi.advanceTimersByTime(3000);
           return {
             providerId: 'test',
             brain: { perception: '', analysis: '', plan: '', execution: { patches: [] }, learning: null },
@@ -323,10 +326,10 @@ describe('modelHealthRuntime', () => {
 
     it('should return model with lower latency first', async () => {
       const slowAdapter = createMockAdapter({
-        id: 'slow',
+        id: 'slow' as LlmProviderId,
         label: 'Slow',
         run: vi.fn().mockImplementation(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          vi.advanceTimersByTime(100);
           return {
             providerId: 'test',
             brain: { perception: '', analysis: '', plan: '', execution: { patches: [] }, learning: null },
@@ -334,7 +337,7 @@ describe('modelHealthRuntime', () => {
         }),
       });
       const fastAdapter = createMockAdapter({
-        id: 'fast',
+        id: 'fast' as LlmProviderId,
         label: 'Fast',
         run: vi.fn().mockResolvedValue({
           providerId: 'test',

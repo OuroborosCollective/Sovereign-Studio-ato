@@ -97,7 +97,6 @@ function buildHealthTestContext(adapterId: string, mission: string): LlmAdapterC
     mission,
     repoPaths: [],
     selectedFilePath: 'HEALTH_CHECK',
-    traceId: `model-health-${adapterId}-${Date.now()}`,
     allowExternalNoKey: true,
     allowOptInRoutes: true,
   };
@@ -111,6 +110,19 @@ export async function checkModelHealth(
   config: Required<ModelHealthRuntimeConfig>,
   signal?: AbortSignal
 ): Promise<ModelHealthCheckResult> {
+  if (!adapter.enabled) {
+    return {
+      adapterId: adapter.id,
+      adapterName: adapter.label,
+      status: 'unknown',
+      latencyMs: null,
+      lastCheck: Date.now(),
+      errorCount: 0,
+      successCount: 0,
+      isEnabled: false,
+    };
+  }
+
   const startTime = performance.now();
   const testContext = buildHealthTestContext(adapter.id, config.testMission);
 
@@ -119,29 +131,20 @@ export async function checkModelHealth(
   const timeoutId = setTimeout(() => timeoutController.abort(), config.timeoutMs);
   
   // Combine signals
-  const combinedSignal = signal
-    ? (() => {
-        const parentAbort = false;
-        return {
-          aborted: signal.aborted || parentAbort,
-          addEventListener: (type: string, listener: EventListener) => {
-            signal.addEventListener(type as 'abort', listener);
-            timeoutController.signal.addEventListener(type as 'abort', listener);
-          },
-          removeEventListener: (type: string, listener: EventListener) => {
-            signal.removeEventListener(type as 'abort', listener);
-            timeoutController.signal.removeEventListener(type as 'abort', listener);
-          },
-          dispatchEvent: (event: Event) => {
-            return signal.dispatchEvent(event) || timeoutController.signal.dispatchEvent(event);
-          },
-        } as AbortSignal;
-      })()
-    : timeoutController.signal;
+  const abortController = new AbortController();
+  const onAbort = () => abortController.abort();
+  if (signal) signal.addEventListener('abort', onAbort);
+  timeoutController.signal.addEventListener('abort', onAbort);
 
   try {
-    await adapter.run(testContext);
-    clearTimeout(timeoutId);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutController.signal.addEventListener('abort', () => reject(new Error('Timeout')));
+    });
+
+    await Promise.race([
+      adapter.run({ ...testContext, signal: abortController.signal }),
+      timeoutPromise,
+    ]);
 
     const latencyMs = performance.now() - startTime;
     return {
@@ -155,7 +158,6 @@ export async function checkModelHealth(
       isEnabled: adapter.enabled,
     };
   } catch (error) {
-    clearTimeout(timeoutId);
     return {
       adapterId: adapter.id,
       adapterName: adapter.label,
@@ -167,6 +169,9 @@ export async function checkModelHealth(
       isEnabled: adapter.enabled,
       lastError: error instanceof Error ? error.message : 'Health check failed',
     };
+  } finally {
+    clearTimeout(timeoutId);
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }
 
@@ -175,7 +180,7 @@ export async function checkModelHealth(
  */
 export async function checkAllModelsHealth(
   adapters: LlmAdapter[],
-  config: ModelHealthRuntimeRuntimeConfig = {},
+  config: ModelHealthRuntimeConfig = {},
   signal?: AbortSignal
 ): Promise<ModelHealthReport> {
   const cfg = { ...DEFAULT_CONFIG, ...config } as Required<ModelHealthRuntimeConfig>;

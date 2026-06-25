@@ -50,7 +50,14 @@ export interface UseLlmAdaptersReturn {
 export function useLlmAdapters(options: UseLlmAdaptersOptions = {}): UseLlmAdaptersReturn {
   const {
     cards = [],
-    settings = { id: 'default', name: 'Default', createdAt: 0, updatedAt: 0 },
+    settings = {
+      repoMode: 'single',
+      packageManager: 'auto',
+      installStrategy: 'safe',
+      linter: 'auto',
+      specialization: 'General',
+      maxFixLoops: 3,
+    },
     ...apiKeys
   } = options;
 
