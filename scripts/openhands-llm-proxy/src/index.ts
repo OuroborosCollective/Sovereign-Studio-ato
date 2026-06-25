@@ -26,7 +26,9 @@ function json(data: unknown, status = 200): Response {
 
 function requireProxyKey(request: Request, env: Env): Response | null {
   const expected = env.OPENHANDS_PROXY_KEY?.trim();
-  if (!expected) return null;
+  if (!expected) {
+    return json({ error: { message: "OpenHands proxy key is not configured" } }, 503);
+  }
   const auth = request.headers.get("Authorization") || "";
   const received = auth.replace(/^Bearer\s+/i, "").trim();
   if (!received || received !== expected) {
@@ -287,6 +289,9 @@ export default {
 
     // Models list
     if (request.method === "GET" && (pathname === "/v1/models" || pathname === "/models")) {
+      const auth = requireProxyKey(request, env);
+      if (auth) return auth;
+
       return json({
         object: "list",
         data: [{
