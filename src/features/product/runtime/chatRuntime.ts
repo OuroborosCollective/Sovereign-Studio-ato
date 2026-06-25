@@ -91,9 +91,7 @@ function mergedConfig(config: ChatRuntimeConfig): Required<Omit<ChatRuntimeConfi
 }
 
 function nowMs(): number {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now();
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
 }
 
 function traceId(): string {
@@ -130,17 +128,15 @@ export function validateChatEntry(input: string, config: ChatRuntimeConfig = {})
   };
 }
 
-export async function checkChatEntryGuard(_input: string): Promise<{ pass: boolean; reason?: string }> {
+export async function checkChatEntryGuard(input: string): Promise<{ pass: boolean; reason?: string }> {
+  if (!input.trim()) return { pass: false, reason: 'Chat input is empty.' };
+
   try {
     const modelHealthResult = runtimeIntelligence.getModelHealthFallbackResult();
-    if (!modelHealthResult.proceed) {
-      return { pass: false, reason: `Model health check failed: ${modelHealthResult.reason}` };
-    }
+    if (!modelHealthResult.proceed) return { pass: false, reason: `Model health check failed: ${modelHealthResult.reason}` };
 
     const fallbackState = runtimeIntelligence.getModelHealthFallbackState();
-    if (fallbackState.circuitBreaker.state === 'open') {
-      return { pass: false, reason: 'Circuit breaker is open - too many model failures' };
-    }
+    if (fallbackState.circuitBreaker.state === 'open') return { pass: false, reason: 'Circuit breaker is open - too many model failures' };
 
     return { pass: true };
   } catch (error) {
@@ -307,14 +303,10 @@ export async function executeChatRuntime(
   const cfg = mergedConfig(config);
   const validation = validateChatEntry(input, cfg);
 
-  if (!validation.valid) {
-    return { success: false, error: new ChatRuntimeError(validation.errors.join(', '), 'entry', true, { validation }) };
-  }
+  if (!validation.valid) return { success: false, error: new ChatRuntimeError(validation.errors.join(', '), 'entry', true, { validation }) };
 
   const guardResult = await checkChatEntryGuard(input);
-  if (!guardResult.pass) {
-    return { success: false, error: new ChatRuntimeError(guardResult.reason ?? 'Entry guard failed', 'entry', true, { guardResult }) };
-  }
+  if (!guardResult.pass) return { success: false, error: new ChatRuntimeError(guardResult.reason ?? 'Entry guard failed', 'entry', true, { guardResult }) };
 
   try {
     assertChatRuntimeHealthy();
