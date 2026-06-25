@@ -25,6 +25,16 @@ import { SettingsModal } from './features/product/components/SettingsModal';
 import { useUserApiKeys } from './features/product/hooks/useUserApiKeys';
 import type { UserApiKeys } from './features/product/components/UserKeyManager';
 import {
+  createOpenHandsEnterpriseClient,
+  type OpenHandsEnterpriseClientOptions,
+} from './features/product/runtime/openhandsEnterpriseClient';
+import {
+  resolveOpenHandsEnterpriseConfig,
+  createOpenHandsIdleSnapshot,
+  summarizeOpenHandsJob,
+  type OpenHandsJobSnapshot,
+} from './features/product/runtime/openhandsEnterpriseRuntime';
+import {
   AUTOMATION_MODE_LABELS,
   buildAutomationRunKey,
   decideSovereignAutomation,
@@ -234,6 +244,16 @@ const App: React.FC = () => {
   const [lastAutoRunKey, setLastAutoRunKey] = useState('');
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
   const [planningConfirmed, setPlanningConfirmed] = useState(false);
+
+  // OpenHands Enterprise state
+  const openhandsConfig = useMemo(() => resolveOpenHandsEnterpriseConfig(), []);
+  const openhandsClient = useMemo(() => 
+    openhandsConfig.ready ? createOpenHandsEnterpriseClient({ config: openhandsConfig }) : null,
+    [openhandsConfig]
+  );
+  const [openhandsJob, setOpenhandsJob] = useState<OpenHandsJobSnapshot>(createOpenHandsIdleSnapshot());
+  const [openhandsJobId, setOpenhandsJobId] = useState<string | null>(null);
+  const [isPollingOpenHands, setIsPollingOpenHands] = useState(false);
   const lastAutoViewReasonRef = useRef('');
   const recentUserInteractionUntil = useRef(0);
   const autoStepReadyAtRef = useRef(0);
@@ -433,6 +453,83 @@ const App: React.FC = () => {
     hasWorkflowReport: Boolean(workflowReport),
     ...override,
   });
+
+  // OpenHands Enterprise job functions
+  const startOpenHandsJob = useCallback(async (missionText: string): Promise<void> => {
+    if (!openhandsClient || !openhandsConfig.ready) {
+      setSovereignSummary('OpenHands ist nicht konfiguriert.');
+      return;
+    }
+    
+    if (!repoUrl) {
+      setSovereignSummary('OpenHands braucht ein Repository.');
+      return;
+    }
+
+    try {
+      setIsPollingOpenHands(true);
+      pushTelemetry('openhands', 'info', 'openhands:job-start', 'Starte OpenHands Auftrag.', { repo: repoUrl });
+      
+      const snapshot = await openhandsClient.startJob({
+        repoUrl,
+        branch: repoBranch || 'main',
+        mission: missionText,
+      });
+      
+      setOpenhandsJob(snapshot);
+      setOpenhandsJobId(snapshot.jobId || null);
+      setSovereignSummary(summarizeOpenHandsJob(snapshot));
+      
+      pushTelemetry('openhands', 'info', 'openhands:job-created', snapshot.jobId || 'OpenHands Job erstellt.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenHands Auftrag fehlgeschlagen.';
+      setSovereignSummary(message);
+      pushTelemetry('openhands', 'error', 'openhands:job-error', message);
+    }
+  }, [openhandsClient, openhandsConfig.ready, repoUrl, repoBranch, pushTelemetry]);
+
+  const pollOpenHandsJob = useCallback(async (): Promise<void> => {
+    if (!openhandsClient || !openhandsJobId) return;
+
+    try {
+      const snapshot = await openhandsClient.getJob(openhandsJobId);
+      setOpenhandsJob(snapshot);
+      setSovereignSummary(summarizeOpenHandsJob(snapshot));
+      
+      // Stop polling on terminal status
+      if (snapshot.status === 'completed' || snapshot.status === 'failed' || snapshot.status === 'blocked') {
+        setIsPollingOpenHands(false);
+        pushTelemetry('openhands', snapshot.status === 'completed' ? 'success' : 'warning', 
+          `openhands:job-${snapshot.status}`, summarizeOpenHandsJob(snapshot));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Poll fehlgeschlagen.';
+      pushTelemetry('openhands', 'error', 'openhands:poll-error', message);
+    }
+  }, [openhandsClient, openhandsJobId, pushTelemetry]);
+
+  const cancelOpenHandsJob = useCallback(async (): Promise<void> => {
+    if (!openhandsClient || !openhandsJobId) return;
+
+    try {
+      const snapshot = await openhandsClient.cancelJob(openhandsJobId);
+      setOpenhandsJob(snapshot);
+      setIsPollingOpenHands(false);
+      setSovereignSummary('OpenHands Auftrag abgebrochen.');
+      pushTelemetry('openhands', 'info', 'openhands:job-cancelled', 'Auftrag abgebrochen.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Cancel fehlgeschlagen.';
+      pushTelemetry('openhands', 'error', 'openhands:cancel-error', message);
+    }
+  }, [openhandsClient, openhandsJobId, pushTelemetry]);
+
+  // Poll OpenHands when active
+  useEffect(() => {
+    if (!isPollingOpenHands || !openhandsJobId) return;
+    
+    const interval = setInterval(pollOpenHandsJob, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, [isPollingOpenHands, openhandsJobId, pollOpenHandsJob]);
 
   const runSequentialStep = async <T,>(
     step: SequentialRuntimeStep,
@@ -1219,6 +1316,11 @@ const App: React.FC = () => {
             onGenerateIdeas={generateRepoIdeas}
             onGenerateErrorWorkflow={generateErrorWorkflow}
             onPublishDraftPr={() => { void publishDraftPr(); }}
+            openhandsReady={openhandsConfig.ready}
+            openhandsJobStatus={openhandsJob.status}
+            openhandsIsRunning={isPollingOpenHands}
+            onStartOpenHands={startOpenHandsJob}
+            onCancelOpenHands={cancelOpenHandsJob}
           />
         </SovereignTabErrorBoundary>
       ) : null}
