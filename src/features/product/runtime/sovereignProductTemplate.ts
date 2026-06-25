@@ -69,32 +69,34 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   version: 1,
   productName: 'Sovereign Studio',
   startTab: 'builder',
-  primaryFlow: ['repo', 'builder', 'chat', 'files', 'diff'],
+  primaryFlow: ['repo', 'builder', 'files', 'diff'],
   sideTabs: ['workflow', 'repair', 'remote', 'memory', 'telemetry', 'monitor'],
-  diagnosticTabs: ['readiness', 'integrity', 'findings', 'health', 'runtime', 'coverage'],
+  diagnosticTabs: ['chat', 'readiness', 'integrity', 'findings', 'health', 'runtime', 'coverage'],
   autoNavigationAllowlist: ['active-work', 'red-stopper'],
   invariants: [
-    'Builder is the startup surface because it is the NoCode chat workbench.',
+    'Builder is the startup surface because it is the official NoCode chat workbench.',
+    'There must be only one visible chat workbench in the primary flow: the Builder tab labelled Chat.',
     'Repo remains the first setup surface in the primary flow and may be requested by the chat when missing.',
     'Files and Diff are review surfaces, not startup surfaces.',
     'Workflow and Repair are side/stopper surfaces, not passive planning fallbacks.',
-    'The Android primary navigation is Repo, Builder, Files and Diff only.',
+    'The Android primary navigation is Repo, Chat, Files and Diff only.',
+    'The legacy Chat AI runtime panel is diagnostic-only and must not be a second user-facing chat surface.',
     'Passive review, awaiting-intent and side-channel states must not auto-open tabs.',
     'Only active work or red stopper states may auto-open a target view.',
     'Coach, setup drawer and workbench are guidance layers; they must not become state sources for themselves.',
   ],
   tabs: [
     { id: 'repo', label: 'Repo', group: 'primary', phase: 'repo-setup', mainFlowIndex: 0, autoOpenAllowed: true, userVisible: true },
-    { id: 'builder', label: 'Builder', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
-    { id: 'chat', label: 'Chat AI', group: 'primary', phase: 'intent-planning', mainFlowIndex: 2, autoOpenAllowed: false, userVisible: true },
-    { id: 'files', label: 'Files', group: 'primary', phase: 'package-review', mainFlowIndex: 3, autoOpenAllowed: false, userVisible: true },
-    { id: 'diff', label: 'Diff', group: 'primary', phase: 'diff-review', mainFlowIndex: 4, autoOpenAllowed: false, userVisible: true },
+    { id: 'builder', label: 'Chat', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
+    { id: 'files', label: 'Files', group: 'primary', phase: 'package-review', mainFlowIndex: 2, autoOpenAllowed: false, userVisible: true },
+    { id: 'diff', label: 'Diff', group: 'primary', phase: 'diff-review', mainFlowIndex: 3, autoOpenAllowed: false, userVisible: true },
     { id: 'workflow', label: 'Workflow', group: 'side', phase: 'draft-pr-workflow', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
     { id: 'repair', label: 'Repair', group: 'side', phase: 'repair-diagnostics', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
     { id: 'remote', label: 'Remote Memory', group: 'side', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
     { id: 'memory', label: 'Pattern Memory', group: 'side', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
     { id: 'telemetry', label: 'Telemetry', group: 'side', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
     { id: 'monitor', label: 'Live Monitor', group: 'side', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: true, userVisible: true },
+    { id: 'chat', label: 'Chat AI Diagnostics', group: 'diagnostic', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: false },
     { id: 'readiness', label: 'Readiness', group: 'diagnostic', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
     { id: 'integrity', label: 'Integrity', group: 'diagnostic', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
     { id: 'findings', label: 'Findings', group: 'diagnostic', phase: 'operator-diagnostics', mainFlowIndex: null, autoOpenAllowed: false, userVisible: true },
@@ -151,8 +153,16 @@ export function validateSovereignProductTemplate(
   if (sideMissing.length) errors.push(`Side tabs reference unknown tabs: ${sideMissing.join(', ')}`);
   if (diagnosticMissing.length) errors.push(`Diagnostic tabs reference unknown tabs: ${diagnosticMissing.join(', ')}`);
 
-  if (contract.primaryFlow.join('>') !== 'repo>builder>chat>files>diff') {
-    errors.push('Primary flow must be repo > builder > chat > files > diff.');
+  if (contract.primaryFlow.join('>') !== 'repo>builder>files>diff') {
+    errors.push('Primary flow must be repo > builder > files > diff.');
+  }
+
+  const builderTab = contract.tabs.find((candidate) => candidate.id === 'builder');
+  if (builderTab?.label !== 'Chat') errors.push('Builder tab label must be Chat because it is the official chat workbench.');
+
+  const chatTab = contract.tabs.find((candidate) => candidate.id === 'chat');
+  if (chatTab && (chatTab.group === 'primary' || chatTab.userVisible)) {
+    errors.push('Legacy Chat AI tab must stay diagnostic-only and hidden from primary navigation.');
   }
 
   for (const [index, tab] of contract.primaryFlow.entries()) {
