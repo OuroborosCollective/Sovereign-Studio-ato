@@ -37,6 +37,7 @@ export interface OpenHandsRuntimeEvent {
 
 export interface OpenHandsJobSnapshot {
   jobId?: string;
+  openHandsId?: string;
   status: OpenHandsJobStatus;
   repoUrl?: string;
   branch?: string;
@@ -140,7 +141,7 @@ export function createOpenHandsIdleSnapshot(): OpenHandsJobSnapshot {
 export function summarizeOpenHandsJob(snapshot: OpenHandsJobSnapshot): string {
   if (snapshot.status === 'idle') return 'OpenHands wartet auf einen echten Agentenauftrag.';
   if (snapshot.status === 'queued') return 'OpenHands Auftrag ist in der Warteschlange.';
-  if (snapshot.status === 'running') return `OpenHands arbeitet: ${snapshot.changedFiles.length} Datei(en) gemeldet.`;
+  if (snapshot.status === 'running') return `OpenHands arbeitet${snapshot.openHandsId ? ` mit echter Runtime-ID ${snapshot.openHandsId}` : ''}: ${snapshot.changedFiles.length} Datei(en) gemeldet.`;
   if (snapshot.status === 'waiting-for-user') return 'OpenHands wartet auf eine Nutzerentscheidung.';
   if (snapshot.status === 'blocked') return snapshot.lastError || 'OpenHands ist durch ein Gate blockiert.';
   if (snapshot.status === 'failed') return snapshot.lastError || 'OpenHands Auftrag ist fehlgeschlagen.';
