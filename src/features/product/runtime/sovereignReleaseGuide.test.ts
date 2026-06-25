@@ -30,7 +30,7 @@ describe('sovereign release guide runtime', () => {
 
     expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
-    expect(state.nextLabel).toBe('Weiter zu workflow');
+    expect(state.nextLabel).toBe('Weiter');
     expect(state.helperMessage).toContain('sichtbaren Weiter-Button');
   });
 
@@ -44,10 +44,9 @@ describe('sovereign release guide runtime', () => {
 
     expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
-    expect(state.nextLabel).toBe('Weiter zu workflow');
+    expect(state.nextLabel).toBe('Weiter');
     expect(state.progress).toBe(85);
   });
-
 
   it('does not claim that UI guidance auto-controls user navigation', () => {
     const state = deriveReleaseGuideState(input({
@@ -57,6 +56,7 @@ describe('sovereign release guide runtime', () => {
     }));
 
     expect(state.helperMessage).toContain('sichtbare');
+    expect(state.helperMessage).toContain('Button');
     expect(state.helperMessage).not.toContain('automatisch');
   });
 

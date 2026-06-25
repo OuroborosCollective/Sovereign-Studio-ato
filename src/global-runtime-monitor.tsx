@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
@@ -12,9 +12,11 @@ type GlobalRuntimeWindow = Window & typeof globalThis & { __sovereignGlobalRunti
 type StepState = 'done' | 'current' | 'waiting' | 'halted';
 type Step = { index: number; label: string; state: StepState };
 type StepPlan = { current: number; total: number; label: string; steps: Step[] };
+type LogFilter = 'all' | 'error' | 'warning' | 'info';
 
 const HOST_ID = 'sovereign-global-runtime-monitor-root';
 const MAX_LOG_ENTRIES = 24;
+const AUTO_ADVANCE_DELAY_MS = 1500;
 const monitorContainerContract = getSovereignContainerContract('global-runtime-monitor');
 const monitorToggleContract = SOVEREIGN_ACTION_MONITOR_TOGGLE;
 
@@ -37,6 +39,53 @@ function telemetryLevelLamp(level: SovereignTelemetryEvent['level']): CoachLamp 
   if (level === 'error') return 'red';
   if (level === 'warning') return 'yellow';
   return 'green';
+}
+
+function logFilterLabel(filter: LogFilter): string {
+  if (filter === 'error') return 'Fehler';
+  if (filter === 'warning') return 'Warnung';
+  if (filter === 'info') return 'Info';
+  return 'Alle';
+}
+
+function filterLogEntry(entry: RuntimeCoachState, filter: LogFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'error') return entry.lamp === 'red';
+  if (filter === 'warning') return entry.lamp === 'yellow';
+  return entry.lamp === 'green';
+}
+
+function coachText(coach: RuntimeCoachState): string {
+  return `${coach.title} ${coach.message} ${coach.action} ${coach.source}`.toLowerCase();
+}
+
+function hasBlockingToken(coach: RuntimeCoachState): boolean {
+  return [
+    'guard',
+    'health',
+    'validation_failed',
+    'blocked',
+    'blockiert',
+    'failed',
+    'fehler',
+    'draft pr',
+    'pull request',
+    'workflow',
+    'package-build',
+    'package build',
+    'publishing',
+  ].some((token) => coachText(coach).includes(token));
+}
+
+function canAutoAdvanceGuide(coach: RuntimeCoachState, targetTab: ReleaseGuideTab | null): targetTab is ReleaseGuideTab {
+  void coach;
+  void targetTab;
+  return false;
+}
+
+function showRepairPanel(coach: RuntimeCoachState): boolean {
+  const source = coachText(coach);
+  return coach.lamp === 'red' && ['health', 'guard', 'validation_failed', 'failed', 'blockiert'].some((token) => source.includes(token));
 }
 
 function compactTelemetry(event: SovereignTelemetryEvent): RuntimeCoachState {
@@ -109,7 +158,13 @@ function GlobalRuntimeMonitor(): React.ReactElement {
   const [monitorVisible, setMonitorVisible] = useState(true);
   const guide = useMemo(() => deriveReleaseGuideState(coachState), [coachState]);
   const plan = useMemo(() => stepPlan(coachState, log), [coachState, log]);
-  const visibleLog = useMemo(() => log.slice(0, MAX_LOG_ENTRIES), [log]);
+  const [logFilter, setLogFilter] = useState<LogFilter>('all');
+  const [autoAdvanceRemaining, setAutoAdvanceRemaining] = useState<number | null>(null);
+  const logViewportRef = useRef<HTMLDivElement | null>(null);
+  const lastAutoCommandKeyRef = useRef('');
+  const visibleLog = useMemo(() => log.filter((entry) => filterLogEntry(entry, logFilter)).slice(0, MAX_LOG_ENTRIES), [log, logFilter]);
+  const autoAdvanceSafe = canAutoAdvanceGuide(coachState, guide.targetTab);
+  const repairPanelVisible = showRepairPanel(coachState);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -132,8 +187,42 @@ function GlobalRuntimeMonitor(): React.ReactElement {
     };
   }, []);
 
-  // The monitor is a truth/display surface. It must not auto-click workspace tabs;
-  // users trigger navigation explicitly via the visible guide buttons.
+  useEffect(() => {
+    if (!logViewportRef.current) return;
+    logViewportRef.current.scrollTop = 0;
+  }, [visibleLog.length, logFilter]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    setAutoAdvanceRemaining(null);
+
+    if (!autoAdvanceSafe) return undefined;
+
+    const targetTab = guide.targetTab;
+    const commandKey = `${coachState.updatedAt}:${coachState.title}:${targetTab}`;
+    if (!targetTab || lastAutoCommandKeyRef.current === commandKey) return undefined;
+
+    setAutoAdvanceRemaining(AUTO_ADVANCE_DELAY_MS / 1000);
+    const tick = window.setInterval(() => {
+      setAutoAdvanceRemaining((current) => {
+        if (current === null) return null;
+        return Math.max(0, Number((current - 0.5).toFixed(1)));
+      });
+    }, 500);
+    const timer = window.setTimeout(() => {
+      lastAutoCommandKeyRef.current = commandKey;
+      setAutoAdvanceRemaining(null);
+      publishGuideCommand({ type: 'next', targetTab });
+    }, AUTO_ADVANCE_DELAY_MS);
+
+    return () => {
+      window.clearInterval(tick);
+      window.clearTimeout(timer);
+    };
+  }, [autoAdvanceSafe, coachState.title, coachState.updatedAt, guide.targetTab]);
+
+  // The monitor is a truth/display surface. It may auto-focus harmless UI tabs only;
+  // guarded runtime actions, health gates, workflow steps and PR publishing still require visible user intent.
 
   const confirmStep = (): void => {
     const now = Date.now();
@@ -152,12 +241,12 @@ function GlobalRuntimeMonitor(): React.ReactElement {
       {monitorVisible && <div className="sovereign-monitor-body">
         <div className="sovereign-monitor-status"><span className={lampClassName(coachState.lamp)} /><div className="sovereign-monitor-copy"><strong>{coachState.title}</strong><span>{formatTime(coachState.updatedAt)} · {coachState.source} · {coachState.thinking ? 'arbeitet' : 'bereit'}</span><p>{coachState.message}</p><em>Next Action: {coachState.action}</em></div></div>
         <div className="sovereign-helper-panel" data-testid="release-guide__panel">
-          <div className="sovereign-helper-copy"><strong>{guide.helperMessage}</strong><span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Der sichtbare Weiter-Button bleibt deine bewusste Aktion.'}</span></div>
-          <div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsstand ${plan.label}`}><div className="sovereign-monitor-progress-head"><span>Arbeitsstand</span><strong>{plan.label}</strong></div><div className="grid gap-1 text-[10px]" style={{ gridTemplateColumns: `repeat(${plan.total}, minmax(0, 1fr))` }}>{plan.steps.map((step) => <span key={step.index} className={stepClassName(step.state)} title={step.label}>{step.index}. {step.label}</span>)}</div></div>
-          <div className="sovereign-guide-actions" data-testid="release-guide__actions"><button className="sovereign-guide-button" type="button" onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })} data-testid="release-guide__back">Zurück</button><button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">{guide.confirmLabel}</button><button className="sovereign-guide-button sovereign-guide-button-primary" type="button" onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })} disabled={!guide.nextEnabled} aria-disabled={!guide.nextEnabled} data-testid="release-guide__next">{guide.nextLabel}</button></div>
+          <div className="sovereign-helper-copy"><strong>{guide.helperMessage}</strong><span>{confirmedAt ? `Zuletzt bestätigt: ${formatTime(confirmedAt)}` : guide.waitingReason || 'Der sichtbare Weiter-Button bleibt deine bewusste Aktion.'}</span>{autoAdvanceRemaining !== null ? <span className="sovereign-auto-advance-hint">Auto-Fokus in {autoAdvanceRemaining.toFixed(1)}s · nur UI-Navigation</span> : null}</div>
+          {repairPanelVisible ? <div className="sovereign-health-repair-panel" data-testid="release-guide__repair-panel"><strong>Nächste sichere Reparatur</strong><span>Health/Guard blockiert bewusst. Öffne Diagnose oder Reparatur, statt plan-only Output zu erzwingen.</span><div><button type="button" onClick={() => publishGuideCommand({ type: 'next', targetTab: 'telemetry' })}>Telemetry</button><button type="button" onClick={() => publishGuideCommand({ type: 'next', targetTab: 'health' })}>Health</button><button type="button" onClick={() => publishGuideCommand({ type: 'next', targetTab: 'repair' })}>Repair</button></div></div> : null}<div className="sovereign-monitor-progress" data-testid="release-guide__progress" aria-label={`Arbeitsstand ${plan.label}`}><div className="sovereign-monitor-progress-head"><span>Arbeitsstand</span><strong>{plan.label}</strong></div><div className="grid gap-1 text-[10px]" style={{ gridTemplateColumns: `repeat(${plan.total}, minmax(0, 1fr))` }}>{plan.steps.map((step) => <span key={step.index} className={stepClassName(step.state)} title={step.label}>{step.index}. {step.label}</span>)}</div></div>
         </div>
       </div>}
-      <div className="sovereign-monitor-log" data-testid="global-runtime-monitor-log">{visibleLog.map((entry, index) => <div key={`${entry.updatedAt}-${entry.title}-${index}`} className="sovereign-monitor-line"><span className={lampClassName(entry.lamp)} /><div><span>{formatTime(entry.updatedAt)} · {entry.source}</span><p>{entry.title}: {entry.message}</p></div></div>)}</div>
+      {monitorVisible ? <div className="sovereign-guide-actions" data-testid="release-guide__actions"><button className="sovereign-guide-button" type="button" onClick={() => publishGuideCommand({ type: 'back', targetTab: guide.previousTab })} data-testid="release-guide__back">Zurück</button><button className="sovereign-guide-button" type="button" onClick={confirmStep} data-testid="release-guide__confirm">{guide.confirmLabel}</button><button className="sovereign-guide-button sovereign-guide-button-primary" type="button" onClick={() => publishGuideCommand({ type: 'next', targetTab: guide.targetTab })} disabled={!guide.nextEnabled} aria-disabled={!guide.nextEnabled} data-testid="release-guide__next">{guide.nextLabel}</button></div> : null}
+      <div className="sovereign-monitor-log-shell"><div className="sovereign-monitor-filter-row" aria-label="Logfilter">{(['all', 'error', 'warning', 'info'] as LogFilter[]).map((filter) => <button key={filter} type="button" onClick={() => setLogFilter(filter)} data-state={logFilter === filter ? 'active' : 'idle'}>{logFilterLabel(filter)}</button>)}</div><div ref={logViewportRef} className="sovereign-monitor-log" data-testid="global-runtime-monitor-log">{visibleLog.map((entry, index) => <div key={`${entry.updatedAt}-${entry.title}-${index}`} className="sovereign-monitor-line"><span className={lampClassName(entry.lamp)} /><div><span>{formatTime(entry.updatedAt)} · {entry.source}</span><p>{entry.title}: {entry.message}</p></div></div>)}</div></div>
     </section>
   );
 }

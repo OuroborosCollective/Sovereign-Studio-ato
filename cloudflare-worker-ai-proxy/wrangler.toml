@@ -1,0 +1,13 @@
+name = "sovereign-llm-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Account ID - wird via secrets oder environment gesetzt
+# account_id = "4a82319180f1f1cee60d85a971c3041d"
+
+[vars]
+# Default AI model
+DEFAULT_MODEL = "@cf/meta/llama-3-8b-instruct"
+
+[observability]
+enabled = true

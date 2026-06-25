@@ -26,11 +26,8 @@ export function maskSecrets(text: string): string {
   masked = masked.replace(/(authorization\s*[:=]\s*)(?!Bearer\s+)[a-zA-Z0-9_+\-./= ]{15,}/gi, '$1****');
   masked = masked.replace(/Bearer\s+[a-zA-Z0-9._~+/-]{15,120}=*/gi, 'Bearer ****');
 
-  // Label-based credentials in common logs or error strings (supporting quotes)
-  masked = masked.replace(
-    /(["']?(?:password|token|secret|api[_-]?key|access[_-]?token|passwd|pwd)["']?\s*[:=]\s*["']?)[a-zA-Z0-9_@#$%^&*.\-~+/=]{8,120}/gi,
-    '$1****',
-  );
+  // Label-based credentials in common logs or error strings (supports optional quotes and base64 characters)
+  masked = masked.replace(/(["']?)(password|token|secret|api[_-]?key|access[_-]?token)\1\s*[:=]\s*["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi, '$2: ****');
 
   return masked;
 }

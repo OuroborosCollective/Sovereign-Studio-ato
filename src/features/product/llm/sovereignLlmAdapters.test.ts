@@ -3,27 +3,41 @@ import { defaultSettings, starterCards } from '../constants';
 import { buildSovereignLlmAdapters } from './sovereignLlmAdapters';
 
 describe('sovereignLlmAdapters', () => {
-  it('creates mlvoca adapter first by default', () => {
+  it('creates the hosted primary bridge first by default', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
     });
 
-    expect(adapters[0].id).toBe('mlvoca');
-    expect(adapters[0].kind).toBe('no-key');
-    expect(adapters[0].priority).toBe(0);
+    expect(adapters[0].id).toBe('optional-user-keys');
+    expect(adapters[0].kind).toBe('user-key');
+    expect(adapters[0].priority).toBe(-10);
     expect(adapters[0].enabled).toBe(true);
   });
 
-  it('creates pollinations adapter second by default', () => {
+  it('keeps mlvoca as the first no-key fallback by default', () => {
     const adapters = buildSovereignLlmAdapters({
       cards: starterCards(),
       settings: defaultSettings,
     });
 
-    expect(adapters[1].id).toBe('pollinations');
-    expect(adapters[1].kind).toBe('no-key');
-    expect(adapters[1].priority).toBe(1);
+    const mlvocaAdapter = adapters.find((adapter) => adapter.id === 'mlvoca');
+    expect(mlvocaAdapter).toBeDefined();
+    expect(mlvocaAdapter?.kind).toBe('no-key');
+    expect(mlvocaAdapter?.priority).toBe(0);
+    expect(mlvocaAdapter?.enabled).toBe(true);
+  });
+
+  it('creates pollinations adapter after mlvoca by default', () => {
+    const adapters = buildSovereignLlmAdapters({
+      cards: starterCards(),
+      settings: defaultSettings,
+    });
+
+    const pollinationsAdapter = adapters.find((adapter) => adapter.id === 'pollinations');
+    expect(pollinationsAdapter).toBeDefined();
+    expect(pollinationsAdapter?.kind).toBe('no-key');
+    expect(pollinationsAdapter?.priority).toBe(1);
   });
 
   it('creates groq adapter only when API key is provided', () => {
@@ -69,6 +83,7 @@ describe('sovereignLlmAdapters', () => {
     });
 
     expect(adapters.map((adapter) => adapter.id)).toEqual([
+      'optional-user-keys',
       'mlvoca',
       'pollinations',
       'groq',
@@ -89,9 +104,10 @@ describe('sovereignLlmAdapters', () => {
 
     const sortedAdapters = [...adapters].sort((a, b) => a.priority - b.priority);
 
-    expect(sortedAdapters[0].id).toBe('mlvoca');
-    expect(sortedAdapters[1].id).toBe('pollinations');
-    expect(sortedAdapters[2].id).toBe('groq');
+    expect(sortedAdapters[0].id).toBe('optional-user-keys');
+    expect(sortedAdapters[1].id).toBe('mlvoca');
+    expect(sortedAdapters[2].id).toBe('pollinations');
+    expect(sortedAdapters[3].id).toBe('groq');
     expect(sortedAdapters[sortedAdapters.length - 1].id).toBe('local-safe');
   });
 });

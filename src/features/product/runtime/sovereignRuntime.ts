@@ -229,7 +229,7 @@ function createFallbackBrain(input: BuildImplementationInput, architecture: Repo
 export function buildSovereignImplementationPackage(input: BuildImplementationInput): SovereignImplementationPackage {
   const architecture = analyzeRepoArchitecture(input.repoPaths);
   const requestedWork = classifyRequestedWork(input.blueprint);
-  const brain = requestedWork === 'readme-docs' || requestedWork === 'runtime-hardening'
+  const brain = requestedWork === 'readme-docs'
     ? createDocsBrain(input, architecture)
     : createFallbackBrain(input, architecture);
 

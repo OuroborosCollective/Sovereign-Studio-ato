@@ -1,5 +1,5 @@
 import './runtime-adapter';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { buildGitHubHeaders, stripTokenFromText } from './features/github/githubAuthSession';
 import { parseGithubRepoUrl } from './features/github/utils';
 import { publishPackageAsDraftPr } from './features/github/githubPackagePublisher';
@@ -24,6 +24,16 @@ import { SovereignTabErrorBoundary } from './features/product/components/Soverei
 import { SettingsModal } from './features/product/components/SettingsModal';
 import { useUserApiKeys } from './features/product/hooks/useUserApiKeys';
 import type { UserApiKeys } from './features/product/components/UserKeyManager';
+import {
+  createOpenHandsEnterpriseClient,
+  type OpenHandsEnterpriseClientOptions,
+} from './features/product/runtime/openhandsEnterpriseClient';
+import {
+  resolveOpenHandsEnterpriseConfig,
+  createOpenHandsIdleSnapshot,
+  summarizeOpenHandsJob,
+  type OpenHandsJobSnapshot,
+} from './features/product/runtime/openhandsEnterpriseRuntime';
 import {
   AUTOMATION_MODE_LABELS,
   buildAutomationRunKey,
@@ -112,6 +122,7 @@ type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
 const DEFAULT_MISSION = 'README + Update History';
 const AUTO_STEP_DELAY_MS = 5000;
+const USER_NAVIGATION_OVERRIDE_MS = 30_000;
 
 // Tabs are derived from the Product Template as the single source of truth.
 // This ensures the app shell always matches the product contract.
@@ -207,6 +218,7 @@ const App: React.FC = () => {
   const [lastPackageKey, setLastPackageKey] = useState('');
   const [lastDraftCommitSha, setLastDraftCommitSha] = useState('');
   const [lastDraftBranch, setLastDraftBranch] = useState('');
+  const [lastDraftPackageKey, setLastDraftPackageKey] = useState('');
   const [workflowReport, setWorkflowReport] = useState<WorkflowWatchReport | null>(null);
   const [diffSources, setDiffSources] = useState<SourceFileSnapshot[]>([]);
   const [isLoadingDiffSources, setIsLoadingDiffSources] = useState(false);
@@ -232,6 +244,16 @@ const App: React.FC = () => {
   const [lastAutoRunKey, setLastAutoRunKey] = useState('');
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
   const [planningConfirmed, setPlanningConfirmed] = useState(false);
+
+  // OpenHands Enterprise state
+  const openhandsConfig = useMemo(() => resolveOpenHandsEnterpriseConfig(), []);
+  const openhandsClient = useMemo(() => 
+    openhandsConfig.ready ? createOpenHandsEnterpriseClient({ config: openhandsConfig }) : null,
+    [openhandsConfig]
+  );
+  const [openhandsJob, setOpenhandsJob] = useState<OpenHandsJobSnapshot>(createOpenHandsIdleSnapshot());
+  const [openhandsJobId, setOpenhandsJobId] = useState<string | null>(null);
+  const [isPollingOpenHands, setIsPollingOpenHands] = useState(false);
   const lastAutoViewReasonRef = useRef('');
   const recentUserInteractionUntil = useRef(0);
   const autoStepReadyAtRef = useRef(0);
@@ -265,42 +287,46 @@ const App: React.FC = () => {
     publishSetupStateToWindow(setupState);
   }, [setupState]);
 
-  const safeRepoFiles = Array.isArray(repoFiles) ? repoFiles : [];
-  const safeDiffSources = Array.isArray(diffSources) ? diffSources : [];
+  // ⚡ Bolt: Memoize safe arrays to prevent redundant recalculations in dependent hooks
+  const safeRepoFiles = useMemo(() => Array.isArray(repoFiles) ? repoFiles : [], [repoFiles]);
+  const safeDiffSources = useMemo(() => Array.isArray(diffSources) ? diffSources : [], [diffSources]);
   const runtimeBusy = Boolean(sequentialRuntime.activeStep);
   const currentMission = normalizeMission(mission);
-  const packageInputKey = buildAutomationRunKey({
+
+  // ⚡ Bolt: Memoize expensive derived state and orchestration keys to prevent lag during mission input
+  // and redundant processing during automation runs.
+  const packageInputKey = useMemo(() => buildAutomationRunKey({
     mode: 'manual',
     repoUrl,
     repoBranch,
     mission: currentMission,
     repoFileCount: safeRepoFiles.length,
-  });
-  const automationRunKey = buildAutomationRunKey({
+  }), [repoUrl, repoBranch, currentMission, safeRepoFiles.length]);
+  const automationRunKey = useMemo(() => buildAutomationRunKey({
     mode: automationMode,
     repoUrl,
     repoBranch,
     mission: currentMission,
     repoFileCount: safeRepoFiles.length,
-  });
+  }), [automationMode, repoUrl, repoBranch, currentMission, safeRepoFiles.length]);
   const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
-  const latestGeneratedReview = lastPackage ? reviewGeneratedFiles(lastPackage.files) : null;
-  const diffReport = lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, safeDiffSources) : null;
-  const repairPlan = buildWorkflowRepairPlan(workflowReport);
-  const healthReport = buildSovereignHealthReport({
+  const latestGeneratedReview = useMemo(() => lastPackage ? reviewGeneratedFiles(lastPackage.files) : null, [lastPackage]);
+  const diffReport = useMemo(() => lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, safeDiffSources) : null, [lastPackage, safeDiffSources]);
+  const repairPlan = useMemo(() => buildWorkflowRepairPlan(workflowReport), [workflowReport]);
+  const healthReport = useMemo(() => buildSovereignHealthReport({
     repoFiles: safeRepoFiles,
     generatedFileReview: latestGeneratedReview,
     workflowWatch: workflowReport,
     telemetry,
-  });
-  const coverageReport = buildRuntimeValidationCoverageReport();
-  const solutionPatternHints = formatSolutionPatternHints(solutionPatternStore);
-  const activePatternCount = Array.isArray(solutionPatternStore.patterns)
+  }), [safeRepoFiles, latestGeneratedReview, workflowReport, telemetry]);
+  const coverageReport = useMemo(() => buildRuntimeValidationCoverageReport(), []);
+  const solutionPatternHints = useMemo(() => formatSolutionPatternHints(solutionPatternStore), [solutionPatternStore]);
+  const activePatternCount = useMemo(() => Array.isArray(solutionPatternStore.patterns)
     ? solutionPatternStore.patterns.filter((pattern) => pattern.status === 'active').length
-    : 0;
+    : 0, [solutionPatternStore.patterns]);
 
   // Coach-State aus echtem Runtime ableiten - für mobile-operator-coach
-  const coachState = deriveCoachStateFromRuntime(
+  const coachState = useMemo(() => deriveCoachStateFromRuntime(
     sequentialRuntime,
     repoSnapshotStatus.ready,
     Boolean(lastPackage),
@@ -308,12 +334,13 @@ const App: React.FC = () => {
     isPublishing,
     isWatchingWorkflow,
     activePatternCount > 0
-  );
+  ), [sequentialRuntime, repoSnapshotStatus.ready, lastPackage, workflowReport?.status, isPublishing, isWatchingWorkflow, activePatternCount]);
 
   // Expose Coach-State für mobile-operator-coach
   useCoachRuntimeBridge({ coachState });
 
-  const pushTelemetry = (
+  // ⚡ Bolt: Stabilize telemetry callback identity to prevent cascading re-renders in diagnostic components
+  const pushTelemetry = useCallback((
     stage: Parameters<typeof createTelemetryEvent>[0],
     level: Parameters<typeof createTelemetryEvent>[1],
     label: string,
@@ -321,7 +348,7 @@ const App: React.FC = () => {
     details?: Parameters<typeof createTelemetryEvent>[4],
   ) => {
     setTelemetry((state) => appendTelemetryEvent(state, createTelemetryEvent(stage, level, label, message, details)));
-  };
+  }, [setTelemetry]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -333,9 +360,35 @@ const App: React.FC = () => {
   }, [solutionPatternStore]);
 
   const handleUserTabClick = (tab: SovereignTab) => {
-    recentUserInteractionUntil.current = wallClockMs() + 3_000;
+    recentUserInteractionUntil.current = wallClockMs() + USER_NAVIGATION_OVERRIDE_MS;
     setActiveTab(tab);
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleGuideCommand = (event: Event): void => {
+      const detail = (event as CustomEvent<{ type?: string; targetTab?: SovereignTab | null }>).detail;
+      if (!detail) return;
+
+      if (detail.type === 'confirm') {
+        recentUserInteractionUntil.current = wallClockMs() + USER_NAVIGATION_OVERRIDE_MS;
+        setPlanningConfirmed(true);
+        pushTelemetry('workflow', 'info', 'release-guide:confirmed', 'User confirmed the visible coach step.');
+        return;
+      }
+
+      if ((detail.type === 'next' || detail.type === 'back') && detail.targetTab) {
+        handleUserTabClick(detail.targetTab);
+        pushTelemetry('workflow', 'info', `release-guide:${detail.type}`, `Coach navigation selected ${detail.targetTab}.`, { tab: detail.targetTab });
+      }
+    };
+
+    window.addEventListener('sovereign:release-guide-command', handleGuideCommand as EventListener);
+    return () => window.removeEventListener('sovereign:release-guide-command', handleGuideCommand as EventListener);
+    // Release guide commands are runtime events from the global coach.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const routerActiveTab: SovereignAutoViewTab = activeTab === 'monitor' ? 'repo' : activeTab;
@@ -400,6 +453,83 @@ const App: React.FC = () => {
     hasWorkflowReport: Boolean(workflowReport),
     ...override,
   });
+
+  // OpenHands Enterprise job functions
+  const startOpenHandsJob = useCallback(async (missionText: string): Promise<void> => {
+    if (!openhandsClient || !openhandsConfig.ready) {
+      setSovereignSummary('OpenHands ist nicht konfiguriert.');
+      return;
+    }
+    
+    if (!repoUrl) {
+      setSovereignSummary('OpenHands braucht ein Repository.');
+      return;
+    }
+
+    try {
+      setIsPollingOpenHands(true);
+      pushTelemetry('openhands', 'info', 'openhands:job-start', 'Starte OpenHands Auftrag.', { repo: repoUrl });
+      
+      const snapshot = await openhandsClient.startJob({
+        repoUrl,
+        branch: repoBranch || 'main',
+        mission: missionText,
+      });
+      
+      setOpenhandsJob(snapshot);
+      setOpenhandsJobId(snapshot.jobId || null);
+      setSovereignSummary(summarizeOpenHandsJob(snapshot));
+      
+      pushTelemetry('openhands', 'info', 'openhands:job-created', snapshot.jobId || 'OpenHands Job erstellt.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OpenHands Auftrag fehlgeschlagen.';
+      setSovereignSummary(message);
+      pushTelemetry('openhands', 'error', 'openhands:job-error', message);
+    }
+  }, [openhandsClient, openhandsConfig.ready, repoUrl, repoBranch, pushTelemetry]);
+
+  const pollOpenHandsJob = useCallback(async (): Promise<void> => {
+    if (!openhandsClient || !openhandsJobId) return;
+
+    try {
+      const snapshot = await openhandsClient.getJob(openhandsJobId);
+      setOpenhandsJob(snapshot);
+      setSovereignSummary(summarizeOpenHandsJob(snapshot));
+      
+      // Stop polling on terminal status
+      if (snapshot.status === 'completed' || snapshot.status === 'failed' || snapshot.status === 'blocked') {
+        setIsPollingOpenHands(false);
+        pushTelemetry('openhands', snapshot.status === 'completed' ? 'success' : 'warning', 
+          `openhands:job-${snapshot.status}`, summarizeOpenHandsJob(snapshot));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Poll fehlgeschlagen.';
+      pushTelemetry('openhands', 'error', 'openhands:poll-error', message);
+    }
+  }, [openhandsClient, openhandsJobId, pushTelemetry]);
+
+  const cancelOpenHandsJob = useCallback(async (): Promise<void> => {
+    if (!openhandsClient || !openhandsJobId) return;
+
+    try {
+      const snapshot = await openhandsClient.cancelJob(openhandsJobId);
+      setOpenhandsJob(snapshot);
+      setIsPollingOpenHands(false);
+      setSovereignSummary('OpenHands Auftrag abgebrochen.');
+      pushTelemetry('openhands', 'info', 'openhands:job-cancelled', 'Auftrag abgebrochen.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Cancel fehlgeschlagen.';
+      pushTelemetry('openhands', 'error', 'openhands:cancel-error', message);
+    }
+  }, [openhandsClient, openhandsJobId, pushTelemetry]);
+
+  // Poll OpenHands when active
+  useEffect(() => {
+    if (!isPollingOpenHands || !openhandsJobId) return;
+    
+    const interval = setInterval(pollOpenHandsJob, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, [isPollingOpenHands, openhandsJobId, pollOpenHandsJob]);
 
   const runSequentialStep = async <T,>(
     step: SequentialRuntimeStep,
@@ -546,6 +676,7 @@ const App: React.FC = () => {
       setDiffSources([]);
       setLastDraftCommitSha('');
       setLastDraftBranch('');
+      setLastDraftPackageKey('');
       setWorkflowReport(null);
 
       return true;
@@ -711,6 +842,7 @@ const App: React.FC = () => {
     setDiffSources([]);
     setLastDraftCommitSha('');
     setLastDraftBranch('');
+    setLastDraftPackageKey('');
     setWorkflowReport(null);
     setLastAutoRunKey('');
 
@@ -726,6 +858,7 @@ const App: React.FC = () => {
     setDiffSources([]);
     setLastDraftCommitSha('');
     setLastDraftBranch('');
+    setLastDraftPackageKey('');
     setWorkflowReport(null);
     setLastAutoRunKey('');
     setSovereignPreview('');
@@ -735,6 +868,19 @@ const App: React.FC = () => {
   };
 
   const publishDraftPrForPackage = async (pkg: SovereignImplementationPackage): Promise<boolean> => {
+    if (lastDraftCommitSha && lastDraftBranch && lastDraftPackageKey === packageInputKey) {
+      const message = [
+        'Draft PR existiert bereits fuer diesen Auftrag und Repo-Snapshot.',
+        `Branch: ${lastDraftBranch}`,
+        `Commit: ${lastDraftCommitSha}`,
+        'Ich erstelle keinen zweiten identischen Draft PR. Beobachte stattdessen die bestehenden Checks.',
+      ].join('\n');
+      setSovereignSummary(message);
+      pushTelemetry('github', 'info', 'github:draft-pr-deduped', 'Existing Draft PR reused for this exact package input.', { branch: lastDraftBranch });
+      await watchLatestWorkflow(lastDraftCommitSha, lastDraftBranch);
+      return true;
+    }
+
     const result = await runSequentialStep('draft-pr-publish', async () => {
       // Guard: all publish preconditions must pass (file review + health gate)
       const review = reviewGeneratedFiles(pkg.files);
@@ -783,6 +929,7 @@ const App: React.FC = () => {
 
     setLastDraftCommitSha(result.commitSha);
     setLastDraftBranch(result.branch);
+    setLastDraftPackageKey(packageInputKey);
     setSovereignSummary([
       'Draft PR erstellt.',
       `URL: ${result.pullRequestUrl}`,
@@ -1146,6 +1293,16 @@ const App: React.FC = () => {
 
       {activeTab === 'builder' ? (
         <SovereignTabErrorBoundary tabId="builder" tabLabel="Builder">
+          <RepoInsightPanelBridge
+            repoFiles={safeRepoFiles}
+            scanRegistry={scanRegistry}
+            workflowReport={workflowReport}
+            solutionPatternStore={solutionPatternStore}
+            currentMission={mission}
+            onSuggestionClick={(suggestion) => {
+              setMission(suggestion.whyUseful);
+            }}
+          />
           <BuilderContainer
             mission={mission}
             repoReady={repoSnapshotStatus.ready}
@@ -1159,16 +1316,11 @@ const App: React.FC = () => {
             onGenerateIdeas={generateRepoIdeas}
             onGenerateErrorWorkflow={generateErrorWorkflow}
             onPublishDraftPr={() => { void publishDraftPr(); }}
-          />
-          <RepoInsightPanelBridge
-            repoFiles={safeRepoFiles}
-            scanRegistry={scanRegistry}
-            workflowReport={workflowReport}
-            solutionPatternStore={solutionPatternStore}
-            currentMission={mission}
-            onSuggestionClick={(suggestion) => {
-              setMission(suggestion.whyUseful);
-            }}
+            openhandsReady={openhandsConfig.ready}
+            openhandsJobStatus={openhandsJob.status}
+            openhandsIsRunning={isPollingOpenHands}
+            onStartOpenHands={startOpenHandsJob}
+            onCancelOpenHands={cancelOpenHandsJob}
           />
         </SovereignTabErrorBoundary>
       ) : null}

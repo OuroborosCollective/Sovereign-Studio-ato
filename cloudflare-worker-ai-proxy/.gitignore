@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Wrangler
+.wrangler/
+dist/
+
+# Environment files (contain secrets!)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

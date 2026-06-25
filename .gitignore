@@ -10,11 +10,17 @@ android/app/src/main/assets/public/
 android/app/build/
 
 # Keystores
-*.keystoremarketing-output/
+*.keystore
 marketing-output/
+
+# Local enterprise/operator secrets
+license.yaml
+*.license.yaml
+licenses/
+OpenHands*.yaml
+Ouroboros-Collective-Sovereign.yaml
 
 # React Native build
 sovereign-studio-rn/dist/
 sovereign-studio-rn/android/
 sovereign-studio-rn/ios/
-

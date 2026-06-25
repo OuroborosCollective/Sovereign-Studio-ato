@@ -6,6 +6,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError } from '../providerManager';
 import { geminiService } from '../geminiService';
+import { maskSecrets } from '../../../shared/utils/crypto';
 
 // Re-export for convenience
 export { providerManager, FREE_PROVIDERS, type ProviderType, type ProviderConfig, type ProviderResponse, type ProviderError };
@@ -86,7 +87,7 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
             model: options.model || 'gemini-1.5-flash'
           };
         } catch (err: any) {
-          const errorMsg = err?.message || String(err);
+          const errorMsg = maskSecrets(err?.message || String(err));
           const isRetryable = 
             errorMsg.includes('429') || 
             errorMsg.includes('quota') || 
@@ -123,9 +124,9 @@ export function useProviderFallback(options: ProviderFallbackOptions = {}): Prov
       return response;
 
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = maskSecrets(err instanceof Error ? err.message : String(err));
       setError(errorMsg);
-      throw err;
+      throw new Error(errorMsg);
     } finally {
       setIsLoading(false);
     }

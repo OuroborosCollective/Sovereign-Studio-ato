@@ -18,6 +18,17 @@ function nextIndex(index: number, length: number): number {
   return length === 0 ? 0 : (index + 1) % length;
 }
 
+function startIndex(active: LlmAdapter[], memory: LlmRevolverMemory): number {
+  const hostedBridgeIndex = active.findIndex((adapter) => adapter.id === 'optional-user-keys' && adapter.kind === 'user-key');
+  if (hostedBridgeIndex >= 0) return hostedBridgeIndex;
+  return Math.max(0, Math.min(memory.nextIndex, active.length - 1));
+}
+
+function assertRealProvider(adapter: LlmAdapter): void {
+  if (adapter.kind !== 'local-safe') return;
+  throw new Error('VALIDATION_FAILED_LLM_REQUIRED: local-safe is analysis-only and cannot be the source of a publishable Draft PR. A real hosted/user-key provider must produce the package.');
+}
+
 function emit(options: LlmRevolverOptions, attempts: LlmRevolverEvent[], event: LlmRevolverEvent): void {
   attempts.push(event);
   options.onEvent?.(event);
@@ -46,7 +57,7 @@ export async function resolveWithLlmRevolver(
     return { ok: false, failure, memory, attempts } satisfies LlmRevolverFailure;
   }
 
-  let cursor = Math.max(0, Math.min(memory.nextIndex, active.length - 1));
+  let cursor = startIndex(active, memory);
   let lastFailure = createLlmFailure(active[cursor].id, new Error('No provider was fired.'));
 
   for (let shot = 0; shot < maxShots; shot++) {
@@ -87,6 +98,7 @@ export async function resolveWithLlmRevolver(
     try {
       const result = await adapter.run(context);
       assertPushableBrain(adapter.id, context.mission, result.brain);
+      assertRealProvider(adapter);
       memory.nextIndex = nextIndex(cursor, active.length);
       memory.shots = [{ providerId: adapter.id, at: now() }, ...memory.shots].slice(0, 30);
       emit(options, attempts, {

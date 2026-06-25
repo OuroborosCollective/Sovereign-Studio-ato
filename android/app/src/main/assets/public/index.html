@@ -6,11 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#fafaf9" />
     <title>Sovereign Studio V3</title>
-    <script type="module" crossorigin src="./assets/index-CkdYmgf5.js"></script>
+    <script type="module" crossorigin src="./assets/index-qliQSptl.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-QTnfLwEv.js">
-    <link rel="modulepreload" crossorigin href="./assets/dependencies-BoFiQy3G.js">
-    <link rel="modulepreload" crossorigin href="./assets/vendor-BGbohJBH.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-v0iH9Fyj.css">
+    <link rel="modulepreload" crossorigin href="./assets/dependencies-DiwVdvdx.js">
+    <link rel="modulepreload" crossorigin href="./assets/vendor-D_gUkaCd.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-CDTwyZS_.css">
   </head>
   <body>
     <div id="root"></div>
@@ -21,7 +21,7 @@
     var root=document.getElementById('root');
     if(!root)return;
     var text=root.textContent||'';
-    var hasAppShell=document.querySelector('[data-testid="repo-snapshot-container"],[data-testid="builder-container"],[data-testid="operator-monitor"]');
+    var hasAppShell=document.querySelector('[data-testid="app-shell__root"],[data-testid="repo-snapshot-container"],[data-testid="builder-container"],[data-testid="operator-monitor"],.sovereign-login-shell');
     if(hasAppShell)return;
     if(!/Loading|Sovereign|Refactor/i.test(text)&&text.trim().length>80)return;
     root.innerHTML='<main style="min-height:100vh;box-sizing:border-box;padding:24px 16px;background:#0f172a;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">' +
@@ -30,8 +30,7 @@
       '<h1 style="margin:0 0 12px;color:#f8fafc;font-size:24px">App-Bundle konnte nicht starten</h1>' +
       '<p style="margin:0 0 10px;color:#cbd5e1;line-height:1.5">Die eigentliche Sovereign-App wurde nicht ersetzt. Dieser Bildschirm erscheint nur, wenn der Android/WebView-Bundle nicht geladen oder nicht sauber synchronisiert wurde.</p>' +
       '<p style="margin:0 0 14px;color:#94a3b8;font-size:13px;line-height:1.45">Recovery-Hinweis: Build erneut ausfuehren und sicherstellen, dass die aktuellen Web-Assets nach Android synchronisiert wurden.</p>' +
-      '<pre style="white-space:pre-wrap;border:1px solid #1f2937;background:#020617;color:#93c5fd;padding:10px;font-size:12px">npm run build:web
-npx cap sync android</pre>' +
+      '<pre style="white-space:pre-wrap;border:1px solid #1f2937;background:#020617;color:#93c5fd;padding:10px;font-size:12px">npm run build:web\nnpx cap sync android</pre>' +
       '<button onclick="location.reload()" style="margin-top:14px;border:1px solid #38bdf8;padding:12px 14px;background:#0ea5e9;color:#020617;font-weight:800">Neu laden</button>' +
       '</section></main>';
     if(window.console&&console.warn)console.warn('[Sovereign Recovery] Android boot fallback shown:',reason||'startup timeout');
