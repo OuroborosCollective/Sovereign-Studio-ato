@@ -34,6 +34,21 @@ function changedFiles(snapshot: OpenHandsJobSnapshot, maxFiles: number): string[
     .slice(0, Math.max(1, maxFiles));
 }
 
+function extractRuntimeId(summary: string): string | undefined {
+  const match = summary.match(/Runtime-ID\s+([^:\n.\s]+)/i);
+  return safeText(match?.[1]);
+}
+
+function extractHttpsUrl(summary: string): string | undefined {
+  const match = summary.match(/https:\/\/[^\s)]+/i);
+  return safeUrl(match?.[0]?.replace(/[.,;]+$/, ''));
+}
+
+function isStopperSummary(summary: string): boolean {
+  const clean = summary.toLowerCase();
+  return clean.includes('blockiert') || clean.includes('fehlgeschlagen') || clean.includes('failed') || clean.includes('blocked');
+}
+
 export function deriveSovereignChatResultCards(
   snapshot: OpenHandsJobSnapshot,
   options: SovereignChatResultCardOptions = {},
@@ -89,6 +104,43 @@ export function deriveSovereignChatResultCards(
       kind: 'completed',
       title: 'Küken hat fertig gepiepst',
       message: 'OpenHands ist fertig, hat aber keine geänderten Dateien oder Draft PR gemeldet.',
+    });
+  }
+
+  return cards;
+}
+
+export function deriveSovereignChatResultCardsFromSummary(summary: string): SovereignChatResultCard[] {
+  const clean = summary.trim();
+  if (!clean) return [];
+
+  const cards: SovereignChatResultCard[] = [];
+  const runtimeId = extractRuntimeId(clean);
+  const draftPrUrl = extractHttpsUrl(clean);
+
+  if (runtimeId) {
+    cards.push({
+      kind: 'runtime-id',
+      title: 'Echte OpenHands Runtime',
+      message: `Küken folgt echter Runtime-ID ${runtimeId}.`,
+    });
+  }
+
+  if (draftPrUrl) {
+    cards.push({
+      kind: 'draft-pr',
+      title: 'Draft PR bereit',
+      message: 'Küken hat den Draft PR ins Nest gelegt. Bitte prüfen, nicht automatisch mergen.',
+      actionLabel: 'Draft PR öffnen',
+      actionUrl: draftPrUrl,
+    });
+  }
+
+  if (isStopperSummary(clean) && !draftPrUrl) {
+    cards.push({
+      kind: 'stopper',
+      title: 'Stop-Gate oder Agent-Fehler',
+      message: clean,
     });
   }
 
