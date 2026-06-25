@@ -11,6 +11,7 @@ import {
   SOVEREIGN_ACTION_REPAIR_LOG,
   SOVEREIGN_ACTION_DRAFT_PR,
 } from '../runtime/sovereignActionContracts';
+import { formatCuteThinkingLabel } from '../runtime/cuteThinkingStatus';
 
 export interface BuilderContainerProps {
   mission: string;
@@ -36,6 +37,8 @@ interface IdeaOption {
   readonly label: string;
   readonly text: string;
 }
+
+const CUTE_THINKING_FRAME_MS = 1100;
 
 const IDEA_OPTIONS: IdeaOption[] = [
   {
@@ -150,6 +153,7 @@ export function BuilderContainer({
   onCancelOpenHands,
 }: BuilderContainerProps) {
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
+  const [thinkingFrameIndex, setThinkingFrameIndex] = useState(0);
   const lastMissionSeenRef = useRef(mission);
   const state = deriveBuilderContainerState({
     repoReady,
@@ -167,7 +171,26 @@ export function BuilderContainer({
     const visibleMission = collapseRepeatedAnalyzedMission(mission);
     return isAnalyzedMission(visibleMission) ? visibleMission : collapseRepeatedAnalyzedMission(analyzedMission);
   }, [analyzedMission, mission]);
+  const runtimeThinkingActive = Boolean(openhandsIsRunning || repoBusy || runtimeBusy || isPublishing);
+  const cuteThinkingLabel = useMemo(() => formatCuteThinkingLabel({
+    index: thinkingFrameIndex,
+    active: runtimeThinkingActive,
+    status: openhandsJobStatus,
+  }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
   const agentDisabled = !repoReady || repoBusy || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
+
+  useEffect(() => {
+    if (!runtimeThinkingActive) {
+      setThinkingFrameIndex(0);
+      return undefined;
+    }
+
+    const handle = window.setInterval(() => {
+      setThinkingFrameIndex((current) => current + 1);
+    }, CUTE_THINKING_FRAME_MS);
+
+    return () => window.clearInterval(handle);
+  }, [runtimeThinkingActive]);
 
   useEffect(() => {
     if (mission === lastMissionSeenRef.current) return;
@@ -188,11 +211,7 @@ export function BuilderContainer({
     onStartOpenHands?.(cleanMission);
   };
 
-  const agentStatusLabel = openhandsIsRunning
-    ? `Agent arbeitet: ${openhandsJobStatus || 'running'}`
-    : openhandsReady
-      ? 'Agent bereit'
-      : 'Agent noch nicht verbunden';
+  const agentStatusLabel = openhandsReady ? cuteThinkingLabel : '🌙 Agent noch nicht verbunden';
 
   return (
     <section
@@ -221,6 +240,9 @@ export function BuilderContainer({
         <div className="max-w-[92%] rounded-3xl rounded-tl-sm border border-cyan-400/20 bg-cyan-500/10 p-4 text-cyan-50">
           <p className="text-xs font-black uppercase tracking-wide text-cyan-200">Sovereign</p>
           <p className="mt-2">Hey, ich bin bereit. Sag mir einfach, was ich an deinem Repo bauen, prüfen oder verbessern soll. Details wie Logs, Patterns und Runtime bleiben leise im Menü.</p>
+          <p className="mt-3 inline-flex rounded-full border border-cyan-300/20 bg-slate-950/40 px-3 py-1 text-xs text-cyan-100" aria-live="polite">
+            {agentStatusLabel}
+          </p>
         </div>
 
         {wishText.trim() ? (
@@ -277,7 +299,7 @@ export function BuilderContainer({
           aria-label="Agent mit Chat-Auftrag starten"
           data-state={agentDisabled ? 'disabled' : 'idle'}
         >
-          {openhandsIsRunning ? 'Agent arbeitet...' : 'Agent starten'}
+          {runtimeThinkingActive ? cuteThinkingLabel : 'Agent starten'}
         </button>
         {openhandsIsRunning ? (
           <button className={dangerButtonClassName} onClick={onCancelOpenHands} type="button">
