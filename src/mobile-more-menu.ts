@@ -2,7 +2,7 @@ const MENU_ID = 'sovereign-more-menu';
 const MOBILE_QUERY = '(max-width: 767px)';
 const AUTO_MODE_VALUE = 'full-auto-draft-pr';
 
-const PRIMARY_LABELS = ['Repo', 'Builder', 'Files', 'Diff'] as const;
+const PRIMARY_LABELS = ['Repo', 'Chat', 'Builder', 'Files', 'Diff'] as const;
 
 const OPTIONS = [
   'Workflow',
@@ -217,9 +217,7 @@ function createMenu(): HTMLDivElement {
   select.addEventListener('change', (event) => {
     const target = event.currentTarget as HTMLSelectElement;
     const value = normalizeLabel(target.value);
-
     if (!value) return;
-
     clickByText(value);
     target.value = '';
   });
@@ -228,107 +226,90 @@ function createMenu(): HTMLDivElement {
   return box;
 }
 
-function ensureSingleMenu(nav: HTMLElement): void {
-  removeMenusOutside(nav);
-
-  const menus = Array.from(nav.querySelectorAll<HTMLElement>(`#${MENU_ID}`));
-  const [first, ...duplicates] = menus;
-
-  for (const duplicate of duplicates) duplicate.remove();
-  if (!first) nav.appendChild(createMenu());
-}
-
-function installNow(): void {
-  preferGuardedAuto();
-
-  const nav = findNavRoot();
-
+function applyMobileMoreMenu(): void {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
   if (!isMobileViewport()) {
     restoreManagedButtons();
     removeMenus();
     return;
   }
 
+  const nav = findNavRoot();
   if (!nav) return;
 
+  removeMenusOutside(nav);
   applyMobileButtonVisibility(nav);
-  ensureSingleMenu(nav);
+
+  if (!nav.querySelector(`#${MENU_ID}`)) nav.appendChild(createMenu());
 }
 
-function scheduleInstall(): void {
-  const state = runtimeWindow();
+function scheduleMobileMoreMenu(): void {
+  if (typeof window === 'undefined') return;
+  const win = runtimeWindow();
 
-  if (state.__sovereignMoreMenuTimer) return;
+  if (win.__sovereignMoreMenuRaf) window.cancelAnimationFrame(win.__sovereignMoreMenuRaf);
+  if (win.__sovereignMoreMenuTimer) window.clearTimeout(win.__sovereignMoreMenuTimer);
 
-  state.__sovereignMoreMenuTimer = window.setTimeout(() => {
-    state.__sovereignMoreMenuTimer = undefined;
-    installNow();
-  }, 0);
-}
-
-function installObserver(): void {
-  const state = runtimeWindow();
-
-  if (state.__sovereignMoreMenuObserver || typeof MutationObserver === 'undefined') return;
-
-  state.__sovereignMoreMenuObserver = new MutationObserver(() => {
-    scheduleInstall();
+  win.__sovereignMoreMenuRaf = window.requestAnimationFrame(() => {
+    win.__sovereignMoreMenuRaf = undefined;
+    applyMobileMoreMenu();
   });
 
-  state.__sovereignMoreMenuObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  win.__sovereignMoreMenuTimer = window.setTimeout(() => {
+    win.__sovereignMoreMenuTimer = undefined;
+    applyMobileMoreMenu();
+  }, 120);
 }
 
-function installMediaListener(): void {
-  const state = runtimeWindow();
-
-  if (state.__sovereignMoreMenuMedia || typeof window.matchMedia !== 'function') return;
-
-  const media = window.matchMedia(MOBILE_QUERY);
-  state.__sovereignMoreMenuMedia = media;
-
-  media.addEventListener('change', scheduleInstall);
-}
-
-function installBoundedFallback(): void {
-  const state = runtimeWindow();
-
-  if (state.__sovereignMoreMenuFallbackInterval) return;
-
-  state.__sovereignMoreMenuFallbackRuns = 0;
-
-  state.__sovereignMoreMenuFallbackInterval = window.setInterval(() => {
-    state.__sovereignMoreMenuFallbackRuns = (state.__sovereignMoreMenuFallbackRuns ?? 0) + 1;
-    scheduleInstall();
-
-    if (state.__sovereignMoreMenuFallbackRuns >= 8 && state.__sovereignMoreMenuFallbackInterval) {
-      window.clearInterval(state.__sovereignMoreMenuFallbackInterval);
-      state.__sovereignMoreMenuFallbackInterval = undefined;
+function installFallbackLoop(): void {
+  const win = runtimeWindow();
+  if (win.__sovereignMoreMenuFallbackInterval) return;
+  win.__sovereignMoreMenuFallbackRuns = 0;
+  win.__sovereignMoreMenuFallbackInterval = window.setInterval(() => {
+    if (!isMobileViewport()) {
+      if (win.__sovereignMoreMenuFallbackInterval) window.clearInterval(win.__sovereignMoreMenuFallbackInterval);
+      win.__sovereignMoreMenuFallbackInterval = undefined;
+      return;
     }
-  }, 750);
+
+    win.__sovereignMoreMenuFallbackRuns = (win.__sovereignMoreMenuFallbackRuns ?? 0) + 1;
+    applyMobileMoreMenu();
+
+    if (win.__sovereignMoreMenuFallbackRuns >= 10 && win.__sovereignMoreMenuFallbackInterval) {
+      window.clearInterval(win.__sovereignMoreMenuFallbackInterval);
+      win.__sovereignMoreMenuFallbackInterval = undefined;
+    }
+  }, 500);
 }
 
 export function installMobileMoreMenu(): void {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  const win = runtimeWindow();
+  if (win.__sovereignMoreMenuInstalled) return;
+  win.__sovereignMoreMenuInstalled = true;
 
-  const state = runtimeWindow();
+  scheduleMobileMoreMenu();
+  installFallbackLoop();
 
-  if (state.__sovereignMoreMenuInstalled) {
-    installNow();
-    scheduleInstall();
-    return;
+  if (!win.__sovereignMoreMenuObserver && document.body) {
+    win.__sovereignMoreMenuObserver = new MutationObserver(scheduleMobileMoreMenu);
+    win.__sovereignMoreMenuObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'hidden', 'style', 'aria-label', 'title'],
+    });
   }
 
-  state.__sovereignMoreMenuInstalled = true;
-
-  installObserver();
-  installMediaListener();
-  installBoundedFallback();
-
-  installNow();
-  scheduleInstall();
-  window.setTimeout(scheduleInstall, 250);
-  window.setTimeout(scheduleInstall, 800);
+  if (!win.__sovereignMoreMenuMedia && typeof window.matchMedia === 'function') {
+    const media = window.matchMedia(MOBILE_QUERY);
+    win.__sovereignMoreMenuMedia = media;
+    media.addEventListener?.('change', scheduleMobileMoreMenu);
+  }
 }
+
+// Compatibility for older Android WebView injected helpers.
+export const __sovereignMobileMoreMenuCompatibility = {
+  clickByText,
+  preferGuardedAuto,
+};
