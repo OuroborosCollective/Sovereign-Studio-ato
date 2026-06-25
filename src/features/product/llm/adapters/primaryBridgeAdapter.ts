@@ -3,6 +3,7 @@ import { assertPushableBrain } from '../llmRuntimeChecks';
 import type { LlmAdapter, LlmAdapterContext, LlmAdapterResult } from '../llmAdapter';
 import { buildSovereignLlmPrompt } from '../llmAdapter';
 import { normalizePrimaryBridgeUrl, resolvePrimaryBridgeConfig } from '../primaryBridgeConfig';
+import { maskSecrets } from '../../../../shared/utils/crypto';
 
 export interface PrimaryBridgeAdapterOptions {
   proxyUrl?: string;
@@ -51,7 +52,7 @@ async function readBridgeResponse(response: Response): Promise<ChatCompletionRes
       : payload.error
         ? JSON.stringify(payload.error)
         : text || response.statusText || `HTTP ${response.status}`;
-    throw { provider: 'primary-llm-bridge', status: response.status, error: message, isRetryable: response.status === 429 || response.status >= 500 };
+    throw { provider: 'primary-llm-bridge', status: response.status, error: maskSecrets(message), isRetryable: response.status === 429 || response.status >= 500 };
   }
 
   return payload;
@@ -76,6 +77,7 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
           headers: {
             'Content-Type': 'application/json',
             'X-Sovereign-Client': 'android-webview',
+            ...(config.proxyKey ? { 'X-API-Key': config.proxyKey } : {}),
           },
           body: JSON.stringify({
             model: config.model,
@@ -95,7 +97,7 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
 
         return { providerId: 'optional-user-keys', brain: parsed, raw };
       } catch (error) {
-        throw new Error(`Primary bridge provider failed: ${providerError(error)}`);
+        throw new Error(`Primary bridge provider failed: ${maskSecrets(providerError(error))}`);
       }
     },
   };
