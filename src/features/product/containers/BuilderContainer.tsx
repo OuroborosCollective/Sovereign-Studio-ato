@@ -2,10 +2,14 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   builderPublishLabel,
   deriveBuilderContainerState,
+  isPlaceholderMission,
 } from '../runtime/builderContainerRuntime';
 import { getSovereignContainerContract } from '../runtime/sovereignContainerContracts';
 import { SOVEREIGN_FORM_MISSION } from '../runtime/sovereignFormContracts';
 import {
+  SOVEREIGN_ACTION_ANALYZE_MISSION,
+  SOVEREIGN_ACTION_DRAFT_PR,
+  SOVEREIGN_ACTION_REPAIR_LOG,
   SOVEREIGN_ACTION_START_TASK,
 } from '../runtime/sovereignActionContracts';
 import { formatCuteThinkingLabel } from '../runtime/cuteThinkingStatus';
@@ -87,6 +91,9 @@ const IDEA_OPTIONS: IdeaOption[] = [
 ];
 
 const builderContainerContract = getSovereignContainerContract('builder');
+const primaryButtonClassName = 'inline-flex min-h-11 items-center justify-center rounded-full border border-cyan-300/45 bg-cyan-400/10 px-4 py-2 text-sm font-black text-cyan-100 transition hover:border-cyan-200 disabled:cursor-not-allowed disabled:opacity-45';
+const secondaryButtonClassName = 'inline-flex min-h-11 items-center justify-center rounded-full border border-slate-700 bg-slate-950 px-4 py-2 text-sm font-bold text-slate-100 transition hover:border-cyan-400/60 disabled:cursor-not-allowed disabled:opacity-45';
+const dangerButtonClassName = 'inline-flex min-h-11 items-center justify-center rounded-full border border-rose-400/45 bg-rose-500/10 px-4 py-2 text-sm font-black text-rose-100 transition hover:border-rose-200 disabled:cursor-not-allowed disabled:opacity-45';
 
 function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
@@ -115,7 +122,7 @@ function isAnalyzedMission(value: string): boolean {
 
 function missionToWishText(value: string): string {
   const clean = collapseRepeatedAnalyzedMission(value);
-  if (!clean) return '';
+  if (!clean || isPlaceholderMission(clean)) return '';
   if (!isAnalyzedMission(clean)) return clean.replace(/^Ideenfabrik Auftrag:\s*/i, '').trim();
 
   const withoutHeader = clean.replace(/^Ideenfabrik Auftrag:\s*/i, '').trim();
@@ -233,6 +240,7 @@ export function BuilderContainer({
   }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
   const outcomeHints = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
   const agentDisabled = !repoReady || repoBusy || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
+  const visibleDisabledReason = state.disabledReason === 'Mission is empty.' && wishText.trim() ? '' : state.disabledReason;
 
   useEffect(() => {
     if (!runtimeThinkingActive) {
@@ -401,7 +409,7 @@ export function BuilderContainer({
               ) : null}
 
               {sovereignSummary ? <p className="mt-4 text-slate-300">{sovereignSummary}</p> : null}
-              {state.disabledReason ? <p className="mt-3 text-amber-300">{state.disabledReason}</p> : null}
+              {visibleDisabledReason ? <p className="mt-3 text-amber-300">{visibleDisabledReason}</p> : null}
 
               {outcomeHints.length > 0 ? (
                 <div className="mt-4 space-y-1 text-xs" aria-label="OpenHands Ergebnis-Hinweise" data-testid="sovereign-chat-outcome-hints">
@@ -431,7 +439,7 @@ export function BuilderContainer({
               name={SOVEREIGN_FORM_MISSION.id}
               data-role={SOVEREIGN_FORM_MISSION.dataRole}
               data-testid={SOVEREIGN_FORM_MISSION.testId}
-              className="min-h-16 flex-1 resize-none border-0 bg-transparent p-2 text-base leading-6 text-slate-50 outline-none placeholder:text-slate-400"
+              className="max-h-40 min-h-16 flex-1 resize-none border-0 bg-transparent p-2 text-base leading-6 text-slate-50 outline-none placeholder:text-slate-400"
               value={wishText}
               onChange={(event) => setWishText(event.target.value)}
               placeholder="What do you want to build?"
@@ -439,7 +447,7 @@ export function BuilderContainer({
             />
 
             <button
-              className="mt-1 inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-300/60 bg-slate-950 text-2xl text-slate-50 disabled:opacity-45"
+              className="mt-1 inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-300/60 bg-slate-950 text-2xl text-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
               type="submit"
               disabled={agentDisabled}
               data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
@@ -454,13 +462,104 @@ export function BuilderContainer({
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
             <span className="rounded-full px-2 py-1 font-bold">🛠 Tools</span>
             <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1">&lt;/&gt; Code</span>
-            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1">OpenHands</span>
+            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1">🐤 OpenHands</span>
             <span className={repoReady ? 'rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-200' : 'rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-amber-200'}>
               {repoReady ? 'Repo verbunden' : 'Repo fehlt'}
             </span>
+            <span className="ml-auto rounded-full px-3 py-1 text-slate-300">
+              {runtimeThinkingActive ? 'Running task' : 'Waiting for task'} ◷
+            </span>
           </div>
         </div>
+
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1 text-xs" aria-label="Repository Kurzbefehle">
+          <span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-2">
+            ⌘ {repoReady ? 'Repo verbunden' : 'Repo fehlt'}
+          </span>
+          <span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-2">⑂ main</span>
+          <span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-2">↓ Pull</span>
+          <span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-2">↑ Push</span>
+          <span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-2">⑂ Pull Request</span>
+        </div>
+
+        <div className="mt-3">
+          {openhandsIsRunning ? (
+            <button className={dangerButtonClassName} onClick={onCancelOpenHands} type="button" disabled={!onCancelOpenHands}>
+              Agent stoppen
+            </button>
+          ) : (
+            <button
+              className={secondaryButtonClassName}
+              type="button"
+              onClick={analyzeWish}
+              data-role={SOVEREIGN_ACTION_ANALYZE_MISSION.dataRole}
+              data-testid={SOVEREIGN_ACTION_ANALYZE_MISSION.testId}
+            >
+              Auftrag vorbereiten
+            </button>
+          )}
+        </div>
       </form>
+
+      <details className="border-t border-slate-800 bg-slate-950/70 p-4">
+        <summary className="cursor-pointer text-xs font-black uppercase tracking-wide text-slate-400">
+          Werkzeuge, Diagnose und Draft PR
+        </summary>
+
+        <div className="mt-4 grid gap-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={secondaryButtonClassName}
+              onClick={onGenerateIdeas}
+              disabled={!state.canGenerate}
+              data-testid="builder__internal-package-check"
+            >
+              Interne Prüfung
+            </button>
+
+            <button
+              type="button"
+              className={secondaryButtonClassName}
+              onClick={onGenerateErrorWorkflow}
+              disabled={!state.canGenerate}
+              data-role={SOVEREIGN_ACTION_REPAIR_LOG.dataRole}
+              data-testid={SOVEREIGN_ACTION_REPAIR_LOG.testId}
+              aria-label={SOVEREIGN_ACTION_REPAIR_LOG.ariaLabel}
+            >
+              Fehleranalyse
+            </button>
+
+            <button
+              type="button"
+              className={primaryButtonClassName}
+              onClick={onPublishDraftPr}
+              disabled={!state.canPublish}
+              data-role={SOVEREIGN_ACTION_DRAFT_PR.dataRole}
+              data-testid={SOVEREIGN_ACTION_DRAFT_PR.testId}
+              aria-label={SOVEREIGN_ACTION_DRAFT_PR.ariaLabel}
+            >
+              {builderPublishLabel(isPublishing)}
+            </button>
+          </div>
+
+          {visibleDisabledReason ? <p className="text-xs text-amber-300">{visibleDisabledReason}</p> : null}
+
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">Analysierter ausführbarer Auftrag</p>
+            <pre className="sovereign-builder-mission-output mt-2 whitespace-pre-wrap rounded-2xl border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
+              {executableOpenHandsMission}
+            </pre>
+          </div>
+
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">Runtime Preview</p>
+            <pre className="sovereign-builder-mission-output mt-2 whitespace-pre-wrap rounded-2xl border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
+              {sovereignPreview || 'Noch keine Runtime Preview verfügbar.'}
+            </pre>
+          </div>
+        </div>
+      </details>
     </section>
   );
 }
