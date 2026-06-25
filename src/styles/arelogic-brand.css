@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   --are-void: #050816;
   --are-deep: #080d1e;
@@ -7,12 +9,16 @@
 
   --are-ion: #00c8ff;
   --are-ion-soft: rgba(0, 200, 255, 0.18);
+
   --are-matter: #7b5ea7;
   --are-matter-soft: rgba(123, 94, 167, 0.18);
+
   --are-signal: #00ff9c;
   --are-signal-soft: rgba(0, 255, 156, 0.16);
+
   --are-warn: #f59e0b;
   --are-warn-soft: rgba(245, 158, 11, 0.16);
+
   --are-alert: #ff4466;
   --are-alert-soft: rgba(255, 68, 102, 0.16);
 
@@ -40,18 +46,24 @@
   --safe-left: env(safe-area-inset-left, 0px);
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html {
+  min-height: 100%;
   background: var(--are-void);
   color: var(--are-text-primary);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at top left, rgba(0, 200, 255, 0.12), transparent 34rem),
     radial-gradient(circle at bottom right, rgba(123, 94, 167, 0.16), transparent 30rem),
@@ -67,6 +79,13 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: geometricPrecision;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button,
@@ -88,6 +107,12 @@ select:disabled {
   opacity: 0.58;
 }
 
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
 ::selection {
   background: var(--are-ion-soft);
   color: var(--are-text-bright);
@@ -95,6 +120,9 @@ select:disabled {
 
 .sovereign-app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: hidden;
   background:
     linear-gradient(180deg, rgba(8, 13, 30, 0.96), rgba(5, 8, 22, 1)),
     var(--are-void);
@@ -109,6 +137,8 @@ select:disabled {
 .sovereign-panel,
 .sovereign-card,
 .sovereign-runtime-card {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   background:
     linear-gradient(180deg, rgba(12, 20, 40, 0.94), rgba(8, 13, 30, 0.94)),
     var(--are-surface);
@@ -138,10 +168,12 @@ select:disabled {
 }
 
 .sovereign-tab {
+  min-height: 44px;
   border: 1px solid var(--are-border);
   border-radius: var(--are-radius-md);
   background: rgba(12, 20, 40, 0.72);
   color: var(--are-text-secondary);
+  -webkit-tap-highlight-color: transparent;
   transition:
     border-color var(--are-transition-fast),
     background var(--are-transition-fast),
@@ -173,8 +205,10 @@ select:disabled {
 .sovereign-primary-button,
 .sovereign-secondary-button,
 .sovereign-danger-button {
+  min-height: 44px;
   border-radius: var(--are-radius-md);
   border: 1px solid var(--are-border);
+  -webkit-tap-highlight-color: transparent;
   transition:
     border-color var(--are-transition-fast),
     background var(--are-transition-fast),
@@ -224,15 +258,22 @@ select:disabled {
 .sovereign-textarea,
 .sovereign-select {
   width: 100%;
+  min-height: 44px;
   border: 1px solid var(--are-border);
   border-radius: var(--are-radius-md);
   background: rgba(5, 8, 22, 0.74);
   color: var(--are-text-primary);
   outline: none;
+  -webkit-tap-highlight-color: transparent;
   transition:
     border-color var(--are-transition-fast),
     background var(--are-transition-fast),
     box-shadow var(--are-transition-fast);
+}
+
+.sovereign-textarea {
+  min-height: 120px;
+  resize: vertical;
 }
 
 .sovereign-input:focus,
@@ -340,6 +381,7 @@ select:disabled {
 .sovereign-code,
 .sovereign-log,
 .sovereign-pre {
+  max-width: 100%;
   border: 1px solid var(--are-border);
   border-radius: var(--are-radius-md);
   background: rgba(5, 8, 22, 0.82);
@@ -355,7 +397,8 @@ select:disabled {
 .sovereign-log,
 .sovereign-pre {
   overflow: auto;
-  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sovereign-log-line-ok {
@@ -453,7 +496,17 @@ select:disabled {
   margin: -1px !important;
 }
 
-@media (max-width: 767px) {
+@media (hover: none) and (pointer: coarse) {
+  .sovereign-tab:hover,
+  .sovereign-button:hover,
+  .sovereign-primary-button:hover,
+  .sovereign-secondary-button:hover,
+  .sovereign-danger-button:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 599px) {
   .sovereign-app-shell {
     padding:
       calc(10px + var(--safe-top))
@@ -462,29 +515,69 @@ select:disabled {
       calc(10px + var(--safe-left));
   }
 
-  .sovereign-panel {
-    padding: 14px;
-    border-radius: var(--are-radius-md);
-  }
-
+  .sovereign-panel,
   .sovereign-card,
   .sovereign-runtime-card {
     padding: 12px;
     border-radius: var(--are-radius-md);
   }
 
-  .sovereign-tab {
-    min-height: 42px;
-  }
-
-  .sovereign-input,
-  .sovereign-textarea,
-  .sovereign-select,
+  .sovereign-tab,
   .sovereign-button,
   .sovereign-primary-button,
   .sovereign-secondary-button,
-  .sovereign-danger-button {
+  .sovereign-danger-button,
+  .sovereign-input,
+  .sovereign-select {
     min-height: 44px;
+  }
+}
+
+@media (min-width: 600px) and (max-width: 1024px) {
+  .sovereign-app-shell {
+    padding:
+      calc(14px + var(--safe-top))
+      calc(14px + var(--safe-right))
+      calc(16px + var(--safe-bottom))
+      calc(14px + var(--safe-left));
+  }
+
+  .sovereign-panel {
+    padding: 18px;
+  }
+
+  .sovereign-card,
+  .sovereign-runtime-card {
+    padding: 15px;
+  }
+
+  .sovereign-tab {
+    min-height: 46px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .sovereign-app-shell {
+    padding:
+      calc(18px + var(--safe-top))
+      calc(18px + var(--safe-right))
+      calc(18px + var(--safe-bottom))
+      calc(18px + var(--safe-left));
+  }
+}
+
+@supports not (min-height: 100dvh) {
+  body,
+  #root,
+  .sovereign-app-shell {
+    min-height: -webkit-fill-available;
+  }
+}
+
+@supports not (backdrop-filter: blur(16px)) {
+  .sovereign-mobile-bar,
+  .sovereign-mobile-drawer {
+    background: rgba(5, 8, 22, 0.96);
   }
 }
 
@@ -497,4 +590,4 @@ select:disabled {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
   }
-  }
+                   }
