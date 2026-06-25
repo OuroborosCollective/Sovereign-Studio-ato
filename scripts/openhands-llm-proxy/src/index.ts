@@ -6,6 +6,19 @@ type WorkerFetchHandler<BindingEnv> = {
   fetch(request: Request, env: BindingEnv): Promise<Response> | Response;
 };
 
+type SafeRouteLog = {
+  method: string;
+  path: string;
+  hasAuth: boolean;
+  contentType: string | null;
+  bodyKeys?: string[];
+  hasMessages?: boolean;
+  hasPrompt?: boolean;
+  hasInput?: boolean;
+  parsedMessageCount?: number;
+  inputType?: string;
+};
+
 export interface Env {
   AI: WorkersAiBinding;
   DEFAULT_MODEL?: string;
@@ -22,6 +35,28 @@ function json(data: unknown, status = 200): Response {
       "Access-Control-Allow-Headers": "Content-Type, Authorization"
     },
   });
+}
+
+function createRouteLog(request: Request, pathname: string): SafeRouteLog {
+  return {
+    method: request.method,
+    path: pathname,
+    hasAuth: Boolean(request.headers.get("Authorization")),
+    contentType: request.headers.get("Content-Type")
+  };
+}
+
+function logRoute(label: string, routeLog: SafeRouteLog): void {
+  console.log(label, JSON.stringify(routeLog));
+}
+
+function logSafeError(label: string, error: unknown): void {
+  const errorType = error instanceof Error ? error.name : typeof error;
+  console.log(label, JSON.stringify({ errorType }));
+}
+
+function safeRequestError(status = 400): Response {
+  return json({ error: { message: "Request could not be processed" } }, status);
 }
 
 function requireProxyKey(request: Request, env: Env): Response | null {
@@ -43,15 +78,15 @@ function extractModel(raw: string, def: string): string {
 }
 
 function getModelFromBody(body: Record<string, unknown>, env: Env): string {
-  const rawModel = typeof body.model === "string" && body.model.trim() 
-    ? body.model.trim() 
+  const rawModel = typeof body.model === "string" && body.model.trim()
+    ? body.model.trim()
     : env.DEFAULT_MODEL || "@cf/meta/llama-3.1-8b-instruct-fp8";
   return extractModel(rawModel, env.DEFAULT_MODEL || "@cf/meta/llama-3.1-8b-instruct-fp8");
 }
 
 function extractMessagesFromBody(body: Record<string, unknown>): Array<{role: string; content: string}> {
   const messages: Array<{role: string; content: string}> = [];
-  
+
   // Handle messages array (standard chat format)
   if (Array.isArray(body.messages)) {
     for (const m of body.messages as Array<unknown>) {
@@ -66,46 +101,37 @@ function extractMessagesFromBody(body: Record<string, unknown>): Array<{role: st
       }
     }
   }
-  
+
   // Handle prompt (simple string format)
   if (messages.length === 0 && typeof body.prompt === "string") {
     messages.push({ role: "user", content: body.prompt });
   }
-  
+
   // Handle input (OpenAI Responses API format)
   if (messages.length === 0 && typeof body.input === "string") {
     messages.push({ role: "user", content: body.input });
   }
-  
+
   return messages;
 }
 
 async function chatComplete(request: Request, env: Env): Promise<Response> {
-  const debug: Record<string, unknown> = {
-    method: request.method,
-    path: new URL(request.url).pathname,
-    hasAuth: Boolean(request.headers.get("Authorization")),
-    contentType: request.headers.get("Content-Type")
-  };
+  const routeLog = createRouteLog(request, new URL(request.url).pathname);
 
   const auth = requireProxyKey(request, env);
   if (auth) return auth;
 
   try {
     const body = await request.json() as Record<string, unknown>;
-    debug.bodyKeys = Object.keys(body);
-    debug.bodyModel = body.model;
-    debug.hasMessages = Array.isArray(body.messages);
-    debug.hasPrompt = typeof body.prompt === "string";
-    debug.hasInput = typeof body.input === "string";
+    routeLog.bodyKeys = Object.keys(body);
+    routeLog.hasMessages = Array.isArray(body.messages);
+    routeLog.hasPrompt = typeof body.prompt === "string";
+    routeLog.hasInput = typeof body.input === "string";
 
     const model = getModelFromBody(body, env);
-    debug.model = model;
-
     const messages = extractMessagesFromBody(body);
-    debug.parsedMessageCount = messages.length;
-    
-    console.log("DEBUG:", JSON.stringify(debug));
+    routeLog.parsedMessageCount = messages.length;
+    logRoute("OpenHands proxy chat request", routeLog);
 
     if (messages.length === 0) {
       return json({ error: { message: "no valid messages" } }, 400);
@@ -129,35 +155,28 @@ async function chatComplete(request: Request, env: Env): Promise<Response> {
       }]
     });
   } catch (error) {
-    console.log("DEBUG error:", JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
-    return json({ error: { message: error instanceof Error ? error.message : "Error" } }, 400);
+    logSafeError("OpenHands proxy chat error", error);
+    return safeRequestError(400);
   }
 }
 
 // OpenAI Responses API support
 async function responsesAPI(request: Request, env: Env): Promise<Response> {
-  const debug: Record<string, unknown> = {
-    method: request.method,
-    path: new URL(request.url).pathname,
-    hasAuth: Boolean(request.headers.get("Authorization")),
-    contentType: request.headers.get("Content-Type")
-  };
+  const routeLog = createRouteLog(request, new URL(request.url).pathname);
 
   const auth = requireProxyKey(request, env);
   if (auth) return auth;
 
   try {
     const body = await request.json() as Record<string, unknown>;
-    debug.bodyKeys = Object.keys(body);
-    debug.bodyModel = body.model;
-    debug.hasInput = typeof body.input === "string";
+    routeLog.bodyKeys = Object.keys(body);
+    routeLog.hasInput = typeof body.input === "string";
 
     const model = getModelFromBody(body, env);
-    debug.model = model;
 
     // Extract input text - support multiple formats
     let inputText = "";
-    
+
     if (typeof body.input === "string" && body.input.trim()) {
       inputText = body.input.trim();
     } else if (Array.isArray(body.input)) {
@@ -199,20 +218,19 @@ async function responsesAPI(request: Request, env: Env): Promise<Response> {
         }
       }
     }
-    
+
     // Fallback: if still empty, use prompt field
     if (!inputText.trim() && typeof body.prompt === "string") {
       inputText = body.prompt;
     }
-    
-    debug.inputText = inputText.substring(0, 100);
-    debug.inputType = typeof body.input;
-    console.log("DEBUG responses:", JSON.stringify(debug));
+
+    routeLog.inputType = typeof body.input;
+    logRoute("OpenHands proxy responses request", routeLog);
 
     // Handle empty/initial requests gracefully - return a minimal ready response
     // This happens when OpenHands initializes the Responses API
     if (!inputText.trim()) {
-      console.log("DEBUG: Empty input received, returning minimal ready response");
+      logRoute("OpenHands proxy empty responses initialization", routeLog);
       return json({
         id: `resp_${crypto.randomUUID().replace(/-/g, "").substring(0, 12)}`,
         object: "response",
@@ -225,10 +243,10 @@ async function responsesAPI(request: Request, env: Env): Promise<Response> {
     }
 
     // Call Workers AI
-    const result = await env.AI.run(model, { 
-      messages: [{ role: "user", content: inputText }] 
+    const result = await env.AI.run(model, {
+      messages: [{ role: "user", content: inputText }]
     });
-    
+
     const outputText = typeof result === "object" && result && "response" in result
       ? String((result as { response?: unknown }).response || "")
       : JSON.stringify(result);
@@ -255,8 +273,8 @@ async function responsesAPI(request: Request, env: Env): Promise<Response> {
       output_text: outputText
     });
   } catch (error) {
-    console.log("DEBUG responses error:", JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
-    return json({ error: { message: error instanceof Error ? error.message : "Error" } }, 400);
+    logSafeError("OpenHands proxy responses error", error);
+    return safeRequestError(400);
   }
 }
 
@@ -264,13 +282,8 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
-    
-    console.log("DEBUG:", JSON.stringify({
-      method: request.method,
-      path: pathname,
-      hasAuth: Boolean(request.headers.get("Authorization")),
-      contentType: request.headers.get("Content-Type")
-    }));
+
+    logRoute("OpenHands proxy route", createRouteLog(request, pathname));
 
     // Handle CORS preflight
     if (request.method === "OPTIONS") {
