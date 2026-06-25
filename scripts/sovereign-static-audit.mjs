@@ -22,6 +22,12 @@ const forbiddenEntrypointDomInstallers = [
   'installMobileRuntimeModules',
 ];
 
+const releaseRuntimeConfigFiles = [
+  'src/App.tsx',
+  'src/features/product/runtime/externalMemorySync.ts',
+  'src/features/product/runtime/remoteMemoryGatewayBridge.ts',
+];
+
 const strictCapacitorMajor = process.env.SOVEREIGN_STRICT_CAPACITOR_MAJOR === '1';
 let ok = true;
 
@@ -47,6 +53,33 @@ function versionMajor(value) {
   return match ? Number.parseInt(match[0], 10) : null;
 }
 
+function isLocalHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isNonLocalHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && !isLocalHttpUrl(value);
+  } catch {
+    return false;
+  }
+}
+
+function collectStringLiterals(source) {
+  const literals = [];
+  const pattern = /(['"`])((?:\\.|(?!\1)[\s\S])*)\1/g;
+  for (const match of source.matchAll(pattern)) {
+    literals.push(match[2]);
+  }
+  return literals;
+}
+
 for (const file of required) {
   if (!existsSync(file)) fail(`missing: ${file}`);
 }
@@ -60,6 +93,20 @@ if (existsSync('src/main.tsx')) {
 
   for (const token of forbiddenEntrypointDomInstallers) {
     if (main.includes(token)) fail(`src/main.tsx must not boot DOM-mutating mobile installer: ${token}.`);
+  }
+}
+
+for (const file of releaseRuntimeConfigFiles) {
+  if (!existsSync(file)) continue;
+  const source = read(file);
+  const nonLocalHttpUrls = collectStringLiterals(source).filter(isNonLocalHttpUrl);
+
+  if (nonLocalHttpUrls.length) {
+    fail(`${file} must not ship non-local HTTP endpoint default(s): ${[...new Set(nonLocalHttpUrls)].join(', ')}`);
+  }
+
+  if (/allowSelfHostedHttp\s*:\s*true/.test(source)) {
+    fail(`${file} must not enable allowSelfHostedHttp=true in release runtime defaults.`);
   }
 }
 
