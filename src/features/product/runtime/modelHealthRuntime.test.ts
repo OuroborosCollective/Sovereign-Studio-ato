@@ -16,11 +16,33 @@ import {
 import type { LlmAdapter, LlmAdapterContext, LlmAdapterResult } from '../llm/llmAdapter';
 
 const brain: LlmAdapterResult['brain'] = {
-  perception: '',
-  analysis: '',
-  plan: '',
-  execution: { patches: [] },
-  learning: null,
+  perception: {
+    domain: 'runtime-health',
+    intent: 'probe adapter readiness',
+    architecture: 'model health runtime',
+    confidence: 1,
+  },
+  analysis: {
+    severity: 'low',
+    issues: [],
+    rootCause: 'health probe mock response',
+    systemicRisk: 'none',
+  },
+  plan: {
+    strategy: 'return deterministic health response',
+    phases: [],
+    estimatedComplexity: 'trivial',
+  },
+  execution: {
+    patches: [],
+    integrationNotes: 'No code changes are produced by a health probe.',
+    testStrategy: 'Use deterministic adapter mocks.',
+  },
+  learning: {
+    patterns: ['health-probe'],
+    rules: ['model health tests must satisfy the SovereignBrainResult contract'],
+    architectureUpgrade: 'Keep health mocks aligned with the runtime brain contract.',
+  },
 };
 
 const okResult: LlmAdapterResult = {
