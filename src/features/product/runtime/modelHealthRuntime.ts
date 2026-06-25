@@ -103,7 +103,7 @@ function createTimeoutSignal(timeoutMs: number, parent?: AbortSignal): {
   cleanup: () => void;
 } {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
+  const timeout = globalThis.setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
   const onParentAbort = () => controller.abort();
 
   if (parent) {
@@ -114,7 +114,7 @@ function createTimeoutSignal(timeoutMs: number, parent?: AbortSignal): {
   return {
     signal: controller.signal,
     cleanup: () => {
-      window.clearTimeout(timeout);
+      globalThis.clearTimeout(timeout);
       parent?.removeEventListener('abort', onParentAbort);
     },
   };
