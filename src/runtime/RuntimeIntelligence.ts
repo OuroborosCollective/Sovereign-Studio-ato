@@ -576,6 +576,9 @@ export class RuntimeTelemetry {
 
 const globalTelemetry = new RuntimeTelemetry();
 
+/** Export global telemetry instance */
+export { globalTelemetry };
+
 // ============================================================================
 // Circuit Breaker
 // ============================================================================

@@ -2,6 +2,32 @@ export type OpenHandsDeploymentMode = 'disabled' | 'external-agent-runtime';
 export type OpenHandsJobStatus = 'idle' | 'queued' | 'running' | 'waiting-for-user' | 'blocked' | 'failed' | 'completed';
 export type OpenHandsEventLevel = 'info' | 'warning' | 'error' | 'success';
 
+/** OpenHands health status */
+export type OpenHandsHealthStatus = 'healthy' | 'degraded' | 'unknown' | 'unavailable';
+
+/** OpenHands runtime health report */
+export interface OpenHandsHealthReport {
+  status: OpenHandsHealthStatus;
+  latencyMs: number | null;
+  lastCheck: number | null;
+  consecutiveFailures: number;
+  lastError?: string;
+  agentApiUrl: string;
+  adminConsoleUrl: string;
+}
+
+/** Create initial OpenHands health report */
+export function createOpenHandsHealthReport(config: OpenHandsEnterpriseConfig): OpenHandsHealthReport {
+  return {
+    status: config.ready ? 'unknown' : 'unavailable',
+    latencyMs: null,
+    lastCheck: null,
+    consecutiveFailures: 0,
+    agentApiUrl: config.agentApiUrl,
+    adminConsoleUrl: config.adminConsoleUrl,
+  };
+}
+
 export interface OpenHandsEnterpriseConfigInput {
   enabled?: boolean;
   agentApiUrl?: string;
