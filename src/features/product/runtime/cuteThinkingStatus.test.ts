@@ -27,15 +27,29 @@ describe('cuteThinkingStatus', () => {
     expect(CUTE_THINKING_FRAMES.some((frame) => frame.text.includes('Küken schreibt'))).toBe(true);
   });
 
+  it('uses status-aware chick phrases for working and code states', () => {
+    const running = getCuteThinkingFrame(1, true, 'Agent arbeitet');
+    const coding = getCuteThinkingFrame(2, true, 'Ich schreibe Code');
+
+    expect(running.text).toMatch(/Küken|Piep/);
+    expect(coding.text).toMatch(/Küken|Piep|Code/);
+  });
+
+  it('uses a soft done phrase when work completed', () => {
+    const done = getCuteThinkingFrame(4, true, 'completed');
+
+    expect(done.text).toBe('Küken hat fertig gepiepst');
+  });
+
   it('always includes a kaomoji in formatted labels', () => {
     const label = formatCuteThinkingLabel({ index: 5, active: true, status: 'running' });
 
     expect(CUTE_KAOMOJI_FRAMES.some((kaomoji) => label.includes(kaomoji))).toBe(true);
   });
 
-  it('picks deterministic kaomoji frames from the index', () => {
-    expect(getCuteKaomojiFrame(0)).toBe(getCuteKaomojiFrame(0));
-    expect(CUTE_KAOMOJI_FRAMES).toContain(getCuteKaomojiFrame(12));
+  it('picks deterministic random-looking kaomoji frames from index and salt', () => {
+    expect(getCuteKaomojiFrame(0, 11)).toBe(getCuteKaomojiFrame(0, 11));
+    expect(CUTE_KAOMOJI_FRAMES).toContain(getCuteKaomojiFrame(12, 99));
   });
 
   it('formats active labels with soft thinking dots and status', () => {
@@ -43,5 +57,6 @@ describe('cuteThinkingStatus', () => {
 
     expect(label).toContain('...');
     expect(label).toContain('running');
+    expect(label).toMatch(/Küken|Piep/);
   });
 });
