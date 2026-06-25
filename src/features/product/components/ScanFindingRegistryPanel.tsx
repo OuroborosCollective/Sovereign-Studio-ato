@@ -1,3 +1,4 @@
+import React, { memo, useMemo } from 'react';
 import {
   SCAN_FINDING_CATEGORIES,
   buildScanFindingPublishGate,
@@ -19,7 +20,7 @@ function severityClass(severity: ScanFindingSeverity): string {
   return 'text-slate-300';
 }
 
-function FindingCard({ finding }: { finding: ScanFinding }) {
+const FindingCard = memo(({ finding }: { finding: ScanFinding }) => {
   return (
     <details className="rounded border border-slate-800 bg-slate-900/70 p-3">
       <summary className="cursor-pointer">
@@ -35,21 +36,39 @@ function FindingCard({ finding }: { finding: ScanFinding }) {
       </div>
     </details>
   );
-}
+});
 
-export function ScanFindingRegistryPanel({ registry }: ScanFindingRegistryPanelProps) {
-  const activeFindings = registry.findings.filter((finding) => finding.status === 'active');
-  const resolvedFindings = registry.findings.filter((finding) => finding.status === 'resolved');
-  const grouped = groupScanFindingsByCategory(activeFindings);
+FindingCard.displayName = 'FindingCard';
+
+export const ScanFindingRegistryPanel = memo(({ registry }: ScanFindingRegistryPanelProps) => {
+  const activeFindings = useMemo(() =>
+    registry.findings.filter((finding) => finding.status === 'active'),
+    [registry.findings]
+  );
+  const resolvedFindings = useMemo(() =>
+    registry.findings.filter((finding) => finding.status === 'resolved'),
+    [registry.findings]
+  );
+  const grouped = useMemo(() =>
+    groupScanFindingsByCategory(activeFindings),
+    [activeFindings]
+  );
   const latestRun = registry.runs[0];
-  const gate = buildScanFindingPublishGate(registry);
+  const gate = useMemo(() =>
+    buildScanFindingPublishGate(registry),
+    [registry]
+  );
+  const summary = useMemo(() =>
+    summarizeScanFindingRegistry(registry),
+    [registry]
+  );
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-bold">Scan Findings Registry</h2>
-          <p className="mt-1 text-xs text-slate-400">{summarizeScanFindingRegistry(registry)}</p>
+          <p className="mt-1 text-xs text-slate-400">{summary}</p>
         </div>
         <span className={`rounded bg-slate-900 px-2 py-1 text-xs font-bold uppercase ${gate.allowed ? 'text-emerald-300' : 'text-red-300'}`}>
           {gate.allowed ? 'clear' : 'needs attention'}
@@ -92,4 +111,6 @@ export function ScanFindingRegistryPanel({ registry }: ScanFindingRegistryPanelP
       ) : null}
     </section>
   );
-}
+});
+
+ScanFindingRegistryPanel.displayName = 'ScanFindingRegistryPanel';
