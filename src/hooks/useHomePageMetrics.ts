@@ -31,16 +31,6 @@ function formatTime(date: Date): string {
   });
 }
 
-function getCurrentTimeMetric(): HomePageMetric {
-  return {
-    label: 'Time',
-    value: formatTime(new Date()),
-    unit: '',
-    isDemo: false,
-    source: 'system',
-  };
-}
-
 function deriveMetricsFromHealth(health: SovereignHealthReport | null): HomePageMetric[] {
   if (!health) return DEMO_METRICS;
 
