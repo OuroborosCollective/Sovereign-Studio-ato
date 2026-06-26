@@ -277,6 +277,13 @@ function realStopper(lines: string[]): boolean {
   return lines.some((line) => has(line, STOPPERS) && !has(line, HARMLESS));
 }
 
+function hasExplicitDataState(carrier: Element): boolean {
+  const source = carrier.getAttribute('data-sovereign-source') ?? carrier.getAttribute('data-coach-source');
+  const hash = carrier.getAttribute('data-sovereign-hash') ?? carrier.getAttribute('data-coach-hash');
+  const tick = carrier.getAttribute('data-sovereign-tick') ?? carrier.getAttribute('data-coach-tick');
+  return Boolean(source || hash || tick);
+}
+
 function domDataState(): ExternalCoachState | null {
   const carrier = document.querySelector<HTMLElement>('[data-sovereign-coach-state], [data-coach-lamp], [data-coach-title], [data-coach-message], [data-coach-action]');
   if (!carrier || carrier.closest(`#${ROOT_ID}`)) return null;
@@ -284,7 +291,10 @@ function domDataState(): ExternalCoachState | null {
   if (json) {
     try { return normalizeState(JSON.parse(json), 'dom-fallback'); } catch { return null; }
   }
-  return normalizeState({ lamp: carrier.getAttribute('data-coach-lamp'), title: carrier.getAttribute('data-coach-title'), message: carrier.getAttribute('data-coach-message'), action: carrier.getAttribute('data-coach-action'), thinking: carrier.getAttribute('data-coach-thinking'), source: 'dom-fallback' }, 'dom-fallback');
+  const rawLamp = carrier.getAttribute('data-coach-lamp');
+  const lamp = rawLamp === 'green' || rawLamp === 'yellow' || rawLamp === 'red' ? rawLamp : null;
+  if (lamp === 'green' && !hasExplicitDataState(carrier)) return null;
+  return normalizeState({ lamp, title: carrier.getAttribute('data-coach-title'), message: carrier.getAttribute('data-coach-message'), action: carrier.getAttribute('data-coach-action'), thinking: carrier.getAttribute('data-coach-thinking'), source: 'dom-fallback' }, 'dom-fallback');
 }
 
 function setupState(): ExternalCoachState | null {
@@ -383,13 +393,13 @@ function domState(signal = bodySignal()): ExternalCoachState {
   const dataState = domDataState();
   if (dataState) return remember(dataState);
   if (realStopper(signal.lines)) return remember({ lamp: 'red', title: 'Ich sehe einen echten Stopper', message: 'Ich zeige dir jetzt Repair oder Logs. Folge nur dem naechsten markierten Schritt.', action: 'Repair/Logs automatisch pruefen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
-  if (has(signal.normalized, THINKING) && !has(signal.normalized, READY)) return remember({ lamp: 'green', title: 'Ich arbeite gerade', message: 'Ich analysiere und pruefe. Du musst jetzt nichts suchen oder klicken.', action: 'Bitte warten.', thinking: true, source: 'dom-fallback', updatedAt: wallClockMs() });
-  if (has(signal.normalized, READY)) return remember({ lamp: 'green', title: has(signal.normalized, ['code wiederhergestellt']) ? 'Code wiederhergestellt' : 'Ergebnis ist bereit', message: 'Die Dateien sind akzeptiert. Pruefe Files und Diff. Danach kann der Draft PR bewusst erstellt werden.', action: 'Files/Diff pruefen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
+  if (has(signal.normalized, THINKING) && !has(signal.normalized, READY)) return remember({ lamp: 'yellow', title: 'Ich arbeite gerade', message: 'Ich analysiere und pruefe. Du musst jetzt nichts suchen oder klicken.', action: 'Bitte warten.', thinking: true, source: 'dom-fallback', updatedAt: wallClockMs() });
+  if (has(signal.normalized, READY)) return remember({ lamp: 'yellow', title: has(signal.normalized, ['code wiederhergestellt']) ? 'Code wiederhergestellt' : 'Ergebnis ist bereit', message: 'Die Dateien sind akzeptiert. Pruefe Files und Diff. Danach kann der Draft PR bewusst erstellt werden.', action: 'Files/Diff pruefen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
   if (has(signal.normalized, REPO_MISSING)) return remember({ lamp: 'yellow', title: 'Ich brauche zuerst dein Repo', message: 'Oeffne das Zahnrad oder tippe Repo. Trage Repository URL und optional privaten Zugang ein. Danach Load Repo.', action: 'Repo Setup oeffnen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
-  if (has(signal.normalized, GENERATED)) return remember({ lamp: 'green', title: 'Ich habe Ergebnis-Dateien', message: 'Pruefe kurz die erzeugten Dateien. Wenn alles passt, geht es weiter zum Draft PR.', action: 'Dateien pruefen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
-  if (has(signal.normalized, ACCEPTED)) return remember({ lamp: 'green', title: 'Auftrag ist angenommen', message: 'Der externe Auftrag wurde erkannt und bleibt im Ablauf.', action: 'Plan/Logs verfolgen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
-  if (has(signal.normalized, MEMORY)) return remember({ lamp: 'green', title: 'Pattern Memory ist aktiv', message: 'Pattern- oder Memory-Signale wurden erkannt.', action: 'Pattern/Memory pruefen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
-  if (has(signal.normalized, HEALTHY)) return remember({ lamp: 'green', title: 'Checks sehen gesund aus', message: 'Die Runtime-Pruefung ist gruen. Du kannst zum Repo, Plan oder Dateien zurueck.', action: 'Weiter im Hauptfluss.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
+  if (has(signal.normalized, GENERATED)) return remember({ lamp: 'yellow', title: 'Ich habe Ergebnis-Dateien', message: 'Pruefe kurz die erzeugten Dateien. Wenn alles passt, geht es weiter zum Draft PR.', action: 'Dateien pruefen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
+  if (has(signal.normalized, ACCEPTED)) return remember({ lamp: 'yellow', title: 'Auftrag ist angenommen', message: 'Der externe Auftrag wurde erkannt und bleibt im Ablauf.', action: 'Plan/Logs verfolgen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
+  if (has(signal.normalized, MEMORY)) return remember({ lamp: 'yellow', title: 'Pattern Memory ist aktiv', message: 'Pattern- oder Memory-Signale wurden erkannt.', action: 'Pattern/Memory pruefen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
+  if (has(signal.normalized, HEALTHY)) return remember({ lamp: 'yellow', title: 'Checks sehen gesund aus', message: 'Die Runtime-Pruefung ist gruen. Du kannst zum Repo, Plan oder Dateien zurueck.', action: 'Weiter im Hauptfluss.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
   if (has(signal.normalized, MISSION)) return remember({ lamp: 'yellow', title: 'Ich brauche deinen Wunsch', message: 'Schreibe kurz, was ich verbessern soll. Ich plane danach automatisch weiter.', action: 'Auftrag schreiben.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
   return remember({ lamp: 'yellow', title: 'Ich warte auf den Start', message: 'Beginne mit Repo Setup. Danach fuehre ich dich Schritt fuer Schritt weiter.', action: 'Repo oeffnen.', thinking: false, source: 'dom-fallback', updatedAt: wallClockMs() });
 }

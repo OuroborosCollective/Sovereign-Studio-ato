@@ -247,15 +247,60 @@ describe('KI Coach real module', () => {
     expect(coachText()).toContain('Aktivitaet ohne neues Runtime-Signal');
   });
 
-  it('uses DOM fallback when no runtime state exists', async () => {
+  it('uses DOM fallback with yellow lamp when no runtime state exists', async () => {
     mountShell('runtime validation coverage healthy 21/21 runtime validation');
 
     const { installMobileOperatorCoach } = await loadCoach();
     installMobileOperatorCoach();
     advanceInitialRender();
 
-    expect(coachRoot().className).toBe('green');
+    // DOM-fallback should use yellow, not green - no strong success without runtime evidence
+    expect(coachRoot().className).toBe('yellow');
     expect(coachText()).toContain('Checks sehen gesund aus');
+  });
+
+  it('DOM-fallback cannot produce green without explicit data-state', async () => {
+    mountShell('self review: accepted generated files workflow accepted');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    // DOM-fallback should never produce green for success signals
+    expect(coachRoot().className).not.toBe('green');
+  });
+
+  it('DOM-fallback with explicit data-sovereign-coach-state produces green when lamp is set', async () => {
+    mountShell('<div id="carrier" data-sovereign-coach-state=\'{"lamp":"green","title":"Test","message":"Test msg","action":"Test action"}\'></div>');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    // When data-sovereign-coach-state with lamp is present, green is allowed
+    expect(coachRoot().className).toBe('green');
+  });
+
+  it('DOM-fallback data-coach-lamp=green without explicit source/hash/tick produces yellow', async () => {
+    mountShell('<div id="carrier" data-coach-lamp="green" data-coach-title="Test" data-coach-message="Msg" data-coach-action="Act"></div>');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    // Green data-coach-lamp without explicit source/hash/tick should be ignored
+    expect(coachRoot().className).toBe('yellow');
+  });
+
+  it('DOM-fallback data-coach-lamp=green with explicit source produces green', async () => {
+    mountShell('<div id="carrier" data-coach-lamp="green" data-coach-title="Test" data-coach-message="Msg" data-coach-action="Act" data-coach-source="runtime"></div>');
+
+    const { installMobileOperatorCoach } = await loadCoach();
+    installMobileOperatorCoach();
+    advanceInitialRender();
+
+    // Green with explicit source should be allowed
+    expect(coachRoot().className).toBe('green');
   });
 
   it('detects real DOM fallback stoppers', async () => {
@@ -589,7 +634,7 @@ describe('KI Coach real module', () => {
       expect(coachText()).toContain('Repository bereit');
     });
 
-    it('falls back to DOM when no setup state is available', async () => {
+    it('falls back to DOM with yellow when no setup state is available', async () => {
       mountShell('runtime validation coverage healthy 21/21 runtime validation');
 
       // No setup state set
@@ -599,7 +644,8 @@ describe('KI Coach real module', () => {
       installMobileOperatorCoach();
       advanceInitialRender();
 
-      expect(coachRoot().className).toBe('green');
+      // DOM-fallback should use yellow for success signals
+      expect(coachRoot().className).toBe('yellow');
       expect(coachText()).toContain('Checks sehen gesund aus');
     });
   });
