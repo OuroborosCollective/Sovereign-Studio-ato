@@ -73,70 +73,70 @@ describe('workflowRepairPlan', () => {
   });
 
   it('does not fabricate repair mission from unknown status', () => {
-    const plan = buildWorkflowRepairPlan(report({
+    const plan = buildWorkflowRepairPlan({ report: report({
       status: 'unknown',
       checks: [],
-    }));
+    })});
     expect(plan.blocked).toBe(true);
     expect(plan.severity).toBe('low');
     expect(plan.actions).toHaveLength(0);
   });
 
   it('blocks when errors exist but no failed checks', () => {
-    const plan = buildWorkflowRepairPlan(report({
+    const plan = buildWorkflowRepairPlan({ report: report({
       status: 'unknown',
       checks: [],
       errors: ['GitHub API rate limited'],
-    }));
+    })});
     expect(plan.blocked).toBe(false);
     expect(plan.severity).toBe('medium');
     expect(plan.actions).toHaveLength(1);
   });
 
   it('maps lint check failure to correct suggested files', () => {
-    const plan = buildWorkflowRepairPlan(report({
+    const plan = buildWorkflowRepairPlan({ report: report({
       status: 'red',
       checks: [{ name: 'lint', status: 'red', source: 'check-run', summary: 'ESLint found 5 errors' }],
-    }));
+    })});
     expect(plan.blocked).toBe(false);
     expect(plan.actions[0].suggestedFiles).toContain('src/**/*');
     expect(plan.actions[0].suggestedFiles).toContain('eslint.config.*');
   });
 
   it('maps test check failure to correct suggested files', () => {
-    const plan = buildWorkflowRepairPlan(report({
+    const plan = buildWorkflowRepairPlan({ report: report({
       status: 'red',
       checks: [{ name: 'test', status: 'red', source: 'check-run', summary: 'Vitest failed' }],
-    }));
+    })});
     expect(plan.blocked).toBe(false);
     expect(plan.actions[0].suggestedFiles).toContain('src/**/*.test.ts');
     expect(plan.actions[0].suggestedFiles).toContain('src/**/*.test.tsx');
   });
 
   it('maps build check failure to correct suggested files', () => {
-    const plan = buildWorkflowRepairPlan(report({
+    const plan = buildWorkflowRepairPlan({ report: report({
       status: 'red',
       checks: [{ name: 'build', status: 'red', source: 'check-run', summary: 'Vite build failed' }],
-    }));
+    })});
     expect(plan.blocked).toBe(false);
     expect(plan.actions[0].suggestedFiles).toContain('tsconfig.json');
     expect(plan.actions[0].suggestedFiles).toContain('vite.config.*');
   });
 
   it('derives severity from number of failed checks', () => {
-    const single = buildWorkflowRepairPlan(report({
+    const single = buildWorkflowRepairPlan({ report: report({
       status: 'red',
       checks: [{ name: 'lint', status: 'red', source: 'local', summary: 'failed' }],
-    }));
+    })});
     expect(single.severity).toBe('medium');
 
-    const multi = buildWorkflowRepairPlan(report({
+    const multi = buildWorkflowRepairPlan({ report: report({
       status: 'red',
       checks: [
         { name: 'lint', status: 'red', source: 'local', summary: 'failed' },
         { name: 'test', status: 'red', source: 'local', summary: 'failed' },
       ],
-    }));
+    })});
     expect(multi.severity).toBe('high');
   });
 });
