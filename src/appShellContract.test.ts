@@ -4,6 +4,7 @@ import { SOVEREIGN_PRODUCT_TEMPLATE } from './features/product/runtime/sovereign
 
 const MAIN_PATH = 'src/main.tsx';
 const APP_PATH = 'src/App.tsx';
+const WRAPPER_PATH = 'src/SovereignAppWrapper.tsx';
 const CSS_PATH = 'src/index.css';
 
 const DOM_INSTALLER_TOKENS = [
@@ -44,14 +45,16 @@ describe('current Sovereign app shell contract', () => {
   it('keeps required shell source files present', () => {
     expect(existsSync(MAIN_PATH)).toBe(true);
     expect(existsSync(APP_PATH)).toBe(true);
+    expect(existsSync(WRAPPER_PATH)).toBe(true);
     expect(existsSync(CSS_PATH)).toBe(true);
   });
 
-  it('boots only the React app and stable Android runtime helpers', () => {
+  it('boots only the React app wrapper and stable Android runtime helpers', () => {
     const main = read(MAIN_PATH);
+    const wrapper = read(WRAPPER_PATH);
 
     expectContainsAll(main, [
-      "import App from './App'",
+      "import App from './SovereignAppWrapper'",
       '<ErrorBoundary>',
       '<App />',
       "import './runtime-adapter'",
@@ -62,16 +65,23 @@ describe('current Sovereign app shell contract', () => {
       'bootApp();',
     ]);
 
+    expectContainsAll(wrapper, [
+      "import App from './App'",
+      'SovereignRuntimeShell',
+      '<App />',
+      'composition-wrapper-around-existing-app',
+    ]);
+
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    // File contains: 'npm run build:web\\n' (2 backslashes = \n in source)
-    // When JS parses this, \\n becomes literal newline in HTML output
+    // File contains: 'npm run build:web\n' (2 backslashes = \n in source)
+    // When JS parses this, \n becomes literal newline in HTML output
     // But in file it's stored as \n in HTML source (displayed as actual newline)
     // We check that file contains the escaped form (2 backslashes)
-    const escapedNewline = 'npm run build:web' + '\\\\n' + 'npx cap sync android';
+    const escapedNewline = 'npm run build:web' + '\\n' + 'npx cap sync android';
     const unsafeCommand = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
 
     expect(releaseFix).toContain(escapedNewline);
