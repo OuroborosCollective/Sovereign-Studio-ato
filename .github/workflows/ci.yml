@@ -56,8 +56,8 @@ jobs:
       - name: Type Check
         run: pnpm run type-check
 
-      - name: Run Unit Tests
-        run: pnpm run test:unit
+      - name: Run Release Gate Tests
+        run: pnpm run test:release-gate
         env:
           CI: true
 
