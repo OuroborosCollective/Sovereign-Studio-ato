@@ -1,0 +1,615 @@
+name: 🧠 OpenHands Second Squad
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "sweep, issue, pr, or todo"
+        required: false
+        default: "sweep"
+        type: choice
+        options:
+          - sweep
+          - issue
+          - pr
+          - todo
+      issue_number:
+        description: "Issue or PR number for mode issue/pr"
+        required: false
+        type: string
+      max_targets:
+        description: "Max targets per run, capped at 3"
+        required: false
+        default: "2"
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: openhands-second-squad-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  SQUAD_NAME: "OpenHands Second Squad"
+  SQUAD_MACRO: "@openhands-squad2"
+  SQUAD_LABEL: "openhands-squad2"
+  RELEASE_LABEL: "release-squad"
+  AUTONOMOUS_LABEL: "autonomous-task"
+  FIX_LABEL: "fix-me"
+  TODO_TOKEN: "TODO(openhands-squad2)"
+  TARGET_BRANCH: ${{ vars.TARGET_BRANCH || 'main' }}
+  OPENHANDS_MAX_ITER: ${{ vars.OPENHANDS_SECOND_SQUAD_MAX_ITER || '120' }}
+  OPENHANDS_PR_TYPE: ${{ vars.OPENHANDS_SECOND_SQUAD_PR_TYPE || 'draft' }}
+  OPENHANDS_VERSION: ${{ vars.OPENHANDS_VERSION || '' }}
+  LLM_MODEL: ${{ secrets.LLM_MODEL || vars.LLM_MODEL || 'anthropic/claude-sonnet-4-20250514' }}
+  LLM_BASE_URL: ${{ secrets.LLM_BASE_URL || vars.LLM_BASE_URL || '' }}
+  LLM_API_VERSION: ${{ vars.LLM_API_VERSION || '' }}
+  PYTHON_VERSION: "3.12"
+  CI: "true"
+
+jobs:
+  todo-sweep:
+    name: 🧹 TODO trigger sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: 🧬 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🏷️ Ensure squad labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = [
+              { name: process.env.SQUAD_LABEL, color: "5319E7", description: "OpenHands Second Squad target." },
+              { name: process.env.RELEASE_LABEL, color: "0E8A16", description: "Release-readiness automation target." },
+              { name: "openhands-todo", color: "1D76DB", description: "Created from TODO(openhands-squad2)." },
+              { name: "processed", color: "C5DEF5", description: "Automation processed this issue." },
+              { name: "openhands-needs-human", color: "D93F0B", description: "OpenHands needs human review." }
+            ];
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name
+                });
+              } catch (error) {
+                if (error.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label.name,
+                    color: label.color,
+                    description: label.description
+                  });
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+      - name: 🔎 Create issues from TODO(openhands-squad2)
+        if: github.event_name == 'schedule' || inputs.mode == 'todo' || inputs.mode == 'sweep'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const path = require("path");
+            const { execFileSync } = require("child_process");
+
+            const token = process.env.TODO_TOKEN;
+            const ignoredDirs = new Set([".git", "node_modules", "dist", "build", "coverage", ".next", ".turbo", ".cache", ".agent"]);
+            const allowedExtensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".md", ".yml", ".yaml", ".json", ".css"]);
+            const matches = [];
+
+            function walk(dir) {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (ignoredDirs.has(entry.name)) continue;
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                  walk(full);
+                  continue;
+                }
+                if (!entry.isFile()) continue;
+                if (!allowedExtensions.has(path.extname(entry.name))) continue;
+
+                const text = fs.readFileSync(full, "utf8");
+                const lines = text.split(/\r?\n/);
+                lines.forEach((line, index) => {
+                  if (line.includes(token)) {
+                    matches.push({ file: full.replace(/^[.]\//, ""), line: index + 1, text: line.trim().slice(0, 240) });
+                  }
+                });
+              }
+            }
+
+            walk(".");
+
+            if (!matches.length) {
+              core.info(`No ${token} markers found.`);
+              return;
+            }
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "openhands-todo",
+              per_page: 100
+            });
+
+            const existingBodies = new Set(existing.data.map((issue) => issue.body || ""));
+            let created = 0;
+
+            for (const match of matches.slice(0, 10)) {
+              const marker = `source:${match.file}:${match.line}`;
+              if ([...existingBodies].some((body) => body.includes(marker))) continue;
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `OpenHands TODO: ${match.file}:${match.line}`,
+                body: [
+                  "## OpenHands Second Squad TODO",
+                  "",
+                  marker,
+                  "",
+                  "```txt",
+                  match.text,
+                  "```",
+                  "",
+                  "Task: resolve this TODO with real code, tests where reasonable, and a Draft PR. Do not fake success."
+                ].join("\n"),
+                labels: [process.env.SQUAD_LABEL, "openhands-todo", process.env.RELEASE_LABEL]
+              });
+
+              created += 1;
+            }
+
+            core.info(`Created ${created} TODO issue(s).`);
+
+  collect-targets:
+    name: 🎯 Select Second Squad targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    needs: [todo-sweep]
+    if: always()
+
+    outputs:
+      count: ${{ steps.collect.outputs.count }}
+      matrix: ${{ steps.collect.outputs.matrix }}
+
+    steps:
+      - name: 🎯 Collect trusted targets
+        id: collect
+        uses: actions/github-script@v7
+        env:
+          MODE: ${{ inputs.mode || 'sweep' }}
+          ISSUE_NUMBER_INPUT: ${{ inputs.issue_number || '' }}
+          MAX_TARGETS_INPUT: ${{ inputs.max_targets || '2' }}
+        with:
+          script: |
+            const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+            const triggerLabels = [
+              process.env.SQUAD_LABEL,
+              process.env.RELEASE_LABEL,
+              process.env.AUTONOMOUS_LABEL,
+              process.env.FIX_LABEL,
+              "openhands-todo"
+            ];
+            const stopLabels = ["processed", "openhands-blocked", "openhands-needs-human", "do-not-autofix"];
+            const targets = [];
+            const seen = new Set();
+            const eventName = context.eventName;
+            const payload = context.payload;
+            const macro = process.env.SQUAD_MACRO;
+            const maxTargets = Math.max(1, Math.min(Number(process.env.MAX_TARGETS_INPUT || "2") || 2, 3));
+
+            function labelNames(issue) {
+              return (issue?.labels || []).map((label) => typeof label === "string" ? label : label.name).filter(Boolean);
+            }
+
+            function hasAny(issue, labels) {
+              const names = labelNames(issue);
+              return labels.some((label) => names.includes(label));
+            }
+
+            function isStopped(issue) {
+              return hasAny(issue, stopLabels);
+            }
+
+            function addTarget(issueNumber, issueType, commentId, reason) {
+              if (!issueNumber) return;
+              const key = `${issueType}:${issueNumber}:${commentId || "None"}`;
+              if (seen.has(key)) return;
+              seen.add(key);
+              targets.push({
+                issue_number: String(issueNumber),
+                issue_type: issueType,
+                comment_id: String(commentId || "None"),
+                reason
+              });
+            }
+
+            async function getIssue(issueNumber) {
+              const res = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: Number(issueNumber)
+              });
+              return res.data;
+            }
+
+            async function sweepIssues() {
+              for (const label of triggerLabels) {
+                if (targets.length >= maxTargets) break;
+
+                const res = await github.rest.issues.listForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  state: "open",
+                  labels: label,
+                  sort: "updated",
+                  direction: "asc",
+                  per_page: 30
+                });
+
+                for (const issue of res.data) {
+                  if (targets.length >= maxTargets) break;
+                  if (issue.pull_request) continue;
+                  if (isStopped(issue)) continue;
+                  if (!hasAny(issue, triggerLabels)) continue;
+                  addTarget(issue.number, "issue", "None", `sweep:${label}`);
+                }
+              }
+            }
+
+            if (eventName === "workflow_dispatch") {
+              const mode = process.env.MODE || "sweep";
+              const issueNumber = process.env.ISSUE_NUMBER_INPUT;
+
+              if ((mode === "issue" || mode === "pr") && issueNumber) {
+                addTarget(issueNumber, mode, "None", "manual-dispatch");
+              } else {
+                await sweepIssues();
+              }
+            }
+
+            if (eventName === "schedule") {
+              await sweepIssues();
+            }
+
+            if (eventName === "issues") {
+              const issue = payload.issue;
+              if (issue && !issue.pull_request && !isStopped(issue) && hasAny(issue, triggerLabels)) {
+                addTarget(issue.number, "issue", "None", `issue-${payload.action}`);
+              }
+            }
+
+            if (eventName === "issue_comment") {
+              const issue = payload.issue;
+              const comment = payload.comment;
+              if (
+                issue &&
+                comment &&
+                comment.body &&
+                comment.body.includes(macro) &&
+                trustedAssociations.has(comment.author_association)
+              ) {
+                addTarget(issue.number, issue.pull_request ? "pr" : "issue", comment.id, "trusted-macro-comment");
+              }
+            }
+
+            if (eventName === "pull_request_review_comment") {
+              const pr = payload.pull_request;
+              const comment = payload.comment;
+              if (
+                pr &&
+                comment &&
+                comment.body &&
+                comment.body.includes(macro) &&
+                trustedAssociations.has(comment.author_association)
+              ) {
+                addTarget(pr.number, "pr", comment.id, "trusted-review-comment");
+              }
+            }
+
+            if (eventName === "pull_request_review") {
+              const pr = payload.pull_request;
+              const review = payload.review;
+              if (
+                pr &&
+                review &&
+                review.body &&
+                review.body.includes(macro) &&
+                trustedAssociations.has(review.author_association)
+              ) {
+                addTarget(pr.number, "pr", review.id, "trusted-review-body");
+              }
+            }
+
+            const matrix = { include: targets };
+            core.setOutput("count", String(targets.length));
+            core.setOutput("matrix", JSON.stringify(matrix));
+            core.info(JSON.stringify(matrix, null, 2));
+
+  second-squad-resolve:
+    name: 🛠️ Second Squad resolves #${{ matrix.issue_number }}
+    needs: collect-targets
+    if: needs.collect-targets.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJson(needs.collect-targets.outputs.matrix) }}
+
+    concurrency:
+      group: openhands-second-squad-target-${{ github.repository }}-${{ matrix.issue_type }}-${{ matrix.issue_number }}
+      cancel-in-progress: false
+
+    env:
+      ISSUE_NUMBER: ${{ matrix.issue_number }}
+      ISSUE_TYPE: ${{ matrix.issue_type }}
+      COMMENT_ID: ${{ matrix.comment_id }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+      GITHUB_USERNAME: ${{ secrets.PAT_USERNAME || github.actor }}
+      GIT_USERNAME: ${{ secrets.PAT_USERNAME || github.actor }}
+      SANDBOX_ENV_GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+      SANDBOX_BASE_CONTAINER_IMAGE: ${{ vars.OPENHANDS_BASE_CONTAINER_IMAGE || '' }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: 🧬 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN || github.token }}
+
+      - name: 🧪 Preflight truth gate
+        run: |
+          set -euo pipefail
+
+          echo "${SQUAD_NAME} target"
+          echo "repo=${GITHUB_REPOSITORY}"
+          echo "issue_number=${ISSUE_NUMBER}"
+          echo "issue_type=${ISSUE_TYPE}"
+          echo "comment_id=${COMMENT_ID}"
+          echo "target_branch=${TARGET_BRANCH}"
+          echo "openhands_max_iter=${OPENHANDS_MAX_ITER}"
+          echo "openhands_pr_type=${OPENHANDS_PR_TYPE}"
+          echo "reason=${{ matrix.reason }}"
+
+          if [ -z "${LLM_API_KEY}" ]; then
+            echo "::error::Missing required secret LLM_API_KEY."
+            exit 1
+          fi
+
+          if [ "${OPENHANDS_PR_TYPE}" != "draft" ] && [ "${OPENHANDS_PR_TYPE}" != "ready" ]; then
+            echo "::error::OPENHANDS_SECOND_SQUAD_PR_TYPE must be draft or ready."
+            exit 1
+          fi
+
+          if [ "${ISSUE_TYPE}" != "issue" ] && [ "${ISSUE_TYPE}" != "pr" ]; then
+            echo "::error::ISSUE_TYPE must be issue or pr."
+            exit 1
+          fi
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 📦 Install OpenHands
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip wheel setuptools
+
+          if [ -n "${OPENHANDS_VERSION}" ]; then
+            python -m pip install "openhands-ai==${OPENHANDS_VERSION}"
+          else
+            python -m pip install openhands-ai
+          fi
+
+          python - <<'PY'
+          import importlib.metadata
+          print("openhands-ai version:", importlib.metadata.version("openhands-ai"))
+          PY
+
+      - name: 💬 Announce start
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN || github.token }}
+          script: |
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                `🧠 **${process.env.SQUAD_NAME} läuft.**`,
+                "",
+                `Trigger: \`${{ matrix.reason }}\``,
+                `Mode: \`${process.env.ISSUE_TYPE}\``,
+                `Run: ${runUrl}`,
+                "",
+                "Arbeitsregel: echte Codeänderung oder ehrliches Scheitern. Draft PR/Branch, kein Auto-Merge."
+              ].join("\n")
+            });
+
+      - name: 🧠 Resolve with OpenHands
+        id: resolve
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          rm -rf /tmp/output
+          mkdir -p /tmp/output
+          cd /tmp
+
+          python -m openhands.resolver.resolve_issue \
+            --selected-repo "${GITHUB_REPOSITORY}" \
+            --issue-number "${ISSUE_NUMBER}" \
+            --issue-type "${ISSUE_TYPE}" \
+            --max-iterations "${OPENHANDS_MAX_ITER}" \
+            --comment-id "${COMMENT_ID}" \
+            2>&1 | tee /tmp/openhands-second-squad-resolve.log
+
+      - name: 🧾 Analyze result
+        id: result
+        if: always()
+        run: |
+          set -euo pipefail
+          RESULT_FILE="/tmp/output/output.jsonl"
+
+          if [ -f "${RESULT_FILE}" ] && grep -q '"success":true' "${RESULT_FILE}"; then
+            echo "success=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "success=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          cp /tmp/openhands-second-squad-resolve.log "${GITHUB_WORKSPACE}/openhands-second-squad-resolve-${ISSUE_TYPE}-${ISSUE_NUMBER}.log" || true
+          cp "${RESULT_FILE}" "${GITHUB_WORKSPACE}/openhands-second-squad-output-${ISSUE_TYPE}-${ISSUE_NUMBER}.jsonl" || true
+
+      - name: 🚀 Publish Draft PR on success
+        if: always() && steps.result.outputs.success == 'true'
+        id: publish_pr
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cd /tmp
+
+          python -m openhands.resolver.send_pull_request \
+            --issue-number "${ISSUE_NUMBER}" \
+            --target-branch "${TARGET_BRANCH}" \
+            --username "${GIT_USERNAME}" \
+            --pr-type "${OPENHANDS_PR_TYPE}" \
+            2>&1 | tee /tmp/openhands-second-squad-pr.log
+
+          cp /tmp/openhands-second-squad-pr.log "${GITHUB_WORKSPACE}/openhands-second-squad-pr-${ISSUE_TYPE}-${ISSUE_NUMBER}.log" || true
+
+      - name: 🌿 Publish branch on failure
+        if: always() && steps.result.outputs.success != 'true'
+        id: publish_branch
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cd /tmp
+
+          python -m openhands.resolver.send_pull_request \
+            --issue-number "${ISSUE_NUMBER}" \
+            --username "${GIT_USERNAME}" \
+            --pr-type branch \
+            --send-on-failure \
+            2>&1 | tee /tmp/openhands-second-squad-branch.log
+
+          cp /tmp/openhands-second-squad-branch.log "${GITHUB_WORKSPACE}/openhands-second-squad-branch-${ISSUE_TYPE}-${ISSUE_NUMBER}.log" || true
+
+      - name: 📤 Upload Second Squad artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openhands-second-squad-${{ matrix.issue_type }}-${{ matrix.issue_number }}
+          path: |
+            openhands-second-squad-resolve-${{ matrix.issue_type }}-${{ matrix.issue_number }}.log
+            openhands-second-squad-output-${{ matrix.issue_type }}-${{ matrix.issue_number }}.jsonl
+            openhands-second-squad-pr-${{ matrix.issue_type }}-${{ matrix.issue_number }}.log
+            openhands-second-squad-branch-${{ matrix.issue_type }}-${{ matrix.issue_number }}.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: ✅ Final status comment and labels
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          SUCCESS: ${{ steps.result.outputs.success || 'false' }}
+          RESOLVE_OUTCOME: ${{ steps.resolve.outcome }}
+          PR_OUTCOME: ${{ steps.publish_pr.outcome || 'skipped' }}
+          BRANCH_OUTCOME: ${{ steps.publish_branch.outcome || 'skipped' }}
+        with:
+          github-token: ${{ secrets.PAT_TOKEN || github.token }}
+          script: |
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const success = process.env.SUCCESS === "true";
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const resultLabel = success ? "openhands-pr-created" : "openhands-needs-human";
+
+            async function ensureLabel(name, color, description) {
+              try {
+                await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name });
+              } catch (error) {
+                if (error.status === 404) {
+                  await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name, color, description });
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+            await ensureLabel("openhands-attempted", "5319E7", "OpenHands attempted this task.");
+            await ensureLabel("openhands-pr-created", "0E8A16", "OpenHands created or updated a PR.");
+            await ensureLabel("openhands-needs-human", "D93F0B", "OpenHands needs human review.");
+            await ensureLabel("processed", "C5DEF5", "Automation processed this issue.");
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ["openhands-attempted", resultLabel, "processed"]
+            });
+
+            for (const label of [process.env.SQUAD_LABEL, process.env.RELEASE_LABEL, process.env.AUTONOMOUS_LABEL, process.env.FIX_LABEL, "openhands-todo"]) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  name: label
+                });
+              } catch (error) {
+                if (error.status !== 404) core.warning(`Could not remove ${label}: ${error.message}`);
+              }
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                success
+                  ? `✅ **${process.env.SQUAD_NAME} hat eine Lösung erzeugt.**`
+                  : `⚠️ **${process.env.SQUAD_NAME} braucht menschliche Prüfung.**`,
+                "",
+                `Resolve outcome: \`${process.env.RESOLVE_OUTCOME}\``,
+                `Draft PR outcome: \`${process.env.PR_OUTCOME}\``,
+                `Failure branch outcome: \`${process.env.BRANCH_OUTCOME}\``,
+                `Run: ${runUrl}`,
+                "",
+                success
+                  ? "Bitte Draft PR prüfen. Kein Auto-Merge wurde ausgeführt."
+                  : "Logs/Artifacts prüfen. Danach erneut mit `@openhands-squad2` oder Label `openhands-squad2` starten."
+              ].join("\n")
+            });
