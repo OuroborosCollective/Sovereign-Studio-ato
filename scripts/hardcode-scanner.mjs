@@ -11,7 +11,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { existsSync } from 'fs';
 
 const SCAN_PATTERNS = {
@@ -223,6 +223,20 @@ function formatReport(findings, scannedPaths = []) {
   };
 }
 
+const SAFE_SCAN_ROOT = resolve(process.cwd());
+
+function resolveSafeScanPath(inputPath) {
+  const resolvedPath = resolve(SAFE_SCAN_ROOT, inputPath);
+  const normalizedRoot = SAFE_SCAN_ROOT.endsWith('/') ? SAFE_SCAN_ROOT : `${SAFE_SCAN_ROOT}/`;
+  const normalizedPath = resolvedPath.endsWith('/') ? resolvedPath : `${resolvedPath}/`;
+
+  if (resolvedPath !== SAFE_SCAN_ROOT && !normalizedPath.startsWith(normalizedRoot)) {
+    return null;
+  }
+
+  return resolvedPath;
+}
+
 /**
  * Run scan on one or more paths
  * @param {string|string[]} scanPaths - Single path string, array of paths, or '--all' flag
@@ -246,8 +260,19 @@ export function runScan(scanPaths = 'src') {
     paths = [scanPaths];
   }
   
-  // Filter to existing paths
-  const existingPaths = paths.filter(p => existsSync(p));
+  const rejectedPaths = [];
+  const existingPaths = [];
+
+  for (const p of paths) {
+    const safePath = resolveSafeScanPath(p);
+    if (!safePath) {
+      rejectedPaths.push(p);
+      continue;
+    }
+    if (existsSync(safePath)) {
+      existingPaths.push(safePath);
+    }
+  }
   
   if (existingPaths.length === 0) {
     console.error(`\n❌ No valid paths to scan: ${paths.join(', ')}\n`);
@@ -255,8 +280,17 @@ export function runScan(scanPaths = 'src') {
   }
   
   if (existingPaths.length < paths.length) {
-    const missing = paths.filter(p => !existsSync(p));
-    console.warn(`\n⚠️  Skipping non-existent paths: ${missing.join(', ')}\n`);
+    const missing = paths.filter(p => {
+      const safePath = resolveSafeScanPath(p);
+      return safePath && !existsSync(safePath);
+    });
+    if (missing.length > 0) {
+      console.warn(`\n⚠️  Skipping non-existent paths: ${missing.join(', ')}\n`);
+    }
+  }
+
+  if (rejectedPaths.length > 0) {
+    console.warn(`\n⚠️  Skipping paths outside scan root (${SAFE_SCAN_ROOT}): ${rejectedPaths.join(', ')}\n`);
   }
   
   console.log(`\n🔍 Scanning ${existingPaths.length} path(s)...\n`);
