@@ -1321,6 +1321,7 @@ const App: React.FC = () => {
             onGenerateErrorWorkflow={generateErrorWorkflow}
             onPublishDraftPr={() => { void publishDraftPr(); }}
             openhandsReady={openhandsConfig.ready}
+            openhandsConfig={openhandsConfig}
             openhandsJobStatus={openhandsJob.status}
             openhandsIsRunning={isPollingOpenHands}
             onStartOpenHands={startOpenHandsJob}

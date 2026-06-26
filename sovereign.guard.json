@@ -3,7 +3,7 @@
   "greenRequires": [
     "audit:sovereign",
     "type-check",
-    "test:run",
+    "test:release-gate",
     "build"
   ],
   "architecture": [
