@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
-import App from './App';
+import App from './SovereignAppWrapper';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { installGlobalRuntimeMonitor } from './global-runtime-monitor';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
