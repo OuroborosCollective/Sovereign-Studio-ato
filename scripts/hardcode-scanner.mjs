@@ -3,9 +3,14 @@
  * Hardcode & Logic Scanner
  * Scans source files for hardcoded values, credentials, magic numbers,
  * and logic issues that could impact functions, UI/UX, or other parts.
+ * 
+ * Usage:
+ *   node hardcode-scanner.mjs [path1] [path2] ...  # Scan specific paths
+ *   node hardcode-scanner.mjs --all               # Scan all project paths
+ *   node hardcode-scanner.mjs src                  # Scan single path (backward compatible)
  */
 
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
@@ -38,6 +43,17 @@ const SCAN_PATTERNS = {
     { regex: /(TODO|FIXME|HACK|XXX|BUG)\s*:\s*.{20,}/g, type: 'UNRESOLVED_ISSUE', severity: 'INFO', suggestion: 'Address this issue or create tracking ticket' },
   ],
 };
+
+// Default paths for all-scope scanning (runtime, mobile, mesh, and worker paths)
+const DEFAULT_SCAN_PATHS = [
+  'src',
+  'sovereign-studio-rn/src',
+  'mesh-system',
+  'cloudflare-worker/src',
+  'ato-v2',
+  'scripts',
+  'brain',
+];
 
 const SKIP_PATHS = ['node_modules', 'dist', '.git', '.next', 'build', '.cache', 'coverage'];
 const SKIP_FILES = ['.test.', '.spec.', '.d.ts', '.min.js', '.bundle.js'];
@@ -91,6 +107,22 @@ function scanFile(filePath, content) {
 function scanDirectory(dirPath, allFindings = []) {
   if (!existsSync(dirPath)) return allFindings;
   
+  // Handle single file path
+  const stat = statSync(dirPath);
+  if (stat.isFile()) {
+    if (shouldSkip(dirPath)) return allFindings;
+    if (/\.(ts|tsx|js|jsx|mjs)$/.test(dirPath)) {
+      try {
+        const content = readFileSync(dirPath, 'utf-8');
+        const findings = scanFile(dirPath, content);
+        allFindings.push(...findings);
+      } catch (err) {
+        // Skip files that can't be read
+      }
+    }
+    return allFindings;
+  }
+  
   const entries = readdirSync(dirPath, { withFileTypes: true });
   
   for (const entry of entries) {
@@ -117,7 +149,7 @@ function scanDirectory(dirPath, allFindings = []) {
   return allFindings;
 }
 
-function formatReport(findings) {
+function formatReport(findings, scannedPaths = []) {
   const errors = findings.filter(f => f.severity === 'ERROR');
   const warnings = findings.filter(f => f.severity === 'WARNING');
   const info = findings.filter(f => f.severity === 'INFO');
@@ -132,9 +164,18 @@ function formatReport(findings) {
   console.log('║          🔍 HARDCODED VALUE & LOGIC SCAN REPORT                ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝\n');
   
+  // Show scanned paths if available
+  if (scannedPaths.length > 0) {
+    console.log('📁 Validated paths:');
+    for (const p of scannedPaths) {
+      console.log(`   • ${p}`);
+    }
+    console.log('');
+  }
+  
   if (findings.length === 0) {
     console.log('✅ No hardcoded values or logic issues detected!\n');
-    return { errors: 0, warnings: 0, info: 0, findings: [] };
+    return { errors: 0, warnings: 0, info: 0, findings: [], scannedPaths };
   }
   
   console.log(`📊 Summary: ${errors.length} errors | ${warnings.length} warnings | ${info.length} info\n`);
@@ -177,20 +218,84 @@ function formatReport(findings) {
     errors: errors.length,
     warnings: warnings.length,
     info: info.length,
-    findings
+    findings,
+    scannedPaths
   };
 }
 
-// Export for use in GitHub Actions
-export function runScan(scanPath = 'src') {
-  console.log(`Scanning directory: ${scanPath}...\n`);
-  const findings = scanDirectory(scanPath);
-  return formatReport(findings);
+/**
+ * Run scan on one or more paths
+ * @param {string|string[]} scanPaths - Single path string, array of paths, or '--all' flag
+ * @returns {Object} Scan results
+ */
+export function runScan(scanPaths = 'src') {
+  let paths = [];
+  
+  // Handle --all flag
+  if (scanPaths === '--all' || (Array.isArray(scanPaths) && scanPaths[0] === '--all')) {
+    paths = DEFAULT_SCAN_PATHS;
+    console.log(`\n🎯 All-scope audit mode: scanning ${paths.length} paths\n`);
+    console.log('Scanned paths:');
+    for (const p of paths) {
+      console.log(`  • ${p}`);
+    }
+    console.log('');
+  } else if (Array.isArray(scanPaths)) {
+    paths = scanPaths;
+  } else {
+    paths = [scanPaths];
+  }
+  
+  // Filter to existing paths
+  const existingPaths = paths.filter(p => existsSync(p));
+  
+  if (existingPaths.length === 0) {
+    console.error(`\n❌ No valid paths to scan: ${paths.join(', ')}\n`);
+    return { errors: 0, warnings: 0, info: 0, findings: [], scannedPaths: [] };
+  }
+  
+  if (existingPaths.length < paths.length) {
+    const missing = paths.filter(p => !existsSync(p));
+    console.warn(`\n⚠️  Skipping non-existent paths: ${missing.join(', ')}\n`);
+  }
+  
+  console.log(`\n🔍 Scanning ${existingPaths.length} path(s)...\n`);
+  
+  // Scan all paths
+  let allFindings = [];
+  for (const path of existingPaths) {
+    console.log(`  → Scanning: ${path}`);
+    const findings = scanDirectory(path);
+    allFindings.push(...findings);
+  }
+  
+  console.log(`\n✅ Scanned paths: ${existingPaths.join(', ')}`);
+  
+  return formatReport(allFindings, existingPaths);
 }
 
-// Run if called directly
-const scanPath = process.argv[2] || 'src';
-const result = runScan(scanPath);
+// Export constants for external use
+export { DEFAULT_SCAN_PATHS, SKIP_PATHS, SKIP_FILES };
 
-// Exit with error code if errors found
-process.exit(result.errors > 0 ? 1 : 0);
+// Only run main logic when executed directly (not imported as a module)
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+
+if (isMainModule) {
+  const args = process.argv.slice(2);
+  let scanInput = args[0] || 'src';
+
+  // Handle multiple paths (e.g., "node script.mjs src scripts")
+  if (args.length > 1 && !args.includes('--all')) {
+    scanInput = args;
+  }
+
+  // Handle --all flag
+  if (args.includes('--all')) {
+    scanInput = '--all';
+  }
+
+  const result = runScan(scanInput);
+
+  // Exit with error code if errors found
+  process.exit(result.errors > 0 ? 1 : 0);
+}
