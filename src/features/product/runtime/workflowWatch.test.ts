@@ -107,4 +107,64 @@ describe('workflowWatch', () => {
     expect(validation.valid).toBe(false);
     expect(validation.errors.join(' ')).toContain('secret-like');
   });
+
+  it('returns idle instead of fake-green when no checks are available', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      const textUrl = String(url);
+      if (textUrl.endsWith('/status')) {
+        return jsonResponse({ statuses: [] });
+      }
+      if (textUrl.endsWith('/check-runs')) {
+        return jsonResponse({ check_runs: [] });
+      }
+      return jsonResponse({}, false, 404);
+    });
+
+    const report = await fetchWorkflowWatchReport({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      commitSha: 'abc',
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    expect(report.status).toBe('idle');
+    expect(report.checks).toHaveLength(0);
+    expect(validateWorkflowWatchReport(report).valid).toBe(true);
+  });
+
+  it('returns pending when at least one check is pending', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      const textUrl = String(url);
+      if (textUrl.endsWith('/status')) {
+        return jsonResponse({ statuses: [{ context: 'ci', state: 'pending', description: 'running' }] });
+      }
+      if (textUrl.endsWith('/check-runs')) {
+        return jsonResponse({ check_runs: [] });
+      }
+      return jsonResponse({}, false, 404);
+    });
+
+    const report = await fetchWorkflowWatchReport({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      commitSha: 'abc',
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    expect(report.status).toBe('pending');
+    expect(report.checks[0].status).toBe('pending');
+    expect(validateWorkflowWatchReport(report).valid).toBe(true);
+  });
+
+  it('does not fabricate green status from empty checks', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({}, false, 404));
+
+    const report = await fetchWorkflowWatchReport({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      commitSha: 'abc',
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    expect(report.status).not.toBe('green');
+    expect(report.status).toBe('idle');
+    expect(validateWorkflowWatchReport(report).valid).toBe(true);
+  });
 });

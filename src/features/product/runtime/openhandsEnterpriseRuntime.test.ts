@@ -82,4 +82,69 @@ describe('openhandsEnterpriseRuntime', () => {
     expect(masked).not.toContain('token=secret');
     expect(masked).toContain('[redacted]');
   });
+
+  it('rejects empty repoUrl in job request', () => {
+    expect(() => buildOpenHandsJobRequest({
+      repoUrl: '',
+      mission: 'test',
+    })).toThrow('repository URL');
+  });
+
+  it('rejects empty mission in job request', () => {
+    expect(() => buildOpenHandsJobRequest({
+      repoUrl: 'https://github.com/test/repo',
+      mission: '',
+    })).toThrow('mission');
+  });
+
+  it('defaults branch to main when not provided', () => {
+    const request = buildOpenHandsJobRequest({
+      repoUrl: 'https://github.com/test/repo',
+      mission: 'test mission',
+    });
+    expect(request.branch).toBe('main');
+  });
+
+  it('does not fabricate ready state when no config is provided', () => {
+    const config = resolveOpenHandsEnterpriseConfig();
+    expect(config.ready).toBe(false);
+    expect(config.reason).toContain('disabled');
+  });
+
+  it('requires HTTPS for non-local URLs', () => {
+    const config = resolveOpenHandsEnterpriseConfig({
+      enabled: true,
+      agentApiUrl: 'https://api.openhands.com/v1',
+    });
+    expect(config.ready).toBe(true);
+    expect(config.reason).not.toContain('missing or unsafe');
+  });
+
+  it('summarizes running state with runtime ID when available', () => {
+    const snapshot = {
+      status: 'running' as const,
+      openHandsId: 'oh-12345',
+      changedFiles: ['README.md'],
+      events: [],
+    };
+    const summary = summarizeOpenHandsJob(snapshot);
+    expect(summary).toContain('oh-12345');
+    expect(summary).toContain('1 Datei');
+  });
+
+  it('summarizes waiting-for-user state correctly', () => {
+    const snapshot = {
+      status: 'waiting-for-user' as const,
+      changedFiles: [],
+      events: [],
+    };
+    expect(summarizeOpenHandsJob(snapshot)).toContain('wartet');
+  });
+
+  it('detects non-terminal states correctly', () => {
+    expect(isOpenHandsTerminalStatus('idle')).toBe(false);
+    expect(isOpenHandsTerminalStatus('queued')).toBe(false);
+    expect(isOpenHandsTerminalStatus('running')).toBe(false);
+    expect(isOpenHandsTerminalStatus('waiting-for-user')).toBe(false);
+  });
 });
