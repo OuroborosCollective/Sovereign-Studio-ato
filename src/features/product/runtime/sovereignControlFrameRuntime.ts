@@ -203,7 +203,7 @@ function loggerModule(input: SovereignControlFrameStateInput, findings: number):
     conditions: [
       condition('Telemetry counter available', count >= 0 ? 'pass' : 'fail'),
       condition('Scan registry readable', findings >= 0 ? 'pass' : 'fail'),
-      condition('No token log required', 'pass'),
+      condition('No private value logging required', 'pass'),
     ],
   };
 }
@@ -223,6 +223,17 @@ function restoreModule(input: SovereignControlFrameStateInput): SovereignControl
   };
 }
 
+function selectActiveModule(modules: readonly SovereignControlModuleState[]): SovereignControlModuleState {
+  const orchestr = modules.find((module) => module.id === 'orchestr');
+  if (orchestr?.signal === 'error' || orchestr?.signal === 'processing') return orchestr;
+
+  return modules.find((module) => module.signal === 'error')
+    ?? modules.find((module) => module.signal === 'processing')
+    ?? modules.find((module) => module.signal === 'warning')
+    ?? modules.find((module) => module.signal === 'active')
+    ?? modules[0];
+}
+
 export function deriveSovereignControlFrameState(input: SovereignControlFrameStateInput): SovereignControlFrameState {
   const patterns = activePatternCount(input.solutionPatternStore);
   const findings = scanFindingCount(input.scanRegistry);
@@ -238,11 +249,7 @@ export function deriveSovereignControlFrameState(input: SovereignControlFrameSta
     restoreModule(input),
   ];
 
-  const activeModule = modules.find((module) => module.signal === 'error')
-    ?? modules.find((module) => module.signal === 'processing')
-    ?? modules.find((module) => module.signal === 'warning')
-    ?? modules.find((module) => module.signal === 'active')
-    ?? modules[0];
+  const activeModule = selectActiveModule(modules);
 
   const logs: SovereignControlLogLine[] = modules
     .filter((module) => module.signal !== 'idle')
