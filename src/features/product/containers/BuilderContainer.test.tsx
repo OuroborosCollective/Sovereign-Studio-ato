@@ -20,42 +20,52 @@ function baseProps() {
   };
 }
 
+function chatField(): HTMLTextAreaElement {
+  return screen.getByLabelText(/Sovereign Chat Eingabe/i) as HTMLTextAreaElement;
+}
+
 describe('BuilderContainer', () => {
-  it('renders the chat-driven workbench and preview', () => {
+  it('renders the fixed DevChat shell structure', () => {
     render(<BuilderContainer {...baseProps()} />);
 
-    expect(screen.getByTestId('builder-container')).toBeDefined();
-    expect(screen.getByText('Package summary')).toBeDefined();
+    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'devchat-runtime-shell');
+    expect(screen.getByTestId('sovereign-devchat-statusbar')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.getByPlaceholderText('Nachricht, Planung, Feature…')).toBeDefined();
+    expect(screen.getByLabelText('Sovereign Menü öffnen')).toBeDefined();
     expect(screen.getByText('Sovereign Chat')).toBeDefined();
     expect(screen.getByText('OpenHands Runtime')).toBeDefined();
-    expect(screen.getByLabelText(/Ideenfabrik Wunschfeld/i)).toBeDefined();
   });
 
-  it('lets option buttons write into the chat wish field instead of directly replacing the mission', () => {
-    const props = baseProps();
-    render(<BuilderContainer {...props} />);
+  it('keeps DevChat content as runtime-derived messages, not demo flow', () => {
+    render(<BuilderContainer {...baseProps()} />);
 
-    // Get the wish field - initial value comes from mission prop
-    const wishField = screen.getByLabelText(/Ideenfabrik Wunschfeld/i) as HTMLTextAreaElement;
-    
-    // The field has initial value from mission prop
-    expect(wishField.value).toBe('Bitte mobile UX verbessern und Log direkt sichtbar machen.');
-    
-    // The quick suggestions should be visible when there's no wish text
-    expect(screen.queryByText("Let's start building!")).toBeNull();
+    expect(screen.getByText(/Repo-Snapshot verbunden/)).toBeDefined();
+    expect(screen.getByText('Bitte mobile UX verbessern und Log direkt sichtbar machen.')).toBeDefined();
+    expect(screen.getByText('Package summary')).toBeDefined();
+    expect(screen.queryByText(/AutoSwitchOrchestrator/)).toBeNull();
+    expect(screen.queryByText(/simulate/i)).toBeNull();
   });
 
-  it('analyzes the chat wish into a guarded executable mission', () => {
+  it('shows suggestions only in empty chat state and writes them into the input', () => {
     const props = baseProps();
-    render(<BuilderContainer {...props} />);
+    render(<BuilderContainer {...props} mission="" />);
 
-    fireEvent.change(screen.getByLabelText(/Ideenfabrik Wunschfeld/i), {
+    expect(screen.getByText("Let's start building!")).toBeDefined();
+    fireEvent.click(screen.getByText('Runtime härten'));
+
+    expect(chatField().value).toContain('Prüfe den schwächsten Ablauf');
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
+  it('prepares a guarded executable mission when the agent is not start-ready', () => {
+    const props = baseProps();
+    render(<BuilderContainer {...props} openhandsReady={false} />);
+
+    fireEvent.change(chatField(), {
       target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
     });
-    
-    // Submit the form to analyze
-    const form = document.querySelector('form');
-    fireEvent.submit(form as HTMLFormElement);
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Ideenfabrik Auftrag'));
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('mobile UX verbessern'));
@@ -63,7 +73,7 @@ describe('BuilderContainer', () => {
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Facade-Live-Pfade'));
   });
 
-  it('syncs externally adopted insight missions into the wish field', () => {
+  it('syncs externally adopted insight missions into the chat input', () => {
     const props = baseProps();
     const { rerender } = render(<BuilderContainer {...props} mission="README + Update History" />);
 
@@ -79,8 +89,7 @@ describe('BuilderContainer', () => {
     ].join('\n');
     rerender(<BuilderContainer {...props} mission={adoptedMission} />);
 
-    const wishField = screen.getByLabelText(/Ideenfabrik Wunschfeld/i) as HTMLTextAreaElement;
-    expect(wishField.value).toBe('Verbessere mobile UX und Log-Fenster.');
+    expect(chatField().value).toBe('Verbessere mobile UX und Log-Fenster.');
   });
 
   it('does not duplicate an already analyzed mission', () => {
@@ -104,10 +113,7 @@ describe('BuilderContainer', () => {
     ].join('\n');
 
     render(<BuilderContainer {...props} mission={analyzedMission} />);
-    
-    // Submit form to trigger analyze
-    const form = document.querySelector('form');
-    fireEvent.submit(form as HTMLFormElement);
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     const emittedMission = props.onMissionChange.mock.calls[0][0] as string;
     expect(emittedMission.match(/Ideenfabrik Auftrag:/g)).toHaveLength(1);
@@ -115,17 +121,24 @@ describe('BuilderContainer', () => {
     expect(emittedMission).toContain('Verbessere mobile UX und Log-Fenster.');
   });
 
-  it('keeps internal builder actions available via menu', () => {
-    const props = baseProps();
-    render(<BuilderContainer {...props} />);
+  it('opens the DevChat side menu as overlay without changing the shell structure', () => {
+    render(<BuilderContainer {...baseProps()} />);
 
-    // Open the menu details
-    const details = document.querySelector('details');
-    expect(details).not.toBeNull();
-    fireEvent.click(details!.querySelector('summary')!);
+    fireEvent.click(screen.getByLabelText('Sovereign Menü öffnen'));
 
-    // Check that the Sovereign menu is visible
-    expect(screen.getByText(/Sovereign Menüs/)).toBeDefined();
+    expect(screen.getByTestId('sovereign-devchat-side-menu')).toBeDefined();
+    expect(screen.getByText('Sovereign Studio')).toBeDefined();
+    expect(screen.getAllByText('Repo laden').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('opens runtime source sheet from the status bar', () => {
+    render(<BuilderContainer {...baseProps()} openhandsReady />);
+
+    fireEvent.click(screen.getByText('OpenHands'));
+
+    expect(screen.getByText('Runtime Quelle')).toBeDefined();
+    expect(screen.getByText('Echte Agent-Runtime verbunden')).toBeDefined();
+    expect(screen.getByText('Repo-Kontext geladen')).toBeDefined();
   });
 
   it('starts the external agent from the chat mission when ready', () => {
@@ -136,42 +149,44 @@ describe('BuilderContainer', () => {
     };
     render(<BuilderContainer {...props} />);
 
-    // Submit form with wish text to trigger agent start
-    fireEvent.change(screen.getByLabelText(/Ideenfabrik Wunschfeld/i), {
-      target: { value: 'Test mission' },
-    });
-    const form = document.querySelector('form');
-    fireEvent.submit(form as HTMLFormElement);
+    fireEvent.change(chatField(), { target: { value: 'Test mission' } });
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     expect(props.onStartOpenHands).toHaveBeenCalledOnce();
     expect(props.onStartOpenHands.mock.calls[0][0]).toContain('Ideenfabrik Auftrag');
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
-  it('emits direct mission changes from the wish field', () => {
-    const props = baseProps();
-    render(<BuilderContainer {...props} />);
-
-    fireEvent.change(screen.getByLabelText(/Ideenfabrik Wunschfeld/i), { target: { value: 'New mission' } });
-
-    // Mission change is called when form is submitted
-    const form = document.querySelector('form');
-    fireEvent.submit(form as HTMLFormElement);
-    
-    expect(props.onMissionChange).toHaveBeenCalled();
-  });
-
-  it('shows repo status when not ready', () => {
-    render(<BuilderContainer {...baseProps()} repoReady={false} />);
+  it('shows repo status when not ready and blocks direct send', () => {
+    render(<BuilderContainer {...baseProps()} repoReady={false} openhandsReady />);
 
     expect(screen.getByText(/Repo fehlt/)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Agent starten' })).toBeDisabled();
+  });
+
+  it('keeps OpenHands output as plain hints and not result cards', () => {
+    render(
+      <BuilderContainer
+        {...baseProps()}
+        openhandsReady
+        openhandsJob={{
+          status: 'running',
+          openHandsId: 'conv_123',
+          changedFiles: ['src/App.tsx'],
+          events: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('sovereign-chat-outcome-hints')).toBeDefined();
+    expect(screen.getByText(/OpenHands Runtime-ID/)).toBeDefined();
+    expect(screen.getByText(/1 Datei/)).toBeDefined();
+    expect(screen.queryByLabelText(/Karten/i)).toBeNull();
   });
 
   it('shows publishing state correctly', () => {
-    render(<BuilderContainer {...baseProps()} isPublishing={true} />);
+    render(<BuilderContainer {...baseProps()} isPublishing />);
 
-    // The submit button should be disabled during publishing
-    const submitBtn = screen.getByRole('button', { name: 'Agent starten' });
-    expect(submitBtn).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Agent starten' })).toBeDisabled();
   });
 });
