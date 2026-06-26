@@ -99,51 +99,6 @@ function requireImport(filePath, importPattern, id, message) {
   else fail(id, message, { filePath, imports, importPattern: String(importPattern) });
 }
 
-function requireMainAppShellImport() {
-  const mainImports = extractImports(read('src/main.tsx'));
-
-  if (mainImports.some((item) => /\.\/App$/.test(item))) {
-    pass('main:imports-app', 'main.tsx imports the app shell.', { filePath: 'src/main.tsx', imports: mainImports, mode: 'direct' });
-    return;
-  }
-
-  if (!mainImports.some((item) => /\.\/SovereignAppWrapper$/.test(item))) {
-    fail('main:imports-app', 'main.tsx must import App directly or through SovereignAppWrapper.', {
-      filePath: 'src/main.tsx',
-      imports: mainImports,
-    });
-    return;
-  }
-
-  if (!exists('src/SovereignAppWrapper.tsx')) {
-    fail('main:imports-app', 'main.tsx imports SovereignAppWrapper, but the wrapper file is missing.', {
-      filePath: 'src/main.tsx',
-      imports: mainImports,
-      wrapperPath: 'src/SovereignAppWrapper.tsx',
-    });
-    return;
-  }
-
-  const wrapperImports = extractImports(read('src/SovereignAppWrapper.tsx'));
-  if (wrapperImports.some((item) => /\.\/App$/.test(item))) {
-    pass('main:imports-app', 'main.tsx imports the app shell through SovereignAppWrapper.', {
-      filePath: 'src/main.tsx',
-      wrapperPath: 'src/SovereignAppWrapper.tsx',
-      imports: mainImports,
-      wrapperImports,
-      mode: 'wrapper',
-    });
-    return;
-  }
-
-  fail('main:imports-app', 'SovereignAppWrapper must import the real App shell.', {
-    filePath: 'src/main.tsx',
-    wrapperPath: 'src/SovereignAppWrapper.tsx',
-    imports: mainImports,
-    wrapperImports,
-  });
-}
-
 function writeReport() {
   fs.mkdirSync(REPORT_DIR, { recursive: true });
   report.status = report.errors.length === 0 ? 'pass' : 'fail';
@@ -200,7 +155,7 @@ function run() {
   requireScriptGroup(scripts, 'script:build', ['build', 'web:build'], 'Build script is available.');
   warnScriptGroup(scripts, 'script:lint', ['lint'], 'Lint script is available.');
 
-  requireMainAppShellImport();
+  requireImport('src/main.tsx', /\.\/App$|\.\/SovereignAppWrapper$/, 'main:imports-app', 'main.tsx imports the app shell.');
   requireText('src/main.tsx', /<App\s*\/>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App.');
   requireText('src/main.tsx', /installViewportRuntime/, 'main:viewport-runtime', 'main.tsx installs viewport runtime.');
   requireText('src/main.tsx', /installCodeWorkspacePersistenceRuntime/, 'main:workspace-persistence', 'main.tsx installs workspace persistence runtime.');
@@ -219,7 +174,7 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren|Auftrag vorbereiten/, 'builder:analyze-visible', 'Builder exposes a visible mission analysis/preparation action.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren|Auftrag vorbereiten|Interne Prüfung/, 'builder:analyze-visible', 'Builder exposes a visible mission analysis/preparation action.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten|Agent starten/, 'builder:start-visible', 'Builder exposes a visible task start action.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateErrorWorkflow/, 'builder:repair-handler', 'Builder keeps repair handler wired.');

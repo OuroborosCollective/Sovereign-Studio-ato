@@ -1,0 +1,434 @@
+{
+  "name": "Sovereign Runtime Contract Scan",
+  "generatedAt": "2026-06-26T22:44:53.378Z",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "file:package.json",
+      "ok": true,
+      "message": "Root package manifest is required.",
+      "details": {
+        "filePath": "package.json"
+      }
+    },
+    {
+      "id": "file:pnpm-lock.yaml",
+      "ok": true,
+      "message": "Frozen pnpm lockfile is required.",
+      "details": {
+        "filePath": "pnpm-lock.yaml"
+      }
+    },
+    {
+      "id": "file:src/main.tsx",
+      "ok": true,
+      "message": "React entrypoint is required.",
+      "details": {
+        "filePath": "src/main.tsx"
+      }
+    },
+    {
+      "id": "file:src/App.tsx",
+      "ok": true,
+      "message": "App shell is required.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "file:src/index.css",
+      "ok": true,
+      "message": "Shared design CSS is required.",
+      "details": {
+        "filePath": "src/index.css"
+      }
+    },
+    {
+      "id": "file:src/features/product/containers/RepoSnapshotContainer.tsx",
+      "ok": true,
+      "message": "Repo snapshot container is required.",
+      "details": {
+        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/product/containers/BuilderContainer.tsx",
+      "ok": true,
+      "message": "Builder container is required.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "file:src/features/product/runtime/sovereignTelemetry.ts",
+      "ok": true,
+      "message": "Telemetry runtime is required.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignTelemetry.ts"
+      }
+    },
+    {
+      "id": "file:src/features/product/runtime/runtimeOutcomeGuard.ts",
+      "ok": true,
+      "message": "Outcome guard runtime is required.",
+      "details": {
+        "filePath": "src/features/product/runtime/runtimeOutcomeGuard.ts"
+      }
+    },
+    {
+      "id": "file:src/features/product/runtime/sequentialRuntimeGuard.ts",
+      "ok": true,
+      "message": "Sequential runtime guard is required.",
+      "details": {
+        "filePath": "src/features/product/runtime/sequentialRuntimeGuard.ts"
+      }
+    },
+    {
+      "id": "file:src/features/product/runtime/sovereignProductTemplate.ts",
+      "ok": true,
+      "message": "Product template contract is required.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignProductTemplate.ts"
+      }
+    },
+    {
+      "id": "script:type-check",
+      "ok": true,
+      "message": "TypeScript check script is available.",
+      "details": {
+        "found": [
+          "type-check"
+        ]
+      }
+    },
+    {
+      "id": "script:test",
+      "ok": true,
+      "message": "Unit test script is available.",
+      "details": {
+        "found": [
+          "test:run",
+          "test"
+        ]
+      }
+    },
+    {
+      "id": "script:build",
+      "ok": true,
+      "message": "Build script is available.",
+      "details": {
+        "found": [
+          "build"
+        ]
+      }
+    },
+    {
+      "id": "script:lint",
+      "ok": true,
+      "message": "Lint script is available.",
+      "details": {
+        "found": [
+          "lint"
+        ]
+      }
+    },
+    {
+      "id": "main:imports-app",
+      "ok": true,
+      "message": "main.tsx imports the app shell.",
+      "details": {
+        "filePath": "src/main.tsx",
+        "imports": [
+          "react",
+          "react-dom/client",
+          "posthog-js",
+          "./SovereignAppWrapper",
+          "./components/ErrorBoundary",
+          "./global-runtime-monitor",
+          "./store",
+          "./runtime-adapter",
+          "./index.css",
+          "./styles/arelogic-brand.css",
+          "./styles/sovereign-release-guide.css",
+          "./styles/sovereign-playtest-ux.css"
+        ]
+      }
+    },
+    {
+      "id": "main:renders-app",
+      "ok": true,
+      "message": "main.tsx renders App.",
+      "details": {
+        "filePath": "src/main.tsx"
+      }
+    },
+    {
+      "id": "main:viewport-runtime",
+      "ok": true,
+      "message": "main.tsx installs viewport runtime.",
+      "details": {
+        "filePath": "src/main.tsx"
+      }
+    },
+    {
+      "id": "main:workspace-persistence",
+      "ok": true,
+      "message": "main.tsx installs workspace persistence runtime.",
+      "details": {
+        "filePath": "src/main.tsx"
+      }
+    },
+    {
+      "id": "main:no-old-dom-installers",
+      "ok": true,
+      "message": "main.tsx must not install old DOM/mobile mutation helpers.",
+      "details": {
+        "filePath": "src/main.tsx"
+      }
+    },
+    {
+      "id": "app:github-repo-hook",
+      "ok": true,
+      "message": "App uses real GitHub repo runtime hook.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:sequential-step-runner",
+      "ok": true,
+      "message": "App routes important work through sequential runtime.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:telemetry-publisher",
+      "ok": true,
+      "message": "App publishes telemetry for runtime handoff visibility.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:coach-derived-from-runtime",
+      "ok": true,
+      "message": "Coach state is derived from runtime state.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:coach-bridge",
+      "ok": true,
+      "message": "App publishes coach state to runtime bridge.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:real-package-builder",
+      "ok": true,
+      "message": "App uses real package builder from repo files.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "app:draft-pr-publisher",
+      "ok": true,
+      "message": "App keeps Draft PR publishing wired.",
+      "details": {
+        "filePath": "src/App.tsx"
+      }
+    },
+    {
+      "id": "repo:setup-state-event",
+      "ok": true,
+      "message": "Repo setup publishes setup-state events.",
+      "details": {
+        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
+      }
+    },
+    {
+      "id": "repo:load-handler-prop",
+      "ok": true,
+      "message": "Repo container exposes load handler.",
+      "details": {
+        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
+      }
+    },
+    {
+      "id": "repo:mobile-repo-input",
+      "ok": true,
+      "message": "Repo URL input keeps Android/mobile or contract role.",
+      "details": {
+        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
+      }
+    },
+    {
+      "id": "repo:mobile-access-input",
+      "ok": true,
+      "message": "Access input keeps Android/mobile or contract role.",
+      "details": {
+        "filePath": "src/features/product/containers/RepoSnapshotContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:analyze-visible",
+      "ok": true,
+      "message": "Builder exposes a visible mission analysis/preparation action.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:start-visible",
+      "ok": true,
+      "message": "Builder exposes a visible task start action.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:generation-handler",
+      "ok": true,
+      "message": "Builder keeps generation handler wired.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:repair-handler",
+      "ok": true,
+      "message": "Builder keeps repair handler wired.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:publish-handler",
+      "ok": true,
+      "message": "Builder keeps Draft PR handler wired.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "builder:runtime-state-derived",
+      "ok": true,
+      "message": "Builder action availability is derived from runtime state.",
+      "details": {
+        "filePath": "src/features/product/containers/BuilderContainer.tsx"
+      }
+    },
+    {
+      "id": "telemetry:event-validation",
+      "ok": true,
+      "message": "Telemetry event validation exists.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignTelemetry.ts"
+      }
+    },
+    {
+      "id": "telemetry:state-validation",
+      "ok": true,
+      "message": "Telemetry state validation exists.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignTelemetry.ts"
+      }
+    },
+    {
+      "id": "telemetry:append-event",
+      "ok": true,
+      "message": "Telemetry append path exists.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignTelemetry.ts"
+      }
+    },
+    {
+      "id": "telemetry:global-event-bus",
+      "ok": true,
+      "message": "Telemetry should publish to one global monitor event bus.",
+      "details": {
+        "filePath": "src/features/product/runtime/sovereignTelemetry.ts"
+      }
+    },
+    {
+      "id": "outcome:status-contract",
+      "ok": true,
+      "message": "Outcome guard classifies runtime result states.",
+      "details": {
+        "filePath": "src/features/product/runtime/runtimeOutcomeGuard.ts"
+      }
+    },
+    {
+      "id": "outcome:learnable-contract",
+      "ok": true,
+      "message": "Outcome guard exposes learnable flag.",
+      "details": {
+        "filePath": "src/features/product/runtime/runtimeOutcomeGuard.ts"
+      }
+    },
+    {
+      "id": "sequential:start-step",
+      "ok": true,
+      "message": "Sequential runtime can start guarded steps.",
+      "details": {
+        "filePath": "src/features/product/runtime/sequentialRuntimeGuard.ts"
+      }
+    },
+    {
+      "id": "sequential:finish-step",
+      "ok": true,
+      "message": "Sequential runtime can finish guarded steps.",
+      "details": {
+        "filePath": "src/features/product/runtime/sequentialRuntimeGuard.ts"
+      }
+    },
+    {
+      "id": "monitor:file-present",
+      "ok": true,
+      "message": "Global runtime monitor file exists.",
+      "details": {}
+    },
+    {
+      "id": "monitor:coach-state-listener",
+      "ok": true,
+      "message": "Global monitor listens to runtime coach state.",
+      "details": {
+        "filePath": "src/global-runtime-monitor.tsx"
+      }
+    },
+    {
+      "id": "monitor:telemetry-listener",
+      "ok": true,
+      "message": "Global monitor listens to telemetry events.",
+      "details": {
+        "filePath": "src/global-runtime-monitor.tsx"
+      }
+    },
+    {
+      "id": "monitor:installed",
+      "ok": true,
+      "message": "main.tsx should install the global monitor.",
+      "details": {
+        "filePath": "src/main.tsx"
+      }
+    },
+    {
+      "id": "android:directory",
+      "ok": true,
+      "message": "Android project directory exists.",
+      "details": {}
+    },
+    {
+      "id": "audit:static-audit-present",
+      "ok": true,
+      "message": "Existing static audit is present.",
+      "details": {}
+    }
+  ],
+  "warnings": [],
+  "errors": []
+}
