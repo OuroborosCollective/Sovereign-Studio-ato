@@ -7,13 +7,17 @@ function readSource(path: string): string {
 }
 
 describe('main app entry', () => {
-  it('renders the current Sovereign container app, not the legacy ProductMagic shell', () => {
+  it('renders the current Sovereign composition wrapper, not the legacy ProductMagic shell', () => {
     const main = readSource('./main.tsx');
+    const wrapper = readSource('./SovereignAppWrapper.tsx');
 
-    expect(main).toContain("import App from './App'");
+    expect(main).toContain("import App from './SovereignAppWrapper'");
     expect(main).toContain('<App />');
+    expect(wrapper).toContain("import App from './App'");
+    expect(wrapper).toContain('<App />');
     expect(main).not.toContain("import ProductMagicApp from './ProductMagicApp'");
     expect(main).not.toContain('<ProductMagicApp />');
+    expect(wrapper).not.toContain('ProductMagicApp');
   });
 
   it('derives tabs from the Product Template as single source of truth', () => {
