@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { TelemetryContainer } from './TelemetryContainer';
 import { appendTelemetryEvent, createInitialTelemetryState, createTelemetryEvent } from '../runtime/sovereignTelemetry';
@@ -14,7 +14,9 @@ describe('TelemetryContainer', () => {
     expect(screen.getByTestId('telemetry-container')).toBeDefined();
     expect(screen.getByText(/Noch keine Live-Events/i)).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
+    });
     expect(onExpandedChange).toHaveBeenCalledWith(false);
   });
 
@@ -26,27 +28,33 @@ describe('TelemetryContainer', () => {
     );
 
     const { rerender } = render(<TelemetryContainer state={telemetry} expanded={false} onExpandedChange={onExpandedChange} />);
-    fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
+    });
     expect(onExpandedChange).toHaveBeenCalledWith(true);
 
     rerender(<TelemetryContainer state={telemetry} expanded={true} onExpandedChange={onExpandedChange} />);
     expect(screen.getAllByText(/ui:ready/i).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: TELEMETRY_TOGGLE }));
+    });
     expect(onExpandedChange).toHaveBeenLastCalledWith(false);
   });
 
   it('ingests dependency telemetry events into the visible panel state', async () => {
     render(<TelemetryContainer state={createInitialTelemetryState()} expanded={true} onExpandedChange={vi.fn()} />);
 
-    window.dispatchEvent(new CustomEvent('sovereign:dependency-telemetry-event', {
-      detail: {
-        stage: 'runtime',
-        level: 'warning',
-        label: 'dependency:workflow:degraded',
-        message: 'Workflow dependency degraded.',
-        details: { dependencySource: 'workflow', dependencyKey: 'github-workflow-watch' },
-      },
-    }));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('sovereign:dependency-telemetry-event', {
+        detail: {
+          stage: 'runtime',
+          level: 'warning',
+          label: 'dependency:workflow:degraded',
+          message: 'Workflow dependency degraded.',
+          details: { dependencySource: 'workflow', dependencyKey: 'github-workflow-watch' },
+        },
+      }));
+    });
 
     await waitFor(() => expect(screen.getAllByText(/dependency:workflow:degraded/i).length).toBeGreaterThan(0));
     expect(screen.getByText(/Workflow: warning/i)).toBeDefined();
