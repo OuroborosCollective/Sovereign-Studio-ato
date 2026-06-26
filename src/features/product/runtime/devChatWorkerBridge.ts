@@ -123,7 +123,8 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
       }));
 
     const blobPaths = files.filter((file: DevChatRepoTreeFile) => file.type === 'blob').map((file: DevChatRepoTreeFile) => file.path);
-    const dirs = Array.from(new Set(blobPaths.map((path: string) => path.split('/')[0]).filter(Boolean))).slice(0, 12);
+    const topLevelDirs = blobPaths.map((path: string) => path.split('/')[0]).filter((dir: string): dir is string => Boolean(dir));
+    const dirs = Array.from(new Set<string>(topLevelDirs)).slice(0, 12);
     const lastPath = lastPreferredSourcePath(blobPaths);
     const slash = lastPath ? lastPath.lastIndexOf('/') : -1;
 
