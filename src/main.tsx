@@ -5,6 +5,12 @@ import App from './SovereignAppWrapper';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { installGlobalRuntimeMonitor } from './global-runtime-monitor';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
+import {
+  SOVEREIGN_WORKSPACE_COMMAND_EVENT,
+  isSovereignWorkspaceTab,
+  normalizeSovereignWorkspaceCommandDetail,
+  type SovereignWorkspaceCommandDetail,
+} from './features/product/runtime/sovereignWorkspaceCommand';
 import './runtime-adapter';
 import './index.css';
 import './styles/arelogic-brand.css';
@@ -26,11 +32,6 @@ type GoogleAuthModule = {
       grantOfflineAccess: boolean;
     }) => void | Promise<void>;
   };
-};
-
-type ReleaseGuideCommandDetail = {
-  type?: 'back' | 'confirm' | 'next';
-  targetTab?: string | null;
 };
 
 type MobileWindow = Window &
@@ -230,7 +231,7 @@ function installTabContentScrollRuntime(): void {
   });
 }
 
-function activateReleaseGuideTarget(button: HTMLButtonElement, type?: ReleaseGuideCommandDetail['type']): void {
+function activateReleaseGuideTarget(button: HTMLButtonElement, type?: SovereignWorkspaceCommandDetail['type']): void {
   button.classList.add('sovereign-next-step-highlight');
   window.setTimeout(() => button.classList.remove('sovereign-next-step-highlight'), 2800);
 
@@ -252,14 +253,14 @@ function installReleaseGuideCommandRuntime(): void {
   if (mobileWindow.__sovereignReleaseGuideCommandRuntimeInstalled) return;
   mobileWindow.__sovereignReleaseGuideCommandRuntimeInstalled = true;
 
-  window.addEventListener('sovereign:release-guide-command', (event: Event) => {
-    const detail = (event as CustomEvent<ReleaseGuideCommandDetail>).detail;
-    const targetTab = detail?.targetTab?.trim();
-    if (!targetTab || !SAFE_TAB_ID.test(targetTab)) return;
+  window.addEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT, (event: Event) => {
+    const detail = normalizeSovereignWorkspaceCommandDetail((event as CustomEvent<unknown>).detail);
+    const targetTab = detail?.targetTab;
+    if (!isSovereignWorkspaceTab(targetTab)) return;
 
     const button = findReleaseGuideTargetButton(targetTab);
     if (button) {
-      activateReleaseGuideTarget(button, detail?.type);
+      activateReleaseGuideTarget(button, detail.type);
       return;
     }
 
