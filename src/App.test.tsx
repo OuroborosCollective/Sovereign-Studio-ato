@@ -46,7 +46,7 @@ describe('App', () => {
 
     expect(screen.getByText('Sovereign Chat')).toBeDefined();
     expect(screen.getByText('OpenHands Runtime')).toBeDefined();
-    expect(screen.getByPlaceholderText(/What do you want to build/)).toBeDefined();
+    expect(screen.getByPlaceholderText(/GitHub URL oder Nachricht/)).toBeDefined();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Open Repo tab' }));
     expect(screen.getByPlaceholderText('https://github.com/owner/repository')).toBeDefined();
