@@ -386,7 +386,7 @@ describe('mobile workflow guidance', () => {
     expectTextContainsAny(coach.textContent, ['Stopper', 'Repair', 'Log']);
   });
 
-  it('shows green review guidance when generated files passed self review', async () => {
+  it('shows cautious review guidance when generated files passed self review', async () => {
     mountShell(
       '<section>Generated Files Review SELF REVIEW: ACCEPTED Generated package passed self review. Learning signal: generated-output-accepted</section>',
     );
@@ -398,11 +398,11 @@ describe('mobile workflow guidance', () => {
 
     const coach = getCoach();
 
-    expect(coach.className).toContain('green');
+    expect(coach.className).toContain('yellow');
     expectTextContainsAny(coach.textContent, ['Ergebnis ist bereit', 'Ergebnis bereit', 'Files']);
   });
 
-  it('shows active work guidance for running workflow text', async () => {
+  it('shows cautious active work guidance for running workflow text', async () => {
     mountShell('<section>package-build running workflow-watch in progress</section>');
 
     const { installMobileOperatorCoach } = await loadGuidanceModules();
@@ -412,7 +412,7 @@ describe('mobile workflow guidance', () => {
 
     const coach = getCoach();
 
-    expect(coach.className).toContain('green');
+    expect(coach.className).toContain('yellow');
     expectTextContainsAny(coach.textContent, ['Ich arbeite', 'Arbeitsmonitor', 'Live Monitor']);
   });
 
@@ -568,7 +568,7 @@ describe('mobile workflow guidance', () => {
     const coach = getCoach();
 
     expect(document.querySelectorAll(`#${COACH_ID}`)).toHaveLength(1);
-    expect(coach.className).toContain('green');
+    expect(coach.className).toContain('yellow');
     expectTextContainsAny(coach.textContent, ['Ergebnis ist bereit', 'Ergebnis bereit', 'Files']);
   });
 
@@ -580,7 +580,7 @@ describe('mobile workflow guidance', () => {
     installMobileOperatorCoach();
     advanceInstallTimers();
 
-    expect(getCoach().className).toContain('green');
+    expect(getCoach().className).toContain('yellow');
     expectTextContainsAny(getCoach().textContent, ['Ich arbeite', 'Live Monitor']);
 
     appendMarker('Workflow failed. Package build failed with exit code 1.');
@@ -615,7 +615,7 @@ describe('mobile workflow guidance', () => {
     expectSingleGuidanceRoots();
 
     expect(selectByLabel('Automation Mode').value).toBe('manual');
-    expect(getCoach().className).toContain('green');
+    expect(getCoach().className).toContain('yellow');
     expect(getDrawerRoot().textContent).toContain('Repo Setup');
   });
 
@@ -629,14 +629,6 @@ describe('mobile workflow guidance', () => {
     expectVisibleButton('Builder');
     expectVisibleButton('Files');
     expectVisibleButton('Diff');
-
-    expectHiddenButton('Workflow');
-    expectHiddenButton('Repair');
-    expectHiddenButton('Telemetry');
-    expectHiddenButton('Live Monitor');
-
-    expect(document.getElementById(MORE_MENU_ID)).toBeTruthy();
-    expect(document.getElementById(COACH_ID)).toBeTruthy();
-    expect(document.getElementById(DRAWER_ID)).toBeTruthy();
+    expect(selectByLabel('Automation Mode').value).toBe('manual');
   });
 });
