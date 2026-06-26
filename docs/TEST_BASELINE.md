@@ -17,7 +17,60 @@ Build completed successfully after all codemods.
 
 The remaining failures are pre-existing chat/sequential tests unrelated to the Remote Memory App Bridge.
 
-## Remote Memory gate
+## Test Strategy
+
+This project uses a tiered test strategy to ensure fast feedback while maintaining comprehensive coverage:
+
+### Test Commands
+
+| Command | Purpose | Speed | Release Block |
+| --- | --- | --- | --- |
+| `pnpm run test:smoke` | Fast smoke tests (local runtime, no external deps) | Fast (~2-5min) | Yes |
+| `pnpm run test:release-gate` | Smoke + Integration tests | Medium (~5-10min) | Yes |
+| `pnpm run test:integration` | Chat, sequential, UI integration tests | Medium | Yes (part of release-gate) |
+| `pnpm run test:e2e` | Mobile/e2e runner | Slow (~10min) | No |
+| `pnpm run test:all` | Complete Vitest suite | Slow | No |
+
+### Test Excludes (test:smoke)
+
+The following patterns are excluded from smoke tests because they require external services, have timing dependencies, or are UI-flaky:
+
+| Exclude Pattern | Reason |
+| --- | --- |
+| `**/*.chat.test.ts` | External API timing dependencies |
+| `**/*.integration.test.ts` | UI/chat integration tests with flake risk |
+| `**/*.e2e.test.ts` | E2E tests in Vitest (use `test:e2e` instead) |
+| `**/*.spec.ts` | Playwright E2E specs |
+| `**/*.sequential.test.ts` | Sequential workflow tests with API timing |
+| `**/ChatSidebar.test.tsx` | Chat UI assertions with flake risk |
+| `**/e2e/**` | Detox E2E tests (use `test:e2e` instead) |
+| `**/api-fallback/**` | Live service tests with network deps |
+
+### Release Gate
+
+The `test:release-gate` command (used in CI) combines:
+1. `test:smoke` - deterministic local runtime tests
+2. `test:integration` - critical integration tests (ChatSidebar, sequential workflows)
+
+**This is the required release gate for all PRs.** CI runs this automatically.
+
+### Quick Commands
+
+```bash
+# Fast feedback (for local development)
+pnpm run test:smoke
+
+# Full release gate (what CI runs)
+pnpm run test:release-gate
+
+# Complete visibility
+pnpm run test:all
+
+# Mobile e2e (separate lane)
+pnpm run test:e2e
+```
+
+## Remote Memory Gate
 
 The Remote Memory runtime gate is green:
 
@@ -36,31 +89,11 @@ The passing runtime area includes, among others:
 
 Remote Memory can therefore be treated as clean unless a future diff touches its runtime or app bridge code and causes this lane to fail.
 
-## Test lanes
+## Legacy Commands
 
-Use separated commands so deterministic local runtime work is not blocked by known external/API timing failures:
-
-```bash
-npm run test:unit
-npm run test:integration
-npm run test:e2e
-npm run test:all
-```
-
-### `test:unit`
-
-Runs the deterministic local unit/runtime lane and excludes known external/API/e2e/UI-flake paths:
-
-- `**/*.chat.test.ts`
-- `**/*.integration.test.ts`
-- `**/*.e2e.test.ts`
-- `**/*.spec.ts`
-- `**/*.sequential.test.ts`
-- `**/ChatSidebar.test.tsx`
-- `**/e2e/**`
-- `**/api-fallback/**`
-
-This is the primary release gate for local runtime feature work.
+The following commands exist for backwards compatibility:
+- `test:unit` - Alias for `test:smoke`
+- `test:run` - Alias for `test:all` (used in sovereign.guard.json)
 
 ### `test:integration`
 
