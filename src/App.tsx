@@ -234,11 +234,11 @@ const App: React.FC = () => {
   const [solutionPatternStore, setSolutionPatternStore] = useState(loadSafeSolutionPatternStore);
   const [remoteMemoryConfig, setRemoteMemoryConfig] = useState<ExternalMemorySyncConfig>(() => ({
     ...createExternalMemorySyncConfig(),
-    gatewayUrl: 'http://46.202.154.25:8088',
+    gatewayUrl: '',
     workspaceId: 'Pattern',
     collectionName: 'sovereign_logic_patterns',
     contributorId: 'sovereign-local-install',
-    allowSelfHostedHttp: true,
+    allowSelfHostedHttp: false,
   }));
 
   const sequentialRuntimeRef = useRef<SequentialRuntimeState>(createSequentialRuntimeState());

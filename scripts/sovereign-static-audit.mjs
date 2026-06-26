@@ -63,6 +63,10 @@ function isLocalHttpUrl(value) {
 }
 
 function isNonLocalHttpUrl(value) {
+  // Ignore standard XML and SVG namespaces
+  if (value === 'http://www.w3.org/2000/svg' || value === 'http://www.w3.org/1999/xlink') {
+    return false;
+  }
   try {
     const url = new URL(value);
     return url.protocol === 'http:' && !isLocalHttpUrl(value);

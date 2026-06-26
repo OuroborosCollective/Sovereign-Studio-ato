@@ -75,6 +75,9 @@ describe('OpenHandsOperatorBriefingPanel', () => {
     render(<OpenHandsOperatorBriefingPanel config={readyConfig} />);
 
     const firstSection = screen.getByRole('button', { name: /openhands starten/i });
+    // Section is expanded by default in test props
+    expect(screen.getByText('Start-Labels')).toBeVisible();
+
     await user.click(firstSection);
     expect(screen.queryByText('Start-Labels')).not.toBeInTheDocument();
 

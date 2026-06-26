@@ -24,7 +24,19 @@ describe('maskSecrets', () => {
   it('masks Google API keys', () => {
     const secret = 'AIzaSyA-1234567890_abcdefghijklmnopqrst';
     const text = `API key ${secret} is invalid`;
-    expect(maskSecrets(text)).toBe('API key AIzaSy**** is invalid');
+    expect(maskSecrets(text)).toBe('API key AIza**** is invalid');
+    expect(maskSecrets('AIza_anything_long_enough_abcdefghijklmnopqrstuv')).toBe('AIza****');
+  });
+
+  it('masks OpenRouter style keys', () => {
+    const secret = 'sk-or-v1-abcdefghijklmnopqrstuvwxyz0123456789';
+    expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-or-v1-****');
+  });
+
+  it('masks HuggingFace, Together AI and Pollinations AI keys', () => {
+    expect(maskSecrets('hf_abcdefghijklmnopqrstuvwxyz')).toBe('hf_****');
+    expect(maskSecrets('together_abcdefghijklmnopqrstuvwxyz')).toBe('together_****');
+    expect(maskSecrets('pollinations_abcdefghijklmnopqrstuvwxyz')).toBe('pollinations_****');
   });
 
   it('masks Bearer tokens', () => {
@@ -59,7 +71,7 @@ describe('maskSecrets', () => {
 
   it('masks multiple secrets in one string', () => {
     const text = 'Keys: ghp_1234567890abcdefghijklmnopqrstuvwx and AIzaSyA-1234567890_abcdefghijklmnopqrst';
-    expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIzaSy****');
+    expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIza****');
   });
 
   it('leaves normal text untouched', () => {

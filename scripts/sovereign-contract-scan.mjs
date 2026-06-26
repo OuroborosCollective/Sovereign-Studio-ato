@@ -155,7 +155,7 @@ function run() {
   requireScriptGroup(scripts, 'script:build', ['build', 'web:build'], 'Build script is available.');
   warnScriptGroup(scripts, 'script:lint', ['lint'], 'Lint script is available.');
 
-  requireImport('src/main.tsx', /\.\/App$/, 'main:imports-app', 'main.tsx imports the app shell.');
+  requireImport('src/main.tsx', /\.\/App$|\.\/SovereignAppWrapper$/, 'main:imports-app', 'main.tsx imports the app shell.');
   requireText('src/main.tsx', /<App\s*\/>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App.');
   requireText('src/main.tsx', /installViewportRuntime/, 'main:viewport-runtime', 'main.tsx installs viewport runtime.');
   requireText('src/main.tsx', /installCodeWorkspacePersistenceRuntime/, 'main:workspace-persistence', 'main.tsx installs workspace persistence runtime.');
@@ -174,7 +174,7 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren|Auftrag vorbereiten/, 'builder:analyze-visible', 'Builder exposes a visible mission analysis/preparation action.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren|Auftrag vorbereiten|Interne Prüfung/, 'builder:analyze-visible', 'Builder exposes a visible mission analysis/preparation action.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten|Agent starten/, 'builder:start-visible', 'Builder exposes a visible task start action.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateErrorWorkflow/, 'builder:repair-handler', 'Builder keeps repair handler wired.');
