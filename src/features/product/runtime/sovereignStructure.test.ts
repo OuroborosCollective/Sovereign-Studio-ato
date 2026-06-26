@@ -164,7 +164,7 @@ describe('sovereign runtime structure', () => {
     expect(workflowBridge.registry.findings.some((finding) => finding.category === 'ci-failure')).toBe(true);
     expect(workflowBridge.gate.allowed).toBe(false);
 
-    const repairPlan = buildWorkflowRepairPlan(failedWorkflow);
+    const repairPlan = buildWorkflowRepairPlan({ report: failedWorkflow });
     expect(repairPlan.blocked).toBe(false);
     expect(repairPlan.mission).toContain('Workflow repair package');
 

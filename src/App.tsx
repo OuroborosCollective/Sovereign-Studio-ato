@@ -315,7 +315,7 @@ const App: React.FC = () => {
   const hasFreshPackage = Boolean(lastPackage && lastPackageKey === packageInputKey);
   const latestGeneratedReview = useMemo(() => lastPackage ? reviewGeneratedFiles(lastPackage.files) : null, [lastPackage]);
   const diffReport = useMemo(() => lastPackage ? buildGeneratedFileDiffReport(lastPackage.files, safeDiffSources) : null, [lastPackage, safeDiffSources]);
-  const repairPlan = useMemo(() => buildWorkflowRepairPlan(workflowReport), [workflowReport]);
+  const repairPlan = useMemo(() => buildWorkflowRepairPlan({ report: workflowReport }), [workflowReport]);
   const healthReport = useMemo(() => buildSovereignHealthReport({
     repoFiles: safeRepoFiles,
     generatedFileReview: latestGeneratedReview,

@@ -27,6 +27,9 @@ describe('workflowWatch', () => {
     });
     expect(report.status).toBe('green');
     expect(report.summary).toContain('1 workflow');
+    expect(report.evidenceLedger).toBeDefined();
+    expect(report.evidenceLedger?.entries.length).toBeGreaterThan(0);
+    expect(report.evidenceLedger?.entries.some((e) => e.status === 'success' && e.category === 'workflow-watch')).toBe(true);
     expect(validateWorkflowWatchReport(report).valid).toBe(true);
     expect(() => assertWorkflowWatchReportValid(report)).not.toThrow();
   });
@@ -35,6 +38,8 @@ describe('workflowWatch', () => {
     const report = await fetchWorkflowWatchReport({ repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato' });
     expect(report.status).toBe('unknown');
     expect(report.warnings[0]).toContain('No commit SHA');
+    expect(report.evidenceLedger).toBeDefined();
+    expect(report.evidenceLedger?.entries.some((e) => e.status === 'unknown')).toBe(true);
     expect(validateWorkflowWatchReport(report).valid).toBe(true);
   });
 
@@ -61,6 +66,8 @@ describe('workflowWatch', () => {
     expect(report.fixes.join(' ')).toContain('failed check logs');
     expect(report.dependencyLifecycle?.phase).toBe('ready');
     expect(report.dependencyLifecycle?.kind).toBe('workflow');
+    expect(report.evidenceLedger).toBeDefined();
+    expect(report.evidenceLedger?.entries.some((e) => e.status === 'failure' && e.category === 'workflow-watch')).toBe(true);
     expect(validateWorkflowWatchReport(report).valid).toBe(true);
   });
 
@@ -77,6 +84,8 @@ describe('workflowWatch', () => {
     expect(report.warnings.join(' ')).toContain('503');
     expect(report.dependencyLifecycle?.phase).toBe('degraded');
     expect(report.dependencyLifecycle?.lastFailureAt).toBeGreaterThan(0);
+    expect(report.evidenceLedger).toBeDefined();
+    expect(report.evidenceLedger?.entries.some((e) => e.status === 'unknown' || e.status === 'failure')).toBe(true);
     expect(validateWorkflowWatchReport(report).valid).toBe(true);
   });
 
