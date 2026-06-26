@@ -7,7 +7,7 @@ import { appendTelemetryEvent, createInitialTelemetryState, createTelemetryEvent
 const TELEMETRY_TOGGLE = /NoCode Live Monitor.*Telemetry Log/i;
 
 describe('TelemetryContainer', () => {
-  it('renders empty telemetry and keeps it collapsed when no events exist', () => {
+  it('renders empty telemetry and keeps it collapsed when no events exist', async () => {
     const onExpandedChange = vi.fn();
     render(<TelemetryContainer state={createInitialTelemetryState()} expanded={false} onExpandedChange={onExpandedChange} />);
 
@@ -20,7 +20,7 @@ describe('TelemetryContainer', () => {
     expect(onExpandedChange).toHaveBeenCalledWith(false);
   });
 
-  it('toggles telemetry when events exist', () => {
+  it('toggles telemetry when events exist', async () => {
     const onExpandedChange = vi.fn();
     const telemetry = appendTelemetryEvent(
       createInitialTelemetryState(),
