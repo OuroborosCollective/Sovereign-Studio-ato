@@ -255,6 +255,18 @@ export function selectFallbackModel(
     };
   }
 
+  if (config.primaryStrategy !== 'block' && degradedModels.length > 0 && config.degradedStrategy === 'use-degraded') {
+    const best = degradedModels.sort((a, b) => (a.latencyMs ?? 0) - (b.latencyMs ?? 0))[0];
+    return {
+      usedFallback: true,
+      selectedModel: best,
+      strategy: 'use-degraded',
+      reason: `Using degraded model (${best.latencyMs}ms latency)`,
+      proceed: true,
+      circuitState: state.circuitBreaker.state,
+    };
+  }
+
   // Fallback strategies for degraded/no models
   switch (config.primaryStrategy) {
     case 'block': {
