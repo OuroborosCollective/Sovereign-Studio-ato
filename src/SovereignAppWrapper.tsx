@@ -12,6 +12,8 @@ type ModuleId =
   | 'logger'
   | 'restore';
 
+type PrimaryWorkspaceTab = 'builder' | 'repo' | 'files' | 'diff';
+
 type Signal = 'idle' | 'active' | 'processing' | 'warning' | 'error';
 type Phase = 'idle' | 'spinup' | 'working' | 'done' | 'error';
 type ConditionStatus = 'pass' | 'fail' | 'wait';
@@ -64,6 +66,13 @@ const SIGNAL_COLOR: Record<Signal, string> = {
   warning: '#d29922',
   error: '#f85149',
 };
+
+const PRIMARY_WORKSPACE_MENU: Array<{ id: PrimaryWorkspaceTab; label: string; hint: string }> = [
+  { id: 'builder', label: 'Chat', hint: 'Hauptfläche' },
+  { id: 'repo', label: 'Repo', hint: 'Quelle' },
+  { id: 'files', label: 'Files', hint: 'Review' },
+  { id: 'diff', label: 'Diff', hint: 'Änderungen' },
+];
 
 function normalizeSetupPhase(value: unknown): PublishedRuntimeSnapshot['setupPhase'] {
   if (
@@ -200,6 +209,17 @@ function currentModule(state: RuntimeFrameState): RuntimeModule {
   return state.modules.find((module) => module.id === state.activeModuleId) ?? state.modules[0];
 }
 
+function publishPrimaryWorkspaceCommand(targetTab: PrimaryWorkspaceTab): void {
+  if (typeof window === 'undefined') return;
+
+  window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', {
+    detail: {
+      type: 'next',
+      targetTab,
+    },
+  }));
+}
+
 function RuntimeLamp({ signal }: { signal: Signal }) {
   const color = SIGNAL_COLOR[signal];
 
@@ -240,6 +260,31 @@ function RuntimePanel({ state, module }: { state: RuntimeFrameState; module: Run
         </div>
       </div>
     </div>
+  );
+}
+
+function PrimaryWorkspaceMenu() {
+  return (
+    <nav
+      className="border-t border-slate-900 bg-[#05070b] px-2 py-2"
+      aria-label="Sovereign primary workspace menu"
+      data-testid="sovereign-wrapper-primary-menu"
+    >
+      <div className="grid grid-cols-4 gap-2">
+        {PRIMARY_WORKSPACE_MENU.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-2 py-2 text-left text-[10px] font-bold text-cyan-100"
+            onClick={() => publishPrimaryWorkspaceCommand(item.id)}
+            data-testid={`sovereign-wrapper-primary-menu__${item.id}`}
+          >
+            <span className="block text-[11px] leading-4">{item.label}</span>
+            <span className="block truncate font-mono text-[8px] font-normal opacity-60">{item.hint}</span>
+          </button>
+        ))}
+      </div>
+    </nav>
   );
 }
 
@@ -300,6 +345,7 @@ function SovereignRuntimeShell({ state, children }: { state: RuntimeFrameState; 
       </div>
 
       {panelOpen ? <RuntimePanel state={state} module={active} /> : null}
+      <PrimaryWorkspaceMenu />
 
       <nav className="grid h-14 flex-shrink-0 grid-cols-8 border-t border-slate-900 bg-black" aria-label="Sovereign runtime wrapper modules">
         {state.modules.map((module) => (
