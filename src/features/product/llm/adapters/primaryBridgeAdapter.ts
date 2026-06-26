@@ -8,6 +8,7 @@ import { maskSecrets } from '../../../../shared/utils/crypto';
 export interface PrimaryBridgeAdapterOptions {
   proxyUrl?: string;
   model?: string;
+  proxyKey?: string;
 }
 
 type ChatCompletionResponse = {
@@ -59,7 +60,7 @@ async function readBridgeResponse(response: Response): Promise<ChatCompletionRes
 }
 
 export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions = {}): LlmAdapter {
-  const config = resolvePrimaryBridgeConfig({ proxyUrl: options.proxyUrl, model: options.model });
+  const config = resolvePrimaryBridgeConfig({ proxyUrl: options.proxyUrl, model: options.model, proxyKey: options.proxyKey });
 
   return {
     id: 'optional-user-keys',
