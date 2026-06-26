@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import App from './App';
-import {
-  createWorkspaceCommandDetail,
-  type WorkspaceCommandTab,
-} from './features/product/runtime/workspaceCommandRuntime';
 
 type ModuleId =
   | 'init'
@@ -15,6 +11,22 @@ type ModuleId =
   | 'session'
   | 'logger'
   | 'restore';
+
+type WorkspaceTab =
+  | 'builder'
+  | 'repo'
+  | 'files'
+  | 'diff'
+  | 'workflow'
+  | 'repair'
+  | 'remote'
+  | 'memory'
+  | 'telemetry'
+  | 'monitor'
+  | 'health'
+  | 'runtime'
+  | 'coverage'
+  | 'findings';
 
 type Signal = 'idle' | 'active' | 'processing' | 'warning' | 'error';
 type Phase = 'idle' | 'spinup' | 'working' | 'done' | 'error';
@@ -58,7 +70,7 @@ interface RuntimeFrameState {
 }
 
 interface WorkspaceMenuItem {
-  id: WorkspaceCommandTab;
+  id: WorkspaceTab;
   label: string;
   hint: string;
   group: 'primary' | 'work' | 'ops';
@@ -228,11 +240,14 @@ function currentModule(state: RuntimeFrameState): RuntimeModule {
   return state.modules.find((module) => module.id === state.activeModuleId) ?? state.modules[0];
 }
 
-function publishWorkspaceCommand(targetTab: WorkspaceCommandTab): void {
+function publishWorkspaceCommand(targetTab: WorkspaceTab): void {
   if (typeof window === 'undefined') return;
 
   window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', {
-    detail: createWorkspaceCommandDetail(targetTab),
+    detail: {
+      type: 'next',
+      targetTab,
+    },
   }));
 }
 
