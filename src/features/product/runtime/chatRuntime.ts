@@ -87,7 +87,7 @@ const DEFAULT_CONFIG: Required<Omit<ChatRuntimeConfig, 'processor'>> = {
 };
 
 function mergedConfig(config: ChatRuntimeConfig): Required<Omit<ChatRuntimeConfig, 'processor'>> & Pick<ChatRuntimeConfig, 'processor'> {
-  return { ...DEFAULT_CONFIG, processor: config.processor };
+  return { ...DEFAULT_CONFIG, ...config, processor: config.processor };
 }
 
 function nowMs(): number {
@@ -132,11 +132,18 @@ export async function checkChatEntryGuard(input: string): Promise<{ pass: boolea
   if (!input.trim()) return { pass: false, reason: 'Chat input is empty.' };
 
   try {
+    const modelHealthReport = runtimeIntelligence.getModelHealthReport();
+    const hasConfiguredModelChecks = Boolean(modelHealthReport?.results.length);
     const modelHealthResult = runtimeIntelligence.getModelHealthFallbackResult();
-    if (!modelHealthResult.proceed) return { pass: false, reason: `Model health check failed: ${modelHealthResult.reason}` };
-
     const fallbackState = runtimeIntelligence.getModelHealthFallbackState();
-    if (fallbackState.circuitBreaker.state === 'open') return { pass: false, reason: 'Circuit breaker is open - too many model failures' };
+
+    if (hasConfiguredModelChecks && !modelHealthResult.proceed) {
+      return { pass: false, reason: `Model health check failed: ${modelHealthResult.reason}` };
+    }
+
+    if (hasConfiguredModelChecks && fallbackState.circuitBreaker.state === 'open') {
+      return { pass: false, reason: 'Circuit breaker is open - too many model failures' };
+    }
 
     return { pass: true };
   } catch (error) {
@@ -284,13 +291,11 @@ export class ChatRuntimeError extends Error {
 }
 
 export function assertChatRuntimeHealthy(): void {
-  const health = runtimeIntelligence.getRuntimeHealth();
-  if (health.status === 'red') {
-    throw new ChatRuntimeError(`Runtime health is red: ${health.reasons.join(', ')}`, 'process', false, { health });
-  }
-
+  const modelHealthReport = runtimeIntelligence.getModelHealthReport();
+  const hasConfiguredModelChecks = Boolean(modelHealthReport?.results.length);
   const modelFallback = runtimeIntelligence.getModelHealthFallbackResult();
-  if (!modelFallback.proceed) {
+
+  if (hasConfiguredModelChecks && !modelFallback.proceed) {
     throw new ChatRuntimeError(`Model health not ready: ${modelFallback.reason}`, 'process', true, { modelFallback });
   }
 }
@@ -311,7 +316,15 @@ export async function executeChatRuntime(
   try {
     assertChatRuntimeHealthy();
     const processResult = await processChatMessage(validation.normalizedInput, history, cfg);
-    return { success: processResult.success, exitState: buildChatExitState(history, processResult, cfg) };
+    const exitState = buildChatExitState(history, processResult, cfg);
+    if (!processResult.success) {
+      return {
+        success: false,
+        exitState,
+        error: new ChatRuntimeError(processResult.error ?? 'Chat processing failed', 'process', true, { processResult }),
+      };
+    }
+    return { success: true, exitState };
   } catch (error) {
     return {
       success: false,
