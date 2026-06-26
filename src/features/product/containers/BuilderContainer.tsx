@@ -6,6 +6,8 @@ import {
 import { getSovereignContainerContract } from '../runtime/sovereignContainerContracts';
 import { SOVEREIGN_FORM_MISSION } from '../runtime/sovereignFormContracts';
 import {
+  SOVEREIGN_ACTION_DRAFT_PR,
+  SOVEREIGN_ACTION_REPAIR_LOG,
   SOVEREIGN_ACTION_START_TASK,
 } from '../runtime/sovereignActionContracts';
 import { formatCuteThinkingLabel } from '../runtime/cuteThinkingStatus';
@@ -53,15 +55,10 @@ const WORKBENCH_PANES = [
   { id: 'browser', label: 'Browser', icon: '◎' },
 ] as const;
 
-function paneHelpText(pane: WorkbenchPane): string {
-  if (pane === 'planner') return 'Planung bleibt im Chat: Auftrag verstehen, Repo prüfen, Stopper erklären.';
-  if (pane === 'changes') return 'Änderungen erscheinen als ruhige Hinweise. Details bleiben im Files/Diff-Menü.';
-  if (pane === 'code') return 'Code-Kontext wird von der Runtime genutzt; die UI erzeugt keinen Code selbst.';
-  if (pane === 'terminal') return 'Terminal und Logs sind nur lesende Diagnoseflächen, nicht die Hauptbedienung.';
-  return 'Browser/Preview bleibt optionaler Inspektor, nicht der Hauptablauf.';
-}
-
+const SIDE_MENU_ITEMS = ['Repo', 'Files', 'Diff', 'Workflow', 'Repair', 'Memory'] as const;
+const DIAGNOSTIC_ITEMS = ['Health', 'Runtime', 'Telemetry', 'Findings'] as const;
 const CUTE_THINKING_FRAME_MS = 1100;
+const builderContainerContract = getSovereignContainerContract('builder');
 
 const IDEA_OPTIONS: IdeaOption[] = [
   {
@@ -86,7 +83,13 @@ const IDEA_OPTIONS: IdeaOption[] = [
   },
 ];
 
-const builderContainerContract = getSovereignContainerContract('builder');
+function paneHelpText(pane: WorkbenchPane): string {
+  if (pane === 'planner') return 'Planung bleibt im Chat: Auftrag verstehen, Repo prüfen, Stopper erklären.';
+  if (pane === 'changes') return 'Änderungen erscheinen als ruhige Hinweise. Details bleiben im Files/Diff-Menü.';
+  if (pane === 'code') return 'Code-Kontext wird von der Runtime genutzt; die UI erzeugt keinen Code selbst.';
+  if (pane === 'terminal') return 'Terminal und Logs sind nur lesende Diagnoseflächen, nicht die Hauptbedienung.';
+  return 'Browser/Preview bleibt optionaler Inspektor, nicht der Hauptablauf.';
+}
 
 function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
@@ -132,7 +135,9 @@ function buildAnalyzedMission(args: {
   if (isAnalyzedMission(existingMission)) return existingMission;
 
   const wish = missionToWishText(args.wish) || 'Verbessere das Sovereign Tool so, dass es für Nutzer klar bedienbar ist.';
-  const repoState = args.repoReady ? 'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.' : `Repo-Snapshot ist noch nicht bereit: ${args.repoReason}`;
+  const repoState = args.repoReady
+    ? 'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.'
+    : `Repo-Snapshot ist noch nicht bereit: ${args.repoReason}`;
 
   return [
     'Ideenfabrik Auftrag:',
@@ -164,25 +169,11 @@ function buildOutcomeHints(job: OpenHandsJobSnapshot | undefined): ChatOutcomeHi
   const files = (job.changedFiles ?? []).filter((file) => typeof file === 'string' && file.trim()).map((file) => file.trim());
   const draftPrUrl = safeHttpsUrl(job.draftPrUrl);
 
-  if (job.openHandsId?.trim()) {
-    hints.push({ kind: 'runtime', text: `🐤 OpenHands Runtime-ID: ${job.openHandsId.trim()}` });
-  }
-
-  if (files.length > 0) {
-    hints.push({ kind: 'files', text: `${files.length} Datei(en) geändert · Details im Files-Menü` });
-  }
-
-  if (draftPrUrl) {
-    hints.push({ kind: 'draft-pr', text: 'Draft PR bereit · Öffnen', href: draftPrUrl });
-  }
-
-  if ((job.status === 'blocked' || job.status === 'failed') && job.lastError?.trim()) {
-    hints.push({ kind: 'stopper', text: job.lastError.trim() });
-  }
-
-  if (job.status === 'completed' && files.length === 0 && !draftPrUrl) {
-    hints.push({ kind: 'done', text: 'Küken hat fertig gepiepst · Keine Dateiänderung gemeldet' });
-  }
+  if (job.openHandsId?.trim()) hints.push({ kind: 'runtime', text: `🐤 OpenHands Runtime-ID: ${job.openHandsId.trim()}` });
+  if (files.length > 0) hints.push({ kind: 'files', text: `${files.length} Datei(en) geändert · Details im Files-Menü` });
+  if (draftPrUrl) hints.push({ kind: 'draft-pr', text: 'Draft PR bereit · Öffnen', href: draftPrUrl });
+  if ((job.status === 'blocked' || job.status === 'failed') && job.lastError?.trim()) hints.push({ kind: 'stopper', text: job.lastError.trim() });
+  if (job.status === 'completed' && files.length === 0 && !draftPrUrl) hints.push({ kind: 'done', text: 'Küken hat fertig gepiepst · Keine Dateiänderung gemeldet' });
 
   return hints;
 }
@@ -211,15 +202,7 @@ export function BuilderContainer({
   const [thinkingFrameIndex, setThinkingFrameIndex] = useState(0);
   const [activePane, setActivePane] = useState<WorkbenchPane>('changes');
   const lastMissionSeenRef = useRef(mission);
-  const state = deriveBuilderContainerState({
-    repoReady,
-    repoBusy,
-    runtimeBusy,
-    isPublishing,
-    mission,
-    sovereignSummary,
-    sovereignPreview,
-  });
+  const state = deriveBuilderContainerState({ repoReady, repoBusy, runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview });
   const analyzedMission = useMemo(() => buildAnalyzedMission({ wish: wishText, repoReady, repoReason }), [repoReady, repoReason, wishText]);
   const executableOpenHandsMission = useMemo(() => {
     const visibleMission = collapseRepeatedAnalyzedMission(mission);
@@ -233,6 +216,8 @@ export function BuilderContainer({
   }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
   const outcomeHints = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
   const agentDisabled = !repoReady || repoBusy || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
+  const agentStatusLabel = openhandsReady ? cuteThinkingLabel : '🌙 Agent noch nicht verbunden';
+  const composerStatus = runtimeThinkingActive ? 'Running task' : 'Waiting for task';
 
   useEffect(() => {
     if (!runtimeThinkingActive) {
@@ -277,13 +262,15 @@ export function BuilderContainer({
     startAgentFromChat();
   };
 
-  const agentStatusLabel = openhandsReady ? cuteThinkingLabel : '🌙 Agent noch nicht verbunden';
+  const centerColumnClass = 'mx-auto flex min-h-[min(55vh,42rem)] w-full max-w-full flex-col lg:w-[55vw] lg:max-w-[55vw]';
+  const composerClass = 'mx-auto w-full lg:w-[80%] lg:max-w-[44vw]';
 
   return (
     <section
       className={`${builderContainerContract.rootClass} sovereign-builder-compact mt-4 overflow-hidden rounded-3xl border border-cyan-400/25 bg-[#090c10] text-sm text-slate-200 shadow-2xl shadow-cyan-950/10`}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
+      data-layout="chat-body-55-with-inspector-rails"
       aria-label={builderContainerContract.ariaLabel}
     >
       <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 px-4 py-3">
@@ -306,9 +293,9 @@ export function BuilderContainer({
             >
               ☰
             </summary>
-            <div className="absolute left-0 z-20 mt-2 w-64 rounded-2xl border border-slate-700 bg-slate-900 p-3 text-sm shadow-2xl">
+            <div className="absolute left-0 z-20 mt-2 w-[min(10vw,9rem)] min-w-[8rem] rounded-2xl border border-slate-700 bg-slate-900 p-3 text-xs shadow-2xl max-lg:w-64">
               <p className="font-black text-slate-100">Sovereign Menüs</p>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-slate-400">
                 Repo, Files, Diff, Workflow, Repair, Pattern Memory, Remote Memory,
                 Telemetry und Health bleiben als leise Inspektoren erreichbar.
               </p>
@@ -319,148 +306,189 @@ export function BuilderContainer({
         <div className="text-right text-xs">
           <p className="font-black uppercase tracking-[0.24em] text-cyan-200">No-Code Chat</p>
           <p className="mt-1 text-slate-400">
-            {repoReady ? 'Repo verbunden' : 'Repo zuerst verbinden'} · {runtimeThinkingActive ? 'Running task' : 'Waiting for task'}
+            {repoReady ? 'Repo verbunden' : 'Repo zuerst verbinden'} · {composerStatus}
           </p>
         </div>
       </div>
 
-      <div className="px-4 pt-4">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" aria-hidden="true" />
-          <h2 className="text-lg font-black text-slate-50">Sovereign Chat</h2>
-          <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-400">
-            OpenHands Runtime
-          </span>
-          <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-xs text-purple-100" aria-live="polite">
-            {agentStatusLabel}
-          </span>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Sovereign Arbeitsbereiche">
-          {WORKBENCH_PANES.map((pane) => (
-            <button
-              key={pane.id}
-              type="button"
-              aria-pressed={activePane === pane.id}
-              className={
-                activePane === pane.id
-                  ? 'flex-shrink-0 rounded-full border border-cyan-300/50 bg-slate-800 px-3 py-2 text-sm font-bold text-slate-50'
-                  : 'flex-shrink-0 rounded-full border border-transparent bg-transparent px-3 py-2 text-sm font-bold text-slate-400'
-              }
-              onClick={() => setActivePane(pane.id)}
-            >
-              <span className="mr-1 text-slate-300">{pane.icon}</span>
-              {pane.label}
-            </button>
+      <div className="grid min-h-[72vh] grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-[minmax(8rem,1fr)_minmax(0,55vw)_minmax(8rem,1fr)]" data-layout-zone="chat-with-side-menus">
+        <aside className="hidden min-w-0 flex-col gap-2 lg:flex" aria-label="Linkes Sovereign Seitenmenü">
+          {SIDE_MENU_ITEMS.map((item) => (
+            <span key={item} className="rounded-full border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs font-bold text-slate-300">
+              {item}
+            </span>
           ))}
-        </div>
+        </aside>
 
-        <p className="mt-2 text-xs text-slate-500">{paneHelpText(activePane)}</p>
-      </div>
+        <div className="min-w-0">
+          <div className="px-1 pt-1">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" aria-hidden="true" />
+              <h2 className="text-lg font-black text-slate-50">Sovereign Chat</h2>
+              <span className="rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-400">
+                OpenHands Runtime
+              </span>
+              <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-xs text-purple-100" aria-live="polite">
+                {agentStatusLabel}
+              </span>
+            </div>
 
-      <div className="min-h-[22rem] px-4 py-8" aria-label="Sovereign Chat Verlauf">
-        {!wishText.trim() ? (
-          <div className="mx-auto flex max-w-3xl flex-col items-center justify-center py-10 text-center">
-            <div className="text-6xl" aria-hidden="true">🐥</div>
-            <p className="mt-4 text-3xl font-black text-slate-50">Let&apos;s start building!</p>
-            <p className="mt-3 max-w-xl text-sm text-slate-400">
-              Schreib einfach, was du gebaut haben möchtest. Repo, Runtime, Patterns,
-              Logs und Checks laufen im Hintergrund und melden nur echte Stopper.
-            </p>
-
-            <div className="mt-6 grid w-full gap-3 sm:grid-cols-2" aria-label="Schnellvorschläge">
-              {IDEA_OPTIONS.slice(0, 4).map((option) => (
+            <div className="mt-4 flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Sovereign Arbeitsbereiche">
+              {WORKBENCH_PANES.map((pane) => (
                 <button
-                  key={option.label}
+                  key={pane.id}
                   type="button"
-                  className="rounded-2xl border border-slate-700 bg-transparent px-4 py-4 text-left text-sm font-bold text-slate-100 hover:border-cyan-400/60"
-                  onClick={() => setWishText((current) => appendOption(current, option))}
+                  aria-pressed={activePane === pane.id}
+                  className={
+                    activePane === pane.id
+                      ? 'flex-shrink-0 rounded-full border border-cyan-300/50 bg-slate-800 px-3 py-2 text-sm font-bold text-slate-50'
+                      : 'flex-shrink-0 rounded-full border border-transparent bg-transparent px-3 py-2 text-sm font-bold text-slate-400'
+                  }
+                  onClick={() => setActivePane(pane.id)}
                 >
-                  {option.label}
+                  <span className="mr-1 text-slate-300">{pane.icon}</span>
+                  {pane.label}
                 </button>
               ))}
             </div>
+
+            <p className="mt-2 text-xs text-slate-500">{paneHelpText(activePane)}</p>
           </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="ml-auto max-w-[86%] rounded-3xl rounded-tr-sm bg-slate-700/80 px-4 py-3 text-slate-50">
-              <p className="whitespace-pre-wrap">{wishText}</p>
-            </div>
 
-            <div className="max-w-[92%] text-slate-100">
-              <p className="whitespace-pre-wrap">
-                {repoReady
-                  ? 'Ich prüfe dein Repo, suche passende Runtime-/Pattern-Hinweise und starte nur echte Agentenarbeit.'
-                  : repoReason}
-              </p>
+          <div className={centerColumnClass} data-chat-body-width="55%">
+            <div className="mt-4 min-h-[min(55vh,42rem)] max-h-[min(55vh,42rem)] overflow-y-auto rounded-3xl border border-slate-800/80 bg-slate-950/45 px-4 py-6" aria-label="Sovereign Chat Verlauf" data-testid="sovereign-chat-body-window">
+              {!wishText.trim() ? (
+                <div className="mx-auto flex max-w-3xl flex-col items-center justify-center py-10 text-center">
+                  <div className="text-6xl" aria-hidden="true">🐥</div>
+                  <p className="mt-4 text-3xl font-black text-slate-50">Let&apos;s start building!</p>
+                  <p className="mt-3 max-w-xl text-sm text-slate-400">
+                    Schreib einfach, was du gebaut haben möchtest. Repo, Runtime, Patterns,
+                    Logs und Checks laufen im Hintergrund und melden nur echte Stopper.
+                  </p>
 
-              {runtimeThinkingActive ? (
-                <p className="mt-4 inline-flex rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-200">
-                  ••• {cuteThinkingLabel}
-                </p>
-              ) : null}
-
-              {sovereignSummary ? <p className="mt-4 text-slate-300">{sovereignSummary}</p> : null}
-              {state.disabledReason ? <p className="mt-3 text-amber-300">{state.disabledReason}</p> : null}
-
-              {outcomeHints.length > 0 ? (
-                <div className="mt-4 space-y-1 text-xs" aria-label="OpenHands Ergebnis-Hinweise" data-testid="sovereign-chat-outcome-hints">
-                  {outcomeHints.map((hint) => (
-                    <p key={`${hint.kind}:${hint.text}`} data-outcome-hint-kind={hint.kind}>
-                      {hint.href ? (
-                        <a className="underline underline-offset-4" href={hint.href} target="_blank" rel="noreferrer">
-                          {hint.text}
-                        </a>
-                      ) : hint.text}
-                    </p>
-                  ))}
+                  <div className="mt-6 grid w-full gap-3 sm:grid-cols-2" aria-label="Schnellvorschläge">
+                    {IDEA_OPTIONS.slice(0, 4).map((option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        className="rounded-2xl border border-slate-700 bg-transparent px-4 py-4 text-left text-sm font-bold text-slate-100 hover:border-cyan-400/60"
+                        onClick={() => setWishText((current) => appendOption(current, option))}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="space-y-6">
+                  <div className="ml-auto max-w-[86%] rounded-3xl rounded-tr-sm bg-slate-700/80 px-4 py-3 text-slate-50">
+                    <p className="whitespace-pre-wrap">{wishText}</p>
+                  </div>
+
+                  <div className="max-w-[92%] text-slate-100">
+                    <p className="whitespace-pre-wrap">
+                      {repoReady
+                        ? 'Ich prüfe dein Repo, suche passende Runtime-/Pattern-Hinweise und starte nur echte Agentenarbeit.'
+                        : repoReason}
+                    </p>
+
+                    {runtimeThinkingActive ? (
+                      <p className="mt-4 inline-flex rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-200">
+                        ••• {cuteThinkingLabel}
+                      </p>
+                    ) : null}
+
+                    {sovereignSummary ? <p className="mt-4 text-slate-300">{sovereignSummary}</p> : null}
+                    {state.disabledReason ? <p className="mt-3 text-amber-300">{state.disabledReason}</p> : null}
+
+                    {outcomeHints.length > 0 ? (
+                      <div className="mt-4 space-y-1 text-xs" aria-label="OpenHands Ergebnis-Hinweise" data-testid="sovereign-chat-outcome-hints">
+                        {outcomeHints.map((hint) => (
+                          <p key={`${hint.kind}:${hint.text}`} data-outcome-hint-kind={hint.kind}>
+                            {hint.href ? (
+                              <a className="underline underline-offset-4" href={hint.href} target="_blank" rel="noreferrer">
+                                {hint.text}
+                              </a>
+                            ) : hint.text}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-      </div>
 
-      <form className="sticky bottom-0 border-t border-slate-800/80 bg-[#090c10] p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" onSubmit={handleComposerSubmit}>
-        <div className="rounded-3xl border border-slate-700 bg-slate-800/95 p-3 shadow-2xl shadow-black/30">
-          <div className="flex items-start gap-3">
-            <span className="pt-3 text-2xl text-slate-300" aria-hidden="true">📎</span>
+            <form className="mt-3 border-t border-transparent pb-[max(1rem,env(safe-area-inset-bottom))]" onSubmit={handleComposerSubmit} data-composer-width="80%">
+              <div className={composerClass}>
+                <div className="rounded-3xl border border-slate-700 bg-slate-800/95 p-3 shadow-2xl shadow-black/30">
+                  <div className="flex items-start gap-3">
+                    <span className="pt-3 text-2xl text-slate-300" aria-hidden="true">📎</span>
 
-            <textarea
-              id={SOVEREIGN_FORM_MISSION.id}
-              name={SOVEREIGN_FORM_MISSION.id}
-              data-role={SOVEREIGN_FORM_MISSION.dataRole}
-              data-testid={SOVEREIGN_FORM_MISSION.testId}
-              className="min-h-16 flex-1 resize-none border-0 bg-transparent p-2 text-base leading-6 text-slate-50 outline-none placeholder:text-slate-400 md:min-h-20"
-              value={wishText}
-              onChange={(event) => setWishText(event.target.value)}
-              placeholder="What do you want to build?"
-              aria-label={SOVEREIGN_FORM_MISSION.ariaLabel}
-            />
+                    <textarea
+                      id={SOVEREIGN_FORM_MISSION.id}
+                      name={SOVEREIGN_FORM_MISSION.id}
+                      data-role={SOVEREIGN_FORM_MISSION.dataRole}
+                      data-testid={SOVEREIGN_FORM_MISSION.testId}
+                      className="min-h-12 flex-1 resize-none border-0 bg-transparent p-2 text-base leading-6 text-slate-50 outline-none placeholder:text-slate-400 md:min-h-16"
+                      value={wishText}
+                      onChange={(event) => setWishText(event.target.value)}
+                      placeholder="What do you want to build?"
+                      aria-label={SOVEREIGN_FORM_MISSION.ariaLabel}
+                    />
 
-            <button
-              className="mt-1 inline-flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-slate-300/60 bg-slate-950 text-2xl text-slate-50 disabled:opacity-45 active:scale-95 transition-transform"
-              type="submit"
-              disabled={agentDisabled}
-              data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
-              data-testid={SOVEREIGN_ACTION_START_TASK.testId}
-              aria-label="Agent starten"
-              data-state={agentDisabled ? 'disabled' : 'idle'}
-            >
-              ↑
-            </button>
-          </div>
+                    <button
+                      className="mt-1 inline-flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-slate-300/60 bg-slate-950 text-2xl text-slate-50 transition-transform disabled:opacity-45 active:scale-95"
+                      type="submit"
+                      disabled={agentDisabled}
+                      data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
+                      data-testid={SOVEREIGN_ACTION_START_TASK.testId}
+                      aria-label="Agent starten"
+                      data-state={agentDisabled ? 'disabled' : 'idle'}
+                    >
+                      ↑
+                    </button>
+                  </div>
 
-          <div className="mt-3 flex items-center gap-2 text-xs text-slate-300 overflow-x-auto scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <span className="rounded-full px-2 py-1 font-bold flex-shrink-0">🛠 Tools</span>
-            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 flex-shrink-0">&lt;/&gt; Code</span>
-            <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 flex-shrink-0">OpenHands</span>
-            <span className={`rounded-full px-3 py-1 flex-shrink-0 ${repoReady ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border border-amber-500/30 bg-amber-500/10 text-amber-200' }`}>
-              {repoReady ? 'Repo verbunden' : 'Repo fehlt'}
-            </span>
+                  <div className="mt-3 flex items-center gap-2 overflow-x-auto text-xs text-slate-300 scrollbar-hide [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <span className="flex-shrink-0 rounded-full px-2 py-1 font-bold">🛠 Tools</span>
+                    <span className="flex-shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-1">&lt;/&gt; Code</span>
+                    <span className="flex-shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-1">OpenHands</span>
+                    <span className={`flex-shrink-0 rounded-full px-3 py-1 ${repoReady ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border border-amber-500/30 bg-amber-500/10 text-amber-200'}`}>
+                      {repoReady ? 'Repo verbunden' : 'Repo fehlt'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
-      </form>
+
+        <aside className="hidden min-w-0 flex-col gap-2 xl:flex" aria-label="Rechtes Sovereign Diagnosemenü">
+          {DIAGNOSTIC_ITEMS.map((item) => (
+            <span key={item} className="rounded-full border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs font-bold text-slate-300">
+              {item}
+            </span>
+          ))}
+
+          <details className="mt-2 rounded-2xl border border-slate-700 bg-slate-950/80 p-3 text-xs text-slate-300">
+            <summary className="cursor-pointer font-black text-slate-100">Diagnose</summary>
+            <div className="mt-3 space-y-2">
+              <button type="button" className="block w-full rounded-xl border border-slate-700 px-3 py-2 text-left" onClick={onGenerateIdeas}>Interne Prüfung</button>
+              <button type="button" className="block w-full rounded-xl border border-amber-500/40 px-3 py-2 text-left text-amber-100" onClick={onGenerateErrorWorkflow} data-role={SOVEREIGN_ACTION_REPAIR_LOG.dataRole} data-testid={SOVEREIGN_ACTION_REPAIR_LOG.testId}>Fehleranalyse</button>
+              <button type="button" className="block w-full rounded-xl border border-cyan-500/40 px-3 py-2 text-left text-cyan-100" onClick={onPublishDraftPr} data-role={SOVEREIGN_ACTION_DRAFT_PR.dataRole} data-testid={SOVEREIGN_ACTION_DRAFT_PR.testId}>{builderPublishLabel(isPublishing)}</button>
+              {openhandsIsRunning ? <button type="button" className="block w-full rounded-xl border border-red-500/40 px-3 py-2 text-left text-red-100" onClick={onCancelOpenHands}>Agent stoppen</button> : null}
+            </div>
+          </details>
+
+          {sovereignPreview ? (
+            <details className="rounded-2xl border border-slate-700 bg-slate-950/80 p-3 text-xs text-slate-300">
+              <summary className="cursor-pointer font-black text-slate-100">Preview</summary>
+              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-[10px] text-slate-400">{sovereignPreview}</pre>
+            </details>
+          ) : null}
+        </aside>
+      </div>
     </section>
   );
 }
