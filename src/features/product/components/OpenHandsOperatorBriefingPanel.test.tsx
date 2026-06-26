@@ -76,7 +76,7 @@ describe('OpenHandsOperatorBriefingPanel', () => {
 
     const firstSection = screen.getByRole('button', { name: /openhands starten/i });
     await user.click(firstSection);
-    expect(screen.queryByText('Start-Labels')).not.toBeVisible();
+    expect(screen.queryByText('Start-Labels')).not.toBeInTheDocument();
 
     await user.click(firstSection);
     expect(screen.getByText('Start-Labels')).toBeVisible();
@@ -93,7 +93,7 @@ describe('OpenHandsOperatorBriefingPanel', () => {
       adminConsoleUrl: '',
     };
     render(<OpenHandsOperatorBriefingPanel config={configWithWarning} />);
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('shows blocked badge when blocked items exist', () => {

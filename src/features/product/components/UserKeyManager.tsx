@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import '../styles/UserKeyManager.css';
 import { SettingsErrorBoundary } from './SettingsErrorBoundary';
 
@@ -270,7 +271,7 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
                       title={showKeys[provider.id] ? 'Verbergen' : 'Anzeigen'}
                       aria-label={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
                     >
-                      {showKeys[provider.id] ? '🙈' : '👁️'}
+                      {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                     {(keys[provider.id as keyof UserApiKeys]) && (
                       <button
@@ -280,7 +281,7 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
                         title="Key löschen"
                         aria-label="Key löschen"
                       >
-                        🗑️
+                        <Trash2 size={16} />
                       </button>
                     )}
                   </div>
