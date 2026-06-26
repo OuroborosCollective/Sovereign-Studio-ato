@@ -99,6 +99,51 @@ function requireImport(filePath, importPattern, id, message) {
   else fail(id, message, { filePath, imports, importPattern: String(importPattern) });
 }
 
+function requireMainAppShellImport() {
+  const mainImports = extractImports(read('src/main.tsx'));
+
+  if (mainImports.some((item) => /\.\/App$/.test(item))) {
+    pass('main:imports-app', 'main.tsx imports the app shell.', { filePath: 'src/main.tsx', imports: mainImports, mode: 'direct' });
+    return;
+  }
+
+  if (!mainImports.some((item) => /\.\/SovereignAppWrapper$/.test(item))) {
+    fail('main:imports-app', 'main.tsx must import App directly or through SovereignAppWrapper.', {
+      filePath: 'src/main.tsx',
+      imports: mainImports,
+    });
+    return;
+  }
+
+  if (!exists('src/SovereignAppWrapper.tsx')) {
+    fail('main:imports-app', 'main.tsx imports SovereignAppWrapper, but the wrapper file is missing.', {
+      filePath: 'src/main.tsx',
+      imports: mainImports,
+      wrapperPath: 'src/SovereignAppWrapper.tsx',
+    });
+    return;
+  }
+
+  const wrapperImports = extractImports(read('src/SovereignAppWrapper.tsx'));
+  if (wrapperImports.some((item) => /\.\/App$/.test(item))) {
+    pass('main:imports-app', 'main.tsx imports the app shell through SovereignAppWrapper.', {
+      filePath: 'src/main.tsx',
+      wrapperPath: 'src/SovereignAppWrapper.tsx',
+      imports: mainImports,
+      wrapperImports,
+      mode: 'wrapper',
+    });
+    return;
+  }
+
+  fail('main:imports-app', 'SovereignAppWrapper must import the real App shell.', {
+    filePath: 'src/main.tsx',
+    wrapperPath: 'src/SovereignAppWrapper.tsx',
+    imports: mainImports,
+    wrapperImports,
+  });
+}
+
 function writeReport() {
   fs.mkdirSync(REPORT_DIR, { recursive: true });
   report.status = report.errors.length === 0 ? 'pass' : 'fail';
@@ -155,7 +200,7 @@ function run() {
   requireScriptGroup(scripts, 'script:build', ['build', 'web:build'], 'Build script is available.');
   warnScriptGroup(scripts, 'script:lint', ['lint'], 'Lint script is available.');
 
-  requireImport('src/main.tsx', /\.\/App$/, 'main:imports-app', 'main.tsx imports the app shell.');
+  requireMainAppShellImport();
   requireText('src/main.tsx', /<App\s*\/>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App.');
   requireText('src/main.tsx', /installViewportRuntime/, 'main:viewport-runtime', 'main.tsx installs viewport runtime.');
   requireText('src/main.tsx', /installCodeWorkspacePersistenceRuntime/, 'main:workspace-persistence', 'main.tsx installs workspace persistence runtime.');
