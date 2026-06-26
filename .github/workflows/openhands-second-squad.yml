@@ -50,6 +50,7 @@ env:
   RELEASE_LABEL: "release-squad"
   AUTONOMOUS_LABEL: "autonomous-task"
   FIX_LABEL: "fix-me"
+  # TODO_TOKEN: Reserved for future TODO marker scanning in source files
   TODO_TOKEN: "TODO(openhands-squad2)"
   TARGET_BRANCH: ${{ vars.TARGET_BRANCH || 'main' }}
   OPENHANDS_MAX_ITER: ${{ vars.OPENHANDS_SECOND_SQUAD_MAX_ITER || '120' }}
@@ -81,7 +82,7 @@ jobs:
             const labels = [
               { name: process.env.SQUAD_LABEL, color: "5319E7", description: "OpenHands Second Squad target." },
               { name: process.env.RELEASE_LABEL, color: "0E8A16", description: "Release-readiness automation target." },
-              { name: "openhands-todo", color: "1D76DB", description: "Created from TODO(openhands-squad2)." },
+              { name: "openhands-todo", color: "1D76DB", description: "Created by openhands-second-squad TODO sweep." },
               { name: "processed", color: "C5DEF5", description: "Automation processed this issue." },
               { name: "openhands-needs-human", color: "D93F0B", description: "OpenHands needs human review." }
             ];
