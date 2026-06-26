@@ -92,20 +92,32 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('keeps the wrapper workspace menu as a command bridge, not a second state source', () => {
+  it('keeps the wrapper workspace menu as a Runtime Intelligence command bridge, not a second state source', () => {
     const wrapper = read(WRAPPER_PATH);
+    const commandRuntime = read('src/features/product/runtime/workspaceCommandRuntime.ts');
 
     expectContainsAll(wrapper, [
+      "from './features/product/runtime/workspaceCommandRuntime'",
       'WorkspaceMenu',
       'WORKSPACE_MENU',
       'publishWorkspaceCommand',
+      'createWorkspaceCommandDetail',
       'sovereign-wrapper-workspace-menu',
       'sovereign-wrapper-menu__${item.id}',
-      "targetTab",
+    ]);
+
+    expectContainsAll(commandRuntime, [
+      "from '../../../runtime'",
+      'runtimeIntelligence.decide',
+      'mobile-workbench',
+      'WORKSPACE_COMMAND_TABS',
+      'createWorkspaceCommandDetail',
+      'runtimeTraceId',
     ]);
 
     for (const tab of WORKSPACE_MENU_TABS) {
       expect(wrapper).toContain(`'${tab}'`);
+      expect(commandRuntime).toContain(`'${tab}'`);
     }
 
     expect(wrapper).toContain("window.dispatchEvent(new CustomEvent('sovereign:release-guide-command'");
