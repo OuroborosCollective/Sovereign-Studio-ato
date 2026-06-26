@@ -95,6 +95,13 @@ export function summarizeDevChatRepoSnapshot(snapshot: DevChatRepoSnapshot): str
   return `${snapshot.owner}/${snapshot.repo} geladen · ${snapshot.branch} · ${snapshot.fileCount} files${truncated}`;
 }
 
+function lastPreferredSourcePath(paths: string[]): string | undefined {
+  for (let index = paths.length - 1; index >= 0; index -= 1) {
+    if (paths[index].startsWith('src/')) return paths[index];
+  }
+  return paths.length ? paths[paths.length - 1] : undefined;
+}
+
 export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Promise<DevChatRepoLoadResult> {
   try {
     const response = await fetch(
@@ -117,8 +124,8 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
 
     const blobPaths = files.filter((file: DevChatRepoTreeFile) => file.type === 'blob').map((file: DevChatRepoTreeFile) => file.path);
     const dirs = Array.from(new Set(blobPaths.map((path: string) => path.split('/')[0]).filter(Boolean))).slice(0, 12);
-    const lastPath = blobPaths.findLast((path: string) => path.startsWith('src/')) ?? blobPaths.at(-1);
-    const slash = lastPath?.lastIndexOf('/') ?? -1;
+    const lastPath = lastPreferredSourcePath(blobPaths);
+    const slash = lastPath ? lastPath.lastIndexOf('/') : -1;
 
     return {
       ok: true,
