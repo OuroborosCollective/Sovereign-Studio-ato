@@ -1,10 +1,16 @@
 import React, { useRef, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { useHomePageMetrics } from '../hooks/useHomePageMetrics';
+import { getLatestSovereignHealthReport } from '../features/product/runtime/sovereignHealth';
 
 /**
  * CanvasEngine
  * Hochperformante Partikel-Simulation für den systemweiten Hintergrund.
+ * 
+ * ⚠️ UI-ONLY: Diese Partikel verwenden Math.random() rein für visuelle Effekte.
+ * Keine der Partikel-Positionen oder -Bewegungen stellt Systemzustand oder Runtime-Daten dar.
+ * Der Particle-Seed ist nicht deterministisch und dient ausschließlich der Ästhetik.
  */
 const CanvasEngine: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -144,12 +150,19 @@ const CanvasEngine: React.FC = () => {
 /**
  * HomePage
  * Fullscreen Interface Transformation.
+ * 
+ * ⚠️ RUNTIME-TRUTH: Alle Metriken stammen aus verifizierten Runtime-Quellen
+ * oder sind explizit als Demo/Dummy markiert. Keine festen Werte, die als
+ * Live-Status erscheinen könnten.
  */
 import { useState } from 'react';
 
 const HomePage: React.FC = () => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [activeTab, setActiveTab] = useState<'explorer' | 'editor' | 'chat'>('explorer');
+  
+  const healthReport = getLatestSovereignHealthReport();
+  const { currentTime, metrics, isDemo } = useHomePageMetrics(healthReport);
 
   return (
     <MainLayout
@@ -180,8 +193,8 @@ const HomePage: React.FC = () => {
                 <span className="text-slate-500 font-mono text-[10px]">SVRGN_CORE_V4.2.0</span>
               </div>
               <div className="text-right">
-                <div className="text-white font-mono text-xl">10:42:04</div>
-                <div className="text-slate-500 font-mono text-[10px] uppercase">Zentralzeit-Referenz</div>
+                <div className="text-white font-mono text-xl">{currentTime}</div>
+                <div className="text-slate-500 font-mono text-[10px] uppercase">Systemzeit</div>
               </div>
             </div>
 
@@ -208,21 +221,29 @@ const HomePage: React.FC = () => {
 
               {/* Live Stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
-                {[
-                  { label: 'Uplink', val: 'Active', unit: 'Stable' },
-                  { label: 'Neural', val: '84.2', unit: 'GFLOPS' },
-                  { label: 'Latency', val: '12', unit: 'ms' },
-                  { label: 'Load', val: '14', unit: '%' }
-                ].map((stat, i) => (
+                {metrics.map((metric, i) => (
                   <div key={i} className="p-4 bg-slate-950/40 border border-white/5 backdrop-blur-md rounded-xl hover:border-sky-500/30 transition-colors">
-                    <div className="text-[9px] uppercase tracking-tighter text-slate-500">{stat.label}</div>
+                    <div className="flex items-center gap-1">
+                      <div className="text-[9px] uppercase tracking-tighter text-slate-500">{metric.label}</div>
+                      {metric.isDemo && (
+                        <span className="text-[8px] px-1 py-0.5 rounded bg-slate-800 text-slate-600 uppercase">Demo</span>
+                      )}
+                    </div>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-lg font-mono text-white">{stat.val}</span>
-                      <span className="text-[9px] font-mono text-sky-500/70">{stat.unit}</span>
+                      <span className="text-lg font-mono text-white">{metric.value}</span>
+                      <span className="text-[9px] font-mono text-sky-500/70">{metric.unit}</span>
                     </div>
                   </div>
                 ))}
               </div>
+              
+              {isDemo && (
+                <div className="mt-4 text-center">
+                  <span className="text-[10px] font-mono text-slate-600 uppercase tracking-wider">
+                    Demo-Modus — Keine Runtime-Quelle verbunden
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Footer Bar */}
