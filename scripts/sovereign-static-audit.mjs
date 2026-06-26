@@ -80,13 +80,22 @@ function collectStringLiterals(source) {
   return literals;
 }
 
+function importsCurrentAppShell(main) {
+  if (main.includes("import App from './App'")) return true;
+  if (!main.includes("import App from './SovereignAppWrapper'")) return false;
+  if (!existsSync('src/SovereignAppWrapper.tsx')) return false;
+
+  const wrapper = read('src/SovereignAppWrapper.tsx');
+  return wrapper.includes("import App from './App'") && wrapper.includes('<App />');
+}
+
 for (const file of required) {
   if (!existsSync(file)) fail(`missing: ${file}`);
 }
 
 if (existsSync('src/main.tsx')) {
   const main = read('src/main.tsx');
-  if (!main.includes("import App from './App'")) fail('src/main.tsx must import the current App shell.');
+  if (!importsCurrentAppShell(main)) fail('src/main.tsx must import the current App shell directly or through SovereignAppWrapper.');
   if (!main.includes('<App />')) fail('src/main.tsx must render the current App shell.');
   if (!main.includes('installViewportRuntime')) fail('src/main.tsx must install the Android viewport runtime.');
   if (!main.includes('restoreCanvasStateMirror')) fail('src/main.tsx must restore mobile workspace persistence before boot.');
