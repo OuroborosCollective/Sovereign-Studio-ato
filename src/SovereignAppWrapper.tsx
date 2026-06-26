@@ -12,7 +12,21 @@ type ModuleId =
   | 'logger'
   | 'restore';
 
-type PrimaryWorkspaceTab = 'builder' | 'repo' | 'files' | 'diff';
+type WorkspaceTab =
+  | 'builder'
+  | 'repo'
+  | 'files'
+  | 'diff'
+  | 'workflow'
+  | 'repair'
+  | 'remote'
+  | 'memory'
+  | 'telemetry'
+  | 'monitor'
+  | 'health'
+  | 'runtime'
+  | 'coverage'
+  | 'findings';
 
 type Signal = 'idle' | 'active' | 'processing' | 'warning' | 'error';
 type Phase = 'idle' | 'spinup' | 'working' | 'done' | 'error';
@@ -55,6 +69,13 @@ interface RuntimeFrameState {
   overrideActive: boolean;
 }
 
+interface WorkspaceMenuItem {
+  id: WorkspaceTab;
+  label: string;
+  hint: string;
+  group: 'primary' | 'work' | 'ops';
+}
+
 type SovereignWindow = Window & {
   __sovereignSetupState?: unknown;
 };
@@ -67,11 +88,21 @@ const SIGNAL_COLOR: Record<Signal, string> = {
   error: '#f85149',
 };
 
-const PRIMARY_WORKSPACE_MENU: Array<{ id: PrimaryWorkspaceTab; label: string; hint: string }> = [
-  { id: 'builder', label: 'Chat', hint: 'Hauptfläche' },
-  { id: 'repo', label: 'Repo', hint: 'Quelle' },
-  { id: 'files', label: 'Files', hint: 'Review' },
-  { id: 'diff', label: 'Diff', hint: 'Änderungen' },
+const WORKSPACE_MENU: WorkspaceMenuItem[] = [
+  { id: 'builder', label: 'Chat', hint: 'Hauptfläche', group: 'primary' },
+  { id: 'repo', label: 'Repo', hint: 'Quelle', group: 'primary' },
+  { id: 'files', label: 'Files', hint: 'Review', group: 'primary' },
+  { id: 'diff', label: 'Diff', hint: 'Änderungen', group: 'primary' },
+  { id: 'workflow', label: 'Workflow', hint: 'CI Watch', group: 'work' },
+  { id: 'repair', label: 'Repair', hint: 'Fixplan', group: 'work' },
+  { id: 'remote', label: 'Remote', hint: 'Memory', group: 'work' },
+  { id: 'monitor', label: 'Monitor', hint: 'Live', group: 'work' },
+  { id: 'telemetry', label: 'Telemetry', hint: 'Events', group: 'ops' },
+  { id: 'health', label: 'Health', hint: 'Status', group: 'ops' },
+  { id: 'runtime', label: 'Runtime', hint: 'Steps', group: 'ops' },
+  { id: 'coverage', label: 'Coverage', hint: 'Gates', group: 'ops' },
+  { id: 'findings', label: 'Findings', hint: 'Scanner', group: 'ops' },
+  { id: 'memory', label: 'Pattern', hint: 'Lernen', group: 'ops' },
 ];
 
 function normalizeSetupPhase(value: unknown): PublishedRuntimeSnapshot['setupPhase'] {
@@ -209,7 +240,7 @@ function currentModule(state: RuntimeFrameState): RuntimeModule {
   return state.modules.find((module) => module.id === state.activeModuleId) ?? state.modules[0];
 }
 
-function publishPrimaryWorkspaceCommand(targetTab: PrimaryWorkspaceTab): void {
+function publishWorkspaceCommand(targetTab: WorkspaceTab): void {
   if (typeof window === 'undefined') return;
 
   window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', {
@@ -263,21 +294,25 @@ function RuntimePanel({ state, module }: { state: RuntimeFrameState; module: Run
   );
 }
 
-function PrimaryWorkspaceMenu() {
+function WorkspaceMenu() {
   return (
     <nav
       className="border-t border-slate-900 bg-[#05070b] px-2 py-2"
-      aria-label="Sovereign primary workspace menu"
-      data-testid="sovereign-wrapper-primary-menu"
+      aria-label="Sovereign workspace menu bridge"
+      data-testid="sovereign-wrapper-workspace-menu"
     >
-      <div className="grid grid-cols-4 gap-2">
-        {PRIMARY_WORKSPACE_MENU.map((item) => (
+      <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {WORKSPACE_MENU.map((item) => (
           <button
             key={item.id}
             type="button"
-            className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-2 py-2 text-left text-[10px] font-bold text-cyan-100"
-            onClick={() => publishPrimaryWorkspaceCommand(item.id)}
-            data-testid={`sovereign-wrapper-primary-menu__${item.id}`}
+            className={item.group === 'primary'
+              ? 'min-w-[4.8rem] rounded-xl border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-left text-[10px] font-bold text-cyan-100'
+              : item.group === 'work'
+                ? 'min-w-[5.4rem] rounded-xl border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-left text-[10px] font-bold text-amber-100'
+                : 'min-w-[5.4rem] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-left text-[10px] font-bold text-slate-300'}
+            onClick={() => publishWorkspaceCommand(item.id)}
+            data-testid={`sovereign-wrapper-menu__${item.id}`}
           >
             <span className="block text-[11px] leading-4">{item.label}</span>
             <span className="block truncate font-mono text-[8px] font-normal opacity-60">{item.hint}</span>
@@ -345,7 +380,7 @@ function SovereignRuntimeShell({ state, children }: { state: RuntimeFrameState; 
       </div>
 
       {panelOpen ? <RuntimePanel state={state} module={active} /> : null}
-      <PrimaryWorkspaceMenu />
+      <WorkspaceMenu />
 
       <nav className="grid h-14 flex-shrink-0 grid-cols-8 border-t border-slate-900 bg-black" aria-label="Sovereign runtime wrapper modules">
         {state.modules.map((module) => (
