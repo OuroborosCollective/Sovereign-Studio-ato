@@ -96,7 +96,6 @@ describe('OpenHandsOperatorBriefingPanel', () => {
       adminConsoleUrl: '',
     };
     render(<OpenHandsOperatorBriefingPanel config={configWithWarning} />);
-    // adminConsoleUrl missing triggers 2 warnings (one in config section, one in secrets section)
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 

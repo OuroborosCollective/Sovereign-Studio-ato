@@ -92,20 +92,32 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('keeps the wrapper workspace menu as a command bridge, not a second state source', () => {
+  it('keeps the wrapper workspace menu as a Runtime Intelligence command bridge, not a second state source', () => {
     const wrapper = read(WRAPPER_PATH);
+    const commandRuntime = read('src/features/product/runtime/workspaceCommandRuntime.ts');
 
     expectContainsAll(wrapper, [
+      "from './features/product/runtime/workspaceCommandRuntime'",
       'WorkspaceMenu',
       'WORKSPACE_MENU',
       'publishWorkspaceCommand',
+      'createWorkspaceCommandDetail',
       'sovereign-wrapper-workspace-menu',
       'sovereign-wrapper-menu__${item.id}',
-      "targetTab",
+    ]);
+
+    expectContainsAll(commandRuntime, [
+      "from '../../../runtime'",
+      'runtimeIntelligence.decide',
+      'mobile-workbench',
+      'WORKSPACE_COMMAND_TABS',
+      'createWorkspaceCommandDetail',
+      'runtimeTraceId',
     ]);
 
     for (const tab of WORKSPACE_MENU_TABS) {
       expect(wrapper).toContain(`'${tab}'`);
+      expect(commandRuntime).toContain(`'${tab}'`);
     }
 
     expect(wrapper).toContain("window.dispatchEvent(new CustomEvent('sovereign:release-guide-command'");
@@ -128,7 +140,7 @@ describe('current Sovereign app shell contract', () => {
 
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    // File contains: 'npm run build:web\n' (2 backslashes = \n in source)
+    // File contains: 'npm run build:web\\n' (2 backslashes = \n in source)
     // When JS parses this, \n becomes literal newline in HTML output
     // But in file it's stored as \n in HTML source (displayed as actual newline)
     // We check that file contains the escaped form (2 backslashes)
