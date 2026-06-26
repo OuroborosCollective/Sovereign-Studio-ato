@@ -1,3 +1,4 @@
+import React, { memo, useMemo } from 'react';
 import type { RepoFile } from '../../github/types';
 import { analyzeRepoFileIntegrityList, summarizeFileIntegrity } from '../runtime/repoFileIntegrity';
 
@@ -12,8 +13,16 @@ function riskClass(risk: string): string {
   return 'text-emerald-300';
 }
 
-export function RepoFileIntegrityMatrix({ files, limit = 80 }: RepoFileIntegrityMatrixProps) {
-  const results = analyzeRepoFileIntegrityList(files).slice(0, limit);
+/**
+ * ⚡ Bolt: RepoFileIntegrityMatrix
+ * Optimized with React.memo and useMemo to prevent redundant O(N) file integrity analysis
+ * during parent re-renders. Analysis is only re-run when files or limit changes.
+ */
+export const RepoFileIntegrityMatrix = memo(({ files, limit = 80 }: RepoFileIntegrityMatrixProps) => {
+  const results = useMemo(() =>
+    analyzeRepoFileIntegrityList(files).slice(0, limit),
+    [files, limit]
+  );
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
@@ -58,4 +67,6 @@ export function RepoFileIntegrityMatrix({ files, limit = 80 }: RepoFileIntegrity
       )}
     </section>
   );
-}
+});
+
+RepoFileIntegrityMatrix.displayName = 'RepoFileIntegrityMatrix';
