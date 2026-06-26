@@ -75,6 +75,27 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
+  it('keeps the wrapper chat-first menu as a command bridge, not a second state source', () => {
+    const wrapper = read(WRAPPER_PATH);
+
+    expectContainsAll(wrapper, [
+      'PrimaryWorkspaceMenu',
+      'PRIMARY_WORKSPACE_MENU',
+      'publishPrimaryWorkspaceCommand',
+      'sovereign-wrapper-primary-menu',
+      "targetTab",
+      "'builder'",
+      "'repo'",
+      "'files'",
+      "'diff'",
+    ]);
+
+    expect(wrapper).toContain("window.dispatchEvent(new CustomEvent('sovereign:release-guide-command'");
+    expect(wrapper).not.toContain('querySelector');
+    expect(wrapper).not.toContain('localStorage');
+    expect(wrapper).not.toContain('sessionStorage');
+  });
+
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
     // File contains: 'npm run build:web\n' (2 backslashes = \n in source)
