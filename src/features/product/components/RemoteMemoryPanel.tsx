@@ -27,6 +27,7 @@ export interface RemoteMemoryPanelProps {
   isBusy: boolean;
   cleanupConfirmationText?: string;
   cleanupScopeConfirmed?: boolean;
+  safetyNotice?: string;
   onChange: (config: ExternalMemorySyncConfig) => void;
   onCleanupConfirmationTextChange?: (value: string) => void;
   onCleanupScopeConfirmedChange?: (value: boolean) => void;
@@ -52,6 +53,7 @@ export function RemoteMemoryPanel({
   isBusy,
   cleanupConfirmationText = '',
   cleanupScopeConfirmed = false,
+  safetyNotice,
   onChange,
   onCleanupConfirmationTextChange,
   onCleanupScopeConfirmedChange,
@@ -83,6 +85,8 @@ export function RemoteMemoryPanel({
           An
         </label>
       </div>
+
+      {safetyNotice ? <p className="mt-3 rounded border border-amber-700 bg-amber-950/30 p-3 text-xs text-amber-100">{safetyNotice}</p> : null}
 
       <pre className="mt-4 whitespace-pre-wrap rounded border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-400">{buildExternalMemoryConsentText()}</pre>
 
