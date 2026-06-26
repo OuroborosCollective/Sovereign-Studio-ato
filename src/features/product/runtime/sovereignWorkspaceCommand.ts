@@ -8,13 +8,13 @@ export const SOVEREIGN_WORKSPACE_TAB_IDS = [
   'workflow',
   'repair',
   'remote',
-  'memory',
-  'telemetry',
   'monitor',
+  'telemetry',
   'health',
   'runtime',
   'coverage',
   'findings',
+  'memory',
 ] as const;
 
 export type SovereignWorkspaceTab = typeof SOVEREIGN_WORKSPACE_TAB_IDS[number];
