@@ -1,3 +1,4 @@
+import React, { memo, useMemo } from 'react';
 import type { RepoFile } from '../../github/types';
 import { getLatestSovereignHealthReport, type SovereignHealthReport } from '../runtime/sovereignHealth';
 import { getSovereignHealthRuntimeGate } from '../runtime/sovereignFunctionalGuards';
@@ -29,12 +30,33 @@ function healthClass(status: string): string {
   return 'text-slate-300';
 }
 
-export function RepoReadinessPanel({ repoUrl, files, status, healthReport }: RepoReadinessPanelProps) {
-  const signals = buildRepoSignalsFromFiles(repoUrl, files);
-  const report = evaluateRepoReadiness(signals);
-  const launchMarkdown = buildLaunchPackageMarkdown(signals, report, status ?? 'Loaded repository snapshot');
-  const effectiveHealthReport = healthReport ?? getLatestSovereignHealthReport();
-  const healthGate = effectiveHealthReport ? getSovereignHealthRuntimeGate(effectiveHealthReport) : null;
+/**
+ * ⚡ Bolt: RepoReadinessPanel
+ * Optimized with React.memo and useMemo to stabilize expensive derived state.
+ * Prevents redundant repo signal analysis and readiness evaluation during
+ * frequent shell re-renders.
+ */
+export const RepoReadinessPanel = memo(({ repoUrl, files, status, healthReport }: RepoReadinessPanelProps) => {
+  const signals = useMemo(() =>
+    buildRepoSignalsFromFiles(repoUrl, files),
+    [repoUrl, files]
+  );
+  const report = useMemo(() =>
+    evaluateRepoReadiness(signals),
+    [signals]
+  );
+  const launchMarkdown = useMemo(() =>
+    buildLaunchPackageMarkdown(signals, report, status ?? 'Loaded repository snapshot'),
+    [signals, report, status]
+  );
+  const effectiveHealthReport = useMemo(() =>
+    healthReport ?? getLatestSovereignHealthReport(),
+    [healthReport]
+  );
+  const healthGate = useMemo(() =>
+    effectiveHealthReport ? getSovereignHealthRuntimeGate(effectiveHealthReport) : null,
+    [effectiveHealthReport]
+  );
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
@@ -111,4 +133,6 @@ export function RepoReadinessPanel({ repoUrl, files, status, healthReport }: Rep
       </details>
     </section>
   );
-}
+});
+
+RepoReadinessPanel.displayName = 'RepoReadinessPanel';

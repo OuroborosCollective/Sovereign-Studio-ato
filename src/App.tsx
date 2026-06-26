@@ -1279,7 +1279,12 @@ const App: React.FC = () => {
 
       {activeTab === 'readiness' ? (
         <SovereignTabErrorBoundary tabId="readiness" tabLabel="Readiness">
-          <RepoReadinessPanel repoUrl={repoUrl} files={safeRepoFiles} status={repoStatus} />
+          <RepoReadinessPanel
+            repoUrl={repoUrl}
+            files={safeRepoFiles}
+            status={repoStatus}
+            healthReport={healthReport}
+          />
         </SovereignTabErrorBoundary>
       ) : null}
 
