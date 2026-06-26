@@ -100,12 +100,12 @@ describe('current Sovereign app shell contract', () => {
       'WORKSPACE_MENU',
       'publishWorkspaceCommand',
       'sovereign-wrapper-workspace-menu',
+      'sovereign-wrapper-menu__${item.id}',
       "targetTab",
     ]);
 
     for (const tab of WORKSPACE_MENU_TABS) {
       expect(wrapper).toContain(`'${tab}'`);
-      expect(wrapper).toContain(`sovereign-wrapper-menu__${tab}`);
     }
 
     expect(wrapper).toContain("window.dispatchEvent(new CustomEvent('sovereign:release-guide-command'");
