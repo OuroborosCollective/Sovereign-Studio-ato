@@ -1,0 +1,100 @@
+name: Apply Release Remote Memory Default Fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-release-remote-memory-default-fix.yml
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  apply:
+    name: Remove bundled Remote Memory gateway default
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch App Remote Memory defaults
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.tsx')
+          text = path.read_text()
+          gateway = 'http://' + '.'.join(['46', '202', '154', '25']) + ':8088'
+          old = """  const [remoteMemoryConfig, setRemoteMemoryConfig] = useState<ExternalMemorySyncConfig>(() => ({
+            ...createExternalMemorySyncConfig(),
+            gatewayUrl: '%s',
+            workspaceId: 'Pattern',
+            collectionName: 'sovereign_logic_patterns',
+            contributorId: 'sovereign-local-install',
+            allowSelfHostedHttp: true,
+          }));""" % gateway
+          new = """  const [remoteMemoryConfig, setRemoteMemoryConfig] = useState<ExternalMemorySyncConfig>(() => createExternalMemorySyncConfig());"""
+
+          if old not in text:
+              raise SystemExit('Expected bundled Remote Memory default block was not found; refusing blind edit.')
+
+          next_text = text.replace(old, new, 1)
+          if gateway in next_text:
+              raise SystemExit('Unsafe gateway literal still present in src/App.tsx after patch.')
+
+          path.write_text(next_text)
+          PY
+
+      - name: Validate patch result
+        run: |
+          set -euo pipefail
+          if grep -n "46\.202\.154\.25" src/App.tsx; then
+            echo "Unsafe Remote Memory gateway still exists in App.tsx" >&2
+            exit 1
+          fi
+          if grep -n "allowSelfHostedHttp: true" src/App.tsx; then
+            echo "Self-hosted HTTP is still forced true in App.tsx" >&2
+            exit 1
+          fi
+          git diff -- src/App.tsx
+          git diff --check
+
+      - name: Commit patch
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src/App.tsx; then
+            echo "No App.tsx change required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx
+          git commit -m "fix: remove bundled remote memory gateway default"
+          git push
+
+      - name: Close release issue when fixed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = 359;
+            const { owner, repo } = context.repo;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: 'Release Remote Memory default fix applied by workflow: App.tsx now uses createExternalMemorySyncConfig() without bundled non-local HTTP gateway defaults.'
+            });
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number,
+              state: 'closed',
+              state_reason: 'completed'
+            });
