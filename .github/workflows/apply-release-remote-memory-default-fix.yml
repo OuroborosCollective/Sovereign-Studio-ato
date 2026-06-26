@@ -55,7 +55,8 @@ jobs:
       - name: Validate patch result
         run: |
           set -euo pipefail
-          if grep -n "46\.202\.154\.25" src/App.tsx; then
+          gateway_pattern="46[.]202[.]154[.]25"
+          if grep -nE "${gateway_pattern}" src/App.tsx; then
             echo "Unsafe Remote Memory gateway still exists in App.tsx" >&2
             exit 1
           fi
