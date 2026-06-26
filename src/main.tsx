@@ -194,6 +194,20 @@ function scrollTabContentIntoView(targetTab: string): void {
   }, 120);
 }
 
+function activateReleaseGuideSelectTarget(targetTab: string): boolean {
+  const select = document.querySelector<HTMLSelectElement>('select[data-testid="tabbar__more-select"]');
+  if (!select) return false;
+
+  const hasOption = Array.from(select.options).some((option) => option.value === targetTab);
+  if (!hasOption) return false;
+
+  select.value = targetTab;
+  select.dispatchEvent(new Event('input', { bubbles: true }));
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  scrollTabContentIntoView(targetTab);
+  return true;
+}
+
 function installTabContentScrollRuntime(): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -244,9 +258,12 @@ function installReleaseGuideCommandRuntime(): void {
     if (!targetTab || !SAFE_TAB_ID.test(targetTab)) return;
 
     const button = findReleaseGuideTargetButton(targetTab);
-    if (!button) return;
+    if (button) {
+      activateReleaseGuideTarget(button, detail?.type);
+      return;
+    }
 
-    activateReleaseGuideTarget(button, detail?.type);
+    activateReleaseGuideSelectTarget(targetTab);
   });
 }
 
