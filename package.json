@@ -18,6 +18,7 @@
     "build:apk": "pnpm run build && cd android && chmod +x ./gradlew && ./gradlew assembleRelease -Pandroid.injected.signing.store.file=\"$ANDROID_KEYSTORE_PATH\" -Pandroid.injected.signing.store.password=\"$ANDROID_KEYSTORE_PASSWORD\" -Pandroid.injected.signing.key.alias=\"$ANDROID_KEY_ALIAS\" -Pandroid.injected.signing.key.password=\"$ANDROID_KEY_PASSWORD\"",
     "build:aab": "pnpm run build && cd android && chmod +x ./gradlew && ./gradlew bundleRelease -Pandroid.injected.signing.store.file=\"$ANDROID_KEYSTORE_PATH\" -Pandroid.injected.signing.store.password=\"$ANDROID_KEYSTORE_PASSWORD\" -Pandroid.injected.signing.key.alias=\"$ANDROID_KEY_ALIAS\" -Pandroid.injected.signing.key.password=\"$ANDROID_KEY_PASSWORD\"",
     "audit:sovereign": "node scripts/sovereign-static-audit.mjs",
+    "audit:all": "node scripts/hardcode-scanner.mjs --all",
     "generate-keystore": "node gen-key.js",
     "preview": "vite preview",
     "clean": "rimraf dist",
