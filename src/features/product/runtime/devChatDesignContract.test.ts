@@ -31,8 +31,8 @@ describe('devChatDesignContract', () => {
   it('rejects structural drift', () => {
     const drifted: DevChatDesignContract = {
       ...SOVEREIGN_DEV_CHAT_DESIGN_CONTRACT,
-      centralBodyWidthPercent: 60,
-      maxSideMenuOverlayPercentOfBody: 25,
+      centralBodyWidthPercent: 60 as 55,
+      maxSideMenuOverlayPercentOfBody: 25 as 10,
     };
 
     const report = validateDevChatDesignContract(drifted);
