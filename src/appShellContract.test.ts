@@ -24,6 +24,23 @@ const REQUIRED_CONTAINER_TOKENS = [
   'PatternMemoryContainer',
 ];
 
+const WORKSPACE_MENU_TABS = [
+  'builder',
+  'repo',
+  'files',
+  'diff',
+  'workflow',
+  'repair',
+  'remote',
+  'memory',
+  'telemetry',
+  'monitor',
+  'health',
+  'runtime',
+  'coverage',
+  'findings',
+];
+
 function read(path: string): string {
   expect(existsSync(path), `${path} must exist`).toBe(true);
   return readFileSync(path, 'utf8');
@@ -75,25 +92,38 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('keeps the wrapper chat-first menu as a command bridge, not a second state source', () => {
+  it('keeps the wrapper workspace menu as a command bridge, not a second state source', () => {
     const wrapper = read(WRAPPER_PATH);
 
     expectContainsAll(wrapper, [
-      'PrimaryWorkspaceMenu',
-      'PRIMARY_WORKSPACE_MENU',
-      'publishPrimaryWorkspaceCommand',
-      'sovereign-wrapper-primary-menu',
+      'WorkspaceMenu',
+      'WORKSPACE_MENU',
+      'publishWorkspaceCommand',
+      'sovereign-wrapper-workspace-menu',
       "targetTab",
-      "'builder'",
-      "'repo'",
-      "'files'",
-      "'diff'",
     ]);
+
+    for (const tab of WORKSPACE_MENU_TABS) {
+      expect(wrapper).toContain(`'${tab}'`);
+      expect(wrapper).toContain(`sovereign-wrapper-menu__${tab}`);
+    }
 
     expect(wrapper).toContain("window.dispatchEvent(new CustomEvent('sovereign:release-guide-command'");
     expect(wrapper).not.toContain('querySelector');
     expect(wrapper).not.toContain('localStorage');
     expect(wrapper).not.toContain('sessionStorage');
+  });
+
+  it('routes release guide commands through primary buttons or the More menu select', () => {
+    const main = read(MAIN_PATH);
+
+    expectContainsAll(main, [
+      'activateReleaseGuideSelectTarget',
+      'select[data-testid="tabbar__more-select"]',
+      "select.dispatchEvent(new Event('change'",
+      'activateReleaseGuideTarget(button, detail?.type);',
+      'activateReleaseGuideSelectTarget(targetTab);',
+    ]);
   });
 
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
