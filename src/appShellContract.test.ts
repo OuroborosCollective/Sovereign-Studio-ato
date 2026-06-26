@@ -1,11 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SOVEREIGN_PRODUCT_TEMPLATE } from './features/product/runtime/sovereignProductTemplate';
+import {
+  SOVEREIGN_WORKSPACE_MENU,
+  SOVEREIGN_WORKSPACE_TAB_IDS,
+} from './features/product/runtime/sovereignWorkspaceCommand';
 
 const MAIN_PATH = 'src/main.tsx';
 const APP_PATH = 'src/App.tsx';
 const WRAPPER_PATH = 'src/SovereignAppWrapper.tsx';
 const CSS_PATH = 'src/index.css';
+const WORKSPACE_COMMAND_PATH = 'src/features/product/runtime/sovereignWorkspaceCommand.ts';
 
 const DOM_INSTALLER_TOKENS = [
   'installMobileAgentMonitor',
@@ -22,23 +27,6 @@ const REQUIRED_CONTAINER_TOKENS = [
   'RepoSnapshotContainer',
   'TelemetryContainer',
   'PatternMemoryContainer',
-];
-
-const WORKSPACE_MENU_TABS = [
-  'builder',
-  'repo',
-  'files',
-  'diff',
-  'workflow',
-  'repair',
-  'remote',
-  'memory',
-  'telemetry',
-  'monitor',
-  'health',
-  'runtime',
-  'coverage',
-  'findings',
 ];
 
 function read(path: string): string {
@@ -64,6 +52,7 @@ describe('current Sovereign app shell contract', () => {
     expect(existsSync(APP_PATH)).toBe(true);
     expect(existsSync(WRAPPER_PATH)).toBe(true);
     expect(existsSync(CSS_PATH)).toBe(true);
+    expect(existsSync(WORKSPACE_COMMAND_PATH)).toBe(true);
   });
 
   it('boots only the React app wrapper and stable Android runtime helpers', () => {
@@ -92,43 +81,68 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('keeps the wrapper workspace menu as an event bridge, not a second state source', () => {
+  it('keeps the wrapper workspace menu as a contract-backed event bridge, not a second state source', () => {
     const wrapper = read(WRAPPER_PATH);
+    const command = read(WORKSPACE_COMMAND_PATH);
 
     expectContainsAll(wrapper, [
       'WorkspaceMenu',
-      'WORKSPACE_MENU',
+      'SOVEREIGN_WORKSPACE_MENU',
+      'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
+      'createSovereignWorkspaceCommand',
       'publishWorkspaceCommand',
       'sovereign-wrapper-workspace-menu',
       'sovereign-wrapper-menu__${item.id}',
-      "targetTab",
+      'targetTab',
     ]);
 
-    for (const tab of WORKSPACE_MENU_TABS) {
-      expect(wrapper).toContain(`'${tab}'`);
+    for (const tab of SOVEREIGN_WORKSPACE_TAB_IDS) {
+      expect(command).toContain(`'${tab}'`);
     }
 
-    expect(wrapper).toContain("window.dispatchEvent(new CustomEvent('sovereign:release-guide-command'");
+    expect(SOVEREIGN_WORKSPACE_MENU.map((item) => item.id)).toEqual([...SOVEREIGN_WORKSPACE_TAB_IDS]);
+    expect(wrapper).toContain('window.dispatchEvent(new CustomEvent(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
     expect(wrapper).not.toContain('querySelector');
     expect(wrapper).not.toContain('localStorage');
     expect(wrapper).not.toContain('sessionStorage');
   });
 
-  it('routes release guide commands through primary buttons or the More menu select', () => {
+  it('routes release guide commands through validated workspace commands and the More menu select', () => {
     const main = read(MAIN_PATH);
 
     expectContainsAll(main, [
+      'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
+      'normalizeSovereignWorkspaceCommandDetail',
+      'isSovereignWorkspaceTab',
       'activateReleaseGuideSelectTarget',
       'select[data-testid="tabbar__more-select"]',
       "select.dispatchEvent(new Event('change'",
-      'activateReleaseGuideTarget(button, detail?.type);',
+      'activateReleaseGuideTarget(button, detail.type);',
       'activateReleaseGuideSelectTarget(targetTab);',
     ]);
   });
 
+  it('keeps the workspace command contract runtime-only and DOM-free', () => {
+    const command = read(WORKSPACE_COMMAND_PATH);
+
+    expectContainsAll(command, [
+      'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
+      'SOVEREIGN_WORKSPACE_TAB_IDS',
+      'SOVEREIGN_WORKSPACE_MENU',
+      'isSovereignWorkspaceTab',
+      'normalizeSovereignWorkspaceCommandDetail',
+    ]);
+
+    expect(command).not.toContain('document.');
+    expect(command).not.toContain('window.');
+    expect(command).not.toContain('querySelector');
+    expect(command).not.toContain('localStorage');
+    expect(command).not.toContain('sessionStorage');
+  });
+
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    const escapedSourceNewline = 'npm run build:web' + '\\\\n' + 'npx cap sync android';
+    const escapedSourceNewline = 'npm run build:web' + '\\n' + 'npx cap sync android';
     const unsafeRuntimeNewline = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
 
     expect(releaseFix).toContain(escapedSourceNewline);
