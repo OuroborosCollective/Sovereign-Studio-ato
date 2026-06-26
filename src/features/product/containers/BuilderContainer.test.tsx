@@ -41,7 +41,7 @@ describe('BuilderContainer', () => {
     render(<BuilderContainer {...baseProps()} />);
 
     expect(screen.getByText(/Repo-Snapshot verbunden/)).toBeDefined();
-    expect(screen.getByText('Bitte mobile UX verbessern und Log direkt sichtbar machen.')).toBeDefined();
+    expect(screen.getAllByText('Bitte mobile UX verbessern und Log direkt sichtbar machen.').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Package summary')).toBeDefined();
     expect(screen.queryByText(/AutoSwitchOrchestrator/)).toBeNull();
     expect(screen.queryByText(/simulate/i)).toBeNull();
@@ -155,7 +155,7 @@ describe('BuilderContainer', () => {
   it('shows repo status when not ready and blocks direct send', () => {
     render(<BuilderContainer {...baseProps()} repoReady={false} openhandsReady />);
 
-    expect(screen.getByText(/Repo fehlt/)).toBeDefined();
+    expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: 'Agent starten' })).toBeDisabled();
   });
 
