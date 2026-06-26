@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { RemoteMemoryPanel } from '../components/RemoteMemoryPanel';
 import type { ScanFindingRegistry } from '../runtime/scanFindingRegistry';
 import { summarizeScanFindingRegistry } from '../runtime/scanFindingRegistry';
@@ -53,6 +53,41 @@ export interface RemoteMemoryContainerProps {
   onTelemetry: RemoteMemoryContainerTelemetry;
 }
 
+const LEGACY_BUNDLED_REMOTE_MEMORY_GATEWAY = 'http://46.202.154.25:8088';
+
+function isLegacyBundledRemoteMemoryGateway(config: ExternalMemorySyncConfig): boolean {
+  return config.gatewayUrl.trim() === LEGACY_BUNDLED_REMOTE_MEMORY_GATEWAY;
+}
+
+function normalizeRemoteMemoryRuntimeConfig(config: ExternalMemorySyncConfig): ExternalMemorySyncConfig {
+  if (!isLegacyBundledRemoteMemoryGateway(config)) return config;
+
+  return {
+    ...config,
+    enabled: false,
+    consentAccepted: false,
+    gatewayUrl: '',
+    workspaceId: 'local-workspace',
+    contributorId: 'local-contributor',
+    allowSelfHostedHttp: false,
+  };
+}
+
+function sameRemoteMemoryRuntimeConfig(a: ExternalMemorySyncConfig, b: ExternalMemorySyncConfig): boolean {
+  return a.enabled === b.enabled
+    && a.consentAccepted === b.consentAccepted
+    && a.gatewayUrl === b.gatewayUrl
+    && a.workspaceId === b.workspaceId
+    && a.collectionName === b.collectionName
+    && a.contributorId === b.contributorId
+    && a.mode === b.mode
+    && a.clientAccessKey === b.clientAccessKey
+    && a.allowSelfHostedHttp === b.allowSelfHostedHttp
+    && a.includeScanFindings === b.includeScanFindings
+    && a.includeLearningPatterns === b.includeLearningPatterns
+    && a.includeSolutionPatterns === b.includeSolutionPatterns;
+}
+
 function createRemoteMemoryDependency(): SovereignDependencyLifecycleState {
   return createSovereignDependencyLifecycleState(
     'remote-memory-gateway',
@@ -70,6 +105,8 @@ export function RemoteMemoryContainer({
   mission,
   onTelemetry,
 }: RemoteMemoryContainerProps) {
+  const effectiveConfig = useMemo(() => normalizeRemoteMemoryRuntimeConfig(config), [config]);
+  const legacyGatewayWasNeutralized = effectiveConfig !== config;
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<ExternalMemoryHealthResult | null>(null);
   const [monitoring, setMonitoring] = useState<ExternalMemoryMonitoringResult | null>(null);
@@ -82,6 +119,13 @@ export function RemoteMemoryContainer({
   const [updates, setUpdates] = useState<ExternalMemoryPullUpdatesResult | null>(null);
   const [intake, setIntake] = useState<RemoteMemoryUpdateIntakeResult | null>(null);
   const [remoteMemoryDependency, setRemoteMemoryDependency] = useState(createRemoteMemoryDependency);
+
+  useEffect(() => {
+    if (!sameRemoteMemoryRuntimeConfig(config, effectiveConfig)) {
+      onConfigChange(effectiveConfig);
+      onTelemetry('memory', 'warning', 'remote-memory:unsafe-default-neutralized', 'Bundled non-local HTTP Remote Memory gateway was disabled for release safety. Configure an HTTPS gateway or explicit local testing endpoint before enabling Remote Memory.');
+    }
+  }, [config, effectiveConfig, onConfigChange, onTelemetry]);
 
   const publishRemoteDependency = (next: SovereignDependencyLifecycleState) => {
     setRemoteMemoryDependency(next);
@@ -107,14 +151,14 @@ export function RemoteMemoryContainer({
   };
 
   const handlePreview = () => {
-    const result = buildExternalMemorySyncPreview({ config, scanRegistry, solutionStore: solutionPatternStore });
+    const result = buildExternalMemorySyncPreview({ config: effectiveConfig, scanRegistry, solutionStore: solutionPatternStore });
     setPreview(result);
     onTelemetry('memory', result.valid ? 'success' : 'warning', 'remote-memory:preview', result.summary, { items: result.itemCount });
   };
 
   const handleHealth = () => {
     void withBusy(async () => {
-      const result = await checkExternalMemoryHealth({ config });
+      const result = await checkExternalMemoryHealth({ config: effectiveConfig });
       setHealth(result);
       onTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:health', result.summary);
       return result;
@@ -123,7 +167,7 @@ export function RemoteMemoryContainer({
 
   const handleMonitoring = () => {
     void withBusy(async () => {
-      const result = await fetchExternalMemoryMonitoring({ config });
+      const result = await fetchExternalMemoryMonitoring({ config: effectiveConfig });
       setMonitoring(result);
       onTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:monitoring', result.summary, {
         milvusConnected: result.monitoring?.milvusConnected ?? false,
@@ -134,8 +178,8 @@ export function RemoteMemoryContainer({
 
   const handleSync = () => {
     void withBusy(async () => {
-      const payload = buildExternalMemorySyncPayload({ config, scanRegistry, solutionStore: solutionPatternStore });
-      const result = await syncExternalMemory({ config, payload });
+      const payload = buildExternalMemorySyncPayload({ config: effectiveConfig, scanRegistry, solutionStore: solutionPatternStore });
+      const result = await syncExternalMemory({ config: effectiveConfig, payload });
       setSyncResult(result);
       onTelemetry('memory', result.accepted ? 'success' : 'warning', 'remote-memory:sync', result.summary, { items: payload.items.length });
       return result;
@@ -145,7 +189,7 @@ export function RemoteMemoryContainer({
   const handleSearch = () => {
     void withBusy(async () => {
       const query = mission.trim() || summarizeScanFindingRegistry(scanRegistry);
-      const result = await searchExternalMemory({ config, query, limit: 8 });
+      const result = await searchExternalMemory({ config: effectiveConfig, query, limit: 8 });
       setSearchResult(result);
       onTelemetry('memory', result.ok ? 'success' : 'warning', 'remote-memory:search', result.summary, { items: result.items.length });
       return result;
@@ -154,7 +198,7 @@ export function RemoteMemoryContainer({
 
   const handlePullUpdates = () => {
     void withBusy(async () => {
-      const bridge = await pullRemoteUpdatesIntoSolutionMemory({ config, store: solutionPatternStore });
+      const bridge = await pullRemoteUpdatesIntoSolutionMemory({ config: effectiveConfig, store: solutionPatternStore });
       setUpdates(bridge.updates);
       setIntake(bridge.intake);
       onSolutionPatternStoreChange(bridge.store);
@@ -167,8 +211,8 @@ export function RemoteMemoryContainer({
   const handleCleanupContributor = () => {
     void withBusy(async () => {
       if (!cleanupScopeConfirmed) throw new Error('Contributor cleanup scope is not confirmed.');
-      const request = buildExternalMemoryDeleteRequest(config);
-      const result = await deleteExternalMemoryData({ config, request });
+      const request = buildExternalMemoryDeleteRequest(effectiveConfig);
+      const result = await deleteExternalMemoryData({ config: effectiveConfig, request });
       setCleanupResult(result);
       onTelemetry('memory', result.deleted ? 'success' : 'warning', 'remote-memory:cleanup-contributor', result.summary, {
         deleted: result.response?.deletedItems ?? 0,
@@ -184,7 +228,7 @@ export function RemoteMemoryContainer({
 
   return (
     <RemoteMemoryPanel
-      config={config}
+      config={effectiveConfig}
       syncResult={syncResult}
       healthResult={health}
       monitoringResult={monitoring}
@@ -206,6 +250,7 @@ export function RemoteMemoryContainer({
       onSearch={handleSearch}
       onPullUpdates={handlePullUpdates}
       onCleanupContributor={handleCleanupContributor}
+      safetyNotice={legacyGatewayWasNeutralized ? 'Release safety: the bundled non-local HTTP Remote Memory gateway was disabled. Use HTTPS or explicit local testing before enabling Remote Memory.' : undefined}
     />
   );
 }
