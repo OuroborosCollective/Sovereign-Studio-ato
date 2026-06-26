@@ -1,3 +1,5 @@
+import { maskSecrets } from '../../shared/utils/crypto';
+
 export interface GitHubAuthSession {
   token: string;
   hasToken: boolean;
@@ -71,6 +73,9 @@ export function requireGitHubToken(token?: string | null, purpose = 'GitHub writ
 
 export function stripTokenFromText(value: string, token?: string | null): string {
   const normalized = normalizeGitHubToken(token);
-  if (!normalized) return value;
-  return value.split(normalized).join(redactGitHubToken(normalized));
+  const text = normalized
+    ? value.split(normalized).join(redactGitHubToken(normalized))
+    : value;
+
+  return maskSecrets(text);
 }

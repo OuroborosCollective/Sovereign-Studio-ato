@@ -34,10 +34,15 @@ describe('githubAuthSession', () => {
     expect(() => requireGitHubToken('', 'Draft PR')).toThrow('Draft PR requires a GitHub token');
   });
 
-  it('strips raw tokens from text', () => {
-    const text = stripTokenFromText('failed with ghp_1234567890', 'ghp_1234567890');
+  it('strips raw tokens and other secrets from text', () => {
+    const text = stripTokenFromText(
+      'failed with ghp_1234567890 and sk-abc1234567890abcdefghijkl',
+      'ghp_1234567890'
+    );
     expect(text).toContain('ghp_…7890');
     expect(text).not.toContain('ghp_1234567890');
+    expect(text).toContain('sk-****');
+    expect(text).not.toContain('sk-abc1234567890');
     expect(createGitHubAuthSession(' token ').redactedToken).toBe('<redacted-token>');
   });
 });
