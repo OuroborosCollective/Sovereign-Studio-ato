@@ -25,7 +25,6 @@ describe('useHomePageMetrics', () => {
 
     it('updates time every second', () => {
       const startDate = new Date('2024-01-15T14:30:45');
-      const oneSecondLater = new Date('2024-01-15T14:30:46');
       vi.setSystemTime(startDate);
 
       const { result } = renderHook(() => useHomePageMetrics(null));
