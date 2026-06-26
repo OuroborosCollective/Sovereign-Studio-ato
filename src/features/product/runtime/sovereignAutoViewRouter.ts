@@ -253,11 +253,11 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
     };
   }
 
-  if (input.isPublishing || input.isWatchingWorkflow || input.workflowStatus === 'pending' || input.workflowStatus === 'green') {
+  if (input.isPublishing || input.isWatchingWorkflow || input.workflowStatus === 'pending') {
     return {
       shouldSwitch: input.activeTab !== 'workflow',
       tab: 'workflow',
-      reason: 'Workflow state is active or recently completed, so workflow remains visible.',
+      reason: 'Workflow state is active, so workflow remains visible.',
     };
   }
 
@@ -269,13 +269,19 @@ export function decideSovereignAutoView(input: SovereignAutoViewInput): Sovereig
     };
   }
 
-  if (input.hasPackage && (input.hasDiffSources || input.mode === 'auto-review' || input.mode === 'full-auto-draft-pr')) {
+  if (input.hasPackage && input.mode === 'auto-review' && input.activeTab === 'builder') {
+    return {
+      shouldSwitch: true,
+      tab: 'workflow',
+      reason: 'Package exists; diff is internal until source snapshots are loaded, so workflow is the safe review surface.',
+    };
+  }
+
+  if (input.hasPackage && input.hasDiffSources) {
     return {
       shouldSwitch: input.activeTab !== 'workflow',
       tab: 'workflow',
-      reason: input.hasDiffSources
-        ? 'Package source snapshots exist; diff is internal and workflow is the safe review surface.'
-        : 'Package exists; diff is internal until source snapshots are loaded, so workflow is the safe review surface.',
+      reason: 'Package source snapshots exist; diff is internal and workflow is the safe review surface.',
     };
   }
 
