@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import {
+  SOVEREIGN_WORKSPACE_COMMAND_EVENT,
+  SOVEREIGN_WORKSPACE_MENU,
+  createSovereignWorkspaceCommand,
+  type SovereignWorkspaceTab,
+} from './features/product/runtime/sovereignWorkspaceCommand';
 import App from './App';
 
 type ModuleId =
@@ -11,22 +17,6 @@ type ModuleId =
   | 'session'
   | 'logger'
   | 'restore';
-
-type WorkspaceTab =
-  | 'builder'
-  | 'repo'
-  | 'files'
-  | 'diff'
-  | 'workflow'
-  | 'repair'
-  | 'remote'
-  | 'memory'
-  | 'telemetry'
-  | 'monitor'
-  | 'health'
-  | 'runtime'
-  | 'coverage'
-  | 'findings';
 
 type Signal = 'idle' | 'active' | 'processing' | 'warning' | 'error';
 type Phase = 'idle' | 'spinup' | 'working' | 'done' | 'error';
@@ -69,13 +59,6 @@ interface RuntimeFrameState {
   overrideActive: boolean;
 }
 
-interface WorkspaceMenuItem {
-  id: WorkspaceTab;
-  label: string;
-  hint: string;
-  group: 'primary' | 'work' | 'ops';
-}
-
 type SovereignWindow = Window & {
   __sovereignSetupState?: unknown;
 };
@@ -87,23 +70,6 @@ const SIGNAL_COLOR: Record<Signal, string> = {
   warning: '#d29922',
   error: '#f85149',
 };
-
-const WORKSPACE_MENU: WorkspaceMenuItem[] = [
-  { id: 'builder', label: 'Chat', hint: 'Hauptfläche', group: 'primary' },
-  { id: 'repo', label: 'Repo', hint: 'Quelle', group: 'primary' },
-  { id: 'files', label: 'Files', hint: 'Review', group: 'primary' },
-  { id: 'diff', label: 'Diff', hint: 'Änderungen', group: 'primary' },
-  { id: 'workflow', label: 'Workflow', hint: 'CI Watch', group: 'work' },
-  { id: 'repair', label: 'Repair', hint: 'Fixplan', group: 'work' },
-  { id: 'remote', label: 'Remote', hint: 'Memory', group: 'work' },
-  { id: 'monitor', label: 'Monitor', hint: 'Live', group: 'work' },
-  { id: 'telemetry', label: 'Telemetry', hint: 'Events', group: 'ops' },
-  { id: 'health', label: 'Health', hint: 'Status', group: 'ops' },
-  { id: 'runtime', label: 'Runtime', hint: 'Steps', group: 'ops' },
-  { id: 'coverage', label: 'Coverage', hint: 'Gates', group: 'ops' },
-  { id: 'findings', label: 'Findings', hint: 'Scanner', group: 'ops' },
-  { id: 'memory', label: 'Pattern', hint: 'Lernen', group: 'ops' },
-];
 
 function normalizeSetupPhase(value: unknown): PublishedRuntimeSnapshot['setupPhase'] {
   if (
@@ -240,14 +206,11 @@ function currentModule(state: RuntimeFrameState): RuntimeModule {
   return state.modules.find((module) => module.id === state.activeModuleId) ?? state.modules[0];
 }
 
-function publishWorkspaceCommand(targetTab: WorkspaceTab): void {
+function publishWorkspaceCommand(targetTab: SovereignWorkspaceTab): void {
   if (typeof window === 'undefined') return;
 
-  window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', {
-    detail: {
-      type: 'next',
-      targetTab,
-    },
+  window.dispatchEvent(new CustomEvent(SOVEREIGN_WORKSPACE_COMMAND_EVENT, {
+    detail: createSovereignWorkspaceCommand(targetTab),
   }));
 }
 
@@ -302,7 +265,7 @@ function WorkspaceMenu() {
       data-testid="sovereign-wrapper-workspace-menu"
     >
       <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {WORKSPACE_MENU.map((item) => (
+        {SOVEREIGN_WORKSPACE_MENU.map((item) => (
           <button
             key={item.id}
             type="button"
