@@ -7,6 +7,7 @@ import {
   startSovereignDependencyCheck,
   type SovereignDependencyLifecycleState,
 } from './sovereignDependencyLifecycle';
+import type { EvidenceLedger, EvidenceLedgerEntry } from './evidenceLedger';
 
 export type WorkflowWatchStatus = 'idle' | 'pending' | 'green' | 'red' | 'unknown';
 
@@ -38,6 +39,7 @@ export interface WorkflowWatchReport {
   fixes: string[];
   summary: string;
   dependencyLifecycle?: SovereignDependencyLifecycleState;
+  evidenceLedger?: EvidenceLedger;
 }
 
 export interface WorkflowWatchValidationReport {
@@ -196,23 +198,121 @@ export function buildLocalWorkflowWatchReport(input: {
   warnings?: string[];
   checkedAt?: number;
   dependencyLifecycle?: SovereignDependencyLifecycleState;
+  evidenceLedger?: EvidenceLedger;
+  evidenceEntries?: EvidenceLedgerEntry[];
 }): WorkflowWatchReport {
   const checks = input.checks ?? [];
   const errors = input.errors ?? [];
   const warnings = input.warnings ?? [];
   const status = summarizeStatus(checks, errors, warnings);
   const fixes = buildFixes(status, checks, errors);
+  const timestamp = input.checkedAt ?? Date.now();
+
+  // Build evidence ledger from watch operations
+  let ledger = input.evidenceLedger ?? { entries: [] };
+  const newEntries: EvidenceLedgerEntry[] = input.evidenceEntries ?? [];
+
+  if (checks.length > 0) {
+    const failedChecks = checks.filter((c) => c.status === 'red');
+    const pendingChecks = checks.filter((c) => c.status === 'pending');
+    const successChecks = checks.filter((c) => c.status === 'green');
+
+    if (failedChecks.length > 0) {
+      newEntries.push({
+        id: `ev-watch-${timestamp}-failure`,
+        category: 'workflow-watch',
+        source: { type: 'github-api', detail: `${failedChecks.length} check(s) failed` },
+        status: 'failure',
+        reason: `${failedChecks.length} GitHub workflow check(s) failed: ${failedChecks.map((c) => c.name).join(', ')}.`,
+        timestamp,
+        location: {
+          commitSha: input.commitSha,
+          branch: input.branch,
+        },
+      });
+    }
+
+    if (pendingChecks.length > 0) {
+      newEntries.push({
+        id: `ev-watch-${timestamp}-pending`,
+        category: 'workflow-watch',
+        source: { type: 'github-api', detail: `${pendingChecks.length} check(s) pending` },
+        status: 'pending',
+        reason: `${pendingChecks.length} GitHub workflow check(s) pending.`,
+        timestamp,
+        location: {
+          commitSha: input.commitSha,
+          branch: input.branch,
+        },
+      });
+    }
+
+    if (successChecks.length > 0 && failedChecks.length === 0 && pendingChecks.length === 0) {
+      newEntries.push({
+        id: `ev-watch-${timestamp}-success`,
+        category: 'workflow-watch',
+        source: { type: 'github-api', detail: 'All checks green' },
+        status: 'success',
+        reason: `All ${successChecks.length} GitHub workflow check(s) passed.`,
+        timestamp,
+        location: {
+          commitSha: input.commitSha,
+          branch: input.branch,
+        },
+      });
+    }
+  }
+
+  if (errors.length > 0) {
+    newEntries.push({
+      id: `ev-watch-${timestamp}-error`,
+      category: 'workflow-watch',
+      source: { type: 'local-runtime', detail: 'Watch errors' },
+      status: 'failure',
+      reason: `Workflow watch reported ${errors.length} error(s): ${errors.join('; ')}`,
+      timestamp,
+    });
+  }
+
+  if (warnings.length > 0) {
+    newEntries.push({
+      id: `ev-watch-${timestamp}-warning`,
+      category: 'workflow-watch',
+      source: { type: 'local-runtime', detail: 'Watch warnings' },
+      status: 'unknown',
+      reason: `Workflow watch reported ${warnings.length} warning(s): ${warnings.join('; ')}`,
+      timestamp,
+    });
+  }
+
+  if (checks.length === 0 && errors.length === 0 && warnings.length === 0) {
+    newEntries.push({
+      id: `ev-watch-${timestamp}-idle`,
+      category: 'workflow-watch',
+      source: { type: 'local-runtime', detail: 'No checks yet' },
+      status: 'unknown',
+      reason: 'No GitHub workflow checks found for this commit yet.',
+      timestamp,
+    });
+  }
+
+  // Append new entries to ledger
+  for (const entry of newEntries) {
+    ledger = { entries: [...ledger.entries, entry] };
+  }
+
   const report = {
     status,
     commitSha: input.commitSha,
     branch: input.branch,
-    checkedAt: input.checkedAt ?? Date.now(),
+    checkedAt: timestamp,
     checks,
     errors,
     warnings,
     fixes,
     summary: `${checks.length} workflow check(s), ${errors.length} error(s), ${warnings.length} warning(s). Status: ${status}.`,
     dependencyLifecycle: input.dependencyLifecycle,
+    evidenceLedger: ledger,
   } satisfies WorkflowWatchReport;
 
   assertWorkflowWatchReportValid(report);
