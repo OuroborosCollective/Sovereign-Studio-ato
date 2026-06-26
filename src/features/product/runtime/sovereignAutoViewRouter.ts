@@ -18,7 +18,8 @@ export type SovereignAutoViewTab =
   | 'coverage'
   | 'memory'
   | 'remote'
-  | 'telemetry';
+  | 'telemetry'
+  | 'monitor';
 
 export type SovereignAutoViewSignal =
   | 'repo-ready'
@@ -78,102 +79,209 @@ export interface SovereignAutoViewDecision {
   reason: string;
 }
 
+const ALL_TABS: readonly SovereignAutoViewTab[] = [
+  'repo',
+  'readiness',
+  'integrity',
+  'findings',
+  'builder',
+  'chat',
+  'files',
+  'diff',
+  'workflow',
+  'repair',
+  'health',
+  'runtime',
+  'coverage',
+  'memory',
+  'remote',
+  'telemetry',
+  'monitor',
+];
+
+const SIDE_TABS: readonly SovereignAutoViewTab[] = [
+  'memory',
+  'remote',
+  'telemetry',
+  'monitor',
+  'readiness',
+  'integrity',
+  'findings',
+  'health',
+  'runtime',
+  'coverage',
+  'chat',
+];
+
 const STEP_TABS: Record<SequentialRuntimeStep, SovereignAutoViewTab> = {
   'repo-load': 'repo',
   'package-build': 'builder',
   'diff-load': 'diff',
-  'draft-pr-publish': 'files',
+  'draft-pr-publish': 'workflow',
   'workflow-watch': 'workflow',
   'repair-plan': 'repair',
 };
 
-const AUTO_VIEW_RULES: ReadonlyArray<{
-  readonly tab: SovereignAutoViewTab;
-  readonly reason: string;
-  readonly when: (input: Required<Pick<SovereignAutoViewInput, 'hasPackage' | 'isPublishing' | 'isWatchingWorkflow'>> & SovereignAutoViewInput) => boolean;
-}> = [
-  {
-    tab: 'files',
-    reason: 'Draft PR publishing is active, so generated files stay visible.',
-    when: (input) => input.isPublishing,
-  },
-  {
-    tab: 'workflow',
-    reason: 'Workflow watch is active, so workflow state stays visible.',
-    when: (input) => input.isWatchingWorkflow,
-  },
-  {
-    tab: 'repair',
-    reason: 'Workflow is red, so repair guidance is the next safe surface.',
-    when: (input) => input.workflowStatus === 'red',
-  },
-  {
-    tab: 'workflow',
-    reason: 'Workflow is pending, so checks remain visible.',
-    when: (input) => input.workflowStatus === 'yellow',
-  },
-  {
-    tab: 'diff',
-    reason: 'Diff sources are loaded, so review the diff before publishing.',
-    when: (input) => Boolean(input.hasDiffSources),
-  },
-  {
-    tab: 'files',
-    reason: 'A package exists, so generated files are ready for review.',
-    when: (input) => input.hasPackage,
-  },
-  {
-    tab: 'builder',
-    reason: 'Repo is ready and no result exists yet, so chat/builder remains the planning surface.',
-    when: (input) => Boolean(input.repoReady),
-  },
-  {
-    tab: 'repo',
-    reason: 'Repo is not ready, so setup remains the safe surface.',
-    when: (input) => !input.repoReady,
-  },
-];
+function activeSignalsFromInput(input: SovereignAutoViewInput): Set<SovereignAutoViewSignal> {
+  const signals = new Set(input.activeSignals ?? []);
+  if (input.repoReady) signals.add('repo-ready');
+  if (input.activeStep) signals.add('runtime-active');
+  if (input.isPublishing) signals.add('publishing');
+  if (input.isWatchingWorkflow) signals.add('workflow-watch');
+  if (input.workflowStatus === 'red') signals.add('workflow-red');
+  if (input.workflowStatus === 'pending') signals.add('workflow-pending');
+  if (input.workflowStatus === 'green') signals.add('workflow-green');
+  if (input.hasPackage) signals.add('package-ready');
+  if (input.hasDiffSources) signals.add('diff-ready');
+  if (input.hasActivePatterns) signals.add('patterns-active');
+  if (input.hasActiveTelemetry) signals.add('telemetry-active');
+  return signals;
+}
 
-function protectManualSideTab(input: SovereignAutoViewInput): SovereignAutoViewDecision | null {
-  const sideTabs: SovereignAutoViewTab[] = ['memory', 'remote', 'telemetry', 'monitor', 'readiness', 'integrity', 'findings', 'health', 'runtime', 'coverage'];
-  const recentUserInteractionUntil = input.recentUserInteractionUntil ?? input.manualOverrideUntil;
+export function validateSovereignAutoViewInput(input: SovereignAutoViewInput): string[] {
+  const errors: string[] = [];
+  if (!ALL_TABS.includes(input.activeTab)) errors.push(`Unknown active tab: ${input.activeTab}`);
+  if (input.completedTabs?.some((tab) => !ALL_TABS.includes(tab))) errors.push('completedTabs contains unknown tab.');
+  if (input.activeStep && !(input.activeStep in STEP_TABS)) errors.push(`Unknown active step: ${input.activeStep}`);
+  if (input.workflowStatus && !['idle', 'pending', 'green', 'red', 'unknown'].includes(input.workflowStatus)) errors.push(`Unknown workflow status: ${input.workflowStatus}`);
+  return errors;
+}
+
+export function isSovereignAutoViewManualOverrideActive(input: SovereignAutoViewInput): boolean {
   const now = input.nowMs ?? Date.now();
-  if (sideTabs.includes(input.activeTab) && recentUserInteractionUntil && now < recentUserInteractionUntil) {
-    return {
-      shouldSwitch: false,
-      tab: input.activeTab,
-      reason: `Manual side tab ${input.activeTab} is still protected by recent user interaction.`,
-    };
-  }
-  return null;
+  return Boolean(input.manualOverrideUntil && now < input.manualOverrideUntil);
+}
+
+export function evaluateSovereignAutoViewConditions(
+  conditions: SovereignAutoViewCondition[],
+  input: SovereignAutoViewInput,
+): boolean {
+  const signals = activeSignalsFromInput(input);
+  const now = input.nowMs ?? Date.now();
+  const completedTabs = new Set(input.completedTabs ?? []);
+
+  return conditions.every((condition) => {
+    if (condition.type === 'SIGNAL_ACTIVE') return Boolean(condition.signal && signals.has(condition.signal));
+    if (condition.type === 'TAB_COMPLETED') return Boolean(condition.tab && completedTabs.has(condition.tab));
+    if (condition.type === 'USER_INACTIVE') {
+      const threshold = condition.thresholdMs ?? input.autoSwitchInactivityMs ?? 0;
+      if (!input.lastUserInteractionAt || threshold <= 0) return false;
+      return now - input.lastUserInteractionAt >= threshold;
+    }
+    if (condition.type === 'CONFIDENCE_MATCHED') {
+      const threshold = condition.confidenceThreshold ?? input.patternConfidenceThreshold ?? 0;
+      return (input.patternConfidence ?? 0) >= threshold;
+    }
+    if (condition.type === 'MANUAL_OVERRIDE_CLEAR') return !isSovereignAutoViewManualOverrideActive(input);
+    return false;
+  });
 }
 
 export function decideSovereignAutoView(input: SovereignAutoViewInput): SovereignAutoViewDecision {
-  const manualProtection = protectManualSideTab(input);
-  if (manualProtection) return manualProtection;
+  const validationErrors = validateSovereignAutoViewInput(input);
+  if (validationErrors.length > 0) {
+    return {
+      shouldSwitch: false,
+      tab: input.activeTab,
+      reason: `Invalid auto view input: ${validationErrors.join(' | ')}`,
+    };
+  }
+
+  if (isSovereignAutoViewManualOverrideActive(input)) {
+    return {
+      shouldSwitch: false,
+      tab: input.activeTab,
+      reason: 'Auto view switch paused by manual override window.',
+    };
+  }
+
+  if (input.mode === 'manual') {
+    if (input.activeStep) {
+      const stepTab = STEP_TABS[input.activeStep];
+      return {
+        shouldSwitch: input.activeTab !== stepTab,
+        tab: stepTab,
+        reason: `Sequential runtime step ${input.activeStep} is active.`,
+      };
+    }
+
+    if (input.workflowStatus === 'red') {
+      return {
+        shouldSwitch: input.activeTab !== 'repair',
+        tab: 'repair',
+        reason: 'Workflow red stopper routes into repair even in manual mode.',
+      };
+    }
+
+    if (input.activeTab === 'diff' && input.hasPackage && input.hasDiffSources) {
+      return {
+        shouldSwitch: true,
+        tab: 'workflow',
+        reason: 'Source snapshots exist; diff is internal and workflow is the safe review surface.',
+      };
+    }
+
+    if (input.activeTab === 'builder') {
+      return {
+        shouldSwitch: false,
+        tab: 'builder',
+        reason: 'Manual mode keeps user navigation free in the Builder planning workspace.',
+      };
+    }
+
+    return {
+      shouldSwitch: false,
+      tab: input.activeTab,
+      reason: 'Manual mode keeps user navigation free.',
+    };
+  }
 
   if (input.activeStep) {
-    const tab = STEP_TABS[input.activeStep];
+    const stepTab = STEP_TABS[input.activeStep];
     return {
-      shouldSwitch: input.activeTab !== tab,
-      tab,
+      shouldSwitch: input.activeTab !== stepTab,
+      tab: stepTab,
       reason: `Sequential runtime step ${input.activeStep} is active.`,
     };
   }
 
-  for (const rule of AUTO_VIEW_RULES) {
-    if (rule.when(input as Required<Pick<SovereignAutoViewInput, 'hasPackage' | 'isPublishing' | 'isWatchingWorkflow'>> & SovereignAutoViewInput)) {
-      return {
-        shouldSwitch: input.activeTab !== rule.tab,
-        tab: rule.tab,
-        reason: rule.reason,
-      };
-    }
+  if (SIDE_TABS.includes(input.activeTab)) {
+    return {
+      shouldSwitch: false,
+      tab: input.activeTab,
+      reason: `User-selected side tab ${input.activeTab} stays visible until runtime work requires a switch.`,
+    };
+  }
+
+  if (input.isPublishing || input.isWatchingWorkflow || input.workflowStatus === 'pending' || input.workflowStatus === 'green') {
+    return {
+      shouldSwitch: input.activeTab !== 'workflow',
+      tab: 'workflow',
+      reason: 'Workflow state is active or recently completed, so workflow remains visible.',
+    };
+  }
+
+  if (input.workflowStatus === 'red') {
+    return {
+      shouldSwitch: input.activeTab !== 'repair',
+      tab: 'repair',
+      reason: 'Workflow is red, so repair guidance is the next safe surface.',
+    };
+  }
+
+  if (input.hasPackage && (input.hasDiffSources || input.mode === 'auto-review' || input.mode === 'full-auto-draft-pr')) {
+    return {
+      shouldSwitch: input.activeTab !== 'workflow',
+      tab: 'workflow',
+      reason: input.hasDiffSources
+        ? 'Package source snapshots exist; diff is internal and workflow is the safe review surface.'
+        : 'Package exists; diff is internal until source snapshots are loaded, so workflow is the safe review surface.',
+    };
   }
 
   return {
     shouldSwitch: false,
     tab: input.activeTab,
-    reason: 'No auto-view rule matched.',
+    reason: 'No auto view change matched.',
   };
 }
