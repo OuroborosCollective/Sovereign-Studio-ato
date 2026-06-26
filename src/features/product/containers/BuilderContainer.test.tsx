@@ -31,7 +31,7 @@ describe('BuilderContainer', () => {
     expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'devchat-runtime-shell');
     expect(screen.getByTestId('sovereign-devchat-statusbar')).toBeDefined();
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
-    expect(screen.getByPlaceholderText('Nachricht, Planung, Feature…')).toBeDefined();
+    expect(screen.getByPlaceholderText('GitHub URL oder Nachricht…')).toBeDefined();
     expect(screen.getByLabelText('Sovereign Menü öffnen')).toBeDefined();
     expect(screen.getByText('Sovereign Chat')).toBeDefined();
     expect(screen.getByText('OpenHands Runtime')).toBeDefined();
@@ -62,9 +62,7 @@ describe('BuilderContainer', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} openhandsReady={false} />);
 
-    fireEvent.change(chatField(), {
-      target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
-    });
+    fireEvent.change(chatField(), { target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' } });
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
     expect(props.onMissionChange).toHaveBeenCalledWith(expect.stringContaining('Ideenfabrik Auftrag'));
@@ -129,24 +127,21 @@ describe('BuilderContainer', () => {
     expect(screen.getByTestId('sovereign-devchat-side-menu')).toBeDefined();
     expect(screen.getByText('Sovereign Studio')).toBeDefined();
     expect(screen.getAllByText('Repo laden').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Cloudflare')).toBeDefined();
   });
 
   it('opens runtime source sheet from the status bar', () => {
     render(<BuilderContainer {...baseProps()} openhandsReady />);
 
-    fireEvent.click(screen.getByText('OpenHands'));
+    fireEvent.click(screen.getAllByText('OpenHands')[0]);
 
     expect(screen.getByText('Runtime Quelle')).toBeDefined();
     expect(screen.getByText('Echte Agent-Runtime verbunden')).toBeDefined();
-    expect(screen.getByText('Repo-Kontext geladen')).toBeDefined();
+    expect(screen.getByText(/Worker Chat/)).toBeDefined();
   });
 
   it('starts the external agent from the chat mission when ready', () => {
-    const props = {
-      ...baseProps(),
-      openhandsReady: true,
-      onStartOpenHands: vi.fn(),
-    };
+    const props = { ...baseProps(), openhandsReady: true, onStartOpenHands: vi.fn() };
     render(<BuilderContainer {...props} />);
 
     fireEvent.change(chatField(), { target: { value: 'Test mission' } });
@@ -169,12 +164,7 @@ describe('BuilderContainer', () => {
       <BuilderContainer
         {...baseProps()}
         openhandsReady
-        openhandsJob={{
-          status: 'running',
-          openHandsId: 'conv_123',
-          changedFiles: ['src/App.tsx'],
-          events: [],
-        }}
+        openhandsJob={{ status: 'running', openHandsId: 'conv_123', changedFiles: ['src/App.tsx'], events: [] }}
       />,
     );
 
