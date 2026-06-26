@@ -85,8 +85,9 @@ function activePatternCount(store: SolutionPatternStore): number {
 }
 
 function scanFindingCount(registry: ScanFindingRegistry): number {
-  const values = Object.values(registry.sources ?? {});
-  return values.reduce((sum, source) => sum + (Array.isArray(source.findings) ? source.findings.length : 0), 0);
+  return Array.isArray(registry.findings)
+    ? registry.findings.filter((finding) => finding.status === 'active').length
+    : 0;
 }
 
 function activeStepId(runtime: SequentialRuntimeState): string {
@@ -95,10 +96,6 @@ function activeStepId(runtime: SequentialRuntimeState): string {
 
 function openHandsError(job: OpenHandsJobSnapshot | undefined): boolean {
   return job?.status === 'failed' || job?.status === 'blocked';
-}
-
-function workflowError(report: WorkflowWatchReport | null): boolean {
-  return report?.status === 'red';
 }
 
 function repoModule(input: SovereignControlFrameStateInput): SovereignControlModuleState {
