@@ -142,10 +142,10 @@ describe('current Sovereign app shell contract', () => {
 
   it('keeps the Android recovery fallback JavaScript parse-safe', () => {
     const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    const escapedSourceNewline = String.raw`npm run build:web\nnpx cap sync android`;
+    const sourceEscapedNewline = String.raw`npm run build:web\\nnpx cap sync android`;
     const unsafeRuntimeNewline = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
 
-    expect(releaseFix).toContain(escapedSourceNewline);
+    expect(releaseFix).toContain(sourceEscapedNewline);
     expect(releaseFix).toContain('[data-testid="app-shell__root"]');
     expect(releaseFix).toContain('.sovereign-login-shell');
     expect(releaseFix).not.toContain(unsafeRuntimeNewline);
