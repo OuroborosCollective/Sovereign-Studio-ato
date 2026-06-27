@@ -6,6 +6,10 @@ on:
       - '**/*.tsx'
       - '.github/workflows/unused-code.yml'
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   ts-prune:
     runs-on: ubuntu-latest
@@ -15,6 +19,9 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: |
+      - name: Check unused exports
+        run: |
+          set -euo pipefail
           npx ts-prune | tee prune.log
-          if [ -s prune.log ]; then echo "::error ::Unbenutzte Exporte gefunden" && exit 1; fi
+          if [[ ${PIPESTATUS[0]} -ne 0 ]]; then echo "::error ::ts-prune failed" && exit 1; fi
+          if [ -s prune.log ]; then echo "::error ::Unused exports detected" && cat prune.log && exit 1; fi
