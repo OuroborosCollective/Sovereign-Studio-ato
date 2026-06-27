@@ -76,6 +76,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Future chat dispatch path',
   },
   {
+    id: 'solution-pattern-hints',
+    runtimePath: 'src/features/product/runtime/solutionPatternHints.ts',
+    testPath: 'src/features/product/runtime/solutionPatternHints.test.ts',
+    purpose: 'Formats active Aha solution patterns into quiet, redacted hints without dumping raw memory into the UI.',
+    status: 'covered',
+    integrationPoint: 'Future Remote Memory hint and Builder context display',
+  },
+  {
     id: 'github-auth-session',
     runtimePath: 'src/features/github/githubAuthSession.ts',
     testPath: 'src/features/github/githubAuthSession.test.ts',
