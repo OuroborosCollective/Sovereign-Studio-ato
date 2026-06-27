@@ -26,6 +26,7 @@ const releaseRuntimeConfigFiles = [
   'src/App.tsx',
   'src/features/product/runtime/externalMemorySync.ts',
   'src/features/product/runtime/remoteMemoryGatewayBridge.ts',
+  'src/features/product/runtime/remoteMemoryContainerRuntime.ts',
 ];
 
 const strictCapacitorMajor = process.env.SOVEREIGN_STRICT_CAPACITOR_MAJOR === '1';
