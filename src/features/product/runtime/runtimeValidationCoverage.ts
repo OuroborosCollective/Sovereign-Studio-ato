@@ -52,6 +52,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'ScanFindingRegistryPanel + App repo snapshot scan effect',
   },
   {
+    id: 'brownfield-explorer',
+    runtimePath: 'src/features/product/runtime/brownfieldExplorer.ts',
+    testPath: 'src/features/product/runtime/brownfieldExplorer.test.ts',
+    purpose: 'Derives deterministic repo debt signals from the already loaded file tree without network or token access.',
+    status: 'covered',
+    integrationPoint: 'Future quiet Brownfield inspector hint + repo snapshot analysis pipeline',
+  },
+  {
     id: 'github-auth-session',
     runtimePath: 'src/features/github/githubAuthSession.ts',
     testPath: 'src/features/github/githubAuthSession.test.ts',
