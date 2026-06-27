@@ -60,6 +60,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Future quiet Brownfield inspector hint + repo snapshot analysis pipeline',
   },
   {
+    id: 'brownfield-inspector-hint',
+    runtimePath: 'src/features/product/runtime/brownfieldInspectorHint.ts',
+    testPath: 'src/features/product/runtime/brownfieldInspectorHint.test.ts',
+    purpose: 'Turns Brownfield reports into quiet inspector hints without creating a second UI truth source.',
+    status: 'covered',
+    integrationPoint: 'Future repo snapshot inspector hint and Health/Findings routing',
+  },
+  {
     id: 'github-auth-session',
     runtimePath: 'src/features/github/githubAuthSession.ts',
     testPath: 'src/features/github/githubAuthSession.test.ts',
