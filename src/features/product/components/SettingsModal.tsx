@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Sparkles, Key, ExternalLink, X, Eye, EyeOff } from 'lucide-react';
+import { Shield, Sparkles, Key, ExternalLink, X, Eye, EyeOff, CircleX } from 'lucide-react';
 import type { ProjectSettings } from '../types';
 import { defaultSettings } from '../constants';
 import { LLM_PROVIDERS, type UserApiKeys } from './UserKeyManager';
@@ -79,6 +79,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => setShowSettings(false)}
             className="text-indigo-200 hover:text-white transition-colors p-1"
             aria-label="Schließen"
+            title="Schließen"
           >
             <X size={20} />
           </button>
@@ -129,6 +130,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onClick={() => toggleShowKey(provider.id)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
                         aria-label={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
+                        title={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
                       >
                         {showKeys[provider.id] ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
@@ -142,19 +144,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <div className="space-y-4 pt-4 border-t border-stone-200">
             <div>
-              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Repository</label>
-              <input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" aria-label="GitHub Repository URL" />
+              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">
+                GitHub Repository <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  className="w-full p-2 pr-10 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  aria-label="GitHub Repository URL"
+                  required
+                />
+                {repoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setRepoUrl('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
+                    aria-label="Eingabe löschen"
+                    title="Eingabe löschen"
+                  >
+                    <CircleX size={14} />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Schreib-Key optional</label>
+                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Schreib-Key (optional)</label>
                 <div className="relative">
                   <input
                     type={showKeys['github'] ? 'text' : 'password'}
                     value={accessKey}
                     onChange={(e) => setAccessKey(e.target.value)}
                     className="w-full p-2 pr-10 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                    placeholder="nur fuer private Repos"
+                    placeholder="nur für private Repos"
                     aria-label="GitHub Schreib-Key"
                   />
                   <button
@@ -162,6 +185,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClick={() => toggleShowKey('github')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
                     aria-label={showKeys['github'] ? 'Key verbergen' : 'Key anzeigen'}
+                    title={showKeys['github'] ? 'Key verbergen' : 'Key anzeigen'}
                   >
                     {showKeys['github'] ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
@@ -183,6 +207,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onClick={() => toggleShowKey('gemini')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
                     aria-label={showKeys['gemini'] ? 'Key verbergen' : 'Key anzeigen'}
+                    title={showKeys['gemini'] ? 'Key verbergen' : 'Key anzeigen'}
                   >
                     {showKeys['gemini'] ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
