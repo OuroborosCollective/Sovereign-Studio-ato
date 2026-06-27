@@ -16,6 +16,7 @@ import {
 } from './sovereignRuntime';
 import { assertSovereignBrainResult, toImplementationFiles } from '../brain/sovereignBrainContract';
 import { assertPushableBrain } from '../llm/llmRuntimeChecks';
+import { decidePalRoute, type PalAutomationMode, type PalRouterDecision } from './palRouter';
 import { runSovereignLlmRuntime } from './sovereignLlmRuntime';
 
 export interface BuildSovereignPackageFromRepoFilesInput {
@@ -27,6 +28,8 @@ export interface BuildSovereignPackageFromRepoFilesInput {
   previousPreview?: string;
   memoryContext?: string[];
   runtimeEvents?: string[];
+  palBlockers?: string[];
+  automationMode?: PalAutomationMode;
   allowUserKeyRoutes?: boolean;
   userKeys?: {
     gemini?: string;
@@ -167,6 +170,28 @@ function runtimeUserKeys(input: BuildSovereignPackageFromRepoFilesInput): BuildS
   return input.userKeys ?? readStoredUserKeys();
 }
 
+function decidePackageBuildRoute(
+  input: BuildSovereignPackageFromRepoFilesInput,
+  effectiveMission: string,
+): PalRouterDecision {
+  return decidePalRoute({
+    mission: effectiveMission,
+    repoReady: input.repoFiles.length > 0,
+    repoFileCount: input.repoFiles.length,
+    blockers: input.palBlockers,
+    automationMode: input.automationMode ?? 'manual',
+  });
+}
+
+function assertPalAllowsPackageBuild(decision: PalRouterDecision): void {
+  if (!decision.blocked) return;
+  throw new Error(`PAL_BLOCKED_PACKAGE_BUILD: ${decision.reason} Next action: ${decision.recommendedAction}`);
+}
+
+function palRuntimeEvent(decision: PalRouterDecision): string {
+  return `PAL route: intent=${decision.intent} tier=${decision.tier} signal=${decision.signal} blocked=${decision.blocked} reason=${decision.reason}`;
+}
+
 export function hasConcreteSovereignMission(mission: string): boolean {
   const normalized = mission.trim();
   if (isPlaceholderSovereignMission(normalized)) return false;
@@ -213,6 +238,9 @@ export function buildSovereignPackageFromRepoFiles(
   const effectiveMission = resolveAutonomousSovereignMission(input.mission, input.repoFiles);
   assertConcreteSovereignMission(effectiveMission);
 
+  const palDecision = decidePackageBuildRoute(input, effectiveMission);
+  assertPalAllowsPackageBuild(palDecision);
+
   const pkg = buildSovereignImplementationPackage({
     blueprint: effectiveMission,
     cards: input.cards ?? starterCards(),
@@ -245,13 +273,16 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
   const effectiveMission = resolveAutonomousSovereignMission(input.mission, input.repoFiles);
   assertConcreteSovereignMission(effectiveMission);
 
+  const palDecision = decidePackageBuildRoute(input, effectiveMission);
+  assertPalAllowsPackageBuild(palDecision);
+
   const llmResult = await runSovereignLlmRuntime({
     mission: effectiveMission,
     repoPaths: input.repoFiles.map((file) => file.path),
     selectedFilePath: input.selectedFilePath ?? 'README.md',
     previousPreview: input.previousPreview,
     memoryContext: input.memoryContext ?? [],
-    runtimeEvents: input.runtimeEvents ?? [],
+    runtimeEvents: [...(input.runtimeEvents ?? []), palRuntimeEvent(palDecision)],
     allowExternalNoKey: true,
     allowUserKeyRoutes: input.allowUserKeyRoutes ?? false,
     userKeys: runtimeUserKeys(input),
@@ -273,6 +304,12 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
         llmSource: llmResult.source,
         providerId: llmResult.providerId,
         attempts: llmResult.attempts,
+        pal: {
+          intent: palDecision.intent,
+          tier: palDecision.tier,
+          signal: palDecision.signal,
+          facts: palDecision.facts,
+        },
         brain: {
           severity: llmResult.brain.analysis.severity,
           strategy: llmResult.brain.plan.strategy,
@@ -290,6 +327,7 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
       brain: llmResult.brain,
       files: implementationFiles,
       suggestions: [
+        `PAL: ${palDecision.intent} via ${palDecision.tier} (${palDecision.signal})`,
         `Target files: ${implementationFiles.map((file) => file.path).join(', ')}`,
         `Architecture: ${architecture.summary}`,
         `Brain: ${llmResult.brain.analysis.severity} / ${llmResult.brain.plan.estimatedComplexity}`,
