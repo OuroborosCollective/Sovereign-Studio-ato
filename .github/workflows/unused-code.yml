@@ -1,0 +1,20 @@
+name: unused-code
+on:
+  pull_request:
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '.github/workflows/unused-code.yml'
+
+jobs:
+  ts-prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: |
+          npx ts-prune | tee prune.log
+          if [ -s prune.log ]; then echo "::error ::Unbenutzte Exporte gefunden" && exit 1; fi
