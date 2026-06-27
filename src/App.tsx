@@ -443,19 +443,19 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoFiles]);
 
-  const setSequentialState = (next: SequentialRuntimeState) => {
+  const setSequentialState = useCallback((next: SequentialRuntimeState) => {
     sequentialRuntimeRef.current = next;
     setSequentialRuntime(next);
-  };
+  }, []);
 
-  const sequentialOptions = (override: SequentialStartOptions = {}): SequentialStartOptions => ({
+  const sequentialOptions = useCallback((override: SequentialStartOptions = {}): SequentialStartOptions => ({
     repoReady: repoSnapshotStatus.ready,
     hasPackage: Boolean(lastPackage),
     hasDiffSources: safeDiffSources.length > 0,
     hasDraftCommit: Boolean(lastDraftCommitSha),
     hasWorkflowReport: Boolean(workflowReport),
     ...override,
-  });
+  }), [repoSnapshotStatus.ready, lastPackage, safeDiffSources.length, lastDraftCommitSha, workflowReport]);
 
   // OpenHands Enterprise job functions
   const startOpenHandsJob = useCallback(async (missionText: string): Promise<void> => {
@@ -534,7 +534,7 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [isPollingOpenHands, openhandsJobId, pollOpenHandsJob]);
 
-  const runSequentialStep = async <T,>(
+  const runSequentialStep = useCallback(async <T,>(
     step: SequentialRuntimeStep,
     task: () => Promise<T>,
     options: SequentialStartOptions = {},
@@ -563,9 +563,9 @@ const App: React.FC = () => {
 
       return null;
     }
-  };
+  }, [sequentialOptions, setSequentialState, pushTelemetry, githubToken]);
 
-  const buildPackageCore = async (
+  const buildPackageCore = useCallback(async (
     nextMission: string,
     nextPackageKey = packageInputKey,
   ): Promise<SovereignImplementationPackage | null> => {
@@ -655,16 +655,16 @@ const App: React.FC = () => {
 
       return null;
     }
-  };
+  }, [pushTelemetry, safeRepoFiles, remoteMemoryConfig, solutionPatternStore, sovereignPreview, telemetry.events, githubToken, packageInputKey]);
 
-  const buildPackage = async (
+  const buildPackage = useCallback(async (
     nextMission: string,
     nextPackageKey = packageInputKey,
   ): Promise<SovereignImplementationPackage | null> => runSequentialStep('package-build', async () => {
     const pkg = await buildPackageCore(nextMission, nextPackageKey);
     if (!pkg) throw new Error('Package build failed.');
     return pkg;
-  });
+  }), [runSequentialStep, buildPackageCore, packageInputKey]);
 
   const handleLoadRepoTree = async () => {
     await runSequentialStep('repo-load', async () => {
@@ -779,15 +779,15 @@ const App: React.FC = () => {
     }
   }, { hasDraftCommit: Boolean(commitSha) });
 
-  const generateRepoIdeas = () => {
+  const generateRepoIdeas = useCallback(() => {
     void buildPackage(currentMission);
-  };
+  }, [buildPackage, currentMission]);
 
-  const generateErrorWorkflow = () => {
+  const generateErrorWorkflow = useCallback(() => {
     void buildPackage('Workflow Fehleranalyse + Runtime Check + Test Plan');
-  };
+  }, [buildPackage]);
 
-  const useRepairMission = (nextMission: string) => {
+  const useRepairMission = useCallback((nextMission: string) => {
     void runSequentialStep('repair-plan', async () => {
       const cleanMission = normalizeMission(nextMission);
 
@@ -801,7 +801,7 @@ const App: React.FC = () => {
 
       return true;
     }, { hasWorkflowReport: Boolean(workflowReport) });
-  };
+  }, [runSequentialStep, workflowReport, pushTelemetry]);
 
   const saveCurrentSession = () => {
     if (!repoSnapshotStatus.ready || typeof window === 'undefined') {
@@ -870,7 +870,7 @@ const App: React.FC = () => {
     pushTelemetry('memory', 'info', 'memory:cleared', 'Visible session state cleared. Stored memory is unchanged.');
   };
 
-  const publishDraftPrForPackage = async (pkg: SovereignImplementationPackage): Promise<boolean> => {
+  const publishDraftPrForPackage = useCallback(async (pkg: SovereignImplementationPackage): Promise<boolean> => {
     if (lastDraftCommitSha && lastDraftBranch && lastDraftPackageKey === packageInputKey) {
       const message = [
         'Draft PR existiert bereits fuer diesen Auftrag und Repo-Snapshot.',
@@ -950,14 +950,14 @@ const App: React.FC = () => {
     await watchLatestWorkflow(result.commitSha, result.branch);
 
     return true;
-  };
+  }, [lastDraftCommitSha, lastDraftBranch, lastDraftPackageKey, packageInputKey, pushTelemetry, watchLatestWorkflow, runSequentialStep, safeRepoFiles, healthReport, githubToken, repoUrl, repoBranch, currentMission, diffReport, scanRegistry]);
 
-  const publishDraftPr = async () => {
+  const publishDraftPr = useCallback(async () => {
     const pkg = hasFreshPackage && lastPackage ? lastPackage : await buildPackage(currentMission, packageInputKey);
     if (!pkg) return;
 
     await publishDraftPrForPackage(pkg);
-  };
+  }, [hasFreshPackage, lastPackage, buildPackage, currentMission, packageInputKey, publishDraftPrForPackage]);
 
   useEffect(() => {
     if (!user) return undefined;

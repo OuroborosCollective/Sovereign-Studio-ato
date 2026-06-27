@@ -1,3 +1,4 @@
+import React, { memo, useMemo } from 'react';
 import {
   SEQUENTIAL_RUNTIME_STEPS,
   describeSequentialStep,
@@ -17,7 +18,17 @@ function statusClass(status: string): string {
   return 'text-slate-500';
 }
 
-export function SequentialRuntimePanel({ state }: SequentialRuntimePanelProps) {
+/**
+ * ⚡ Bolt: SequentialRuntimePanel
+ * Optimized with React.memo and useMemo to prevent redundant array operations
+ * during frequent shell re-renders.
+ */
+export const SequentialRuntimePanel = memo(({ state }: SequentialRuntimePanelProps) => {
+  const reversedHistory = useMemo(() =>
+    state.history.slice().reverse(),
+    [state.history]
+  );
+
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -43,7 +54,7 @@ export function SequentialRuntimePanel({ state }: SequentialRuntimePanelProps) {
         })}
       </div>
 
-      {state.history.length ? (
+      {reversedHistory.length ? (
         <details className="mt-4">
           <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-slate-400">Runtime transition history</summary>
           <div className="mt-2 max-h-72 overflow-auto rounded border border-slate-800">
@@ -57,7 +68,7 @@ export function SequentialRuntimePanel({ state }: SequentialRuntimePanelProps) {
                 </tr>
               </thead>
               <tbody>
-                {state.history.slice().reverse().map((event) => (
+                {reversedHistory.map((event) => (
                   <tr key={event.sequence} className="border-t border-slate-800">
                     <td className="p-2 text-slate-500">{event.sequence}</td>
                     <td className="p-2 text-slate-300">{describeSequentialStep(event.step)}</td>
@@ -72,4 +83,6 @@ export function SequentialRuntimePanel({ state }: SequentialRuntimePanelProps) {
       ) : null}
     </section>
   );
-}
+});
+
+SequentialRuntimePanel.displayName = 'SequentialRuntimePanel';
