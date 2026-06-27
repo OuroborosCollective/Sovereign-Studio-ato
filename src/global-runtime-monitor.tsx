@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
 import { deriveReleaseGuideState, type ReleaseGuideTab } from './features/product/runtime/sovereignReleaseGuide';
+import { SOVEREIGN_WORKSPACE_COMMAND_EVENT } from './features/product/runtime/sovereignWorkspaceCommand';
 import type { SovereignTelemetryEvent } from './features/product/runtime/sovereignTelemetry';
 
 type CoachLamp = 'green' | 'yellow' | 'red';
@@ -106,7 +107,7 @@ function seedLog(win: GlobalRuntimeWindow): RuntimeCoachState[] {
 
 function publishGuideCommand(command: ReleaseGuideCommand): void {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('sovereign:release-guide-command', { detail: command }));
+  window.dispatchEvent(new CustomEvent(SOVEREIGN_WORKSPACE_COMMAND_EVENT, { detail: command }));
 }
 
 function compactLabel(entry: RuntimeCoachState): string {
