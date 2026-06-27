@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SOVEREIGN_PRODUCT_TEMPLATE } from './features/product/runtime/sovereignProductTemplate';
 import {
+  SOVEREIGN_WORKSPACE_COMMAND_EVENT,
   SOVEREIGN_WORKSPACE_MENU,
   SOVEREIGN_WORKSPACE_TAB_IDS,
 } from './features/product/runtime/sovereignWorkspaceCommand';
@@ -120,6 +121,13 @@ describe('current Sovereign app shell contract', () => {
       'activateReleaseGuideTarget(button, detail.type);',
       'activateReleaseGuideSelectTarget(targetTab);',
     ]);
+  });
+
+  it('keeps App guide command listener aligned with the workspace event contract', () => {
+    const app = read(APP_PATH);
+
+    expect(app).toContain(`window.addEventListener('${SOVEREIGN_WORKSPACE_COMMAND_EVENT}'`);
+    expect(app).toContain(`window.removeEventListener('${SOVEREIGN_WORKSPACE_COMMAND_EVENT}'`);
   });
 
   it('keeps the workspace command contract runtime-only and DOM-free', () => {
