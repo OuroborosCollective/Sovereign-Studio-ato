@@ -1,4 +1,5 @@
 import type { ChatMessage, Suggestion, SuggestionType } from '../types';
+import { maskSecrets } from '../../../shared/utils/crypto';
 
 export const CHAT_SIDEBAR_MAX_INPUT = 2000;
 export const CHAT_SIDEBAR_MAX_MESSAGE = 4000;
@@ -39,7 +40,7 @@ export function normalizeChatMessages(messages: readonly ChatMessage[] | null | 
       return {
         id: safeId(message.id, `chat-${index}`),
         role,
-        content: trimText(message.content),
+        content: maskSecrets(trimText(message.content)),
         timestamp: safeTimestamp(message.timestamp, index),
       };
     })
