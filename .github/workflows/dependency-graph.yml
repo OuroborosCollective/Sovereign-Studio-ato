@@ -6,6 +6,10 @@ on:
       - '**/*.tsx'
       - '.github/workflows/dependency-graph.yml'
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   madge:
     runs-on: ubuntu-latest
@@ -14,12 +18,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install Graphviz
+        run: sudo apt-get update && sudo apt-get install -y graphviz
       - run: npm ci
-      - run: |
+      - name: Generate dependency graph
+        run: |
+          set -euo pipefail
           npx madge --circular --extensions ts,tsx src || (echo "::error ::Circular deps detected" && exit 1)
           npx madge --image deps.svg --extensions ts,tsx src
-      - name: Upload graph & comment
-        uses: marocchino/sticky-pull-request-comment@v2
+      - name: Prepare graph comment
+        run: |
+          echo "![Dependency Graph](attachment://deps.svg)" > graph-comment.md
+      - name: Upload SVG as artifact
+        uses: actions/upload-artifact@v4
         with:
+          name: deps-graph
           path: deps.svg
-          header: ":chart_with_upwards_trend: Aktueller Dependency-Graph"
+      - name: Comment graph (same-repo PRs only)
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: marocchino/sticky-pull-request-comment@d24b05e359ad9e37e9b0ce3f4bfefd4dc2621c7a
+        with:
+          path: graph-comment.md
+          header: ":chart_with_upwards_trend: Dependency Graph"
