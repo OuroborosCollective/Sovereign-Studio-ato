@@ -12,9 +12,6 @@ export function createRemoteMemoryContainerConfig(
 ): ExternalMemorySyncConfig {
   return {
     ...createExternalMemorySyncConfig(),
-    workspaceId: 'Pattern',
-    collectionName: 'sovereign_logic_patterns',
-    contributorId: 'sovereign-local-install',
     ...overrides,
   };
 }
