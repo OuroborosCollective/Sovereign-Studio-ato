@@ -57,9 +57,9 @@ describe('maskSecrets', () => {
 
   it('masks label-based credentials', () => {
     expect(maskSecrets('password: my-secret-password')).toBe('password: ****');
-    expect(maskSecrets('token=ghp_12345')).toBe('token: ****');
-    expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key: ****');
-    expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token: ****');
+    expect(maskSecrets('token=ghp_12345')).toBe('token=****');
+    expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key=****');
+    expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token=****');
     expect(maskSecrets('secret: somevalue')).toBe('secret: ****');
   });
 

@@ -1,5 +1,3 @@
-export const makeId = () => crypto.randomUUID();
-
 /**
  * Redacts sensitive credentials from strings to prevent accidental leakage in logs or UI.
  * Matches common token, key and label-based credential patterns.

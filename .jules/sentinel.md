@@ -17,3 +17,8 @@
 **Vulnerability:** Log utilities like `stripTokenFromText` originally only redacted the specific GitHub token provided. If an error message contained both a GitHub token and an AI provider key (e.g., in a failed cross-provider operation), the AI key would still be leaked.
 **Learning:** Redaction utilities should not be limited to redacting a single known value. Integrating a central, pattern-based `maskSecrets` utility into all log-stripping paths provides a critical second layer of defense (defense in depth).
 **Prevention:** Always pipe log strings through a generalized `maskSecrets` utility even when a specific token is already being stripped. Ensure the utility covers all provider prefixes used in the app (e.g., `sk-or-v1-`, `hf_`, `together_`, `pollinations_`).
+
+## 2025-02-14 - Synchronized Secret Masking across Web and Mobile
+**Vulnerability:** The `sovereign-studio-rn` project lacked the `maskSecrets` utility and was passing raw AI provider error messages (which often contain API keys) directly to the UI and fallback handlers.
+**Learning:** Security hardening must be synchronized across all projects in a monorepo. A fix in the main application does not automatically protect sub-projects using similar integration patterns.
+**Prevention:** When implementing security utilities like `maskSecrets`, ensure they are either shared via a common package or explicitly ported and applied to all integration points across the entire repository, including mobile sub-projects.

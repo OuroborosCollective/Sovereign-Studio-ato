@@ -19,6 +19,7 @@ import type {
   ProviderError,
   AwarenessSyncResult 
 } from '../../types';
+import { maskSecrets } from '../../utils/crypto';
 
 // Free Provider Configurations (Priority Order)
 export const FREE_PROVIDERS: ProviderConfig[] = [
@@ -157,7 +158,7 @@ export async function callMlvoCa(
       const errorText = await response.text().catch(() => `HTTP ${response.status}`);
       throw {
         provider: 'mlvoca' as ProviderType,
-        error: errorText || `HTTP ${response.status}`,
+        error: maskSecrets(errorText || `HTTP ${response.status}`),
         statusCode: response.status,
         isRetryable: response.status >= 500 || response.status === 429,
       };
@@ -172,7 +173,7 @@ export async function callMlvoCa(
   } catch (error: any) {
     throw {
       provider: 'mlvoca' as ProviderType,
-      error: error?.message || String(error),
+      error: maskSecrets(error?.message || String(error)),
       statusCode: error?.statusCode,
       isRetryable: error?.isRetryable ?? true,
     };
@@ -210,7 +211,7 @@ export async function callGroq(
       const errorData = await response.json().catch(() => ({}));
       throw {
         provider: 'groq' as ProviderType,
-        error: errorData.error?.message || `HTTP ${response.status}`,
+        error: maskSecrets(errorData.error?.message || `HTTP ${response.status}`),
         statusCode: response.status,
         isRetryable: response.status === 429 || response.status >= 500,
       };
@@ -226,7 +227,7 @@ export async function callGroq(
   } catch (error: any) {
     throw {
       provider: 'groq' as ProviderType,
-      error: error?.error?.message || error?.message || String(error),
+      error: maskSecrets(error?.error?.message || error?.message || String(error)),
       statusCode: error?.statusCode,
       isRetryable: error?.isRetryable ?? true,
     };
@@ -269,7 +270,7 @@ export async function callHuggingFace(
       const errorText = await response.text().catch(() => `HTTP ${response.status}`);
       throw {
         provider: 'huggingface' as ProviderType,
-        error: errorText || `HTTP ${response.status}`,
+        error: maskSecrets(errorText || `HTTP ${response.status}`),
         statusCode: response.status,
         isRetryable: response.status >= 500 || response.status === 429,
       };
@@ -286,7 +287,7 @@ export async function callHuggingFace(
   } catch (error: any) {
     throw {
       provider: 'huggingface' as ProviderType,
-      error: error?.message || String(error),
+      error: maskSecrets(error?.message || String(error)),
       statusCode: error?.statusCode,
       isRetryable: error?.isRetryable ?? true,
     };
@@ -323,7 +324,7 @@ export async function callTogether(
       const errorData = await response.json().catch(() => ({}));
       throw {
         provider: 'together' as ProviderType,
-        error: errorData.error?.message || `HTTP ${response.status}`,
+        error: maskSecrets(errorData.error?.message || `HTTP ${response.status}`),
         statusCode: response.status,
         isRetryable: response.status === 429 || response.status >= 500,
       };
@@ -339,7 +340,7 @@ export async function callTogether(
   } catch (error: any) {
     throw {
       provider: 'together' as ProviderType,
-      error: error?.error?.message || error?.message || String(error),
+      error: maskSecrets(error?.error?.message || error?.message || String(error)),
       statusCode: error?.statusCode,
       isRetryable: error?.isRetryable ?? true,
     };
@@ -378,7 +379,7 @@ export async function callOpenRouter(
       const errorData = await response.json().catch(() => ({}));
       throw {
         provider: 'openrouter' as ProviderType,
-        error: errorData.error?.message || `HTTP ${response.status}`,
+        error: maskSecrets(errorData.error?.message || `HTTP ${response.status}`),
         statusCode: response.status,
         isRetryable: response.status === 429 || response.status >= 500,
       };
@@ -394,7 +395,7 @@ export async function callOpenRouter(
   } catch (error: any) {
     throw {
       provider: 'openrouter' as ProviderType,
-      error: error?.error?.message || error?.message || String(error),
+      error: maskSecrets(error?.error?.message || error?.message || String(error)),
       statusCode: error?.statusCode,
       isRetryable: error?.isRetryable ?? true,
     };
@@ -529,7 +530,7 @@ export class ProviderManager {
         this.lastUsedProvider = 'gemini';
         return { text, provider: 'gemini', model: options.model || 'gemini-1.5-flash' };
       } catch (geminiError) {
-        onFallback?.('gemini', 'groq', (geminiError as Error)?.message || 'Unknown error');
+        onFallback?.('gemini', 'groq', maskSecrets((geminiError as Error)?.message || 'Unknown error'));
       }
     }
 
@@ -566,7 +567,7 @@ export class ProviderManager {
         this.failedProviders.add(config.type);
         const nextConfig = providers.find(p => p.type !== config.type);
         if (nextConfig) {
-          onFallback?.(config.type, nextConfig.type, error?.message || 'Unknown error');
+          onFallback?.(config.type, nextConfig.type, maskSecrets(error?.message || 'Unknown error'));
         }
         
         if (!isRetryableError(error)) {
@@ -575,7 +576,7 @@ export class ProviderManager {
       }
     }
 
-    throw new Error('Alle LLM Provider sind fehlgeschlagen.');
+    throw new Error(maskSecrets('Alle LLM Provider sind fehlgeschlagen.'));
   }
 }
 
@@ -639,7 +640,7 @@ VERBESSERUNGSVORSCHLÄGE:
     rawText = response.text;
     usedProvider = 'mlvoca';
   } catch (mlvocaError: any) {
-    onProviderSwitch?.('mlvoca', 'gemini', mlvocaError?.message || 'MLVOCA failed');
+    onProviderSwitch?.('mlvoca', 'gemini', maskSecrets(mlvocaError?.message || 'MLVOCA failed'));
   }
 
   // Priority 2: Try Gemini if key is provided
@@ -652,7 +653,7 @@ VERBESSERUNGSVORSCHLÄGE:
       });
       usedProvider = 'gemini';
     } catch (geminiError: any) {
-      onProviderSwitch?.('gemini', 'groq', geminiError?.message || 'Gemini failed');
+      onProviderSwitch?.('gemini', 'groq', maskSecrets(geminiError?.message || 'Gemini failed'));
     }
   }
 
@@ -666,7 +667,7 @@ VERBESSERUNGSVORSCHLÄGE:
       rawText = response.text;
       usedProvider = 'groq';
     } catch (err: any) {
-      onProviderSwitch?.('groq', 'huggingface', err?.message || 'Groq failed');
+      onProviderSwitch?.('groq', 'huggingface', maskSecrets(err?.message || 'Groq failed'));
     }
   }
 
@@ -680,7 +681,7 @@ VERBESSERUNGSVORSCHLÄGE:
       rawText = response.text;
       usedProvider = 'huggingface';
     } catch (err: any) {
-      onProviderSwitch?.('huggingface', 'together', err?.message || 'HF failed');
+      onProviderSwitch?.('huggingface', 'together', maskSecrets(err?.message || 'HF failed'));
     }
   }
 
@@ -694,12 +695,12 @@ VERBESSERUNGSVORSCHLÄGE:
       rawText = response.text;
       usedProvider = 'together';
     } catch (err: any) {
-      onProviderSwitch?.('together', 'openrouter', err?.message || 'Together failed');
+      onProviderSwitch?.('together', 'openrouter', maskSecrets(err?.message || 'Together failed'));
     }
   }
 
   if (!rawText) {
-    throw new Error('Alle AI-Provider sind fehlgeschlagen. Bitte versuche es später erneut.');
+    throw new Error(maskSecrets('Alle AI-Provider sind fehlgeschlagen. Bitte versuche es später erneut.'));
   }
 
   const summary = extractSection(rawText, 'ZUSAMMENFASSUNG');
