@@ -1,0 +1,24 @@
+/* Responsive additions - container queries & device tweaks */
+
+/* 1. Container Query for Global Monitor */
+.sovereign-global-monitor {
+  container-type: inline-size;
+  container-name: monitor;
+}
+
+@container monitor (min-width: 600px) {
+  .sovereign-monitor-body { max-height: 32svh; }
+  .sovereign-guide-actions { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* 2. Landscape Smartphone Tweaks */
+@media (orientation: landscape) and (max-height: 500px) {
+  .sovereign-global-monitor { flex-direction: row; }
+  .sovereign-helper-panel { flex: 1 1 30%; }
+}
+
+/* 3. Samsung Tab A9 / mid‑sized tablets */
+@media (min-width: 800px) and (max-width: 960px) {
+  .sovereign-guide-actions { grid-template-columns: repeat(5, 1fr); }
+  .sovereign-monitor-log   { max-height: 20svh; }
+}
