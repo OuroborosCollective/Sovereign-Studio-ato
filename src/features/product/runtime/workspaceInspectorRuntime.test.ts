@@ -73,7 +73,9 @@ describe('workspaceInspectorRuntime', () => {
     expect(result.palBlocked).toBe(true);
     expect(result.activePatternCount).toBe(1);
     expect(result.policy.topLamp).toBe('red');
-    expect(result.policy.signals[0].id).toBe('pal');
+    // Brownfield and PAL both have 'red' lamp in this test state.
+    // Alphabetical ID sorting in quietInspectorHintPolicy.ts puts 'brownfield' before 'pal'.
+    expect(result.policy.signals[0].id).toBe('brownfield');
     expect(result.policy.summary).toContain('Blocker');
   });
 
