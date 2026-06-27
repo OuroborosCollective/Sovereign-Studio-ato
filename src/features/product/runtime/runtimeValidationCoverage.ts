@@ -68,6 +68,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Future repo snapshot inspector hint and Health/Findings routing',
   },
   {
+    id: 'pal-router',
+    runtimePath: 'src/features/product/runtime/palRouter.ts',
+    testPath: 'src/features/product/runtime/palRouter.test.ts',
+    purpose: 'Chooses a task tier from mission intent, repo readiness, file count and blockers before chat dispatch.',
+    status: 'covered',
+    integrationPoint: 'Future chat dispatch path',
+  },
+  {
     id: 'github-auth-session',
     runtimePath: 'src/features/github/githubAuthSession.ts',
     testPath: 'src/features/github/githubAuthSession.test.ts',
