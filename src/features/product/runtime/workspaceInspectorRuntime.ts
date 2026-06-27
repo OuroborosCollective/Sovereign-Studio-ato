@@ -52,6 +52,15 @@ export function buildWorkspaceInspectorRuntime(
 
   const signals: QuietInspectorSignal[] = [];
 
+  signals.push(visibleSignal({
+    id: 'pal',
+    source: 'PAL',
+    lamp: pal.signal,
+    message: pal.reason,
+    targetTab: pal.blocked ? 'health' : 'runtime',
+    updatedAt: input.now,
+  }));
+
   if (brownfield.visible) {
     signals.push(visibleSignal({
       id: 'brownfield',
@@ -62,15 +71,6 @@ export function buildWorkspaceInspectorRuntime(
       updatedAt: input.now,
     }));
   }
-
-  signals.push(visibleSignal({
-    id: 'pal',
-    source: 'PAL',
-    lamp: pal.signal,
-    message: pal.reason,
-    targetTab: pal.blocked ? 'health' : 'runtime',
-    updatedAt: input.now,
-  }));
 
   if (memory.visible) {
     signals.push(visibleSignal({
