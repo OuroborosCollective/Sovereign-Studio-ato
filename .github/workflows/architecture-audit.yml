@@ -1,0 +1,51 @@
+name: architecture-audit
+on:
+  pull_request:
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '.github/workflows/architecture-audit.yml'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+
+      # 1. dependency-cruiser – cycles & forbidden layers
+      - name: dependency-cruiser cycles
+        run: |
+          npx depcruise src --include-cycles --output-type err || (echo "::error ::dependency-cruiser found circular dependencies" && exit 1)
+
+      # 2. ts-prune – unused exports
+      - name: ts-prune dead exports
+        run: |
+          npx ts-prune | tee prune.log
+          if [ -s prune.log ]; then echo "::error ::Unused exports detected" && cat prune.log && exit 1; fi
+
+      # 3. knip – unused files / deps
+      - name: knip unused resources
+        run: npx knip --no-progress
+
+      # 4. madge – graph + cycles (visual)
+      - name: madge graph
+        run: |
+          npx madge --circular --extensions ts,tsx src || (echo "::error ::Madge found circular deps" && exit 1)
+          npx madge --image arch.svg --extensions ts,tsx src
+
+      # 5. eslint (import/no-cycle & friends)
+      - name: eslint import cycles
+        run: npm run lint
+
+      # 6. Attach SVG graph to PR
+      - name: Comment graph
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: arch.svg
+          header: ":gem: Architektur‑Graph"
