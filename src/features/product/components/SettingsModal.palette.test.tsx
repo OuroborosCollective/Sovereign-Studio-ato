@@ -32,9 +32,8 @@ describe('SettingsModal Palette Enhancements', () => {
   it('toggles visibility of GitHub key', () => {
     render(<SettingsModal {...mockProps} />);
     const githubInput = screen.getByLabelText('GitHub Schreib-Key');
-    // Find the toggle button specifically for GitHub key
     const toggleButtons = screen.getAllByLabelText('Key anzeigen');
-    const githubToggle = toggleButtons.find(b => b.closest('div')?.contains(githubInput));
+    const githubToggle = toggleButtons.find((button) => button.closest('div')?.contains(githubInput));
 
     if (!githubToggle) throw new Error('GitHub toggle not found');
 
@@ -42,7 +41,7 @@ describe('SettingsModal Palette Enhancements', () => {
 
     fireEvent.click(githubToggle);
     expect(githubInput).toHaveAttribute('type', 'text');
-    expect(screen.getByLabelText('Key verbergen')).toBeInTheDocument();
+    expect(screen.getByLabelText('Key verbergen')).toBeTruthy();
 
     fireEvent.click(githubToggle);
     expect(githubInput).toHaveAttribute('type', 'password');
@@ -52,7 +51,7 @@ describe('SettingsModal Palette Enhancements', () => {
     render(<SettingsModal {...mockProps} />);
     const geminiInput = screen.getByLabelText('Gemini API-Key');
     const toggleButtons = screen.getAllByLabelText('Key anzeigen');
-    const geminiToggle = toggleButtons.find(b => b.closest('div')?.contains(geminiInput));
+    const geminiToggle = toggleButtons.find((button) => button.closest('div')?.contains(geminiInput));
 
     if (!geminiToggle) throw new Error('Gemini toggle not found');
 
@@ -65,6 +64,6 @@ describe('SettingsModal Palette Enhancements', () => {
   it('renders Lucide X icon for close button', () => {
     render(<SettingsModal {...mockProps} />);
     const closeBtn = screen.getByLabelText('Schließen');
-    expect(closeBtn.querySelector('svg.lucide-x')).toBeInTheDocument();
+    expect(closeBtn.querySelector('svg.lucide-x')).toBeTruthy();
   });
 });
