@@ -60,7 +60,7 @@ describe('workspaceInspectorRuntime', () => {
     const result = buildWorkspaceInspectorRuntime({
       repoName: 'Blocked Repo',
       branch: 'main',
-      repoFiles: ['package.json', 'src/App.tsx', 'src/main.tsx'],
+      repoFiles: ['package.json', 'src/App.tsx', 'src/main.tsx', 'src/App.test.tsx'],
       mission: 'Fix die roten Gates',
       repoReady: true,
       blockers: ['Health Blocker zuerst lösen'],
