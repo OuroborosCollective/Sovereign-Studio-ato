@@ -84,6 +84,14 @@ export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
     integrationPoint: 'Future Remote Memory hint and Builder context display',
   },
   {
+    id: 'quiet-inspector-policy',
+    runtimePath: 'src/features/product/runtime/quietInspectorHintPolicy.ts',
+    testPath: 'src/features/product/runtime/quietInspectorHintPolicy.test.ts',
+    purpose: 'Merges background runtime hints into a small prioritized inspector signal list so the chat stays quiet.',
+    status: 'covered',
+    integrationPoint: 'Future chat workbench status strip and inspector badges',
+  },
+  {
     id: 'github-auth-session',
     runtimePath: 'src/features/github/githubAuthSession.ts',
     testPath: 'src/features/github/githubAuthSession.test.ts',
