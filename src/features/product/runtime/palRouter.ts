@@ -24,7 +24,7 @@ export interface PalRouterDecision {
 }
 
 const REPAIR_RE = /\b(error|fehler|fix|repair|reparier|kaputt|failed|failure|red gate|workflow|ci|build|test|typecheck|lint)\b/i;
-const CODE_CHANGE_RE = /\b(add|build|implement|integrier|erstelle|füge|fuege|ändere|aendere|refactor|umbau|feature|patch|commit|push)\b/i;
+const CODE_CHANGE_RE = /\b(add|build|implement\w*|integrier\w*|erstelle|füge|fuege|ändere|aendere|refactor|umbau|feature|patch|commit|push)\b/i;
 const DRAFT_PR_RE = /\b(draft\s*pr|pull request|pr erstellen|publish|veröffentlichen|veroeffentlichen)\b/i;
 const REPO_SCAN_RE = /\b(repo|repository|analyse|analysiere|scan|hotspot|brownfield|dateibaum|architektur)\b/i;
 const ANSWER_RE = /\b(erklär|erklaer|warum|was ist|wie geht|bewerte|meinung|zusammenfass|summary)\b/i;
