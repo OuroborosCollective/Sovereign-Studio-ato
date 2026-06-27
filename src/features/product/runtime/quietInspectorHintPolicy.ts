@@ -9,6 +9,7 @@ export interface QuietInspectorSignal {
   readonly targetTab: QuietInspectorTarget;
   readonly visible?: boolean;
   readonly updatedAt?: number;
+  readonly priority?: number;
 }
 
 export interface QuietInspectorPolicyResult {
@@ -43,6 +44,7 @@ function normalizeSignal(signal: QuietInspectorSignal): QuietInspectorSignal | n
     targetTab: signal.targetTab,
     visible: true,
     updatedAt: typeof signal.updatedAt === 'number' && Number.isFinite(signal.updatedAt) ? Math.floor(signal.updatedAt) : 0,
+    priority: signal.priority,
   };
 }
 
@@ -63,7 +65,7 @@ export function mergeQuietInspectorSignals(signals: QuietInspectorSignal[]): Qui
   const normalized = signals
     .map(normalizeSignal)
     .filter((signal): signal is QuietInspectorSignal => Boolean(signal))
-    .sort((a, b) => lampWeight(b.lamp) - lampWeight(a.lamp) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id))
+    .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999) || lampWeight(b.lamp) - lampWeight(a.lamp) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id))
     .slice(0, MAX_SIGNALS);
 
   const topLamp = normalized[0]?.lamp ?? 'green';

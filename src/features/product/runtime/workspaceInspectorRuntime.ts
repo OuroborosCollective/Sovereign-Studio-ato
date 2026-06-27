@@ -70,6 +70,7 @@ export function buildWorkspaceInspectorRuntime(
     message: pal.reason,
     targetTab: pal.blocked ? 'health' : 'runtime',
     updatedAt: input.now,
+    priority: 0,
   }));
 
   if (memory.visible) {
