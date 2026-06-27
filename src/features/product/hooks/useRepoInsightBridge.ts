@@ -19,10 +19,22 @@ import {
   createRepoInsightSuggestions,
   type RepoInsightSuggestion,
 } from '../runtime/repoInsightEngine';
+import {
+  buildWorkspaceInspectorRuntime,
+  type WorkspaceInspectorRuntimeResult,
+} from '../runtime/workspaceInspectorRuntime';
 import type { CoachLamp } from '../hooks/useCoachRuntimeBridge';
+
+const EMPTY_SOLUTION_PATTERN_STORE: SolutionPatternStore = {
+  version: 1,
+  patterns: [],
+  rejections: [],
+  updatedAt: 0,
+};
 
 export interface RepoInsightBridgeState {
   output: RepoInsightEngineOutput | null;
+  workspaceInspector: WorkspaceInspectorRuntimeResult | null;
   isLoading: boolean;
   error: string | null;
   lastAnalyzedFiles: number;
@@ -50,6 +62,13 @@ export interface UseRepoInsightBridgeResult extends RepoInsightBridgeState {
     thinking: boolean;
     source: 'repo' | 'runtime-library';
   } | null;
+}
+
+function repoNameFromUrl(repoUrl?: string): string {
+  if (!repoUrl) return 'unknown-repo';
+  const trimmed = repoUrl.trim().replace(/\.git$/i, '');
+  const parts = trimmed.split('/').filter(Boolean);
+  return parts.at(-1) ?? 'unknown-repo';
 }
 
 function deriveCoachStateFromInsight(
@@ -108,18 +127,36 @@ export function useRepoInsightBridge(
 
   const [state, setState] = useState<RepoInsightBridgeState>({
     output: null,
+    workspaceInspector: null,
     isLoading: false,
     error: null,
     lastAnalyzedFiles: 0,
   });
 
   const analyze = useCallback(() => {
+    const inspector = buildWorkspaceInspectorRuntime({
+      repoName: repoNameFromUrl(repoUrl),
+      branch: repoBranch?.trim() || 'main',
+      repoFiles,
+      mission: currentMission ?? '',
+      repoReady: repoFiles.length > 0,
+      blockers: [],
+      automationMode: 'manual',
+      solutionPatternStore: solutionPatternStore ?? EMPTY_SOLUTION_PATTERN_STORE,
+      now: wallClockMs(),
+    });
+
     if (repoFiles.length === 0) {
-      setState((prev) => ({ ...prev, isLoading: false, error: 'No repository files to analyze.' }));
+      setState((prev) => ({
+        ...prev,
+        workspaceInspector: inspector,
+        isLoading: false,
+        error: 'No repository files to analyze.',
+      }));
       return;
     }
 
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({ ...prev, workspaceInspector: inspector, isLoading: true, error: null }));
 
     const input: RepoInsightEngineInput = {
       repoFiles,
@@ -133,9 +170,22 @@ export function useRepoInsightBridge(
     };
 
     const result = createRepoInsightSuggestions(input);
+    const blockers = result.output?.blockers.map((blocker) => blocker.message) ?? [];
+    const workspaceInspector = buildWorkspaceInspectorRuntime({
+      repoName: repoNameFromUrl(repoUrl),
+      branch: repoBranch?.trim() || 'main',
+      repoFiles,
+      mission: currentMission ?? '',
+      repoReady: repoFiles.length > 0,
+      blockers,
+      automationMode: 'manual',
+      solutionPatternStore: solutionPatternStore ?? EMPTY_SOLUTION_PATTERN_STORE,
+      now: wallClockMs(),
+    });
 
     setState({
       output: result.output,
+      workspaceInspector,
       isLoading: false,
       error: result.error,
       lastAnalyzedFiles: repoFiles.length,
@@ -155,12 +205,13 @@ export function useRepoInsightBridge(
       new CustomEvent('sovereign:repo-insight-state', {
         detail: {
           ...coachState,
+          workspaceInspector: state.workspaceInspector?.policy ?? null,
           tick: wallClockMs(),
           updatedAt: wallClockMs(),
         },
       }),
     );
-  }, [coachState]);
+  }, [coachState, state.workspaceInspector]);
 
   const getSuggestionMission = useCallback(
     (suggestion: RepoInsightSuggestion): string => {
