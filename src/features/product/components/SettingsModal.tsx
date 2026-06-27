@@ -18,6 +18,21 @@ interface SettingsModalProps {
   setUserApiKeys: (keys: UserApiKeys) => void;
 }
 
+type UserApiKeyId = keyof UserApiKeys;
+
+const USER_API_KEY_IDS: ReadonlySet<string> = new Set<UserApiKeyId>([
+  'pollinations',
+  'groq',
+  'huggingface',
+  'together',
+  'openrouter',
+  'gemini',
+]);
+
+function isUserApiKeyId(providerId: string): providerId is UserApiKeyId {
+  return USER_API_KEY_IDS.has(providerId);
+}
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   repoUrl, setRepoUrl, accessKey, setAccessKey, geminiKey, setGeminiKey,
   settings = defaultSettings, setSettings = () => undefined, setShowSettings, userApiKeys, setUserApiKeys
@@ -35,6 +50,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   }, [setShowSettings]);
 
   const handleKeyChange = (providerId: string, value: string) => {
+    if (!isUserApiKeyId(providerId)) return;
     setUserApiKeys({ ...userApiKeys, [providerId]: value || undefined });
   };
 
@@ -47,7 +63,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const getProviderKey = (providerId: string): string => {
-    return userApiKeys[providerId as keyof UserApiKeys] || '';
+    return isUserApiKeyId(providerId) ? userApiKeys[providerId] || '' : '';
   };
 
   const activeProviders = Object.values(userApiKeys).filter(v => v).length;
