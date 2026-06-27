@@ -56,7 +56,7 @@ const LOCKFILE_RE = /^(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lock
 const LEGACY_PATH_RE = /(?:^|[\/._-])(?:legacy|old|backup|deprecated|unused|archive|draft|wip|temp|tmp|copy)(?:[\/._-]|$)/i;
 
 const STATE_PATTERN_MARKERS: Array<{ id: string; re: RegExp; label: string }> = [
-  { id: 'zustand', re: /(?:^|\/)zustand(?:\/|\.|-|_)/i, label: 'Zustand' },
+  { id: 'zustand', re: /(?:^|[\/._-])zustand(?:[\/._-]|$)/i, label: 'Zustand' },
   { id: 'redux', re: /(?:^|\/)(?:redux|.+\.slice\.(?:ts|tsx|js|jsx)$)/i, label: 'Redux/Slices' },
   { id: 'jotai', re: /(?:^|\/|\.|-|_)atom(?:\.|-|_|\/)/i, label: 'Jotai/Atoms' },
   { id: 'recoil', re: /(?:^|\/)recoil(?:\/|\.|-|_)/i, label: 'Recoil' },
