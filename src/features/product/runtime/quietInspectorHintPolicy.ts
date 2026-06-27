@@ -63,7 +63,16 @@ export function mergeQuietInspectorSignals(signals: QuietInspectorSignal[]): Qui
   const normalized = signals
     .map(normalizeSignal)
     .filter((signal): signal is QuietInspectorSignal => Boolean(signal))
-    .sort((a, b) => lampWeight(b.lamp) - lampWeight(a.lamp) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id))
+    .sort((a, b) => {
+      const diff = lampWeight(b.lamp) - lampWeight(a.lamp);
+      if (diff !== 0) return diff;
+
+      // Tie-break: PAL signal always wins for the top position if weight is equal
+      if (a.id === 'pal' && b.id !== 'pal') return -1;
+      if (b.id === 'pal' && a.id !== 'pal') return 1;
+
+      return (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id);
+    })
     .slice(0, MAX_SIGNALS);
 
   const topLamp = normalized[0]?.lamp ?? 'green';
