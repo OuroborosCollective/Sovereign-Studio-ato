@@ -18,17 +18,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+          run_install: true
       - name: Install Graphviz
         run: sudo apt-get update && sudo apt-get install -y graphviz
-      - run: npm ci
       - name: Generate dependency graph
         run: |
           set -euo pipefail
-          npx madge --circular --extensions ts,tsx src || (echo "::error ::Circular deps detected" && exit 1)
-          npx madge --image deps.svg --extensions ts,tsx src
+          pnpm madge --circular --extensions ts,tsx src || (echo "::error ::Circular deps detected" && exit 1)
+          pnpm madge --image deps.svg --extensions ts,tsx src
       - name: Prepare graph comment
-        run: |
-          echo "![Dependency Graph](attachment://deps.svg)" > graph-comment.md
+        run: echo "![Dependency Graph](attachment://deps.svg)" > graph-comment.md
       - name: Upload SVG as artifact
         uses: actions/upload-artifact@v4
         with:
