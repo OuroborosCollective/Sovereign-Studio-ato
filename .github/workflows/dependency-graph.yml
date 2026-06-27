@@ -1,0 +1,25 @@
+name: dependency-graph
+on:
+  pull_request:
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '.github/workflows/dependency-graph.yml'
+
+jobs:
+  madge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: |
+          npx madge --circular --extensions ts,tsx src || (echo "::error ::Circular deps detected" && exit 1)
+          npx madge --image deps.svg --extensions ts,tsx src
+      - name: Upload graph & comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: deps.svg
+          header: ":chart_with_upwards_trend: Aktueller Dependency-Graph"
