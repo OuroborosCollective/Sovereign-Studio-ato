@@ -101,7 +101,9 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.3",
     "vite": "8.0.16",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "madge": "^7.1.0",
+    "ts-prune": "^0.8.3"
   },
   "overrides": {
     "@codetrix-studio/capacitor-google-auth": {
