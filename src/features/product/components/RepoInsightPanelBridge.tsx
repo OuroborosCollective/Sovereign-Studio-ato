@@ -13,6 +13,7 @@ import type { ScanFindingRegistry } from '../runtime/scanFindingRegistry';
 import type { WorkflowWatchReport } from '../runtime/workflowWatch';
 import type { SolutionPatternStore } from '../runtime/solutionPatternMemory';
 import type { RepoInsightEngineOutput, RepoInsightSuggestion } from '../runtime/repoInsightEngine';
+import type { WorkspaceInspectorRuntimeResult } from '../runtime/workspaceInspectorRuntime';
 
 export interface RepoInsightPanelBridgeProps {
   repoFiles: RepoFile[];
@@ -23,6 +24,12 @@ export interface RepoInsightPanelBridgeProps {
   onSuggestionClick: (suggestion: RepoInsightSuggestion) => void;
   onRecommendedMissionClick?: (mission: string) => void;
 }
+
+const INSPECTOR_LAMP_CLASS: Record<'green' | 'yellow' | 'red', string> = {
+  green: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100',
+  yellow: 'border-amber-500/30 bg-amber-500/10 text-amber-100',
+  red: 'border-red-500/30 bg-red-500/10 text-red-100',
+};
 
 function missionVerb(category: RepoInsightSuggestion['category']): string {
   if (category === 'fix') return 'Repariere';
@@ -67,6 +74,31 @@ function displayOutput(output: RepoInsightEngineOutput | null): RepoInsightEngin
   };
 }
 
+function WorkspaceInspectorStrip({ inspector }: { readonly inspector: WorkspaceInspectorRuntimeResult | null }) {
+  const policy = inspector?.policy;
+  if (!policy?.hasVisibleSignals) return null;
+
+  return (
+    <div
+      className={`mb-3 rounded-xl border px-3 py-2 text-xs ${INSPECTOR_LAMP_CLASS[policy.topLamp]}`}
+      data-testid="workspace-inspector-strip"
+      aria-label="Workspace Inspector Runtime Hinweise"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <strong className="font-mono text-[11px] uppercase tracking-[0.16em]">Workspace Inspector</strong>
+        <span className="font-mono text-[10px] opacity-80">{policy.summary}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {policy.signals.slice(0, 3).map((signal) => (
+          <span key={signal.id} className="rounded-full border border-current/20 px-2 py-1 font-mono text-[10px] opacity-90">
+            {signal.source}: {signal.message}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function RepoInsightPanelBridge({
   repoFiles,
   scanRegistry,
@@ -78,6 +110,7 @@ export function RepoInsightPanelBridge({
 }: RepoInsightPanelBridgeProps) {
   const {
     output,
+    workspaceInspector,
     isLoading,
     analyze,
     coachState,
@@ -121,11 +154,14 @@ export function RepoInsightPanelBridge({
   };
 
   return (
-    <RepoInsightPanel
-      output={effectiveOutput}
-      isLoading={isLoading}
-      onSuggestionClick={handleSuggestionClick}
-      onRecommendedMissionClick={handleRecommendedMissionClick}
-    />
+    <>
+      <WorkspaceInspectorStrip inspector={workspaceInspector} />
+      <RepoInsightPanel
+        output={effectiveOutput}
+        isLoading={isLoading}
+        onSuggestionClick={handleSuggestionClick}
+        onRecommendedMissionClick={handleRecommendedMissionClick}
+      />
+    </>
   );
 }
