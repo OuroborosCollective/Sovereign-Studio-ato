@@ -8,14 +8,24 @@ import {
 import type { ExternalMemorySyncPreview } from './externalMemorySyncPreview';
 
 describe('remoteMemoryContainerRuntime', () => {
-  it('creates stable default config with caller overrides', () => {
+  it('creates safe default config without HTTP IP defaults', () => {
+    const config = createRemoteMemoryContainerConfig();
+    expect(config.enabled).toBe(false);
+    expect(config.gatewayUrl).toBe('');
+    expect(config.allowSelfHostedHttp).toBe(false);
+    expect(config.contributorId).toBe('local-contributor');
+    expect(config.workspaceId).toBe('local-workspace');
+    expect(config.gatewayUrl).not.toContain('http://');
+    expect(config.gatewayUrl).not.toContain('46.202');
+  });
+
+  it('allows HTTPS gateway with explicit overrides', () => {
     const config = createRemoteMemoryContainerConfig({ enabled: true, gatewayUrl: 'https://memory.example.test' });
 
     expect(config.enabled).toBe(true);
     expect(config.gatewayUrl).toBe('https://memory.example.test');
-    expect(config.workspaceId).toBe('Pattern');
-    expect(config.collectionName).toBe('sovereign_logic_patterns');
-    expect(config.contributorId).toBe('sovereign-local-install');
+    expect(config.contributorId).toBe('local-contributor');
+    expect(config.workspaceId).toBe('local-workspace');
   });
 
   it('reports disabled, busy and ready status', () => {
