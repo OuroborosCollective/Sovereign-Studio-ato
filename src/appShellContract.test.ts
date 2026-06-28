@@ -30,6 +30,17 @@ const REQUIRED_CONTAINER_TOKENS = [
   'PatternMemoryContainer',
 ];
 
+const REMOVED_WRAPPER_NAV_TOKENS = [
+  'WorkspaceMenu',
+  'publishWorkspaceCommand',
+  'SOVEREIGN_WORKSPACE_MENU',
+  'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
+  'createSovereignWorkspaceCommand',
+  'sovereign-wrapper-workspace-menu',
+  'sovereign-wrapper-menu__${item.id}',
+  'composition-wrapper-around-existing-app',
+];
+
 function read(path: string): string {
   expect(existsSync(path), `${path} must exist`).toBe(true);
   return readFileSync(path, 'utf8');
@@ -74,38 +85,45 @@ describe('current Sovereign app shell contract', () => {
 
     expectContainsAll(wrapper, [
       "import App from './App'",
-      'SovereignRuntimeShell',
+      'SovereignAppShell',
       '<App />',
-      'composition-wrapper-around-existing-app',
+      'data-layout="minimal-app-shell"',
+      'data-contract="chat-first-sovereign-shell"',
+      'MinimalLampBar',
+      'sovereign-shell-content',
     ]);
 
+    expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('keeps the wrapper workspace menu as a contract-backed event bridge, not a second state source', () => {
+  it('keeps the wrapper free of a second workspace navigation layer', () => {
     const wrapper = read(WRAPPER_PATH);
-    const command = read(WORKSPACE_COMMAND_PATH);
 
     expectContainsAll(wrapper, [
-      'WorkspaceMenu',
-      'SOVEREIGN_WORKSPACE_MENU',
-      'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
-      'createSovereignWorkspaceCommand',
-      'publishWorkspaceCommand',
-      'sovereign-wrapper-workspace-menu',
-      'sovereign-wrapper-menu__${item.id}',
-      'targetTab',
+      'SovereignAppShell',
+      'MinimalLampBar',
+      'chat-first-sovereign-shell',
     ]);
+
+    expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
+    expect(wrapper).not.toContain('querySelector');
+    expect(wrapper).not.toContain('localStorage');
+    expect(wrapper).not.toContain('sessionStorage');
+  });
+
+  it('keeps workspace command definitions available without making the wrapper a navigation source', () => {
+    const command = read(WORKSPACE_COMMAND_PATH);
+    const wrapper = read(WRAPPER_PATH);
 
     for (const tab of SOVEREIGN_WORKSPACE_TAB_IDS) {
       expect(command).toContain(`'${tab}'`);
     }
 
     expect(SOVEREIGN_WORKSPACE_MENU.map((item) => item.id)).toEqual([...SOVEREIGN_WORKSPACE_TAB_IDS]);
-    expect(wrapper).toContain('window.dispatchEvent(new CustomEvent(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
-    expect(wrapper).not.toContain('querySelector');
-    expect(wrapper).not.toContain('localStorage');
-    expect(wrapper).not.toContain('sessionStorage');
+    expect(command).toContain(SOVEREIGN_WORKSPACE_COMMAND_EVENT);
+    expect(wrapper).not.toContain(SOVEREIGN_WORKSPACE_COMMAND_EVENT);
+    expect(wrapper).not.toContain('SOVEREIGN_WORKSPACE_MENU');
   });
 
   it('routes release guide commands through validated workspace commands and the More menu select', () => {
@@ -126,13 +144,13 @@ describe('current Sovereign app shell contract', () => {
   it('keeps App guide command listener aligned with the workspace event contract', () => {
     const app = read(APP_PATH);
 
-    // App.tsx must import and use the shared event constant to prevent drift
-    expect(app).toContain(`SOVEREIGN_WORKSPACE_COMMAND_EVENT`);
-    expect(app).toContain(`normalizeSovereignWorkspaceCommandDetail`);
-    expect(app).toContain(`window.addEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT`);
-    expect(app).toContain(`window.removeEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT`);
-    // Must NOT use hardcoded string to avoid future drift
-    expect(app).not.toContain(`'sovereign:release-guide-command'`);
+    // App.tsx must import and use the shared event constant to prevent drift.
+    expect(app).toContain('SOVEREIGN_WORKSPACE_COMMAND_EVENT');
+    expect(app).toContain('normalizeSovereignWorkspaceCommandDetail');
+    expect(app).toContain('window.addEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
+    expect(app).toContain('window.removeEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
+    // Must NOT use hardcoded string to avoid future drift.
+    expect(app).not.toContain("'sovereign:release-guide-command'");
   });
 
   it('keeps the workspace command contract runtime-only and DOM-free', () => {
