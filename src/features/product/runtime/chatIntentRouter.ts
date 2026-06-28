@@ -218,13 +218,13 @@ const TARGET_TABS: Record<ChatIntent, ChatIntentRouterOutput['targetTab'] | unde
   'unknown': undefined,
 };
 
-const GITHUB_URL_REGEX = /https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?/i;
+const GITHUB_URL_REGEX = /^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i;
 
 function detectIntent(message: string): ChatIntent {
   const normalized = message.toLowerCase().trim();
 
   // Check for GitHub URL first (more specific than word signals)
-  if (GITHUB_URL_REGEX.test(message)) {
+  if (GITHUB_URL_REGEX.test(message.trim())) {
     return 'load-repo';
   }
 
