@@ -37,6 +37,20 @@ describe('BuilderContainer', () => {
     expect(screen.getByText('OpenHands Runtime')).toBeDefined();
   });
 
+  it('keeps the default builder surface quiet and chat-first', () => {
+    render(<BuilderContainer {...baseProps()} />);
+
+    expect(screen.getByText('Sovereign Chat')).toBeDefined();
+    expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
+    expect(screen.queryByTestId('sovereign-devchat-side-menu')).toBeNull();
+    expect(screen.queryByText('Planner')).toBeNull();
+    expect(screen.queryByText('Changes')).toBeNull();
+    expect(screen.queryByText('Code')).toBeNull();
+    expect(screen.queryByText('Terminal')).toBeNull();
+    expect(screen.queryByText('Browser')).toBeNull();
+    expect(screen.queryByText(/Sovereign geführter Chat Ablauf/i)).toBeNull();
+  });
+
   it('keeps DevChat content as runtime-derived messages, not demo flow', () => {
     render(<BuilderContainer {...baseProps()} />);
 
@@ -122,6 +136,7 @@ describe('BuilderContainer', () => {
   it('opens the DevChat side menu as overlay without changing the shell structure', () => {
     render(<BuilderContainer {...baseProps()} />);
 
+    expect(screen.queryByTestId('sovereign-devchat-side-menu')).toBeNull();
     fireEvent.click(screen.getByLabelText('Sovereign Menü öffnen'));
 
     expect(screen.getByTestId('sovereign-devchat-side-menu')).toBeDefined();
