@@ -266,7 +266,6 @@ export function getIntentPreconditions(intent: ChatIntent): IntentPrecondition {
 export function getAvailableIntents(input: Pick<ChatIntentRouterInput, 'repoReady' | 'hasToken' | 'hasPackage' | 'hasDraft' | 'repoFileCount' | 'activeBlockers'>): ChatIntent[] {
   return (Object.keys(INTENT_PRECONDITIONS) as ChatIntent[]).filter((intent) => {
     if (intent === 'unknown') return false;
-    const preconditions = INTENT_PRECONDITIONS[intent];
     const blockedReason = buildBlockedReason(intent, {
       ...input,
       message: '', // placeholder
