@@ -65,6 +65,16 @@ export interface SovereignProductTemplateValidationReport {
   summary: string;
 }
 
+export const SOVEREIGN_PRODUCT_TRUTH_INVARIANTS = [
+  'Default surface is Chat.',
+  'The user talks to Sovereign; Sovereign operates the control room behind the curtain.',
+  'Only chat timeline, text input, small thinking/status cues and compact lamps are visible by default.',
+  'Repo, Files, Diff, Workflow, Runtime, Telemetry, Health, Coverage, Memory and Inspector are inspection surfaces opened explicitly, never forced on the user.',
+  'Repo setup may start from a chat instruction.',
+  'The UI must not become a dashboard, monitor or second control shell.',
+  'Truth is produced by runtime, not by UI.',
+] as const;
+
 export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   version: 1,
   productName: 'Sovereign Studio',
@@ -74,6 +84,7 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
   diagnosticTabs: ['chat', 'readiness', 'integrity', 'findings', 'health', 'runtime', 'coverage'],
   autoNavigationAllowlist: ['active-work', 'red-stopper'],
   invariants: [
+    ...SOVEREIGN_PRODUCT_TRUTH_INVARIANTS,
     'Builder is the startup surface because it is the official NoCode chat workbench.',
     'There must be only one visible chat workbench in the primary flow: the Builder tab labelled Chat.',
     'Repo remains the first setup surface in the primary flow and may be requested by the chat when missing.',
@@ -145,6 +156,12 @@ export function validateSovereignProductTemplate(
   if (contract.productName !== 'Sovereign Studio') errors.push('Template productName must be Sovereign Studio.');
   if (contract.startTab !== 'builder') errors.push('Template must start in builder chat workbench tab.');
   if (duplicateIds.length) errors.push(`Duplicate template tabs: ${unique(duplicateIds).join(', ')}`);
+
+  for (const invariant of SOVEREIGN_PRODUCT_TRUTH_INVARIANTS) {
+    if (!contract.invariants.includes(invariant)) {
+      errors.push(`Missing product truth invariant: ${invariant}`);
+    }
+  }
 
   const primaryMissing = missingFromContract(contract, contract.primaryFlow);
   const sideMissing = missingFromContract(contract, contract.sideTabs);
