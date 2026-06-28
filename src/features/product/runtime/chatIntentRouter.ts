@@ -140,12 +140,6 @@ const READ_ONLY_INTENTS = new Set<ChatIntent>([
   'search-patterns',
 ]);
 
-// Intents that are workflow-specific (CI/workflow wording required)
-const WORKFLOW_INTENTS = new Set<ChatIntent>([
-  'watch-workflow',
-  'repair-workflow',
-]);
-
 const INTENT_SIGNALS: Record<ChatIntent, string[]> = {
   'load-repo': [
     'load repo', 'fetch repository', 'open repo', 'select repository', 'repo url', 'github link',
