@@ -95,7 +95,7 @@ const TARGET_TABS: Record<ChatIntent, ChatIntentRouterOutput['targetTab'] | unde
   'show-diff': 'diff', 'watch-workflow': 'workflow', 'repair-workflow': 'repair', 'search-patterns': 'files', 'unknown': undefined,
 };
 
-const GITHUB_URL_REGEX = /https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?/i;
+const GITHUB_URL_REGEX = /(?:^|\s)https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/\S*)?(?=\s|$)/i;
 const ACTION_INTENTS = new Set<ChatIntent>(['create-draft-pr', 'show-diff', 'generate-package', 'repair-workflow', 'watch-workflow']);
 
 function hasActionIntent(message: string): boolean {
