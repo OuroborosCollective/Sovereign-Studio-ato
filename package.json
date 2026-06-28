@@ -43,7 +43,7 @@
     "apk:clean-release": "pnpm run android:clean && pnpm run build:apk",
     "depcruise": "pnpm dlx dependency-cruiser",
     "madge": "pnpm dlx madge",
-    "ts-prune": "pnpm dlx ts-prune",
+    "ts-prune": "node scripts/ci-ts-prune-baseline.mjs",
     "knip": "pnpm dlx knip"
   },
   "dependencies": {
