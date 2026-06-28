@@ -85,10 +85,9 @@ describe('current Sovereign app shell contract', () => {
 
     expectContainsAll(wrapper, [
       "import App from './App'",
-      'SovereignAppShell',
+      'MinimalAppShell',
       '<App />',
       'data-layout="minimal-app-shell"',
-      'data-contract="chat-first-sovereign-shell"',
       'MinimalLampBar',
       'sovereign-shell-content',
     ]);
@@ -101,9 +100,9 @@ describe('current Sovereign app shell contract', () => {
     const wrapper = read(WRAPPER_PATH);
 
     expectContainsAll(wrapper, [
-      'SovereignAppShell',
+      'MinimalAppShell',
       'MinimalLampBar',
-      'chat-first-sovereign-shell',
+      'minimal-app-shell',
     ]);
 
     expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
