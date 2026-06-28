@@ -5,16 +5,18 @@ const path = require('node:path');
  * CI/mobile native compatibility guard.
  *
  * The current Sovereign Studio RN app uses a local JS-only navigator and does not
- * import native navigation/gesture modules from app code. Expo prebuild can still
- * let the React Native Gradle autolinker discover their Android native projects
- * from node_modules. Those pinned native sources are currently incompatible with
- * the pinned React Native/Expo Android API and fail before E2E tests can start.
+ * import native navigation/gesture modules or Expo Constants from app code. Expo
+ * prebuild can still let the React Native/Expo Gradle autolinker discover their
+ * Android native projects from node_modules. Those pinned native sources are
+ * currently incompatible with the pinned React Native/Expo Android API and fail
+ * before E2E tests can start.
  *
  * Keep the packages installed for dependency compatibility, but remove only their
  * Android native project folders after npm ci/install. The JS packages remain
  * available, while Gradle has no unused native module to compile.
  */
 const UNUSED_ANDROID_MODULES = [
+  'expo-constants',
   'react-native-gesture-handler',
   'react-native-reanimated',
   'react-native-screens',
