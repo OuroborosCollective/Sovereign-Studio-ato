@@ -17,3 +17,8 @@
 **Vulnerability:** Log utilities like `stripTokenFromText` originally only redacted the specific GitHub token provided. If an error message contained both a GitHub token and an AI provider key (e.g., in a failed cross-provider operation), the AI key would still be leaked.
 **Learning:** Redaction utilities should not be limited to redacting a single known value. Integrating a central, pattern-based `maskSecrets` utility into all log-stripping paths provides a critical second layer of defense (defense in depth).
 **Prevention:** Always pipe log strings through a generalized `maskSecrets` utility even when a specific token is already being stripped. Ensure the utility covers all provider prefixes used in the app (e.g., `sk-or-v1-`, `hf_`, `together_`, `pollinations_`).
+
+## 2025-05-23 - Proactive Secret Masking at the Normalization Layer
+**Vulnerability:** Chat messages and suggestions were normalized and stored in application state before any redaction occurred. While outgoing AI calls were protected, the raw secrets remained in the local runtime state and UI-bound objects.
+**Learning:** Security controls like secret masking should be applied as early as possible (at the entry/normalization layer) to minimize the "blast radius" of sensitive data within the application's memory and state management.
+**Prevention:** Integrate `maskSecrets` directly into normalization utilities (like `trimText` or `validateChatEntry`) that process user-provided or external content before it is committed to state.
