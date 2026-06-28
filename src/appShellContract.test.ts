@@ -126,8 +126,13 @@ describe('current Sovereign app shell contract', () => {
   it('keeps App guide command listener aligned with the workspace event contract', () => {
     const app = read(APP_PATH);
 
-    expect(app).toContain(`window.addEventListener('${SOVEREIGN_WORKSPACE_COMMAND_EVENT}'`);
-    expect(app).toContain(`window.removeEventListener('${SOVEREIGN_WORKSPACE_COMMAND_EVENT}'`);
+    // App.tsx must import and use the shared event constant to prevent drift
+    expect(app).toContain(`SOVEREIGN_WORKSPACE_COMMAND_EVENT`);
+    expect(app).toContain(`normalizeSovereignWorkspaceCommandDetail`);
+    expect(app).toContain(`window.addEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT`);
+    expect(app).toContain(`window.removeEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT`);
+    // Must NOT use hardcoded string to avoid future drift
+    expect(app).not.toContain(`'sovereign:release-guide-command'`);
   });
 
   it('keeps the workspace command contract runtime-only and DOM-free', () => {

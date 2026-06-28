@@ -120,6 +120,10 @@ import {
 import {
   createSovereignTestId,
 } from './features/product/runtime/sovereignComponentContracts';
+import {
+  SOVEREIGN_WORKSPACE_COMMAND_EVENT,
+  normalizeSovereignWorkspaceCommandDetail,
+} from './features/product/runtime/sovereignWorkspaceCommand';
 
 type SovereignTab = 'monitor' | SovereignAutoViewTab;
 
@@ -371,7 +375,7 @@ const App: React.FC = () => {
     if (typeof window === 'undefined') return undefined;
 
     const handleGuideCommand = (event: Event): void => {
-      const detail = (event as CustomEvent<{ type?: string; targetTab?: SovereignTab | null }>).detail;
+      const detail = normalizeSovereignWorkspaceCommandDetail((event as CustomEvent).detail);
       if (!detail) return;
 
       if (detail.type === 'confirm') {
@@ -387,8 +391,8 @@ const App: React.FC = () => {
       }
     };
 
-    window.addEventListener('sovereign:release-guide-command', handleGuideCommand as EventListener);
-    return () => window.removeEventListener('sovereign:release-guide-command', handleGuideCommand as EventListener);
+    window.addEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT, handleGuideCommand as EventListener);
+    return () => window.removeEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT, handleGuideCommand as EventListener);
     // Release guide commands are runtime events from the global coach.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
