@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { routeChatIntent, getIntentPreconditions, getAvailableIntents } from './chatIntentRouter';
+import { routeChatIntent, getAvailableIntents } from './chatIntentRouter';
 import type { ChatIntentRouterInput } from './chatIntentRouter';
 
 const makeInput = (overrides: Partial<ChatIntentRouterInput> = {}): ChatIntentRouterInput => ({
