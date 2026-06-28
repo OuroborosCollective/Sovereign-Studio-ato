@@ -87,14 +87,10 @@ interface ChatLine {
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-// Galaxy A9: 1080×2220, 392ppi, xxhdpi → 360dp wide logical
-// Touch targets ≥ 48dp. Pure #000 = true AMOLED off-pixels.
-const MAX_W = 393; // dp
+const MAX_W = 393;
 const CUTE_THINKING_FRAME_MS = 1100;
 const builderContainerContract = getSovereignContainerContract('builder');
 
-// Replit-inspired dark palette — not GitHub dark, not VS Code dark.
-// Warmer neutrals, teal accent instead of blue.
 const C = {
   bg:        '#0e1116',
   surface:   '#161c24',
@@ -1199,7 +1195,7 @@ function Composer({
         marginTop: 5,
         paddingLeft: 14,
       }}>
-        Enter senden · Shift+Enter Zeilenumbruch
+        Agent starten · Enter senden · Shift+Enter Zeilenumbruch
       </div>
     </div>
   );
