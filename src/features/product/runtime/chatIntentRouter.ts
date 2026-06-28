@@ -132,14 +132,6 @@ const INTENT_PRECONDITIONS: Record<ChatIntent, IntentPrecondition> = {
   },
 };
 
-// Intents that should NOT be blocked by existing draft PR (read-only actions)
-const READ_ONLY_INTENTS = new Set<ChatIntent>([
-  'explain-status',
-  'show-diff',
-  'watch-workflow',
-  'search-patterns',
-]);
-
 const INTENT_SIGNALS: Record<ChatIntent, string[]> = {
   'load-repo': [
     'load repo', 'fetch repository', 'open repo', 'select repository', 'repo url', 'github link',
