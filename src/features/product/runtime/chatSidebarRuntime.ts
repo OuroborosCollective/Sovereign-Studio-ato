@@ -1,4 +1,5 @@
 import type { ChatMessage, Suggestion, SuggestionType } from '../types';
+import { maskSecrets } from '../../../shared/utils/crypto';
 
 export const CHAT_SIDEBAR_MAX_INPUT = 2000;
 export const CHAT_SIDEBAR_MAX_MESSAGE = 4000;
@@ -9,7 +10,8 @@ const KNOWN_SUGGESTION_TYPES = new Set(['feature', 'error', 'improvement']);
 const KNOWN_PRIORITIES = new Set(['high', 'medium', 'low']);
 
 function trimText(value: unknown, max = CHAT_SIDEBAR_MAX_MESSAGE): string {
-  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+  return maskSecrets(text);
 }
 
 function safeId(value: unknown, fallback: string): string {
