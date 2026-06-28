@@ -250,6 +250,7 @@ const App: React.FC = () => {
   const [automationMode, setAutomationMode] = useState<SovereignAutomationMode>('manual');
   const [lastAutoRunKey, setLastAutoRunKey] = useState('');
   const [automationStatus, setAutomationStatus] = useState('Manual mode is active.');
+  const [automationPanelExpanded, setAutomationPanelExpanded] = useState(false);
   const [planningConfirmed, setPlanningConfirmed] = useState(false);
 
   // OpenHands Enterprise state
@@ -1182,39 +1183,55 @@ const App: React.FC = () => {
         </label>
       </div>
 
-      <section className={`${SOVEREIGN_APP_CLASSES.card} ${SOVEREIGN_APP_CLASSES.automationPanel} mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200`} data-role="sovereign-automation-panel" data-testid="automation__panel">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section className={`${SOVEREIGN_APP_CLASSES.card} ${SOVEREIGN_APP_CLASSES.automationPanel} mt-4 rounded border border-slate-700 bg-slate-950/60 text-sm text-slate-200`} data-role="sovereign-automation-panel" data-testid="automation__panel">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between px-4 py-2 text-left"
+          onClick={() => setAutomationPanelExpanded((prev) => !prev)}
+          aria-expanded={automationPanelExpanded}
+          aria-controls="automation__panel-content"
+          data-testid="automation__panel-toggle"
+        >
           <div>
             <h2 className="font-bold">Automation Mode</h2>
             <p className="mt-1 text-xs text-slate-400">{automationStatus}</p>
           </div>
+          <span className="text-slate-500 transition-transform" aria-hidden="true">
+            {automationPanelExpanded ? '▾' : '▸'}
+          </span>
+        </button>
 
-          <select
-            value={automationMode}
-            onChange={(event) => changeAutomationMode(event.target.value as SovereignAutomationMode)}
-            className={`${SOVEREIGN_APP_CLASSES.select} rounded border border-slate-700 bg-slate-900 p-2 text-sm`}
-            aria-label="Automation mode"
-            data-role="automation-mode-select"
-            data-testid="automation__mode-select"
-          >
-            {automationModes.map((mode) => (
-              <option key={mode} value={mode}>
-                {AUTOMATION_MODE_LABELS[mode]}
-              </option>
-            ))}
-          </select>
-        </div>
+        {automationPanelExpanded && (
+          <div id="automation__panel-content" className="border-t border-slate-800 px-4 pb-4 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <select
+                value={automationMode}
+                onChange={(event) => changeAutomationMode(event.target.value as SovereignAutomationMode)}
+                className={`${SOVEREIGN_APP_CLASSES.select} rounded border border-slate-700 bg-slate-900 p-2 text-sm`}
+                aria-label="Automation mode"
+                data-role="automation-mode-select"
+                data-testid="automation__mode-select"
+              >
+                {automationModes.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {AUTOMATION_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <p className="mt-2 text-[11px] text-slate-500">
-          Full Auto runs repo snapshot checks, scan findings, sequential runtime guard, generated-file review, auto-view routing, workflow watch and Draft PR publishing rules. It does not auto-merge.
-        </p>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Full Auto runs repo snapshot checks, scan findings, sequential runtime guard, generated-file review, auto-view routing, workflow watch and Draft PR publishing rules. It does not auto-merge.
+            </p>
+          </div>
+        )}
       </section>
 
       {activeTab === 'monitor' ? (
         <SovereignTabErrorBoundary
           tabId="monitor"
           tabLabel="Monitor"
-          onDismiss={() => handleUserTabClick('repo')}
+          onDismiss={() => handleUserTabClick('builder')}
         >
           <section
             className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200"
@@ -1224,37 +1241,38 @@ const App: React.FC = () => {
               <div>
                 <h2 className="font-bold">Live Monitor</h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  Optionale Operator-Zentrale für Runtime Guards, Pattern Memory, Remote Memory und Telemetry. Der Release-Workflow startet bewusst im Repo-Tab.
+                  Schnellzugriff auf Runtime-Status. Details in eigenen Tabs.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs">
-                <button type="button" onClick={() => handleUserTabClick('repo')}>Repo laden</button>
-                <button type="button" onClick={() => handleUserTabClick('remote')}>Remote Memory</button>
-                <button type="button" onClick={() => handleUserTabClick('telemetry')}>Telemetry öffnen</button>
+                <button type="button" onClick={() => handleUserTabClick('repo')}>Repo</button>
+                <button type="button" onClick={() => handleUserTabClick('builder')}>Chat</button>
               </div>
             </div>
 
             <div className="mt-4 grid gap-2 text-xs md:grid-cols-4">
-              <div className="rounded bg-slate-900/70 p-3">Repo: {repoSnapshotStatus.ready ? 'ready' : 'not ready'}</div>
-              <div className="rounded bg-slate-900/70 p-3">Runtime: {sequentialRuntime.activeStep ?? 'idle'}</div>
-              <div className="rounded bg-slate-900/70 p-3">Workflow: {workflowReport?.status ?? 'idle'}</div>
-              <div className="rounded bg-slate-900/70 p-3">Patterns: {activePatternCount}</div>
+              <div className="rounded bg-slate-900/70 p-3">
+                <span className="inline-block h-2 w-2 rounded-full mr-1" style={{ background: repoSnapshotStatus.ready ? '#3fb950' : '#30363d' }} />
+                Repo
+              </div>
+              <div className="rounded bg-slate-900/70 p-3">
+                <span className="inline-block h-2 w-2 rounded-full mr-1" style={{ background: sequentialRuntime.activeStep ? '#58a6ff' : '#30363d' }} />
+                Runtime
+              </div>
+              <div className="rounded bg-slate-900/70 p-3">
+                <span className="inline-block h-2 w-2 rounded-full mr-1" style={{ background: workflowReport?.status === 'green' ? '#3fb950' : '#30363d' }} />
+                Workflow
+              </div>
+              <div className="rounded bg-slate-900/70 p-3">
+                <span className="inline-block h-2 w-2 rounded-full mr-1" style={{ background: activePatternCount > 0 ? '#d29922' : '#30363d' }} />
+                Patterns
+              </div>
             </div>
 
-            <div className="mt-4 rounded border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-300">
-              <h3 className="font-bold uppercase tracking-wide text-slate-200">Remote Memory Snapshot</h3>
-              <p className="mt-2">
-                Enabled: {remoteMemoryConfig.enabled ? 'yes' : 'no'} · Mode: {remoteMemoryConfig.mode} · Workspace: {remoteMemoryConfig.workspaceId} · Collection: {remoteMemoryConfig.collectionName}
-              </p>
-              <p className="mt-1 text-slate-500">Remote Memory bleibt optional und consent-gated. Änderungen laufen im Remote-Memory-Tab.</p>
-            </div>
-
-            <SequentialRuntimePanel state={sequentialRuntime} />
-            <RuntimeValidationCoveragePanel report={coverageReport} />
-            <ScanFindingRegistryPanel registry={scanRegistry} />
-            <PatternMemoryContainer store={solutionPatternStore} onClear={resetPatternMemory} />
-            <TelemetryContainer state={telemetry} expanded={telemetryExpanded} onExpandedChange={setTelemetryExpanded} />
+            <p className="mt-4 text-xs text-slate-500">
+              Alle Diagnose-Details: Telemetry, Runtime Steps, Coverage, Health in eigenen Tabs (via "Mehr").
+            </p>
           </section>
         </SovereignTabErrorBoundary>
       ) : null}
