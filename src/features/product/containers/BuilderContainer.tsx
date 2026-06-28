@@ -34,9 +34,9 @@ import type {
   OpenHandsJobSnapshot,
 } from '../runtime/openhandsEnterpriseRuntime';
 
-/* ────────────────────────────────────────────────────────────
-   TYPES  (identical props to BuilderContainer — drop-in swap)
-   ──────────────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// TYPES  (identical props to BuilderContainer — drop-in swap)
+// ─────────────────────────────────────────────────────────────
 
 export interface BuilderContainerProps {
   mission: string;
@@ -83,9 +83,9 @@ interface ChatLine {
   readonly path?: string;
 }
 
-/* ────────────────────────────────────────────────────────────
-   CONSTANTS
-   ──────────────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────
 
 // Galaxy A9: 1080×2220, 392ppi, xxhdpi → 360dp wide logical
 // Touch targets ≥ 48dp. Pure #000 = true AMOLED off-pixels.
@@ -144,9 +144,9 @@ const IDEA_OPTIONS: IdeaOption[] = [
   { label: '🔒 Runtime',   text: 'Prüfe den schwächsten Ablauf und ergänze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.' },
 ];
 
-/* ────────────────────────────────────────────────────────────
-   HELPERS  (identical logic to BuilderContainer)
-   ──────────────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// HELPERS  (identical logic to BuilderContainer)
+// ─────────────────────────────────────────────────────────────
 
 function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
@@ -336,11 +336,11 @@ function buildChatLines(args: {
   return lines;
 }
 
-/* ────────────────────────────────────────────────────────────
-   SUB-COMPONENTS
-   ──────────────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// SUB-COMPONENTS
+// ─────────────────────────────────────────────────────────────
 
-/* ── 3-dot status ampel (Replit-style inline) */
+// ── 3-dot status ampel (Replit-style inline)
 function Ampel({ status }: { status: AgentStatus }) {
   const col = STATUS_COLOR[status];
   return (
@@ -364,7 +364,7 @@ function Ampel({ status }: { status: AgentStatus }) {
   );
 }
 
-/* ── Top status bar (Replit-like header strip) */
+// ── Top status bar (Replit-like header strip)
 function TopBar({
   status, repoReady, chatRepoSnapshot, repoReason,
   onMenuOpen, onSourceClick, source,
@@ -457,7 +457,7 @@ function TopBar({
   );
 }
 
-/* ── File badge (Replit-style above bubble) */
+// ── File badge (Replit-style above bubble)
 function FileBadge({ path, file }: { path?: string; file?: string }) {
   if (!file) return null;
   return (
@@ -476,7 +476,7 @@ function FileBadge({ path, file }: { path?: string; file?: string }) {
   );
 }
 
-/* ── Thought bubble (collapsed by default) */
+// ── Thought bubble (collapsed by default)
 function ThoughtBubble({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const short = text.length > 72 ? `${text.slice(0, 72)}…` : text;
@@ -503,7 +503,7 @@ function ThoughtBubble({ text }: { text: string }) {
   );
 }
 
-/* ── Chat bubble */
+// ── Chat bubble
 function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
   const isUser = msg.role === 'user';
 
@@ -565,7 +565,7 @@ function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
   );
 }
 
-/* ── Thinking dots */
+// ── Thinking dots
 function ThinkingDots() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px' }}>
@@ -588,7 +588,7 @@ function ThinkingDots() {
   );
 }
 
-/* ── Outcome hints (files changed, draft PR, etc.) */
+// ── Outcome hints (files changed, draft PR, etc.)
 function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
   if (hints.length === 0) return null;
   return (
@@ -615,7 +615,7 @@ function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
   );
 }
 
-/* ── Empty/Welcome screen */
+// ── Empty/Welcome screen
 function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
   return (
     <div style={{
@@ -680,7 +680,7 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
   );
 }
 
-/* ── Runtime source sheet (bottom sheet, Android-native feel) */
+// ── Runtime source sheet (bottom sheet, Android-native feel)
 function RuntimeSheet({
   sources, current, onClose,
 }: {
@@ -725,7 +725,7 @@ function RuntimeSheet({
             onClick={onClose}
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-              padding: '12px 20px', background: 'transparent', border: 'none',
+              padding: '12px 20px', border: 'none',
               borderLeft: `3px solid ${s.id === current.id ? TIER_COLOR[s.tier] : 'transparent'}`,
               cursor: 'pointer',
               background: s.id === current.id ? `${TIER_COLOR[s.tier]}08` : 'transparent',
@@ -755,7 +755,7 @@ function RuntimeSheet({
   );
 }
 
-/* ── Side drawer (Replit-like — slides in from left on Android) */
+// ── Side drawer (Replit-like — slides in from left on Android)
 function SideDrawer({
   onClose, onGenerateIdeas, onGenerateErrorWorkflow,
   onPublishDraftPr, isPublishing, chatRepoSnapshot, onCancelOpenHands,
@@ -842,8 +842,7 @@ function SideDrawer({
           padding: '10px 12px', borderRadius: 10,
           background: C.bg, border: `1px solid ${C.border}`,
         }}>
-          <div style={{
-            fontFamily: 'monospace', fontSize: 9, color: C.textMuted, marginBottom: 4 }}>
+          <div style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted, marginBottom: 4 }}>
             Cloudflare Workers
           </div>
           <div style={{
@@ -931,7 +930,7 @@ function SideDrawer({
   );
 }
 
-/* ── Composer (input bar — pinned to bottom, safe-area aware) */
+// ── Composer (input bar — pinned to bottom, safe-area aware)
 function Composer({
   value, onChange, onSubmit, disabled, loading, placeholder,
 }: {
@@ -982,24 +981,16 @@ function Composer({
             }
           }}
           placeholder={placeholder}
-          /*  💡 Duplicate style-prop behoben:
-              Alles in **einem** Objekt inkl. CSS-Variable */
           style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
+            flex: 1, background: 'transparent', border: 'none', outline: 'none',
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            fontSize: 14,
-            lineHeight: 1.5,
-            color: C.text,
-            resize: 'none',
-            maxHeight: 120,
-            minHeight: 24,
+            fontSize: 14, lineHeight: 1.5, color: C.text,
+            resize: 'none', maxHeight: 120, minHeight: 24,
             overflowY: 'auto',
-
-            /* CSS-Variable für Placeholder-Farbe */
-            '--placeholder-color': C.textMuted as string,
+          }}
+          style={{
+            // Placeholder color via CSS variable fallback
+            '--placeholder-color': C.textMuted,
           } as React.CSSProperties}
         />
 
@@ -1037,11 +1028,11 @@ function Composer({
   );
 }
 
-/* ────────────────────────────────────────────────────────────
-   MAIN COMPONENT
-   Drop-in replacement for BuilderContainer —
-   identical props, same import paths.
-   ──────────────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// Drop-in replacement for BuilderContainer —
+// identical props, same import paths.
+// ─────────────────────────────────────────────────────────────
 
 export function BuilderContainer({
   mission, repoReady, repoReason, repoBusy, runtimeBusy, isPublishing,
@@ -1063,22 +1054,273 @@ export function BuilderContainer({
   const scrollRef                            = useRef<HTMLDivElement>(null);
   const nowRef                               = useRef(Date.now());
 
-  /* …───────────────── (Rest des Codes unverändert) ───────────────── */
+  // Re-use exact same derivation logic as BuilderContainer
+  const state = deriveBuilderContainerState({
+    repoReady: repoReady || Boolean(chatRepoSnapshot),
+    repoBusy: repoBusy || localRepoLoading,
+    runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview,
+  });
 
+  const effectiveRepoReady  = repoReady || Boolean(chatRepoSnapshot);
+  const effectiveRepoReason = chatRepoSnapshot
+    ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
+    : repoReason;
+
+  const analyzedMission = useMemo(
+    () => buildAnalyzedMission({ wish: wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }),
+    [effectiveRepoReady, effectiveRepoReason, wishText],
+  );
+
+  const executableOpenHandsMission = useMemo(() => {
+    const v = collapseRepeatedAnalyzedMission(mission);
+    return isAnalyzedMission(v) ? v : collapseRepeatedAnalyzedMission(analyzedMission);
+  }, [analyzedMission, mission]);
+
+  const runtimeThinkingActive = Boolean(
+    openhandsIsRunning || repoBusy || localRepoLoading || runtimeBusy || isPublishing,
+  );
+
+  const cuteThinkingLabel = useMemo(
+    () => formatCuteThinkingLabel({ index: thinkingFrameIndex, active: runtimeThinkingActive, status: openhandsJobStatus }),
+    [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex],
+  );
+
+  const outcomeHints = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
+
+  const agentDisabled = !effectiveRepoReady || repoBusy || localRepoLoading || runtimeBusy
+    || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
+
+  const agentStatus = deriveAgentStatus({
+    repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob,
+    localRepoLoading, localRepoError: Boolean(chatRepoError),
+  });
+
+  const sourceTier: RuntimeTier = openhandsReady
+    ? (runtimeThinkingActive ? 'active' : 'ready') : 'blocked';
+
+  const runtimeSource = {
+    id: 'openhands-runtime',
+    label: openhandsReady ? 'OpenHands' : 'OpenHands offline',
+    tier: sourceTier,
+    description: openhandsReady ? 'Echte Agent-Runtime verbunden' : 'Agent-Runtime nicht verbunden',
+    available: Boolean(openhandsReady),
+  };
+
+  const runtimeSources = [
+    runtimeSource,
+    { id: 'worker-chat',   label: 'Worker Chat',  tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_CHAT,   available: true },
+    { id: 'worker-kv',    label: 'Worker KV',    tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_KV,     available: true },
+    { id: 'worker-models',label: `${DEV_CHAT_WORKER_MODELS.length} Modelle`, tier: 'ready' as RuntimeTier,
+      description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(' · '), available: true },
+    { id: 'repo-snapshot', label: effectiveRepoReady ? 'Repo Snapshot' : 'Repo fehlt',
+      tier: (effectiveRepoReady ? 'ready' : 'blocked') as RuntimeTier,
+      description: effectiveRepoReady ? effectiveRepoReason : repoReason, available: effectiveRepoReady },
+  ];
+
+  const chatLines = useMemo(
+    () => buildChatLines({
+      wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason,
+      runtimeThinkingActive, cuteThinkingLabel, sovereignSummary,
+      disabledReason: state.disabledReason, openhandsJob, chatRepoSnapshot, chatRepoError,
+    }),
+    [chatRepoError, chatRepoSnapshot, cuteThinkingLabel, effectiveRepoReady,
+     effectiveRepoReason, openhandsJob, runtimeThinkingActive, sovereignSummary,
+     state.disabledReason, wishText],
+  );
+
+  // Thinking animation frame
+  useEffect(() => {
+    if (!runtimeThinkingActive) { setTFI(0); return; }
+    const h = window.setInterval(() => setTFI((c) => c + 1), CUTE_THINKING_FRAME_MS);
+    return () => window.clearInterval(h);
+  }, [runtimeThinkingActive]);
+
+  // Mission sync
+  useEffect(() => {
+    if (mission === lastMissionRef.current) return;
+    lastMissionRef.current = mission;
+    setWishText(missionToWishText(mission));
+  }, [mission]);
+
+  // Auto-scroll
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [chatLines.length, outcomeHints.length, runtimeThinkingActive]);
+
+  const analyzeWish = () => {
+    const clean = collapseRepeatedAnalyzedMission(analyzedMission);
+    lastMissionRef.current = clean;
+    onMissionChange(clean);
+  };
+
+  const startAgentFromChat = () => {
+    const clean = collapseRepeatedAnalyzedMission(executableOpenHandsMission);
+    lastMissionRef.current = clean;
+    onMissionChange(clean);
+    onStartOpenHands?.(clean);
+  };
+
+  const handleSubmit = async () => {
+    const parsedRepo = parseDevChatGithubUrl(wishText);
+    if (parsedRepo) {
+      setRepoLoading(true);
+      setChatRepoError(null);
+      const result = await fetchDevChatRepoTree(parsedRepo);
+      setRepoLoading(false);
+      if (result.ok && result.snapshot) {
+        setChatRepo(result.snapshot);
+        const summary = summarizeDevChatRepoSnapshot(result.snapshot);
+        lastMissionRef.current = summary;
+        onMissionChange(`Repo laden via Chat:\n${summary}\n${result.snapshot.files.slice(0, 60).map((f) => f.path).join('\n')}`);
+        return;
+      }
+      setChatRepoError(result.error ?? 'Repo konnte nicht geladen werden.');
+      return;
+    }
+    if (agentDisabled) { analyzeWish(); return; }
+    startAgentFromChat();
+  };
+
+  const submitDisabled = localRepoLoading || (!parseDevChatGithubUrl(wishText) && (agentDisabled || !wishText.trim()));
+
+  // Stable timestamp for bubbles
+  useEffect(() => { nowRef.current = Date.now(); }, [chatLines.length]);
+
+  return (
+    <section
+      className={builderContainerContract.rootClass}
+      data-role={builderContainerContract.dataRole}
+      data-testid={builderContainerContract.testId}
+      data-layout="devchat-replit"
+      aria-label={builderContainerContract.ariaLabel}
+      style={{
+        // Galaxy A9 — full height, max 393dp wide, AMOLED black
+        width: '100%', maxWidth: MAX_W, margin: '0 auto',
+        height: '100dvh', display: 'flex', flexDirection: 'column',
+        background: C.bg, color: C.text,
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        overflow: 'hidden', position: 'relative',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      {/* ── Keyframes */}
+      <style>{`
+        @keyframes sdc-pulse {
+          0%,100%{opacity:1;transform:scale(1)}
+          50%{opacity:.3;transform:scale(.8)}
+        }
+        textarea::placeholder { color: #3d4f61; }
+        ::-webkit-scrollbar { width: 3px; height: 3px; }
+        ::-webkit-scrollbar-thumb { background: #232d3a; border-radius: 2px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+      `}</style>
+
+      {/* ── TOP BAR */}
+      <TopBar
+        status={agentStatus}
+        repoReady={effectiveRepoReady}
+        chatRepoSnapshot={chatRepoSnapshot}
+        repoReason={effectiveRepoReason}
+        onMenuOpen={() => setShowSide(true)}
+        onSourceClick={() => setShowRuntime(true)}
+        source={runtimeSource}
+      />
+
+      {/* ── CHAT SCROLL AREA */}
+      <div
+        ref={scrollRef}
+        data-testid="sovereign-chat-body-window"
+        aria-label="Sovereign Chat Verlauf"
+        style={{
+          flex: 1, overflowY: 'auto', overflowX: 'hidden',
+          background: C.bg,
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
+        {!wishText.trim() && !chatRepoSnapshot ? (
+          <WelcomeScreen onIdea={(opt) => setWishText((c) => appendOption(c, opt))} />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 0 8px' }}>
+            {chatLines.map((line) => (
+              <Bubble key={line.id} msg={line} now={nowRef.current} />
+            ))}
+
+            {agentStatus === 'thinking' && <ThinkingDots />}
+
+            <OutcomeHints hints={outcomeHints} />
+
+            {/* Bottom padding */}
+            <div style={{ height: 8 }} />
+          </div>
+        )}
+      </div>
+
+      {/* ── COMPOSER */}
+      <Composer
+        value={wishText}
+        onChange={setWishText}
+        onSubmit={() => { void handleSubmit(); }}
+        disabled={submitDisabled}
+        loading={localRepoLoading}
+        placeholder={
+          chatRepoSnapshot
+            ? `Frage zu ${chatRepoSnapshot.name}…`
+            : 'GitHub URL oder Auftrag…'
+        }
+      />
+
+      {/* ── OVERLAYS */}
+      {showRuntimeSheet && (
+        <RuntimeSheet
+          sources={runtimeSources}
+          current={runtimeSource}
+          onClose={() => setShowRuntime(false)}
+        />
+      )}
+
+      {showSideMenu && (
+        <SideDrawer
+          onClose={() => setShowSide(false)}
+          onGenerateIdeas={onGenerateIdeas}
+          onGenerateErrorWorkflow={onGenerateErrorWorkflow}
+          onPublishDraftPr={onPublishDraftPr}
+          isPublishing={isPublishing}
+          chatRepoSnapshot={chatRepoSnapshot}
+          onCancelOpenHands={onCancelOpenHands}
+          openhandsIsRunning={openhandsIsRunning}
+        />
+      )}
+
+      {showOpenHandsBriefing && openhandsConfig && (
+        <div
+          onClick={() => setOHB(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 50,
+            background: 'rgba(14,17,22,0.88)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 440,
+              maxHeight: '90vh', overflowY: 'auto',
+              borderRadius: 20, border: `1px solid ${C.border}`,
+            }}
+          >
+            <OpenHandsOperatorBriefingPanel
+              config={openhandsConfig}
+              onClose={() => setOHB(false)}
+              initiallyExpanded={true}
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
-
-/*  Update im globalen Style-Block:
-    Placeholder-Farbe nutzt jetzt die CSS-Variable */
-
-<style>{`
-  @keyframes sdc-pulse {
-    0%,100%{opacity:1;transform:scale(1)}
-    50%{opacity:.3;transform:scale(.8)}
-  }
-  textarea::placeholder { color: var(--placeholder-color); }
-  ::-webkit-scrollbar { width: 3px; height: 3px; }
-  ::-webkit-scrollbar-thumb { background: #232d3a; border-radius: 2px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-`}</style>
 
 export default BuilderContainer;
