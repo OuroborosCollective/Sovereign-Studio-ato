@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   SOVEREIGN_PRODUCT_TEMPLATE,
+  SOVEREIGN_PRODUCT_TRUTH_INVARIANTS,
   assertSovereignProductTemplateValid,
   canSovereignProductTemplateAutoOpen,
   getSovereignProductTemplateTab,
@@ -29,6 +30,26 @@ describe('sovereign product template contract', () => {
     expect(report.valid).toBe(true);
     expect(report.errors).toEqual([]);
     expect(() => assertSovereignProductTemplateValid()).not.toThrow();
+  });
+
+  it('keeps every mandatory product truth invariant in the runtime contract', () => {
+    for (const invariant of SOVEREIGN_PRODUCT_TRUTH_INVARIANTS) {
+      expect(SOVEREIGN_PRODUCT_TEMPLATE.invariants).toContain(invariant);
+    }
+  });
+
+  it('rejects removal of mandatory product truth invariants', () => {
+    const broken = cloneTemplate();
+    broken.invariants = broken.invariants.filter(
+      (invariant) => invariant !== SOVEREIGN_PRODUCT_TRUTH_INVARIANTS[0],
+    );
+
+    const report = validateSovereignProductTemplate(broken);
+
+    expect(report.valid).toBe(false);
+    expect(report.errors.join(' | ')).toContain(
+      `Missing product truth invariant: ${SOVEREIGN_PRODUCT_TRUTH_INVARIANTS[0]}`,
+    );
   });
 
   it('starts in the chat workbench while keeping repo in the Android primary flow', () => {
