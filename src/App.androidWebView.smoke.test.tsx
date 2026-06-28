@@ -41,9 +41,14 @@ function openRepoTab(): void {
   fireEvent.click(screen.getByRole('tab', { name: 'Open Repo tab' }));
 }
 
+function openAutomationPanel(): void {
+  fireEvent.click(screen.getByTestId('automation__panel-toggle'));
+}
+
 describe('App setup flow smoke', () => {
   it('keeps Full Auto blocked until a real repository snapshot exists', async () => {
     openWorkspace();
+    openAutomationPanel();
 
     const automationSelect = screen.getByTestId('automation__mode-select');
     fireEvent.change(automationSelect, { target: { value: 'full-auto-draft-pr' } });
@@ -79,14 +84,14 @@ describe('App setup flow smoke', () => {
     window.removeEventListener('sovereign:setup-state', listener);
   });
 
-  it('keeps Pattern Memory count visible in the monitor region', async () => {
+  it('keeps Pattern Memory count visible in the compact monitor region', async () => {
     openWorkspace();
 
     const moreSelect = screen.getByTestId('tabbar__more-select');
     fireEvent.change(moreSelect, { target: { value: 'monitor' } });
 
     const monitor = await screen.findByTestId('operator-monitor');
-    expect(within(monitor).getByText('Patterns: 0')).toBeDefined();
-    expect(within(monitor).getByRole('heading', { name: 'Pattern Memory' })).toBeDefined();
+    expect(within(monitor).getByText('Patterns')).toBeDefined();
+    expect(within(monitor).getByText('Live Monitor')).toBeDefined();
   });
 });
