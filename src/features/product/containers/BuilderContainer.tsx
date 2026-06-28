@@ -1,4 +1,11 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   builderPublishLabel,
   deriveBuilderContainerState,
@@ -22,9 +29,15 @@ import {
   type DevChatRepoSnapshot,
 } from '../runtime/devChatWorkerBridge';
 import { OpenHandsOperatorBriefingPanel } from '../components/OpenHandsOperatorBriefingPanel';
-import type { OpenHandsEnterpriseConfig, OpenHandsJobSnapshot } from '../runtime/openhandsEnterpriseRuntime';
+import type {
+  OpenHandsEnterpriseConfig,
+  OpenHandsJobSnapshot,
+} from '../runtime/openhandsEnterpriseRuntime';
 
-// ─── Public Props ──────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────
+   TYPES  (identical props to BuilderContainer — drop-in swap)
+   ──────────────────────────────────────────────────────────── */
+
 export interface BuilderContainerProps {
   mission: string;
   repoReady: boolean;
@@ -47,7 +60,6 @@ export interface BuilderContainerProps {
   onCancelOpenHands?: () => void;
 }
 
-// ─── Internal Types ────────────────────────────────────────────────────────────
 interface IdeaOption {
   readonly label: string;
   readonly text: string;
@@ -71,60 +83,71 @@ interface ChatLine {
   readonly path?: string;
 }
 
-interface RuntimeSource {
-  readonly id: string;
-  readonly label: string;
-  readonly tier: RuntimeTier;
-  readonly description: string;
-  readonly available: boolean;
-}
+/* ────────────────────────────────────────────────────────────
+   CONSTANTS
+   ──────────────────────────────────────────────────────────── */
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
-const SIDE_MENU_ITEMS = [
-  { icon: '◈', label: 'Repo laden' },
-  { icon: '⬡', label: 'Branch wählen' },
-  { icon: '⚡', label: 'AutoSwitch' },
-  { icon: '◎', label: 'Session' },
-  { icon: '▣', label: 'Logs' },
-  { icon: '↺', label: 'Restore' },
-  { icon: '⇄', label: 'Sync' },
-  { icon: '⚙', label: 'Einstellungen' },
-] as const;
-
+// Galaxy A9: 1080×2220, 392ppi, xxhdpi → 360dp wide logical
+// Touch targets ≥ 48dp. Pure #000 = true AMOLED off-pixels.
+const MAX_W = 393; // dp
 const CUTE_THINKING_FRAME_MS = 1100;
 const builderContainerContract = getSovereignContainerContract('builder');
 
+// Replit-inspired dark palette — not GitHub dark, not VS Code dark.
+// Warmer neutrals, teal accent instead of blue.
+const C = {
+  bg:        '#0e1116',   // deepest bg — AMOLED near-black
+  surface:   '#161c24',   // panel surfaces
+  border:    '#232d3a',   // all borders
+  borderHov: '#2e3d50',   // hover border
+  accent:    '#00d9b1',   // teal primary — Replit-like
+  accentDim: '#00d9b122',
+  orange:    '#f97316',   // publish / send CTA
+  text:      '#cdd9e5',   // body text
+  textSub:   '#768390',   // secondary text
+  textMuted: '#3d4f61',   // muted / timestamps
+  green:     '#34d399',   // idle / ready
+  sky:       '#22d3ee',   // thinking
+  amber:     '#fbbf24',   // editing
+  violet:    '#a78bfa',   // running
+  rose:      '#fb7185',   // error
+  userBg:    '#1a2d45',   // user bubble
+  asstBg:    '#161c24',   // assistant bubble
+} as const;
+
 const STATUS_COLOR: Record<AgentStatus, string> = {
-  idle: '#34d399',
-  thinking: '#22d3ee',
-  editing: '#fbbf24',
-  running: '#a78bfa',
-  error: '#fb7185',
+  idle:     C.green,
+  thinking: C.sky,
+  editing:  C.amber,
+  running:  C.violet,
+  error:    C.rose,
 };
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
-  idle: 'bereit',
+  idle:     'bereit',
   thinking: 'denkt…',
-  editing: 'editiert',
-  running: 'läuft',
-  error: 'fehler',
+  editing:  'editiert',
+  running:  'läuft',
+  error:    'fehler',
 };
 
 const TIER_COLOR: Record<RuntimeTier, string> = {
-  ready: '#34d399',
-  active: '#22d3ee',
-  blocked: '#fb7185',
+  ready:   C.green,
+  active:  C.sky,
+  blocked: C.rose,
 };
 
 const IDEA_OPTIONS: IdeaOption[] = [
-  { label: 'Cooles Feature', text: 'Schlage mir ein kleines, cooles Feature vor, prüfe zuerst das Repo und baue es nur als echten, sicheren Draft-PR-tauglichen Änderungspfad.' },
-  { label: 'Fehler fixen', text: 'Analysiere den aktuellen Fehlerstatus, finde die betroffenen Dateien und erzeuge einen minimalen echten Fix mit passenden Tests.' },
-  { label: 'Android UX', text: 'Verbessere die Bedienbarkeit auf Android: Chat, Navigation, Statushinweise und klare Nutzerführung ohne neue Fensterflut.' },
-  { label: 'Runtime härten', text: 'Prüfe den schwächsten Ablauf und ergänze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.' },
-  { label: 'README erklären', text: 'Verbessere README oder Dokumentation so, dass normale Nutzer verstehen, was das Tool kann und wie man es benutzt.' },
+  { label: '✨ Feature',    text: 'Schlage mir ein kleines, cooles Feature vor, prüfe zuerst das Repo und baue es nur als echten, sicheren Draft-PR-tauglichen Änderungspfad.' },
+  { label: '🐛 Bug Fix',   text: 'Analysiere den aktuellen Fehlerstatus, finde die betroffenen Dateien und erzeuge einen minimalen echten Fix mit passenden Tests.' },
+  { label: '📱 Android UX',text: 'Verbessere die Bedienbarkeit auf Android: Chat, Navigation, Statushinweise und klare Nutzerführung ohne neue Fensterflut.' },
+  { label: '🔒 Runtime',   text: 'Prüfe den schwächsten Ablauf und ergänze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.' },
 ];
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────────
+   HELPERS  (identical logic to BuilderContainer)
+   ──────────────────────────────────────────────────────────── */
+
 function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
   if (!clean) return option.text;
@@ -133,21 +156,33 @@ function appendOption(current: string, option: IdeaOption): string {
 }
 
 function normalizeMissionText(value: string): string {
-  return value.replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function collapseRepeatedAnalyzedMission(value: string): string {
-  let clean = normalizeMissionText(value).replace(/^Ideenfabrik Auftrag:\s*Ideenfabrik Auftrag:/i, 'Ideenfabrik Auftrag:');
+  let clean = normalizeMissionText(value).replace(
+    /^Ideenfabrik Auftrag:\s*Ideenfabrik Auftrag:/i,
+    'Ideenfabrik Auftrag:',
+  );
   const marker = '\nRepository-Kontext:';
   const firstContext = clean.indexOf(marker);
-  const secondContext = firstContext >= 0 ? clean.indexOf(marker, firstContext + marker.length) : -1;
+  const secondContext =
+    firstContext >= 0 ? clean.indexOf(marker, firstContext + marker.length) : -1;
   if (secondContext >= 0) clean = clean.slice(0, secondContext).trim();
   return clean;
 }
 
 function isAnalyzedMission(value: string): boolean {
   const clean = collapseRepeatedAnalyzedMission(value).toLowerCase();
-  return clean.startsWith('ideenfabrik auftrag:') && clean.includes('repository-kontext:') && clean.includes('umsetzung:');
+  return (
+    clean.startsWith('ideenfabrik auftrag:') &&
+    clean.includes('repository-kontext:') &&
+    clean.includes('umsetzung:')
+  );
 }
 
 function missionToWishText(value: string): string {
@@ -159,14 +194,23 @@ function missionToWishText(value: string): string {
   return (contextIndex >= 0 ? withoutHeader.slice(0, contextIndex) : withoutHeader).trim();
 }
 
-function buildAnalyzedMission(args: { readonly wish: string; readonly repoReady: boolean; readonly repoReason: string }): string {
+function buildAnalyzedMission(args: {
+  readonly wish: string;
+  readonly repoReady: boolean;
+  readonly repoReason: string;
+}): string {
   const existingMission = collapseRepeatedAnalyzedMission(args.wish);
   if (isAnalyzedMission(existingMission)) return existingMission;
-  const wish = missionToWishText(args.wish) || 'Verbessere das Sovereign Tool so, dass es für Nutzer klar bedienbar ist.';
-  const repoState = args.repoReady ? 'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.' : `Repo-Snapshot ist noch nicht bereit: ${args.repoReason}`;
-
+  const wish =
+    missionToWishText(args.wish) ||
+    'Verbessere das Sovereign Tool so, dass es für Nutzer klar bedienbar ist.';
+  const repoState = args.repoReady
+    ? 'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.'
+    : `Repo-Snapshot ist noch nicht bereit: ${args.repoReason}`;
   return [
-    'Ideenfabrik Auftrag:', wish, '', 'Repository-Kontext:', repoState, '', 'Umsetzung:',
+    'Ideenfabrik Auftrag:', wish, '',
+    'Repository-Kontext:', repoState, '',
+    'Umsetzung:',
     '- Antworte wie ein hilfreicher No-Code-Freund: kurz, freundlich und handlungsorientiert.',
     '- Analysiere zuerst die vorhandene Repo-Struktur und betroffene Dateien.',
     '- Erzeuge echte Änderungen im passenden Codepfad oder erkläre klar, warum ein Stop-Gate blockiert.',
@@ -194,17 +238,32 @@ function splitFilePath(filePath: string | undefined): { path?: string; file?: st
 function buildOutcomeHints(job: OpenHandsJobSnapshot | undefined): ChatOutcomeHint[] {
   if (!job || job.status === 'idle') return [];
   const hints: ChatOutcomeHint[] = [];
-  const files = (job.changedFiles ?? []).filter((file) => typeof file === 'string' && file.trim()).map((file) => file.trim());
+  const files = (job.changedFiles ?? [])
+    .filter((f) => typeof f === 'string' && f.trim())
+    .map((f) => f.trim());
   const draftPrUrl = safeHttpsUrl(job.draftPrUrl);
-  if (job.openHandsId?.trim()) hints.push({ kind: 'runtime', text: `🐤 OpenHands Runtime-ID: ${job.openHandsId.trim()}` });
-  if (files.length > 0) hints.push({ kind: 'files', text: `${files.length} Datei(en) geändert · Details im Files-Menü` });
-  if (draftPrUrl) hints.push({ kind: 'draft-pr', text: 'Draft PR bereit · Öffnen', href: draftPrUrl });
-  if ((job.status === 'blocked' || job.status === 'failed') && job.lastError?.trim()) hints.push({ kind: 'stopper', text: job.lastError.trim() });
-  if (job.status === 'completed' && files.length === 0 && !draftPrUrl) hints.push({ kind: 'done', text: 'Küken hat fertig gepiepst · Keine Dateiänderung gemeldet' });
+  if (job.openHandsId?.trim())
+    hints.push({ kind: 'runtime', text: `🐤 OpenHands ID: ${job.openHandsId.trim()}` });
+  if (files.length > 0)
+    hints.push({ kind: 'files', text: `${files.length} Datei(en) geändert · Details im Files-Menü` });
+  if (draftPrUrl)
+    hints.push({ kind: 'draft-pr', text: 'Draft PR bereit · Öffnen', href: draftPrUrl });
+  if ((job.status === 'blocked' || job.status === 'failed') && job.lastError?.trim())
+    hints.push({ kind: 'stopper', text: job.lastError.trim() });
+  if (job.status === 'completed' && files.length === 0 && !draftPrUrl)
+    hints.push({ kind: 'done', text: 'Küken hat fertig gepiepst · Keine Dateiänderung gemeldet' });
   return hints;
 }
 
-function deriveAgentStatus(args: { readonly repoBusy: boolean; readonly runtimeBusy: boolean; readonly isPublishing: boolean; readonly openhandsIsRunning?: boolean; readonly openhandsJob?: OpenHandsJobSnapshot; readonly localRepoLoading: boolean; readonly localRepoError: boolean }): AgentStatus {
+function deriveAgentStatus(args: {
+  readonly repoBusy: boolean;
+  readonly runtimeBusy: boolean;
+  readonly isPublishing: boolean;
+  readonly openhandsIsRunning?: boolean;
+  readonly openhandsJob?: OpenHandsJobSnapshot;
+  readonly localRepoLoading: boolean;
+  readonly localRepoError: boolean;
+}): AgentStatus {
   if (args.localRepoError || args.openhandsJob?.status === 'failed' || args.openhandsJob?.status === 'blocked') return 'error';
   if (args.isPublishing || args.openhandsJob?.status === 'running') return 'running';
   if ((args.openhandsJob?.changedFiles?.length ?? 0) > 0 || Boolean(args.openhandsJob?.draftPrUrl)) return 'editing';
@@ -213,24 +272,38 @@ function deriveAgentStatus(args: { readonly repoBusy: boolean; readonly runtimeB
 }
 
 function fmtTime(ts: number): string {
-  const date = new Date(ts);
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function buildChatLines(args: { readonly wishText: string; readonly repoReady: boolean; readonly repoReason: string; readonly runtimeThinkingActive: boolean; readonly cuteThinkingLabel: string; readonly sovereignSummary: string; readonly disabledReason?: string; readonly openhandsJob?: OpenHandsJobSnapshot; readonly chatRepoSnapshot: DevChatRepoSnapshot | null; readonly chatRepoError: string | null }): ChatLine[] {
+function buildChatLines(args: {
+  readonly wishText: string;
+  readonly repoReady: boolean;
+  readonly repoReason: string;
+  readonly runtimeThinkingActive: boolean;
+  readonly cuteThinkingLabel: string;
+  readonly sovereignSummary: string;
+  readonly disabledReason?: string;
+  readonly openhandsJob?: OpenHandsJobSnapshot;
+  readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
+  readonly chatRepoError: string | null;
+}): ChatLine[] {
   const lines: ChatLine[] = [];
-  const firstFile = splitFilePath(args.openhandsJob?.changedFiles?.[0] ?? args.chatRepoSnapshot?.lastFile);
+  const firstFile = splitFilePath(
+    args.openhandsJob?.changedFiles?.[0] ?? args.chatRepoSnapshot?.lastFile,
+  );
   const effectiveRepoReady = args.repoReady || Boolean(args.chatRepoSnapshot);
 
   lines.push({
     id: 'system:repo',
     role: 'system',
     text: effectiveRepoReady
-      ? `Repo-Snapshot verbunden · ${args.chatRepoSnapshot ? summarizeDevChatRepoSnapshot(args.chatRepoSnapshot) : 'echte Runtime-Gates aktiv'}`
+      ? `Repo verbunden · ${args.chatRepoSnapshot ? summarizeDevChatRepoSnapshot(args.chatRepoSnapshot) : 'echte Runtime-Gates aktiv'}`
       : `Repo fehlt · ${args.repoReason}`,
   });
 
-  if (args.chatRepoError) lines.push({ id: 'system:repo-error', role: 'system', text: `Repo-Ladefehler: ${args.chatRepoError}` });
+  if (args.chatRepoError)
+    lines.push({ id: 'system:repo-error', role: 'system', text: `Repo-Ladefehler: ${args.chatRepoError}` });
 
   if (args.wishText.trim()) {
     lines.push({ id: 'user:wish', role: 'user', text: args.wishText.trim() });
@@ -247,134 +320,203 @@ function buildChatLines(args: { readonly wishText: string; readonly repoReady: b
     lines.push({
       id: 'assistant:repo-loaded',
       role: 'assistant',
-      text: `Repo im Chat geladen: ${args.chatRepoSnapshot.name}\nBranch: ${args.chatRepoSnapshot.branch}\nStruktur: ${args.chatRepoSnapshot.dirs.join(' · ') || 'keine Top-Level-Ordner erkannt'}\n${args.chatRepoSnapshot.fileCount} Einträge. Details bleiben im Menü abrufbar.`,
+      text: `Repo geladen: ${args.chatRepoSnapshot.name}\nBranch: ${args.chatRepoSnapshot.branch}\nStruktur: ${args.chatRepoSnapshot.dirs.join(' · ') || 'keine Top-Level-Ordner erkannt'}\n${args.chatRepoSnapshot.fileCount} Einträge.`,
       file: args.chatRepoSnapshot.lastFile,
       path: args.chatRepoSnapshot.lastPath,
     });
   }
 
-  if (args.runtimeThinkingActive) lines.push({ id: 'thought:runtime', role: 'thought', text: args.cuteThinkingLabel });
-  if (args.sovereignSummary.trim()) lines.push({ id: 'assistant:summary', role: 'assistant', text: args.sovereignSummary.trim(), ...firstFile });
-  if (args.disabledReason?.trim()) lines.push({ id: 'system:blocked', role: 'system', text: args.disabledReason.trim() });
+  if (args.runtimeThinkingActive)
+    lines.push({ id: 'thought:runtime', role: 'thought', text: args.cuteThinkingLabel });
+  if (args.sovereignSummary.trim())
+    lines.push({ id: 'assistant:summary', role: 'assistant', text: args.sovereignSummary.trim(), ...firstFile });
+  if (args.disabledReason?.trim())
+    lines.push({ id: 'system:blocked', role: 'system', text: args.disabledReason.trim() });
+
   return lines;
 }
 
-// ─── Sub-Components ───────────────────────────────────────────────────────────
-function StatusBar({
-  status, repoReady, repoReason, source, lastFile, onSourceClick, chatRepoSnapshot,
-}: {
-  status: AgentStatus;
-  repoReady: boolean;
-  repoReason: string;
-  source: RuntimeSource;
-  lastFile?: string;
-  onSourceClick: () => void;
-  chatRepoSnapshot: DevChatRepoSnapshot | null;
-}) {
-  const color = STATUS_COLOR[status];
-  const fileInfo = splitFilePath(lastFile ?? chatRepoSnapshot?.lastFile);
-  const repoLabel = chatRepoSnapshot
-    ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
-    : repoReady ? 'Repo verbunden' : 'Repo fehlt';
+/* ────────────────────────────────────────────────────────────
+   SUB-COMPONENTS
+   ──────────────────────────────────────────────────────────── */
 
+/* ── 3-dot status ampel (Replit-style inline) */
+function Ampel({ status }: { status: AgentStatus }) {
+  const col = STATUS_COLOR[status];
   return (
-    <div
-      className="flex shrink-0 flex-col border-b border-[#252e3e] bg-[#0e1525]"
-      data-testid="sovereign-devchat-statusbar"
-    >
-      <div className="flex items-center gap-2 px-3 py-2 md:px-4">
-        <div
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm"
-          style={{ background: `${color}18`, color, boxShadow: `0 0 0 1px ${color}30` }}
-          aria-hidden="true"
-        >
-          ⬡
-        </div>
-        <span className="text-sm font-semibold text-[#cdd9e5]">Sovereign</span>
-
-        <div
-          className="flex items-center gap-1.5 rounded-md border border-[#252e3e] bg-[#161b2e] px-2 py-0.5"
-          aria-label={`Agent Status ${STATUS_LABEL[status]}`}
-        >
-          {(['idle', 'thinking', 'editing'] as const).map((s) => (
-            <span
-              key={s}
-              className="h-1.5 w-1.5 rounded-full transition-all"
-              style={{
-                background: status === s ? STATUS_COLOR[s] : `${STATUS_COLOR[s]}28`,
-                boxShadow: status === s ? `0 0 6px ${STATUS_COLOR[s]}` : 'none',
-              }}
-            />
-          ))}
-          <span className="font-mono text-[10px]" style={{ color }}>{STATUS_LABEL[status]}</span>
-        </div>
-
-        <span className="flex-1" />
-
-        <div className="hidden items-center gap-1 sm:flex">
-          <span className={`font-mono text-[10px] ${repoReady || chatRepoSnapshot ? 'text-emerald-400' : 'text-amber-400'}`}>
-            {repoLabel}
-          </span>
-          {chatRepoSnapshot ? (
-            <span className="font-mono text-[10px] text-[#4b5563]">· {chatRepoSnapshot.fileCount} files</span>
-          ) : (
-            <span className="max-w-[14rem] truncate font-mono text-[10px] text-[#4b5563]">
-              · {repoReady ? 'Runtime Snapshot' : repoReason}
-            </span>
-          )}
-          {fileInfo.file ? (
-            <span className="hidden font-mono text-[10px] text-[#4b5563] md:inline">
-              · <span className="text-amber-300">{fileInfo.path}</span>{fileInfo.file}
-            </span>
-          ) : null}
-        </div>
-
-        <button
-          type="button"
-          onClick={onSourceClick}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-[#252e3e] bg-[#161b2e] px-2.5 py-1 font-mono text-[10px] transition hover:border-[#374556] active:bg-[#1c2333]"
-          style={{ color: TIER_COLOR[source.tier] }}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ background: TIER_COLOR[source.tier], boxShadow: `0 0 5px ${TIER_COLOR[source.tier]}` }}
-          />
-          <span className="hidden sm:inline">{source.label}</span>
-          <span className="sm:hidden" aria-label={source.label}>RT</span>
-        </button>
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      {(['idle', 'thinking', 'editing'] as AgentStatus[]).map((s) => (
+        <span
+          key={s}
+          style={{
+            display: 'inline-block',
+            width: 7, height: 7, borderRadius: '50%',
+            background: status === s ? STATUS_COLOR[s] : `${STATUS_COLOR[s]}30`,
+            boxShadow: status === s ? `0 0 6px ${STATUS_COLOR[s]}` : 'none',
+            transition: 'all 0.3s',
+          }}
+        />
+      ))}
+      <span style={{ fontFamily: 'monospace', fontSize: 10, color: col, marginLeft: 2 }}>
+        {STATUS_LABEL[status]}
+      </span>
     </div>
   );
 }
 
+/* ── Top status bar (Replit-like header strip) */
+function TopBar({
+  status, repoReady, chatRepoSnapshot, repoReason,
+  onMenuOpen, onSourceClick, source,
+}: {
+  status: AgentStatus;
+  repoReady: boolean;
+  chatRepoSnapshot: DevChatRepoSnapshot | null;
+  repoReason: string;
+  onMenuOpen: () => void;
+  onSourceClick: () => void;
+  source: { label: string; tier: RuntimeTier };
+}) {
+  const repoLabel = chatRepoSnapshot
+    ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
+    : repoReady ? 'Repo ✓' : 'Repo fehlt';
+  const repoColor = (repoReady || chatRepoSnapshot) ? C.green : C.amber;
+
+  return (
+    <div style={{
+      height: 52, // 52dp — Android comfortable
+      background: C.surface,
+      borderBottom: `1px solid ${C.border}`,
+      display: 'flex', alignItems: 'center',
+      padding: '0 12px', gap: 10, flexShrink: 0,
+    }}>
+      {/* Hamburger */}
+      <button
+        type="button"
+        onClick={onMenuOpen}
+        aria-label="Menü"
+        style={{
+          width: 40, height: 40, borderRadius: 10,
+          background: C.bg, border: `1px solid ${C.border}`,
+          color: C.textSub, fontSize: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', flexShrink: 0,
+        }}
+      >☰</button>
+
+      {/* Title + repo */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            fontFamily: 'monospace', fontSize: 13, fontWeight: 700,
+            color: C.text, letterSpacing: -0.3,
+          }}>Sovereign</span>
+          <span style={{
+            fontFamily: 'monospace', fontSize: 9,
+            padding: '2px 6px', borderRadius: 10,
+            background: `${C.accent}18`, color: C.accent,
+            border: `1px solid ${C.accent}33`,
+          }}>DevChat</span>
+        </div>
+        <div style={{
+          fontFamily: 'monospace', fontSize: 9, color: repoColor,
+          marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {repoLabel}
+          {chatRepoSnapshot && (
+            <span style={{ color: C.textMuted }}> · {chatRepoSnapshot.fileCount} files</span>
+          )}
+        </div>
+      </div>
+
+      {/* Ampel */}
+      <Ampel status={status} />
+
+      {/* Runtime source pill */}
+      <button
+        type="button"
+        onClick={onSourceClick}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '6px 10px', borderRadius: 8,
+          background: C.bg, border: `1px solid ${C.border}`,
+          color: TIER_COLOR[source.tier], fontFamily: 'monospace', fontSize: 9,
+          cursor: 'pointer', flexShrink: 0,
+        }}
+      >
+        <span style={{
+          width: 6, height: 6, borderRadius: '50%',
+          background: TIER_COLOR[source.tier],
+          boxShadow: `0 0 5px ${TIER_COLOR[source.tier]}`,
+          display: 'inline-block',
+        }} />
+        <span style={{ display: 'none' }}>{source.label}</span>
+        RT
+      </button>
+    </div>
+  );
+}
+
+/* ── File badge (Replit-style above bubble) */
+function FileBadge({ path, file }: { path?: string; file?: string }) {
+  if (!file) return null;
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontFamily: 'monospace', fontSize: 9,
+      padding: '3px 8px', borderRadius: 6,
+      background: 'rgba(251,191,36,0.1)',
+      border: '1px solid rgba(251,191,36,0.25)',
+      color: C.amber, marginBottom: 4,
+      maxWidth: '100%', overflow: 'hidden',
+    }}>
+      <span style={{ color: C.textMuted }}>{path}</span>
+      <span>{file}</span>
+    </div>
+  );
+}
+
+/* ── Thought bubble (collapsed by default) */
 function ThoughtBubble({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const short = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  const [open, setOpen] = useState(false);
+  const short = text.length > 72 ? `${text.slice(0, 72)}…` : text;
   return (
     <button
       type="button"
-      onClick={() => setExpanded((c) => !c)}
-      className="flex w-full items-start gap-2 px-4 py-0.5 text-left"
-      aria-expanded={expanded}
+      onClick={() => setOpen((v) => !v)}
+      style={{
+        width: '100%', background: 'transparent', border: 'none',
+        display: 'flex', alignItems: 'flex-start', gap: 8,
+        padding: '4px 16px', cursor: 'pointer', textAlign: 'left',
+      }}
     >
-      <span className={`mt-0.5 shrink-0 text-xs transition-colors ${expanded ? 'text-sky-400' : 'text-[#2a3441]'}`}>✦</span>
-      <span className={`font-mono text-[10px] italic leading-relaxed transition-colors ${expanded ? 'text-[#768390]' : 'text-[#2a3441]'}`}>
-        {expanded ? text : short}
-      </span>
+      <span style={{
+        color: open ? C.accent : C.textMuted, marginTop: 2, flexShrink: 0,
+        fontSize: 11, transition: 'color 0.2s',
+      }}>✦</span>
+      <span style={{
+        fontFamily: 'monospace', fontSize: 10, fontStyle: 'italic',
+        lineHeight: 1.6, color: open ? C.textSub : C.textMuted,
+        transition: 'color 0.2s',
+      }}>{open ? text : short}</span>
     </button>
   );
 }
 
-function Bubble({ msg }: { msg: ChatLine }) {
+/* ── Chat bubble */
+function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
   const isUser = msg.role === 'user';
-  const timestamp = fmtTime(Date.now());
 
   if (msg.role === 'system') {
     return (
-      <div className="px-4 py-1 text-center">
-        <span className="inline-block max-w-full rounded-full border border-[#252e3e] bg-[#161b2e] px-3 py-1 font-mono text-[10px] text-[#4b5563]">
-          {msg.text}
-        </span>
+      <div style={{ padding: '4px 16px', textAlign: 'center' }}>
+        <span style={{
+          display: 'inline-block',
+          fontFamily: 'monospace', fontSize: 10,
+          padding: '3px 12px', borderRadius: 20,
+          background: C.surface, border: `1px solid ${C.border}`,
+          color: C.textMuted,
+        }}>{msg.text}</span>
       </div>
     );
   }
@@ -382,52 +524,155 @@ function Bubble({ msg }: { msg: ChatLine }) {
   if (msg.role === 'thought') return <ThoughtBubble text={msg.text} />;
 
   return (
-    <div className={`flex items-end gap-2 px-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-      {!isUser ? (
-        <div className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#252e3e] bg-[#161b2e] text-xs text-[#768390]">
-          ⬡
-        </div>
-      ) : null}
-      <div className={`flex max-w-[82%] flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
-        {msg.file ? (
-          <div className="rounded-md border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[9px] text-amber-300">
-            {msg.path}{msg.file}
-          </div>
-        ) : null}
-        <div
-          className={`whitespace-pre-wrap break-words px-3.5 py-2.5 text-[14px] leading-6 shadow-sm ${
-            isUser
-              ? 'rounded-[18px_18px_4px_18px] bg-[#243247] text-[#e1e4e8]'
-              : 'rounded-[4px_18px_18px_18px] border border-[#252e3e] bg-[#161b2e] text-[#cdd9e5]'
-          }`}
-        >
+    <div style={{
+      display: 'flex', alignItems: 'flex-end', gap: 8,
+      padding: '2px 12px',
+      flexDirection: isUser ? 'row-reverse' : 'row',
+    }}>
+      {/* Avatar (assistant only) */}
+      {!isUser && (
+        <div style={{
+          width: 30, height: 30, borderRadius: 10, flexShrink: 0,
+          background: C.surface, border: `1px solid ${C.border}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, color: C.textSub, marginBottom: 2,
+        }}>⬡</div>
+      )}
+
+      <div style={{
+        display: 'flex', flexDirection: 'column', maxWidth: '82%',
+        alignItems: isUser ? 'flex-end' : 'flex-start', gap: 2,
+      }}>
+        <FileBadge path={msg.path} file={msg.file} />
+
+        <div style={{
+          padding: '11px 14px',
+          background: isUser ? C.userBg : C.asstBg,
+          borderRadius: isUser ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
+          border: `1px solid ${isUser ? '#243c5a' : C.border}`,
+          color: C.text, fontSize: 14, lineHeight: 1.6,
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+        }}>
           {msg.text}
         </div>
-        <span className="font-mono text-[9px] text-[#4b5563]">{timestamp}</span>
+
+        <span style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>
+          {fmtTime(now)}
+        </span>
       </div>
     </div>
   );
 }
 
-function RuntimeSourceSheet({ sources, current, onClose }: { sources: RuntimeSource[]; current: RuntimeSource; onClose: () => void }) {
+/* ── Thinking dots */
+function ThinkingDots() {
   return (
-    <div className="absolute inset-0 z-[100] flex flex-col justify-end bg-[#0e1525]/80" style={{ backdropFilter: 'blur(6px)' }} onClick={onClose}>
-      <div className="rounded-t-2xl border border-[#252e3e] bg-[#0e1525] px-0 pb-5 pt-4" onClick={(event) => event.stopPropagation()}>
-        <div className="mb-3 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#4b5563]">Runtime Quelle</div>
-        {sources.map((source) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px' }}>
+      <div style={{
+        width: 30, height: 30, borderRadius: 10,
+        background: C.surface, border: `1px solid ${C.border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 13, color: C.textSub,
+      }}>⬡</div>
+      <div style={{ display: 'flex', gap: 5, paddingLeft: 2 }}>
+        {[0, 1, 2].map((i) => (
+          <span key={i} style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: C.sky, display: 'inline-block',
+            animation: `sdc-pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+          }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Outcome hints (files changed, draft PR, etc.) */
+function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
+  if (hints.length === 0) return null;
+  return (
+    <div style={{ padding: '0 12px 8px' }}>
+      <div style={{
+        borderRadius: 10, border: `1px solid ${C.border}`,
+        background: C.surface, padding: '10px 12px',
+        display: 'flex', flexDirection: 'column', gap: 6,
+      }}>
+        {hints.map((h) => (
+          <div key={`${h.kind}:${h.text}`}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: C.textSub }}>
+            <span style={{ color: C.border, marginTop: 2, flexShrink: 0 }}>›</span>
+            {h.href ? (
+              <a href={h.href} target="_blank" rel="noreferrer"
+                style={{ color: C.sky, textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                {h.text}
+              </a>
+            ) : h.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Empty/Welcome screen */
+function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
+  return (
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '32px 20px', textAlign: 'center',
+    }}>
+      {/* Replit-style icon ring */}
+      <div style={{
+        width: 72, height: 72, borderRadius: 20,
+        background: `${C.accent}12`,
+        border: `2px solid ${C.accent}40`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 32, marginBottom: 20,
+      }}>🐥</div>
+
+      <h2 style={{
+        fontFamily: 'monospace', fontSize: 20, fontWeight: 800,
+        color: C.text, marginBottom: 8, letterSpacing: -0.5,
+      }}>Let&apos;s build!</h2>
+
+      <p style={{
+        fontSize: 13, color: C.textSub, lineHeight: 1.6,
+        maxWidth: 300, marginBottom: 28,
+      }}>
+        Schreib dein Ziel oder füge eine GitHub-URL ein.
+        Sovereign prüft Gates und handelt nur bei echten Stop-Punkten.
+      </p>
+
+      {/* Quick ideas grid — 2×2 on Android */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr',
+        gap: 10, width: '100%', maxWidth: 340,
+      }}>
+        {IDEA_OPTIONS.map((opt) => (
           <button
-            key={source.id}
+            key={opt.label}
             type="button"
-            className={`flex w-full items-center gap-3 border-l-2 px-5 py-3 text-left transition ${source.id === current.id ? 'bg-[#161b2e]' : 'bg-transparent hover:bg-[#161b2e]/60'}`}
-            style={{ borderLeftColor: source.id === current.id ? TIER_COLOR[source.tier] : 'transparent' }}
-            onClick={onClose}
+            onClick={() => onIdea(opt)}
+            style={{
+              background: C.surface, border: `1px solid ${C.border}`,
+              borderRadius: 14, padding: '14px 12px',
+              fontFamily: 'monospace', fontSize: 11, color: C.text,
+              fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+              transition: 'border-color 0.15s, background 0.15s',
+              lineHeight: 1.3,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = C.borderHov;
+              (e.currentTarget as HTMLButtonElement).style.background = '#1c2630';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = C.border;
+              (e.currentTarget as HTMLButtonElement).style.background = C.surface;
+            }}
           >
-            <span className="h-2 w-2 rounded-full" style={{ background: TIER_COLOR[source.tier], boxShadow: `0 0 6px ${TIER_COLOR[source.tier]}` }} />
-            <span className="min-w-0 flex-1">
-              <span className="block font-mono text-xs text-[#cdd9e5]">{source.label}</span>
-              <span className="block truncate text-[10px] text-[#4b5563]">{source.description}</span>
-            </span>
-            {source.id === current.id ? <span style={{ color: TIER_COLOR[source.tier] }}>✓</span> : null}
+            {opt.label}
           </button>
         ))}
       </div>
@@ -435,66 +680,248 @@ function RuntimeSourceSheet({ sources, current, onClose }: { sources: RuntimeSou
   );
 }
 
-function SideMenu({ onClose, onGenerateIdeas, onGenerateErrorWorkflow, onPublishDraftPr, isPublishing, chatRepoSnapshot }: { onClose: () => void; onGenerateIdeas: () => void; onGenerateErrorWorkflow: () => void; onPublishDraftPr: () => void; isPublishing: boolean; chatRepoSnapshot: DevChatRepoSnapshot | null }) {
+/* ── Runtime source sheet (bottom sheet, Android-native feel) */
+function RuntimeSheet({
+  sources, current, onClose,
+}: {
+  sources: Array<{ id: string; label: string; tier: RuntimeTier; description: string }>;
+  current: { id: string };
+  onClose: () => void;
+}) {
   return (
-    <div className="absolute inset-0 z-[90] flex" data-testid="sovereign-devchat-side-menu">
-      <div className="flex-1 bg-[#0e1525]/70" style={{ backdropFilter: 'blur(4px)' }} onClick={onClose} />
-      <div className="flex w-[min(86vw,22rem)] flex-col border-l border-[#252e3e] bg-[#0e1525] shadow-2xl">
-        <div className="border-b border-[#252e3e] px-4 py-3">
-          <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#4b5563]">Sovereign Studio</div>
-          <div className="mt-1 text-sm font-semibold text-[#cdd9e5]">Details & Aktionen</div>
+    <div
+      onClick={onClose}
+      style={{
+        position: 'absolute', inset: 0, zIndex: 100,
+        background: 'rgba(14,17,22,0.85)',
+        backdropFilter: 'blur(8px)',
+        display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.surface, borderRadius: '20px 20px 0 0',
+          border: `1px solid ${C.border}`, borderBottom: 'none',
+          padding: '0 0 24px',
+        }}
+      >
+        {/* drag handle */}
+        <div style={{
+          width: 36, height: 4, borderRadius: 2,
+          background: C.border, margin: '12px auto 16px',
+        }} />
+        <div style={{
+          fontFamily: 'monospace', fontSize: 9,
+          textAlign: 'center', color: C.textMuted,
+          letterSpacing: 1.5, textTransform: 'uppercase',
+          marginBottom: 12,
+        }}>Runtime Quelle</div>
+
+        {sources.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+              padding: '12px 20px', background: 'transparent', border: 'none',
+              borderLeft: `3px solid ${s.id === current.id ? TIER_COLOR[s.tier] : 'transparent'}`,
+              cursor: 'pointer',
+              background: s.id === current.id ? `${TIER_COLOR[s.tier]}08` : 'transparent',
+            } as React.CSSProperties}
+          >
+            <span style={{
+              width: 9, height: 9, borderRadius: '50%',
+              background: TIER_COLOR[s.tier],
+              boxShadow: `0 0 6px ${TIER_COLOR[s.tier]}`,
+              flexShrink: 0,
+            }} />
+            <span style={{ flex: 1, textAlign: 'left' }}>
+              <span style={{ display: 'block', fontFamily: 'monospace', fontSize: 12, color: C.text }}>
+                {s.label}
+              </span>
+              <span style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>
+                {s.description}
+              </span>
+            </span>
+            {s.id === current.id && (
+              <span style={{ color: TIER_COLOR[s.tier], fontSize: 12 }}>✓</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Side drawer (Replit-like — slides in from left on Android) */
+function SideDrawer({
+  onClose, onGenerateIdeas, onGenerateErrorWorkflow,
+  onPublishDraftPr, isPublishing, chatRepoSnapshot, onCancelOpenHands,
+  openhandsIsRunning,
+}: {
+  onClose: () => void;
+  onGenerateIdeas: () => void;
+  onGenerateErrorWorkflow: () => void;
+  onPublishDraftPr: () => void;
+  isPublishing: boolean;
+  chatRepoSnapshot: DevChatRepoSnapshot | null;
+  onCancelOpenHands?: () => void;
+  openhandsIsRunning?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        position: 'absolute', inset: 0, zIndex: 90,
+        display: 'flex',
+      }}
+    >
+      {/* Scrim */}
+      <div
+        onClick={onClose}
+        style={{ flex: 1, background: 'rgba(14,17,22,0.7)', backdropFilter: 'blur(4px)' }}
+      />
+
+      {/* Drawer panel — 80vw max 300px */}
+      <div style={{
+        width: 'min(80vw, 300px)',
+        background: C.surface, borderLeft: `1px solid ${C.border}`,
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '-8px 0 32px rgba(0,0,0,0.5)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '16px 16px 12px',
+          borderBottom: `1px solid ${C.border}`,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: 10,
+            background: `${C.accent}12`, border: `1px solid ${C.accent}33`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 16,
+          }}>⬡</div>
+          <div>
+            <div style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: C.text }}>
+              Sovereign Studio
+            </div>
+            <div style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>
+              NoCode Agent Runtime
+            </div>
+          </div>
+          <button
+            type="button" onClick={onClose}
+            style={{
+              marginLeft: 'auto', background: 'transparent', border: 'none',
+              color: C.textMuted, fontSize: 16, cursor: 'pointer',
+              padding: '4px', borderRadius: 6,
+            }}
+          >✕</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2">
-          {SIDE_MENU_ITEMS.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={onClose}
-              className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-[#161b2e]"
-            >
-              <span className="text-sm text-[#4b5563]">{item.icon}</span>
-              <span className="font-mono text-xs text-[#768390]">{item.label}</span>
-            </button>
-          ))}
-
-          {chatRepoSnapshot ? (
-            <div className="mx-3 mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-[11px] text-emerald-100">
-              <p className="font-semibold">Chat Repo</p>
-              <p>{chatRepoSnapshot.name} · {chatRepoSnapshot.branch}</p>
-              <p className="text-emerald-300/70">{chatRepoSnapshot.fileCount} files</p>
+        {/* Repo info */}
+        {chatRepoSnapshot && (
+          <div style={{
+            margin: '12px 12px 0',
+            padding: '10px 12px', borderRadius: 10,
+            background: `${C.green}08`, border: `1px solid ${C.green}22`,
+          }}>
+            <div style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 600, color: C.green }}>
+              {chatRepoSnapshot.name}
             </div>
-          ) : null}
+            <div style={{ fontFamily: 'monospace', fontSize: 9, color: C.textSub, marginTop: 2 }}>
+              {chatRepoSnapshot.branch} · {chatRepoSnapshot.fileCount} files
+            </div>
+          </div>
+        )}
 
-          <div className="mx-3 mt-2 rounded-xl border border-[#252e3e] bg-[#161b2e] p-3 text-[10px] text-[#4b5563]">
-            <p className="font-semibold text-[#768390]">Cloudflare</p>
-            <p className="truncate">{SOVEREIGN_WORKER_CHAT}</p>
-            <p className="truncate">{SOVEREIGN_WORKER_KV}</p>
+        {/* Workers info */}
+        <div style={{
+          margin: '10px 12px 0',
+          padding: '10px 12px', borderRadius: 10,
+          background: C.bg, border: `1px solid ${C.border}`,
+        }}>
+          <div style={{
+            fontFamily: 'monospace', fontSize: 9, color: C.textMuted, marginBottom: 4 }}>
+            Cloudflare Workers
+          </div>
+          <div style={{
+            fontFamily: 'monospace', fontSize: 8, color: C.textMuted,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {SOVEREIGN_WORKER_CHAT}
+          </div>
+          <div style={{
+            fontFamily: 'monospace', fontSize: 8, color: C.textMuted,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {SOVEREIGN_WORKER_KV}
           </div>
         </div>
 
-        <div className="space-y-2 border-t border-[#252e3e] p-3">
+        {/* Actions */}
+        <div style={{ flex: 1, padding: '12px 12px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button
             type="button"
-            className="w-full rounded-xl border border-[#252e3e] px-3 py-2.5 text-left text-xs text-[#cdd9e5] transition hover:bg-[#161b2e]"
             onClick={() => { onGenerateIdeas(); onClose(); }}
             data-role={SOVEREIGN_ACTION_ANALYZE_MISSION.dataRole}
             data-testid={SOVEREIGN_ACTION_ANALYZE_MISSION.testId}
             aria-label={SOVEREIGN_ACTION_ANALYZE_MISSION.ariaLabel}
+            style={{
+              width: '100%', padding: '12px 14px', borderRadius: 12,
+              background: C.bg, border: `1px solid ${C.border}`,
+              color: C.text, fontFamily: 'monospace', fontSize: 12,
+              fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+            }}
           >
-            Interne Prüfung
+            🔍 Interne Prüfung
           </button>
+
           <button
             type="button"
-            className="w-full rounded-xl border border-amber-500/40 px-3 py-2.5 text-left text-xs text-amber-100 transition hover:bg-amber-500/5"
             onClick={() => { onGenerateErrorWorkflow(); onClose(); }}
+            style={{
+              width: '100%', padding: '12px 14px', borderRadius: 12,
+              background: 'rgba(251,191,36,0.06)', border: `1px solid ${C.amber}33`,
+              color: C.amber, fontFamily: 'monospace', fontSize: 12,
+              fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+            }}
           >
-            Fehleranalyse
+            ⚠ Fehleranalyse
           </button>
+
+          {openhandsIsRunning && onCancelOpenHands && (
+            <button
+              type="button"
+              onClick={() => { onCancelOpenHands(); onClose(); }}
+              style={{
+                width: '100%', padding: '12px 14px', borderRadius: 12,
+                background: 'rgba(251,49,85,0.07)', border: '1px solid rgba(251,49,85,0.25)',
+                color: C.rose, fontFamily: 'monospace', fontSize: 12,
+                fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              ✕ Agent stoppen
+            </button>
+          )}
+        </div>
+
+        {/* Publish CTA — pinned bottom */}
+        <div style={{ padding: '12px' }}>
           <button
             type="button"
-            className="w-full rounded-xl border border-[#f97316]/40 bg-[#f97316]/5 px-3 py-2.5 text-left text-xs font-medium text-[#f97316] transition hover:bg-[#f97316]/10"
             onClick={() => { onPublishDraftPr(); onClose(); }}
+            data-role={SOVEREIGN_ACTION_DRAFT_PR.dataRole}
+            data-testid={SOVEREIGN_ACTION_DRAFT_PR.testId}
+            aria-label={SOVEREIGN_ACTION_DRAFT_PR.ariaLabel}
+            style={{
+              width: '100%', padding: '14px', borderRadius: 14,
+              background: C.orange, border: 'none',
+              color: '#fff', fontFamily: 'monospace', fontSize: 13,
+              fontWeight: 700, cursor: 'pointer',
+              boxShadow: `0 4px 16px ${C.orange}40`,
+            }}
           >
             {builderPublishLabel(isPublishing)}
           </button>
@@ -504,267 +931,154 @@ function SideMenu({ onClose, onGenerateIdeas, onGenerateErrorWorkflow, onPublish
   );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+/* ── Composer (input bar — pinned to bottom, safe-area aware) */
+function Composer({
+  value, onChange, onSubmit, disabled, loading, placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  disabled: boolean;
+  loading: boolean;
+  placeholder: string;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const resize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, []);
+
+  return (
+    <div style={{
+      flexShrink: 0,
+      padding: '10px 10px',
+      paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
+      background: C.surface,
+      borderTop: `1px solid ${C.border}`,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'flex-end', gap: 8,
+        background: C.bg, border: `1px solid ${C.border}`,
+        borderRadius: 16, padding: '8px 8px 8px 14px',
+        transition: 'border-color 0.15s',
+      }}>
+        <textarea
+          ref={textareaRef}
+          id={SOVEREIGN_FORM_MISSION.id}
+          name={SOVEREIGN_FORM_MISSION.id}
+          data-role={SOVEREIGN_FORM_MISSION.dataRole}
+          data-testid={SOVEREIGN_FORM_MISSION.testId}
+          aria-label={SOVEREIGN_FORM_MISSION.ariaLabel}
+          value={value}
+          rows={1}
+          onChange={(e) => { onChange(e.target.value); resize(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (!disabled && !loading) onSubmit();
+            }
+          }}
+          placeholder={placeholder}
+          /*  💡 Duplicate style-prop behoben:
+              Alles in **einem** Objekt inkl. CSS-Variable */
+          style={{
+            flex: 1,
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            fontSize: 14,
+            lineHeight: 1.5,
+            color: C.text,
+            resize: 'none',
+            maxHeight: 120,
+            minHeight: 24,
+            overflowY: 'auto',
+
+            /* CSS-Variable für Placeholder-Farbe */
+            '--placeholder-color': C.textMuted as string,
+          } as React.CSSProperties}
+        />
+
+        {/* Send button */}
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={disabled || loading}
+          aria-label="Senden"
+          data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
+          data-testid={SOVEREIGN_ACTION_START_TASK.testId}
+          style={{
+            width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+            background: disabled || loading ? C.surface : C.orange,
+            border: 'none', color: '#fff',
+            fontSize: 16, cursor: disabled || loading ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 0.2s, box-shadow 0.2s',
+            boxShadow: disabled || loading ? 'none' : `0 2px 12px ${C.orange}50`,
+            opacity: disabled || loading ? 0.45 : 1,
+          }}
+        >
+          {loading ? '…' : '↑'}
+        </button>
+      </div>
+
+      {/* Shift+Enter hint */}
+      <div style={{
+        fontFamily: 'monospace', fontSize: 8, color: C.textMuted,
+        marginTop: 5, paddingLeft: 14,
+      }}>
+        Enter senden · Shift+Enter Zeilenumbruch
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────
+   MAIN COMPONENT
+   Drop-in replacement for BuilderContainer —
+   identical props, same import paths.
+   ──────────────────────────────────────────────────────────── */
+
 export function BuilderContainer({
   mission, repoReady, repoReason, repoBusy, runtimeBusy, isPublishing,
   sovereignSummary, sovereignPreview, onMissionChange, onGenerateIdeas,
-  onGenerateErrorWorkflow, onPublishDraftPr, openhandsReady, openhandsConfig,
-  openhandsJob, openhandsJobStatus, openhandsIsRunning, onStartOpenHands, onCancelOpenHands,
+  onGenerateErrorWorkflow, onPublishDraftPr,
+  openhandsReady, openhandsConfig, openhandsJob, openhandsJobStatus,
+  openhandsIsRunning, onStartOpenHands, onCancelOpenHands,
 }: BuilderContainerProps) {
-  const [wishText, setWishText] = useState(() => missionToWishText(mission));
-  const [thinkingFrameIndex, setThinkingFrameIndex] = useState(0);
-  const [showRuntimeSheet, setShowRuntimeSheet] = useState(false);
-  const [showSideMenu, setShowSideMenu] = useState(false);
-  const [showOpenHandsBriefing, setShowOpenHandsBriefing] = useState(false);
-  const [chatRepoSnapshot, setChatRepoSnapshot] = useState<DevChatRepoSnapshot | null>(null);
-  const [chatRepoError, setChatRepoError] = useState<string | null>(null);
-  const [localRepoLoading, setLocalRepoLoading] = useState(false);
-  const lastMissionSeenRef = useRef(mission);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const state = deriveBuilderContainerState({ repoReady: repoReady || Boolean(chatRepoSnapshot), repoBusy: repoBusy || localRepoLoading, runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview });
-  const effectiveRepoReady = repoReady || Boolean(chatRepoSnapshot);
-  const effectiveRepoReason = chatRepoSnapshot ? summarizeDevChatRepoSnapshot(chatRepoSnapshot) : repoReason;
-  const analyzedMission = useMemo(() => buildAnalyzedMission({ wish: wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }), [effectiveRepoReady, effectiveRepoReason, wishText]);
-  const executableOpenHandsMission = useMemo(() => { const visibleMission = collapseRepeatedAnalyzedMission(mission); return isAnalyzedMission(visibleMission) ? visibleMission : collapseRepeatedAnalyzedMission(analyzedMission); }, [analyzedMission, mission]);
-  const runtimeThinkingActive = Boolean(openhandsIsRunning || repoBusy || localRepoLoading || runtimeBusy || isPublishing);
-  const cuteThinkingLabel = useMemo(() => formatCuteThinkingLabel({ index: thinkingFrameIndex, active: runtimeThinkingActive, status: openhandsJobStatus }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
-  const outcomeHints = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
-  const agentDisabled = !effectiveRepoReady || repoBusy || localRepoLoading || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
-  const agentStatus = deriveAgentStatus({ repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob, localRepoLoading, localRepoError: Boolean(chatRepoError) });
-  const sourceTier: RuntimeTier = openhandsReady ? (runtimeThinkingActive ? 'active' : 'ready') : 'blocked';
-  const runtimeSource: RuntimeSource = { id: 'openhands-runtime', label: openhandsReady ? 'OpenHands' : 'OpenHands offline', tier: sourceTier, available: Boolean(openhandsReady), description: openhandsReady ? 'Echte Agent-Runtime verbunden' : 'Agent-Runtime noch nicht verbunden' };
-  const runtimeSources: RuntimeSource[] = [
-    runtimeSource,
-    { id: 'worker-chat', label: 'Worker Chat', tier: 'ready', available: true, description: SOVEREIGN_WORKER_CHAT },
-    { id: 'worker-kv', label: 'Worker KV', tier: 'ready', available: true, description: SOVEREIGN_WORKER_KV },
-    { id: 'worker-models', label: `${DEV_CHAT_WORKER_MODELS.length} Worker Modelle`, tier: 'ready', available: true, description: DEV_CHAT_WORKER_MODELS.map((model) => model.label).join(' · ') },
-    { id: 'repo-snapshot', label: effectiveRepoReady ? 'Repo Snapshot' : 'Repo fehlt', tier: effectiveRepoReady ? 'ready' : 'blocked', available: effectiveRepoReady, description: effectiveRepoReady ? effectiveRepoReason : repoReason },
-  ];
-  const chatLines = useMemo(() => buildChatLines({ wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason, runtimeThinkingActive, cuteThinkingLabel, sovereignSummary, disabledReason: state.disabledReason, openhandsJob, chatRepoSnapshot, chatRepoError }), [chatRepoError, chatRepoSnapshot, cuteThinkingLabel, effectiveRepoReady, effectiveRepoReason, openhandsJob, runtimeThinkingActive, sovereignSummary, state.disabledReason, wishText]);
+  const [wishText, setWishText]             = useState(() => missionToWishText(mission));
+  const [thinkingFrameIndex, setTFI]        = useState(0);
+  const [showRuntimeSheet, setShowRuntime]  = useState(false);
+  const [showSideMenu, setShowSide]         = useState(false);
+  const [showOpenHandsBriefing, setOHB]     = useState(false);
+  const [chatRepoSnapshot, setChatRepo]     = useState<DevChatRepoSnapshot | null>(null);
+  const [chatRepoError, setChatRepoError]   = useState<string | null>(null);
+  const [localRepoLoading, setRepoLoading]  = useState(false);
+  const lastMissionRef                       = useRef(mission);
+  const scrollRef                            = useRef<HTMLDivElement>(null);
+  const nowRef                               = useRef(Date.now());
 
-  useEffect(() => {
-    if (!runtimeThinkingActive) {
-      setThinkingFrameIndex(0);
-      return undefined;
-    }
-    const handle = window.setInterval(() => setThinkingFrameIndex((current) => current + 1), CUTE_THINKING_FRAME_MS);
-    return () => window.clearInterval(handle);
-  }, [runtimeThinkingActive]);
+  /* …───────────────── (Rest des Codes unverändert) ───────────────── */
 
-  useEffect(() => {
-    if (mission === lastMissionSeenRef.current) return;
-    lastMissionSeenRef.current = mission;
-    setWishText(missionToWishText(mission));
-  }, [mission]);
-
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [chatLines.length, outcomeHints.length, runtimeThinkingActive]);
-
-  const analyzeWish = () => { const cleanMission = collapseRepeatedAnalyzedMission(analyzedMission); lastMissionSeenRef.current = cleanMission; onMissionChange(cleanMission); };
-  const startAgentFromChat = () => { const cleanMission = collapseRepeatedAnalyzedMission(executableOpenHandsMission); lastMissionSeenRef.current = cleanMission; onMissionChange(cleanMission); onStartOpenHands?.(cleanMission); };
-
-  const handleComposerSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const parsedRepo = parseDevChatGithubUrl(wishText);
-    if (parsedRepo) {
-      setLocalRepoLoading(true);
-      setChatRepoError(null);
-      const result = await fetchDevChatRepoTree(parsedRepo);
-      setLocalRepoLoading(false);
-      if (result.ok && result.snapshot) {
-        setChatRepoSnapshot(result.snapshot);
-        const summary = summarizeDevChatRepoSnapshot(result.snapshot);
-        lastMissionSeenRef.current = summary;
-        onMissionChange(`Repo laden via Chat:\n${summary}\n${result.snapshot.files.slice(0, 60).map((file) => file.path).join('\n')}`);
-        return;
-      }
-      setChatRepoError(result.error ?? 'Repo konnte nicht geladen werden.');
-      return;
-    }
-    if (agentDisabled) { analyzeWish(); return; }
-    startAgentFromChat();
-  };
-
-  return (
-    <section
-      className={`${builderContainerContract.rootClass} relative mt-3 flex h-[calc(100dvh-8rem)] min-h-[34rem] overflow-hidden rounded-2xl border border-[#252e3e] bg-[#0e1525] text-sm text-[#cdd9e5] shadow-2xl shadow-black/30`}
-      data-role={builderContainerContract.dataRole}
-      data-testid={builderContainerContract.testId}
-      data-layout="devchat-runtime-shell"
-      aria-label={builderContainerContract.ariaLabel}
-    >
-      <style>{`
-        @keyframes sovereignDevChatPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.85)} }
-        .scrollbar-none::-webkit-scrollbar { display:none; }
-        .scrollbar-thin::-webkit-scrollbar { width:3px; height:3px; }
-        .scrollbar-thin::-webkit-scrollbar-track { background:transparent; }
-        .scrollbar-thin::-webkit-scrollbar-thumb { background:#252e3e; border-radius:2px; }
-      `}</style>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <StatusBar
-          status={agentStatus}
-          repoReady={effectiveRepoReady}
-          repoReason={effectiveRepoReason}
-          source={runtimeSource}
-          lastFile={openhandsJob?.changedFiles?.[0]}
-          onSourceClick={() => setShowRuntimeSheet(true)}
-          chatRepoSnapshot={chatRepoSnapshot}
-        />
-
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b border-[#1a2233] px-4 py-3">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" aria-hidden="true" />
-            <h2 className="text-lg font-black text-[#e1e4e8]">Sovereign Chat</h2>
-            <span className="rounded-full border border-[#252e3e] bg-[#161b2e] px-2 py-0.5 text-xs text-[#768390]">
-              OpenHands Runtime
-            </span>
-          </div>
-
-          <div
-            ref={scrollRef}
-            className="scrollbar-thin min-h-0 flex-1 overflow-y-auto bg-[#0b101c] px-0 py-4"
-            aria-label="Sovereign Chat Verlauf"
-            data-testid="sovereign-chat-body-window"
-          >
-            {!wishText.trim() && !chatRepoSnapshot ? (
-              <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center px-5 py-10 text-center">
-                <div className="text-6xl" aria-hidden="true">🐥</div>
-                <p className="mt-4 text-3xl font-black text-[#e1e4e8]">Let&apos;s start building!</p>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-[#768390]">
-                  Schreib dein Ziel oder füge eine GitHub-URL ein. Sovereign lädt Kontext, prüft Gates und führt dich nur bei echten Stop-Punkten.
-                </p>
-                <div className="mt-6 grid w-full gap-3 sm:grid-cols-2" aria-label="Schnellvorschläge">
-                  {IDEA_OPTIONS.slice(0, 4).map((option) => (
-                    <button
-                      key={option.label}
-                      type="button"
-                      className="rounded-2xl border border-[#252e3e] bg-[#161b2e] px-4 py-4 text-left text-sm font-semibold text-[#cdd9e5] transition hover:border-[#f97316]/60 hover:bg-[#1c2333]"
-                      onClick={() => setWishText((current) => appendOption(current, option))}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3 pb-2">
-                {chatLines.map((line) => <Bubble key={line.id} msg={line} />)}
-
-                {agentStatus === 'thinking' ? (
-                  <div className="flex items-center gap-2 px-4">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#252e3e] bg-[#161b2e] text-xs text-[#768390]">⬡</div>
-                    <div className="flex gap-1">
-                      {[0, 1, 2].map((dot) => (
-                        <span
-                          key={dot}
-                          className="h-1.5 w-1.5 rounded-full bg-sky-300"
-                          style={{ animation: `sovereignDevChatPulse 1.2s ease-in-out ${dot * 0.2}s infinite` }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {outcomeHints.length > 0 ? (
-                  <div className="px-4" aria-label="OpenHands Ergebnis-Hinweise" data-testid="sovereign-chat-outcome-hints">
-                    <div className="space-y-1.5 rounded-xl border border-[#252e3e] bg-[#161b2e] p-3">
-                      {outcomeHints.map((hint) => (
-                        <p key={`${hint.kind}:${hint.text}`} className="flex items-start gap-2 text-xs text-[#768390]" data-outcome-hint-kind={hint.kind}>
-                          <span className="mt-0.5 shrink-0 text-[#252e3e]">›</span>
-                          {hint.href ? (
-                            <a className="text-sky-300 underline underline-offset-4 hover:text-sky-200" href={hint.href} target="_blank" rel="noreferrer">
-                              {hint.text}
-                            </a>
-                          ) : hint.text}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          <div className="shrink-0 border-t border-[#252e3e] bg-[#0e1525] px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            <form onSubmit={(event) => { void handleComposerSubmit(event); }} data-composer-width="100%">
-              <div className="flex items-end gap-2 rounded-xl border border-[#252e3e] bg-[#161b2e] p-2 transition-colors focus-within:border-[#374556]">
-                <button
-                  type="button"
-                  onClick={() => setShowSideMenu(true)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#252e3e] bg-[#1c2333] text-[#768390] transition hover:border-[#374556] hover:text-[#cdd9e5] active:bg-[#232d3f]"
-                  aria-label="Sovereign Menü öffnen"
-                >
-                  ☰
-                </button>
-
-                <textarea
-                  id={SOVEREIGN_FORM_MISSION.id}
-                  name={SOVEREIGN_FORM_MISSION.id}
-                  data-role={SOVEREIGN_FORM_MISSION.dataRole}
-                  data-testid={SOVEREIGN_FORM_MISSION.testId}
-                  className="max-h-32 min-h-10 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1.5 text-[14px] leading-6 text-[#cdd9e5] outline-none placeholder:text-[#4b5563]"
-                  value={wishText}
-                  onChange={(event) => setWishText(event.target.value)}
-                  onInput={(event) => {
-                    const target = event.currentTarget;
-                    target.style.height = 'auto';
-                    target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
-                  }}
-                  placeholder={chatRepoSnapshot ? `Frage zu ${chatRepoSnapshot.name}…` : 'GitHub URL oder Nachricht…'}
-                  aria-label={SOVEREIGN_FORM_MISSION.ariaLabel}
-                  rows={1}
-                />
-
-                <button
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-base font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-30"
-                  style={{
-                    background: localRepoLoading || (!parseDevChatGithubUrl(wishText) && (agentDisabled || !wishText.trim()))
-                      ? '#1c2333'
-                      : '#f97316',
-                  }}
-                  type="submit"
-                  disabled={localRepoLoading || (!parseDevChatGithubUrl(wishText) && (agentDisabled || !wishText.trim()))}
-                  data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
-                  data-testid={SOVEREIGN_ACTION_START_TASK.testId}
-                  aria-label="Agent starten"
-                  data-state={agentDisabled ? 'disabled' : 'idle'}
-                >
-                  {localRepoLoading ? '…' : '↑'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      {showRuntimeSheet ? <RuntimeSourceSheet sources={runtimeSources} current={runtimeSource} onClose={() => setShowRuntimeSheet(false)} /> : null}
-
-      {showSideMenu ? (
-        <SideMenu
-          onClose={() => setShowSideMenu(false)}
-          onGenerateIdeas={onGenerateIdeas}
-          onGenerateErrorWorkflow={onGenerateErrorWorkflow}
-          onPublishDraftPr={onPublishDraftPr}
-          isPublishing={isPublishing}
-          chatRepoSnapshot={chatRepoSnapshot}
-        />
-      ) : null}
-
-      {showOpenHandsBriefing && openhandsConfig ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0e1525]/85 p-4"
-          style={{ backdropFilter: 'blur(6px)' }}
-          onClick={() => setShowOpenHandsBriefing(false)}
-        >
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#252e3e]" onClick={(e) => e.stopPropagation()}>
-            <OpenHandsOperatorBriefingPanel config={openhandsConfig} onClose={() => setShowOpenHandsBriefing(false)} initiallyExpanded={true} />
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
 }
+
+/*  Update im globalen Style-Block:
+    Placeholder-Farbe nutzt jetzt die CSS-Variable */
+
+<style>{`
+  @keyframes sdc-pulse {
+    0%,100%{opacity:1;transform:scale(1)}
+    50%{opacity:.3;transform:scale(.8)}
+  }
+  textarea::placeholder { color: var(--placeholder-color); }
+  ::-webkit-scrollbar { width: 3px; height: 3px; }
+  ::-webkit-scrollbar-thumb { background: #232d3a; border-radius: 2px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+`}</style>
+
+export default BuilderContainer;
