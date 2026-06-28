@@ -1,6 +1,6 @@
 {
   "name": "Sovereign UX Contract Scan",
-  "generatedAt": "2026-06-28T16:19:07.346Z",
+  "generatedAt": "2026-06-28T23:33:14.036Z",
   "status": "pass",
   "checks": [
     {
@@ -1032,7 +1032,7 @@
       "message": "Builder should expose multiple clear actions.",
       "details": {
         "filePath": "src/features/product/containers/BuilderContainer.tsx",
-        "count": 50,
+        "count": 32,
         "min": 4
       }
     },

@@ -57,6 +57,11 @@ const runPatch = () => {
       file: 'ios/App/App.xcodeproj/project.pbxproj',
       search: 'IPHONEOS_DEPLOYMENT_TARGET = 12.0',
       replace: 'IPHONEOS_DEPLOYMENT_TARGET = 13.0'
+    },
+    {
+      file: 'node_modules/@codetrix-studio/capacitor-google-auth/android/build.gradle',
+      search: 'jcenter()',
+      replace: 'mavenCentral()'
     }
   ];
 

@@ -658,7 +658,7 @@ function ThinkingDots() {
 function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
   if (hints.length === 0) return null;
   return (
-    <div style={{ padding: '0 12px 8px' }}>
+    <div style={{ padding: '0 12px 8px' }} data-testid="sovereign-chat-outcome-hints">
       <div style={{
         borderRadius: 10,
         border: `1px solid ${C.border}`,
@@ -731,8 +731,8 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
         maxWidth: 300,
         marginBottom: 28,
       }}>
-        Schreib dein Ziel oder füge eine GitHub-URL ein.
-        Sovereign prüft Gates und handelt nur bei echten Stop-Punkten.
+        Schritt 2: Schreib dein Ziel oder füge eine GitHub-URL ein.
+        Die Prüfung erfolgt über Gates an echten Stop-Punkten.
       </p>
 
       <div style={{
@@ -1017,7 +1017,7 @@ function SideDrawer({
               textAlign: 'left',
             }}
           >
-            🔍 Interne Prüfung
+            2 · 🔍 Interne Prüfung
           </button>
 
           <button
@@ -1112,13 +1112,16 @@ function Composer({
   }, []);
 
   return (
-    <div style={{
-      flexShrink: 0,
-      padding: '10px 10px',
-      paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
-      background: C.surface,
-      borderTop: `1px solid ${C.border}`,
-    }}>
+    <form
+      onSubmit={(e) => { e.preventDefault(); onSubmit(); }}
+      style={{
+        flexShrink: 0,
+        padding: '10px 10px',
+        paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
+        background: C.surface,
+        borderTop: `1px solid ${C.border}`,
+      }}
+    >
       <div style={{
         display: 'flex',
         alignItems: 'flex-end',
@@ -1164,8 +1167,7 @@ function Composer({
         />
 
         <button
-          type="button"
-          onClick={onSubmit}
+          type="submit"
           disabled={disabled || loading}
           aria-label="Senden"
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
@@ -1201,7 +1203,7 @@ function Composer({
       }}>
         Enter senden · Shift+Enter Zeilenumbruch
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -1457,7 +1459,7 @@ export function BuilderContainer({
       <div
         ref={scrollRef}
         data-testid="sovereign-chat-body-window"
-        aria-label="Sovereign Chat Verlauf"
+        aria-label="Chat Verlauf"
         style={{
           flex: 1,
           overflowY: 'auto',
