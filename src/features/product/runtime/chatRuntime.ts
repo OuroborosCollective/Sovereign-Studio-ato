@@ -8,6 +8,7 @@
  */
 
 import { defaultTraceIdProvider, globalTelemetry, runtimeIntelligence } from '../../../runtime/RuntimeIntelligence';
+import { maskSecrets } from '../../../shared/utils/crypto';
 
 export interface ChatMessage {
   id: string;
@@ -102,7 +103,7 @@ export function validateChatEntry(input: string, config: ChatRuntimeConfig = {})
   const cfg = mergedConfig(config);
   const errors: string[] = [];
   const normalized = input.trim();
-  const sanitized = normalized.replace(/[<>]/g, '').replace(/\0/g, '');
+  const sanitized = maskSecrets(normalized.replace(/[<>]/g, '').replace(/\0/g, ''));
 
   if (normalized.length < cfg.minMessageLength) errors.push(`Message too short (min: ${cfg.minMessageLength} chars)`);
   if (normalized.length > cfg.maxMessageLength) errors.push(`Message too long (max: ${cfg.maxMessageLength} chars)`);
@@ -213,7 +214,7 @@ export async function processChatMessage(
     };
   } catch (error) {
     const latencyMs = Math.round(nowMs() - startTime);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = maskSecrets(error instanceof Error ? error.message : 'Unknown error');
     const model = getChatModel();
     if (model) runtimeIntelligence.recordModelFailureForFallback(model.modelId);
 

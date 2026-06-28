@@ -60,6 +60,6 @@ describe('SovereignAppWrapper - Chat-First UI Contract', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
 
     // The chat workbench should now be visible
-    expect(screen.getByText('Sovereign Chat')).toBeDefined();
+    expect(screen.getByText('DevChat')).toBeDefined();
   });
 });

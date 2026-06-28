@@ -43,4 +43,14 @@ describe('chatSidebarRuntime', () => {
 
     expect(chatSidebarSummary(messages, suggestions)).toBe('1 message(s), 1 suggestion(s), 1 accepted.');
   });
+
+  it('masks sensitive tokens in chat messages', () => {
+    const messages = normalizeChatMessages([
+      { id: 'm1', role: 'user', content: 'My key is ghp_123456789012345678901234567890123456', timestamp: 1 },
+      { id: 'm2', role: 'assistant', content: 'Use sk-123456789012345678901234 to call the API', timestamp: 2 },
+    ] as ChatMessage[]);
+
+    expect(messages[0].content).toBe('My key is ghp_****');
+    expect(messages[1].content).toBe('Use sk-**** to call the API');
+  });
 });
