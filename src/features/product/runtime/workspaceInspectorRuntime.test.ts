@@ -60,7 +60,7 @@ describe('workspaceInspectorRuntime', () => {
     const result = buildWorkspaceInspectorRuntime({
       repoName: 'Blocked Repo',
       branch: 'main',
-      repoFiles: ['package.json', 'src/App.tsx', 'src/main.tsx'],
+      repoFiles: ['package.json', 'src/App.tsx', 'src/App.test.tsx', 'src/main.tsx', 'src/main.test.tsx'],
       mission: 'Fix die roten Gates',
       repoReady: true,
       blockers: ['Health Blocker zuerst lösen'],
@@ -73,9 +73,8 @@ describe('workspaceInspectorRuntime', () => {
     expect(result.palBlocked).toBe(true);
     expect(result.activePatternCount).toBe(1);
     expect(result.policy.topLamp).toBe('red');
-    // Brownfield and PAL both have 'red' lamp in this test state.
-    // Alphabetical ID sorting in quietInspectorHintPolicy.ts puts 'brownfield' before 'pal'.
-    expect(result.policy.signals[0].id).toBe('brownfield');
+    // PAL is 'red', Brownfield is 'green' (good test coverage).
+    expect(result.policy.signals[0].id).toBe('pal');
     expect(result.policy.summary).toContain('Blocker');
   });
 

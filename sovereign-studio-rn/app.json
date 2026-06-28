@@ -7,14 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": false,
-    "autolinking": {
-      "exclude": [
-        "expo-constants",
-        "react-native-gesture-handler",
-        "react-native-reanimated",
-        "react-native-screens"
-      ]
-    },
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#0a0a0a"
