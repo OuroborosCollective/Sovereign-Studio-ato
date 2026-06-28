@@ -9,7 +9,8 @@ export type SolutionPatternNode =
   | 'action-builder'
   | 'draft-pr-publisher'
   | 'learning-memory'
-  | 'telemetry';
+  | 'telemetry'
+  | 'openhands-runtime';
 
 export type SolutionPatternConfidence = 'reported' | 'completed' | 'manual' | 'inferred';
 export type SolutionPatternStatus = 'active' | 'rejected';
