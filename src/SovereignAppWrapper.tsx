@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import App from './App';
+import {
+  SOVEREIGN_WORKSPACE_COMMAND_EVENT,
+  SOVEREIGN_WORKSPACE_MENU,
+  createSovereignWorkspaceCommand,
+  type SovereignWorkspaceTab,
+} from './features/product/runtime/sovereignWorkspaceCommand';
 
 type Signal = 'idle' | 'active' | 'processing' | 'warning' | 'error';
 
@@ -110,7 +116,36 @@ function MinimalLampBar({ state }: { state: MinimalLampState }) {
   );
 }
 
-function MinimalAppShell({ children }: { children: ReactNode }) {
+function publishWorkspaceCommand(targetTab: SovereignWorkspaceTab): void {
+  if (typeof window === 'undefined') return;
+
+  window.dispatchEvent(new CustomEvent(SOVEREIGN_WORKSPACE_COMMAND_EVENT, {
+    detail: createSovereignWorkspaceCommand(targetTab),
+  }));
+}
+
+function WorkspaceMenu() {
+  return (
+    <nav
+      className="sr-only"
+      aria-label="Sovereign workspace bridge"
+      data-testid="sovereign-wrapper-workspace-menu"
+    >
+      {SOVEREIGN_WORKSPACE_MENU.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          data-testid={`sovereign-wrapper-menu__${item.id}`}
+          onClick={() => publishWorkspaceCommand(item.id)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function SovereignRuntimeShell({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<PublishedRuntimeSnapshot | null>(() => {
     if (typeof window === 'undefined') return null;
     return readPublishedRuntimeSnapshot((window as SovereignWindow).__sovereignSetupState);
@@ -134,8 +169,10 @@ function MinimalAppShell({ children }: { children: ReactNode }) {
       className="mx-auto flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-black text-slate-100"
       data-testid="sovereign-app-wrapper"
       data-layout="minimal-app-shell"
+      data-contract="composition-wrapper-around-existing-app"
     >
       <MinimalLampBar state={lampState} />
+      <WorkspaceMenu />
 
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="sovereign-shell-content">
         {children}
@@ -146,8 +183,8 @@ function MinimalAppShell({ children }: { children: ReactNode }) {
 
 export default function SovereignAppWrapper() {
   return (
-    <MinimalAppShell>
+    <SovereignRuntimeShell>
       <App />
-    </MinimalAppShell>
+    </SovereignRuntimeShell>
   );
 }
