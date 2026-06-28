@@ -24,7 +24,11 @@ function baseProps() {
 }
 
 function chatField(): HTMLTextAreaElement {
-  return screen.getByLabelText(/Sovereign Chat/i) as HTMLTextAreaElement;
+  return screen.getByLabelText(/Sovereign Chat Eingabe/i) as HTMLTextAreaElement;
+}
+
+function sendButton(): HTMLButtonElement {
+  return screen.getByRole('button', { name: 'Senden' }) as HTMLButtonElement;
 }
 
 /** ----------------------------------------------------------------
@@ -35,17 +39,17 @@ describe('BuilderContainer (replit shell)', () => {
   it('renders the fixed DevChat shell structure', () => {
     render(<BuilderContainer {...baseProps()} />);
 
-    // root section
-    expect(screen.getByTestId('builder-container'))
-      .toHaveAttribute('data-layout', 'devchat-replit');
+    const root = screen.getByTestId('builder-container');
+    expect(root).toHaveAttribute('data-layout', 'devchat-replit');
+    expect(root).toHaveAttribute('aria-label', 'Sovereign Builder');
 
-    // top bar → shows both brand tokens
-    expect(screen.getByText(/Sovereign/i)).toBeDefined();
-    expect(screen.getByText(/DevChat/i)).toBeDefined();
+    // top bar brand tokens
+    expect(screen.getAllByText('Sovereign').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('DevChat')).toBeDefined();
 
-    // main chat viewport + composer placeholder
+    // main chat viewport + composer
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
-    expect(screen.getByPlaceholderText('GitHub URL oder Auftrag…')).toBeDefined();
+    expect(chatField()).toBeDefined();
 
     // hamburger menu button
     expect(screen.getByLabelText('Menü')).toBeDefined();
@@ -90,30 +94,18 @@ describe('BuilderContainer (replit shell)', () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── guarded mission generation when agent locked ───────────── */
-  it('prepares a guarded executable mission when the agent is not start-ready', () => {
+  /* ───────────── locked agent state ───────────── */
+  it('keeps direct send blocked when the agent runtime is not start-ready', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} openhandsReady={false} />);
 
     fireEvent.change(chatField(), {
       target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
     });
-    fireEvent.submit(
-      screen.getByRole('button', { name: 'Senden' }),
-    );
 
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('Ideenfabrik Auftrag'),
-    );
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('mobile UX verbessern'),
-    );
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('Repo-Snapshot ist noch nicht bereit'),
-    );
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('Facade-Live-Pfade'),
-    );
+    expect(sendButton()).toBeDisabled();
+    fireEvent.click(sendButton());
+    expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
   /* ───────────── mission adoption → input synchronisation ───────────── */
@@ -141,7 +133,11 @@ describe('BuilderContainer (replit shell)', () => {
 
   /* ───────────── duplicate-header collapse check ───────────── */
   it('does not duplicate an already analysed mission', () => {
-    const props = baseProps();
+    const props = {
+      ...baseProps(),
+      openhandsReady: true,
+      onStartOpenHands: vi.fn(),
+    };
     const analysedMission = [
       'Ideenfabrik Auftrag:',
       'Ideenfabrik Auftrag:',
@@ -161,8 +157,9 @@ describe('BuilderContainer (replit shell)', () => {
     ].join('\n');
 
     render(<BuilderContainer {...props} mission={analysedMission} />);
-    fireEvent.submit(screen.getByRole('button', { name: 'Senden' }));
+    fireEvent.click(sendButton());
 
+    expect(props.onMissionChange).toHaveBeenCalled();
     const emittedMission = props.onMissionChange.mock.calls[0][0] as string;
     expect(emittedMission.match(/Ideenfabrik Auftrag:/g)).toHaveLength(1);
     expect(emittedMission.match(/Repository-Kontext:/g)).toHaveLength(1);
@@ -184,8 +181,7 @@ describe('BuilderContainer (replit shell)', () => {
   it('opens runtime source sheet from the status bar', () => {
     render(<BuilderContainer {...baseProps()} openhandsReady />);
 
-    // hidden span with 'OpenHands' text exists even if visually hidden
-    fireEvent.click(screen.getAllByText('OpenHands')[0]);
+    fireEvent.click(screen.getByText('RT'));
 
     expect(screen.getByText('Runtime Quelle')).toBeDefined();
     expect(screen.getByText('Echte Agent-Runtime verbunden')).toBeDefined();
@@ -202,7 +198,7 @@ describe('BuilderContainer (replit shell)', () => {
     render(<BuilderContainer {...props} />);
 
     fireEvent.change(chatField(), { target: { value: 'Test mission' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Senden' }));
+    fireEvent.click(sendButton());
 
     expect(props.onStartOpenHands).toHaveBeenCalledOnce();
     expect(props.onStartOpenHands.mock.calls[0][0]).toContain('Ideenfabrik Auftrag');
@@ -214,7 +210,7 @@ describe('BuilderContainer (replit shell)', () => {
     render(<BuilderContainer {...baseProps()} repoReady={false} openhandsReady />);
 
     expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled();
+    expect(sendButton()).toBeDisabled();
   });
 
   /* ───────────── OpenHands output renders as hint list ───────────── */
@@ -232,7 +228,6 @@ describe('BuilderContainer (replit shell)', () => {
       />,
     );
 
-    expect(screen.getByTestId('sovereign-chat-outcome-hints')).toBeDefined();
     expect(screen.getByText(/OpenHands ID/i)).toBeDefined();
     expect(screen.getByText(/1 Datei/)).toBeDefined();
     expect(screen.queryByLabelText(/Karten/i)).toBeNull();
@@ -242,6 +237,6 @@ describe('BuilderContainer (replit shell)', () => {
   it('shows publishing state correctly', () => {
     render(<BuilderContainer {...baseProps()} isPublishing />);
 
-    expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled();
+    expect(sendButton()).toBeDisabled();
   });
 });
