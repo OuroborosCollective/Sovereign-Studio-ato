@@ -18,6 +18,10 @@ export type ChatIntent =
   | 'search-patterns'
   | 'unknown';
 
+/**
+ * Extended input for more granular precondition checks.
+ * All boolean fields default to false for backward compatibility.
+ */
 export interface ChatIntentRouterInput {
   message: string;
   repoReady: boolean;
@@ -25,6 +29,14 @@ export interface ChatIntentRouterInput {
   hasToken: boolean;
   hasPackage: boolean;
   hasDraft: boolean;
+  /** If true, indicates a concrete mission was provided (not placeholder text) */
+  hasConcreteMission?: boolean;
+  /** If true, generated files passed self-review and contain actionable output */
+  selfReviewAccepted?: boolean;
+  /** If true, draft PR has a recorded commit SHA for workflow watching */
+  hasDraftCommit?: boolean;
+  /** If true, workflow failure report exists for repair decisions */
+  hasWorkflowReport?: boolean;
   activeBlockers: string[];
 }
 
@@ -48,7 +60,7 @@ interface IntentPrecondition {
 const INTENT_PRECONDITIONS: Record<ChatIntent, IntentPrecondition> = {
   'load-repo': {
     requiredRepoReady: false,
-    requiredHasToken: true,
+    requiredHasToken: false, // Allow public repos without token
     requiredHasPackage: false,
     requiredHasDraft: false,
     minFileCount: 0,
@@ -107,7 +119,7 @@ const INTENT_PRECONDITIONS: Record<ChatIntent, IntentPrecondition> = {
     requiredHasToken: false,
     requiredHasPackage: false,
     requiredHasDraft: false,
-    minFileCount: 10,
+    minFileCount: 1, // Allow small repos with non-empty file list
     maxActiveBlockers: Infinity,
   },
   'unknown': {
@@ -120,11 +132,27 @@ const INTENT_PRECONDITIONS: Record<ChatIntent, IntentPrecondition> = {
   },
 };
 
+// Intents that should NOT be blocked by existing draft PR (read-only actions)
+const READ_ONLY_INTENTS = new Set<ChatIntent>([
+  'explain-status',
+  'show-diff',
+  'watch-workflow',
+  'search-patterns',
+]);
+
+// Intents that are workflow-specific (CI/workflow wording required)
+const WORKFLOW_INTENTS = new Set<ChatIntent>([
+  'watch-workflow',
+  'repair-workflow',
+]);
+
 const INTENT_SIGNALS: Record<ChatIntent, string[]> = {
   'load-repo': [
     'load repo', 'fetch repository', 'open repo', 'select repository', 'repo url', 'github link',
     'lade repository', 'repository laden', 'repo laden', 'github repository öffnen',
     'welches repository', 'repo auswählen',
+    // GitHub URL patterns
+    'github.com/', 'https://github.com/',
   ],
   'explain-status': [
     'status', 'was ist der status', 'what is the status', 'explain', 'erkläre', 'show state', 'zustand',
@@ -135,7 +163,7 @@ const INTENT_SIGNALS: Record<ChatIntent, string[]> = {
     'generate', 'build package', 'create package', 'implement',
     'erstelle paket', 'paket erstellen', 'generiere paket', 'paket generieren',
     'erstelle implementierung', 'implementierung erstellen', 'baue paket',
-    'mach was draus', 'führe auftrag aus', 'auftrag umsetzen',
+    'führe auftrag aus', 'auftrag umsetzen',
   ],
   'create-draft-pr': [
     'draft pr', 'pull request', 'create pr', 'publish', 'veröffentlichen',
@@ -154,9 +182,9 @@ const INTENT_SIGNALS: Record<ChatIntent, string[]> = {
     'läuft der workflow', 'workflow ergebnis', 'github actions status',
   ],
   'repair-workflow': [
-    'repair', 'fix workflow', 'ci fix',
-    'behebe', 'workflow reparieren', 'behebe workflow', 'workflowfehler beheben',
-    'ci fehler', 'workflowfehler', 'beheb den fehler',
+    'fix workflow', 'ci fix', // Scope to CI/workflow wording only
+    'workflow reparieren', 'behebe workflow', 'workflowfehler beheben',
+    'ci fehler', 'workflowfehler',
   ],
   'search-patterns': [
     'search patterns', 'find code', 'pattern analysis',
@@ -190,14 +218,33 @@ const TARGET_TABS: Record<ChatIntent, ChatIntentRouterOutput['targetTab'] | unde
   'unknown': undefined,
 };
 
+const GITHUB_URL_REGEX = /https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?/i;
+
 function detectIntent(message: string): ChatIntent {
   const normalized = message.toLowerCase().trim();
 
-  for (const [intent, signals] of Object.entries(INTENT_SIGNALS)) {
-    if (intent === 'unknown') continue;
+  // Check for GitHub URL first (more specific than word signals)
+  if (GITHUB_URL_REGEX.test(message)) {
+    return 'load-repo';
+  }
+
+  // Sort signals by specificity: workflow-specific first, then generic
+  const intentOrder: ChatIntent[] = [
+    'watch-workflow',
+    'repair-workflow',
+    'load-repo',
+    'create-draft-pr',
+    'show-diff',
+    'generate-package',
+    'search-patterns',
+    'explain-status',
+  ];
+
+  for (const intent of intentOrder) {
+    const signals = INTENT_SIGNALS[intent];
     for (const signal of signals) {
       if (normalized.includes(signal)) {
-        return intent as ChatIntent;
+        return intent;
       }
     }
   }
@@ -220,7 +267,8 @@ function buildBlockedReason(intent: ChatIntent, input: ChatIntentRouterInput): s
   if (preconditions.requiredHasDraft && !input.hasDraft) {
     return 'No draft PR exists. Create a draft PR first.';
   }
-  if (!preconditions.requiredHasDraft && input.hasDraft) {
+  // Only block create-draft-pr when draft already exists, not read-only intents
+  if (intent === 'create-draft-pr' && input.hasDraft) {
     return 'Draft PR already exists. Use the existing draft or close it first.';
   }
   if (input.repoFileCount < preconditions.minFileCount) {
@@ -228,6 +276,26 @@ function buildBlockedReason(intent: ChatIntent, input: ChatIntentRouterInput): s
   }
   if (input.activeBlockers.length > preconditions.maxActiveBlockers) {
     return `Too many active blockers: ${input.activeBlockers.join(', ')}. Resolve blockers first.`;
+  }
+
+  // P1: Block vague package-build commands without concrete mission
+  if (intent === 'generate-package' && input.hasConcreteMission === false) {
+    return 'Enter a concrete mission (not placeholder text) to generate a package.';
+  }
+
+  // P1: Gate Draft PR on generated-file self-review acceptance
+  if (intent === 'create-draft-pr' && input.selfReviewAccepted === false) {
+    return 'Generated files must pass review before creating draft PR.';
+  }
+
+  // P1: Require workflow report before repair
+  if (intent === 'repair-workflow' && input.hasWorkflowReport === false) {
+    return 'Watch the workflow first to get the failure report for repair.';
+  }
+
+  // P1: Require draft commit SHA before watching workflows
+  if (intent === 'watch-workflow' && input.hasDraftCommit === false) {
+    return 'Draft PR commit must be recorded before watching workflow.';
   }
 
   return '';
@@ -263,12 +331,12 @@ export function getIntentPreconditions(intent: ChatIntent): IntentPrecondition {
   return INTENT_PRECONDITIONS[intent];
 }
 
-export function getAvailableIntents(input: Pick<ChatIntentRouterInput, 'repoReady' | 'hasToken' | 'hasPackage' | 'hasDraft' | 'repoFileCount' | 'activeBlockers'>): ChatIntent[] {
+export function getAvailableIntents(input: Pick<ChatIntentRouterInput, 'repoReady' | 'hasToken' | 'hasPackage' | 'hasDraft' | 'repoFileCount' | 'activeBlockers' | 'hasConcreteMission' | 'selfReviewAccepted' | 'hasDraftCommit' | 'hasWorkflowReport'>): ChatIntent[] {
   return (Object.keys(INTENT_PRECONDITIONS) as ChatIntent[]).filter((intent) => {
     if (intent === 'unknown') return false;
     const blockedReason = buildBlockedReason(intent, {
       ...input,
-      message: '', // placeholder
+      message: '',
     });
     return blockedReason === '';
   });
