@@ -39,15 +39,15 @@ describe('BuilderContainer (replit shell)', () => {
   it('renders the fixed DevChat shell structure', () => {
     render(<BuilderContainer {...baseProps()} />);
 
-    // root section
-    expect(screen.getByTestId('builder-container'))
-      .toHaveAttribute('data-layout', 'devchat-replit');
+    const root = screen.getByTestId('builder-container');
+    expect(root).toHaveAttribute('data-layout', 'devchat-replit');
+    expect(root).toHaveAttribute('aria-label', 'Sovereign Builder');
 
-    // top bar → shows both brand tokens
-    expect(screen.getByText(/Sovereign/i)).toBeDefined();
-    expect(screen.getByText(/DevChat/i)).toBeDefined();
+    // top bar brand tokens
+    expect(screen.getAllByText('Sovereign').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('DevChat')).toBeDefined();
 
-    // main chat viewport + composer placeholder is controlled by the current mission state
+    // main chat viewport + composer
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
     expect(chatField()).toBeDefined();
 
@@ -94,28 +94,18 @@ describe('BuilderContainer (replit shell)', () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── guarded mission generation when agent locked ───────────── */
-  it('prepares a guarded executable mission when the agent is not start-ready', () => {
+  /* ───────────── locked agent state ───────────── */
+  it('keeps direct send blocked when the agent runtime is not start-ready', () => {
     const props = baseProps();
     render(<BuilderContainer {...props} openhandsReady={false} />);
 
     fireEvent.change(chatField(), {
       target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
     });
-    fireEvent.click(sendButton());
 
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('Ideenfabrik Auftrag'),
-    );
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('mobile UX verbessern'),
-    );
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('Repo-Snapshot ist geladen'),
-    );
-    expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('Facade-Live-Pfade'),
-    );
+    expect(sendButton()).toBeDisabled();
+    fireEvent.click(sendButton());
+    expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
   /* ───────────── mission adoption → input synchronisation ───────────── */
@@ -143,7 +133,11 @@ describe('BuilderContainer (replit shell)', () => {
 
   /* ───────────── duplicate-header collapse check ───────────── */
   it('does not duplicate an already analysed mission', () => {
-    const props = baseProps();
+    const props = {
+      ...baseProps(),
+      openhandsReady: true,
+      onStartOpenHands: vi.fn(),
+    };
     const analysedMission = [
       'Ideenfabrik Auftrag:',
       'Ideenfabrik Auftrag:',
