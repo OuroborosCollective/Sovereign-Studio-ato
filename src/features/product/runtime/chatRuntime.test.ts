@@ -64,6 +64,12 @@ describe('chatRuntime', () => {
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.includes('too short'))).toBe(true);
     });
+
+    it('should mask sensitive tokens', () => {
+      const result = validateChatEntry('My key is ghp_123456789012345678901234567890123456');
+
+      expect(result.normalizedInput).toBe('My key is ghp_****');
+    });
   });
 
   describe('checkChatEntryGuard', () => {
