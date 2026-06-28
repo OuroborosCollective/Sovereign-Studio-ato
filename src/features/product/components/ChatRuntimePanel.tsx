@@ -5,7 +5,7 @@
  * Connected to RuntimeIntelligence for health checks and telemetry
  */
 
-import React, { useState, useCallback, useMemo, useEffect, Component, ReactNode } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, Component, ReactNode, useRef } from 'react';
 import { 
   Send, 
   RefreshCw, 
@@ -17,6 +17,7 @@ import {
   Wifi,
   WifiOff,
   Shield,
+  CircleX,
 } from 'lucide-react';
 import {
   validateChatEntry,
@@ -179,6 +180,7 @@ export function ChatRuntimePanel({
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [exitState, setExitState] = useState<ChatExitState | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Connect to Runtime Model Health
   const {
@@ -319,6 +321,7 @@ export function ChatRuntimePanel({
               disabled={isChecking}
               className="p-2 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
               title="Refresh health"
+              aria-label="Refresh health"
             >
               <RefreshCw className={`w-4 h-4 text-slate-400 ${isChecking ? 'animate-spin' : ''}`} />
             </button>
@@ -418,18 +421,35 @@ export function ChatRuntimePanel({
         {/* Input */}
         <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800">
           <div className="flex gap-3">
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Type your message..."
-              disabled={isProcessing}
-              className="flex-1 px-4 py-3 bg-slate-800/80 border border-slate-700 rounded-2xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 transition-colors"
-            />
+            <div className="flex-1 relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Type your message..."
+                disabled={isProcessing}
+                className="w-full px-4 py-3 pr-10 bg-slate-800/80 border border-slate-700 rounded-2xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 transition-colors"
+                aria-label="Chat message"
+              />
+              {inputValue && !isProcessing && (
+                <button
+                  type="button"
+                  onClick={() => { setInputValue(''); inputRef.current?.focus(); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1"
+                  aria-label="Clear input"
+                  title="Clear input"
+                >
+                  <CircleX size={16} />
+                </button>
+              )}
+            </div>
             <button
               type="submit"
               disabled={!inputValue.trim() || isProcessing}
               className="px-4 py-3 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 rounded-2xl text-cyan-400 disabled:opacity-30 transition-colors"
+              aria-label="Send message"
+              title="Send message"
             >
               <Send className="w-5 h-5" />
             </button>
