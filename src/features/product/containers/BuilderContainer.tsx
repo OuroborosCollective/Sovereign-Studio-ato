@@ -96,23 +96,23 @@ const builderContainerContract = getSovereignContainerContract('builder');
 // Replit-inspired dark palette — not GitHub dark, not VS Code dark.
 // Warmer neutrals, teal accent instead of blue.
 const C = {
-  bg:        '#0e1116',   // deepest bg — AMOLED near-black
-  surface:   '#161c24',   // panel surfaces
-  border:    '#232d3a',   // all borders
-  borderHov: '#2e3d50',   // hover border
-  accent:    '#00d9b1',   // teal primary — Replit-like
+  bg:        '#0e1116',
+  surface:   '#161c24',
+  border:    '#232d3a',
+  borderHov: '#2e3d50',
+  accent:    '#00d9b1',
   accentDim: '#00d9b122',
-  orange:    '#f97316',   // publish / send CTA
-  text:      '#cdd9e5',   // body text
-  textSub:   '#768390',   // secondary text
-  textMuted: '#3d4f61',   // muted / timestamps
-  green:     '#34d399',   // idle / ready
-  sky:       '#22d3ee',   // thinking
-  amber:     '#fbbf24',   // editing
-  violet:    '#a78bfa',   // running
-  rose:      '#fb7185',   // error
-  userBg:    '#1a2d45',   // user bubble
-  asstBg:    '#161c24',   // assistant bubble
+  orange:    '#f97316',
+  text:      '#cdd9e5',
+  textSub:   '#768390',
+  textMuted: '#3d4f61',
+  green:     '#34d399',
+  sky:       '#22d3ee',
+  amber:     '#fbbf24',
+  violet:    '#a78bfa',
+  rose:      '#fb7185',
+  userBg:    '#1a2d45',
+  asstBg:    '#161c24',
 } as const;
 
 const STATUS_COLOR: Record<AgentStatus, string> = {
@@ -145,7 +145,7 @@ const IDEA_OPTIONS: IdeaOption[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// HELPERS  (identical logic to BuilderContainer)
+// HELPERS
 // ─────────────────────────────────────────────────────────────
 
 function appendOption(current: string, option: IdeaOption): string {
@@ -340,7 +340,6 @@ function buildChatLines(args: {
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
 
-// ── 3-dot status ampel (Replit-style inline)
 function Ampel({ status }: { status: AgentStatus }) {
   const col = STATUS_COLOR[status];
   return (
@@ -350,7 +349,9 @@ function Ampel({ status }: { status: AgentStatus }) {
           key={s}
           style={{
             display: 'inline-block',
-            width: 7, height: 7, borderRadius: '50%',
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
             background: status === s ? STATUS_COLOR[s] : `${STATUS_COLOR[s]}30`,
             boxShadow: status === s ? `0 0 6px ${STATUS_COLOR[s]}` : 'none',
             transition: 'all 0.3s',
@@ -364,7 +365,6 @@ function Ampel({ status }: { status: AgentStatus }) {
   );
 }
 
-// ── Top status bar (Replit-like header strip)
 function TopBar({
   status, repoReady, chatRepoSnapshot, repoReason,
   onMenuOpen, onSourceClick, source,
@@ -384,43 +384,62 @@ function TopBar({
 
   return (
     <div style={{
-      height: 52, // 52dp — Android comfortable
+      height: 52,
       background: C.surface,
       borderBottom: `1px solid ${C.border}`,
-      display: 'flex', alignItems: 'center',
-      padding: '0 12px', gap: 10, flexShrink: 0,
+      display: 'flex',
+      alignItems: 'center',
+      padding: '0 12px',
+      gap: 10,
+      flexShrink: 0,
     }}>
-      {/* Hamburger */}
       <button
         type="button"
         onClick={onMenuOpen}
         aria-label="Menü"
         style={{
-          width: 40, height: 40, borderRadius: 10,
-          background: C.bg, border: `1px solid ${C.border}`,
-          color: C.textSub, fontSize: 16,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', flexShrink: 0,
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          color: C.textSub,
+          fontSize: 16,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          flexShrink: 0,
         }}
       >☰</button>
 
-      {/* Title + repo */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{
-            fontFamily: 'monospace', fontSize: 13, fontWeight: 700,
-            color: C.text, letterSpacing: -0.3,
+            fontFamily: 'monospace',
+            fontSize: 13,
+            fontWeight: 700,
+            color: C.text,
+            letterSpacing: -0.3,
           }}>Sovereign</span>
           <span style={{
-            fontFamily: 'monospace', fontSize: 9,
-            padding: '2px 6px', borderRadius: 10,
-            background: `${C.accent}18`, color: C.accent,
+            fontFamily: 'monospace',
+            fontSize: 9,
+            padding: '2px 6px',
+            borderRadius: 10,
+            background: `${C.accent}18`,
+            color: C.accent,
             border: `1px solid ${C.accent}33`,
           }}>DevChat</span>
         </div>
         <div style={{
-          fontFamily: 'monospace', fontSize: 9, color: repoColor,
-          marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          fontFamily: 'monospace',
+          fontSize: 9,
+          color: repoColor,
+          marginTop: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}>
           {repoLabel}
           {chatRepoSnapshot && (
@@ -429,23 +448,30 @@ function TopBar({
         </div>
       </div>
 
-      {/* Ampel */}
       <Ampel status={status} />
 
-      {/* Runtime source pill */}
       <button
         type="button"
         onClick={onSourceClick}
         style={{
-          display: 'flex', alignItems: 'center', gap: 5,
-          padding: '6px 10px', borderRadius: 8,
-          background: C.bg, border: `1px solid ${C.border}`,
-          color: TIER_COLOR[source.tier], fontFamily: 'monospace', fontSize: 9,
-          cursor: 'pointer', flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '6px 10px',
+          borderRadius: 8,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
+          color: TIER_COLOR[source.tier],
+          fontFamily: 'monospace',
+          fontSize: 9,
+          cursor: 'pointer',
+          flexShrink: 0,
         }}
       >
         <span style={{
-          width: 6, height: 6, borderRadius: '50%',
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
           background: TIER_COLOR[source.tier],
           boxShadow: `0 0 5px ${TIER_COLOR[source.tier]}`,
           display: 'inline-block',
@@ -457,18 +483,23 @@ function TopBar({
   );
 }
 
-// ── File badge (Replit-style above bubble)
 function FileBadge({ path, file }: { path?: string; file?: string }) {
   if (!file) return null;
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      fontFamily: 'monospace', fontSize: 9,
-      padding: '3px 8px', borderRadius: 6,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      fontFamily: 'monospace',
+      fontSize: 9,
+      padding: '3px 8px',
+      borderRadius: 6,
       background: 'rgba(251,191,36,0.1)',
       border: '1px solid rgba(251,191,36,0.25)',
-      color: C.amber, marginBottom: 4,
-      maxWidth: '100%', overflow: 'hidden',
+      color: C.amber,
+      marginBottom: 4,
+      maxWidth: '100%',
+      overflow: 'hidden',
     }}>
       <span style={{ color: C.textMuted }}>{path}</span>
       <span>{file}</span>
@@ -476,7 +507,6 @@ function FileBadge({ path, file }: { path?: string; file?: string }) {
   );
 }
 
-// ── Thought bubble (collapsed by default)
 function ThoughtBubble({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const short = text.length > 72 ? `${text.slice(0, 72)}…` : text;
@@ -485,25 +515,36 @@ function ThoughtBubble({ text }: { text: string }) {
       type="button"
       onClick={() => setOpen((v) => !v)}
       style={{
-        width: '100%', background: 'transparent', border: 'none',
-        display: 'flex', alignItems: 'flex-start', gap: 8,
-        padding: '4px 16px', cursor: 'pointer', textAlign: 'left',
+        width: '100%',
+        background: 'transparent',
+        border: 'none',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        padding: '4px 16px',
+        cursor: 'pointer',
+        textAlign: 'left',
       }}
     >
       <span style={{
-        color: open ? C.accent : C.textMuted, marginTop: 2, flexShrink: 0,
-        fontSize: 11, transition: 'color 0.2s',
+        color: open ? C.accent : C.textMuted,
+        marginTop: 2,
+        flexShrink: 0,
+        fontSize: 11,
+        transition: 'color 0.2s',
       }}>✦</span>
       <span style={{
-        fontFamily: 'monospace', fontSize: 10, fontStyle: 'italic',
-        lineHeight: 1.6, color: open ? C.textSub : C.textMuted,
+        fontFamily: 'monospace',
+        fontSize: 10,
+        fontStyle: 'italic',
+        lineHeight: 1.6,
+        color: open ? C.textSub : C.textMuted,
         transition: 'color 0.2s',
       }}>{open ? text : short}</span>
     </button>
   );
 }
 
-// ── Chat bubble
 function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
   const isUser = msg.role === 'user';
 
@@ -512,9 +553,12 @@ function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
       <div style={{ padding: '4px 16px', textAlign: 'center' }}>
         <span style={{
           display: 'inline-block',
-          fontFamily: 'monospace', fontSize: 10,
-          padding: '3px 12px', borderRadius: 20,
-          background: C.surface, border: `1px solid ${C.border}`,
+          fontFamily: 'monospace',
+          fontSize: 10,
+          padding: '3px 12px',
+          borderRadius: 20,
+          background: C.surface,
+          border: `1px solid ${C.border}`,
           color: C.textMuted,
         }}>{msg.text}</span>
       </div>
@@ -525,23 +569,35 @@ function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'flex-end', gap: 8,
+      display: 'flex',
+      alignItems: 'flex-end',
+      gap: 8,
       padding: '2px 12px',
       flexDirection: isUser ? 'row-reverse' : 'row',
     }}>
-      {/* Avatar (assistant only) */}
       {!isUser && (
         <div style={{
-          width: 30, height: 30, borderRadius: 10, flexShrink: 0,
-          background: C.surface, border: `1px solid ${C.border}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 13, color: C.textSub, marginBottom: 2,
+          width: 30,
+          height: 30,
+          borderRadius: 10,
+          flexShrink: 0,
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 13,
+          color: C.textSub,
+          marginBottom: 2,
         }}>⬡</div>
       )}
 
       <div style={{
-        display: 'flex', flexDirection: 'column', maxWidth: '82%',
-        alignItems: isUser ? 'flex-end' : 'flex-start', gap: 2,
+        display: 'flex',
+        flexDirection: 'column',
+        maxWidth: '82%',
+        alignItems: isUser ? 'flex-end' : 'flex-start',
+        gap: 2,
       }}>
         <FileBadge path={msg.path} file={msg.file} />
 
@@ -550,8 +606,11 @@ function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
           background: isUser ? C.userBg : C.asstBg,
           borderRadius: isUser ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
           border: `1px solid ${isUser ? '#243c5a' : C.border}`,
-          color: C.text, fontSize: 14, lineHeight: 1.6,
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          color: C.text,
+          fontSize: 14,
+          lineHeight: 1.6,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
           boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
         }}>
           {msg.text}
@@ -565,21 +624,29 @@ function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
   );
 }
 
-// ── Thinking dots
 function ThinkingDots() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px' }}>
       <div style={{
-        width: 30, height: 30, borderRadius: 10,
-        background: C.surface, border: `1px solid ${C.border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 13, color: C.textSub,
+        width: 30,
+        height: 30,
+        borderRadius: 10,
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 13,
+        color: C.textSub,
       }}>⬡</div>
       <div style={{ display: 'flex', gap: 5, paddingLeft: 2 }}>
         {[0, 1, 2].map((i) => (
           <span key={i} style={{
-            width: 7, height: 7, borderRadius: '50%',
-            background: C.sky, display: 'inline-block',
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: C.sky,
+            display: 'inline-block',
             animation: `sdc-pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
           }} />
         ))}
@@ -588,23 +655,32 @@ function ThinkingDots() {
   );
 }
 
-// ── Outcome hints (files changed, draft PR, etc.)
 function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
   if (hints.length === 0) return null;
   return (
     <div style={{ padding: '0 12px 8px' }}>
       <div style={{
-        borderRadius: 10, border: `1px solid ${C.border}`,
-        background: C.surface, padding: '10px 12px',
-        display: 'flex', flexDirection: 'column', gap: 6,
+        borderRadius: 10,
+        border: `1px solid ${C.border}`,
+        background: C.surface,
+        padding: '10px 12px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
       }}>
         {hints.map((h) => (
-          <div key={`${h.kind}:${h.text}`}
-            style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: C.textSub }}>
+          <div
+            key={`${h.kind}:${h.text}`}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, color: C.textSub }}
+          >
             <span style={{ color: C.border, marginTop: 2, flexShrink: 0 }}>›</span>
             {h.href ? (
-              <a href={h.href} target="_blank" rel="noreferrer"
-                style={{ color: C.sky, textDecoration: 'underline', textUnderlineOffset: 3 }}>
+              <a
+                href={h.href}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: C.sky, textDecoration: 'underline', textUnderlineOffset: 3 }}
+              >
                 {h.text}
               </a>
             ) : h.text}
@@ -615,40 +691,56 @@ function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
   );
 }
 
-// ── Empty/Welcome screen
 function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
   return (
     <div style={{
-      flex: 1, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding: '32px 20px', textAlign: 'center',
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '32px 20px',
+      textAlign: 'center',
     }}>
-      {/* Replit-style icon ring */}
       <div style={{
-        width: 72, height: 72, borderRadius: 20,
+        width: 72,
+        height: 72,
+        borderRadius: 20,
         background: `${C.accent}12`,
         border: `2px solid ${C.accent}40`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 32, marginBottom: 20,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 32,
+        marginBottom: 20,
       }}>🐥</div>
 
       <h2 style={{
-        fontFamily: 'monospace', fontSize: 20, fontWeight: 800,
-        color: C.text, marginBottom: 8, letterSpacing: -0.5,
+        fontFamily: 'monospace',
+        fontSize: 20,
+        fontWeight: 800,
+        color: C.text,
+        marginBottom: 8,
+        letterSpacing: -0.5,
       }}>Let&apos;s build!</h2>
 
       <p style={{
-        fontSize: 13, color: C.textSub, lineHeight: 1.6,
-        maxWidth: 300, marginBottom: 28,
+        fontSize: 13,
+        color: C.textSub,
+        lineHeight: 1.6,
+        maxWidth: 300,
+        marginBottom: 28,
       }}>
         Schreib dein Ziel oder füge eine GitHub-URL ein.
         Sovereign prüft Gates und handelt nur bei echten Stop-Punkten.
       </p>
 
-      {/* Quick ideas grid — 2×2 on Android */}
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr',
-        gap: 10, width: '100%', maxWidth: 340,
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 10,
+        width: '100%',
+        maxWidth: 340,
       }}>
         {IDEA_OPTIONS.map((opt) => (
           <button
@@ -656,10 +748,16 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
             type="button"
             onClick={() => onIdea(opt)}
             style={{
-              background: C.surface, border: `1px solid ${C.border}`,
-              borderRadius: 14, padding: '14px 12px',
-              fontFamily: 'monospace', fontSize: 11, color: C.text,
-              fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: 14,
+              padding: '14px 12px',
+              fontFamily: 'monospace',
+              fontSize: 11,
+              color: C.text,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left',
               transition: 'border-color 0.15s, background 0.15s',
               lineHeight: 1.3,
             }}
@@ -680,7 +778,6 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
   );
 }
 
-// ── Runtime source sheet (bottom sheet, Android-native feel)
 function RuntimeSheet({
   sources, current, onClose,
 }: {
@@ -692,29 +789,40 @@ function RuntimeSheet({
     <div
       onClick={onClose}
       style={{
-        position: 'absolute', inset: 0, zIndex: 100,
+        position: 'absolute',
+        inset: 0,
+        zIndex: 100,
         background: 'rgba(14,17,22,0.85)',
         backdropFilter: 'blur(8px)',
-        display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: C.surface, borderRadius: '20px 20px 0 0',
-          border: `1px solid ${C.border}`, borderBottom: 'none',
+          background: C.surface,
+          borderRadius: '20px 20px 0 0',
+          border: `1px solid ${C.border}`,
+          borderBottom: 'none',
           padding: '0 0 24px',
         }}
       >
-        {/* drag handle */}
         <div style={{
-          width: 36, height: 4, borderRadius: 2,
-          background: C.border, margin: '12px auto 16px',
+          width: 36,
+          height: 4,
+          borderRadius: 2,
+          background: C.border,
+          margin: '12px auto 16px',
         }} />
         <div style={{
-          fontFamily: 'monospace', fontSize: 9,
-          textAlign: 'center', color: C.textMuted,
-          letterSpacing: 1.5, textTransform: 'uppercase',
+          fontFamily: 'monospace',
+          fontSize: 9,
+          textAlign: 'center',
+          color: C.textMuted,
+          letterSpacing: 1.5,
+          textTransform: 'uppercase',
           marginBottom: 12,
         }}>Runtime Quelle</div>
 
@@ -724,15 +832,21 @@ function RuntimeSheet({
             type="button"
             onClick={onClose}
             style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-              padding: '12px 20px', border: 'none',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 20px',
+              border: 'none',
               borderLeft: `3px solid ${s.id === current.id ? TIER_COLOR[s.tier] : 'transparent'}`,
               cursor: 'pointer',
               background: s.id === current.id ? `${TIER_COLOR[s.tier]}08` : 'transparent',
             } as React.CSSProperties}
           >
             <span style={{
-              width: 9, height: 9, borderRadius: '50%',
+              width: 9,
+              height: 9,
+              borderRadius: '50%',
               background: TIER_COLOR[s.tier],
               boxShadow: `0 0 6px ${TIER_COLOR[s.tier]}`,
               flexShrink: 0,
@@ -755,7 +869,6 @@ function RuntimeSheet({
   );
 }
 
-// ── Side drawer (Replit-like — slides in from left on Android)
 function SideDrawer({
   onClose, onGenerateIdeas, onGenerateErrorWorkflow,
   onPublishDraftPr, isPublishing, chatRepoSnapshot, onCancelOpenHands,
@@ -773,33 +886,41 @@ function SideDrawer({
   return (
     <div
       style={{
-        position: 'absolute', inset: 0, zIndex: 90,
+        position: 'absolute',
+        inset: 0,
+        zIndex: 90,
         display: 'flex',
       }}
     >
-      {/* Scrim */}
       <div
         onClick={onClose}
         style={{ flex: 1, background: 'rgba(14,17,22,0.7)', backdropFilter: 'blur(4px)' }}
       />
 
-      {/* Drawer panel — 80vw max 300px */}
       <div style={{
         width: 'min(80vw, 300px)',
-        background: C.surface, borderLeft: `1px solid ${C.border}`,
-        display: 'flex', flexDirection: 'column',
+        background: C.surface,
+        borderLeft: `1px solid ${C.border}`,
+        display: 'flex',
+        flexDirection: 'column',
         boxShadow: '-8px 0 32px rgba(0,0,0,0.5)',
       }}>
-        {/* Header */}
         <div style={{
           padding: '16px 16px 12px',
           borderBottom: `1px solid ${C.border}`,
-          display: 'flex', alignItems: 'center', gap: 10,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
         }}>
           <div style={{
-            width: 34, height: 34, borderRadius: 10,
-            background: `${C.accent}12`, border: `1px solid ${C.accent}33`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            background: `${C.accent}12`,
+            border: `1px solid ${C.accent}33`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             fontSize: 16,
           }}>⬡</div>
           <div>
@@ -811,21 +932,28 @@ function SideDrawer({
             </div>
           </div>
           <button
-            type="button" onClick={onClose}
+            type="button"
+            onClick={onClose}
             style={{
-              marginLeft: 'auto', background: 'transparent', border: 'none',
-              color: C.textMuted, fontSize: 16, cursor: 'pointer',
-              padding: '4px', borderRadius: 6,
+              marginLeft: 'auto',
+              background: 'transparent',
+              border: 'none',
+              color: C.textMuted,
+              fontSize: 16,
+              cursor: 'pointer',
+              padding: '4px',
+              borderRadius: 6,
             }}
           >✕</button>
         </div>
 
-        {/* Repo info */}
         {chatRepoSnapshot && (
           <div style={{
             margin: '12px 12px 0',
-            padding: '10px 12px', borderRadius: 10,
-            background: `${C.green}08`, border: `1px solid ${C.green}22`,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: `${C.green}08`,
+            border: `1px solid ${C.green}22`,
           }}>
             <div style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 600, color: C.green }}>
               {chatRepoSnapshot.name}
@@ -836,30 +964,38 @@ function SideDrawer({
           </div>
         )}
 
-        {/* Workers info */}
         <div style={{
           margin: '10px 12px 0',
-          padding: '10px 12px', borderRadius: 10,
-          background: C.bg, border: `1px solid ${C.border}`,
+          padding: '10px 12px',
+          borderRadius: 10,
+          background: C.bg,
+          border: `1px solid ${C.border}`,
         }}>
           <div style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted, marginBottom: 4 }}>
             Cloudflare Workers
           </div>
           <div style={{
-            fontFamily: 'monospace', fontSize: 8, color: C.textMuted,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            fontFamily: 'monospace',
+            fontSize: 8,
+            color: C.textMuted,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}>
             {SOVEREIGN_WORKER_CHAT}
           </div>
           <div style={{
-            fontFamily: 'monospace', fontSize: 8, color: C.textMuted,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            fontFamily: 'monospace',
+            fontSize: 8,
+            color: C.textMuted,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}>
             {SOVEREIGN_WORKER_KV}
           </div>
         </div>
 
-        {/* Actions */}
         <div style={{ flex: 1, padding: '12px 12px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button
             type="button"
@@ -868,10 +1004,17 @@ function SideDrawer({
             data-testid={SOVEREIGN_ACTION_ANALYZE_MISSION.testId}
             aria-label={SOVEREIGN_ACTION_ANALYZE_MISSION.ariaLabel}
             style={{
-              width: '100%', padding: '12px 14px', borderRadius: 12,
-              background: C.bg, border: `1px solid ${C.border}`,
-              color: C.text, fontFamily: 'monospace', fontSize: 12,
-              fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: 12,
+              background: C.bg,
+              border: `1px solid ${C.border}`,
+              color: C.text,
+              fontFamily: 'monospace',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
             🔍 Interne Prüfung
@@ -881,10 +1024,17 @@ function SideDrawer({
             type="button"
             onClick={() => { onGenerateErrorWorkflow(); onClose(); }}
             style={{
-              width: '100%', padding: '12px 14px', borderRadius: 12,
-              background: 'rgba(251,191,36,0.06)', border: `1px solid ${C.amber}33`,
-              color: C.amber, fontFamily: 'monospace', fontSize: 12,
-              fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: 12,
+              background: 'rgba(251,191,36,0.06)',
+              border: `1px solid ${C.amber}33`,
+              color: C.amber,
+              fontFamily: 'monospace',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
             ⚠ Fehleranalyse
@@ -895,10 +1045,17 @@ function SideDrawer({
               type="button"
               onClick={() => { onCancelOpenHands(); onClose(); }}
               style={{
-                width: '100%', padding: '12px 14px', borderRadius: 12,
-                background: 'rgba(251,49,85,0.07)', border: '1px solid rgba(251,49,85,0.25)',
-                color: C.rose, fontFamily: 'monospace', fontSize: 12,
-                fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: 12,
+                background: 'rgba(251,49,85,0.07)',
+                border: '1px solid rgba(251,49,85,0.25)',
+                color: C.rose,
+                fontFamily: 'monospace',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
               }}
             >
               ✕ Agent stoppen
@@ -906,7 +1063,6 @@ function SideDrawer({
           )}
         </div>
 
-        {/* Publish CTA — pinned bottom */}
         <div style={{ padding: '12px' }}>
           <button
             type="button"
@@ -915,10 +1071,16 @@ function SideDrawer({
             data-testid={SOVEREIGN_ACTION_DRAFT_PR.testId}
             aria-label={SOVEREIGN_ACTION_DRAFT_PR.ariaLabel}
             style={{
-              width: '100%', padding: '14px', borderRadius: 14,
-              background: C.orange, border: 'none',
-              color: '#fff', fontFamily: 'monospace', fontSize: 13,
-              fontWeight: 700, cursor: 'pointer',
+              width: '100%',
+              padding: '14px',
+              borderRadius: 14,
+              background: C.orange,
+              border: 'none',
+              color: '#fff',
+              fontFamily: 'monospace',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
               boxShadow: `0 4px 16px ${C.orange}40`,
             }}
           >
@@ -930,7 +1092,6 @@ function SideDrawer({
   );
 }
 
-// ── Composer (input bar — pinned to bottom, safe-area aware)
 function Composer({
   value, onChange, onSubmit, disabled, loading, placeholder,
 }: {
@@ -959,9 +1120,13 @@ function Composer({
       borderTop: `1px solid ${C.border}`,
     }}>
       <div style={{
-        display: 'flex', alignItems: 'flex-end', gap: 8,
-        background: C.bg, border: `1px solid ${C.border}`,
-        borderRadius: 16, padding: '8px 8px 8px 14px',
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 8,
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 16,
+        padding: '8px 8px 8px 14px',
         transition: 'border-color 0.15s',
       }}>
         <textarea
@@ -982,19 +1147,22 @@ function Composer({
           }}
           placeholder={placeholder}
           style={{
-            flex: 1, background: 'transparent', border: 'none', outline: 'none',
+            flex: 1,
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            fontSize: 14, lineHeight: 1.5, color: C.text,
-            resize: 'none', maxHeight: 120, minHeight: 24,
+            fontSize: 14,
+            lineHeight: 1.5,
+            color: C.text,
+            resize: 'none',
+            maxHeight: 120,
+            minHeight: 24,
             overflowY: 'auto',
-          }}
-          style={{
-            // Placeholder color via CSS variable fallback
             '--placeholder-color': C.textMuted,
           } as React.CSSProperties}
         />
 
-        {/* Send button */}
         <button
           type="button"
           onClick={onSubmit}
@@ -1003,11 +1171,18 @@ function Composer({
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
           data-testid={SOVEREIGN_ACTION_START_TASK.testId}
           style={{
-            width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            flexShrink: 0,
             background: disabled || loading ? C.surface : C.orange,
-            border: 'none', color: '#fff',
-            fontSize: 16, cursor: disabled || loading ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: 'none',
+            color: '#fff',
+            fontSize: 16,
+            cursor: disabled || loading ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             transition: 'background 0.2s, box-shadow 0.2s',
             boxShadow: disabled || loading ? 'none' : `0 2px 12px ${C.orange}50`,
             opacity: disabled || loading ? 0.45 : 1,
@@ -1017,10 +1192,12 @@ function Composer({
         </button>
       </div>
 
-      {/* Shift+Enter hint */}
       <div style={{
-        fontFamily: 'monospace', fontSize: 8, color: C.textMuted,
-        marginTop: 5, paddingLeft: 14,
+        fontFamily: 'monospace',
+        fontSize: 8,
+        color: C.textMuted,
+        marginTop: 5,
+        paddingLeft: 14,
       }}>
         Enter senden · Shift+Enter Zeilenumbruch
       </div>
@@ -1030,8 +1207,6 @@ function Composer({
 
 // ─────────────────────────────────────────────────────────────
 // MAIN COMPONENT
-// Drop-in replacement for BuilderContainer —
-// identical props, same import paths.
 // ─────────────────────────────────────────────────────────────
 
 export function BuilderContainer({
@@ -1042,26 +1217,29 @@ export function BuilderContainer({
   openhandsIsRunning, onStartOpenHands, onCancelOpenHands,
 }: BuilderContainerProps) {
 
-  const [wishText, setWishText]             = useState(() => missionToWishText(mission));
-  const [thinkingFrameIndex, setTFI]        = useState(0);
-  const [showRuntimeSheet, setShowRuntime]  = useState(false);
-  const [showSideMenu, setShowSide]         = useState(false);
-  const [showOpenHandsBriefing, setOHB]     = useState(false);
-  const [chatRepoSnapshot, setChatRepo]     = useState<DevChatRepoSnapshot | null>(null);
-  const [chatRepoError, setChatRepoError]   = useState<string | null>(null);
-  const [localRepoLoading, setRepoLoading]  = useState(false);
-  const lastMissionRef                       = useRef(mission);
-  const scrollRef                            = useRef<HTMLDivElement>(null);
-  const nowRef                               = useRef(Date.now());
+  const [wishText, setWishText] = useState(() => missionToWishText(mission));
+  const [thinkingFrameIndex, setTFI] = useState(0);
+  const [showRuntimeSheet, setShowRuntime] = useState(false);
+  const [showSideMenu, setShowSide] = useState(false);
+  const [showOpenHandsBriefing, setOHB] = useState(false);
+  const [chatRepoSnapshot, setChatRepo] = useState<DevChatRepoSnapshot | null>(null);
+  const [chatRepoError, setChatRepoError] = useState<string | null>(null);
+  const [localRepoLoading, setRepoLoading] = useState(false);
+  const lastMissionRef = useRef(mission);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const nowRef = useRef(Date.now());
 
-  // Re-use exact same derivation logic as BuilderContainer
   const state = deriveBuilderContainerState({
     repoReady: repoReady || Boolean(chatRepoSnapshot),
     repoBusy: repoBusy || localRepoLoading,
-    runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview,
+    runtimeBusy,
+    isPublishing,
+    mission,
+    sovereignSummary,
+    sovereignPreview,
   });
 
-  const effectiveRepoReady  = repoReady || Boolean(chatRepoSnapshot);
+  const effectiveRepoReady = repoReady || Boolean(chatRepoSnapshot);
   const effectiveRepoReason = chatRepoSnapshot
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
     : repoReason;
@@ -1091,8 +1269,13 @@ export function BuilderContainer({
     || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
 
   const agentStatus = deriveAgentStatus({
-    repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob,
-    localRepoLoading, localRepoError: Boolean(chatRepoError),
+    repoBusy,
+    runtimeBusy,
+    isPublishing,
+    openhandsIsRunning,
+    openhandsJob,
+    localRepoLoading,
+    localRepoError: Boolean(chatRepoError),
   });
 
   const sourceTier: RuntimeTier = openhandsReady
@@ -1108,41 +1291,78 @@ export function BuilderContainer({
 
   const runtimeSources = [
     runtimeSource,
-    { id: 'worker-chat',   label: 'Worker Chat',  tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_CHAT,   available: true },
-    { id: 'worker-kv',    label: 'Worker KV',    tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_KV,     available: true },
-    { id: 'worker-models',label: `${DEV_CHAT_WORKER_MODELS.length} Modelle`, tier: 'ready' as RuntimeTier,
-      description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(' · '), available: true },
-    { id: 'repo-snapshot', label: effectiveRepoReady ? 'Repo Snapshot' : 'Repo fehlt',
+    {
+      id: 'worker-chat',
+      label: 'Worker Chat',
+      tier: 'ready' as RuntimeTier,
+      description: SOVEREIGN_WORKER_CHAT,
+      available: true,
+    },
+    {
+      id: 'worker-kv',
+      label: 'Worker KV',
+      tier: 'ready' as RuntimeTier,
+      description: SOVEREIGN_WORKER_KV,
+      available: true,
+    },
+    {
+      id: 'worker-models',
+      label: `${DEV_CHAT_WORKER_MODELS.length} Modelle`,
+      tier: 'ready' as RuntimeTier,
+      description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(' · '),
+      available: true,
+    },
+    {
+      id: 'repo-snapshot',
+      label: effectiveRepoReady ? 'Repo Snapshot' : 'Repo fehlt',
       tier: (effectiveRepoReady ? 'ready' : 'blocked') as RuntimeTier,
-      description: effectiveRepoReady ? effectiveRepoReason : repoReason, available: effectiveRepoReady },
+      description: effectiveRepoReady ? effectiveRepoReason : repoReason,
+      available: effectiveRepoReady,
+    },
   ];
 
   const chatLines = useMemo(
     () => buildChatLines({
-      wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason,
-      runtimeThinkingActive, cuteThinkingLabel, sovereignSummary,
-      disabledReason: state.disabledReason, openhandsJob, chatRepoSnapshot, chatRepoError,
+      wishText,
+      repoReady: effectiveRepoReady,
+      repoReason: effectiveRepoReason,
+      runtimeThinkingActive,
+      cuteThinkingLabel,
+      sovereignSummary,
+      disabledReason: state.disabledReason,
+      openhandsJob,
+      chatRepoSnapshot,
+      chatRepoError,
     }),
-    [chatRepoError, chatRepoSnapshot, cuteThinkingLabel, effectiveRepoReady,
-     effectiveRepoReason, openhandsJob, runtimeThinkingActive, sovereignSummary,
-     state.disabledReason, wishText],
+    [
+      chatRepoError,
+      chatRepoSnapshot,
+      cuteThinkingLabel,
+      effectiveRepoReady,
+      effectiveRepoReason,
+      openhandsJob,
+      runtimeThinkingActive,
+      sovereignSummary,
+      state.disabledReason,
+      wishText,
+    ],
   );
 
-  // Thinking animation frame
   useEffect(() => {
-    if (!runtimeThinkingActive) { setTFI(0); return; }
+    if (!runtimeThinkingActive) {
+      setTFI(0);
+      return;
+    }
     const h = window.setInterval(() => setTFI((c) => c + 1), CUTE_THINKING_FRAME_MS);
     return () => window.clearInterval(h);
   }, [runtimeThinkingActive]);
 
-  // Mission sync
   useEffect(() => {
     if (mission === lastMissionRef.current) return;
     lastMissionRef.current = mission;
     setWishText(missionToWishText(mission));
   }, [mission]);
 
-  // Auto-scroll
   useEffect(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -1178,14 +1398,18 @@ export function BuilderContainer({
       setChatRepoError(result.error ?? 'Repo konnte nicht geladen werden.');
       return;
     }
-    if (agentDisabled) { analyzeWish(); return; }
+    if (agentDisabled) {
+      analyzeWish();
+      return;
+    }
     startAgentFromChat();
   };
 
   const submitDisabled = localRepoLoading || (!parseDevChatGithubUrl(wishText) && (agentDisabled || !wishText.trim()));
 
-  // Stable timestamp for bubbles
-  useEffect(() => { nowRef.current = Date.now(); }, [chatLines.length]);
+  useEffect(() => {
+    nowRef.current = Date.now();
+  }, [chatLines.length]);
 
   return (
     <section
@@ -1195,16 +1419,20 @@ export function BuilderContainer({
       data-layout="devchat-replit"
       aria-label={builderContainerContract.ariaLabel}
       style={{
-        // Galaxy A9 — full height, max 393dp wide, AMOLED black
-        width: '100%', maxWidth: MAX_W, margin: '0 auto',
-        height: '100dvh', display: 'flex', flexDirection: 'column',
-        background: C.bg, color: C.text,
+        width: '100%',
+        maxWidth: MAX_W,
+        margin: '0 auto',
+        height: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: C.bg,
+        color: C.text,
         fontFamily: 'system-ui, -apple-system, sans-serif',
-        overflow: 'hidden', position: 'relative',
+        overflow: 'hidden',
+        position: 'relative',
         WebkitTapHighlightColor: 'transparent',
       }}
     >
-      {/* ── Keyframes */}
       <style>{`
         @keyframes sdc-pulse {
           0%,100%{opacity:1;transform:scale(1)}
@@ -1216,7 +1444,6 @@ export function BuilderContainer({
         ::-webkit-scrollbar-track { background: transparent; }
       `}</style>
 
-      {/* ── TOP BAR */}
       <TopBar
         status={agentStatus}
         repoReady={effectiveRepoReady}
@@ -1227,15 +1454,17 @@ export function BuilderContainer({
         source={runtimeSource}
       />
 
-      {/* ── CHAT SCROLL AREA */}
       <div
         ref={scrollRef}
         data-testid="sovereign-chat-body-window"
         aria-label="Sovereign Chat Verlauf"
         style={{
-          flex: 1, overflowY: 'auto', overflowX: 'hidden',
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
           background: C.bg,
-          display: 'flex', flexDirection: 'column',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {!wishText.trim() && !chatRepoSnapshot ? (
@@ -1250,13 +1479,11 @@ export function BuilderContainer({
 
             <OutcomeHints hints={outcomeHints} />
 
-            {/* Bottom padding */}
             <div style={{ height: 8 }} />
           </div>
         )}
       </div>
 
-      {/* ── COMPOSER */}
       <Composer
         value={wishText}
         onChange={setWishText}
@@ -1270,7 +1497,6 @@ export function BuilderContainer({
         }
       />
 
-      {/* ── OVERLAYS */}
       {showRuntimeSheet && (
         <RuntimeSheet
           sources={runtimeSources}
@@ -1296,19 +1522,26 @@ export function BuilderContainer({
         <div
           onClick={() => setOHB(false)}
           style={{
-            position: 'fixed', inset: 0, zIndex: 50,
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
             background: 'rgba(14,17,22,0.88)',
             backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             padding: 16,
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: '100%', maxWidth: 440,
-              maxHeight: '90vh', overflowY: 'auto',
-              borderRadius: 20, border: `1px solid ${C.border}`,
+              width: '100%',
+              maxWidth: 440,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              borderRadius: 20,
+              border: `1px solid ${C.border}`,
             }}
           >
             <OpenHandsOperatorBriefingPanel
