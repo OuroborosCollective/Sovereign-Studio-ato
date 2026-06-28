@@ -40,7 +40,11 @@
     "hardcode:scan:src": "node scripts/hardcode-scanner.mjs src",
     "smoke:ki-coach": "tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts",
     "smoke:ki-coach:headed": "HEADED=true tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts",
-    "apk:clean-release": "pnpm run android:clean && pnpm run build:apk"
+    "apk:clean-release": "pnpm run android:clean && pnpm run build:apk",
+    "depcruise": "pnpm dlx dependency-cruiser",
+    "madge": "pnpm dlx madge",
+    "ts-prune": "pnpm dlx ts-prune",
+    "knip": "pnpm dlx knip"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.3",
