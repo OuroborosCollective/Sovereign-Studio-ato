@@ -6,6 +6,7 @@
   "license": "MIT",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/ci-disable-unused-native-modules.js",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
