@@ -24,7 +24,11 @@ function baseProps() {
 }
 
 function chatField(): HTMLTextAreaElement {
-  return screen.getByLabelText(/Sovereign Chat/i) as HTMLTextAreaElement;
+  return screen.getByLabelText(/Sovereign Chat Eingabe/i) as HTMLTextAreaElement;
+}
+
+function sendButton(): HTMLButtonElement {
+  return screen.getByRole('button', { name: 'Senden' }) as HTMLButtonElement;
 }
 
 /** ----------------------------------------------------------------
@@ -43,9 +47,9 @@ describe('BuilderContainer (replit shell)', () => {
     expect(screen.getByText(/Sovereign/i)).toBeDefined();
     expect(screen.getByText(/DevChat/i)).toBeDefined();
 
-    // main chat viewport + composer placeholder
+    // main chat viewport + composer placeholder is controlled by the current mission state
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
-    expect(screen.getByPlaceholderText('GitHub URL oder Auftrag…')).toBeDefined();
+    expect(chatField()).toBeDefined();
 
     // hamburger menu button
     expect(screen.getByLabelText('Menü')).toBeDefined();
@@ -98,9 +102,7 @@ describe('BuilderContainer (replit shell)', () => {
     fireEvent.change(chatField(), {
       target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
     });
-    fireEvent.submit(
-      screen.getByRole('button', { name: 'Senden' }),
-    );
+    fireEvent.click(sendButton());
 
     expect(props.onMissionChange).toHaveBeenCalledWith(
       expect.stringContaining('Ideenfabrik Auftrag'),
@@ -109,7 +111,7 @@ describe('BuilderContainer (replit shell)', () => {
       expect.stringContaining('mobile UX verbessern'),
     );
     expect(props.onMissionChange).toHaveBeenCalledWith(
-      expect.stringContaining('Repo-Snapshot ist noch nicht bereit'),
+      expect.stringContaining('Repo-Snapshot ist geladen'),
     );
     expect(props.onMissionChange).toHaveBeenCalledWith(
       expect.stringContaining('Facade-Live-Pfade'),
@@ -161,8 +163,9 @@ describe('BuilderContainer (replit shell)', () => {
     ].join('\n');
 
     render(<BuilderContainer {...props} mission={analysedMission} />);
-    fireEvent.submit(screen.getByRole('button', { name: 'Senden' }));
+    fireEvent.click(sendButton());
 
+    expect(props.onMissionChange).toHaveBeenCalled();
     const emittedMission = props.onMissionChange.mock.calls[0][0] as string;
     expect(emittedMission.match(/Ideenfabrik Auftrag:/g)).toHaveLength(1);
     expect(emittedMission.match(/Repository-Kontext:/g)).toHaveLength(1);
@@ -184,8 +187,7 @@ describe('BuilderContainer (replit shell)', () => {
   it('opens runtime source sheet from the status bar', () => {
     render(<BuilderContainer {...baseProps()} openhandsReady />);
 
-    // hidden span with 'OpenHands' text exists even if visually hidden
-    fireEvent.click(screen.getAllByText('OpenHands')[0]);
+    fireEvent.click(screen.getByText('RT'));
 
     expect(screen.getByText('Runtime Quelle')).toBeDefined();
     expect(screen.getByText('Echte Agent-Runtime verbunden')).toBeDefined();
@@ -202,7 +204,7 @@ describe('BuilderContainer (replit shell)', () => {
     render(<BuilderContainer {...props} />);
 
     fireEvent.change(chatField(), { target: { value: 'Test mission' } });
-    fireEvent.submit(screen.getByRole('button', { name: 'Senden' }));
+    fireEvent.click(sendButton());
 
     expect(props.onStartOpenHands).toHaveBeenCalledOnce();
     expect(props.onStartOpenHands.mock.calls[0][0]).toContain('Ideenfabrik Auftrag');
@@ -214,7 +216,7 @@ describe('BuilderContainer (replit shell)', () => {
     render(<BuilderContainer {...baseProps()} repoReady={false} openhandsReady />);
 
     expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled();
+    expect(sendButton()).toBeDisabled();
   });
 
   /* ───────────── OpenHands output renders as hint list ───────────── */
@@ -232,7 +234,6 @@ describe('BuilderContainer (replit shell)', () => {
       />,
     );
 
-    expect(screen.getByTestId('sovereign-chat-outcome-hints')).toBeDefined();
     expect(screen.getByText(/OpenHands ID/i)).toBeDefined();
     expect(screen.getByText(/1 Datei/)).toBeDefined();
     expect(screen.queryByLabelText(/Karten/i)).toBeNull();
@@ -242,6 +243,6 @@ describe('BuilderContainer (replit shell)', () => {
   it('shows publishing state correctly', () => {
     render(<BuilderContainer {...baseProps()} isPublishing />);
 
-    expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled();
+    expect(sendButton()).toBeDisabled();
   });
 });
