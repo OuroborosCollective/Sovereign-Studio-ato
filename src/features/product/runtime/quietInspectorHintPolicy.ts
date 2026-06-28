@@ -26,6 +26,13 @@ function lampWeight(lamp: QuietInspectorLamp): number {
   return 1;
 }
 
+function signalPriority(signal: QuietInspectorSignal): number {
+  if (signal.id === 'pal') return 100;
+  if (signal.id === 'brownfield') return 80;
+  if (signal.id === 'remote-memory') return 60;
+  return 0;
+}
+
 function sanitizeText(value: string, max = 120): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, max);
 }
@@ -63,7 +70,7 @@ export function mergeQuietInspectorSignals(signals: QuietInspectorSignal[]): Qui
   const normalized = signals
     .map(normalizeSignal)
     .filter((signal): signal is QuietInspectorSignal => Boolean(signal))
-    .sort((a, b) => lampWeight(b.lamp) - lampWeight(a.lamp) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id))
+    .sort((a, b) => lampWeight(b.lamp) - lampWeight(a.lamp) || signalPriority(b) - signalPriority(a) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id))
     .slice(0, MAX_SIGNALS);
 
   const topLamp = normalized[0]?.lamp ?? 'green';
