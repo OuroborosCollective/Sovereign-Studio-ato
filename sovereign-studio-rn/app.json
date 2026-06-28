@@ -9,6 +9,7 @@
     "newArchEnabled": false,
     "autolinking": {
       "exclude": [
+        "react-native-gesture-handler",
         "react-native-reanimated",
         "react-native-screens"
       ]
