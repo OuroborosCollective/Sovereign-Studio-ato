@@ -186,7 +186,7 @@ function run() {
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-visible', 'Repair action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /SOVEREIGN_ACTION_DRAFT_PR/, 'builder:draft-visible', 'Draft PR action must be bound to contract.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /Schritt 2|2 ·/, 'builder:step-two-guidance', 'Builder must guide the user through analysis step.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Schritt 3|3 ·/, 'builder:step-three-guidance', 'Builder must guide the user through start step.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /Agent starten|submit.*task|start.*task/i, 'builder:step-three-guidance', 'Builder must provide action to start the agent task.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /disabledReason/, 'builder:disabled-reason', 'Builder must expose disabled reason from runtime state.');
 
   // Container and contract binding validation
