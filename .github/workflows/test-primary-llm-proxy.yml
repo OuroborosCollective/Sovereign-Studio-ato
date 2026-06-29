@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           cat > payload.json <<'JSON'
           {
-            "model": "cerebras/zai-glm-4.7",
+            "model": "llama-3-8b",
             "messages": [
               { "role": "system", "content": "Reply with exactly one short sentence." },
               { "role": "user", "content": "Say Sovereign proxy works." }
@@ -55,7 +55,7 @@ jobs:
             "reasoning_format": "parsed"
           }
           JSON
-          http_status=$(curl -sS -X POST "$PRIMARY_LLM_PROXY_URL" \
+          http_status=$(curl -sS -X POST "$PRIMARY_LLM_PROXY_URL/v1/chat/completions" \
             -H "Content-Type: application/json" \
             --data @payload.json \
             -o response.json \

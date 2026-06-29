@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  DEV_CHAT_WORKER_DEFAULT_MODEL,
   DEV_CHAT_WORKER_MODELS,
   SOVEREIGN_WORKER_CHAT,
+  SOVEREIGN_WORKER_HEALTH,
   SOVEREIGN_WORKER_KV,
   devChatGithubUrlToRepoRequest,
+  fetchDevChatWorkerHealth,
   fetchDevChatWorkerReply,
+  normalizeDevChatWorkerModel,
   parseDevChatGithubUrl,
   summarizeDevChatRepoSnapshot,
 } from './devChatWorkerBridge';
@@ -24,7 +28,11 @@ describe('devChatWorkerBridge', () => {
   it('keeps the approved Cloudflare worker routes', () => {
     expect(SOVEREIGN_WORKER_CHAT).toContain('sovereign-llm-proxy.projectouroboroscollective.workers.dev/v1/chat/completions');
     expect(SOVEREIGN_WORKER_KV).toContain('sovereign-llm-proxy.projectouroboroscollective.workers.dev/kv');
-    expect(DEV_CHAT_WORKER_MODELS.some((model) => model.id === 'deepseek-r1' && model.thinking)).toBe(true);
+    expect(SOVEREIGN_WORKER_HEALTH).toContain('sovereign-llm-proxy.projectouroboroscollective.workers.dev/health');
+    expect(DEV_CHAT_WORKER_MODELS).toEqual([
+      expect.objectContaining({ id: DEV_CHAT_WORKER_DEFAULT_MODEL, thinking: true }),
+    ]);
+    expect(normalizeDevChatWorkerModel('llama-3-8b')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
   });
 
   it('parses GitHub URLs typed into the chat', () => {
@@ -77,8 +85,43 @@ describe('devChatWorkerBridge', () => {
     });
     expect(fetchMock).toHaveBeenCalledWith(SOVEREIGN_WORKER_CHAT, expect.objectContaining({
       method: 'POST',
-      body: expect.stringContaining('llama-3-8b'),
+      body: expect.stringContaining(DEV_CHAT_WORKER_DEFAULT_MODEL),
     }));
+  });
+
+  it('returns a diagnostic blocker for HTTP 500 responses', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      error: { message: 'Gateway exploded', type: 'server_error' },
+    }, 500)));
+
+    const result = await fetchDevChatWorkerReply({
+      model: 'llama-3-8b',
+      messages: [{ role: 'user', content: 'Hallo' }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('Gateway exploded');
+    expect(result.diagnostic?.status).toBe(500);
+    expect(result.diagnostic?.scope).toMatch(/worker_runtime|worker_config/);
+    expect(result.diagnostic?.canClientFix).toBe(false);
+  });
+
+  it('reads the hosted worker health endpoint without secrets', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      ok: true,
+      provider: 'sovereign-llm-bridge',
+      gateway: 'gatter',
+      model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      upstreamConfigured: true,
+      secretConfigured: true,
+    })));
+
+    const result = await fetchDevChatWorkerHealth();
+
+    expect(result.ok).toBe(true);
+    expect(result.route).toBe(SOVEREIGN_WORKER_HEALTH);
+    expect(result.secretConfigured).toBe(true);
+    expect(result.model).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
   });
 
   it('returns a real blocker when the worker response has no usable content', async () => {

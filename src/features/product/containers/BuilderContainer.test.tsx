@@ -288,6 +288,32 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+
+
+  /* ───────────── worker 500 becomes runtime diagnostic state, not blind retry ───────────── */
+  it('turns Worker HTTP 500 into a local runtime diagnostic and avoids blind repeat calls', async () => {
+    const props = baseProps();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'Gateway exploded', type: 'server_error' } }, 500))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, provider: 'sovereign-llm-bridge', gateway: 'gatter', model: 'cerebras/zai-glm-4.7', upstreamConfigured: true, secretConfigured: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<BuilderContainer {...props} repoReady openhandsReady />);
+
+    fireEvent.change(chatField(), { target: { value: 'Hast du Vorschläge für bessere UI?' } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
+    expect(screen.getByText(/HTTP 500/i)).toBeDefined();
+    expect(screen.getByText(/secret=ok/i)).toBeDefined();
+
+    fireEvent.change(chatField(), { target: { value: 'Warum?' } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getAllByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i).length).toBeGreaterThanOrEqual(2));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   /* ───────────── OpenHands output renders as hint list ───────────── */
   it('keeps OpenHands output as plain hints and not result cards', () => {
     render(

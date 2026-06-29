@@ -65,6 +65,14 @@ jobs:
           const DEFAULT_URL = 'https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions';
           const DEFAULT_MODEL = 'cerebras/zai-glm-4.7';
           const GATEWAY_NAME = 'gatter';
+          const MODEL_ALIASES: Record<string, string> = {
+            'llama-3-8b': DEFAULT_MODEL,
+            'llama-3.1-8b': DEFAULT_MODEL,
+            'mistral-7b': DEFAULT_MODEL,
+            'gemma-7b': DEFAULT_MODEL,
+            'qwen-14b': DEFAULT_MODEL,
+            'deepseek-r1': DEFAULT_MODEL,
+          };
           const AUTH_HEADER = ['cf', '-aig-authorization'].join('');
           const MAX_BODY_BYTES = 256000;
           const MAX_MESSAGES = 24;
@@ -115,9 +123,15 @@ jobs:
             });
           }
 
+          function normalizeModel(value: unknown, env: Env): string {
+            const fallback = env.AIG_MODEL || DEFAULT_MODEL;
+            const requested = typeof value === 'string' && value.trim() ? value.trim() : fallback;
+            return MODEL_ALIASES[requested] || requested;
+          }
+
           function normalizePayload(input: Record<string, unknown>, env: Env): Record<string, unknown> {
             return {
-              model: typeof input.model === 'string' && input.model.trim() ? input.model.trim() : env.AIG_MODEL || DEFAULT_MODEL,
+              model: normalizeModel(input.model, env),
               messages: sanitizeMessages(input.messages),
               temperature: typeof input.temperature === 'number' ? input.temperature : 0.2,
               max_tokens: typeof input.max_tokens === 'number' ? input.max_tokens : 4096,
@@ -161,6 +175,15 @@ jobs:
                   body: JSON.stringify(payload),
                 });
                 const body = await upstream.text();
+                if (!upstream.ok) {
+                  return json({
+                    ok: false,
+                    error: 'AI Gateway upstream blocked the request.',
+                    upstreamStatus: upstream.status,
+                    upstreamBody: body.slice(0, 1200),
+                    model: payload.model,
+                  }, { status: upstream.status >= 500 ? 502 : upstream.status }, env, request);
+                }
                 return new Response(body, {
                   status: upstream.status,
                   headers: {
@@ -169,7 +192,9 @@ jobs:
                   },
                 });
               } catch (error) {
-                return json({ ok: false, error: error instanceof Error ? error.message : 'Bridge request failed.' }, { status: 400 }, env, request);
+                const message = error instanceof Error ? error.message : 'Bridge request failed.';
+                const configError = /not configured|must use HTTPS|body|messages|invalid|too large/i.test(message);
+                return json({ ok: false, error: message }, { status: configError ? 400 : 502 }, env, request);
               }
             },
           };

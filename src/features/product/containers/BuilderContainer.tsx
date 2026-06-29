@@ -22,11 +22,15 @@ import {
   DEV_CHAT_WORKER_MODELS,
   SOVEREIGN_WORKER_CHAT,
   SOVEREIGN_WORKER_KV,
+  explainDevChatWorkerDiagnostic,
   fetchDevChatRepoTree,
+  fetchDevChatWorkerHealth,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   summarizeDevChatRepoSnapshot,
   type DevChatRepoSnapshot,
+  type DevChatWorkerDiagnostic,
+  type DevChatWorkerHealthResult,
   type DevChatWorkerMessage,
 } from '../runtime/devChatWorkerBridge';
 import { OpenHandsOperatorBriefingPanel } from '../components/OpenHandsOperatorBriefingPanel';
@@ -106,6 +110,13 @@ interface ModuleCfg {
 }
 
 interface ModuleCond { label: string; status: CondStatus }
+
+interface WorkerRuntimeBlocker {
+  readonly message: string;
+  readonly diagnostic: DevChatWorkerDiagnostic;
+  readonly health?: DevChatWorkerHealthResult;
+  readonly createdAt: number;
+}
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -371,6 +382,77 @@ function buildWorkerMessages(args: {
   ];
 }
 
+function isWorkerDiagnosticQuestion(text: string): boolean {
+  const lower = text.toLowerCase();
+  return [
+    'warum', 'wieso', 'weshalb', 'hilfe', 'hilf', 'help', 'erklär', 'erklaer',
+    'diagnose', 'fehler', '500', 'worker', 'cloudflare', 'blockiert', 'kaputt',
+  ].some((token) => lower.includes(token));
+}
+
+function isWorkerRetryIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ['retry', 'erneut', 'nochmal', 'noch mal', 'wiederholen', 'testen', 'versuch'].some((token) => lower.includes(token));
+}
+
+function buildWorkerBlockerAnswer(args: {
+  readonly blocker: WorkerRuntimeBlocker;
+  readonly repoReady: boolean;
+  readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
+  readonly openhandsReady?: boolean;
+}): string {
+  const { diagnostic, health } = args.blocker;
+  const repoLine = args.chatRepoSnapshot
+    ? `Repo-Kontext bleibt geladen: ${args.chatRepoSnapshot.owner}/${args.chatRepoSnapshot.repo} · ${args.chatRepoSnapshot.branch} · ${args.chatRepoSnapshot.fileCount} files.`
+    : args.repoReady
+      ? 'Repo-Kontext ist weiterhin bereit.'
+      : 'Repo-Kontext fehlt noch.';
+  const healthLine = health
+    ? `Health: ${health.status ?? 'n/a'} · secret=${health.secretConfigured === undefined ? 'unbekannt' : health.secretConfigured ? 'ok' : 'fehlt'} · upstream=${health.upstreamConfigured === undefined ? 'unbekannt' : health.upstreamConfigured ? 'ok' : 'fehlt'} · model=${health.model ?? diagnostic.model}.`
+    : 'Health: noch nicht geprüft.';
+  const codeLine = diagnostic.canClientFix
+    ? 'Einschätzung: Der Fehler ist wahrscheinlich durch unseren App-Request oder die Route im Code korrigierbar.'
+    : 'Einschätzung: Der letzte Fehler liegt wahrscheinlich in Worker-Konfiguration, Worker-Runtime oder Upstream-Provider und muss über Cloudflare/Bridge-Diagnose geprüft werden.';
+
+  return [
+    'Ich wiederhole den kaputten Worker-Call nicht blind.',
+    explainDevChatWorkerDiagnostic(diagnostic),
+    healthLine,
+    repoLine,
+    args.openhandsReady ? 'OpenHands Executor ist nur für echte Code-/Draft-PR-Aufträge zuständig und wurde für diese Chatfrage nicht gestartet.' : 'OpenHands Executor ist nicht bereit; normale Chatfragen bleiben Worker-Route.',
+    codeLine,
+  ].join('\n');
+}
+
+function composerRouteHint(args: {
+  readonly draft: string;
+  readonly workerBlocked: boolean;
+  readonly agentDisabled: boolean;
+}): string {
+  const clean = args.draft.trim();
+  if (!clean) return 'Worker Chat senden · Repo-URL laden · OpenHands nur bei Code-Auftrag';
+  if (parseDevChatGithubUrl(clean)) return 'Repo laden · Runtime Snapshot';
+  if (isOpenHandsExecutionIntent(clean)) return args.agentDisabled ? 'OpenHands blockiert · Worker erklärt zuerst' : 'OpenHands Executor starten';
+  if (args.workerBlocked && !isWorkerRetryIntent(clean)) return 'Worker blockiert · lokale Diagnose statt blindem Retry';
+  if (args.workerBlocked && isWorkerRetryIntent(clean)) return 'Worker Retry · Diagnose wird aktualisiert';
+  return 'Worker Chat senden · Enter senden · Shift+Enter Zeilenumbruch';
+}
+
+function confidenceLabel(value: number): string {
+  if (value >= 0.65) return 'stable';
+  if (value >= 0.35) return 'watch';
+  return 'low';
+}
+
+function phaseFromSignalAndConditions(signal: SignalType, conds: readonly ModuleCond[]): AnimPhase {
+  if (signal === 'error' || conds.some((condition) => condition.status === 'fail')) return 'error';
+  if (signal === 'processing') return 'working';
+  if (conds.some((condition) => condition.status === 'wait')) return signal === 'idle' ? 'idle' : 'working';
+  if (signal === 'warning') return 'working';
+  if (signal === 'active') return 'done';
+  return 'idle';
+}
+
 // ─────────────────────────────────────────────────────────────
 // PAL ROUTER  (inline — uses DEV_CHAT_WORKER_MODELS from bridge)
 // ─────────────────────────────────────────────────────────────
@@ -415,14 +497,6 @@ function sameConditions(
   b: Partial<Record<ModuleId, ModuleCond[]>>,
 ): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
-}
-
-function runtimePhaseFromSignal(signal: SignalType): AnimPhase {
-  if (signal === 'error') return 'error';
-  if (signal === 'warning') return 'working';
-  if (signal === 'processing') return 'working';
-  if (signal === 'active') return 'done';
-  return 'idle';
 }
 
 function buildRuntimeConfidence(args: {
@@ -522,7 +596,7 @@ function TopBar({
             {/* PAL badge */}
             {palTier && (
               <span style={{ fontFamily: 'monospace', fontSize: 8, padding: '2px 5px', borderRadius: 6, background: `${palTier === 'fast' ? C.green : palTier === 'smart' ? C.sky : C.violet}18`, color: palTier === 'fast' ? C.green : palTier === 'smart' ? C.sky : C.violet, border: `1px solid ${palTier === 'fast' ? C.green : palTier === 'smart' ? C.sky : C.violet}33` }}>
-                {palTier.toUpperCase()}{palSavings !== null ? ` · ${palSavings}%↓` : ''}
+                {palTier.toUpperCase()}{palSavings !== null ? ' · sparsam' : ''}
               </span>
             )}
           </div>
@@ -733,8 +807,7 @@ function ModuleScreen({
   const phase = (phases[mod.id]   ?? 'idle') as AnimPhase;
   const conds = conditions[mod.id as ModuleId] ?? [];
   const phaseColor: Record<AnimPhase,string> = { idle:C.textMuted, spinup:C.sky, working:mod.color, completing:C.amber, done:C.green, error:C.rose };
-  const phaseSub:   Record<AnimPhase,string> = { idle:'—', spinup:'initializing…', working:'running', completing:'wrapping up…', done:'✓ complete', error:'✗ failed' };
-  const sigPct: Record<string,number>        = { idle:0, active:85, processing:55, warning:40, error:20 };
+  const phaseSub:   Record<AnimPhase,string> = { idle:'—', spinup:'initializing…', working:'waiting / running', completing:'wrapping up…', done:'✓ complete', error:'✗ failed' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14 }}>
@@ -754,16 +827,14 @@ function ModuleScreen({
       {/* 3-stat grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
         {[
-          { label: 'Signal', value: sig.toUpperCase(),     color: C.textSub,       pct: sigPct[sig] ?? 0 },
-          { label: 'Phase',  value: phase.toUpperCase(),   color: phaseColor[phase], pct: 60 },
-          { label: 'Conf',   value: confidence.toFixed(3), color: mod.color,         pct: confidence * 100 },
-        ].map(({ label, value, color, pct }) => (
+          { label: 'Signal', value: sig.toUpperCase(), color: C.textSub },
+          { label: 'Phase',  value: phase.toUpperCase(), color: phaseColor[phase] },
+          { label: 'Diag',   value: confidenceLabel(confidence), color: mod.color },
+        ].map(({ label, value, color }) => (
           <div key={label} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 10px' }}>
             <div style={{ fontFamily: 'monospace', fontSize: 8, color: C.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
             <div style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color }}>{value}</div>
-            <div style={{ marginTop: 5, height: 2, borderRadius: 1, background: C.border, overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 1, background: color, width: `${pct}%`, transition: 'width 0.6s ease' }} />
-            </div>
+            <div style={{ marginTop: 5, fontFamily: 'monospace', fontSize: 8, color: C.textMuted }}>runtime state</div>
           </div>
         ))}
       </div>
@@ -866,7 +937,7 @@ function SideDrawer({
         {palStats && (
           <div style={{ margin: '8px 12px 0', padding: '10px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.border}` }}>
             <div style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted, marginBottom: 4 }}>PAL Router</div>
-            <div style={{ fontFamily: 'monospace', fontSize: 10, color: C.green }}>{palStats.savings}% gespart vs POWER-only</div>
+            <div style={{ fontFamily: 'monospace', fontSize: 10, color: C.green }}>sparsame Route aktiv</div>
             <div style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>{palStats.total} Calls · {DEV_CHAT_WORKER_MODELS.length} Modelle verfügbar</div>
           </div>
         )}
@@ -897,9 +968,9 @@ function SideDrawer({
 }
 
 // Composer (verbatim v3)
-function Composer({ value, onChange, onSubmit, disabled, loading, placeholder }: {
+function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, routeHint }: {
   value: string; onChange: (v: string) => void; onSubmit: () => void;
-  disabled: boolean; loading: boolean; placeholder: string;
+  disabled: boolean; loading: boolean; placeholder: string; routeHint: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resize = useCallback(() => {
@@ -939,7 +1010,7 @@ function Composer({ value, onChange, onSubmit, disabled, loading, placeholder }:
         </button>
       </div>
       <div style={{ fontFamily: 'monospace', fontSize: 8, color: C.textMuted, marginTop: 5, paddingLeft: 14 }}>
-        Agent starten · Enter senden · Shift+Enter Zeilenumbruch
+        {routeHint}
       </div>
     </div>
   );
@@ -998,6 +1069,7 @@ export function BuilderContainer({
   const [chatRepoError, setChatRepoError] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatLine[]>([]);
   const [chatResponseBusy, setChatResponseBusy] = useState(false);
+  const [workerBlocker, setWorkerBlocker] = useState<WorkerRuntimeBlocker | null>(null);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
   const ignoreNextMissionSyncRef = useRef(false);
@@ -1051,18 +1123,21 @@ export function BuilderContainer({
   const state = deriveBuilderContainerState({ repoReady: repoReady || Boolean(chatRepoSnapshot), repoBusy: repoBusy || localRepoLoading, runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview });
   const effectiveRepoReady   = repoReady || Boolean(chatRepoSnapshot);
   const effectiveRepoReason  = chatRepoSnapshot ? summarizeDevChatRepoSnapshot(chatRepoSnapshot) : repoReason;
+  const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(chatResponseBusy || openhandsIsRunning || repoBusy || localRepoLoading || runtimeBusy || isPublishing);
   const workStateStatus = runtimeThinkingActive
     ? (chatResponseBusy ? 'Cloudflare Worker antwortet' : (openhandsJobStatus?.trim() || 'Runtime arbeitet'))
-    : effectiveRepoReady
-      ? 'idle · Repo-Kontext bereit'
-      : 'idle · Repo fehlt';
+    : workerBlocker
+      ? `blocked · ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : 'Worker blockiert'}`
+      : effectiveRepoReady
+        ? 'idle · Repo-Kontext bereit'
+        : 'idle · Repo fehlt';
   const cuteThinkingLabel    = useMemo(() => formatCuteWorkStateLabel({ index: thinkingFrameIndex, active: runtimeThinkingActive, status: workStateStatus }), [runtimeThinkingActive, thinkingFrameIndex, workStateStatus]);
   const outcomeHints         = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
   const agentDisabled        = !effectiveRepoReady || repoBusy || localRepoLoading || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
-  const agentStatus          = chatResponseBusy ? 'thinking' : deriveAgentStatus({ repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob, localRepoLoading, localRepoError: Boolean(chatRepoError) });
-  const workerSourceTier: RuntimeTier = chatResponseBusy ? 'active' : 'ready';
-  const runtimeSource        = { id: 'worker-chat', label: 'Cloudflare Worker', tier: workerSourceTier, description: SOVEREIGN_WORKER_CHAT, available: true };
+  const agentStatus          = workerBlocker ? 'error' : chatResponseBusy ? 'thinking' : deriveAgentStatus({ repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob, localRepoLoading, localRepoError: Boolean(chatRepoError) });
+  const workerSourceTier: RuntimeTier = workerBlocker ? 'blocked' : chatResponseBusy ? 'active' : 'ready';
+  const runtimeSource        = { id: 'worker-chat', label: workerBlocker ? 'Cloudflare Worker blockiert' : 'Cloudflare Worker', tier: workerSourceTier, description: workerBlocker ? workerBlocker.message : SOVEREIGN_WORKER_CHAT, available: !workerBlocker };
   const runtimeSources       = [
     runtimeSource,
     { id: 'worker-kv',    label: 'Worker KV',     tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_KV, available: true },
@@ -1108,26 +1183,19 @@ export function BuilderContainer({
   // ── AppControl runtime binding
   // No simulated progress: lamps, phases and conditions are derived from real runtime state.
   useEffect(() => {
-    const jobBlocked = openhandsJob?.status === 'blocked' || openhandsJob?.status === 'failed' || Boolean(chatRepoError);
+    const jobBlocked = openhandsJob?.status === 'blocked' || openhandsJob?.status === 'failed' || Boolean(chatRepoError) || Boolean(workerBlocker);
     const hasOutput = (openhandsJob?.changedFiles?.length ?? 0) > 0 || Boolean(openhandsJob?.draftPrUrl);
     const nextSignals: Record<string, SignalType> = {
-      chat: runtimeThinkingActive ? 'processing' : (wishText.trim() || chatHistory.length > 0) ? 'active' : 'idle',
+      chat: workerBlocker ? 'error' : runtimeThinkingActive ? 'processing' : (wishText.trim() || chatHistory.length > 0) ? 'active' : 'idle',
       init: effectiveRepoReady ? 'active' : 'warning',
-      router: localRepoLoading || repoBusy ? 'processing' : effectiveRepoReady ? 'active' : 'idle',
+      router: workerBlocker ? 'error' : localRepoLoading || repoBusy ? 'processing' : effectiveRepoReady ? 'active' : 'idle',
       pattern: palDecisions.length > 0 ? 'active' : 'idle',
-      sync: openhandsIsRunning ? 'processing' : openhandsReady ? 'active' : 'warning',
+      sync: workerBlocker ? 'error' : openhandsIsRunning ? 'processing' : openhandsReady ? 'active' : 'warning',
       orchestr: jobBlocked ? 'error' : isPublishing || openhandsIsRunning ? 'processing' : hasOutput ? 'active' : 'idle',
       logger: statusLogs.length > 0 || outcomeHints.length > 0 ? 'active' : 'idle',
     };
 
     setSignals((previous) => (sameRecord(previous, nextSignals) ? previous : nextSignals));
-    setPhases((previous) => {
-      const next = Object.fromEntries(
-        MODULES.map((module) => [module.id, runtimePhaseFromSignal(nextSignals[module.id] ?? 'idle')]),
-      ) as Record<string, AnimPhase>;
-      return sameRecord(previous, next) ? previous : next;
-    });
-
     const nextConditions: Partial<Record<ModuleId, ModuleCond[]>> = {
       init: [
         { label: 'Module loaded', status: 'pass' },
@@ -1135,15 +1203,17 @@ export function BuilderContainer({
       ],
       router: [
         { label: 'Repo context available', status: effectiveRepoReady ? 'pass' : 'wait' },
-        { label: 'No runtime blocker', status: state.disabledReason ? 'fail' : 'pass' },
+        { label: 'No runtime blocker', status: state.disabledReason || workerBlocker ? 'fail' : 'pass' },
         { label: 'Chat intent present', status: (wishText.trim() || chatHistory.length > 0) ? 'pass' : 'wait' },
       ],
       pattern: [
         { label: 'PAL decision available', status: palDecisions.length > 0 ? 'pass' : 'wait' },
         { label: 'Confidence stable', status: confidence >= 0.5 ? 'pass' : 'wait' },
         { label: 'No fake progress', status: 'pass' },
+        { label: 'No hard percent display', status: 'pass' },
       ],
       sync: [
+        { label: 'Worker route clear', status: workerBlocker ? 'fail' : 'pass' },
         { label: 'OpenHands configured', status: openhandsReady ? 'pass' : 'wait' },
         { label: 'Runtime active only on real job', status: openhandsIsRunning ? 'pass' : 'wait' },
         { label: 'Repo snapshot synced', status: chatRepoSnapshot || repoReady ? 'pass' : 'wait' },
@@ -1152,6 +1222,7 @@ export function BuilderContainer({
         { label: 'Repo gate', status: effectiveRepoReady ? 'pass' : 'wait' },
         { label: 'Agent gate', status: !agentDisabled ? 'pass' : 'wait' },
         { label: 'Stopper clear', status: jobBlocked ? 'fail' : 'pass' },
+        { label: 'Worker blocker clear', status: workerBlocker ? 'fail' : 'pass' },
       ],
       logger: [
         { label: 'Logger active', status: 'pass' },
@@ -1160,6 +1231,12 @@ export function BuilderContainer({
     };
 
     setConditions((previous) => (sameConditions(previous, nextConditions) ? previous : nextConditions));
+    setPhases((previous) => {
+      const next = Object.fromEntries(
+        MODULES.map((module) => [module.id, phaseFromSignalAndConditions(nextSignals[module.id] ?? 'idle', nextConditions[module.id] ?? [])]),
+      ) as Record<string, AnimPhase>;
+      return sameRecord(previous, next) ? previous : next;
+    });
     setConfidence(buildRuntimeConfidence({
       effectiveRepoReady,
       openhandsReady,
@@ -1200,14 +1277,10 @@ export function BuilderContainer({
     state.disabledReason,
     statusLogs.length,
     wishText,
+    workerBlocker,
   ]);
 
   // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
-  const analyzeWishFromText = (text: string) => {
-    const clean = collapseRepeatedAnalyzedMission(buildAnalyzedMission({ wish: text, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }));
-    emitMissionChange(clean);
-  };
-
   const startAgentFromText = (text: string) => {
     const clean = collapseRepeatedAnalyzedMission(buildAnalyzedMission({ wish: text, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }));
     emitMissionChange(clean);
@@ -1247,9 +1320,29 @@ export function BuilderContainer({
       return;
     }
 
+    const workerDiagnosticIntent = isWorkerDiagnosticQuestion(submittedText);
+    if (workerBlocker && !isWorkerRetryIntent(submittedText) && !isOpenHandsExecutionIntent(submittedText)) {
+      appendChatLine({
+        role: 'assistant',
+        text: buildWorkerBlockerAnswer({
+          blocker: workerBlocker,
+          repoReady: effectiveRepoReady,
+          chatRepoSnapshot,
+          openhandsReady,
+        }),
+      });
+      addLog('warn', `Worker blocked · ${workerBlocker.diagnostic.scope}${workerDiagnosticIntent ? ' · local explanation' : ' · retry prevented'}`, 'router');
+      return;
+    }
+
+    if (workerBlocker && isWorkerRetryIntent(submittedText)) {
+      setWorkerBlocker(null);
+      addLog('info', 'Worker retry requested by user', 'router');
+    }
+
     const d = palRoute(submittedText, chatHistory.length + 1, chatRepoSnapshot?.fileCount ?? 0, palDecisions);
     setPalDecisions(prev => [...prev.slice(-99), d]);
-    addLog('info', `PAL → ${d.tier} · ${d.modelLabel} (score ${d.score})`, 'sys');
+    addLog('info', `PAL → ${d.tier} · ${d.modelLabel}`, 'sys');
 
     if (isOpenHandsExecutionIntent(submittedText)) {
       if (!agentDisabled) {
@@ -1274,12 +1367,32 @@ export function BuilderContainer({
     setChatResponseBusy(false);
 
     if (workerResult.ok && workerResult.content) {
+      setWorkerBlocker(null);
       appendChatLine({ role: 'assistant', text: workerResult.content });
       return;
     }
 
-    appendChatLine({ role: 'assistant', text: `Cloudflare Worker blockiert: ${workerResult.error ?? 'keine Antwort erhalten'}` });
-    analyzeWishFromText(submittedText);
+    const health = await fetchDevChatWorkerHealth();
+    const diagnostic = workerResult.diagnostic ?? {
+      route: workerResult.route,
+      model: d.modelId,
+      messageCount: 0,
+      scope: 'unknown' as const,
+      canClientFix: false,
+      nextAction: 'Worker-Diagnose prüfen.',
+    };
+    const blocker: WorkerRuntimeBlocker = {
+      message: workerResult.error ?? 'keine Antwort erhalten',
+      diagnostic,
+      health,
+      createdAt: Date.now(),
+    };
+    setWorkerBlocker(blocker);
+    appendChatLine({
+      role: 'assistant',
+      text: buildWorkerBlockerAnswer({ blocker, repoReady: effectiveRepoReady, chatRepoSnapshot, openhandsReady }),
+    });
+    addLog('error', `Worker blocked · ${diagnostic.scope}${diagnostic.status ? ` · HTTP ${diagnostic.status}` : ''}`, 'router');
   };
 
   const submitDisabled = localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
@@ -1367,6 +1480,7 @@ export function BuilderContainer({
           disabled={submitDisabled}
           loading={localRepoLoading}
           placeholder={chatRepoSnapshot ? `Frage zu ${chatRepoSnapshot.name}…` : 'GitHub URL oder Auftrag…'}
+          routeHint={composerRouteHint({ draft: wishText, workerBlocked, agentDisabled })}
         />
       )}
 
