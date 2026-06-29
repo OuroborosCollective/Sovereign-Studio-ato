@@ -405,7 +405,7 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
         model,
         messages,
         temperature: 0.2,
-        max_tokens: 1024,
+        max_tokens: 4096,
         reasoning_format: 'parsed',
         stream: false,
       }),
@@ -480,5 +480,88 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
       route: SOVEREIGN_WORKER_CHAT,
       diagnostic,
     };
+  }
+}
+
+/**
+ * Streaming variant of fetchDevChatWorkerReply.
+ * Posts with stream: true and yields SSE delta chunks in real-time.
+ * Falls back to the non-streaming route if response.body is unavailable.
+ */
+export async function* streamDevChatWorkerReply(
+  request: DevChatWorkerReplyRequest,
+): AsyncGenerator<string> {
+  const messages = request.messages
+    .map((message) => ({ role: message.role, content: message.content.trim() }))
+    .filter((message) => message.content.length > 0);
+  const model = normalizeDevChatWorkerModel(request.model);
+
+  if (messages.length === 0) return;
+
+  const response = await fetch(SOVEREIGN_WORKER_CHAT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      'X-Sovereign-Client': 'android-webview',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.2,
+      max_tokens: 4096,
+      reasoning_format: 'parsed',
+      stream: true,
+    }),
+    signal: request.signal,
+  });
+
+  if (!response.ok) return;
+  if (!response.body) {
+    // Fallback: fetch non-streaming response and yield content at once
+    const fallback = await fetchDevChatWorkerReply(request);
+    if (fallback.ok && fallback.content) yield fallback.content;
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const data = trimmed.slice(6).trim();
+        if (data === '[DONE]') return;
+
+        try {
+          const payload = JSON.parse(data) as Record<string, unknown>;
+          // OpenAI-compatible SSE format: { choices: [{ delta: { content: "..." } }] }
+          const choices = payload.choices;
+          if (Array.isArray(choices) && choices.length > 0) {
+            const delta = (choices[0] as Record<string, unknown>)?.delta;
+            if (delta && typeof delta === 'object') {
+              const content = (delta as Record<string, unknown>)?.content;
+              if (typeof content === 'string' && content.length > 0) {
+                yield content;
+              }
+            }
+          }
+        } catch {
+          // Skip malformed JSON lines silently
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
   }
 }
