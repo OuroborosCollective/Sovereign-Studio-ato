@@ -145,4 +145,97 @@ describe('agentWorkspaceRuntime', () => {
     expect(normalizeWorkspacePath('/etc/passwd')).toBeNull();
     expect(normalizeWorkspacePath('src/../secret.ts')).toBeNull();
   });
+
+  it('casual chat does not start workspace', () => {
+    const casualMessages = [
+      'Hallo, wie geht es dir?',
+      'Was ist Sovereign Studio?',
+      'Erzähl mir mehr über KI.',
+      'Kannst du mir bei anderen Projekten helfen?',
+      'Wie funktioniert das hier?',
+    ];
+
+    for (const msg of casualMessages) {
+      const decision = decideAgentWorkspaceIntent({
+        message: msg,
+        repoReady: true,
+        executorReady: true,
+      });
+      expect(decision.allowed).toBe(false);
+      expect(decision.kind).not.toBe('code-execution');
+    }
+  });
+
+  it('read-only Worker diagnostic does not start workspace', () => {
+    const readOnlyMessages = [
+      'Was ist der Worker-Status?',
+      'Erkläre mir die Fehlermeldung.',
+      'Prüfe die Health-Status.',
+      'Warum ist der Worker blockiert?',
+      'Lies die Logs und erkläre sie.',
+    ];
+
+    for (const msg of readOnlyMessages) {
+      const decision = decideAgentWorkspaceIntent({
+        message: msg,
+        repoReady: true,
+        executorReady: true,
+      });
+      expect(decision.allowed).toBe(false);
+      expect(decision.kind).toBe('read-only');
+    }
+  });
+
+  it('repo missing blocks workspace', () => {
+    const decision = decideAgentWorkspaceIntent({
+      message: 'Implementiere einen Bug-Fix in src/App.tsx.',
+      repoReady: false,
+      executorReady: true,
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain('loaded repository');
+  });
+
+  it('executor missing blocks workspace', () => {
+    const decision = decideAgentWorkspaceIntent({
+      message: 'Implementiere einen Bug-Fix in src/App.tsx.',
+      repoReady: true,
+      executorReady: false,
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain('executor');
+  });
+
+  it('another active workspace blocks new workspace', () => {
+    for (const status of ['queued', 'running'] as const) {
+      const decision = decideAgentWorkspaceIntent({
+        message: 'Erstelle einen Draft PR für den Fix.',
+        repoReady: true,
+        executorReady: true,
+        activeWorkspaceStatus: status,
+      });
+      expect(decision.allowed).toBe(false);
+      expect(decision.reason).toContain('already');
+    }
+  });
+
+  it('blocked workspace status allows retry', () => {
+    const decision = decideAgentWorkspaceIntent({
+      message: 'Erstelle einen Draft PR für den Fix.',
+      repoReady: true,
+      executorReady: true,
+      activeWorkspaceStatus: 'blocked',
+    });
+    expect(decision.allowed).toBe(true);
+  });
+
+  it('cleaned workspace allows new workspace', () => {
+    const decision = decideAgentWorkspaceIntent({
+      message: 'Erstelle einen Draft PR für den Fix.',
+      repoReady: true,
+      executorReady: true,
+      activeWorkspaceStatus: 'cleaned',
+    });
+    expect(decision.allowed).toBe(true);
+  });
 });

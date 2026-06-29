@@ -17,6 +17,16 @@ export interface BuilderContainerRuntimeState {
   disabledReason: string;
 }
 
+/** Workspace status for short German messages */
+export type WorkspaceStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed' | 'blocked' | 'cleaned';
+
+export interface WorkspaceRuntimeState {
+  status: WorkspaceStatus;
+  shortMessage: string;
+  canShowInspector: boolean;
+  inspectorUrl?: string;
+}
+
 export const BUILDER_PLACEHOLDER_MISSIONS = new Set([
   'README + Update History',
 ]);
@@ -59,4 +69,81 @@ export function deriveBuilderContainerState(input: BuilderContainerRuntimeInput)
 
 export function builderPublishLabel(isPublishing: boolean): string {
   return isPublishing ? 'Draft PR läuft...' : 'Draft PR erstellen';
+}
+
+/**
+ * Derive workspace runtime state from workspace result.
+ * Produces short German messages for calm UI display.
+ *
+ * Rules from product law:
+ * - Show short messages only
+ * - Do not show raw terminal spam
+ * - Do not show fake percentage progress
+ * - Do not show green success without real result
+ * - Inspector link only when URL is present and safe
+ */
+export function deriveWorkspaceRuntimeState(input: {
+  status?: WorkspaceStatus;
+  draftPrUrl?: string;
+  blocker?: string;
+  workspaceInspectorUrl?: string;
+  changedFilesCount?: number;
+}): WorkspaceRuntimeState {
+  const { status = 'idle', draftPrUrl, blocker, workspaceInspectorUrl, changedFilesCount = 0 } = input;
+
+  const isInspectorSafe = Boolean(
+    workspaceInspectorUrl
+    && workspaceInspectorUrl.startsWith('https://')
+    && status !== 'blocked'
+    && status !== 'cleaned',
+  );
+
+  let shortMessage: string;
+
+  switch (status) {
+    case 'idle':
+      shortMessage = '';
+      break;
+    case 'queued':
+      shortMessage = 'Workspace gestartet';
+      break;
+    case 'running':
+      if (changedFilesCount > 0) {
+        shortMessage = `Repo geklont · ${changedFilesCount} Datei(en)`;
+      } else {
+        shortMessage = 'Repo geklont · Tests laufen';
+      }
+      break;
+    case 'completed':
+      if (draftPrUrl) {
+        shortMessage = 'Draft PR bereit';
+      } else if (changedFilesCount > 0) {
+        shortMessage = `${changedFilesCount} Änderung(en) fertig`;
+      } else {
+        shortMessage = 'Workspace abgeschlossen';
+      }
+      break;
+    case 'failed':
+      shortMessage = blocker ? `Blocker: ${truncate(blocker, 50)}` : 'Workspace fehlgeschlagen';
+      break;
+    case 'blocked':
+      shortMessage = blocker ? `Blocker: ${truncate(blocker, 50)}` : 'Workspace blockiert';
+      break;
+    case 'cleaned':
+      shortMessage = 'Workspace bereinigt';
+      break;
+    default:
+      shortMessage = '';
+  }
+
+  return {
+    status,
+    shortMessage,
+    canShowInspector: isInspectorSafe,
+    inspectorUrl: isInspectorSafe ? workspaceInspectorUrl : undefined,
+  };
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }
