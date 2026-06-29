@@ -51,6 +51,12 @@ function requireText(filePath, pattern, id, message) {
   else fail(id, message, { filePath, pattern: String(pattern) });
 }
 
+function forbidText(filePath, pattern, id, message) {
+  const source = read(filePath);
+  if (!pattern.test(source)) pass(id, message, { filePath });
+  else fail(id, message, { filePath, pattern: String(pattern) });
+}
+
 function warnText(filePath, pattern, id, message) {
   const source = read(filePath);
   if (pattern.test(source)) pass(id, message, { filePath });
@@ -129,10 +135,10 @@ function writeReport() {
 
 function run() {
   requireFile(INDEX_CSS, 'Shared CSS and design tokens are required.');
-  requireFile(APP, 'App shell is required for global UX flow.');
+  requireFile(APP, 'Chat-only app entry is required for global UX flow.');
   requireFile('src/main.tsx', 'App entry is required for boot-path style imports.');
   requireFile('src/styles/arelogic-brand.css', 'ARELogic visual tokens must be part of the app style contract.');
-  requireFile(REPO, 'Repo UX container is required.');
+  requireFile(REPO, 'Repo UX container is required as optional inspection surface.');
   requireFile(BUILDER, 'Builder UX container is required.');
   requireFile('src/features/product/runtime/sovereignProductTemplate.ts', 'Product template UX contract is required.');
   requireFile('src/features/product/runtime/sovereignStyleContract.ts', 'Product style contract is required.');
@@ -162,15 +168,22 @@ function run() {
 
   requireText('src/main.tsx', /\.\/styles\/arelogic-brand\.css/, 'main:brand-css-import', 'App entry must import ARELogic visual tokens after the base style layer.');
 
-  requireText(REPO, /Repository Snapshot/, 'repo:title-visible', 'Repo card title must be visible.');
+  requireText(APP, /data-testid="chat-only-app"/, 'app:chat-only-root-test-id', 'App must expose the chat-only root test-id.');
+  requireText(APP, /data-layout="chat-only-live-entry"/, 'app:chat-only-layout', 'App must expose the chat-only live layout contract.');
+  requireText(APP, /aria-label="Sovereign Chat"/, 'app:chat-only-aria-label', 'App must label the chat-only live surface.');
+  requireText(APP, /BuilderContainer/, 'app:builder-only-surface', 'App must render BuilderContainer as the single live product surface.');
+  requireText(APP, /onStartOpenHands=\{startChatOnlyTask\}/, 'app:chat-submit-bound', 'App must keep chat submit wired without visible secondary control shell.');
+  forbidText(APP, /data-testid="app-shell__root"|data-testid="tabbar__root"|data-testid="automation__panel"|data-testid="automation__mode-select"|role="tablist"|role="tab"|aria-selected=|Sovereign Canvas Tool|RepoSnapshotContainer|RepoInsightPanelBridge|operator-monitor|decideSovereignAutoView/, 'app:no-old-dashboard-chrome', 'App must not render old dashboard, tabs, automation panel, repo setup, or monitor chrome.');
+
+  requireText(REPO, /Repository Snapshot/, 'repo:title-visible', 'Repo card title must remain available in optional inspection surface.');
   requireText(REPO, /SOVEREIGN_ACTION_LOAD_REPO/, 'repo:load-action-visible', 'Repo load action must be bound to contract.');
   requireText(REPO, /SOVEREIGN_ACTION_SAVE_SESSION/, 'repo:save-action-visible', 'Session save action must be bound to contract.');
   requireText(REPO, /SOVEREIGN_ACTION_RESTORE_SESSION/, 'repo:restore-action-visible', 'Session restore action must be bound to contract.');
   requireText(REPO, /SOVEREIGN_ACTION_CLEAR_VIEW/, 'repo:clear-action-visible', 'Clear view action must be bound to contract.');
-  requireText(REPO, /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible.');
-  requireText(REPO, /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible.');
+  requireText(REPO, /Repo geladen|Repo fehlt/, 'repo:status-pill-visible', 'Repo loaded/missing state must be visible when the optional repo surface is opened.');
+  requireText(REPO, /Privater Zugang/, 'repo:private-access-visible', 'Private access state must be visible when the optional repo surface is opened.');
 
-  requireText(BUILDER, /data-layout=["']devchat-replit["']|DevChat|Sovereign/, 'builder:devchat-shell-visible', 'Builder must expose the DevChat chat-first shell contract.');
+  requireText(BUILDER, /data-layout=["']devchat-replit["']|data-layout=["']devchat-appcontrol-integrated["']|DevChat|Sovereign/, 'builder:devchat-shell-visible', 'Builder must expose the DevChat chat-first shell contract.');
   requireText(BUILDER, /sovereign-chat-body-window|Sovereign Chat Verlauf/, 'builder:chat-timeline-visible', 'Builder must expose the chat timeline surface.');
   requireText(BUILDER, /SOVEREIGN_FORM_MISSION/, 'builder:mission-input-visible', 'Builder must bind mission input to the form contract.');
   requireText(BUILDER, /SOVEREIGN_ACTION_ANALYZE_MISSION/, 'builder:analyze-visible', 'Analyze action must be bound to contract.');
@@ -192,19 +205,19 @@ function run() {
   requireText(BUILDER, /SOVEREIGN_ACTION_REPAIR_LOG/, 'builder:repair-log-action-bound', 'Builder must bind repair log action contract.');
   requireText('src/global-runtime-monitor.tsx', /SOVEREIGN_ACTION_MONITOR_TOGGLE/, 'monitor:monitor-toggle-bound', 'Global monitor must bind monitor toggle action contract.');
 
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /repo/, 'template:repo-tab', 'Product template must expose repo tab.');
+  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /repo/, 'template:repo-tab', 'Product template must expose repo tab as optional inspection surface.');
   requireText('src/features/product/runtime/sovereignProductTemplate.ts', /builder/, 'template:builder-tab', 'Product template must expose builder tab.');
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /files/, 'template:files-tab', 'Product template must expose files tab.');
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /diff/, 'template:diff-tab', 'Product template must expose diff tab.');
-  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /monitor|telemetry/, 'template:monitor-or-telemetry-tab', 'Product template must expose monitor or telemetry visibility.');
+  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /files/, 'template:files-tab', 'Product template must expose files tab as optional inspection surface.');
+  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /diff/, 'template:diff-tab', 'Product template must expose diff tab as optional inspection surface.');
+  requireText('src/features/product/runtime/sovereignProductTemplate.ts', /monitor|telemetry/, 'template:monitor-or-telemetry-tab', 'Product template must expose monitor or telemetry visibility as optional inspection surface.');
 
   requireText('src/features/product/runtime/sovereignStyleContract.ts', /SOVEREIGN_APP_CLASSES/, 'style:app-classes-contract', 'Style contract must expose app class names.');
   requireText('src/features/product/runtime/sovereignStyleContract.ts', /SOVEREIGN_TAB_STYLE_CONTRACT/, 'style:tab-contract', 'Style contract must expose tab style metadata.');
   requireText('src/features/product/runtime/sovereignStyleContract.ts', /dataRole/, 'style:data-role-contract', 'Style contract must expose stable data roles.');
   requireText('src/features/product/runtime/sovereignStyleContract.ts', /mobilePriority/, 'style:mobile-priority-contract', 'Style contract must expose mobile priorities.');
 
-  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_APP_SHELL_CONTRACT/, 'component:app-shell-contract', 'Component contract must expose app shell contract.');
-  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_TABBAR_CONTRACT/, 'component:tabbar-contract', 'Component contract must expose tabbar contract.');
+  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_APP_SHELL_CONTRACT/, 'component:app-shell-contract', 'Component contract must expose app shell contract metadata.');
+  requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_TABBAR_CONTRACT/, 'component:tabbar-contract', 'Component contract must expose optional tabbar contract metadata.');
   requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_ACTION_BUTTON_CONTRACT/, 'component:action-button-contract', 'Component contract must expose action button contract.');
   requireText('src/features/product/runtime/sovereignComponentContracts.ts', /SOVEREIGN_TEST_ID_PATTERN/, 'component:test-id-pattern', 'Component contract must expose test id pattern.');
 
@@ -218,8 +231,8 @@ function run() {
   requireText('src/styles/arelogic-brand.css', /--are-void/, 'brand-css:void-token', 'Brand CSS must expose ARE void token.');
   requireText('src/styles/arelogic-brand.css', /--are-ion/, 'brand-css:ion-token', 'Brand CSS must expose ARE ion token.');
   requireText('src/styles/arelogic-brand.css', /--are-matter/, 'brand-css:matter-token', 'Brand CSS must expose ARE matter token.');
-  requireText('src/styles/arelogic-brand.css', /\.sovereign-app-shell/, 'brand-css:shell-binding', 'Brand CSS must bind through existing Sovereign shell class.');
-  requireText('src/styles/arelogic-brand.css', /\.sovereign-tab-active/, 'brand-css:tab-binding', 'Brand CSS must bind through existing Sovereign tab class.');
+  requireText('src/styles/arelogic-brand.css', /\.sovereign-app-shell/, 'brand-css:shell-binding', 'Brand CSS must keep shell class support for optional inspection surfaces.');
+  requireText('src/styles/arelogic-brand.css', /\.sovereign-tab-active/, 'brand-css:tab-binding', 'Brand CSS must keep tab class support for optional inspection surfaces.');
   requireText('src/styles/arelogic-brand.css', /\.sovereign-status-dot-green/, 'brand-css:status-binding', 'Brand CSS must bind through existing Sovereign status classes.');
 
   requireText(INDEX_CSS, /:root/, 'css:root-tokens', 'CSS root tokens must exist.');
@@ -232,16 +245,16 @@ function run() {
   requireText(INDEX_CSS, /@media \(max-width: 767px\)/, 'css:mobile-media-query', 'Mobile media query must exist.');
   requireText(INDEX_CSS, /border-radius/, 'css:card-rounding', 'Card/pill visual rounding must be defined.');
   requireText(INDEX_CSS, /box-shadow/, 'css:depth', 'Visual depth/shadow must be defined.');
-  requireText(INDEX_CSS, /\.sovereign-app-shell/, 'css:app-shell-class', 'Stable app shell class must exist.');
-  requireText(INDEX_CSS, /\.sovereign-tabbar/, 'css:tabbar-class', 'Stable tabbar class must exist.');
-  requireText(INDEX_CSS, /\.sovereign-tab\b/, 'css:tab-class', 'Stable tab class must exist.');
-  requireText(INDEX_CSS, /\.sovereign-tab-active/, 'css:active-tab-class', 'Stable active tab class must exist.');
+  requireText(INDEX_CSS, /\.sovereign-app-shell/, 'css:app-shell-class', 'Stable app shell class must remain available for optional inspection surfaces.');
+  requireText(INDEX_CSS, /\.sovereign-tabbar/, 'css:tabbar-class', 'Stable tabbar class must remain available for optional inspection surfaces.');
+  requireText(INDEX_CSS, /\.sovereign-tab\b/, 'css:tab-class', 'Stable tab class must remain available for optional inspection surfaces.');
+  requireText(INDEX_CSS, /\.sovereign-tab-active/, 'css:active-tab-class', 'Stable active tab class must remain available for optional inspection surfaces.');
   requireText(INDEX_CSS, /\.sovereign-card/, 'css:card-class', 'Stable card class must exist.');
-  requireText(INDEX_CSS, /\.sovereign-select/, 'css:select-class', 'Stable select class must exist.');
+  requireText(INDEX_CSS, /\.sovereign-select/, 'css:select-class', 'Stable select class must remain available for optional inspection surfaces.');
   requireText(INDEX_CSS, /\.sovereign-status-pill/, 'css:status-pill-class', 'Stable status pill class must exist.');
 
   if (exists('src/global-runtime-monitor.tsx')) {
-    requireText('src/global-runtime-monitor.tsx', /Agenten-Monitor|Sovereign Bot|Next Action|Log anzeigen|Log einklappen/, 'monitor:global-copy', 'Global monitor must provide readable status copy and log controls.');
+    requireText('src/global-runtime-monitor.tsx', /Agenten-Monitor|Sovereign Bot|Next Action|Log anzeigen|Log einklappen/, 'monitor:global-copy', 'Global monitor must provide readable status copy and log controls as optional inspection surface.');
     requireText('src/global-runtime-monitor.tsx', /sovereign:runtime-coach-state/, 'monitor:coach-state-event', 'Global monitor must read coach state events.');
     requireText('src/global-runtime-monitor.tsx', /sovereign:telemetry-event/, 'monitor:telemetry-event', 'Global monitor must read telemetry events.');
     requireText(INDEX_CSS, /sovereign-global-monitor/, 'monitor:css-class', 'Global monitor CSS class must exist.');
@@ -252,22 +265,7 @@ function run() {
     warnText(REPO, /Agenten-Monitor/, 'monitor:repo-local-copy', 'Repo-local monitor copy should exist if no global monitor exists.');
   }
 
-  requireText(APP, /sovereign-app-shell/, 'app:stable-shell-class-bound', 'App shell must bind stable shell class.');
-  requireText(APP, /sovereign-tabbar/, 'app:stable-tabbar-class-bound', 'App tabbar must bind stable tabbar class.');
-  requireText(APP, /data-role="sovereign-app-shell"/, 'app:shell-data-role-bound', 'App shell must bind sovereign-app-shell data-role.');
-  requireText(APP, /data-testid="app-shell__root"/, 'app:shell-test-id-bound', 'App shell must bind app-shell__root test-id.');
-  requireText(APP, /role="tablist"/, 'app:tabbar-role-bound', 'Tabbar must bind tablist role.');
-  requireText(APP, /aria-label="Sovereign workspace tabs"/, 'app:tabbar-aria-label-bound', 'Tabbar must bind Sovereign workspace tabs aria-label.');
-  requireText(APP, /data-testid="tabbar__root"/, 'app:tabbar-test-id-bound', 'Tabbar must bind tabbar__root test-id.');
-  requireText(APP, /role="tab"/, 'app:tab-role-bound', 'Tab buttons must bind tab role.');
-  requireText(APP, /aria-selected=/, 'app:tab-aria-selected-bound', 'Tab buttons must bind aria-selected.');
-  requireText(APP, /data-testid=\{tab\.testId\}/, 'app:tab-test-id-bound', 'Tab buttons must bind test-id from tab contract.');
-  requireText(APP, /sovereign-automation-panel/, 'app:automation-panel-class-bound', 'Automation panel must bind sovereign-automation-panel class.');
-  requireText(APP, /data-testid="automation__panel"/, 'app:automation-panel-test-id-bound', 'Automation panel must bind automation__panel test-id.');
-  requireText(APP, /SOVEREIGN_APP_CLASSES\.select|sovereign-select/, 'app:automation-select-class-bound', 'Automation select must bind sovereign-select class via contract.');
-  requireText(APP, /data-testid="automation__mode-select"/, 'app:automation-select-test-id-bound', 'Automation select must bind automation__mode-select test-id.');
-
-  requireOneOf([APP, 'src/global-runtime-monitor.tsx', REPO, BUILDER], /Next Action|Aktion:|Agent starten|DevChat|Runtime Quelle/, 'ux:next-action-visible', 'A next action must be visible to the user.');
+  requireOneOf([APP, 'src/global-runtime-monitor.tsx', REPO, BUILDER], /Next Action|Aktion:|Agent starten|DevChat|Runtime Quelle|Sovereign Chat/, 'ux:next-action-visible', 'A next action must be visible to the user.');
   warnOneOf(['src/global-runtime-monitor.tsx', 'src/features/product/containers/TelemetryContainer.tsx', REPO, BUILDER], /Log|Telemetry|events|monitor|Sovereign Chat Verlauf/i, 'ux:log-visible', 'At least one user-visible log or telemetry surface should exist.');
   requireAtLeast(BUILDER, /button/g, 4, 'builder:minimum-actions', 'Builder should expose multiple clear actions.');
 
