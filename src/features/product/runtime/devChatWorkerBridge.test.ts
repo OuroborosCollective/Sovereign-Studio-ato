@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEV_CHAT_WORKER_DEFAULT_MODEL,
+  DEV_CHAT_WORKER_FALLBACK_MODEL,
   DEV_CHAT_WORKER_MODELS,
   SOVEREIGN_WORKER_CHAT,
   SOVEREIGN_WORKER_HEALTH,
@@ -29,8 +30,11 @@ describe('devChatWorkerBridge', () => {
     expect(SOVEREIGN_WORKER_CHAT).toContain('sovereign-llm-proxy.projectouroboroscollective.workers.dev/v1/chat/completions');
     expect(SOVEREIGN_WORKER_KV).toContain('sovereign-llm-proxy.projectouroboroscollective.workers.dev/kv');
     expect(SOVEREIGN_WORKER_HEALTH).toContain('sovereign-llm-proxy.projectouroboroscollective.workers.dev/health');
+    expect(DEV_CHAT_WORKER_DEFAULT_MODEL).toBe('cerebras/gpt-oss-120b');
+    expect(DEV_CHAT_WORKER_FALLBACK_MODEL).toBe('cerebras/zai-glm-4.7');
     expect(DEV_CHAT_WORKER_MODELS).toEqual([
-      expect.objectContaining({ id: DEV_CHAT_WORKER_DEFAULT_MODEL, thinking: true }),
+      expect.objectContaining({ id: DEV_CHAT_WORKER_DEFAULT_MODEL, label: 'Cerebras GPT OSS 120B', tier: 'power', thinking: true }),
+      expect.objectContaining({ id: DEV_CHAT_WORKER_FALLBACK_MODEL, label: 'Cerebras ZAI GLM 4.7', tier: 'smart', thinking: true }),
     ]);
     expect(normalizeDevChatWorkerModel('llama-3-8b')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
   });

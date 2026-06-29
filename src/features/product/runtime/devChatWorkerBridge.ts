@@ -12,7 +12,8 @@ export const SOVEREIGN_WORKER_CHAT = `${SOVEREIGN_WORKER_BASE}/v1/chat/completio
 export const SOVEREIGN_WORKER_HEALTH = `${SOVEREIGN_WORKER_BASE}/health` as const;
 export const SOVEREIGN_WORKER_KV = `${SOVEREIGN_WORKER_BASE}/kv` as const;
 export const SOVEREIGN_SESSION_KEY = 'sovereign-session-v1' as const;
-export const DEV_CHAT_WORKER_DEFAULT_MODEL = 'cerebras/zai-glm-4.7' as const;
+export const DEV_CHAT_WORKER_DEFAULT_MODEL = 'cerebras/gpt-oss-120b' as const;
+export const DEV_CHAT_WORKER_FALLBACK_MODEL = 'cerebras/zai-glm-4.7' as const;
 
 const LEGACY_WORKER_MODEL_ALIASES = new Set([
   'llama-3-8b',
@@ -38,7 +39,8 @@ export interface DevChatWorkerModel {
  * that workflow; legacy friendly aliases are normalized in the hosted bridge.
  */
 export const DEV_CHAT_WORKER_MODELS: readonly DevChatWorkerModel[] = [
-  { id: DEV_CHAT_WORKER_DEFAULT_MODEL, label: 'Cerebras ZAI GLM 4.7', tier: 'smart', thinking: true },
+  { id: DEV_CHAT_WORKER_DEFAULT_MODEL, label: 'Cerebras GPT OSS 120B', tier: 'power', thinking: true },
+  { id: DEV_CHAT_WORKER_FALLBACK_MODEL, label: 'Cerebras ZAI GLM 4.7', tier: 'smart', thinking: true },
 ];
 
 export function normalizeDevChatWorkerModel(model: string | undefined): string {
