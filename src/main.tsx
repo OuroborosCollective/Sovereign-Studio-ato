@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import posthog from 'posthog-js';
 import App from './SovereignAppWrapper';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { installGlobalRuntimeMonitor } from './global-runtime-monitor';
 import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
 import {
   SOVEREIGN_WORKSPACE_COMMAND_EVENT,
@@ -353,7 +352,6 @@ installViewportRuntime();
 installReleaseGuideCommandRuntime();
 installTabContentScrollRuntime();
 installCodeWorkspacePersistenceRuntime();
-installGlobalRuntimeMonitor();
 initPostHog();
 initGoogleAuth();
 bootApp();
