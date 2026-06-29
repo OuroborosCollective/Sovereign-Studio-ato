@@ -32,7 +32,7 @@ describe('App', () => {
     expect(screen.getByText(/Ohne geladenes Repository bleibt Full Auto bewusst blockiert/)).toBeDefined();
   });
 
-  it('opens the no-code DevChat workbench after launch while keeping repo setup available', () => {
+  it('opens the no-code AppControl DevChat workbench after launch while keeping repo setup available', () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
@@ -44,10 +44,14 @@ describe('App', () => {
     expect(screen.getByRole('tab', { name: 'Open Chat tab' })).toBeDefined();
     expect(screen.getByTestId('tabbar__more-select')).toBeDefined();
 
-    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'devchat-replit');
+    expect(screen.getByTestId('builder-container')).toHaveAttribute(
+      'data-layout',
+      'devchat-appcontrol-integrated',
+    );
     expect(screen.getByText('DevChat')).toBeDefined();
     expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
     expect(screen.getByPlaceholderText(/GitHub URL oder Auftrag/)).toBeDefined();
+    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Open Repo tab' }));
     expect(screen.getByPlaceholderText('https://github.com/owner/repository')).toBeDefined();
