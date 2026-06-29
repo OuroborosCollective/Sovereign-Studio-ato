@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import SovereignAppWrapper from './SovereignAppWrapper';
 
@@ -24,47 +24,29 @@ beforeAll(() => {
   }
 });
 
-describe('SovereignAppWrapper - Chat-First UI Contract', () => {
-  it('renders a minimal lamp bar as the only visible shell', () => {
+describe('SovereignAppWrapper - Chat-only UI Contract', () => {
+  it('forwards directly into the App without a wrapper lamp shell', async () => {
     render(<SovereignAppWrapper />);
 
-    // The wrapper should render a minimal lamp bar
-    expect(screen.getByTestId('sovereign-app-wrapper')).toBeDefined();
-    expect(screen.getByTestId('sovereign-minimal-lamp-bar')).toBeDefined();
+    await waitFor(() => {
+      expect(screen.getByTestId('builder-container')).toHaveAttribute(
+        'data-layout',
+        'devchat-appcontrol-integrated',
+      );
+    });
 
-    // Should NOT render the old dominant runtime frame
-    expect(screen.queryByText('Sovereign Runtime Frame')).toBeNull();
-
-    // Should NOT render the 8-module bar
-    expect(screen.queryByTestId('sovereign-wrapper-workspace-menu')).toBeNull();
+    expect(screen.queryByTestId('sovereign-app-wrapper')).toBeNull();
+    expect(screen.queryByTestId('sovereign-minimal-lamp-bar')).toBeNull();
+    expect(screen.queryByTestId('sovereign-shell-content')).toBeNull();
   });
 
-  it('contains the App content inside the minimal shell', () => {
+  it('keeps the AppControl DevChat workbench as the visible product surface', async () => {
     render(<SovereignAppWrapper />);
 
-    // The app should render inside the shell
-    expect(screen.getByTestId('sovereign-shell-content')).toBeDefined();
-  });
+    await waitFor(() => {
+      expect(screen.getByText('DevChat')).toBeDefined();
+    });
 
-  it('shows warning state in lamp bar when no repo loaded', () => {
-    render(<SovereignAppWrapper />);
-
-    // Should show 'warning' status when no repo is loaded
-    expect(screen.getByText('warning')).toBeDefined();
-  });
-
-  it('shows AppControl DevChat workbench after opening the app', () => {
-    render(<SovereignAppWrapper />);
-
-    // Open the app
-    fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
-
-    // The AppControl DevChat workbench should now be visible
-    expect(screen.getByTestId('builder-container')).toHaveAttribute(
-      'data-layout',
-      'devchat-appcontrol-integrated',
-    );
-    expect(screen.getByText('DevChat')).toBeDefined();
     expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
     expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
   });
