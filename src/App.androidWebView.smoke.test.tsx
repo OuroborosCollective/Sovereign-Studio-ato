@@ -69,11 +69,11 @@ describe('App setup flow smoke', () => {
     expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
   });
 
-  it('keeps old monitor and direct setup surfaces out of the visible smoke path', async () => {
+  it('keeps old monitor and direct setup controls out of the active smoke path', async () => {
     await openChatOnlyWorkspace();
 
     expect(screen.queryByTestId('operator-monitor')).toBeNull();
-    expect(screen.queryByTestId('automation__panel')).toBeNull();
+    expect(screen.queryByTestId('automation__mode-select')).toBeNull();
     expect(screen.queryByPlaceholderText('https://github.com/owner/repository')).toBeNull();
   });
 });
