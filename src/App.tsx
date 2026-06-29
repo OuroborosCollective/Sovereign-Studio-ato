@@ -57,6 +57,13 @@ export default function App() {
     setSummary('Auftrag im Chat übernommen. Sovereign hält die Kontrollflächen im Hintergrund und zeigt nur den nächsten sinnvollen Schritt.');
   }, []);
 
+  const startChatOnlyTask = useCallback((nextMission: string) => {
+    setMission(nextMission);
+    setSummary(
+      'Auftrag übernommen. Die Arbeitsumgebung bleibt hinter dem Chat; sichtbare nächste Schritte erscheinen nur hier im Verlauf.',
+    );
+  }, []);
+
   const explainHiddenFeature = useCallback((label: string) => {
     setSummary(`${label} bleibt im Chat-only Live-Pfad eine optionale Chat-Aktion, keine separate sichtbare Arbeitsfläche.`);
   }, []);
@@ -82,7 +89,8 @@ export default function App() {
           onGenerateIdeas={() => explainHiddenFeature('Ideen/Build')}
           onGenerateErrorWorkflow={() => explainHiddenFeature('Fehleranalyse')}
           onPublishDraftPr={() => explainHiddenFeature('Draft PR')}
-          openhandsReady={false}
+          openhandsReady={true}
+          onStartOpenHands={startChatOnlyTask}
         />
       </main>
     </LlmAdapterProvider>
