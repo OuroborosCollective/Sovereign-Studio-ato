@@ -58,6 +58,16 @@ function warn(id, message, details = {}) {
   report.warnings.push({ id, message, details });
 }
 
+function assertText(source, pattern, id, okMessage, failMessage, details = {}) {
+  if (pattern.test(source)) pass(id, okMessage, details);
+  else fail(id, failMessage, { ...details, pattern: String(pattern) });
+}
+
+function forbidText(source, pattern, id, okMessage, failMessage, details = {}) {
+  if (!pattern.test(source)) pass(id, okMessage, details);
+  else fail(id, failMessage, { ...details, pattern: String(pattern) });
+}
+
 function isIgnored(filePath) {
   return filePath.split(path.sep).some((part) => ignoredDirs.has(part));
 }
@@ -176,16 +186,32 @@ function scanMainBootPath() {
 
 function scanRuntimeContracts() {
   const app = read('src/App.tsx');
+  const builder = read('src/features/product/containers/BuilderContainer.tsx');
+  const sequential = read('src/features/product/runtime/sequentialRuntimeGuard.ts');
+  const telemetry = read('src/features/product/runtime/sovereignTelemetry.ts');
+  const githubAuth = read('src/features/github/githubAuthSession.ts');
+  const githubPublisher = read('src/features/github/githubPackagePublisher.ts');
+  const workerBridge = read('src/features/product/runtime/devChatWorkerBridge.ts');
   const monitor = read('src/global-runtime-monitor.tsx');
 
-  if (/runSequentialStep/.test(app)) pass('app:sequential-runtime', 'App uses sequential runtime steps.');
-  else fail('app:sequential-runtime', 'App must route critical actions through sequential runtime.');
+  assertText(app, /data-layout="chat-only-live-entry"/, 'app:chat-only-entry', 'App exposes chat-only live entry.', 'App must expose chat-only live entry.');
+  assertText(app, /BuilderContainer/, 'app:builder-host', 'App hosts BuilderContainer as live surface.', 'App must host BuilderContainer as the live surface.');
+  forbidText(app, /RepoSnapshotContainer|RepoInsightPanelBridge|automation__panel|tabbar__root|operator-monitor|decideSovereignAutoView/, 'app:no-dashboard-live-shell', 'App does not render dashboard chrome in the live path.', 'App must not render dashboard chrome in the live path.');
 
-  if (/pushTelemetry/.test(app)) pass('app:telemetry', 'App publishes telemetry.');
-  else fail('app:telemetry', 'App must publish telemetry.');
+  assertText(sequential, /startSequentialStep/, 'runtime:sequential-start', 'Sequential runtime can start guarded steps.', 'Sequential runtime start path is missing.');
+  assertText(sequential, /finishSequentialStep/, 'runtime:sequential-finish', 'Sequential runtime can finish guarded steps.', 'Sequential runtime finish path is missing.');
+  assertText(sequential, /validateSequentialRuntimeStepRequest/, 'runtime:sequential-validation', 'Sequential runtime validates step requests.', 'Sequential runtime validation is missing.');
 
-  if (/stripTokenFromText/.test(app)) pass('app:redaction', 'App redacts visible/runtime access values.');
-  else fail('app:redaction', 'App must redact visible/runtime access values.');
+  assertText(telemetry, /appendTelemetryEvent/, 'runtime:telemetry-append', 'Telemetry runtime appends events.', 'Telemetry append path is missing.');
+  assertText(telemetry, /publishTelemetryEvent/, 'runtime:telemetry-publish', 'Telemetry runtime publishes events.', 'Telemetry publish path is missing.');
+  assertText(telemetry, /validateTelemetryEvent/, 'runtime:telemetry-validation', 'Telemetry runtime validates events.', 'Telemetry validation is missing.');
+
+  assertText(githubAuth, /stripTokenFromText/, 'runtime:redaction-helper', 'Runtime redaction helper exists.', 'Runtime redaction helper is missing.');
+  assertText(githubPublisher, /stripTokenFromText/, 'runtime:publisher-redaction', 'Draft PR publisher redacts access values on errors.', 'Draft PR publisher must redact access values on errors.');
+  assertText(builder, /stripTokenFromText|sanitizeChatText|redact/i, 'builder:redaction-path', 'Builder chat has a redaction/sanitization path.', 'Builder chat must redact or sanitize visible/runtime access values.');
+
+  assertText(workerBridge, /fetchDevChatRepoTree/, 'chat:repo-tree-runtime', 'Chat repo bridge loads real repo trees.', 'Chat repo bridge must load real repo trees.');
+  assertText(builder, /fetchDevChatRepoTree/, 'builder:repo-tree-runtime', 'Builder chat uses real repo tree runtime.', 'Builder chat must use real repo tree runtime.');
 
   if (monitor) {
     if (/sovereign:runtime-coach-state/.test(monitor)) pass('monitor:coach-bus', 'Global monitor reads coach state events.');
