@@ -1,10 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import {
-  SOVEREIGN_WORKSPACE_COMMAND_EVENT,
-  SOVEREIGN_WORKSPACE_MENU,
-  SOVEREIGN_WORKSPACE_TAB_IDS,
-} from './features/product/runtime/sovereignWorkspaceCommand';
 
 const MAIN_PATH = 'src/main.tsx';
 const APP_PATH = 'src/App.tsx';
@@ -19,6 +14,20 @@ const DOM_INSTALLER_TOKENS = [
   'installMobileWorkspaceOrder',
   'installMobileRuntimeModules',
   'installGlobalRuntimeMonitor',
+];
+
+const REMOVED_VISIBLE_SHELL_TOKENS = [
+  'RepoInsightPanelBridge',
+  'RepoSnapshotContainer',
+  'WorkflowContainer',
+  'TelemetryContainer',
+  'PatternMemoryContainer',
+  'SettingsModal',
+  'Sovereign Canvas Tool',
+  'automation__panel',
+  'tabbar__root',
+  'operator-monitor',
+  'Sovereign Arbeitsfläche öffnen',
 ];
 
 const REMOVED_WRAPPER_NAV_TOKENS = [
@@ -63,7 +72,7 @@ describe('current Sovereign app shell contract', () => {
     expect(existsSync(WORKSPACE_COMMAND_PATH)).toBe(true);
   });
 
-  it('boots the React app wrapper and stable Android runtime helpers without a global coach', () => {
+  it('boots the React wrapper and stable Android runtime helpers without global coach chrome', () => {
     const main = read(MAIN_PATH);
     const wrapper = read(WRAPPER_PATH);
 
@@ -89,6 +98,20 @@ describe('current Sovereign app shell contract', () => {
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
+  it('makes App.tsx a chat-only live surface instead of a workspace dashboard', () => {
+    const app = read(APP_PATH);
+
+    expectContainsAll(app, [
+      'BuilderContainer',
+      'data-testid="chat-only-app"',
+      'data-layout="chat-only-live-entry"',
+      'aria-label="Sovereign Chat"',
+      'CHAT_ONLY_STYLE',
+    ]);
+
+    expectContainsNone(app, REMOVED_VISIBLE_SHELL_TOKENS);
+  });
+
   it('keeps the wrapper free of visible chrome and navigation state', () => {
     const wrapper = read(WRAPPER_PATH);
 
@@ -101,43 +124,5 @@ describe('current Sovereign app shell contract', () => {
     expect(wrapper).not.toContain('querySelector');
     expect(wrapper).not.toContain('localStorage');
     expect(wrapper).not.toContain('sessionStorage');
-  });
-
-  it('keeps workspace command definitions available without making the wrapper a navigation source', () => {
-    const command = read(WORKSPACE_COMMAND_PATH);
-    const wrapper = read(WRAPPER_PATH);
-
-    for (const tab of SOVEREIGN_WORKSPACE_TAB_IDS) {
-      expect(command).toContain(`'${tab}'`);
-    }
-
-    expect(SOVEREIGN_WORKSPACE_MENU.map((item) => item.id)).toEqual([...SOVEREIGN_WORKSPACE_TAB_IDS]);
-    expect(command).toContain(SOVEREIGN_WORKSPACE_COMMAND_EVENT);
-    expect(wrapper).not.toContain(SOVEREIGN_WORKSPACE_COMMAND_EVENT);
-    expect(wrapper).not.toContain('SOVEREIGN_WORKSPACE_MENU');
-  });
-
-  it('routes release guide commands through validated workspace commands and the More menu select', () => {
-    const main = read(MAIN_PATH);
-
-    expectContainsAll(main, [
-      'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
-      'normalizeSovereignWorkspaceCommandDetail',
-      'isSovereignWorkspaceTab',
-      'activateReleaseGuideSelectTarget',
-      'select[data-testid="tabbar__more-select"]',
-      "select.dispatchEvent(new Event('change'",
-      'activateReleaseGuideTarget(button, detail.type);',
-      'activateReleaseGuideSelectTarget(targetTab);',
-    ]);
-  });
-
-  it('keeps App guide command listener aligned with the workspace event contract', () => {
-    const app = read(APP_PATH);
-
-    expect(app).toContain('SOVEREIGN_WORKSPACE_COMMAND_EVENT');
-    expect(app).toContain('normalizeSovereignWorkspaceCommandDetail');
-    expect(app).toContain('window.addEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
-    expect(app).toContain('window.removeEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
   });
 });
