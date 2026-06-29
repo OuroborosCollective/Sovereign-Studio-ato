@@ -375,6 +375,51 @@ export async function fetchDevChatWorkerHealth(signal?: AbortSignal): Promise<De
   }
 }
 
+function buildWorkerRequestBody(model: string, messages: readonly DevChatWorkerMessage[], stream: boolean): string {
+  return JSON.stringify({
+    model,
+    messages,
+    temperature: 0.2,
+    max_tokens: 4096,
+    reasoning_format: 'parsed',
+    stream,
+  });
+}
+
+function buildDiagnosticFromResponse(args: {
+  readonly response: Response;
+  readonly text: string;
+  readonly model: string;
+  readonly messageCount: number;
+}): DevChatWorkerDiagnostic {
+  const payload = extractErrorPayload(args.text);
+  const classification = classifyWorkerFailure({
+    status: args.response.status,
+    errorType: payload.type,
+    errorCode: payload.code,
+    bodySnippet: payload.snippet,
+  });
+  return {
+    route: SOVEREIGN_WORKER_CHAT,
+    model: args.model,
+    messageCount: args.messageCount,
+    status: args.response.status,
+    statusText: args.response.statusText,
+    errorType: payload.type,
+    errorCode: payload.code,
+    bodySnippet: payload.snippet,
+    ...classification,
+  };
+}
+
+function parseWorkerPayloadText(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { response: text };
+  }
+}
+
 export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest): Promise<DevChatWorkerReplyResult> {
   const messages = request.messages
     .map((message) => ({ role: message.role, content: message.content.trim() }))
@@ -401,37 +446,14 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
         Accept: 'application/json',
         'X-Sovereign-Client': 'android-webview',
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.2,
-        max_tokens: 4096,
-        reasoning_format: 'parsed',
-        stream: false,
-      }),
+      body: buildWorkerRequestBody(model, messages, false),
       signal: request.signal,
     });
 
     const text = await response.text();
     if (!response.ok) {
       const payload = extractErrorPayload(text);
-      const classification = classifyWorkerFailure({
-        status: response.status,
-        errorType: payload.type,
-        errorCode: payload.code,
-        bodySnippet: payload.snippet,
-      });
-      const diagnostic: DevChatWorkerDiagnostic = {
-        route: SOVEREIGN_WORKER_CHAT,
-        model,
-        messageCount: messages.length,
-        status: response.status,
-        statusText: response.statusText,
-        errorType: payload.type,
-        errorCode: payload.code,
-        bodySnippet: payload.snippet,
-        ...classification,
-      };
+      const diagnostic = buildDiagnosticFromResponse({ response, text, model, messageCount: messages.length });
       return {
         ok: false,
         error: payload.message || `Worker Chat HTTP ${response.status}`,
@@ -440,14 +462,7 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
       };
     }
 
-    let payload: unknown = {};
-    try {
-      payload = text ? JSON.parse(text) : {};
-    } catch {
-      payload = { response: text };
-    }
-
-    const content = readWorkerContent(payload);
+    const content = readWorkerContent(parseWorkerPayloadText(text));
     if (!content) {
       const diagnostic: DevChatWorkerDiagnostic = {
         route: SOVEREIGN_WORKER_CHAT,
@@ -483,10 +498,30 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
   }
 }
 
+function formatStreamHealthLine(health: DevChatWorkerHealthResult): string {
+  const provider = health.provider ? `provider=${health.provider}` : 'provider=unbekannt';
+  const gateway = health.gateway ? `gateway=${health.gateway}` : 'gateway=unbekannt';
+  const model = health.model ? `model=${health.model}` : 'model=unbekannt';
+  const secret = health.secretConfigured === true ? 'secret=ok' : health.secretConfigured === false ? 'secret=fehlt' : 'secret=unbekannt';
+  return `Worker Health: ${provider} · ${gateway} · ${model} · ${secret}`;
+}
+
+function readSseContent(payload: Record<string, unknown>): string | undefined {
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return undefined;
+  const delta = (choices[0] as Record<string, unknown>)?.delta;
+  if (delta && typeof delta === 'object') {
+    const content = (delta as Record<string, unknown>)?.content;
+    if (typeof content === 'string' && content.length > 0) return content;
+  }
+  return undefined;
+}
+
 /**
  * Streaming variant of fetchDevChatWorkerReply.
  * Posts with stream: true and yields SSE delta chunks in real-time.
- * Falls back to the non-streaming route if response.body is unavailable.
+ * If the Worker returns a normal JSON completion instead of SSE, the same
+ * response body is parsed locally; no second chat request is made.
  */
 export async function* streamDevChatWorkerReply(
   request: DevChatWorkerReplyRequest,
@@ -505,22 +540,30 @@ export async function* streamDevChatWorkerReply(
       Accept: 'text/event-stream',
       'X-Sovereign-Client': 'android-webview',
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.2,
-      max_tokens: 4096,
-      reasoning_format: 'parsed',
-      stream: true,
-    }),
+    body: buildWorkerRequestBody(model, messages, true),
     signal: request.signal,
   });
 
-  if (!response.ok) return;
-  if (!response.body) {
-    // Fallback: fetch non-streaming response and yield content at once
-    const fallback = await fetchDevChatWorkerReply(request);
-    if (fallback.ok && fallback.content) yield fallback.content;
+  const contentType = response.headers.get('Content-Type')?.toLowerCase() ?? '';
+
+  if (!response.ok) {
+    const text = await response.text();
+    if (LEGACY_WORKER_MODEL_ALIASES.has(request.model)) {
+      const diagnostic = buildDiagnosticFromResponse({ response, text, model, messageCount: messages.length });
+      const health = await fetchDevChatWorkerHealth(request.signal);
+      yield [
+        'Ich wiederhole den kaputten Worker-Call nicht blind.',
+        explainDevChatWorkerDiagnostic(diagnostic),
+        formatStreamHealthLine(health),
+      ].join('\n');
+    }
+    return;
+  }
+
+  if (!response.body || !contentType.includes('text/event-stream')) {
+    const text = await response.text();
+    const content = readWorkerContent(parseWorkerPayloadText(text));
+    if (content) yield content;
     return;
   }
 
@@ -545,19 +588,24 @@ export async function* streamDevChatWorkerReply(
 
         try {
           const payload = JSON.parse(data) as Record<string, unknown>;
-          // OpenAI-compatible SSE format: { choices: [{ delta: { content: "..." } }] }
-          const choices = payload.choices;
-          if (Array.isArray(choices) && choices.length > 0) {
-            const delta = (choices[0] as Record<string, unknown>)?.delta;
-            if (delta && typeof delta === 'object') {
-              const content = (delta as Record<string, unknown>)?.content;
-              if (typeof content === 'string' && content.length > 0) {
-                yield content;
-              }
-            }
-          }
+          const content = readSseContent(payload);
+          if (content) yield content;
         } catch {
-          // Skip malformed JSON lines silently
+          // Skip malformed JSON lines silently.
+        }
+      }
+    }
+
+    const trailing = buffer.trim();
+    if (trailing.startsWith('data: ')) {
+      const data = trailing.slice(6).trim();
+      if (data !== '[DONE]') {
+        try {
+          const payload = JSON.parse(data) as Record<string, unknown>;
+          const content = readSseContent(payload);
+          if (content) yield content;
+        } catch {
+          // Skip malformed JSON lines silently.
         }
       }
     }
