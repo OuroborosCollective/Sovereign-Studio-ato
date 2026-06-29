@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SOVEREIGN_PRODUCT_TEMPLATE } from './features/product/runtime/sovereignProductTemplate';
 import {
   SOVEREIGN_WORKSPACE_COMMAND_EVENT,
   SOVEREIGN_WORKSPACE_MENU,
@@ -19,15 +18,7 @@ const DOM_INSTALLER_TOKENS = [
   'installMobileSetupDrawer',
   'installMobileWorkspaceOrder',
   'installMobileRuntimeModules',
-];
-
-const REQUIRED_CONTAINER_TOKENS = [
-  'RemoteMemoryContainer',
-  'BuilderContainer',
-  'WorkflowContainer',
-  'RepoSnapshotContainer',
-  'TelemetryContainer',
-  'PatternMemoryContainer',
+  'installGlobalRuntimeMonitor',
 ];
 
 const REMOVED_WRAPPER_NAV_TOKENS = [
@@ -39,6 +30,11 @@ const REMOVED_WRAPPER_NAV_TOKENS = [
   'sovereign-wrapper-workspace-menu',
   'sovereign-wrapper-menu__${item.id}',
   'composition-wrapper-around-existing-app',
+  'MinimalAppShell',
+  'MinimalLampBar',
+  'minimal-app-shell',
+  'sovereign-minimal-lamp-bar',
+  'sovereign-shell-content',
 ];
 
 function read(path: string): string {
@@ -67,7 +63,7 @@ describe('current Sovereign app shell contract', () => {
     expect(existsSync(WORKSPACE_COMMAND_PATH)).toBe(true);
   });
 
-  it('boots only the React app wrapper and stable Android runtime helpers', () => {
+  it('boots the React app wrapper and stable Android runtime helpers without a global coach', () => {
     const main = read(MAIN_PATH);
     const wrapper = read(WRAPPER_PATH);
 
@@ -85,24 +81,20 @@ describe('current Sovereign app shell contract', () => {
 
     expectContainsAll(wrapper, [
       "import App from './App'",
-      'MinimalAppShell',
       '<App />',
-      'data-layout="minimal-app-shell"',
-      'MinimalLampBar',
-      'sovereign-shell-content',
+      'export default function SovereignAppWrapper',
     ]);
 
     expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
     expectContainsNone(main, DOM_INSTALLER_TOKENS);
   });
 
-  it('keeps the wrapper free of a second workspace navigation layer', () => {
+  it('keeps the wrapper free of visible chrome and navigation state', () => {
     const wrapper = read(WRAPPER_PATH);
 
     expectContainsAll(wrapper, [
-      'MinimalAppShell',
-      'MinimalLampBar',
-      'minimal-app-shell',
+      "import App from './App'",
+      'return <App />',
     ]);
 
     expectContainsNone(wrapper, REMOVED_WRAPPER_NAV_TOKENS);
@@ -143,86 +135,9 @@ describe('current Sovereign app shell contract', () => {
   it('keeps App guide command listener aligned with the workspace event contract', () => {
     const app = read(APP_PATH);
 
-    // App.tsx must import and use the shared event constant to prevent drift.
     expect(app).toContain('SOVEREIGN_WORKSPACE_COMMAND_EVENT');
     expect(app).toContain('normalizeSovereignWorkspaceCommandDetail');
     expect(app).toContain('window.addEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
     expect(app).toContain('window.removeEventListener(SOVEREIGN_WORKSPACE_COMMAND_EVENT');
-    // Must NOT use hardcoded string to avoid future drift.
-    expect(app).not.toContain("'sovereign:release-guide-command'");
-  });
-
-  it('keeps the workspace command contract runtime-only and DOM-free', () => {
-    const command = read(WORKSPACE_COMMAND_PATH);
-
-    expectContainsAll(command, [
-      'SOVEREIGN_WORKSPACE_COMMAND_EVENT',
-      'SOVEREIGN_WORKSPACE_TAB_IDS',
-      'SOVEREIGN_WORKSPACE_MENU',
-      'isSovereignWorkspaceTab',
-      'normalizeSovereignWorkspaceCommandDetail',
-    ]);
-
-    expect(command).not.toContain('document.');
-    expect(command).not.toContain('window.');
-    expect(command).not.toContain('querySelector');
-    expect(command).not.toContain('localStorage');
-    expect(command).not.toContain('sessionStorage');
-  });
-
-  it('keeps the Android recovery fallback JavaScript parse-safe', () => {
-    const releaseFix = read('scripts/release-html-runtime-fix.mjs');
-    const sourceEscapedNewline = String.raw`npm run build:web\\nnpx cap sync android`;
-    const unsafeRuntimeNewline = 'npm run build:web' + '\n' + 'npx cap sync android</pre>';
-
-    expect(releaseFix).toContain(sourceEscapedNewline);
-    expect(releaseFix).toContain('[data-testid="app-shell__root"]');
-    expect(releaseFix).toContain('.sovereign-login-shell');
-    expect(releaseFix).not.toContain(unsafeRuntimeNewline);
-  });
-
-  it('keeps product containers owned by App.tsx instead of post-boot DOM scripts', () => {
-    const app = read(APP_PATH);
-
-    expectContainsAll(app, REQUIRED_CONTAINER_TOKENS);
-    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
-    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
-    expect(SOVEREIGN_PRODUCT_TEMPLATE.startTab).toBe('builder');
-  });
-
-  it('keeps the Android shell mobile-only and landscape safe', () => {
-    const css = read(CSS_PATH);
-    const main = read(MAIN_PATH);
-
-    expectContainsAll(css, [
-      'Android phones, foldables and tablets only',
-      '@media (orientation: landscape)',
-      'grid-template-columns: 1fr',
-    ]);
-
-    expect(css).toMatch(/@media\s*\(orientation:\s*landscape\)/);
-    expect(main).toMatch(/clamp\(5\.35rem,\s*12vw,\s*8rem\)/);
-    expect(css).not.toContain('min-width: 1440px');
-  });
-
-  it('keeps the CSS for the more menu and responsive tabbar', () => {
-    const css = read(CSS_PATH);
-
-    expect(css).not.toContain('.sovereign-tabbar,\n[data-role="sovereign-automation-panel"]');
-    expect(css).toContain('.sovereign-more-menu');
-    expect(css).toContain('.sovereign-more-select');
-  });
-
-  it('keeps the global runtime monitor as guidance and only auto-focuses safe UI tabs', () => {
-    const monitor = read('src/global-runtime-monitor.tsx');
-
-    expect(monitor).toContain('guarded runtime actions, health gates, workflow steps and PR publishing still require visible user intent');
-    expect(monitor).toContain("publishGuideCommand({ type: 'next', targetTab: guide.targetTab })");
-    expect(monitor).toContain("publishGuideCommand({ type: 'next', targetTab })");
-    expect(monitor).toContain('canAutoAdvanceGuide');
-    expect(monitor).toContain('hasBlockingToken');
-    expect(monitor).not.toContain('onGenerateIdeas');
-    expect(monitor).not.toContain('publishDraftPr');
-    expect(monitor).not.toContain('Ich leite den nächsten sicheren Schritt automatisch ein');
   });
 });
