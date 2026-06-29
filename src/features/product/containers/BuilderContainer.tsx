@@ -1356,7 +1356,7 @@ export function BuilderContainer({
     }
 
     setChatResponseBusy(true);
-    setStreamingText('');
+    setStreamingText(null);
 
     const workerMessages = buildWorkerMessages({
       submittedText,
@@ -1368,6 +1368,7 @@ export function BuilderContainer({
 
     // Stream chunks directly into UI for immediate feedback
     let fullText = '';
+    let streamError: { status?: number; statusText?: string; bodySnippet?: string } | null = null;
     try {
       for await (const chunk of streamDevChatWorkerReply({
         model: d.modelId,
@@ -1376,8 +1377,12 @@ export function BuilderContainer({
         fullText += chunk;
         setStreamingText(fullText);
       }
-    } catch {
-      // Stream error — fall through to blocker path
+    } catch (err) {
+      streamError = {
+        status: (err as { status?: number })?.status,
+        statusText: (err as { statusText?: string })?.statusText,
+        bodySnippet: (err as Error)?.message,
+      };
     }
 
     setChatResponseBusy(false);
@@ -1389,15 +1394,29 @@ export function BuilderContainer({
       return;
     }
 
-    // Stream yielded nothing — fetch health for diagnostic blocker
+    // Stream yielded nothing — try non-streaming fallback to get real content or diagnostic
+    const fallback = await fetchDevChatWorkerReply({
+      model: d.modelId,
+      messages: workerMessages,
+    });
+
+    if (fallback.ok && fallback.content) {
+      setWorkerBlocker(null);
+      appendChatLine({ role: 'assistant', text: fallback.content });
+      return;
+    }
+
     const health = await fetchDevChatWorkerHealth();
-    const diagnostic: DevChatWorkerDiagnostic = {
+    const diagnostic = fallback.diagnostic ?? {
       route: SOVEREIGN_WORKER_CHAT,
       model: d.modelId,
       messageCount: workerMessages.length,
-      scope: 'worker_runtime',
+      scope: streamError?.status ? 'network' : 'worker_runtime',
       canClientFix: false,
-      nextAction: 'Worker-Antwortformat im Bridge-Adapter prüfen.',
+      nextAction: 'Worker-Diagnose prüfen.',
+      status: streamError?.status,
+      statusText: streamError?.statusText,
+      bodySnippet: streamError?.bodySnippet,
     };
     const blocker: WorkerRuntimeBlocker = {
       message: 'Stream fehlgeschlagen oder leer.',

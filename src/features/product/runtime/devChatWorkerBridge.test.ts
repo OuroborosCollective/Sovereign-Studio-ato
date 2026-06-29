@@ -144,11 +144,11 @@ describe('devChatWorkerBridge', () => {
 });
 
 describe('streamDevChatWorkerReply', () => {
-  function sseResponse(chunks: string[], done = true): Response {
-    const body = chunks.flatMap(chunk => [
-      `data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}`,
+  function sseResponse(chunks: string[]): Response {
+    const body = [
+      ...chunks.map(chunk => `data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}`),
       'data: [DONE]',
-    ]).join('\n');
+    ].join('\n');
     return new Response(body, {
       status: 200,
       headers: { 'Content-Type': 'text/event-stream' },
