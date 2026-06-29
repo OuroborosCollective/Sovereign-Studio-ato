@@ -27,13 +27,27 @@ const CHAT_ONLY_STYLE = `
     height: 100dvh !important;
     max-height: 100dvh !important;
     width: 100% !important;
-    max-width: 393px !important;
+    max-width: min(100vw, 640px) !important;
     margin: 0 auto !important;
   }
 
-  [data-testid="chat-only-app"] [data-testid="builder-container"] > div:first-of-type,
-  [data-testid="chat-only-app"] [data-testid="builder-container"] > nav[aria-label="Sovereign Studio Tabs"] {
-    display: none !important;
+  @media (max-width: 520px) {
+    [data-testid="chat-only-app"] [data-testid="builder-container"] {
+      max-width: 100vw !important;
+    }
+  }
+
+  @media (min-width: 768px) {
+    [data-testid="chat-only-app"] {
+      display: flex;
+      justify-content: center;
+    }
+
+    [data-testid="chat-only-app"] [data-testid="builder-container"] {
+      border-left: 1px solid rgba(148, 163, 184, 0.14);
+      border-right: 1px solid rgba(148, 163, 184, 0.14);
+      box-shadow: 0 0 40px rgba(0, 0, 0, 0.28);
+    }
   }
 `;
 
