@@ -587,7 +587,7 @@ function TopBar({
     <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
       {/* Main top row — verbatim v3 */}
       <div style={{ height: 52, display: 'flex', alignItems: 'center', padding: '0 12px', gap: 10 }}>
-        <button type="button" onClick={onMenuOpen} aria-label="Menü" style={{ width: 40, height: 40, borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, color: C.textSub, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>☰</button>
+        <button type="button" onClick={onMenuOpen} aria-label="Menü" title="Menü" style={{ width: 40, height: 40, borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, color: C.textSub, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>☰</button>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -600,7 +600,7 @@ function TopBar({
               </span>
             )}
           </div>
-          <div style={{ fontFamily: 'monospace', fontSize: 9, color: repoColor, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div title={repoLabel} style={{ fontFamily: 'monospace', fontSize: 9, color: repoColor, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {repoLabel}
             {chatRepoSnapshot && <span style={{ color: C.textMuted }}> · {chatRepoSnapshot.fileCount} files</span>}
           </div>
@@ -608,13 +608,13 @@ function TopBar({
 
         <Ampel status={status} />
 
-        <button type="button" onClick={onSourceClick} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, color: TIER_COLOR[source.tier], fontFamily: 'monospace', fontSize: 9, cursor: 'pointer', flexShrink: 0 }}>
+        <button type="button" onClick={onSourceClick} aria-label="Runtime Quelle" title="Runtime Quelle" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, color: TIER_COLOR[source.tier], fontFamily: 'monospace', fontSize: 9, cursor: 'pointer', flexShrink: 0 }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: TIER_COLOR[source.tier], boxShadow: `0 0 5px ${TIER_COLOR[source.tier]}`, display: 'inline-block' }} />
           RT
         </button>
 
         {/* Panel toggle */}
-        <button type="button" onClick={onPanelToggle} style={{ background: 'transparent', border: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer', padding: '4px', borderRadius: 6 }}>
+        <button type="button" onClick={onPanelToggle} aria-label={panelOpen ? 'Status-Panel schließen' : 'Status-Panel öffnen'} title={panelOpen ? 'Status-Panel schließen' : 'Status-Panel öffnen'} style={{ background: 'transparent', border: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer', padding: '4px', borderRadius: 6 }}>
           {panelOpen ? '▴' : '▾'}
         </button>
       </div>
@@ -748,7 +748,7 @@ function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
 // ThinkingDots (verbatim v3)
 function ThinkingDots() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px' }}>
+    <div role="status" aria-label="Agent arbeitet..." style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px' }}>
       <div style={{ width: 30, height: 30, borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: C.textSub }}>⬡</div>
       <div style={{ display: 'flex', gap: 5, paddingLeft: 2 }}>
         {[0,1,2].map((i) => <span key={i} style={{ width: 7, height: 7, borderRadius: '50%', background: C.sky, display: 'inline-block', animation: `sdc-pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />)}
@@ -922,7 +922,7 @@ function SideDrawer({
             <div style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: C.text }}>Sovereign Studio</div>
             <div style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>NoCode Agent Runtime</div>
           </div>
-          <button type="button" onClick={onClose} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: C.textMuted, fontSize: 16, cursor: 'pointer', padding: '4px', borderRadius: 6 }}>✕</button>
+          <button type="button" onClick={onClose} aria-label="Schließen" title="Schließen" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: C.textMuted, fontSize: 16, cursor: 'pointer', padding: '4px', borderRadius: 6 }}>✕</button>
         </div>
 
         {/* Repo info */}
@@ -1002,6 +1002,7 @@ function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, r
           onClick={onSubmit}
           disabled={disabled || loading}
           aria-label="Senden"
+          title="Senden"
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
           data-testid={SOVEREIGN_ACTION_START_TASK.testId}
           style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: disabled || loading ? C.surface : C.orange, border: 'none', color: '#fff', fontSize: 16, cursor: disabled || loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s, box-shadow 0.2s', boxShadow: disabled || loading ? 'none' : `0 2px 12px ${C.orange}50`, opacity: disabled || loading ? 0.45 : 1 }}
