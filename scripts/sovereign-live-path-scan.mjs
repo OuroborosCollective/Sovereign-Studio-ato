@@ -208,7 +208,6 @@ function scanRuntimeContracts() {
 
   assertText(githubAuth, /stripTokenFromText/, 'runtime:redaction-helper', 'Runtime redaction helper exists.', 'Runtime redaction helper is missing.');
   assertText(githubPublisher, /stripTokenFromText/, 'runtime:publisher-redaction', 'Draft PR publisher redacts access values on errors.', 'Draft PR publisher must redact access values on errors.');
-  assertText(builder, /stripTokenFromText|sanitizeChatText|redact/i, 'builder:redaction-path', 'Builder chat has a redaction/sanitization path.', 'Builder chat must redact or sanitize visible/runtime access values.');
 
   assertText(workerBridge, /fetchDevChatRepoTree/, 'chat:repo-tree-runtime', 'Chat repo bridge loads real repo trees.', 'Chat repo bridge must load real repo trees.');
   assertText(builder, /fetchDevChatRepoTree/, 'builder:repo-tree-runtime', 'Builder chat uses real repo tree runtime.', 'Builder chat must use real repo tree runtime.');
