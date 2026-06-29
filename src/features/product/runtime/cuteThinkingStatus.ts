@@ -61,6 +61,16 @@ const DONE_STATUS_TEXTS = [
   'Küken legt das Ergebnis ins Nest',
 ] as const;
 
+const IDLE_STATUS_TEXTS = [
+  'idle · warte auf den nächsten echten Schritt',
+  'idle · halte die Runtime ruhig bereit',
+  'idle · beobachte Repo, Auftrag und Gates',
+  'idle · kein Live-Pfad läuft gerade',
+  'idle · bereit für eine echte Aktion',
+] as const;
+
+export const CUTE_WORKSTATE_DOT_FRAMES = ['...', '..', '.'] as const;
+
 export const CUTE_KAOMOJI_FRAMES = [
   '(^_^)',
   '(^o^)',
@@ -203,6 +213,37 @@ export function getCuteThinkingFrame(index: number, active: boolean, status?: st
 
 export function getCuteKaomojiFrame(index: number, salt = 0): string {
   return CUTE_KAOMOJI_FRAMES[deterministicCutePick(index, CUTE_KAOMOJI_FRAMES.length, salt)] ?? CUTE_KAOMOJI_FRAMES[0];
+}
+
+export function getCuteWorkStateDotFrame(index: number): string {
+  return CUTE_WORKSTATE_DOT_FRAMES[normalizeThinkingFrameIndex(index, CUTE_WORKSTATE_DOT_FRAMES.length)] ?? CUTE_WORKSTATE_DOT_FRAMES[0];
+}
+
+function getIdleStatusText(index: number, status?: string): string {
+  const cleanStatus = status?.trim();
+  if (cleanStatus) return cleanStatus;
+  return IDLE_STATUS_TEXTS[deterministicCutePick(index, IDLE_STATUS_TEXTS.length, 23)] ?? IDLE_STATUS_TEXTS[0];
+}
+
+export function formatCuteWorkStateLabel(args: {
+  readonly index: number;
+  readonly active: boolean;
+  readonly status?: string;
+}): string {
+  const frame = getCuteThinkingFrame(args.index, args.active, args.status);
+  const dotTrail = getCuteWorkStateDotFrame(args.index);
+  const salt = statusSalt(`${frame.text}:${args.status ?? ''}:workstate`);
+  const primaryKaomoji = getCuteKaomojiFrame(args.index, salt);
+  const secondaryKaomoji = getCuteKaomojiFrame(args.index + 3, salt + 13);
+  const kaomoji = args.index % 2 === 0 ? `${primaryKaomoji} ${secondaryKaomoji}` : primaryKaomoji;
+
+  if (!args.active) {
+    return `${frame.emoji} ${kaomoji}${dotTrail} ${getIdleStatusText(args.index, args.status)}`;
+  }
+
+  const cleanStatus = args.status?.trim();
+  const suffix = cleanStatus ? ` · ${cleanStatus}` : '';
+  return `${frame.emoji} ${kaomoji}${dotTrail} ${frame.text}${suffix}`;
 }
 
 export function formatCuteThinkingLabel(args: {

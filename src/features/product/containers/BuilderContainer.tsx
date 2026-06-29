@@ -17,7 +17,7 @@ import {
   SOVEREIGN_ACTION_REPAIR_LOG,
   SOVEREIGN_ACTION_START_TASK,
 } from '../runtime/sovereignActionContracts';
-import { formatCuteThinkingLabel } from '../runtime/cuteThinkingStatus';
+import { formatCuteWorkStateLabel } from '../runtime/cuteThinkingStatus';
 import {
   DEV_CHAT_WORKER_MODELS,
   SOVEREIGN_WORKER_CHAT,
@@ -110,6 +110,9 @@ interface ModuleCond { label: string; status: CondStatus }
 
 const MAX_W = 393;
 const CUTE_THINKING_FRAME_MS = 1100;
+const CUTE_IDLE_FRAME_MS = 1450;
+const WORKSTATE_TYPE_FRAME_MS = 35;
+const WORKSTATE_TYPE_STEP = 2;
 const builderContainerContract = getSovereignContainerContract('builder');
 
 // Original colour palette from BuilderContainer v3 — untouched
@@ -290,7 +293,9 @@ function buildChatLines(args: {
     lines.push({ id: 'assistant:repo', role: 'assistant', text: effectiveRepoReady ? 'Ich nutze den geladenen Repo-Kontext und leite die nächste echte Aktion über Sovereign/OpenHands-Gates weiter.' : args.repoReason });
   }
   if (args.chatRepoSnapshot) lines.push({ id: 'assistant:repo-loaded', role: 'assistant', text: `Repo geladen: ${args.chatRepoSnapshot.name}\nBranch: ${args.chatRepoSnapshot.branch}\nStruktur: ${args.chatRepoSnapshot.dirs.join(' · ') || 'keine Top-Level-Ordner erkannt'}\n${args.chatRepoSnapshot.fileCount} Einträge.`, file: args.chatRepoSnapshot.lastFile, path: args.chatRepoSnapshot.lastPath });
-  if (args.runtimeThinkingActive) lines.push({ id: 'thought:runtime', role: 'thought', text: args.cuteThinkingLabel });
+  if (args.cuteThinkingLabel.trim() && (args.runtimeThinkingActive || args.wishText.trim() || args.chatRepoSnapshot || args.disabledReason?.trim())) {
+    lines.push({ id: 'thought:runtime', role: 'thought', text: args.cuteThinkingLabel });
+  }
   if (args.sovereignSummary.trim()) lines.push({ id: 'assistant:summary', role: 'assistant', text: args.sovereignSummary.trim(), ...firstFile });
   if (args.disabledReason?.trim()) lines.push({ id: 'system:blocked', role: 'system', text: args.disabledReason.trim() });
   return lines;
@@ -535,14 +540,38 @@ function FileBadge({ path, file }: { path?: string; file?: string }) {
   );
 }
 
-// ThoughtBubble (verbatim v3)
+function useTypedWorkStateText(text: string): string {
+  const [visibleChars, setVisibleChars] = useState(text.length);
+
+  useEffect(() => {
+    setVisibleChars(Math.min(WORKSTATE_TYPE_STEP, text.length));
+    if (!text.length) return undefined;
+
+    const handle = window.setInterval(() => {
+      setVisibleChars((current) => {
+        if (current >= text.length) return current;
+        return Math.min(text.length, current + WORKSTATE_TYPE_STEP);
+      });
+    }, WORKSTATE_TYPE_FRAME_MS);
+
+    return () => window.clearInterval(handle);
+  }, [text]);
+
+  return text.slice(0, visibleChars);
+}
+
+// ThoughtBubble: typed runtime workstate text. It displays derived runtime state only.
 function ThoughtBubble({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
-  const short = text.length > 72 ? `${text.slice(0, 72)}…` : text;
+  const typedText = useTypedWorkStateText(text);
+  const displayText = open || typedText.length <= 96 ? typedText : `${typedText.slice(0, 96)}…`;
   return (
-    <button type="button" onClick={() => setOpen((v) => !v)} style={{ width: '100%', background: 'transparent', border: 'none', display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 16px', cursor: 'pointer', textAlign: 'left' }}>
+    <button type="button" onClick={() => setOpen((v) => !v)} aria-live="polite" style={{ width: '100%', background: 'transparent', border: 'none', display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 16px', cursor: 'pointer', textAlign: 'left' }}>
       <span style={{ fontFamily: 'monospace', fontSize: 12, color: open ? C.sky : C.border, marginTop: 1, flexShrink: 0, transition: 'color 0.2s' }}>✦</span>
-      <span style={{ fontFamily: 'monospace', fontSize: 10, fontStyle: 'italic', lineHeight: 1.6, color: open ? C.textSub : C.textMuted, transition: 'color 0.2s' }}>{open ? text : short}</span>
+      <span style={{ fontFamily: 'monospace', fontSize: 10, fontStyle: 'italic', lineHeight: 1.6, color: open ? C.textSub : C.textMuted, transition: 'color 0.2s' }}>
+        {displayText}
+        <span aria-hidden="true" style={{ color: C.sky, animation: 'sdc-typing-caret 0.9s steps(2, start) infinite' }}>▍</span>
+      </span>
     </button>
   );
 }
@@ -931,7 +960,12 @@ export function BuilderContainer({
   const analyzedMission      = useMemo(() => buildAnalyzedMission({ wish: wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }), [effectiveRepoReady, effectiveRepoReason, wishText]);
   const executableOpenHandsMission = useMemo(() => { const v = collapseRepeatedAnalyzedMission(mission); return isAnalyzedMission(v) ? v : collapseRepeatedAnalyzedMission(analyzedMission); }, [analyzedMission, mission]);
   const runtimeThinkingActive = Boolean(openhandsIsRunning || repoBusy || localRepoLoading || runtimeBusy || isPublishing);
-  const cuteThinkingLabel    = useMemo(() => formatCuteThinkingLabel({ index: thinkingFrameIndex, active: runtimeThinkingActive, status: openhandsJobStatus }), [openhandsJobStatus, runtimeThinkingActive, thinkingFrameIndex]);
+  const workStateStatus = runtimeThinkingActive
+    ? (openhandsJobStatus?.trim() || 'Runtime arbeitet')
+    : effectiveRepoReady
+      ? 'idle · Repo-Kontext bereit'
+      : 'idle · Repo fehlt';
+  const cuteThinkingLabel    = useMemo(() => formatCuteWorkStateLabel({ index: thinkingFrameIndex, active: runtimeThinkingActive, status: workStateStatus }), [runtimeThinkingActive, thinkingFrameIndex, workStateStatus]);
   const outcomeHints         = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
   const agentDisabled        = !effectiveRepoReady || repoBusy || localRepoLoading || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
   const agentStatus          = deriveAgentStatus({ repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob, localRepoLoading, localRepoError: Boolean(chatRepoError) });
@@ -957,8 +991,7 @@ export function BuilderContainer({
 
   // ── Original v3 effects (verbatim)
   useEffect(() => {
-    if (!runtimeThinkingActive) { setTFI(0); return; }
-    const h = window.setInterval(() => setTFI((c) => c + 1), CUTE_THINKING_FRAME_MS);
+    const h = window.setInterval(() => setTFI((c) => c + 1), runtimeThinkingActive ? CUTE_THINKING_FRAME_MS : CUTE_IDLE_FRAME_MS);
     return () => window.clearInterval(h);
   }, [runtimeThinkingActive]);
 
@@ -1121,6 +1154,7 @@ export function BuilderContainer({
     >
       <style>{`
         @keyframes sdc-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.8)} }
+        @keyframes sdc-typing-caret { 0%,45%{opacity:1} 46%,100%{opacity:.18} }
         textarea::placeholder { color: #3d4f61; }
         ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-thumb { background: #232d3a; border-radius: 2px; }

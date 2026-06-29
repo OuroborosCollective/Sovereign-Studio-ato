@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   CUTE_KAOMOJI_FRAMES,
   CUTE_THINKING_FRAMES,
+  CUTE_WORKSTATE_DOT_FRAMES,
   formatCuteThinkingLabel,
+  formatCuteWorkStateLabel,
   getCuteKaomojiFrame,
+  getCuteWorkStateDotFrame,
   getCuteThinkingFrame,
   normalizeThinkingFrameIndex,
 } from './cuteThinkingStatus';
@@ -59,4 +62,30 @@ describe('cuteThinkingStatus', () => {
     expect(label).toContain('running');
     expect(label).toMatch(/Küken|Piep/);
   });
+
+  it('cycles visible workstate dots without numeric progress', () => {
+    expect(CUTE_WORKSTATE_DOT_FRAMES).toEqual(['...', '..', '.']);
+    expect(getCuteWorkStateDotFrame(0)).toBe('...');
+    expect(getCuteWorkStateDotFrame(1)).toBe('..');
+    expect(getCuteWorkStateDotFrame(2)).toBe('.');
+    expect(getCuteWorkStateDotFrame(3)).toBe('...');
+  });
+
+  it('formats active workstate labels with kaomoji and changing dots', () => {
+    const label = formatCuteWorkStateLabel({ index: 2, active: true, status: 'OpenHands läuft' });
+
+    expect(label).toContain('.');
+    expect(label).toContain('OpenHands läuft');
+    expect(CUTE_KAOMOJI_FRAMES.some((kaomoji) => label.includes(kaomoji))).toBe(true);
+    expect(label).not.toMatch(/\d+%/);
+  });
+
+  it('formats idle workstate labels as a real idle state', () => {
+    const label = formatCuteWorkStateLabel({ index: 4, active: false });
+
+    expect(label).toContain('idle');
+    expect(CUTE_KAOMOJI_FRAMES.some((kaomoji) => label.includes(kaomoji))).toBe(true);
+    expect(label).not.toContain('completed');
+  });
+
 });
