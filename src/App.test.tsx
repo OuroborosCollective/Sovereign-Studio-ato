@@ -25,9 +25,13 @@ beforeAll(() => {
 });
 
 describe('App', () => {
-  it('opens the AppControl DevChat workbench', async () => {
+  it('opens the chat-only live workbench', async () => {
     render(<App />);
 
+    expect(screen.getByTestId('chat-only-app')).toHaveAttribute(
+      'data-layout',
+      'chat-only-live-entry',
+    );
     expect(await screen.findByText('DevChat')).toBeDefined();
     expect(screen.getByTestId('builder-container')).toHaveAttribute(
       'data-layout',
