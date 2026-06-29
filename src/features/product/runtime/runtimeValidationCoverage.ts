@@ -20,6 +20,30 @@ export interface RuntimeValidationCoverageReport {
 
 export const RUNTIME_VALIDATION_TARGETS: RuntimeValidationTarget[] = [
   {
+    id: 'agent-workspace-runtime',
+    runtimePath: 'src/features/product/runtime/agentWorkspaceRuntime.ts',
+    testPath: 'src/features/product/runtime/agentWorkspaceRuntime.test.ts',
+    purpose: 'Neutral contract for code-capable agents. Defines AgentWorkspaceRequest/Result, validates requests, sanitizes events, normalizes results.',
+    status: 'covered',
+    integrationPoint: 'openhandsWorkspaceAdapter + BuilderContainer',
+  },
+  {
+    id: 'openhands-workspace-adapter',
+    runtimePath: 'src/features/product/runtime/openhandsWorkspaceAdapter.ts',
+    testPath: 'src/features/product/runtime/openhandsWorkspaceAdapter.test.ts',
+    purpose: 'Routes OpenHands through neutral AgentWorkspaceRuntime contract. Validates, sanitizes, normalizes. Never invents changedFiles or Draft PR URLs.',
+    status: 'covered',
+    integrationPoint: 'BuilderContainer workspace actions',
+  },
+  {
+    id: 'workspace-runtime-state',
+    runtimePath: 'src/features/product/runtime/builderContainerRuntime.ts',
+    testPath: 'src/features/product/runtime/builderContainerRuntime.test.ts',
+    purpose: 'Derives workspace runtime state with short German messages. Calm UI display rules, inspector link safety.',
+    status: 'covered',
+    integrationPoint: 'BuilderContainer status display',
+  },
+  {
     id: 'readiness-runtime',
     runtimePath: 'src/features/product/runtime/repoLaunchReadiness.ts',
     testPath: 'src/features/product/runtime/repoLaunchReadiness.test.ts',
