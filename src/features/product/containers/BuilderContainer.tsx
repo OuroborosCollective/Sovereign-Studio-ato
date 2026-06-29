@@ -522,7 +522,7 @@ function buildRuntimeConfidence(args: {
 // ─────────────────────────────────────────────────────────────
 
 // Ampel (verbatim from v3)
-function Ampel({ status }: { status: AgentStatus }) {
+const Ampel = React.memo(function Ampel({ status }: { status: AgentStatus }) {
   const col = STATUS_COLOR[status];
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -532,10 +532,10 @@ function Ampel({ status }: { status: AgentStatus }) {
       <span style={{ fontFamily: 'monospace', fontSize: 10, color: col, marginLeft: 2 }}>{STATUS_LABEL[status]}</span>
     </div>
   );
-}
+});
 
 // Module lamps row — AppControl addition
-function ModuleLamps({
+const ModuleLamps = React.memo(function ModuleLamps({
   modules, signals, activeTab, onTabClick,
 }: {
   modules: ModuleCfg[];
@@ -564,10 +564,10 @@ function ModuleLamps({
       })}
     </div>
   );
-}
+});
 
 // TopBar — v3 verbatim + module lamps + panel toggle + PAL badge
-function TopBar({
+const TopBar = React.memo(function TopBar({
   status, repoReady, chatRepoSnapshot, repoReason, onMenuOpen, onSourceClick, source,
   modules, signals, activeTab, onTabClick,
   panelOpen, onPanelToggle, palTier, palSavings,
@@ -623,10 +623,10 @@ function TopBar({
       <ModuleLamps modules={modules} signals={signals} activeTab={activeTab} onTabClick={onTabClick} />
     </div>
   );
-}
+});
 
 // Collapsible status/log panel
-function StatusPanel({
+const StatusPanel = React.memo(function StatusPanel({
   open, logs, signals, modules,
 }: {
   open: boolean;
@@ -671,10 +671,10 @@ function StatusPanel({
       </div>
     </div>
   );
-}
+});
 
 // FileBadge (verbatim v3)
-function FileBadge({ path, file }: { path?: string; file?: string }) {
+const FileBadge = React.memo(function FileBadge({ path, file }: { path?: string; file?: string }) {
   if (!file) return null;
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'monospace', fontSize: 9, padding: '3px 8px', borderRadius: 6, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)', color: C.amber, marginBottom: 4, maxWidth: '100%', overflow: 'hidden' }}>
@@ -682,7 +682,7 @@ function FileBadge({ path, file }: { path?: string; file?: string }) {
       <span>{file}</span>
     </div>
   );
-}
+});
 
 function useTypedWorkStateText(text: string): string {
   const [visibleChars, setVisibleChars] = useState(text.length);
@@ -705,7 +705,7 @@ function useTypedWorkStateText(text: string): string {
 }
 
 // ThoughtBubble: typed runtime workstate text. It displays derived runtime state only.
-function ThoughtBubble({ text }: { text: string }) {
+const ThoughtBubble = React.memo(function ThoughtBubble({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const typedText = useTypedWorkStateText(text);
   const displayText = open || typedText.length <= 96 ? typedText : `${typedText.slice(0, 96)}…`;
@@ -718,10 +718,10 @@ function ThoughtBubble({ text }: { text: string }) {
       </span>
     </button>
   );
-}
+});
 
 // Bubble (verbatim v3)
-function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
+const Bubble = React.memo(function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
   const isUser = msg.role === 'user';
   if (msg.role === 'system') return (
     <div style={{ padding: '4px 16px', textAlign: 'center' }}>
@@ -743,10 +743,10 @@ function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
       </div>
     </div>
   );
-}
+});
 
 // ThinkingDots (verbatim v3)
-function ThinkingDots() {
+const ThinkingDots = React.memo(function ThinkingDots() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px' }}>
       <div style={{ width: 30, height: 30, borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: C.textSub }}>⬡</div>
@@ -755,10 +755,10 @@ function ThinkingDots() {
       </div>
     </div>
   );
-}
+});
 
 // OutcomeHints (verbatim v3)
-function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
+const OutcomeHints = React.memo(function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
   if (hints.length === 0) return null;
   return (
     <div style={{ padding: '0 12px 8px' }}>
@@ -772,10 +772,10 @@ function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
       </div>
     </div>
   );
-}
+});
 
 // WelcomeScreen (verbatim v3)
-function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
+const WelcomeScreen = React.memo(function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px', textAlign: 'center' }}>
       <div style={{ width: 72, height: 72, borderRadius: 20, background: `${C.accent}12`, border: `2px solid ${C.accent}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, marginBottom: 20 }}>🐥</div>
@@ -793,10 +793,10 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
       </div>
     </div>
   );
-}
+});
 
 // ModuleScreen — AppControl detail view for non-chat tabs
-function ModuleScreen({
+const ModuleScreen = React.memo(function ModuleScreen({
   mod, signals, phases, conditions, confidence, sequence,
 }: {
   mod: ModuleCfg; signals: Record<string,SignalType>; phases: Record<string,AnimPhase>;
@@ -876,10 +876,10 @@ function ModuleScreen({
       </div>
     </div>
   );
-}
+});
 
 // RuntimeSheet (verbatim v3)
-function RuntimeSheet({ sources, current, onClose }: { sources: Array<{ id: string; label: string; tier: RuntimeTier; description: string }>; current: { id: string }; onClose: () => void }) {
+const RuntimeSheet = React.memo(function RuntimeSheet({ sources, current, onClose }: { sources: Array<{ id: string; label: string; tier: RuntimeTier; description: string }>; current: { id: string }; onClose: () => void }) {
   return (
     <div onClick={onClose} style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'rgba(14,17,22,0.85)', backdropFilter: 'blur(8px)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: C.surface, borderRadius: '20px 20px 0 0', border: `1px solid ${C.border}`, borderBottom: 'none', padding: '0 0 24px' }}>
@@ -898,10 +898,10 @@ function RuntimeSheet({ sources, current, onClose }: { sources: Array<{ id: stri
       </div>
     </div>
   );
-}
+});
 
 // SideDrawer (verbatim v3 + PAL stats block)
-function SideDrawer({
+const SideDrawer = React.memo(function SideDrawer({
   onClose, onGenerateIdeas, onGenerateErrorWorkflow, onPublishDraftPr,
   isPublishing, chatRepoSnapshot, onCancelOpenHands, openhandsIsRunning, palStats,
 }: {
@@ -965,10 +965,10 @@ function SideDrawer({
       </div>
     </div>
   );
-}
+});
 
 // Composer (verbatim v3)
-function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, routeHint }: {
+const Composer = React.memo(function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, routeHint }: {
   value: string; onChange: (v: string) => void; onSubmit: () => void;
   disabled: boolean; loading: boolean; placeholder: string; routeHint: string;
 }) {
@@ -1014,10 +1014,10 @@ function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, r
       </div>
     </div>
   );
-}
+});
 
 // Bottom tab bar
-function BottomTabBar({
+const BottomTabBar = React.memo(function BottomTabBar({
   modules, activeTab, signals, onTabClick,
 }: {
   modules: ModuleCfg[]; activeTab: string; signals: Record<string,SignalType>; onTabClick: (id: string) => void;
@@ -1045,7 +1045,7 @@ function BottomTabBar({
       })}
     </nav>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -1119,10 +1119,18 @@ export function BuilderContainer({
     addLog('info', `Tab → ${id} (${auto ? 'auto' : 'manual'})`, id);
   }, [addLog]);
 
+  const handleMenuOpen = useCallback(() => setShowSide(true), []);
+  const handleSourceClick = useCallback(() => setShowRuntime(true), []);
+  const handlePanelToggle = useCallback(() => setPanelOpen(v => !v), []);
+  const handleSideMenuClose = useCallback(() => setShowSide(false), []);
+  const handleRuntimeSheetClose = useCallback(() => setShowRuntime(false), []);
+  const handleBriefingClose = useCallback(() => setOHB(false), []);
+  const handleIdeaSelection = useCallback((opt: IdeaOption) => setWishText((c) => appendOption(c, opt)), []);
+
   // ── Original v3 derived values (verbatim)
-  const state = deriveBuilderContainerState({ repoReady: repoReady || Boolean(chatRepoSnapshot), repoBusy: repoBusy || localRepoLoading, runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview });
+  const state = useMemo(() => deriveBuilderContainerState({ repoReady: repoReady || Boolean(chatRepoSnapshot), repoBusy: repoBusy || localRepoLoading, runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview }), [repoReady, chatRepoSnapshot, repoBusy, localRepoLoading, runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview]);
   const effectiveRepoReady   = repoReady || Boolean(chatRepoSnapshot);
-  const effectiveRepoReason  = chatRepoSnapshot ? summarizeDevChatRepoSnapshot(chatRepoSnapshot) : repoReason;
+  const effectiveRepoReason  = useMemo(() => chatRepoSnapshot ? summarizeDevChatRepoSnapshot(chatRepoSnapshot) : repoReason, [chatRepoSnapshot, repoReason]);
   const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(chatResponseBusy || openhandsIsRunning || repoBusy || localRepoLoading || runtimeBusy || isPublishing);
   const workStateStatus = runtimeThinkingActive
@@ -1137,14 +1145,14 @@ export function BuilderContainer({
   const agentDisabled        = !effectiveRepoReady || repoBusy || localRepoLoading || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
   const agentStatus          = workerBlocker ? 'error' : chatResponseBusy ? 'thinking' : deriveAgentStatus({ repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob, localRepoLoading, localRepoError: Boolean(chatRepoError) });
   const workerSourceTier: RuntimeTier = workerBlocker ? 'blocked' : chatResponseBusy ? 'active' : 'ready';
-  const runtimeSource        = { id: 'worker-chat', label: workerBlocker ? 'Cloudflare Worker blockiert' : 'Cloudflare Worker', tier: workerSourceTier, description: workerBlocker ? workerBlocker.message : SOVEREIGN_WORKER_CHAT, available: !workerBlocker };
-  const runtimeSources       = [
+  const runtimeSource = useMemo(() => ({ id: 'worker-chat', label: workerBlocker ? 'Cloudflare Worker blockiert' : 'Cloudflare Worker', tier: workerSourceTier, description: workerBlocker ? workerBlocker.message : SOVEREIGN_WORKER_CHAT, available: !workerBlocker }), [workerBlocker, workerSourceTier]);
+  const runtimeSources = useMemo(() => [
     runtimeSource,
     { id: 'worker-kv',    label: 'Worker KV',     tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_KV, available: true },
     { id: 'worker-models', label: `${DEV_CHAT_WORKER_MODELS.length} Modelle`, tier: 'ready' as RuntimeTier, description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(' · '), available: true },
     { id: 'openhands-runtime', label: openhandsReady ? 'OpenHands Executor' : 'OpenHands offline', tier: (openhandsReady ? (openhandsIsRunning ? 'active' : 'ready') : 'blocked') as RuntimeTier, description: openhandsReady ? 'Echte Agent-Runtime für Code/Draft-PR-Aufträge' : 'Agent-Runtime nicht verbunden', available: Boolean(openhandsReady) },
     { id: 'repo-snapshot', label: effectiveRepoReady ? 'Repo Snapshot' : 'Repo fehlt', tier: (effectiveRepoReady ? 'ready' : 'blocked') as RuntimeTier, description: effectiveRepoReady ? effectiveRepoReason : repoReason, available: effectiveRepoReady },
-  ];
+  ], [runtimeSource, openhandsReady, openhandsIsRunning, effectiveRepoReady, effectiveRepoReason, repoReason]);
   const chatLines = useMemo(() => buildChatLines({ repoReady: effectiveRepoReady, repoReason: effectiveRepoReason, runtimeThinkingActive, cuteThinkingLabel, sovereignSummary, disabledReason: state.disabledReason, openhandsJob, chatRepoSnapshot, chatRepoError, chatHistory }), [chatHistory, chatRepoError, chatRepoSnapshot, cuteThinkingLabel, effectiveRepoReady, effectiveRepoReason, openhandsJob, runtimeThinkingActive, sovereignSummary, state.disabledReason]);
 
   // PAL stats
@@ -1281,13 +1289,13 @@ export function BuilderContainer({
   ]);
 
   // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
-  const startAgentFromText = (text: string) => {
+  const startAgentFromText = useCallback((text: string) => {
     const clean = collapseRepeatedAnalyzedMission(buildAnalyzedMission({ wish: text, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }));
     emitMissionChange(clean);
     onStartOpenHands?.(clean);
-  };
+  }, [effectiveRepoReady, effectiveRepoReason, emitMissionChange, onStartOpenHands]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     const submittedText = wishText.trim();
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing) return;
 
@@ -1393,9 +1401,10 @@ export function BuilderContainer({
       text: buildWorkerBlockerAnswer({ blocker, repoReady: effectiveRepoReady, chatRepoSnapshot, openhandsReady }),
     });
     addLog('error', `Worker blocked · ${diagnostic.scope}${diagnostic.status ? ` · HTTP ${diagnostic.status}` : ''}`, 'router');
-  };
+  }, [addLog, agentDisabled, appendChatLine, chatHistory, chatRepoSnapshot, effectiveRepoReady, effectiveRepoReason, localRepoLoading, chatResponseBusy, isPublishing, openhandsReady, palDecisions, state.disabledReason, wishText, startAgentFromText, workerBlocker]);
 
   const submitDisabled = localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
+  const routeHintValue = useMemo(() => composerRouteHint({ draft: wishText, workerBlocked, agentDisabled }), [wishText, workerBlocked, agentDisabled]);
   const isChat = activeTab === 'chat';
   const activeMod = MODULES.find(m => m.id === activeTab) ?? MODULES[0];
 
@@ -1426,15 +1435,15 @@ export function BuilderContainer({
         repoReady={effectiveRepoReady}
         chatRepoSnapshot={chatRepoSnapshot}
         repoReason={effectiveRepoReason}
-        onMenuOpen={() => setShowSide(true)}
-        onSourceClick={() => setShowRuntime(true)}
+        onMenuOpen={handleMenuOpen}
+        onSourceClick={handleSourceClick}
         source={runtimeSource}
         modules={MODULES}
         signals={signals}
         activeTab={activeTab}
         onTabClick={switchTab}
         panelOpen={panelOpen}
-        onPanelToggle={() => setPanelOpen(v => !v)}
+        onPanelToggle={handlePanelToggle}
         palTier={lastPal?.tier ?? null}
         palSavings={palStats?.savings ?? null}
       />
@@ -1452,7 +1461,7 @@ export function BuilderContainer({
           style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', background: C.bg, display: 'flex', flexDirection: 'column' }}
         >
           {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0
-            ? <WelcomeScreen onIdea={(opt) => setWishText((c) => appendOption(c, opt))} />
+            ? <WelcomeScreen onIdea={handleIdeaSelection} />
             : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 0 8px' }}>
                 {chatLines.map((line) => <Bubble key={line.id} msg={line} now={nowRef.current} />)}
@@ -1476,11 +1485,11 @@ export function BuilderContainer({
         <Composer
           value={wishText}
           onChange={setWishText}
-          onSubmit={() => { void handleSubmit(); }}
+          onSubmit={handleSubmit}
           disabled={submitDisabled}
           loading={localRepoLoading}
           placeholder={chatRepoSnapshot ? `Frage zu ${chatRepoSnapshot.name}…` : 'GitHub URL oder Auftrag…'}
-          routeHint={composerRouteHint({ draft: wishText, workerBlocked, agentDisabled })}
+          routeHint={routeHintValue}
         />
       )}
 
@@ -1488,10 +1497,10 @@ export function BuilderContainer({
       <BottomTabBar modules={MODULES} activeTab={activeTab} signals={signals} onTabClick={switchTab} />
 
       {/* OVERLAYS — v3 verbatim */}
-      {showRuntimeSheet && <RuntimeSheet sources={runtimeSources} current={runtimeSource} onClose={() => setShowRuntime(false)} />}
+      {showRuntimeSheet && <RuntimeSheet sources={runtimeSources} current={runtimeSource} onClose={handleRuntimeSheetClose} />}
       {showSideMenu && (
         <SideDrawer
-          onClose={() => setShowSide(false)}
+          onClose={handleSideMenuClose}
           onGenerateIdeas={onGenerateIdeas}
           onGenerateErrorWorkflow={onGenerateErrorWorkflow}
           onPublishDraftPr={onPublishDraftPr}
@@ -1503,9 +1512,9 @@ export function BuilderContainer({
         />
       )}
       {showOpenHandsBriefing && openhandsConfig && (
-        <div onClick={() => setOHB(false)} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(14,17,22,0.88)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div onClick={handleBriefingClose} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(14,17,22,0.88)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', borderRadius: 20, border: `1px solid ${C.border}` }}>
-            <OpenHandsOperatorBriefingPanel config={openhandsConfig} onClose={() => setOHB(false)} initiallyExpanded={true} />
+            <OpenHandsOperatorBriefingPanel config={openhandsConfig} onClose={handleBriefingClose} initiallyExpanded={true} />
           </div>
         </div>
       )}
