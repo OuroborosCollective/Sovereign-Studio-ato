@@ -43,6 +43,12 @@ function mockWorkerReply(text = 'Worker Antwort aus Cloudflare Route.') {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ choices: [{ message: { content: text } }] })));
 }
 
+async function* mockStreamWorkerReply(chunks: string[]) {
+  for (const chunk of chunks) {
+    yield chunk;
+  }
+}
+
 beforeEach(() => {
   mockWorkerReply();
 });
@@ -289,6 +295,35 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
   });
 
 
+
+  /* ───────────── streaming renders live chunks without blocking ───────────── */
+  it('shows streaming chunks in real-time and freezes final text after stream ends', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      [
+        'data: {"choices":[{"delta":{"content":"Erste "}}]}',
+        'data: {"choices":[{"delta":{"content":"Antwort"}}]}',
+        'data: [DONE]',
+      ].join('\n'),
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+    )));
+
+    const props = baseProps();
+    render(<BuilderContainer {...props} />);
+
+    fireEvent.change(chatField(), { target: { value: 'Wie geht es dir?' } });
+    fireEvent.click(sendButton());
+
+    // User message appears immediately
+    expect(screen.getByText('Wie geht es dir?')).toBeDefined();
+
+    // Stream bubble appears with progressive text
+    await waitFor(() => {
+      const bubbles = screen.getAllByText('Erste ');
+      expect(bubbles.length).toBeGreaterThan(0);
+    });
+
+    await waitFor(() => expect(screen.getByText('Erste Antwort')).toBeDefined());
+  });
 
   /* ───────────── worker 500 becomes runtime diagnostic state, not blind retry ───────────── */
   it('turns Worker HTTP 500 into a local runtime diagnostic and avoids blind repeat calls', async () => {

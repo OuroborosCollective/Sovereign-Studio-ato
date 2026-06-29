@@ -27,6 +27,7 @@ import {
   fetchDevChatWorkerHealth,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
+  streamDevChatWorkerReply,
   summarizeDevChatRepoSnapshot,
   type DevChatRepoSnapshot,
   type DevChatWorkerDiagnostic,
@@ -1069,6 +1070,7 @@ export function BuilderContainer({
   const [chatRepoError, setChatRepoError] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatLine[]>([]);
   const [chatResponseBusy, setChatResponseBusy] = useState(false);
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] = useState<WorkerRuntimeBlocker | null>(null);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
@@ -1354,35 +1356,51 @@ export function BuilderContainer({
     }
 
     setChatResponseBusy(true);
-    const workerResult = await fetchDevChatWorkerReply({
-      model: d.modelId,
-      messages: buildWorkerMessages({
-        submittedText,
-        chatHistory,
-        repoReady: effectiveRepoReady,
-        repoReason: effectiveRepoReason,
-        chatRepoSnapshot,
-      }),
-    });
-    setChatResponseBusy(false);
+    setStreamingText('');
 
-    if (workerResult.ok && workerResult.content) {
+    const workerMessages = buildWorkerMessages({
+      submittedText,
+      chatHistory,
+      repoReady: effectiveRepoReady,
+      repoReason: effectiveRepoReason,
+      chatRepoSnapshot,
+    });
+
+    // Stream chunks directly into UI for immediate feedback
+    let fullText = '';
+    try {
+      for await (const chunk of streamDevChatWorkerReply({
+        model: d.modelId,
+        messages: workerMessages,
+      })) {
+        fullText += chunk;
+        setStreamingText(fullText);
+      }
+    } catch {
+      // Stream error — fall through to blocker path
+    }
+
+    setChatResponseBusy(false);
+    setStreamingText(null);
+
+    if (fullText) {
       setWorkerBlocker(null);
-      appendChatLine({ role: 'assistant', text: workerResult.content });
+      appendChatLine({ role: 'assistant', text: fullText });
       return;
     }
 
+    // Stream yielded nothing — fetch health for diagnostic blocker
     const health = await fetchDevChatWorkerHealth();
-    const diagnostic = workerResult.diagnostic ?? {
-      route: workerResult.route,
+    const diagnostic: DevChatWorkerDiagnostic = {
+      route: SOVEREIGN_WORKER_CHAT,
       model: d.modelId,
-      messageCount: 0,
-      scope: 'unknown' as const,
+      messageCount: workerMessages.length,
+      scope: 'worker_runtime',
       canClientFix: false,
-      nextAction: 'Worker-Diagnose prüfen.',
+      nextAction: 'Worker-Antwortformat im Bridge-Adapter prüfen.',
     };
     const blocker: WorkerRuntimeBlocker = {
-      message: workerResult.error ?? 'keine Antwort erhalten',
+      message: 'Stream fehlgeschlagen oder leer.',
       diagnostic,
       health,
       createdAt: Date.now(),
@@ -1456,7 +1474,13 @@ export function BuilderContainer({
             : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 0 8px' }}>
                 {chatLines.map((line) => <Bubble key={line.id} msg={line} now={nowRef.current} />)}
-                {agentStatus === 'thinking' && <ThinkingDots />}
+                {streamingText !== null && (
+                  <Bubble
+                    msg={{ id: 'stream', role: 'assistant', text: streamingText, createdAt: Date.now() }}
+                    now={nowRef.current}
+                  />
+                )}
+                {agentStatus === 'thinking' && !streamingText && <ThinkingDots />}
                 <OutcomeHints hints={outcomeHints} />
                 <div style={{ height: 8 }} />
               </div>

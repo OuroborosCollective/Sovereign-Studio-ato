@@ -11,6 +11,7 @@ import {
   fetchDevChatWorkerReply,
   normalizeDevChatWorkerModel,
   parseDevChatGithubUrl,
+  streamDevChatWorkerReply,
   summarizeDevChatRepoSnapshot,
 } from './devChatWorkerBridge';
 
@@ -139,5 +140,107 @@ describe('devChatWorkerBridge', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('keine auswertbare Antwort');
     expect(result.route).toBe(SOVEREIGN_WORKER_CHAT);
+  });
+});
+
+describe('streamDevChatWorkerReply', () => {
+  function sseResponse(chunks: string[], done = true): Response {
+    const body = chunks.flatMap(chunk => [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}`,
+      'data: [DONE]',
+    ]).join('\n');
+    return new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  }
+
+  it('yields SSE delta chunks as they arrive', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => sseResponse(['Hallo', ' Welt'])));
+
+    const chunks: string[] = [];
+    for await (const chunk of streamDevChatWorkerReply({
+      model: 'cerebras/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Sag Hallo' }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(['Hallo', ' Welt']);
+  });
+
+  it('terminates cleanly on [DONE]', async () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Teil 1"}}]}',
+      'data: {"choices":[{"delta":{"content":"Teil 2"}}]}',
+      'data: [DONE]',
+    ].join('\n');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+
+    const chunks: string[] = [];
+    for await (const chunk of streamDevChatWorkerReply({
+      model: 'cerebras/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Test' }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(['Teil 1', 'Teil 2']);
+  });
+
+  it('skips invalid JSON lines without crashing', async () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Valid"}}]}',
+      'data: { broken json',
+      'data: {"choices":[{"delta":{"content":"Auch valid"}}]}',
+      'data: [DONE]',
+    ].join('\n');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+
+    const chunks: string[] = [];
+    for await (const chunk of streamDevChatWorkerReply({
+      model: 'cerebras/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Test' }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(['Valid', 'Auch valid']);
+  });
+
+  it('falls back to non-streaming when response.body is absent', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: 'Fallback Antwort' } }],
+    })));
+
+    const chunks: string[] = [];
+    for await (const chunk of streamDevChatWorkerReply({
+      model: 'cerebras/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Test' }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(['Fallback Antwort']);
+  });
+
+  it('yields nothing on HTTP error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'boom' }, 500)));
+
+    const chunks: string[] = [];
+    for await (const chunk of streamDevChatWorkerReply({
+      model: 'cerebras/gpt-oss-120b',
+      messages: [{ role: 'user', content: 'Test' }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([]);
   });
 });
