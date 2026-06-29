@@ -1356,7 +1356,7 @@ export function BuilderContainer({
     }
 
     setChatResponseBusy(true);
-    setStreamingText(null);
+    setStreamingText('');
 
     const workerMessages = buildWorkerMessages({
       submittedText,
@@ -1499,7 +1499,7 @@ export function BuilderContainer({
                     now={nowRef.current}
                   />
                 )}
-                {agentStatus === 'thinking' && !streamingText && <ThinkingDots />}
+                {agentStatus === 'thinking' && streamingText === null && <ThinkingDots />}
                 <OutcomeHints hints={outcomeHints} />
                 <div style={{ height: 8 }} />
               </div>

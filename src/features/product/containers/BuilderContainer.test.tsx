@@ -43,12 +43,6 @@ function mockWorkerReply(text = 'Worker Antwort aus Cloudflare Route.') {
   vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ choices: [{ message: { content: text } }] })));
 }
 
-async function* mockStreamWorkerReply(chunks: string[]) {
-  for (const chunk of chunks) {
-    yield chunk;
-  }
-}
-
 beforeEach(() => {
   mockWorkerReply();
 });
