@@ -34,18 +34,23 @@ function sendButton(): HTMLButtonElement {
 /** ----------------------------------------------------------------
  *  Tests
  *  ---------------------------------------------------------------- */
-describe('BuilderContainer (replit shell)', () => {
+describe('BuilderContainer (AppControl DevChat shell)', () => {
   /* ───────────────────────── structure / shell ───────────────────────── */
-  it('renders the fixed DevChat shell structure', () => {
+  it('renders the AppControl DevChat shell structure', () => {
     render(<BuilderContainer {...baseProps()} />);
 
     const root = screen.getByTestId('builder-container');
-    expect(root).toHaveAttribute('data-layout', 'devchat-replit');
+    expect(root).toHaveAttribute('data-layout', 'devchat-appcontrol-integrated');
     expect(root).toHaveAttribute('aria-label', 'Sovereign Builder');
 
     // top bar brand tokens
     expect(screen.getAllByText('Sovereign').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('DevChat')).toBeDefined();
+
+    // AppControl module tabs are part of the new Builder truth
+    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
+    expect(screen.getByText('CHAT')).toBeDefined();
+    expect(screen.getByText('ROU')).toBeDefined();
 
     // main chat viewport + composer
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
