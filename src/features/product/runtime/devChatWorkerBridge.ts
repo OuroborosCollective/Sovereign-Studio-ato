@@ -29,6 +29,25 @@ export const DEV_CHAT_WORKER_MODELS: readonly DevChatWorkerModel[] = [
   { id: 'gemma-7b', label: 'Gemma 7B', tier: 'fast', thinking: false },
 ];
 
+
+export interface DevChatWorkerMessage {
+  readonly role: 'system' | 'user' | 'assistant';
+  readonly content: string;
+}
+
+export interface DevChatWorkerReplyRequest {
+  readonly model: string;
+  readonly messages: readonly DevChatWorkerMessage[];
+  readonly signal?: AbortSignal;
+}
+
+export interface DevChatWorkerReplyResult {
+  readonly ok: boolean;
+  readonly content?: string;
+  readonly error?: string;
+  readonly route: typeof SOVEREIGN_WORKER_CHAT;
+}
+
 export interface ParsedDevChatGithubUrl {
   readonly owner: string;
   readonly repo: string;
@@ -148,3 +167,80 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
     return { ok: false, error: error instanceof Error ? error.message : 'GitHub repo load failed' };
   }
 }
+
+function readWorkerContent(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const root = payload as Record<string, unknown>;
+
+  const direct = root.content ?? root.reply ?? root.text;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+
+  const message = root.message;
+  if (message && typeof message === 'object') {
+    const content = (message as Record<string, unknown>).content;
+    if (typeof content === 'string' && content.trim()) return content.trim();
+  }
+
+  const choices = root.choices;
+  if (Array.isArray(choices)) {
+    for (const choice of choices) {
+      if (!choice || typeof choice !== 'object') continue;
+      const choiceRecord = choice as Record<string, unknown>;
+      const choiceText = choiceRecord.text;
+      if (typeof choiceText === 'string' && choiceText.trim()) return choiceText.trim();
+
+      const choiceMessage = choiceRecord.message;
+      if (!choiceMessage || typeof choiceMessage !== 'object') continue;
+      const content = (choiceMessage as Record<string, unknown>).content;
+      if (typeof content === 'string' && content.trim()) return content.trim();
+    }
+  }
+
+  return undefined;
+}
+
+export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest): Promise<DevChatWorkerReplyResult> {
+  const messages = request.messages
+    .map((message) => ({ role: message.role, content: message.content.trim() }))
+    .filter((message) => message.content.length > 0);
+
+  if (messages.length === 0) {
+    return { ok: false, error: 'Worker Chat blockiert: keine gültige Nachricht.', route: SOVEREIGN_WORKER_CHAT };
+  }
+
+  try {
+    const response = await fetch(SOVEREIGN_WORKER_CHAT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        model: request.model,
+        messages,
+        temperature: 0.2,
+        stream: false,
+      }),
+      signal: request.signal,
+    });
+
+    if (!response.ok) {
+      return { ok: false, error: `Worker Chat HTTP ${response.status}`, route: SOVEREIGN_WORKER_CHAT };
+    }
+
+    const payload = await response.json();
+    const content = readWorkerContent(payload);
+    if (!content) {
+      return { ok: false, error: 'Worker Chat lieferte keine auswertbare Antwort.', route: SOVEREIGN_WORKER_CHAT };
+    }
+
+    return { ok: true, content, route: SOVEREIGN_WORKER_CHAT };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Worker Chat Anfrage fehlgeschlagen.',
+      route: SOVEREIGN_WORKER_CHAT,
+    };
+  }
+}
+

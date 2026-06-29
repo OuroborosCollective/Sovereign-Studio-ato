@@ -23,9 +23,11 @@ import {
   SOVEREIGN_WORKER_CHAT,
   SOVEREIGN_WORKER_KV,
   fetchDevChatRepoTree,
+  fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   summarizeDevChatRepoSnapshot,
   type DevChatRepoSnapshot,
+  type DevChatWorkerMessage,
 } from '../runtime/devChatWorkerBridge';
 import { OpenHandsOperatorBriefingPanel } from '../components/OpenHandsOperatorBriefingPanel';
 import type {
@@ -85,6 +87,7 @@ interface ChatLine {
   readonly text: string;
   readonly file?: string;
   readonly path?: string;
+  readonly createdAt?: number;
 }
 
 interface RuntimeSource {
@@ -277,28 +280,95 @@ function fmtTime(ts: number): string {
 }
 
 function buildChatLines(args: {
-  readonly wishText: string; readonly repoReady: boolean; readonly repoReason: string;
+  readonly repoReady: boolean; readonly repoReason: string;
   readonly runtimeThinkingActive: boolean; readonly cuteThinkingLabel: string;
   readonly sovereignSummary: string; readonly disabledReason?: string;
   readonly openhandsJob?: OpenHandsJobSnapshot;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null; readonly chatRepoError: string | null;
+  readonly chatHistory: readonly ChatLine[];
 }): ChatLine[] {
   const lines: ChatLine[] = [];
   const firstFile = splitFilePath(args.openhandsJob?.changedFiles?.[0] ?? args.chatRepoSnapshot?.lastFile);
   const effectiveRepoReady = args.repoReady || Boolean(args.chatRepoSnapshot);
-  lines.push({ id: 'system:repo', role: 'system', text: effectiveRepoReady ? `Repo verbunden · ${args.chatRepoSnapshot ? summarizeDevChatRepoSnapshot(args.chatRepoSnapshot) : 'echte Runtime-Gates aktiv'}` : `Repo fehlt · ${args.repoReason}` });
+
+  lines.push({
+    id: 'system:repo',
+    role: 'system',
+    text: effectiveRepoReady
+      ? `Repo verbunden · ${args.chatRepoSnapshot ? summarizeDevChatRepoSnapshot(args.chatRepoSnapshot) : 'echte Runtime-Gates aktiv'}`
+      : `Repo fehlt · ${args.repoReason}`,
+  });
+
   if (args.chatRepoError) lines.push({ id: 'system:repo-error', role: 'system', text: `Repo-Ladefehler: ${args.chatRepoError}` });
-  if (args.wishText.trim()) {
-    lines.push({ id: 'user:wish', role: 'user', text: args.wishText.trim() });
-    lines.push({ id: 'assistant:repo', role: 'assistant', text: effectiveRepoReady ? 'Ich nutze den geladenen Repo-Kontext und leite die nächste echte Aktion über Sovereign/OpenHands-Gates weiter.' : args.repoReason });
-  }
-  if (args.chatRepoSnapshot) lines.push({ id: 'assistant:repo-loaded', role: 'assistant', text: `Repo geladen: ${args.chatRepoSnapshot.name}\nBranch: ${args.chatRepoSnapshot.branch}\nStruktur: ${args.chatRepoSnapshot.dirs.join(' · ') || 'keine Top-Level-Ordner erkannt'}\n${args.chatRepoSnapshot.fileCount} Einträge.`, file: args.chatRepoSnapshot.lastFile, path: args.chatRepoSnapshot.lastPath });
-  if (args.cuteThinkingLabel.trim() && (args.runtimeThinkingActive || args.wishText.trim() || args.chatRepoSnapshot || args.disabledReason?.trim())) {
+  if (args.sovereignSummary.trim()) lines.push({ id: 'assistant:summary', role: 'assistant', text: args.sovereignSummary.trim(), ...firstFile });
+
+  lines.push(...args.chatHistory);
+
+  if (args.cuteThinkingLabel.trim() && (args.runtimeThinkingActive || args.chatHistory.length > 0 || args.chatRepoSnapshot || args.disabledReason?.trim())) {
     lines.push({ id: 'thought:runtime', role: 'thought', text: args.cuteThinkingLabel });
   }
-  if (args.sovereignSummary.trim()) lines.push({ id: 'assistant:summary', role: 'assistant', text: args.sovereignSummary.trim(), ...firstFile });
+
   if (args.disabledReason?.trim()) lines.push({ id: 'system:blocked', role: 'system', text: args.disabledReason.trim() });
   return lines;
+}
+
+function createChatLineId(prefix: ChatRole | 'repo' | 'worker', index: number): string {
+  return `${prefix}:${Date.now()}:${index}`;
+}
+
+function isOpenHandsExecutionIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  const executionTokens = [
+    'openhands', 'draft pr', 'pull request', 'pr erstellen', 'push', 'commit',
+    'baue', 'bauen', 'implementiere', 'implementieren', 'fixe', 'repariere',
+    'patch', 'ändere datei', 'datei ändern', 'ersatzdatei', 'runtime-check',
+    'tests ergänzen', 'test ergänzen', 'code ändern', 'repo schreiben',
+  ];
+  return executionTokens.some((token) => lower.includes(token));
+}
+
+function buildWorkerSystemPrompt(args: { readonly repoReady: boolean; readonly repoReason: string; readonly chatRepoSnapshot: DevChatRepoSnapshot | null }): string {
+  const repoContext = args.chatRepoSnapshot
+    ? [
+        `Repo: ${args.chatRepoSnapshot.owner}/${args.chatRepoSnapshot.repo}`,
+        `Branch: ${args.chatRepoSnapshot.branch}`,
+        `Dateien: ${args.chatRepoSnapshot.fileCount}`,
+        `Top-Level: ${args.chatRepoSnapshot.dirs.join(' · ') || 'keine Top-Level-Ordner erkannt'}`,
+        `Letzter relevanter Pfad: ${[args.chatRepoSnapshot.lastPath, args.chatRepoSnapshot.lastFile].filter(Boolean).join('') || 'nicht erkannt'}`,
+      ].join('\n')
+    : args.repoReady
+      ? `Repo-Kontext: ${args.repoReason}`
+      : `Repo-Kontext fehlt: ${args.repoReason}`;
+
+  return [
+    'Du bist Sovereign Worker Chat, die Standard-LLM-Route des Sovereign Tools.',
+    'Antworte kurz, freundlich, konkret und ohne erfundene Erfolge.',
+    'Keine Mock-, Stub- oder Facade-Live-Pfade behaupten.',
+    'Wenn Code-Ausführung oder Draft-PR nötig ist, erkläre klar, dass OpenHands der Executor ist.',
+    repoContext,
+  ].join('\n');
+}
+
+function buildWorkerMessages(args: {
+  readonly submittedText: string;
+  readonly chatHistory: readonly ChatLine[];
+  readonly repoReady: boolean;
+  readonly repoReason: string;
+  readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
+}): DevChatWorkerMessage[] {
+  const recentMessages = args.chatHistory
+    .filter((line) => line.role === 'user' || line.role === 'assistant')
+    .slice(-8)
+    .map((line): DevChatWorkerMessage => ({
+      role: line.role === 'user' ? 'user' : 'assistant',
+      content: line.text,
+    }));
+
+  return [
+    { role: 'system', content: buildWorkerSystemPrompt(args) },
+    ...recentMessages,
+    { role: 'user', content: args.submittedText },
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -926,8 +996,12 @@ export function BuilderContainer({
   const [showOpenHandsBriefing, setOHB] = useState(false);
   const [chatRepoSnapshot, setChatRepo] = useState<DevChatRepoSnapshot | null>(null);
   const [chatRepoError, setChatRepoError] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<ChatLine[]>([]);
+  const [chatResponseBusy, setChatResponseBusy] = useState(false);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
+  const ignoreNextMissionSyncRef = useRef(false);
+  const chatLineIndexRef = useRef(0);
   const scrollRef      = useRef<HTMLDivElement>(null);
   const nowRef         = useRef(Date.now());
 
@@ -947,6 +1021,26 @@ export function BuilderContainer({
     setStatusLogs(prev => [...prev.slice(-199), { ts, level, msg, tabId }]);
   }, []);
 
+  const appendChatLine = useCallback((line: Omit<ChatLine, 'id' | 'createdAt'> & { readonly id?: string; readonly createdAt?: number }) => {
+    chatLineIndexRef.current += 1;
+    const createdAt = line.createdAt ?? Date.now();
+    setChatHistory((previous) => [
+      ...previous,
+      {
+        ...line,
+        id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
+        createdAt,
+      },
+    ]);
+    nowRef.current = createdAt;
+  }, []);
+
+  const emitMissionChange = useCallback((nextMission: string) => {
+    lastMissionRef.current = nextMission;
+    ignoreNextMissionSyncRef.current = true;
+    onMissionChange(nextMission);
+  }, [onMissionChange]);
+
   const switchTab = useCallback((id: string, auto = false) => {
     setActiveTab(id);
     setSequence(prev => [...prev.slice(-11), { tabId: id, auto }]);
@@ -957,28 +1051,26 @@ export function BuilderContainer({
   const state = deriveBuilderContainerState({ repoReady: repoReady || Boolean(chatRepoSnapshot), repoBusy: repoBusy || localRepoLoading, runtimeBusy, isPublishing, mission, sovereignSummary, sovereignPreview });
   const effectiveRepoReady   = repoReady || Boolean(chatRepoSnapshot);
   const effectiveRepoReason  = chatRepoSnapshot ? summarizeDevChatRepoSnapshot(chatRepoSnapshot) : repoReason;
-  const analyzedMission      = useMemo(() => buildAnalyzedMission({ wish: wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }), [effectiveRepoReady, effectiveRepoReason, wishText]);
-  const executableOpenHandsMission = useMemo(() => { const v = collapseRepeatedAnalyzedMission(mission); return isAnalyzedMission(v) ? v : collapseRepeatedAnalyzedMission(analyzedMission); }, [analyzedMission, mission]);
-  const runtimeThinkingActive = Boolean(openhandsIsRunning || repoBusy || localRepoLoading || runtimeBusy || isPublishing);
+  const runtimeThinkingActive = Boolean(chatResponseBusy || openhandsIsRunning || repoBusy || localRepoLoading || runtimeBusy || isPublishing);
   const workStateStatus = runtimeThinkingActive
-    ? (openhandsJobStatus?.trim() || 'Runtime arbeitet')
+    ? (chatResponseBusy ? 'Cloudflare Worker antwortet' : (openhandsJobStatus?.trim() || 'Runtime arbeitet'))
     : effectiveRepoReady
       ? 'idle · Repo-Kontext bereit'
       : 'idle · Repo fehlt';
   const cuteThinkingLabel    = useMemo(() => formatCuteWorkStateLabel({ index: thinkingFrameIndex, active: runtimeThinkingActive, status: workStateStatus }), [runtimeThinkingActive, thinkingFrameIndex, workStateStatus]);
   const outcomeHints         = useMemo(() => buildOutcomeHints(openhandsJob), [openhandsJob]);
   const agentDisabled        = !effectiveRepoReady || repoBusy || localRepoLoading || runtimeBusy || Boolean(openhandsIsRunning) || !openhandsReady || !onStartOpenHands;
-  const agentStatus          = deriveAgentStatus({ repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob, localRepoLoading, localRepoError: Boolean(chatRepoError) });
-  const sourceTier: RuntimeTier = openhandsReady ? (runtimeThinkingActive ? 'active' : 'ready') : 'blocked';
-  const runtimeSource        = { id: 'openhands-runtime', label: openhandsReady ? 'OpenHands' : 'OpenHands offline', tier: sourceTier, description: openhandsReady ? 'Echte Agent-Runtime verbunden' : 'Agent-Runtime nicht verbunden', available: Boolean(openhandsReady) };
+  const agentStatus          = chatResponseBusy ? 'thinking' : deriveAgentStatus({ repoBusy, runtimeBusy, isPublishing, openhandsIsRunning, openhandsJob, localRepoLoading, localRepoError: Boolean(chatRepoError) });
+  const workerSourceTier: RuntimeTier = chatResponseBusy ? 'active' : 'ready';
+  const runtimeSource        = { id: 'worker-chat', label: 'Cloudflare Worker', tier: workerSourceTier, description: SOVEREIGN_WORKER_CHAT, available: true };
   const runtimeSources       = [
     runtimeSource,
-    { id: 'worker-chat',   label: 'Worker Chat',   tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_CHAT, available: true },
     { id: 'worker-kv',    label: 'Worker KV',     tier: 'ready' as RuntimeTier, description: SOVEREIGN_WORKER_KV, available: true },
     { id: 'worker-models', label: `${DEV_CHAT_WORKER_MODELS.length} Modelle`, tier: 'ready' as RuntimeTier, description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(' · '), available: true },
+    { id: 'openhands-runtime', label: openhandsReady ? 'OpenHands Executor' : 'OpenHands offline', tier: (openhandsReady ? (openhandsIsRunning ? 'active' : 'ready') : 'blocked') as RuntimeTier, description: openhandsReady ? 'Echte Agent-Runtime für Code/Draft-PR-Aufträge' : 'Agent-Runtime nicht verbunden', available: Boolean(openhandsReady) },
     { id: 'repo-snapshot', label: effectiveRepoReady ? 'Repo Snapshot' : 'Repo fehlt', tier: (effectiveRepoReady ? 'ready' : 'blocked') as RuntimeTier, description: effectiveRepoReady ? effectiveRepoReason : repoReason, available: effectiveRepoReady },
   ];
-  const chatLines = useMemo(() => buildChatLines({ wishText, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason, runtimeThinkingActive, cuteThinkingLabel, sovereignSummary, disabledReason: state.disabledReason, openhandsJob, chatRepoSnapshot, chatRepoError }), [chatRepoError, chatRepoSnapshot, cuteThinkingLabel, effectiveRepoReady, effectiveRepoReason, openhandsJob, runtimeThinkingActive, sovereignSummary, state.disabledReason, wishText]);
+  const chatLines = useMemo(() => buildChatLines({ repoReady: effectiveRepoReady, repoReason: effectiveRepoReason, runtimeThinkingActive, cuteThinkingLabel, sovereignSummary, disabledReason: state.disabledReason, openhandsJob, chatRepoSnapshot, chatRepoError, chatHistory }), [chatHistory, chatRepoError, chatRepoSnapshot, cuteThinkingLabel, effectiveRepoReady, effectiveRepoReason, openhandsJob, runtimeThinkingActive, sovereignSummary, state.disabledReason]);
 
   // PAL stats
   const palStats = useMemo(() => {
@@ -998,8 +1090,13 @@ export function BuilderContainer({
   useEffect(() => {
     if (mission === lastMissionRef.current) return;
     lastMissionRef.current = mission;
+    if (ignoreNextMissionSyncRef.current) {
+      ignoreNextMissionSyncRef.current = false;
+      return;
+    }
+    if (wishText.trim() || chatHistory.length > 0) return;
     setWishText(missionToWishText(mission));
-  }, [mission]);
+  }, [chatHistory.length, mission, wishText]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -1014,7 +1111,7 @@ export function BuilderContainer({
     const jobBlocked = openhandsJob?.status === 'blocked' || openhandsJob?.status === 'failed' || Boolean(chatRepoError);
     const hasOutput = (openhandsJob?.changedFiles?.length ?? 0) > 0 || Boolean(openhandsJob?.draftPrUrl);
     const nextSignals: Record<string, SignalType> = {
-      chat: runtimeThinkingActive ? 'processing' : wishText.trim() ? 'active' : 'idle',
+      chat: runtimeThinkingActive ? 'processing' : (wishText.trim() || chatHistory.length > 0) ? 'active' : 'idle',
       init: effectiveRepoReady ? 'active' : 'warning',
       router: localRepoLoading || repoBusy ? 'processing' : effectiveRepoReady ? 'active' : 'idle',
       pattern: palDecisions.length > 0 ? 'active' : 'idle',
@@ -1039,7 +1136,7 @@ export function BuilderContainer({
       router: [
         { label: 'Repo context available', status: effectiveRepoReady ? 'pass' : 'wait' },
         { label: 'No runtime blocker', status: state.disabledReason ? 'fail' : 'pass' },
-        { label: 'Chat intent present', status: wishText.trim() ? 'pass' : 'wait' },
+        { label: 'Chat intent present', status: (wishText.trim() || chatHistory.length > 0) ? 'pass' : 'wait' },
       ],
       pattern: [
         { label: 'PAL decision available', status: palDecisions.length > 0 ? 'pass' : 'wait' },
@@ -1081,6 +1178,7 @@ export function BuilderContainer({
   }, [
     addLog,
     agentDisabled,
+    chatHistory.length,
     chatRepoError,
     chatRepoSnapshot,
     confidence,
@@ -1104,12 +1202,26 @@ export function BuilderContainer({
     wishText,
   ]);
 
-  // ── Original v3 actions (verbatim)
-  const analyzeWish = () => { const clean = collapseRepeatedAnalyzedMission(analyzedMission); lastMissionRef.current = clean; onMissionChange(clean); };
-  const startAgentFromChat = () => { const clean = collapseRepeatedAnalyzedMission(executableOpenHandsMission); lastMissionRef.current = clean; onMissionChange(clean); onStartOpenHands?.(clean); };
+  // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
+  const analyzeWishFromText = (text: string) => {
+    const clean = collapseRepeatedAnalyzedMission(buildAnalyzedMission({ wish: text, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }));
+    emitMissionChange(clean);
+  };
+
+  const startAgentFromText = (text: string) => {
+    const clean = collapseRepeatedAnalyzedMission(buildAnalyzedMission({ wish: text, repoReady: effectiveRepoReady, repoReason: effectiveRepoReason }));
+    emitMissionChange(clean);
+    onStartOpenHands?.(clean);
+  };
 
   const handleSubmit = async () => {
-    const parsedRepo = parseDevChatGithubUrl(wishText);
+    const submittedText = wishText.trim();
+    if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing) return;
+
+    setWishText('');
+    appendChatLine({ role: 'user', text: submittedText });
+
+    const parsedRepo = parseDevChatGithubUrl(submittedText);
     if (parsedRepo) {
       setRepoLoading(true);
       setChatRepoError(null);
@@ -1118,25 +1230,59 @@ export function BuilderContainer({
       if (result.ok && result.snapshot) {
         setChatRepo(result.snapshot);
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
-        lastMissionRef.current = summary;
-        onMissionChange(`Repo laden via Chat:\n${summary}\n${result.snapshot.files.slice(0,60).map((f) => f.path).join('\n')}`);
+        appendChatLine({
+          role: 'assistant',
+          text: `Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(' · ') || 'keine Top-Level-Ordner erkannt'}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`,
+          file: result.snapshot.lastFile,
+          path: result.snapshot.lastPath,
+        });
         const d = palRoute(`Repo geladen: ${result.snapshot.name}`, 0, result.snapshot.fileCount, palDecisions);
         setPalDecisions(prev => [...prev.slice(-99), d]);
         addLog('info', `PAL → ${d.tier} · ${d.modelLabel}`, 'sys');
         return;
       }
-      setChatRepoError(result.error ?? 'Repo konnte nicht geladen werden.');
+      const errorText = result.error ?? 'Repo konnte nicht geladen werden.';
+      setChatRepoError(errorText);
+      appendChatLine({ role: 'assistant', text: `Repo-Laden blockiert: ${errorText}` });
       return;
     }
-    // PAL route before agent call
-    const d = palRoute(wishText, chatLines.length, chatRepoSnapshot?.fileCount ?? 0, palDecisions);
+
+    const d = palRoute(submittedText, chatHistory.length + 1, chatRepoSnapshot?.fileCount ?? 0, palDecisions);
     setPalDecisions(prev => [...prev.slice(-99), d]);
     addLog('info', `PAL → ${d.tier} · ${d.modelLabel} (score ${d.score})`, 'sys');
-    if (agentDisabled) { analyzeWish(); return; }
-    startAgentFromChat();
+
+    if (isOpenHandsExecutionIntent(submittedText)) {
+      if (!agentDisabled) {
+        appendChatLine({ role: 'assistant', text: 'Code-/Draft-PR-Auftrag erkannt. Ich übergebe an OpenHands Executor und halte den Worker Chat als Standardroute bereit.' });
+        startAgentFromText(submittedText);
+        return;
+      }
+      appendChatLine({ role: 'assistant', text: `OpenHands Executor blockiert: ${state.disabledReason || effectiveRepoReason}. Ich beantworte den Auftrag deshalb zuerst über den Cloudflare Worker.` });
+    }
+
+    setChatResponseBusy(true);
+    const workerResult = await fetchDevChatWorkerReply({
+      model: d.modelId,
+      messages: buildWorkerMessages({
+        submittedText,
+        chatHistory,
+        repoReady: effectiveRepoReady,
+        repoReason: effectiveRepoReason,
+        chatRepoSnapshot,
+      }),
+    });
+    setChatResponseBusy(false);
+
+    if (workerResult.ok && workerResult.content) {
+      appendChatLine({ role: 'assistant', text: workerResult.content });
+      return;
+    }
+
+    appendChatLine({ role: 'assistant', text: `Cloudflare Worker blockiert: ${workerResult.error ?? 'keine Antwort erhalten'}` });
+    analyzeWishFromText(submittedText);
   };
 
-  const submitDisabled = localRepoLoading || (!parseDevChatGithubUrl(wishText) && (agentDisabled || !wishText.trim()));
+  const submitDisabled = localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === 'chat';
   const activeMod = MODULES.find(m => m.id === activeTab) ?? MODULES[0];
 
@@ -1192,7 +1338,7 @@ export function BuilderContainer({
           aria-label="Sovereign Chat Verlauf"
           style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', background: C.bg, display: 'flex', flexDirection: 'column' }}
         >
-          {!wishText.trim() && !chatRepoSnapshot
+          {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0
             ? <WelcomeScreen onIdea={(opt) => setWishText((c) => appendOption(c, opt))} />
             : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 0 8px' }}>

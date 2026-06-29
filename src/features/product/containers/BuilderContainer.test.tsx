@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuilderContainer } from './BuilderContainer';
 
 /** ----------------------------------------------------------------
@@ -30,6 +30,26 @@ function chatField(): HTMLTextAreaElement {
 function sendButton(): HTMLButtonElement {
   return screen.getByRole('button', { name: 'Senden' }) as HTMLButtonElement;
 }
+
+
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function mockWorkerReply(text = 'Worker Antwort aus Cloudflare Route.') {
+  vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ choices: [{ message: { content: text } }] })));
+}
+
+beforeEach(() => {
+  mockWorkerReply();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 /** ----------------------------------------------------------------
  *  Tests
@@ -100,8 +120,8 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── locked agent state ───────────── */
-  it('keeps direct send blocked when the agent runtime is not start-ready', () => {
+  /* ───────────── worker route remains available when OpenHands is blocked ───────────── */
+  it('keeps chat send available when the agent runtime is not start-ready and routes to Worker', async () => {
     const props = baseProps();
     render(<BuilderContainer {...props} openhandsReady={false} />);
 
@@ -109,16 +129,19 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
       target: { value: 'Bitte mobile UX verbessern und Log direkt sichtbar machen.' },
     });
 
-    expect(sendButton()).toBeDisabled();
+    expect(sendButton()).not.toBeDisabled();
     fireEvent.click(sendButton());
+
+    expect(chatField().value).toBe('');
+    await waitFor(() => expect(screen.getByText('Worker Antwort aus Cloudflare Route.')).toBeDefined());
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
   /* ───────────── mission adoption → input synchronisation ───────────── */
-  it('syncs externally adopted insight missions into the chat input', () => {
+  it('syncs externally adopted insight missions only into an untouched empty composer', () => {
     const props = baseProps();
     const { rerender } = render(
-      <BuilderContainer {...props} mission="README + Update History" />,
+      <BuilderContainer {...props} mission="" />,
     );
 
     const adoptedMission = [
@@ -138,38 +161,23 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
   });
 
   /* ───────────── duplicate-header collapse check ───────────── */
-  it('does not duplicate an already analysed mission', () => {
+  it('does not duplicate an already analysed mission when OpenHands execution is requested', () => {
     const props = {
       ...baseProps(),
       openhandsReady: true,
       onStartOpenHands: vi.fn(),
     };
-    const analysedMission = [
-      'Ideenfabrik Auftrag:',
-      'Ideenfabrik Auftrag:',
-      'Verbessere mobile UX und Log-Fenster.',
-      '',
-      'Repository-Kontext:',
-      'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.',
-      '',
-      'Umsetzung:',
-      '- Erzeuge echte Änderungen im passenden Codepfad.',
-      '',
-      'Repository-Kontext:',
-      'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.',
-      '',
-      'Umsetzung:',
-      '- Erzeuge echte Änderungen im passenden Codepfad.',
-    ].join('\n');
+    render(<BuilderContainer {...props} mission="" />);
 
-    render(<BuilderContainer {...props} mission={analysedMission} />);
+    fireEvent.change(chatField(), { target: { value: 'Bitte OpenHands: implementiere den mobilen Chat-Fix als Draft PR.' } });
     fireEvent.click(sendButton());
 
     expect(props.onMissionChange).toHaveBeenCalled();
     const emittedMission = props.onMissionChange.mock.calls[0][0] as string;
     expect(emittedMission.match(/Ideenfabrik Auftrag:/g)).toHaveLength(1);
     expect(emittedMission.match(/Repository-Kontext:/g)).toHaveLength(1);
-    expect(emittedMission).toContain('Verbessere mobile UX und Log-Fenster.');
+    expect(emittedMission).toContain('implementiere den mobilen Chat-Fix');
+    expect(props.onStartOpenHands).toHaveBeenCalledOnce();
   });
 
   /* ───────────── side drawer interaction ───────────── */
@@ -184,18 +192,18 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
   });
 
   /* ───────────── runtime source sheet interaction ───────────── */
-  it('opens runtime source sheet from the status bar', () => {
+  it('opens runtime source sheet with Cloudflare Worker as the standard LLM route', () => {
     render(<BuilderContainer {...baseProps()} openhandsReady />);
 
     fireEvent.click(screen.getByText('RT'));
 
     expect(screen.getByText('Runtime Quelle')).toBeDefined();
-    expect(screen.getByText('Echte Agent-Runtime verbunden')).toBeDefined();
-    expect(screen.getByText(/Worker Chat/i)).toBeDefined();
+    expect(screen.getByText('Cloudflare Worker')).toBeDefined();
+    expect(screen.getByText('Echte Agent-Runtime für Code/Draft-PR-Aufträge')).toBeDefined();
   });
 
   /* ───────────── agent start flow (happy path) ───────────── */
-  it('starts the external agent from the chat mission when ready', () => {
+  it('starts the external agent only for explicit code or Draft-PR execution intent', () => {
     const props = {
       ...baseProps(),
       openhandsReady: true,
@@ -203,7 +211,7 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     };
     render(<BuilderContainer {...props} />);
 
-    fireEvent.change(chatField(), { target: { value: 'Test mission' } });
+    fireEvent.change(chatField(), { target: { value: 'Bitte implementiere einen Chat-State-Fix als Draft PR.' } });
     fireEvent.click(sendButton());
 
     expect(props.onStartOpenHands).toHaveBeenCalledOnce();
@@ -211,12 +219,73 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
-  /* ───────────── repo not ready blocks send ───────────── */
-  it('shows repo status when not ready and blocks direct send', () => {
-    render(<BuilderContainer {...baseProps()} repoReady={false} openhandsReady />);
+  /* ───────────── repo not ready still allows normal Worker chat ───────────── */
+  it('shows repo status when not ready but does not block normal chat', async () => {
+    const props = baseProps();
+    render(<BuilderContainer {...props} repoReady={false} openhandsReady />);
 
     expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
-    expect(sendButton()).toBeDisabled();
+    expect(sendButton()).not.toBeDisabled();
+    fireEvent.change(chatField(), { target: { value: 'Was brauchst du als nächstes?' } });
+    fireEvent.click(sendButton());
+
+    expect(chatField().value).toBe('');
+    await waitFor(() => expect(screen.getByText('Worker Antwort aus Cloudflare Route.')).toBeDefined());
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
+  /* ───────────── repo load keeps input clean and writes to chat history ───────────── */
+  it('loads a GitHub repo as runtime context without writing analysis into the composer', async () => {
+    const props = baseProps();
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      tree: [
+        { path: 'src/App.tsx', type: 'blob', size: 123 },
+        { path: 'src/features/product/containers/BuilderContainer.tsx', type: 'blob', size: 456 },
+      ],
+      truncated: false,
+    })));
+
+    render(<BuilderContainer {...props} mission="" repoReady={false} />);
+
+    const repoUrl = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/tree/main/src';
+    fireEvent.change(chatField(), { target: { value: repoUrl } });
+    fireEvent.click(sendButton());
+
+    expect(chatField().value).toBe('');
+    await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
+    expect(screen.getByText(repoUrl)).toBeDefined();
+    expect(chatField().value).not.toContain('Repo geladen');
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
+  /* ───────────── normal text after repo load uses Worker, not OpenHands ───────────── */
+  it('routes normal text after repo load through Cloudflare Worker instead of OpenHands', async () => {
+    const props = {
+      ...baseProps(),
+      openhandsReady: true,
+      onStartOpenHands: vi.fn(),
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        tree: [{ path: 'src/App.tsx', type: 'blob', size: 123 }],
+        truncated: false,
+      }))
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'Repo-Frage über Worker beantwortet.' } }] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<BuilderContainer {...props} mission="" repoReady={false} />);
+
+    fireEvent.change(chatField(), { target: { value: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato' } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
+
+    fireEvent.change(chatField(), { target: { value: 'Was ist der nächste sinnvolle Schritt?' } });
+    fireEvent.click(sendButton());
+
+    expect(chatField().value).toBe('');
+    await waitFor(() => expect(screen.getByText('Repo-Frage über Worker beantwortet.')).toBeDefined());
+    expect(props.onStartOpenHands).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   /* ───────────── OpenHands output renders as hint list ───────────── */
