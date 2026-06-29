@@ -53,15 +53,19 @@ describe('SovereignAppWrapper - Chat-First UI Contract', () => {
     expect(screen.getByText('warning')).toBeDefined();
   });
 
-  it('shows DevChat workbench after opening the app', () => {
+  it('shows AppControl DevChat workbench after opening the app', () => {
     render(<SovereignAppWrapper />);
 
     // Open the app
     fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
 
-    // The DevChat workbench should now be visible
-    expect(screen.getByTestId('builder-container')).toHaveAttribute('data-layout', 'devchat-replit');
+    // The AppControl DevChat workbench should now be visible
+    expect(screen.getByTestId('builder-container')).toHaveAttribute(
+      'data-layout',
+      'devchat-appcontrol-integrated',
+    );
     expect(screen.getByText('DevChat')).toBeDefined();
     expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
+    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
   });
 });
