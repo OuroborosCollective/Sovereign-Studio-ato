@@ -1,13 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SOVEREIGN_PRODUCT_TEMPLATE } from './features/product/runtime/sovereignProductTemplate';
 
 function readSource(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8');
 }
 
 describe('main app entry', () => {
-  it('renders the current Sovereign composition wrapper, not the legacy ProductMagic shell', () => {
+  it('renders the current Sovereign wrapper, not the legacy ProductMagic shell', () => {
     const main = readSource('./main.tsx');
     const wrapper = readSource('./SovereignAppWrapper.tsx');
 
@@ -20,37 +19,35 @@ describe('main app entry', () => {
     expect(wrapper).not.toContain('ProductMagicApp');
   });
 
-  it('derives tabs from the Product Template as single source of truth', () => {
+  it('makes App.tsx the chat-only live surface', () => {
     const app = readSource('./App.tsx');
 
-    // App should import the Product Template
-    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE');
-    // App should use startTab from template
-    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
-    // All visible tabs from the template should be available
-    const visibleTabs = SOVEREIGN_PRODUCT_TEMPLATE.tabs.filter((t) => t.userVisible);
-    expect(visibleTabs.length).toBeGreaterThan(0);
-    // Check that the template is used to derive tabs
-    expect(app).toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
+    expect(app).toContain('BuilderContainer');
+    expect(app).toContain('data-testid="chat-only-app"');
+    expect(app).toContain('data-layout="chat-only-live-entry"');
+    expect(app).toContain('aria-label="Sovereign Chat"');
+    expect(app).toContain('CHAT_ONLY_STYLE');
   });
 
-  it('keeps visible container app navigation and runtime surfaces available via Product Template', () => {
+  it('keeps the old dashboard shell out of the live app entry', () => {
     const app = readSource('./App.tsx');
 
-    // All visible tabs from the Product Template should be handled in app rendering
-    const visibleTabs = SOVEREIGN_PRODUCT_TEMPLATE.tabs.filter((t) => t.userVisible);
-    for (const tab of visibleTabs) {
-      expect(app).toContain(`'${tab.id}'`);
-    }
+    expect(app).not.toContain('SOVEREIGN_PRODUCT_TEMPLATE.tabs');
+    expect(app).not.toContain('SOVEREIGN_PRODUCT_TEMPLATE.startTab');
+    expect(app).not.toContain('tabbar__root');
+    expect(app).not.toContain('automation__panel');
+    expect(app).not.toContain('operator-monitor');
+    expect(app).not.toContain('RepoSnapshotContainer');
+    expect(app).not.toContain('RepoInsightPanelBridge');
   });
 
-  it('wires the runtime auto-view router into the live app shell', () => {
+  it('keeps runtime auto-routing behind the chat instead of driving visible app tabs', () => {
     const app = readSource('./App.tsx');
 
-    expect(app).toContain('decideSovereignAutoView');
-    expect(app).toContain("view:auto-switch");
-    expect(app).toContain('setActiveTab(decision.tab)');
-    expect(app).toContain('workflowStatus: workflowReport?.status');
+    expect(app).not.toContain('decideSovereignAutoView');
+    expect(app).not.toContain('setActiveTab(decision.tab)');
+    expect(app).not.toContain('workflowStatus: workflowReport?.status');
+    expect(app).toContain('onStartOpenHands={startChatOnlyTask}');
   });
 
   it('keeps the release shell styling contract in the Android web build', () => {
