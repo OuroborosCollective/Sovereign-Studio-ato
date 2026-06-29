@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import App from './App';
 
 beforeAll(() => {
@@ -32,66 +32,48 @@ beforeEach(() => {
   delete window.__sovereignSetupState;
 });
 
-function openWorkspace(): void {
+async function openChatOnlyWorkspace(): Promise<void> {
   render(<App />);
-  fireEvent.click(screen.getByRole('button', { name: 'Sovereign Arbeitsfläche öffnen' }));
-}
 
-function openRepoTab(): void {
-  fireEvent.click(screen.getByRole('tab', { name: 'Open Repo tab' }));
-}
-
-function openAutomationPanel(): void {
-  fireEvent.click(screen.getByTestId('automation__panel-toggle'));
+  await waitFor(() => {
+    expect(screen.getByTestId('builder-container')).toHaveAttribute(
+      'data-layout',
+      'devchat-appcontrol-integrated',
+    );
+  });
 }
 
 describe('App setup flow smoke', () => {
-  it('keeps Full Auto blocked until a real repository snapshot exists', async () => {
-    openWorkspace();
-    openAutomationPanel();
+  it('enters the chat-only workbench without a visible launch workflow', async () => {
+    render(<App />);
 
-    const automationSelect = screen.getByTestId('automation__mode-select');
-    fireEvent.change(automationSelect, { target: { value: 'full-auto-draft-pr' } });
-
-    expect(await screen.findByText('Automation needs a loaded repository snapshot.')).toBeDefined();
-  });
-
-  it('publishes direct Repo access UI input into the setup bridge', async () => {
-    const listener = vi.fn();
-    window.addEventListener('sovereign:setup-state', listener);
-
-    openWorkspace();
-    openRepoTab();
-
-    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repository'), {
-      target: { value: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato' },
-    });
-    fireEvent.change(screen.getByLabelText('GitHub private access'), {
-      target: { value: 'access-value-for-test' },
-    });
+    expect(screen.getByTestId('sovereign-chat-entry-bridge')).toHaveAttribute(
+      'data-layout',
+      'chat-entry-bridge',
+    );
 
     await waitFor(() => {
-      expect(window.__sovereignSetupState).toMatchObject({
-        hasToken: true,
-        tokenStatus: 'valid',
-        repoReady: false,
-        setupPhase: 'no-repo',
-        isBusy: false,
-      });
+      expect(screen.getByTestId('builder-container')).toHaveAttribute(
+        'data-layout',
+        'devchat-appcontrol-integrated',
+      );
     });
-    expect(listener).toHaveBeenCalled();
-
-    window.removeEventListener('sovereign:setup-state', listener);
   });
 
-  it('keeps Pattern Memory count visible in the compact monitor region', async () => {
-    openWorkspace();
+  it('keeps the Builder chat as the visible Android workbench surface', async () => {
+    await openChatOnlyWorkspace();
 
-    const moreSelect = screen.getByTestId('tabbar__more-select');
-    fireEvent.change(moreSelect, { target: { value: 'monitor' } });
+    expect(screen.getByText('DevChat')).toBeDefined();
+    expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
+    expect(screen.getByPlaceholderText(/GitHub URL oder Auftrag/)).toBeDefined();
+    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
+  });
 
-    const monitor = await screen.findByTestId('operator-monitor');
-    expect(within(monitor).getByText('Patterns')).toBeDefined();
-    expect(within(monitor).getByText('Live Monitor')).toBeDefined();
+  it('keeps old monitor and direct setup surfaces out of the visible smoke path', async () => {
+    await openChatOnlyWorkspace();
+
+    expect(screen.queryByTestId('operator-monitor')).toBeNull();
+    expect(screen.queryByTestId('automation__panel')).toBeNull();
+    expect(screen.queryByPlaceholderText('https://github.com/owner/repository')).toBeNull();
   });
 });
