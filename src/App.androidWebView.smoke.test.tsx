@@ -44,12 +44,12 @@ async function openChatOnlyWorkspace(): Promise<void> {
 }
 
 describe('App setup flow smoke', () => {
-  it('enters the chat-only workbench without a visible launch workflow', async () => {
+  it('enters the chat-only workbench as the app surface', async () => {
     render(<App />);
 
-    expect(screen.getByTestId('sovereign-chat-entry-bridge')).toHaveAttribute(
+    expect(screen.getByTestId('chat-only-app')).toHaveAttribute(
       'data-layout',
-      'chat-entry-bridge',
+      'chat-only-live-entry',
     );
 
     await waitFor(() => {
@@ -60,16 +60,15 @@ describe('App setup flow smoke', () => {
     });
   });
 
-  it('keeps the Builder chat as the visible Android workbench surface', async () => {
+  it('keeps the Builder chat available on Android', async () => {
     await openChatOnlyWorkspace();
 
     expect(screen.getByText('DevChat')).toBeDefined();
     expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
     expect(screen.getByPlaceholderText(/GitHub URL oder Auftrag/)).toBeDefined();
-    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
   });
 
-  it('keeps old monitor and direct setup controls out of the active smoke path', async () => {
+  it('does not open legacy controls during initial chat entry', async () => {
     await openChatOnlyWorkspace();
 
     expect(screen.queryByTestId('operator-monitor')).toBeNull();
