@@ -7,3 +7,14 @@ allowBuilds:
   core-js: false
   esbuild: false
   protobufjs: false
+
+onlyBuiltDependencies:
+  - canvas
+
+publicHoistPattern:
+  - "*types*"
+  - "*eslint*"
+  - "*vitest*"
+  - "*@types*"
+
+suppress同步hoistingErrors: true
