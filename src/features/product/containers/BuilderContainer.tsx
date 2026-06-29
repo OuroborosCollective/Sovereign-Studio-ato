@@ -390,49 +390,15 @@ function Ampel({ status }: { status: AgentStatus }) {
   );
 }
 
-// Module lamps row — AppControl addition
-function ModuleLamps({
-  modules, signals, activeTab, onTabClick,
-}: {
-  modules: ModuleCfg[];
-  signals: Record<string, SignalType>;
-  activeTab: string;
-  onTabClick: (id: string) => void;
-}) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', borderTop: `1px solid ${C.border}`, overflowX: 'auto' }}>
-      {modules.filter(m => m.id !== 'chat').map(m => {
-        const sig    = signals[m.id] ?? 'idle';
-        const active = sig !== 'idle';
-        const isTab  = activeTab === m.id;
-        return (
-          <button
-            key={m.id}
-            type="button"
-            onClick={() => onTabClick(m.id)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '4px 8px', background: isTab ? `${m.color}10` : 'transparent', border: 'none', borderRight: `1px solid ${C.border}`, borderTop: isTab ? `2px solid ${m.color}` : '2px solid transparent', cursor: 'pointer', flexShrink: 0, minWidth: 44, marginTop: isTab ? 0 : 2 }}
-            aria-label={m.id}
-          >
-            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: active ? m.color : `${m.color}28`, boxShadow: active ? `0 0 4px ${m.color}` : 'none', transition: 'all 0.3s', animation: sig === 'processing' ? 'sdc-pulse 1s ease-in-out infinite' : 'none' }} />
-            <span style={{ fontFamily: 'monospace', fontSize: 7.5, color: isTab ? m.color : C.textMuted, transition: 'color 0.15s' }}>{m.short}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// TopBar — v3 verbatim + module lamps + panel toggle + PAL badge
+// TopBar — chat-first: minimal status bar with lamp, repo info, and RT toggle
+// Module lamps removed from default view per issue #418
 function TopBar({
   status, repoReady, chatRepoSnapshot, repoReason, onMenuOpen, onSourceClick, source,
-  modules, signals, activeTab, onTabClick,
   panelOpen, onPanelToggle, palTier, palSavings,
 }: {
   status: AgentStatus; repoReady: boolean; chatRepoSnapshot: DevChatRepoSnapshot | null;
   repoReason: string; onMenuOpen: () => void; onSourceClick: () => void;
   source: { label: string; tier: RuntimeTier };
-  modules: ModuleCfg[]; signals: Record<string, SignalType>;
-  activeTab: string; onTabClick: (id: string) => void;
   panelOpen: boolean; onPanelToggle: () => void;
   palTier: string | null; palSavings: number | null;
 }) {
@@ -474,9 +440,6 @@ function TopBar({
           {panelOpen ? '▴' : '▾'}
         </button>
       </div>
-
-      {/* Module lamps row */}
-      <ModuleLamps modules={modules} signals={signals} activeTab={activeTab} onTabClick={onTabClick} />
     </div>
   );
 }
@@ -1141,7 +1104,9 @@ export function BuilderContainer({
   const activeMod = MODULES.find(m => m.id === activeTab) ?? MODULES[0];
 
   // ─────────────────────────────────────────────────────────────
-  // RENDER
+  // RENDER — chat-first layout
+  // Main screen shows: TopBar (minimal), Chat View, Composer
+  // Module/Debug views accessible only via tab navigation
   // ─────────────────────────────────────────────────────────────
   return (
     <section
@@ -1161,7 +1126,7 @@ export function BuilderContainer({
         ::-webkit-scrollbar-track { background: transparent; }
       `}</style>
 
-      {/* TOP BAR — v3 design + module lamps + PAL badge */}
+      {/* TOP BAR — minimal status bar with lamp, repo info, RT toggle */}
       <TopBar
         status={agentStatus}
         repoReady={effectiveRepoReady}
@@ -1170,20 +1135,16 @@ export function BuilderContainer({
         onMenuOpen={() => setShowSide(true)}
         onSourceClick={() => setShowRuntime(true)}
         source={runtimeSource}
-        modules={MODULES}
-        signals={signals}
-        activeTab={activeTab}
-        onTabClick={switchTab}
         panelOpen={panelOpen}
         onPanelToggle={() => setPanelOpen(v => !v)}
         palTier={lastPal?.tier ?? null}
         palSavings={palStats?.savings ?? null}
       />
 
-      {/* COLLAPSIBLE STATUS/LOG PANEL */}
+      {/* COLLAPSIBLE STATUS/LOG PANEL — visible only when panelOpen */}
       <StatusPanel open={panelOpen} logs={statusLogs} signals={signals} modules={MODULES} />
 
-      {/* MAIN CONTENT */}
+      {/* CHAT VIEW — primary content, always visible */}
       {isChat ? (
         /* ── CHAT VIEW — v3 verbatim layout */
         <div
@@ -1224,8 +1185,10 @@ export function BuilderContainer({
         />
       )}
 
-      {/* BOTTOM TAB BAR — 7 tabs, SESSION removed */}
-      <BottomTabBar modules={MODULES} activeTab={activeTab} signals={signals} onTabClick={switchTab} />
+      {/* BOTTOM TAB BAR — only visible when user navigates away from chat tab */}
+      {activeTab !== 'chat' && (
+        <BottomTabBar modules={MODULES} activeTab={activeTab} signals={signals} onTabClick={switchTab} />
+      )}
 
       {/* OVERLAYS — v3 verbatim */}
       {showRuntimeSheet && <RuntimeSheet sources={runtimeSources} current={runtimeSource} onClose={() => setShowRuntime(false)} />}

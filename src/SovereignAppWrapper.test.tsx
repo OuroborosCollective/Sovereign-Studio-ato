@@ -47,7 +47,9 @@ describe('SovereignAppWrapper - Chat-only UI Contract', () => {
       expect(screen.getByText('DevChat')).toBeDefined();
     });
 
+    // Chat-first: input visible, tab bar hidden by default
     expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
-    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
+    // Tab bar only shows when not in chat tab (issue #418)
+    expect(screen.queryByLabelText('Sovereign Studio Tabs')).toBeNull();
   });
 });

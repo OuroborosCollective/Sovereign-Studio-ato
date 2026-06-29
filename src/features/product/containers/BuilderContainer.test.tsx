@@ -47,11 +47,8 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     expect(screen.getAllByText('Sovereign').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('DevChat')).toBeDefined();
 
-    // AppControl module tabs are part of the new Builder truth.
-    // ROU exists in both top module lamps and bottom tabbar, so this must be an all-query.
-    expect(screen.getByLabelText('Sovereign Studio Tabs')).toBeDefined();
-    expect(screen.getByText('CHAT')).toBeDefined();
-    expect(screen.getAllByText('ROU').length).toBeGreaterThanOrEqual(1);
+    // Chat-first: tab bar hidden by default (issue #418)
+    expect(screen.queryByLabelText('Sovereign Studio Tabs')).toBeNull();
 
     // main chat viewport + composer
     expect(screen.getByTestId('sovereign-chat-body-window')).toBeDefined();
