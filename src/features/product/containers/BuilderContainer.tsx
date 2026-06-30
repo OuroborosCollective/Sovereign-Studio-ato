@@ -76,7 +76,6 @@ import {
   createGitHubAccessSnapshot,
   requestGitHubAccess,
   startGitHubAccessValidation,
-  completeGitHubAccessValidation,
   failGitHubAccessValidation,
   validateGitHubTokenFormat,
   canPerformGitHubWrite,
