@@ -53,6 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => setShowSettings(true)}
             className="text-indigo-700 hover:text-indigo-900 p-1"
+            aria-label="Einstellungen"
             title="Einstellungen"
           >
             <Settings size={16} />

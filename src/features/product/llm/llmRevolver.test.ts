@@ -118,4 +118,72 @@ describe('llmRevolver', () => {
     expect(result.ok).toBe(false);
     expect(result.attempts[0]?.type).toBe('provider:skipped');
   });
+
+  it('returns consent-required when no-key routes are blocked and all others fail', async () => {
+    // A user-key adapter that fails
+    const failingUserKey: LlmAdapter = {
+      id: 'gemini',
+      label: 'gemini',
+      kind: 'user-key',
+      priority: 10,
+      enabled: true,
+      async run() {
+        const err = new Error('API quota exceeded');
+        (err as Error & { status: number }).status = 429;
+        throw err;
+      },
+    };
+
+    // A no-key adapter that should be blocked
+    const noKey: LlmAdapter = {
+      id: 'ovh-anonymous-code-chat',
+      label: 'ovh',
+      kind: 'no-key',
+      priority: 20,
+      enabled: true,
+      async run() {
+        return { providerId: 'ovh-anonymous-code-chat', brain: brain(), raw: 'ok' };
+      },
+    };
+
+    const result = await resolveWithLlmRevolver([failingUserKey, noKey], {
+      mission: 'Implement feature',
+      repoPaths: ['src/App.tsx'],
+      selectedFilePath: 'src/App.tsx',
+      allowExternalNoKey: false, // explicitly disabled
+    });
+
+    expect(result.ok).toBe(false);
+    // Should be consent-required, not regular failure
+    expect('consentRequired' in result && result.consentRequired).toBe(true);
+    expect('reason' in result && result.reason).toBe('no_key_routes_blocked');
+    // The no-key adapter should have been skipped
+    const skippedAttempt = result.attempts.find(a => a.type === 'provider:skipped');
+    expect(skippedAttempt?.providerId).toBe('ovh-anonymous-code-chat');
+  });
+
+  it('allows no-key routes when allowExternalNoKey is true', async () => {
+    const noKey: LlmAdapter = {
+      id: 'ovh-anonymous-code-chat',
+      label: 'ovh',
+      kind: 'no-key',
+      priority: 10,
+      enabled: true,
+      async run() {
+        return { providerId: 'ovh-anonymous-code-chat', brain: brain(), raw: 'ok' };
+      },
+    };
+
+    const result = await resolveWithLlmRevolver([noKey], {
+      mission: 'README',
+      repoPaths: ['package.json'],
+      selectedFilePath: 'README.md',
+      allowExternalNoKey: true, // enabled
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.result.providerId).toBe('ovh-anonymous-code-chat');
+    }
+  });
 });

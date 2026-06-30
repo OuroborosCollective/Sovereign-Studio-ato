@@ -43,6 +43,8 @@ import { DraftPrCard } from "../components/DraftPrCard";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
+import { ExternalRouteConsentGate } from "../components/ExternalRouteConsentGate";
+import { useExternalRouteConsentStore } from "../store/externalRouteConsentStore";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
@@ -1004,6 +1006,7 @@ function TopBar({
           type="button"
           onClick={onMenuOpen}
           aria-label="Menü"
+          title="Menü"
           style={{
             width: 40,
             height: 40,
@@ -1108,6 +1111,8 @@ function TopBar({
         <button
           type="button"
           onClick={onSourceClick}
+          aria-label={`RT – Runtime Quelle`}
+          title="Runtime Quelle"
           style={{
             display: "flex",
             alignItems: "center",
@@ -1140,6 +1145,8 @@ function TopBar({
         <button
           type="button"
           onClick={onPanelToggle}
+          aria-label={panelOpen ? "Panel schließen" : "Panel öffnen"}
+          title={panelOpen ? "Panel schließen" : "Panel öffnen"}
           style={{
             background: "transparent",
             border: "none",
@@ -1226,6 +1233,7 @@ function StatusPanel({
           <button
             type="button"
             onClick={onClearLogs}
+            aria-label="Logs löschen"
             title="Logs löschen"
             style={{
               position: "absolute",
@@ -2460,6 +2468,8 @@ function SideDrawer({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Menü schließen"
+            title="Menü schließen"
             style={{
               marginLeft: "auto",
               background: "transparent",
@@ -2830,6 +2840,7 @@ function Composer({
           onClick={onSubmit}
           disabled={disabled || loading}
           aria-label="Senden"
+          title="Senden"
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
           data-testid={SOVEREIGN_ACTION_START_TASK.testId}
           style={{
@@ -3048,6 +3059,14 @@ export function BuilderContainer({
     createGitHubAccessSnapshot(),
   );
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
+
+  // ── External Route Consent Gate State (from global store)
+  const { 
+    isConsentRequired: externalRouteConsentRequired,
+    currentMission,
+    approveConsent: storeApproveConsent,
+    denyConsent: storeDenyConsent,
+  } = useExternalRouteConsentStore();
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -4086,6 +4105,29 @@ export function BuilderContainer({
                     }
                   }}
                   onDismiss={() => {}}
+                />
+              )}
+
+              {/* ── External Route Consent Gate */}
+              {externalRouteConsentRequired && currentMission && (
+                <ExternalRouteConsentGate
+                  attempts={currentMission.attempts}
+                  onApprove={() => {
+                    // User approved - grant consent via store
+                    storeApproveConsent();
+                    appendChatLine({
+                      role: 'assistant',
+                      text: 'Free-Routen für diese Anfrage aktiviert. Bitte Mission erneut senden.'
+                    });
+                  }}
+                  onDeny={() => {
+                    // User denied - clear consent via store
+                    storeDenyConsent();
+                    appendChatLine({
+                      role: 'assistant',
+                      text: 'Free-Routen abgelehnt. Arbeit wird lokal fortgesetzt.'
+                    });
+                  }}
                 />
               )}
 

@@ -215,7 +215,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   it("opens runtime source sheet with Cloudflare Worker as the standard LLM route", () => {
     render(<BuilderContainer {...baseProps()} openhandsReady />);
 
-    fireEvent.click(screen.getByText("RT"));
+    // Check accessibility: visible text "RT" must be in accessible name (Label-in-Name)
+    const rtButton = screen.getByRole("button", { name: /RT.*Runtime Quelle/i });
+    expect(rtButton).toHaveAttribute("title", "Runtime Quelle");
+
+    fireEvent.click(rtButton);
 
     expect(screen.getByText("Runtime Quelle")).toBeDefined();
     expect(screen.getByText("Cloudflare Worker")).toBeDefined();

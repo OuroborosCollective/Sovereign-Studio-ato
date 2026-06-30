@@ -268,7 +268,7 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
                       type="button"
                       onClick={() => toggleShowKey(provider.id)}
                       className="btn-icon"
-                      title={showKeys[provider.id] ? 'Verbergen' : 'Anzeigen'}
+                      title={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
                       aria-label={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
                     >
                       {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}

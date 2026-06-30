@@ -74,7 +74,7 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
     expect(runSovereignLlmRuntime).toHaveBeenCalledWith(expect.objectContaining({
       mission: expect.stringContaining('Implementiere'),
       memoryContext: ['REMOTE PATTERN: use guarded patches'],
-      allowExternalNoKey: true,
+      allowExternalNoKey: false,
       allowUserKeyRoutes: true,
       userKeys: { groq: 'gsk_fake_key_for_test_only' },
     }));
@@ -104,8 +104,6 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
     expect(pkg.files.length).toBeGreaterThan(0);
     expect(runSovereignLlmRuntime).toHaveBeenCalledTimes(1);
   });
-
-
 
   it('rejects local-safe fallback for env and security implementation requests', async () => {
     vi.mocked(runSovereignLlmRuntime).mockResolvedValue({
