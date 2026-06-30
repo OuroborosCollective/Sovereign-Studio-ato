@@ -344,6 +344,14 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
     return pkg;
   }
 
+  // Check if consent is required for external no-key routes
+  if (llmResult.consentRequired) {
+    const error = new Error('CONSENT_REQUIRED_EXTERNAL_ROUTES: All paid/keyed routes failed. External no-key routes are blocked. User must consent to enable.');
+    (error as Error & { code: string; attempts: number }).code = 'CONSENT_REQUIRED';
+    (error as Error & { code: string; attempts: number }).attempts = llmResult.attempts.length;
+    throw error;
+  }
+
   if (!isDocumentationSovereignMission(effectiveMission)) {
     throw new Error(`VALIDATION_FAILED_LLM_REQUIRED: All real LLM/code routes failed for this implementation request. local-safe is analysis-only here and will not create a fake code/security/env Draft PR. Last error: ${llmResult.error ?? 'unknown provider failure'}`);
   }

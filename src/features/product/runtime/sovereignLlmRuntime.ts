@@ -3,7 +3,7 @@ import { resolveProductWithLlmRevolver } from '../llm/productLlmRevolver';
 import { buildSovereignLlmPrompt as buildAdapterSovereignLlmPrompt } from '../llm/llmAdapter';
 import { defaultSettings, starterCards } from '../constants';
 import type { Card, ProjectSettings } from '../types';
-import type { LlmRevolverFailure } from '../llm/llmAdapter';
+import type { LlmRevolverFailure, LlmRevolverConsentRequired } from '../llm/llmAdapter';
 
 export interface SovereignLlmRuntimeInput {
   mission: string;
@@ -43,6 +43,7 @@ export interface SovereignLlmRuntimeResult {
   raw?: string;
   attempts: SovereignLlmRuntimeAttempt[];
   error?: string;
+  consentRequired?: boolean;
 }
 
 function userKeysWhenAllowed(input: SovereignLlmRuntimeInput): SovereignLlmRuntimeInput['userKeys'] {
@@ -127,6 +128,18 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
       brain: result.result.brain,
       raw: result.result.raw,
       attempts,
+    };
+  }
+
+  // Check for consent required state
+  if ('consentRequired' in result && result.consentRequired) {
+    return {
+      ok: false,
+      source: 'local-safe',
+      providerId: 'local-safe',
+      attempts,
+      consentRequired: true,
+      error: 'External no-key routes are blocked. User consent required to enable.',
     };
   }
 

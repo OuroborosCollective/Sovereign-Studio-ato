@@ -134,7 +134,15 @@ export interface LlmRevolverFailure {
   attempts: LlmRevolverEvent[];
 }
 
-export type LlmRevolverResult = LlmRevolverSuccess | LlmRevolverFailure;
+export interface LlmRevolverConsentRequired {
+  ok: false;
+  consentRequired: true;
+  reason: 'no_key_routes_blocked';
+  memory: LlmRevolverMemory;
+  attempts: LlmRevolverEvent[];
+}
+
+export type LlmRevolverResult = LlmRevolverSuccess | LlmRevolverFailure | LlmRevolverConsentRequired;
 
 export function createInitialRevolverMemory(): LlmRevolverMemory {
   return { nextIndex: 0, shots: [] };

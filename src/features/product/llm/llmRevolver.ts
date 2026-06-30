@@ -59,12 +59,14 @@ export async function resolveWithLlmRevolver(
 
   let cursor = startIndex(active, memory);
   let lastFailure = createLlmFailure(active[cursor].id, new Error('No provider was fired.'));
+  let noKeyRoutesBlocked = false;
 
   for (let shot = 0; shot < maxShots; shot++) {
     const adapter = active[cursor];
     const attempt = shot + 1;
 
     if (adapter.kind === 'no-key' && !context.allowExternalNoKey) {
+      noKeyRoutesBlocked = true;
       emit(options, attempts, {
         type: 'provider:skipped',
         providerId: adapter.id,
@@ -130,6 +132,18 @@ export async function resolveWithLlmRevolver(
     code: lastFailure.code,
     attempt: maxShots,
   });
+
+  // Consent gate: if no-key routes were blocked and all other routes failed,
+  // return consent-required state instead of plain failure
+  if (noKeyRoutesBlocked && !context.allowExternalNoKey) {
+    return {
+      ok: false,
+      consentRequired: true,
+      reason: 'no_key_routes_blocked',
+      memory,
+      attempts,
+    };
+  }
 
   return { ok: false, failure: lastFailure, memory, attempts };
 }
