@@ -16,6 +16,8 @@ export interface WorkerBlockerCardProps {
     readonly createdAt: number;
   };
   onRetry: () => void;
+  /** Retry with a specific message - cleaner runtime action path */
+  onRetryWithMessage?: (message: string) => void;
   onExplain: () => void;
   onOpenHandsInstead?: (message: string) => void;
   /** Used to gate OpenHands action behind real code intent */
@@ -72,12 +74,22 @@ function formatHealth(health: DevChatWorkerHealthResult | undefined): string {
 export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   blocker,
   onRetry,
+  onRetryWithMessage,
   onExplain,
   onOpenHandsInstead,
   userMessage,
 }) => {
   const { diagnostic, health } = blocker;
   const canOpenHands = userMessage && hasCodeIntent(userMessage);
+  
+  // Prefer retry with message when available (cleaner runtime path)
+  const handleRetry = useCallback(() => {
+    if (onRetryWithMessage && userMessage) {
+      onRetryWithMessage(userMessage);
+    } else {
+      onRetry();
+    }
+  }, [onRetryWithMessage, onRetry, userMessage]);
   
   const handleOpenHands = useCallback(() => {
     if (canOpenHands && onOpenHandsInstead) {
@@ -125,7 +137,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         <button
           type="button"
-          onClick={onRetry}
+          onClick={handleRetry}
           style={{
             padding: '8px 16px',
             borderRadius: 8,

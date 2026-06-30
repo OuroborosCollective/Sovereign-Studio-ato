@@ -1718,15 +1718,13 @@ export function BuilderContainer({
                     blocker={workerBlocker}
                     onRetry={() => {
                       setWorkerBlocker(null);
-                      addLog('info', 'Worker retry triggered from card', 'router');
-                      // Re-attempt last user message
-                      const lastMsg = chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : wishText;
-                      if (lastMsg) {
-                        setWishText(lastMsg);
-                        // Trigger submit if not empty
-                        const form = document.querySelector('form');
-                        if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-                      }
+                      addLog('info', 'Worker retry from card', 'router');
+                    }}
+                    onRetryWithMessage={(msg) => {
+                      setWorkerBlocker(null);
+                      addLog('info', 'Worker retry with message from card', 'router');
+                      setWishText(msg);
+                      // handleSubmit will pick up the updated wishText on next render
                     }}
                     onExplain={() => {
                       const explanation = explainDevChatWorkerDiagnostic(workerBlocker.diagnostic);
