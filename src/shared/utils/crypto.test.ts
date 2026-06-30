@@ -55,17 +55,23 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Failed with ${secret}`)).toBe('Failed with gsk_****');
   });
 
+  it('masks OpenAI Project keys', () => {
+    const secret = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01';
+    expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-proj-****');
+  });
+
   it('masks label-based credentials', () => {
     expect(maskSecrets('password: my-secret-password')).toBe('password: ****');
-    expect(maskSecrets('token=ghp_12345')).toBe('token: ****');
-    expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key: ****');
-    expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token: ****');
+    expect(maskSecrets('passwd=some-pass')).toBe('passwd=****');
+    expect(maskSecrets('token=ghp_12345')).toBe('token=****');
+    expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key=****');
+    expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token=****');
     expect(maskSecrets('secret: somevalue')).toBe('secret: ****');
   });
 
   it('masks quoted label-based credentials and base64 characters', () => {
-    expect(maskSecrets('"password": "my-secret-password"')).toBe('password: ****');
-    expect(maskSecrets("'api_key': 'abc123+/~='")).toBe('api_key: ****');
+    expect(maskSecrets('"password": "my-secret-password"')).toBe('"password": ****');
+    expect(maskSecrets("'api_key': 'abc123+/~='")).toBe("'api_key': ****");
     expect(maskSecrets('token: value_with_@#$%^&*')).toBe('token: ****');
   });
 
