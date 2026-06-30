@@ -41,6 +41,9 @@ import {
 } from "../components/WorkerBlockerCard";
 import { DraftPrCard } from "../components/DraftPrCard";
 import { ChatMarkdown } from "../components/ChatMarkdown";
+import { PacedChatText } from "../components/PacedChatText";
+import { GitHubAccessCard } from "../components/GitHubAccessCard";
+import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
 import {
@@ -69,6 +72,15 @@ import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
 } from "../runtime/openhandsEnterpriseRuntime";
+import {
+  createGitHubAccessSnapshot,
+  requestGitHubAccess,
+  startGitHubAccessValidation,
+  failGitHubAccessValidation,
+  validateGitHubTokenFormat,
+  canPerformGitHubWrite,
+  type GitHubAccessSnapshot,
+} from "../runtime/githubAccessRuntime";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -1551,7 +1563,7 @@ function Bubble({
               boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
             }}
           >
-            {isUser ? msg.text : <ChatMarkdown content={msg.text} />}
+            {isUser ? msg.text : <PacedChatText content={msg.text} />}
           </div>
           {/* ── Issue #429: Long-press menu */}
           {showMenu && (
@@ -3014,6 +3026,12 @@ export function BuilderContainer({
   const [userScrolledAway, setUserScrolledAway] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
 
+  // ── Issue #443: GitHub Access State
+  const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
+    createGitHubAccessSnapshot(),
+  );
+  const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
+
   // ── Slash command menu state (Issue #428)
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
@@ -3946,6 +3964,44 @@ export function BuilderContainer({
                 <ThinkingDots />
               )}
               <OutcomeHints hints={outcomeHints} />
+
+              {/* ── Issue #443: OpenHands Job Truth Card */}
+              {openhandsJob && openhandsJob.status !== 'idle' && (
+                <OpenHandsJobTruthCard
+                  job={openhandsJob}
+                  onStart={onStartOpenHands ? () => onStartOpenHands(wishText) : undefined}
+                  onPreview={() => appendChatLine({ role: 'assistant', text: 'Vorschau wird geladen…' })}
+                  onCancel={onCancelOpenHands}
+                  onOpenDraftPr={openhandsJob.draftPrUrl ? () => window.open(openhandsJob.draftPrUrl, '_blank') : undefined}
+                />
+              )}
+
+              {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
+              {!githubWriteAllowed && (openhandsJob?.status === 'running' || isPublishing) && (
+                <GitHubAccessCard
+                  snapshot={githubAccessState}
+                  onProvideToken={(token) => {
+                    // SECURITY: Real GitHub API validation required before ready state.
+                    // For now, accept format-valid tokens but require explicit re-validation
+                    // on actual GitHub write operations (Draft PR, Push).
+                    // Token masked immediately, real token never stored in runtime state.
+                    const formatResult = validateGitHubTokenFormat(token);
+                    if (formatResult.isValid) {
+                      setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
+                      // NOTE: In production, this would trigger actual GitHub API validation.
+                      // For now, transition to 'requested' to indicate format OK but pending real auth.
+                      setGitHubAccessState(requestGitHubAccess(formatResult.maskedToken));
+                      appendChatLine({ 
+                        role: 'assistant', 
+                        text: `Token-Format akzeptiert (${formatResult.maskedToken}). GitHub-Schreibzugriff wird für Draft PR benötigt.` 
+                      });
+                    } else {
+                      setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
+                    }
+                  }}
+                  onDismiss={() => {}}
+                />
+              )}
 
               {/* ── Issue #426: Worker Blocker Card */}
               {workerBlocker && (
