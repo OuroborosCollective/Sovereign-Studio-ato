@@ -8,6 +8,9 @@ import {
   isConsentGrantedForMission,
   clearAllConsents,
   generateMissionConsentToken,
+  detectConsentForCurrentMission,
+  getCurrentMissionId,
+  setCurrentMissionId,
   type ExternalRouteConsentGateInput,
 } from './externalRouteConsentGate';
 import { buildSovereignPackageFromRepoFilesWithLlm } from './sovereignPackageFromRepoFiles';
@@ -312,6 +315,40 @@ describe('externalRouteConsentGate', () => {
       
       // Consent should be cleared after use
       expect(isConsentGrantedForMission(missionId)).toBe(false);
+    });
+  });
+
+  describe('detectConsentForCurrentMission', () => {
+    it('generates new missionId for new mission', () => {
+      const result = detectConsentForCurrentMission('Build feature X');
+      expect(result.missionId).toBeDefined();
+      expect(result.missionId).toContain('consent:');
+      expect(result.consentGranted).toBe(false);
+    });
+
+    it('returns consentGranted: true when user previously approved same mission', () => {
+      // First, grant consent for a specific mission text
+      const missionText = 'Build feature Y';
+      const firstResult = detectConsentForCurrentMission(missionText);
+      
+      // User approves
+      grantConsentForMission(firstResult.missionId);
+      
+      // Same mission again
+      const secondResult = detectConsentForCurrentMission(missionText);
+      expect(secondResult.consentGranted).toBe(true);
+    });
+
+    it('tracks current mission ID', () => {
+      const result = detectConsentForCurrentMission('Test mission');
+      expect(getCurrentMissionId()).toBe(result.missionId);
+    });
+
+    it('can set mission ID manually', () => {
+      setCurrentMissionId('custom-mission-id');
+      expect(getCurrentMissionId()).toBe('custom-mission-id');
+      setCurrentMissionId(null);
+      expect(getCurrentMissionId()).toBeNull();
     });
   });
 });
