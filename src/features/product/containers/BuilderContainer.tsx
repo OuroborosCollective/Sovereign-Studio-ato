@@ -61,6 +61,10 @@ import {
   detectAndroidQuickRepoUrl,
   triggerAndroidHaptic,
 } from "../runtime/androidQuickInteractionRuntime";
+import {
+  deriveRuntimeInspectorSignals,
+  type RuntimeInspectorSignal,
+} from "../runtime/runtimeInspectorPanelRuntime";
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -1824,6 +1828,8 @@ function ModuleScreen({
   conditions,
   confidence,
   sequence,
+  inspectorSignals,
+  onSignalClick,
 }: {
   mod: ModuleCfg;
   signals: Record<string, SignalType>;
@@ -1831,6 +1837,8 @@ function ModuleScreen({
   conditions: Partial<Record<ModuleId, ModuleCond[]>>;
   confidence: number;
   sequence: Array<{ tabId: string; auto: boolean }>;
+  inspectorSignals: RuntimeInspectorSignal[];
+  onSignalClick: (prompt: string) => void;
 }) {
   const sig = (signals[mod.id] ?? "idle") as SignalType;
   const phase = (phases[mod.id] ?? "idle") as AnimPhase;
@@ -2133,6 +2141,71 @@ function ModuleScreen({
           )}
         </div>
       </div>
+
+      {/* ── Issue #433: Runtime Inspector Signals */}
+      {inspectorSignals.length > 0 && (
+        <div
+          style={{
+            background: C.surface,
+            border: `1px solid ${C.border}`,
+            borderRadius: 10,
+            padding: "10px 12px",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "monospace",
+              fontSize: 8,
+              color: C.textMuted,
+              letterSpacing: 1,
+              textTransform: "uppercase",
+              marginBottom: 8,
+            }}
+          >
+            Inspector Signale
+          </div>
+          {inspectorSignals.map((signal) => (
+            <button
+              key={signal.id}
+              type="button"
+              onClick={() => onSignalClick(signal.prompt)}
+              style={{
+                width: "100%",
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                padding: "8px 10px",
+                marginBottom: 6,
+                background: `${mod.color}10`,
+                border: `1px solid ${mod.color}33`,
+                borderRadius: 8,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 10,
+                  color: mod.color,
+                  fontWeight: 600,
+                }}
+              >
+                {signal.label}
+              </span>
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 9,
+                  color: C.textSub,
+                }}
+              >
+                {signal.detail}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -3984,6 +4057,18 @@ export function BuilderContainer({
             conditions={conditions}
             confidence={confidence}
             sequence={sequence}
+            inspectorSignals={deriveRuntimeInspectorSignals(
+              activeMod.id.toUpperCase() as "PAT" | "ORC" | "INT",
+              { hasMemory: palDecisions.length > 0, patternCount: palDecisions.length },
+              {
+                palDecisions: palDecisions.length,
+                fastTierCount: palDecisions.filter((d) => d.tier === "fast").length,
+                smartTierCount: palDecisions.filter((d) => d.tier === "smart").length,
+                powerTierCount: palDecisions.filter((d) => d.tier === "power").length,
+              },
+              { chatRepoSnapshot },
+            )}
+            onSignalClick={(prompt) => setWishText(prompt)}
           />
           <div style={{ height: 12 }} />
         </div>
