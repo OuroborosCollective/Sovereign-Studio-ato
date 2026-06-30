@@ -99,6 +99,7 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
       <button
         type="button"
         aria-label="Tool Launcher öffnen"
+        title="Tool Launcher öffnen"
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((v) => !v)}
@@ -161,6 +162,7 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
                 role="menuitem"
                 disabled={!tool.available}
                 onClick={() => handleSelect(tool.id)}
+                title={tool.label}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

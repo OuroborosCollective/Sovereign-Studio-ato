@@ -1006,6 +1006,7 @@ function TopBar({
           type="button"
           onClick={onMenuOpen}
           aria-label="Menü"
+          title="Menü"
           style={{
             width: 40,
             height: 40,
@@ -1110,6 +1111,8 @@ function TopBar({
         <button
           type="button"
           onClick={onSourceClick}
+          aria-label="Runtime Quelle"
+          title="Runtime Quelle"
           style={{
             display: "flex",
             alignItems: "center",
@@ -1142,6 +1145,8 @@ function TopBar({
         <button
           type="button"
           onClick={onPanelToggle}
+          aria-label={panelOpen ? "Panel schließen" : "Panel öffnen"}
+          title={panelOpen ? "Panel schließen" : "Panel öffnen"}
           style={{
             background: "transparent",
             border: "none",
@@ -1228,6 +1233,7 @@ function StatusPanel({
           <button
             type="button"
             onClick={onClearLogs}
+            aria-label="Logs löschen"
             title="Logs löschen"
             style={{
               position: "absolute",
@@ -2462,6 +2468,8 @@ function SideDrawer({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Menü schließen"
+            title="Menü schließen"
             style={{
               marginLeft: "auto",
               background: "transparent",
@@ -2832,6 +2840,7 @@ function Composer({
           onClick={onSubmit}
           disabled={disabled || loading}
           aria-label="Senden"
+          title="Senden"
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
           data-testid={SOVEREIGN_ACTION_START_TASK.testId}
           style={{
