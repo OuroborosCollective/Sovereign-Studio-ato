@@ -1,9 +1,10 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
+import { grantConsentForMission, denyConsentForMission } from '../runtime/externalRouteConsentGate';
 
 export interface ExternalRouteConsentState {
   consentRequired: boolean;
+  missionId: string | null;
   consentAttempts: number;
-  isRetrying: boolean;
   pendingMission: string | null;
 }
 
@@ -13,11 +14,12 @@ export interface UseExternalRouteConsentResult {
    * Trigger consent gate for a mission.
    * Call this when a LLM call fails and you want to show the consent UI.
    */
-  triggerConsentGate: (mission: string, attempts: number) => void;
+  triggerConsentGate: (mission: string, missionId: string, attempts: number) => void;
   /**
-   * User approved - clears consent state and returns true for retry.
+   * User approved - grants consent for mission and clears UI state.
+   * Returns the missionId so caller can retry.
    */
-  approveConsent: () => boolean;
+  approveConsent: () => string | null;
   /**
    * User denied - clears the consent state.
    */
@@ -38,7 +40,7 @@ export interface UseExternalRouteConsentResult {
  * 
  * // When LLM fails with consent required:
  * if (error.code === 'CONSENT_REQUIRED') {
- *   triggerConsentGate(mission, error.attempts);
+ *   triggerConsentGate(mission, error.missionId, error.attempts);
  * }
  * 
  * // In render:
@@ -46,10 +48,8 @@ export interface UseExternalRouteConsentResult {
  *   <ExternalRouteConsentGate
  *     attempts={state.consentAttempts}
  *     onApprove={() => {
- *       if (approveConsent()) {
- *         // Set state to retry with allowExternalNoKey: true
- *         setRetryWithConsent(true);
- *       }
+ *       const missionId = approveConsent();
+ *       if (missionId) retryWithConsent(missionId);
  *     }}
  *     onDeny={denyConsent}
  *   />
@@ -59,54 +59,68 @@ export interface UseExternalRouteConsentResult {
 export function useExternalRouteConsent(): UseExternalRouteConsentResult {
   const [state, setState] = useState<ExternalRouteConsentState>({
     consentRequired: false,
+    missionId: null,
     consentAttempts: 0,
-    isRetrying: false,
     pendingMission: null,
   });
 
-  const pendingMissionRef = useRef<string | null>(null);
-
-  const triggerConsentGate = useCallback((mission: string, attempts: number) => {
-    pendingMissionRef.current = mission;
+  const triggerConsentGate = useCallback((mission: string, missionId: string, attempts: number) => {
     setState({
       consentRequired: true,
+      missionId,
       consentAttempts: attempts,
-      isRetrying: false,
       pendingMission: mission,
     });
   }, []);
 
   const approveConsent = useCallback(() => {
-    const hadConsent = state.consentRequired;
-    pendingMissionRef.current = null;
+    const { missionId, pendingMission } = state;
+    
+    if (missionId) {
+      // Grant consent in the registry
+      grantConsentForMission(missionId);
+    }
+    
     setState({
       consentRequired: false,
+      missionId: null,
       consentAttempts: 0,
-      isRetrying: false,
       pendingMission: null,
     });
-    return hadConsent;
-  }, []);
+    
+    // Return missionId so caller can retry with the same ID
+    return missionId;
+  }, [state]);
 
   const denyConsent = useCallback(() => {
-    pendingMissionRef.current = null;
+    const { missionId } = state;
+    
+    if (missionId) {
+      denyConsentForMission(missionId);
+    }
+    
     setState({
       consentRequired: false,
+      missionId: null,
       consentAttempts: 0,
-      isRetrying: false,
       pendingMission: null,
     });
-  }, []);
+  }, [state]);
 
   const reset = useCallback(() => {
-    pendingMissionRef.current = null;
+    const { missionId } = state;
+    
+    if (missionId) {
+      denyConsentForMission(missionId);
+    }
+    
     setState({
       consentRequired: false,
+      missionId: null,
       consentAttempts: 0,
-      isRetrying: false,
       pendingMission: null,
     });
-  }, []);
+  }, [state]);
 
   return {
     state,

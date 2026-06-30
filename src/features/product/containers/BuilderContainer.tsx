@@ -44,7 +44,6 @@ import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { ExternalRouteConsentGate } from "../components/ExternalRouteConsentGate";
-import { setExternalRouteConsent } from "../runtime/externalRouteConsentGate";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
@@ -3055,8 +3054,7 @@ export function BuilderContainer({
   const [externalRouteConsentRequired, setExternalRouteConsentRequired] = useState(false);
   const [externalRouteConsentAttempts, setExternalRouteConsentAttempts] = useState(0);
   const [pendingMissionForConsent, setPendingMissionForConsent] = useState<string | null>(null);
-  // Flag to retry the next mission with allowExternalNoKey: true
-  const [retryWithExternalConsent, setRetryWithExternalConsent] = useState(false);
+  const [pendingMissionId, setPendingMissionId] = useState<string | null>(null);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -4103,31 +4101,32 @@ export function BuilderContainer({
                 <ExternalRouteConsentGate
                   attempts={externalRouteConsentAttempts}
                   onApprove={() => {
-                    // User approved - set consent flag and retry
-                    const mission = pendingMissionForConsent;
-                    setExternalRouteConsentRequired(false);
-                    setPendingMissionForConsent(null);
-                    // Set the module-level consent flag
-                    setExternalRouteConsent(true);
-                    if (mission) {
-                      // Re-trigger the mission with consent enabled
+                    // User approved - grant consent for this mission
+                    if (pendingMissionId) {
+                      // Import is at top - we call the runtime function directly
+                      import('../runtime/externalRouteConsentGate').then(module => {
+                        module.grantConsentForMission(pendingMissionId);
+                      });
                       appendChatLine({
                         role: 'assistant',
-                        text: 'Free-Routen für diese Anfrage aktiviert. Wiederhole den Vorgang...'
+                        text: 'Free-Routen für diese Anfrage aktiviert. Bitte Mission erneut senden.'
                       });
-                      // Store mission for retry and trigger submit
-                      setWishText(mission);
-                      // Small delay to ensure state is updated
-                      setTimeout(() => {
-                        const btn = document.querySelector('[data-testid="submit-button"]') as HTMLButtonElement;
-                        if (btn) btn.click();
-                      }, 100);
                     }
-                  }}
-                  onDeny={() => {
-                    // User denied - continue locally
+                    // Clear UI state
                     setExternalRouteConsentRequired(false);
                     setPendingMissionForConsent(null);
+                    setPendingMissionId(null);
+                  }}
+                  onDeny={() => {
+                    // User denied - clear consent and continue locally
+                    if (pendingMissionId) {
+                      import('../runtime/externalRouteConsentGate').then(module => {
+                        module.denyConsentForMission(pendingMissionId);
+                      });
+                    }
+                    setExternalRouteConsentRequired(false);
+                    setPendingMissionForConsent(null);
+                    setPendingMissionId(null);
                     appendChatLine({
                       role: 'assistant',
                       text: 'Free-Routen abgelehnt. Arbeit wird lokal fortgesetzt.'
