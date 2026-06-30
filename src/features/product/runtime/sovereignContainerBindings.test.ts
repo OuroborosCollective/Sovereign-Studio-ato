@@ -4,11 +4,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getSovereignContainerContract,
+  type SovereignContainerId,
   validateSovereignContainerContracts,
 } from './sovereignContainerContracts';
 
 function readSource(path: string): string {
   return readFileSync(join(process.cwd(), path), 'utf8');
+}
+
+function expectContractLookup(source: string, id: SovereignContainerId): void {
+  expect(source).toMatch(new RegExp(`getSovereignContainerContract\\([\"']${id}[\"']\\)`));
 }
 
 describe('sovereign container source bindings', () => {
@@ -23,7 +28,7 @@ describe('sovereign container source bindings', () => {
     const source = readSource('src/features/product/containers/BuilderContainer.tsx');
     const contract = getSovereignContainerContract('builder');
 
-    expect(source).toContain("getSovereignContainerContract('builder')");
+    expectContractLookup(source, 'builder');
     expect(source).toContain('builderContainerContract.rootClass');
     expect(source).toContain('builderContainerContract.dataRole');
     expect(source).toContain('builderContainerContract.testId');
@@ -35,7 +40,7 @@ describe('sovereign container source bindings', () => {
     const source = readSource('src/global-runtime-monitor.tsx');
     const contract = getSovereignContainerContract('global-runtime-monitor');
 
-    expect(source).toContain("getSovereignContainerContract('global-runtime-monitor')");
+    expectContractLookup(source, 'global-runtime-monitor');
     expect(source).toContain('monitorContainerContract.rootClass');
     expect(source).toContain('monitorContainerContract.dataRole');
     expect(source).toContain('monitorContainerContract.testId');
@@ -48,7 +53,7 @@ describe('sovereign container source bindings', () => {
     const contract = getSovereignContainerContract('repo-snapshot');
 
     expect(source).toContain('Repository Snapshot');
-    expect(source).toContain("getSovereignContainerContract('repo-snapshot')");
+    expectContractLookup(source, 'repo-snapshot');
     expect(source).toContain('repoContainerContract.rootClass');
     expect(source).toContain('repoContainerContract.dataRole');
     expect(source).toContain('repoContainerContract.testId');
