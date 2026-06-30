@@ -60,6 +60,16 @@ describe('maskSecrets', () => {
     expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-proj-****');
   });
 
+  it('masks long OpenAI Project keys without leaking suffixes', () => {
+    const credentialBody = `${'a'.repeat(140)}_${'Z'.repeat(40)}-tail`;
+    const secret = `sk-proj-${credentialBody}`;
+    const masked = maskSecrets(`Using ${secret}; next field`);
+
+    expect(masked).toBe('Using sk-proj-****; next field');
+    expect(masked).not.toContain('tail');
+    expect(masked).not.toContain('ZZZZ');
+  });
+
   it('masks label-based credentials', () => {
     expect(maskSecrets('password: my-secret-password')).toBe('password: ****');
     expect(maskSecrets('passwd=some-pass')).toBe('passwd=****');
