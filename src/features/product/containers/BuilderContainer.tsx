@@ -1111,7 +1111,7 @@ function TopBar({
         <button
           type="button"
           onClick={onSourceClick}
-          aria-label="Runtime Quelle"
+          aria-label={`RT – Runtime Quelle`}
           title="Runtime Quelle"
           style={{
             display: "flex",
