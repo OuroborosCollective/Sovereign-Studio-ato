@@ -44,6 +44,7 @@ import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { ExternalRouteConsentGate } from "../components/ExternalRouteConsentGate";
+import { useExternalRouteConsentStore } from "../store/externalRouteConsentStore";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
@@ -3050,11 +3051,13 @@ export function BuilderContainer({
   );
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
 
-  // ── External Route Consent Gate State
-  const [externalRouteConsentRequired, setExternalRouteConsentRequired] = useState(false);
-  const [externalRouteConsentAttempts, setExternalRouteConsentAttempts] = useState(0);
-  const [pendingMissionForConsent, setPendingMissionForConsent] = useState<string | null>(null);
-  const [pendingMissionId, setPendingMissionId] = useState<string | null>(null);
+  // ── External Route Consent Gate State (from global store)
+  const { 
+    isConsentRequired: externalRouteConsentRequired,
+    currentMission,
+    approveConsent: storeApproveConsent,
+    denyConsent: storeDenyConsent,
+  } = useExternalRouteConsentStore();
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -4097,36 +4100,20 @@ export function BuilderContainer({
               )}
 
               {/* ── External Route Consent Gate */}
-              {externalRouteConsentRequired && (
+              {externalRouteConsentRequired && currentMission && (
                 <ExternalRouteConsentGate
-                  attempts={externalRouteConsentAttempts}
+                  attempts={currentMission.attempts}
                   onApprove={() => {
-                    // User approved - grant consent for this mission
-                    if (pendingMissionId) {
-                      // Import is at top - we call the runtime function directly
-                      import('../runtime/externalRouteConsentGate').then(module => {
-                        module.grantConsentForMission(pendingMissionId);
-                      });
-                      appendChatLine({
-                        role: 'assistant',
-                        text: 'Free-Routen für diese Anfrage aktiviert. Bitte Mission erneut senden.'
-                      });
-                    }
-                    // Clear UI state
-                    setExternalRouteConsentRequired(false);
-                    setPendingMissionForConsent(null);
-                    setPendingMissionId(null);
+                    // User approved - grant consent via store
+                    storeApproveConsent();
+                    appendChatLine({
+                      role: 'assistant',
+                      text: 'Free-Routen für diese Anfrage aktiviert. Bitte Mission erneut senden.'
+                    });
                   }}
                   onDeny={() => {
-                    // User denied - clear consent and continue locally
-                    if (pendingMissionId) {
-                      import('../runtime/externalRouteConsentGate').then(module => {
-                        module.denyConsentForMission(pendingMissionId);
-                      });
-                    }
-                    setExternalRouteConsentRequired(false);
-                    setPendingMissionForConsent(null);
-                    setPendingMissionId(null);
+                    // User denied - clear consent via store
+                    storeDenyConsent();
                     appendChatLine({
                       role: 'assistant',
                       text: 'Free-Routen abgelehnt. Arbeit wird lokal fortgesetzt.'

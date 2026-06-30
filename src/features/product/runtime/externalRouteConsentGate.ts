@@ -25,15 +25,38 @@ import type { PalAutomationMode } from './palRouter';
 import { buildSovereignPackageFromRepoFilesWithLlm } from './sovereignPackageFromRepoFiles';
 import { defaultSettings, starterCards } from '../constants';
 
-// Consent registry: missionId -> boolean
-const consentRegistry = new Map<string, boolean>();
+// Consent registry: missionId -> { granted: boolean, mission: string, timestamp: number }
+interface ConsentEntry {
+  granted: boolean;
+  mission: string;
+  timestamp: number;
+}
+
+const consentRegistry = new Map<string, ConsentEntry>();
+
+// Current mission ID being processed (for auto-detection)
+let currentMissionId: string | null = null;
 
 /**
  * Generate a consent token for a mission.
  * This binds the consent to a specific mission attempt.
  */
 export function generateMissionConsentToken(mission: string): string {
-  return `consent:${Date.now()}:${mission.slice(0, 32)}`;
+  return `consent:${Date.now()}:${mission.slice(0, 32).replace(/[^a-zA-Z0-9]/g, '')}`;
+}
+
+/**
+ * Get the current mission ID.
+ */
+export function getCurrentMissionId(): string | null {
+  return currentMissionId;
+}
+
+/**
+ * Set the current mission ID being processed.
+ */
+export function setCurrentMissionId(missionId: string | null): void {
+  currentMissionId = missionId;
 }
 
 /**
@@ -41,7 +64,12 @@ export function generateMissionConsentToken(mission: string): string {
  * Call this when user approves the consent gate.
  */
 export function grantConsentForMission(missionId: string): void {
-  consentRegistry.set(missionId, true);
+  const existing = consentRegistry.get(missionId);
+  consentRegistry.set(missionId, {
+    granted: true,
+    mission: existing?.mission ?? '',
+    timestamp: Date.now(),
+  });
 }
 
 /**
@@ -56,7 +84,17 @@ export function denyConsentForMission(missionId: string): void {
  * Check if consent is granted for a mission.
  */
 export function isConsentGrantedForMission(missionId: string): boolean {
-  return consentRegistry.get(missionId) === true;
+  const entry = consentRegistry.get(missionId);
+  if (!entry?.granted) return false;
+  
+  // Check expiration (10 minutes)
+  const EXPIRATION_MS = 10 * 60 * 1000;
+  if (Date.now() - entry.timestamp > EXPIRATION_MS) {
+    consentRegistry.delete(missionId);
+    return false;
+  }
+  
+  return true;
 }
 
 /**
@@ -64,6 +102,36 @@ export function isConsentGrantedForMission(missionId: string): boolean {
  */
 export function clearAllConsents(): void {
   consentRegistry.clear();
+}
+
+/**
+ * Auto-detect consent for current mission and check if external routes should be enabled.
+ * This should be called at the start of any LLM runtime call.
+ */
+export function detectConsentForCurrentMission(mission: string): {
+  missionId: string;
+  consentGranted: boolean;
+} {
+  // Try to find existing consent for this mission
+  for (const [id, entry] of consentRegistry) {
+    if (entry.mission === mission && entry.granted) {
+      // Found consent for same mission text
+      if (Date.now() - entry.timestamp <= 10 * 60 * 1000) {
+        return { missionId: id, consentGranted: true };
+      }
+    }
+  }
+  
+  // No consent found, generate new mission ID
+  const missionId = generateMissionConsentToken(mission);
+  consentRegistry.set(missionId, {
+    granted: false,
+    mission,
+    timestamp: Date.now(),
+  });
+  currentMissionId = missionId;
+  
+  return { missionId, consentGranted: false };
 }
 
 export interface ExternalRouteConsentGateInput {
