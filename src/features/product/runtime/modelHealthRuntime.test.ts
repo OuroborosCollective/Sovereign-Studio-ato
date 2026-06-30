@@ -112,8 +112,8 @@ describe('modelHealthRuntime', () => {
       mission: 'OK',
       repoPaths: [],
       selectedFilePath: 'HEALTH_CHECK',
-      allowExternalNoKey: true,
-      allowOptInRoutes: true,
+      allowExternalNoKey: false,
+      allowOptInRoutes: false,
     } satisfies Partial<LlmAdapterContext>));
   });
 
@@ -178,79 +178,73 @@ describe('modelHealthRuntime', () => {
     const result = await checkModelHealth(adapter, {
       timeoutMs: 5,
       degradedThresholdMs: 1,
-      testMission: 'OK',
+      testMission: 'Timeout',
     });
 
     expect(result.status).toBe('unknown');
-    expect(result.lastError).toContain('timed out');
+    expect(result.lastError).toBe('timeout');
   });
 
-  it('checks all enabled adapters and builds a summary', async () => {
-    const fast = createTestAdapter({ id: 'adapter-1', label: 'Adapter 1' });
-    const disabled = createTestAdapter({ id: 'adapter-2', label: 'Adapter 2', enabled: false });
+  it('checks all enabled models and returns aggregate report', async () => {
+    const reportResult = await checkAllModelsHealth([
+      createTestAdapter({ id: 'healthy-one', label: 'Healthy One' }),
+      createTestAdapter({ id: 'disabled-one', label: 'Disabled One', enabled: false }),
+    ], fastConfig);
 
-    const result = await checkAllModelsHealth([fast, disabled], fastConfig);
-
-    expect(result.totalModels).toBe(2);
-    expect(result.healthyCount).toBe(1);
-    expect(result.degradedCount).toBe(0);
-    expect(result.unknownCount).toBe(1);
-    expect(result.summary).toContain('2 model(s) checked');
-    expect(result.summary).toContain('1 healthy');
+    expect(reportResult.totalModels).toBe(2);
+    expect(reportResult.results.length).toBe(2);
+    expect(reportResult.healthyCount).toBe(1);
+    expect(reportResult.unknownCount).toBe(1);
   });
 
-  it('converts check result to status entry', () => {
-    const checkResult: ModelHealthCheckResult = {
-      adapterId: 'test-id',
-      adapterName: 'Test Name',
+  it('builds status entries with deterministic labels', () => {
+    const entry = buildModelHealthStatusEntry({
+      adapterId: 'model-a',
+      adapterName: 'Model A',
       status: 'healthy',
-      latencyMs: 150,
-      lastCheck: 1234567890,
+      latencyMs: 12,
+      lastChecked: 123,
+      successCount: 1,
       errorCount: 0,
-      successCount: 5,
       isEnabled: true,
-    };
-
-    const entry = buildModelHealthStatusEntry(checkResult);
-
-    expect(entry.id).toBe('test-id');
-    expect(entry.name).toBe('Test Name');
-    expect(entry.status).toBe('healthy');
-    expect(entry.latencyMs).toBe(150);
-    expect(entry.lastCheck).toBe(1234567890);
-    expect(entry.errorCount).toBe(0);
-    expect(entry.successCount).toBe(5);
-    expect(entry.isEnabled).toBe(true);
-  });
-
-  it('returns healthy models before degraded models', async () => {
-    const healthy = createTestAdapter({ id: 'healthy', label: 'Healthy' });
-    const degraded = createTestAdapter({
-      id: 'degraded',
-      label: 'Degraded',
-      run: vi.fn().mockImplementation(async () => {
-        await new Promise((resolve) => globalThis.setTimeout(resolve, 8));
-        return okResult;
-      }),
     });
 
-    const result = await checkAllModelsHealth([degraded, healthy], {
-      timeoutMs: 100,
-      degradedThresholdMs: 1,
-      testMission: 'OK',
-    });
-    const best = getBestModelFromReport(result);
-
-    expect(best?.adapterId).toBe('healthy');
+    expect(entry.id).toBe('model-a');
+    expect(entry.label).toBe('Model A');
+    expect(entry.kind).toBe('healthy');
   });
 
-  it('returns null when no models are available', () => {
-    expect(getBestModelFromReport(report())).toBeNull();
+  it('selects the lowest latency healthy model', () => {
+    const best = getBestModelFromReport(report({
+      results: [
+        { adapterId: 'slow', adapterName: 'Slow', status: 'healthy', latencyMs: 50, lastChecked: 1, successCount: 1, errorCount: 0, isEnabled: true },
+        { adapterId: 'fast', adapterName: 'Fast', status: 'healthy', latencyMs: 10, lastChecked: 1, successCount: 1, errorCount: 0, isEnabled: true },
+      ],
+    }));
+
+    expect(best?.adapterId).toBe('fast');
   });
 
-  it('accepts healthy or degraded reports and rejects all-unknown reports', () => {
-    expect(() => assertModelHealthReady(report({ healthyCount: 1, summary: '1 healthy' }))).not.toThrow();
-    expect(() => assertModelHealthReady(report({ degradedCount: 1, summary: '1 degraded' }))).not.toThrow();
-    expect(() => assertModelHealthReady(report({ unknownCount: 1, summary: '1 unknown' }))).toThrow('No models available');
+  it('returns null best model when no healthy model exists', () => {
+    expect(getBestModelFromReport(report({
+      results: [
+        { adapterId: 'broken', adapterName: 'Broken', status: 'unknown', latencyMs: null, lastChecked: 1, successCount: 0, errorCount: 1, isEnabled: true },
+      ],
+    }))).toBeNull();
+  });
+
+  it('asserts readiness for healthy reports', () => {
+    const healthReport = report({ healthyCount: 1, results: [
+      { adapterId: 'ok', adapterName: 'OK', status: 'healthy', latencyMs: 5, lastChecked: 1, successCount: 1, errorCount: 0, isEnabled: true },
+    ] });
+
+    expect(assertModelHealthReady(healthReport).ok).toBe(true);
+  });
+
+  it('blocks readiness when no healthy model exists', () => {
+    const result = assertModelHealthReady(report({ healthyCount: 0 }));
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('No healthy model');
   });
 });

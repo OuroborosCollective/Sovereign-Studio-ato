@@ -54,7 +54,7 @@ describe('sovereignLlmRuntime', () => {
         selectedFilePath: 'src/index.ts',
         memoryContext: ['pattern: test'],
         runtimeEvents: ['event: test'],
-        allowExternalNoKey: true,
+        allowExternalNoKey: false,
       }),
       expect.any(Object),
     );
@@ -91,7 +91,7 @@ describe('sovereignLlmRuntime', () => {
     expect(result.error).toBe('Network error');
   });
 
-  it('passes user keys only when user-key routes are allowed', async () => {
+  it('passes user keys only when user-key routes are allowed without enabling no-key routes', async () => {
     vi.mocked(resolveProductWithLlmRevolver).mockResolvedValue({
       ok: true,
       result: {
@@ -120,7 +120,7 @@ describe('sovereignLlmRuntime', () => {
       expect.objectContaining({
         groqApiKey: 'test-groq-key',
         geminiApiKey: 'test-gemini-key',
-        allowExternalNoKey: true,
+        allowExternalNoKey: false,
       }),
       expect.any(Object),
     );
