@@ -16,11 +16,11 @@ export function maskSecrets(text: string): string {
   // Google Cloud / Gemini API keys
   masked = masked.replace(/AIza[a-zA-Z0-9_-]{26,60}/g, 'AIza****');
 
-  // AI provider style keys
-  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,120}/g, 'sk-or-v1-****');
-  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,120}/g, 'sk-proj-****');
-  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,120}/g, 'sk-****');
-  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,120}/g, 'gsk_****');
+  // AI provider style keys. Do not cap these matches: long credentials must be consumed up to a delimiter.
+  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,}/g, 'sk-or-v1-****');
+  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,}/g, 'sk-proj-****');
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-****');
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,}/g, 'gsk_****');
 
   // HuggingFace, Together AI and Pollinations AI
   masked = masked.replace(/hf_[a-zA-Z0-9]{8,100}/g, 'hf_****');
