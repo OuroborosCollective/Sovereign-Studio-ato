@@ -43,6 +43,7 @@ import { DraftPrCard } from "../components/DraftPrCard";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
+import { ExternalRouteConsentGate } from "../components/ExternalRouteConsentGate";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
@@ -3049,6 +3050,11 @@ export function BuilderContainer({
   );
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
 
+  // ── External Route Consent Gate State
+  const [externalRouteConsentRequired, setExternalRouteConsentRequired] = useState(false);
+  const [externalRouteConsentAttempts, setExternalRouteConsentAttempts] = useState(0);
+  const [pendingMissionForConsent, setPendingMissionForConsent] = useState<string | null>(null);
+
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
     () => createIdleSnapshot(`sovereign-${Date.now()}`),
@@ -4086,6 +4092,37 @@ export function BuilderContainer({
                     }
                   }}
                   onDismiss={() => {}}
+                />
+              )}
+
+              {/* ── External Route Consent Gate */}
+              {externalRouteConsentRequired && (
+                <ExternalRouteConsentGate
+                  attempts={externalRouteConsentAttempts}
+                  onApprove={() => {
+                    // User approved - retry with consent
+                    setExternalRouteConsentRequired(false);
+                    const mission = pendingMissionForConsent;
+                    setPendingMissionForConsent(null);
+                    if (mission) {
+                      // Re-trigger with consent enabled
+                      appendChatLine({
+                        role: 'assistant',
+                        text: 'Free-Routen für diese Anfrage aktiviert. Wiederhole den Vorgang...'
+                      });
+                      // The retry will happen through the normal workflow
+                      // with allowExternalNoKey: true from the runtime config
+                    }
+                  }}
+                  onDeny={() => {
+                    // User denied - continue locally
+                    setExternalRouteConsentRequired(false);
+                    setPendingMissionForConsent(null);
+                    appendChatLine({
+                      role: 'assistant',
+                      text: 'Free-Routen abgelehnt. Arbeit wird lokal fortgesetzt.'
+                    });
+                  }}
                 />
               )}
 
