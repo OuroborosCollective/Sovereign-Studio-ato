@@ -1,14 +1,12 @@
 /**
  * DraftPrCard - Compact inline card for Draft PR and build status
- * 
- * Shows:
- * - title: Draft PR ready
- * - branch or PR URL if available
- * - changed file count from OpenHandsJobSnapshot.changedFiles
- * - buttons: open browser, discuss in chat
+ *
+ * Shows only real Draft PR state supplied by the OpenHands/GitHub runtime path.
+ * The build badge defaults to unknown so the UI never invents a green run.
  */
 
 import React from 'react';
+import type { DraftPrBuildStatusResult } from '../runtime/draftPrBuildStatusRuntime';
 
 const C = {
   bg:        '#0e1116',
@@ -19,6 +17,22 @@ const C = {
   textSub:   '#768390',
   green:     '#34d399',
   sky:       '#22d3ee',
+  amber:     '#fbbf24',
+  rose:      '#fb7185',
+};
+
+const DEFAULT_BUILD_STATUS: DraftPrBuildStatusResult = {
+  state: 'unknown',
+  label: 'Build unbekannt',
+  detail: 'Keine GitHub Workflow-Runs sichtbar; kein grüner Status wird erfunden.',
+};
+
+const BUILD_COLOR: Record<DraftPrBuildStatusResult['state'], string> = {
+  success: C.green,
+  failure: C.rose,
+  running: C.sky,
+  pending: C.amber,
+  unknown: C.textSub,
 };
 
 export interface DraftPrCardProps {
@@ -26,6 +40,15 @@ export interface DraftPrCardProps {
   changedFiles: number | string[];
   onOpenBrowser: () => void;
   onDiscussInChat: () => void;
+  buildStatus?: DraftPrBuildStatusResult;
+}
+
+function extractPrLabel(url: string): string {
+  const urlParts = url.split('/');
+  const lastPart = urlParts[urlParts.length - 1];
+  return lastPart && /^\d+$/.test(lastPart)
+    ? `PR #${lastPart}`
+    : (lastPart || 'unbekannt');
 }
 
 export const DraftPrCard: React.FC<DraftPrCardProps> = ({
@@ -33,18 +56,13 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
   changedFiles,
   onOpenBrowser,
   onDiscussInChat,
+  buildStatus = DEFAULT_BUILD_STATUS,
 }) => {
-  // Extract branch from URL - pull numbers are numeric
-  const urlParts = url.split('/');
-  const lastPart = urlParts[urlParts.length - 1];
-  const branch = lastPart && /^\d+$/.test(lastPart) 
-    ? `PR #${lastPart}` 
-    : (lastPart || 'unbekannt');
-  
-  // Handle changedFiles being either a number or array of file paths
-  const fileCount = Array.isArray(changedFiles) 
-    ? changedFiles.length 
+  const branch = extractPrLabel(url);
+  const fileCount = Array.isArray(changedFiles)
+    ? changedFiles.length
     : (typeof changedFiles === 'number' ? changedFiles : 0);
+  const buildColor = BUILD_COLOR[buildStatus.state];
 
   return (
     <div
@@ -62,7 +80,6 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         gap: 10,
       }}
     >
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 16 }}>📝</span>
         <div style={{ flex: 1 }}>
@@ -75,7 +92,29 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         </div>
       </div>
 
-      {/* Changed files */}
+      <div
+        data-testid="draft-pr-build-badge"
+        aria-label={`Buildstatus: ${buildStatus.label}`}
+        style={{
+          borderRadius: 8,
+          border: `1px solid ${buildColor}40`,
+          background: `${buildColor}12`,
+          padding: '8px 10px',
+          fontSize: 12,
+          color: C.textSub,
+        }}
+      >
+        <div style={{ color: buildColor, fontWeight: 600 }}>
+          {buildStatus.label}
+        </div>
+        <div style={{ marginTop: 2 }}>{buildStatus.detail}</div>
+        {buildStatus.runUrl ? (
+          <a href={buildStatus.runUrl} target="_blank" rel="noreferrer" style={{ color: C.sky, marginTop: 4, display: 'inline-block' }}>
+            Run öffnen
+          </a>
+        ) : null}
+      </div>
+
       <div style={{ fontSize: 12, color: C.textSub }}>
         {fileCount > 0 ? (
           <span>{fileCount} geänderte Datei{fileCount !== 1 ? 'en' : ''}</span>
@@ -84,7 +123,6 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         )}
       </div>
 
-      {/* Actions */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         <button
           type="button"
@@ -103,7 +141,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         >
           Im Browser öffnen
         </button>
-        
+
         <button
           type="button"
           onClick={onDiscussInChat}
