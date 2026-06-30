@@ -19,7 +19,8 @@ function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode
         aria-expanded={folder ? open : undefined}
         style={{ marginLeft: level * 12 }}
       >
-        {folder ? (open ? '▾' : '▸') : '•'} {node.name}
+        <span aria-hidden="true">{folder ? (open ? '▾' : '▸') : '•'}</span>{' '}
+        <span>{node.name}</span>
       </button>
       {folder && open && node.children.length > 0 ? (
         <ul>
