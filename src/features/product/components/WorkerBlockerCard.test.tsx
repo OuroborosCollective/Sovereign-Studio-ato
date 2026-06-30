@@ -6,14 +6,21 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { WorkerBlockerCard, WorkerDegradedBanner } from './WorkerBlockerCard';
+import type { DevChatWorkerDiagnostic } from '../runtime/devChatWorkerBridge';
+import { SOVEREIGN_WORKER_CHAT } from '../runtime/devChatWorkerBridge';
+
+const mockDiagnostic: DevChatWorkerDiagnostic = {
+  route: SOVEREIGN_WORKER_CHAT,
+  model: 'gemini-2.0-flash',
+  messageCount: 1,
+  scope: 'network',
+  canClientFix: true,
+  nextAction: 'retry',
+};
 
 const mockBlocker = {
   message: 'Worker unavailable',
-  diagnostic: {
-    scope: 'network' as const,
-    detail: 'Connection timeout',
-    timestamp: Date.now(),
-  },
+  diagnostic: mockDiagnostic,
   createdAt: Date.now(),
 };
 
