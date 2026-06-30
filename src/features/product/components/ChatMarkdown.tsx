@@ -3,14 +3,14 @@
  * 
  * Renders assistant messages with:
  * - Fenced code sections as scrollable monospace blocks with copy control
- * - Simple bold text
- * - Inline technical terms
- * - Handles malformed input without crashing
+ * - Bold text: **bold**
+ * - Inline code: `code`
+ * - Links: [text](url)
  * 
  * No large formatting dependencies, no raw HTML rendering.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 
 export interface ChatMarkdownProps {
   content: string;
@@ -20,145 +20,100 @@ const C = {
   text:      '#cdd9e5',
   textSub:   '#768390',
   border:    '#232d3a',
-  surface:   '#161c24',
-  accent:    '#00d9b1',
   codeBg:    '#0e1116',
+  accent:    '#00d9b1',
 };
 
-interface CodeBlock {
-  language: string;
-  code: string;
-  startIndex: number;
-  endIndex: number;
-}
-
 /**
- * Parse content into code blocks and text segments
+ * Parse content into segments (code blocks and inline text with formatting)
  */
-function parseContent(content: string): Array<{ type: 'text' | 'code'; content: string; language?: string }> {
-  const segments: Array<{ type: 'text' | 'code'; content: string; language?: string }> = [];
-  
-  // Match fenced code blocks: ```language\ncode\n```
-  const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match;
+type Segment = 
+  | { type: 'text'; content: string }
+  | { type: 'bold'; content: string }
+  | { type: 'code'; content: string }
+  | { type: 'link'; content: string; url: string }
+  | { type: 'codeblock'; language: string; content: string };
 
-  while ((match = codeBlockRegex.exec(content)) !== null) {
-    // Add text before code block
-    if (match.index > lastIndex) {
-      const text = content.slice(lastIndex, match.index);
-      if (text.trim()) {
-        segments.push({ type: 'text', content: text });
+function tokenizeContent(input: string): Segment[] {
+  const segments: Segment[] = [];
+  const lines = input.split('\n');
+  let i = 0;
+  
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Check for code block start: ```language
+    const codeBlockMatch = line.match(/^```(\w*)$/);
+    if (codeBlockMatch) {
+      const language = codeBlockMatch[1] || 'text';
+      const codeLines: string[] = [];
+      i++;
+      
+      // Collect lines until closing ```
+      while (i < lines.length) {
+        const closingMatch = lines[i].match(/^```$/);
+        if (closingMatch) {
+          i++;
+          break;
+        }
+        codeLines.push(lines[i]);
+        i++;
+      }
+      
+      segments.push({ type: 'codeblock', language, content: codeLines.join('\n') });
+      continue;
+    }
+    
+    // Process inline formatting in current line
+    let remaining = line;
+    let lastIndex = 0;
+    
+    while (remaining.length > 0) {
+      // Find next match
+      const patterns = [
+        { regex: /\*\*([^*\n]+)\*\*/, type: 'bold' as const },
+        { regex: /`([^`\n]+)`/, type: 'code' as const },
+        { regex: /\[([^\]\n]+)\]\(([^)\n]+)\)/, type: 'link' as const, urlGroup: 2 },
+      ];
+      
+      let earliestMatch: { match: RegExpExecArray; type: string; url?: string } | null = null;
+      let earliestIndex = Infinity;
+      
+      for (const p of patterns) {
+        p.regex.lastIndex = 0;
+        const m = p.regex.exec(remaining);
+        if (m && m.index < earliestIndex) {
+          earliestIndex = m.index;
+          earliestMatch = { match: m, type: p.type, url: 'urlGroup' in p ? m[p.urlGroup!] : undefined };
+        }
+      }
+      
+      if (earliestMatch && earliestIndex < Infinity) {
+        // Text before match
+        if (earliestIndex > 0) {
+          segments.push({ type: 'text', content: remaining.slice(0, earliestIndex) });
+        }
+        // Matched segment
+        const segType = earliestMatch.type as 'bold' | 'code' | 'link';
+        if (segType === 'link') {
+          segments.push({ type: 'link', content: earliestMatch.match[1], url: earliestMatch.url! });
+        } else {
+          segments.push({ type: segType, content: earliestMatch.match[1] });
+        }
+        remaining = remaining.slice(earliestIndex + earliestMatch.match[0].length);
+      } else {
+        // No more matches
+        if (remaining.length > 0) {
+          segments.push({ type: 'text', content: remaining });
+        }
+        break;
       }
     }
     
-    // Add code block
-    segments.push({
-      type: 'code',
-      language: match[1] || 'text',
-      content: match[2].trim(),
-    });
-    
-    lastIndex = match.index + match[0].length;
+    i++;
   }
-
-  // Add remaining text
-  if (lastIndex < content.length) {
-    const text = content.slice(lastIndex);
-    if (text.trim()) {
-      segments.push({ type: 'text', content: text });
-    }
-  }
-
-  // If no segments, treat entire content as text
-  if (segments.length === 0 && content.trim()) {
-    segments.push({ type: 'text', content: content });
-  }
-
+  
   return segments;
-}
-
-/**
- * Render inline markdown: bold and inline code
- */
-function renderInlineText(text: string): React.ReactNode {
-  // Handle bold: **text**
-  const boldRegex = /\*\*([^*\n]+)\*\*/g;
-  // Handle inline code: `code`
-  const inlineCodeRegex = /`([^`\n]+)`/g;
-  
-  // Process in order
-  let result: React.ReactNode[] = [];
-  let lastIndex = 0;
-  
-  // Combine patterns and sort by index
-  const patterns: Array<{ regex: RegExp; type: 'bold' | 'inline-code'; handler: (match: RegExpExecArray) => React.ReactNode }> = [
-    {
-      regex: /\*\*([^*\n]+)\*\*/g,
-      type: 'bold',
-      handler: (m) => <strong key={`bold-${m.index}`} style={{ color: C.text, fontWeight: 600 }}>{m[1]}</strong>,
-    },
-    {
-      regex: /`([^`\n]+)`/g,
-      type: 'inline-code',
-      handler: (m) => (
-        <code
-          key={`code-${m.index}`}
-          style={{
-            background: C.codeBg,
-            padding: '2px 6px',
-            borderRadius: 4,
-            fontSize: '0.9em',
-            color: C.accent,
-            fontFamily: 'monospace',
-          }}
-        >
-          {m[1]}
-        </code>
-      ),
-    },
-  ];
-
-  // Simple approach: iterate and replace
-  let processed = text;
-  const replacements: Array<{ index: number; length: number; node: React.ReactNode }> = [];
-
-  for (const pattern of patterns) {
-    pattern.regex.lastIndex = 0;
-    let match;
-    while ((match = pattern.regex.exec(text)) !== null) {
-      replacements.push({
-        index: match.index,
-        length: match[0].length,
-        node: pattern.handler(match),
-      });
-    }
-  }
-
-  // Sort by index descending to process from end to start
-  replacements.sort((a, b) => b.index - a.index);
-
-  // Build result
-  let finalText = text;
-  for (const rep of replacements) {
-    const before = finalText.slice(0, rep.index);
-    const after = finalText.slice(rep.index + rep.length);
-    finalText = before + '___PLACEHOLDER_' + (result.length) + '___' + after;
-  }
-
-  // Replace placeholders
-  for (let i = replacements.length - 1; i >= 0; i--) {
-    finalText = finalText.replace(`___PLACEHOLDER_${i}___`, '');
-  }
-
-  // Split remaining text by newlines and add
-  const parts = finalText.split('\n');
-  const textResult: React.ReactNode[] = [];
-  for (const part of parts) {
-    if (part.trim()) textResult.push(part);
-  }
-  
-  return [...textResult, ...result];
 }
 
 /**
@@ -173,7 +128,7 @@ function CopyButton({ code }: { code: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard not available, silently fail
+      // Clipboard not available
     }
   }, [code]);
 
@@ -203,51 +158,14 @@ function CopyButton({ code }: { code: string }) {
  */
 function CodeBlockView({ language, code }: { language: string; code: string }) {
   return (
-    <div
-      style={{
-        margin: '8px 0',
-        borderRadius: 8,
-        overflow: 'hidden',
-        border: `1px solid ${C.border}`,
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '6px 12px',
-          background: C.codeBg,
-          borderBottom: `1px solid ${C.border}`,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            color: C.textSub,
-            fontFamily: 'monospace',
-          }}
-        >
-          {language || 'code'}
+    <div style={{ margin: '8px 0', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', background: C.codeBg, borderBottom: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
+          {language}
         </span>
         <CopyButton code={code} />
       </div>
-      
-      {/* Code content */}
-      <pre
-        style={{
-          margin: 0,
-          padding: '12px',
-          background: C.codeBg,
-          overflowX: 'auto',
-          fontSize: 12,
-          fontFamily: 'monospace',
-          color: C.text,
-          lineHeight: 1.5,
-          maxHeight: 300,
-        }}
-      >
+      <pre style={{ margin: 0, padding: '12px', background: C.codeBg, overflowX: 'auto', fontSize: 12, fontFamily: 'monospace', color: C.text, lineHeight: 1.5, maxHeight: 300 }}>
         <code>{code}</code>
       </pre>
     </div>
@@ -255,45 +173,48 @@ function CodeBlockView({ language, code }: { language: string; code: string }) {
 }
 
 /**
+ * Render a text segment with inline formatting
+ */
+function renderTextSegment(seg: Segment, key: number): React.ReactNode {
+  switch (seg.type) {
+    case 'bold':
+      return <strong key={key} style={{ color: C.text, fontWeight: 600 }}>{seg.content}</strong>;
+    case 'code':
+      return (
+        <code key={key} style={{ background: C.codeBg, padding: '2px 6px', borderRadius: 4, fontSize: '0.9em', color: C.accent, fontFamily: 'monospace' }}>
+          {seg.content}
+        </code>
+      );
+    case 'link':
+      return (
+        <a key={key} href={seg.url} target="_blank" rel="noopener noreferrer" style={{ color: C.accent, textDecoration: 'underline' }}>
+          {seg.content}
+        </a>
+      );
+    case 'text':
+      return <span key={key}>{seg.content}</span>;
+    default:
+      return null;
+  }
+}
+
+/**
  * ChatMarkdown - main export
  */
 export const ChatMarkdown: React.FC<ChatMarkdownProps> = ({ content }) => {
-  // Guard against non-string input
   if (typeof content !== 'string') {
     return <span>{String(content)}</span>;
   }
 
-  const segments = parseContent(content);
+  const segments = useMemo(() => tokenizeContent(content), [content]);
 
   return (
-    <div
-      style={{
-        fontSize: 14,
-        lineHeight: 1.6,
-        color: C.text,
-        wordBreak: 'break-word',
-        overflowWrap: 'break-word',
-      }}
-    >
-      {segments.map((segment, index) => {
-        if (segment.type === 'code') {
-          return (
-            <CodeBlockView
-              key={index}
-              language={segment.language || 'text'}
-              code={segment.content}
-            />
-          );
+    <div style={{ fontSize: 14, lineHeight: 1.6, color: C.text, wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+      {segments.map((seg, index) => {
+        if (seg.type === 'codeblock') {
+          return <CodeBlockView key={index} language={seg.language} code={seg.content} />;
         }
-        
-        return (
-          <span
-            key={index}
-            style={{ whiteSpace: 'pre-wrap' }}
-          >
-            {renderInlineText(segment.content)}
-          </span>
-        );
+        return renderTextSegment(seg, index);
       })}
     </div>
   );

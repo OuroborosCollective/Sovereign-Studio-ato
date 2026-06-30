@@ -1209,8 +1209,6 @@ export function BuilderContainer({
   const [longPressTarget, setLongPressTarget] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Issue #430: Repo tree explorer
-  const [showRepoTree, setShowRepoTree] = useState(false);
 
   // ── Issue #432: Share state
   const [shareStatus, setShareStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
@@ -1245,6 +1243,17 @@ export function BuilderContainer({
     ]);
     nowRef.current = createdAt;
   }, []);
+
+  // ── Issue #425: Track unseen messages
+  const lastChatHistoryLengthRef = useRef(chatHistory.length);
+  useEffect(() => {
+    if (chatHistory.length > lastChatHistoryLengthRef.current) {
+      if (userScrolledAway) {
+        setUnseenCount(prev => prev + (chatHistory.length - lastChatHistoryLengthRef.current));
+      }
+    }
+    lastChatHistoryLengthRef.current = chatHistory.length;
+  }, [chatHistory.length, userScrolledAway]);
 
   const emitMissionChange = useCallback((nextMission: string) => {
     lastMissionRef.current = nextMission;
@@ -1709,7 +1718,15 @@ export function BuilderContainer({
                     blocker={workerBlocker}
                     onRetry={() => {
                       setWorkerBlocker(null);
-                      addLog('info', 'Worker retry from card', 'router');
+                      addLog('info', 'Worker retry triggered from card', 'router');
+                      // Re-attempt last user message
+                      const lastMsg = chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : wishText;
+                      if (lastMsg) {
+                        setWishText(lastMsg);
+                        // Trigger submit if not empty
+                        const form = document.querySelector('form');
+                        if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                      }
                     }}
                     onExplain={() => {
                       const explanation = explainDevChatWorkerDiagnostic(workerBlocker.diagnostic);
