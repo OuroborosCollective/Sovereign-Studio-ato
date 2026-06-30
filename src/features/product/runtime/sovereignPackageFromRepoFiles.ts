@@ -31,6 +31,7 @@ export interface BuildSovereignPackageFromRepoFilesInput {
   palBlockers?: string[];
   automationMode?: PalAutomationMode;
   allowUserKeyRoutes?: boolean;
+  allowExternalNoKey?: boolean;
   userKeys?: {
     gemini?: string;
     groq?: string;
@@ -283,7 +284,7 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
     previousPreview: input.previousPreview,
     memoryContext: input.memoryContext ?? [],
     runtimeEvents: [...(input.runtimeEvents ?? []), palRuntimeEvent(palDecision)],
-    allowExternalNoKey: true,
+    allowExternalNoKey: input.allowExternalNoKey ?? false,
     allowUserKeyRoutes: input.allowUserKeyRoutes ?? false,
     userKeys: runtimeUserKeys(input),
     cards: input.cards ?? starterCards(),
@@ -341,6 +342,14 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
     runtimeAssertSovereignPackage(pkg);
     assertGeneratedPackageReady(pkg, input.repoFiles);
     return pkg;
+  }
+
+  // Check if consent is required for external no-key routes
+  if (llmResult.consentRequired) {
+    const error = new Error('CONSENT_REQUIRED_EXTERNAL_ROUTES: All paid/keyed routes failed. External no-key routes are blocked. User must consent to enable.');
+    (error as Error & { code: string; attempts: number }).code = 'CONSENT_REQUIRED';
+    (error as Error & { code: string; attempts: number }).attempts = llmResult.attempts.length;
+    throw error;
   }
 
   if (!isDocumentationSovereignMission(effectiveMission)) {

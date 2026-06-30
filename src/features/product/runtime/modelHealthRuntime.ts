@@ -87,8 +87,8 @@ function buildHealthTestContext(args: {
     mission: args.mission,
     repoPaths: [],
     selectedFilePath: 'HEALTH_CHECK',
-    allowExternalNoKey: true,
-    allowOptInRoutes: true,
+    allowExternalNoKey: false,
+    allowOptInRoutes: false,
     signal: args.signal,
     runtimeEvents: [`model-health:${args.adapterId}`],
   };

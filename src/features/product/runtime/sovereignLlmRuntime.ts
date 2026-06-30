@@ -3,10 +3,17 @@ import { resolveProductWithLlmRevolver } from '../llm/productLlmRevolver';
 import { buildSovereignLlmPrompt as buildAdapterSovereignLlmPrompt } from '../llm/llmAdapter';
 import { defaultSettings, starterCards } from '../constants';
 import type { Card, ProjectSettings } from '../types';
-import type { LlmRevolverFailure } from '../llm/llmAdapter';
+import type { LlmRevolverFailure, LlmRevolverConsentRequired } from '../llm/llmAdapter';
+import { 
+  detectConsentForCurrentMission, 
+  setCurrentMissionId,
+  grantConsentForMission,
+  isConsentGrantedForMission,
+} from './externalRouteConsentGate';
 
 export interface SovereignLlmRuntimeInput {
   mission: string;
+  missionId?: string;
   repoPaths: string[];
   selectedFilePath: string;
   previousPreview?: string;
@@ -43,6 +50,8 @@ export interface SovereignLlmRuntimeResult {
   raw?: string;
   attempts: SovereignLlmRuntimeAttempt[];
   error?: string;
+  consentRequired?: boolean;
+  missionId?: string;
 }
 
 function userKeysWhenAllowed(input: SovereignLlmRuntimeInput): SovereignLlmRuntimeInput['userKeys'] {
@@ -61,6 +70,20 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
   const attempts: SovereignLlmRuntimeAttempt[] = [];
   const allowedUserKeys = userKeysWhenAllowed(input);
 
+  // Auto-detect consent for this mission
+  const { missionId, consentGranted } = detectConsentForCurrentMission(input.mission);
+  setCurrentMissionId(missionId);
+
+  // Determine effective allowExternalNoKey value
+  // Priority: 1) explicit input, 2) consent granted, 3) default false
+  let effectiveAllowExternal = input.allowExternalNoKey;
+  if (effectiveAllowExternal === undefined && consentGranted) {
+    effectiveAllowExternal = true;
+  }
+  if (effectiveAllowExternal === undefined) {
+    effectiveAllowExternal = false;
+  }
+
   const result = await resolveProductWithLlmRevolver({
     mission: input.mission,
     repoPaths: input.repoPaths,
@@ -76,7 +99,7 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
     togetherApiKey: allowedUserKeys?.together,
     openrouterApiKey: allowedUserKeys?.openrouter,
     geminiApiKey: allowedUserKeys?.gemini,
-    allowExternalNoKey: input.allowExternalNoKey ?? true,
+    allowExternalNoKey: effectiveAllowExternal,
     allowOptInRoutes: false,
   }, {
     onEvent: (event) => {
@@ -127,6 +150,20 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
       brain: result.result.brain,
       raw: result.result.raw,
       attempts,
+      missionId,
+    };
+  }
+
+  // Check for consent required state
+  if ('consentRequired' in result && result.consentRequired) {
+    return {
+      ok: false,
+      source: 'local-safe',
+      providerId: 'local-safe',
+      attempts,
+      consentRequired: true,
+      missionId,
+      error: 'External no-key routes are blocked. User consent required to enable.',
     };
   }
 
@@ -136,6 +173,7 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
     source: 'local-safe',
     providerId: 'local-safe',
     attempts,
+    missionId,
     error: failed.failure.message,
   };
 }
@@ -146,7 +184,7 @@ export function buildSovereignLlmPrompt(input: SovereignLlmRuntimeInput): string
     repoPaths: input.repoPaths,
     selectedFilePath: input.selectedFilePath,
     codeContext: input.previousPreview,
-    allowExternalNoKey: input.allowExternalNoKey ?? true,
+    allowExternalNoKey: input.allowExternalNoKey ?? false,
     memoryContext: input.memoryContext,
     runtimeEvents: input.runtimeEvents,
   });
