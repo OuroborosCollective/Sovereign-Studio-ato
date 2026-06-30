@@ -7,6 +7,9 @@ import { createHuggingFaceAdapter } from './adapters/huggingfaceAdapter';
 import { createTogetherAdapter } from './adapters/togetherAdapter';
 import { createOpenRouterAdapter } from './adapters/openrouterAdapter';
 import { createGeminiAdapter } from './adapters/geminiAdapter';
+import { createOvhAnonymousCodeChatAdapter, createOvhAnonymousFixedModelAdapter } from './adapters/ovhAnonymousAdapter';
+import { createHfPublicSpaceAdapter } from './adapters/hfPublicSpaceAdapter';
+import { createPuterJsAdapter } from './adapters/puterJsAdapter';
 import { createLocalSafeAdapter } from './adapters/localSafeAdapter';
 import { resolvePrimaryBridgeConfig } from './primaryBridgeConfig';
 import type { Card, ProjectSettings } from '../types';
@@ -49,6 +52,15 @@ export function buildSovereignLlmAdapters(options: SovereignLlmAdapterOptions): 
   if (options.togetherApiKey) adapters.push(createTogetherAdapter(options.togetherApiKey));
   if (options.openrouterApiKey) adapters.push(createOpenRouterAdapter(options.openrouterApiKey));
   if (options.geminiApiKey) adapters.push(createGeminiAdapter(options.geminiApiKey));
+
+  // Emergency keyless fallbacks — always present, silently activate when all
+  // higher-priority providers are exhausted or unavailable.
+  adapters.push(
+    createOvhAnonymousCodeChatAdapter(),
+    createOvhAnonymousFixedModelAdapter(),
+    createHfPublicSpaceAdapter(),
+    createPuterJsAdapter(),
+  );
 
   adapters.push(createLocalSafeAdapter({
     cards: options.cards,

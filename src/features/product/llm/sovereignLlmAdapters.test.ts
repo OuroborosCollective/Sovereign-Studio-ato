@@ -91,8 +91,46 @@ describe('sovereignLlmAdapters', () => {
       'together',
       'openrouter',
       'gemini',
+      'ovh-anonymous-code-chat',
+      'ovh-anonymous-fixed-model',
+      'hf-curated-public-space',
+      'puter-js-opt-in',
       'local-safe',
     ]);
+  });
+
+  it('includes emergency keyless fallbacks even without any API keys', () => {
+    const adapters = buildSovereignLlmAdapters({
+      cards: starterCards(),
+      settings: defaultSettings,
+    });
+
+    const ids = adapters.map((adapter) => adapter.id);
+    expect(ids).toContain('ovh-anonymous-code-chat');
+    expect(ids).toContain('ovh-anonymous-fixed-model');
+    expect(ids).toContain('hf-curated-public-space');
+    expect(ids).toContain('puter-js-opt-in');
+  });
+
+  it('emergency keyless adapters have correct kinds and priorities', () => {
+    const adapters = buildSovereignLlmAdapters({
+      cards: starterCards(),
+      settings: defaultSettings,
+    });
+
+    const ovhCodeChat = adapters.find((a) => a.id === 'ovh-anonymous-code-chat');
+    const ovhFixed = adapters.find((a) => a.id === 'ovh-anonymous-fixed-model');
+    const hfPublic = adapters.find((a) => a.id === 'hf-curated-public-space');
+    const puter = adapters.find((a) => a.id === 'puter-js-opt-in');
+
+    expect(ovhCodeChat?.kind).toBe('no-key');
+    expect(ovhCodeChat?.priority).toBe(7);
+    expect(ovhFixed?.kind).toBe('no-key');
+    expect(ovhFixed?.priority).toBe(8);
+    expect(hfPublic?.kind).toBe('no-key');
+    expect(hfPublic?.priority).toBe(9);
+    expect(puter?.kind).toBe('opt-in');
+    expect(puter?.priority).toBe(10);
   });
 
   it('maintains priority ordering', () => {
