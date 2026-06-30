@@ -247,9 +247,10 @@ function readWorkerContent(payload: unknown): string | undefined {
       if (typeof choiceText === 'string' && choiceText.trim()) return choiceText.trim();
 
       const choiceMessage = choiceRecord.message;
-      if (!choiceMessage || typeof choiceMessage !== 'object') continue;
-      const content = (choiceMessage as Record<string, unknown>).content;
-      if (typeof content === 'string' && content.trim()) return content.trim();
+      if (choiceMessage && typeof choiceMessage === 'object') {
+        const content = (choiceMessage as Record<string, unknown>).content;
+        if (typeof content === 'string' && content.trim()) return content.trim();
+      }
     }
   }
 
@@ -517,6 +518,16 @@ function readSseContent(payload: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+function nextStreamFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
 /**
  * Streaming variant of fetchDevChatWorkerReply.
  * Posts with stream: true and yields SSE delta chunks in real-time.
@@ -548,15 +559,13 @@ export async function* streamDevChatWorkerReply(
 
   if (!response.ok) {
     const text = await response.text();
-    if (LEGACY_WORKER_MODEL_ALIASES.has(request.model)) {
-      const diagnostic = buildDiagnosticFromResponse({ response, text, model, messageCount: messages.length });
-      const health = await fetchDevChatWorkerHealth(request.signal);
-      yield [
-        'Ich wiederhole den kaputten Worker-Call nicht blind.',
-        explainDevChatWorkerDiagnostic(diagnostic),
-        formatStreamHealthLine(health),
-      ].join('\n');
-    }
+    const diagnostic = buildDiagnosticFromResponse({ response, text, model, messageCount: messages.length });
+    const health = await fetchDevChatWorkerHealth(request.signal);
+    yield [
+      'Ich wiederhole den kaputten Worker-Call nicht blind.',
+      explainDevChatWorkerDiagnostic(diagnostic),
+      formatStreamHealthLine(health),
+    ].join('\n');
     return;
   }
 
@@ -589,7 +598,10 @@ export async function* streamDevChatWorkerReply(
         try {
           const payload = JSON.parse(data) as Record<string, unknown>;
           const content = readSseContent(payload);
-          if (content) yield content;
+          if (content) {
+            yield content;
+            await nextStreamFrame();
+          }
         } catch {
           // Skip malformed JSON lines silently.
         }
