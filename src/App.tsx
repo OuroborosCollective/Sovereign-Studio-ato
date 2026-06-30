@@ -1,6 +1,6 @@
 import './runtime-adapter';
 import React, { useState } from 'react';
-import { AuditLiveWorkbench } from './features/product/components/AuditLiveWorkbench';
+import { BuilderContainer } from './features/product/containers/BuilderContainer';
 import { LlmAdapterProvider } from './features/product/contexts/LlmAdapterContext';
 
 export default function App() {
@@ -8,7 +8,7 @@ export default function App() {
   return (
     <LlmAdapterProvider>
       <main data-testid="chat-only-app" aria-label="Sovereign Chat" style={{ height: '100dvh', overflow: 'hidden', background: '#0e1116' }}>
-        <AuditLiveWorkbench
+        <BuilderContainer
           mission={mission}
           repoReady={false}
           repoReason="GitHub-URL direkt im Chat einfügen."
