@@ -81,6 +81,23 @@ import {
   canPerformGitHubWrite,
   type GitHubAccessSnapshot,
 } from "../runtime/githubAccessRuntime";
+import { evaluateInputPolicy } from "../runtime/secureInputGuard";
+import { checkChatClaim } from "../runtime/chatClaimGuard";
+import {
+  createIdleSnapshot,
+  transitionIntentDetected,
+  transitionExecutorStarting,
+  transitionExecutorRunning,
+  transitionBranchCreated,
+  transitionCommitCreated,
+  transitionDraftPrReady,
+  transitionBlocked,
+  transitionFailed,
+  type AgentWorkSnapshot,
+} from "../runtime/agentWorkRuntime";
+import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
+import { AgentResultCard } from "../components/AgentResultCard";
+import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -3032,6 +3049,50 @@ export function BuilderContainer({
   );
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
 
+  // ── Issue #445: AgentWorkTimeline state
+  const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
+    () => createIdleSnapshot(`sovereign-${Date.now()}`),
+  );
+
+  // ── Issue #445: Sync AgentWorkSnapshot from openhandsJob transitions
+  useEffect(() => {
+    if (!openhandsJob) return;
+    const repo = chatRepoSnapshot
+      ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
+      : null;
+    setAgentWorkSnapshot((prev) => {
+      let snap = prev;
+      if (openhandsJob.status === 'queued' || openhandsJob.status === 'running') {
+        if (snap.state === 'idle') {
+          snap = transitionIntentDetected(
+            snap,
+            repo ?? 'unknown/repo',
+            chatRepoSnapshot?.branch ?? 'main',
+          );
+        }
+        if (snap.state === 'intent_detected') {
+          snap = transitionExecutorStarting(snap, 'openhands');
+        }
+        if (snap.state === 'executor_starting' && openhandsJob.jobId) {
+          snap = transitionExecutorRunning(snap, openhandsJob.jobId);
+        }
+      }
+      if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready') {
+        snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
+      }
+      if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
+        snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
+      }
+      if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
+        snap = transitionBlocked(snap, 'OpenHands Executor blockiert.');
+      }
+      if (openhandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
+        snap = createIdleSnapshot(`sovereign-${Date.now()}`);
+      }
+      return snap;
+    });
+  }, [openhandsJob, chatRepoSnapshot]);
+
   // ── Slash command menu state (Issue #428)
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
@@ -3533,6 +3594,17 @@ export function BuilderContainer({
   };
 
   const _processSubmit = async (submittedText: string) => {
+    // ── Issue #445: SecureInputGuard — block secrets before any storage or LLM path
+    const securePolicy = evaluateInputPolicy(submittedText);
+    if (securePolicy.shouldBlock) {
+      appendChatLine({
+        role: "assistant",
+        text: securePolicy.userMessage,
+      });
+      addLog("warn", `SecureInputGuard: ${securePolicy.kind ?? "secret"} detected and blocked`, "router");
+      return;
+    }
+
     // ── Issue #428: Slash command handling
     if (submittedText.startsWith("/")) {
       const parsedSlash = parseSlashCommand(submittedText);
@@ -3723,7 +3795,16 @@ export function BuilderContainer({
 
     if (fullText) {
       setWorkerBlocker(null);
-      appendChatLine({ role: "assistant", text: fullText });
+      // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display
+      const claimCheck = checkChatClaim(fullText, agentWorkSnapshot);
+      const textToAppend =
+        claimCheck.allowed || !claimCheck.honestFallback
+          ? fullText
+          : `${fullText}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
+      if (!claimCheck.allowed && claimCheck.violations.length > 0) {
+        addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
+      }
+      appendChatLine({ role: "assistant", text: textToAppend });
       return;
     }
 
@@ -3965,6 +4046,11 @@ export function BuilderContainer({
               )}
               <OutcomeHints hints={outcomeHints} />
 
+              {/* ── Issue #445: AgentWorkTimeline — live task progress in chat feed */}
+              {agentWorkSnapshot.state !== 'idle' && (
+                <AgentWorkTimeline snapshot={agentWorkSnapshot} />
+              )}
+
               {/* ── Issue #443: OpenHands Job Truth Card */}
               {openhandsJob && openhandsJob.status !== 'idle' && (
                 <OpenHandsJobTruthCard
@@ -4051,6 +4137,17 @@ export function BuilderContainer({
                 />
               )}
 
+              {/* ── Issue #445: AgentResultCard — structured result when PR is ready */}
+              {agentWorkSnapshot.state === 'draft_pr_ready' && agentWorkSnapshot.draftPrUrl && (
+                <AgentResultCard
+                  snapshot={agentWorkSnapshot}
+                  onOpen={() => window.open(agentWorkSnapshot.draftPrUrl!, '_blank')}
+                  onViewDiff={() =>
+                    setWishText('Erkläre mir die Änderungen im Draft PR.')
+                  }
+                />
+              )}
+
               {/* ── Issue #425: Scroll-away indicator */}
               {userScrolledAway && (
                 <div
@@ -4132,35 +4229,56 @@ export function BuilderContainer({
 
       {/* COMPOSER — only in chat view, v3 verbatim */}
       {isChat && (
-        <Composer
-          value={wishText}
-          onChange={setWishText}
-          onSubmit={() => {
-            void handleSubmit();
-          }}
-          onKeyDown={handleComposerKeyDown}
-          disabled={submitDisabled}
-          loading={localRepoLoading}
-          placeholder={
-            chatRepoSnapshot
-              ? `Frage zu ${chatRepoSnapshot.name}…`
-              : "GitHub URL oder Auftrag…"
-          }
-          routeHint={composerRouteHint({
-            draft: wishText,
-            workerBlocked,
-            agentDisabled,
-          })}
-          slashMenu={
-            showSlashCommands ? (
-              <SlashCommandMenu
-                commands={slashMatches}
-                selectedIndex={selectedSlashIndex}
-                onSelect={submitSelectedSlashCommand}
-              />
-            ) : null
-          }
-        />
+        <>
+          {/* ── Issue #445: SovereignToolLauncher — quick-action "+" launcher */}
+          <SovereignToolLauncher
+            onSelect={(toolId: ToolId) => {
+              if (toolId === 'repo') { setShowRepoExplorer(true); return; }
+              if (toolId === 'executor') {
+                if (wishText.trim()) startAgentFromText(wishText.trim());
+                return;
+              }
+              if (toolId === 'github_access') {
+                appendChatLine({ role: 'assistant', text: 'GitHub-Zugang: Token im Kanal eingeben oder via Einstellungen hinterlegen.' });
+                return;
+              }
+              if (toolId === 'runtime_logs') { setPanelOpen((v) => !v); return; }
+              if (toolId === 'diff') {
+                setWishText('Zeige mir die aktuellen Änderungen im Repo.');
+                return;
+              }
+            }}
+          />
+          <Composer
+            value={wishText}
+            onChange={setWishText}
+            onSubmit={() => {
+              void handleSubmit();
+            }}
+            onKeyDown={handleComposerKeyDown}
+            disabled={submitDisabled}
+            loading={localRepoLoading}
+            placeholder={
+              chatRepoSnapshot
+                ? `Frage zu ${chatRepoSnapshot.name}…`
+                : "GitHub URL oder Auftrag…"
+            }
+            routeHint={composerRouteHint({
+              draft: wishText,
+              workerBlocked,
+              agentDisabled,
+            })}
+            slashMenu={
+              showSlashCommands ? (
+                <SlashCommandMenu
+                  commands={slashMatches}
+                  selectedIndex={selectedSlashIndex}
+                  onSelect={submitSelectedSlashCommand}
+                />
+              ) : null
+            }
+          />
+        </>
       )}
 
       {/* BOTTOM TAB BAR — 7 tabs, SESSION removed */}
