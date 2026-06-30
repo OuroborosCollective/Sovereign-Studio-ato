@@ -38,7 +38,15 @@ import { OpenHandsOperatorBriefingPanel } from '../components/OpenHandsOperatorB
 import { WorkerBlockerCard, WorkerDegradedBanner } from '../components/WorkerBlockerCard';
 import { DraftPrCard } from '../components/DraftPrCard';
 import { ChatMarkdown } from '../components/ChatMarkdown';
+import { SlashCommandMenu } from '../components/SlashCommandMenu';
 import { exportChatHistory, shareChatExport } from '../runtime/chatExportRuntime';
+import {
+  SOVEREIGN_SLASH_COMMANDS,
+  matchingSlashCommands,
+  parseSlashCommand,
+  shouldShowSlashMenu,
+  type SlashCommandDefinition,
+} from '../runtime/slashCommandRuntime';
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -1048,9 +1056,11 @@ function SideDrawer({
 }
 
 // Composer (verbatim v3)
-function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, routeHint }: {
+function Composer({ value, onChange, onSubmit, onKeyDown, disabled, loading, placeholder, routeHint, slashMenu }: {
   value: string; onChange: (v: string) => void; onSubmit: () => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
   disabled: boolean; loading: boolean; placeholder: string; routeHint: string;
+  slashMenu?: React.ReactNode;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resize = useCallback(() => {
@@ -1062,6 +1072,7 @@ function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, r
 
   return (
     <div style={{ flexShrink: 0, padding: '10px 10px', paddingBottom: 'max(10px, env(safe-area-inset-bottom))', background: C.surface, borderTop: `1px solid ${C.border}` }}>
+      {slashMenu ? <div style={{ marginBottom: 8 }}>{slashMenu}</div> : null}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: '8px 8px 8px 14px', transition: 'border-color 0.15s' }}>
         <textarea
           ref={textareaRef}
@@ -1073,7 +1084,7 @@ function Composer({ value, onChange, onSubmit, disabled, loading, placeholder, r
           value={value}
           rows={1}
           onChange={(e) => { onChange(e.target.value); resize(); }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!disabled && !loading) onSubmit(); } }}
+          onKeyDown={(e) => { if (onKeyDown?.(e)) return; if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!disabled && !loading) onSubmit(); } }}
           placeholder={placeholder}
           style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 14, lineHeight: 1.5, color: C.text, resize: 'none', maxHeight: 120, minHeight: 24, overflowY: 'auto' }}
         />
@@ -1173,14 +1184,11 @@ export function BuilderContainer({
   const [userScrolledAway, setUserScrolledAway] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
 
-  // ── Slash command definitions (Issue #428)
-  const slashCommands = [
-    { cmd: '/analyze', action: 'analyze' },
-    { cmd: '/fix', action: 'fix' },
-    { cmd: '/pr', action: 'pr' },
-    { cmd: '/repo', action: 'repo' },
-    { cmd: '/clear', action: 'clear' },
-  ];
+  // ── Slash command menu state (Issue #428)
+  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
+  const slashMatches = useMemo(() => matchingSlashCommands(wishText), [wishText]);
+  const showSlashCommands = shouldShowSlashMenu(wishText) && slashMatches.length > 0 && !slashMenuDismissed;
 
   // ── Haptic feedback helper
   const triggerHaptic = useCallback((type: 'light' | 'medium' | 'heavy' = 'light') => {
@@ -1223,6 +1231,14 @@ export function BuilderContainer({
     }
     lastChatHistoryLengthRef.current = chatHistory.length;
   }, [chatHistory.length, userScrolledAway]);
+
+  useEffect(() => {
+    setSlashMenuDismissed(false);
+    setSelectedSlashIndex((current) => {
+      if (slashMatches.length === 0) return 0;
+      return Math.min(current, slashMatches.length - 1);
+    });
+  }, [slashMatches.length, wishText]);
 
   const emitMissionChange = useCallback((nextMission: string) => {
     lastMissionRef.current = nextMission;
@@ -1407,6 +1423,7 @@ export function BuilderContainer({
   const handleSubmit = async () => {
     const submittedText = wishText.trim();
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing) return;
+    setWishText('');
     _processSubmit(submittedText);
   };
 
@@ -1420,36 +1437,41 @@ export function BuilderContainer({
   const _processSubmit = async (submittedText: string) => {
     // ── Issue #428: Slash command handling
     if (submittedText.startsWith('/')) {
-      const cmd = slashCommands.find(c => submittedText === c.cmd || submittedText.startsWith(c.cmd + ' '));
-      if (cmd) {
-        if (cmd.action === 'analyze') {
-          triggerHaptic('medium');
-          onGenerateIdeas();
-        } else if (cmd.action === 'fix') {
-          triggerHaptic('medium');
-          onGenerateErrorWorkflow();
-        } else if (cmd.action === 'pr') {
-          triggerHaptic('medium');
-          onPublishDraftPr();
-        } else if (cmd.action === 'repo') {
-          // Extract URL after /repo
-          const urlMatch = submittedText.match(/^\/repo\s+(.+)$/);
-          if (urlMatch) {
-            setWishText(urlMatch[1].trim());
-            triggerHaptic('light');
-          } else {
-            appendChatLine({ role: 'assistant', text: 'Verwendung: /repo <GitHub-URL>' });
-          }
-        } else if (cmd.action === 'clear') {
-          // Clear chat lines but NOT repo, token, remote memory
-          setChatHistory([]);
-          triggerHaptic('light');
-          appendChatLine({ role: 'assistant', text: 'Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.' });
-        }
+      const parsedSlash = parseSlashCommand(submittedText);
+      if (!parsedSlash) {
+        appendChatLine({ role: 'assistant', text: `Unbekannter Befehl. Verfügbare: ${SOVEREIGN_SLASH_COMMANDS.map(c => c.cmd).join(', ')}` });
         return;
-      } else {
-        // Unknown command
-        appendChatLine({ role: 'assistant', text: `Unbekannter Befehl. Verfügbare: ${slashCommands.map(c => c.cmd).join(', ')}` });
+      }
+
+      const { command, argument } = parsedSlash;
+      if (command.action === 'analyze') {
+        triggerHaptic('medium');
+        onGenerateIdeas();
+        return;
+      }
+      if (command.action === 'fix') {
+        triggerHaptic('medium');
+        onGenerateErrorWorkflow();
+        return;
+      }
+      if (command.action === 'pr') {
+        triggerHaptic('medium');
+        onPublishDraftPr();
+        return;
+      }
+      if (command.action === 'repo') {
+        if (!argument) {
+          appendChatLine({ role: 'assistant', text: 'Verwendung: /repo <GitHub-URL>' });
+          return;
+        }
+        await _processSubmit(argument);
+        return;
+      }
+      if (command.action === 'clear') {
+        // Clear chat lines but NOT repo, token, remote memory
+        setChatHistory([]);
+        triggerHaptic('light');
+        appendChatLine({ role: 'assistant', text: 'Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.' });
         return;
       }
     }
@@ -1535,6 +1557,7 @@ export function BuilderContainer({
     // Stream chunks directly into UI for immediate feedback
     let fullText = '';
     let streamError: { status?: number; statusText?: string; bodySnippet?: string } | null = null;
+    let streamDiagnostic: DevChatWorkerDiagnostic | null = null;
     try {
       for await (const chunk of streamDevChatWorkerReply({
         model: d.modelId,
@@ -1542,12 +1565,15 @@ export function BuilderContainer({
       })) {
         fullText += chunk;
         setStreamingText(fullText);
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
     } catch (err) {
+      const diagnostic = (err as { diagnostic?: DevChatWorkerDiagnostic })?.diagnostic;
+      streamDiagnostic = diagnostic ?? null;
       streamError = {
-        status: (err as { status?: number })?.status,
-        statusText: (err as { statusText?: string })?.statusText,
-        bodySnippet: (err as Error)?.message,
+        status: diagnostic?.status ?? (err as { status?: number })?.status,
+        statusText: diagnostic?.statusText ?? (err as { statusText?: string })?.statusText,
+        bodySnippet: diagnostic?.bodySnippet ?? (err as Error)?.message,
       };
     }
 
@@ -1560,26 +1586,27 @@ export function BuilderContainer({
       return;
     }
 
-    // Stream yielded nothing — try non-streaming fallback to get real content or diagnostic
-    const fallback = await fetchDevChatWorkerReply({
-      model: d.modelId,
-      messages: workerMessages,
-    });
+    const fallback = streamDiagnostic
+      ? null
+      : await fetchDevChatWorkerReply({
+          model: d.modelId,
+          messages: workerMessages,
+        });
 
-    if (fallback.ok && fallback.content) {
+    if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
       appendChatLine({ role: 'assistant', text: fallback.content });
       return;
     }
 
     const health = await fetchDevChatWorkerHealth();
-    const diagnostic = fallback.diagnostic ?? {
+    const diagnostic = streamDiagnostic ?? fallback?.diagnostic ?? {
       route: SOVEREIGN_WORKER_CHAT,
       model: d.modelId,
       messageCount: workerMessages.length,
-      scope: streamError?.status ? 'network' : 'worker_runtime',
+      scope: streamError?.status ? 'worker_runtime' : 'network',
       canClientFix: false,
-      nextAction: 'Worker-Diagnose prüfen.',
+      nextAction: streamError?.status ? 'Worker-Diagnose prüfen; kaputten Call nicht blind wiederholen.' : 'Netzwerk, CORS oder Worker-Erreichbarkeit prüfen.',
       status: streamError?.status,
       statusText: streamError?.statusText,
       bodySnippet: streamError?.bodySnippet,
@@ -1596,6 +1623,41 @@ export function BuilderContainer({
       text: buildWorkerBlockerAnswer({ blocker, repoReady: effectiveRepoReady, chatRepoSnapshot, openhandsReady }),
     });
     addLog('error', `Worker blocked · ${diagnostic.scope}${diagnostic.status ? ` · HTTP ${diagnostic.status}` : ''}`, 'router');
+  };
+
+  const selectedSlashCommand = slashMatches[selectedSlashIndex] ?? slashMatches[0];
+  const submitSelectedSlashCommand = (command: SlashCommandDefinition) => {
+    const clean = wishText.trimStart();
+    const argument = clean.startsWith(command.cmd) ? clean.slice(command.cmd.length).trim() : '';
+    const submitted = argument ? `${command.cmd} ${argument}` : command.cmd;
+    setWishText('');
+    setSlashMenuDismissed(false);
+    void _processSubmit(submitted);
+  };
+
+  const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (!showSlashCommands) return false;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedSlashIndex((index) => (index + 1) % slashMatches.length);
+      return true;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedSlashIndex((index) => (index - 1 + slashMatches.length) % slashMatches.length);
+      return true;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setSlashMenuDismissed(true);
+      return true;
+    }
+    if (event.key === 'Enter' && !event.shiftKey && selectedSlashCommand) {
+      event.preventDefault();
+      submitSelectedSlashCommand(selectedSlashCommand);
+      return true;
+    }
+    return false;
   };
 
   const submitDisabled = localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
@@ -1782,10 +1844,18 @@ export function BuilderContainer({
           value={wishText}
           onChange={setWishText}
           onSubmit={() => { void handleSubmit(); }}
+          onKeyDown={handleComposerKeyDown}
           disabled={submitDisabled}
           loading={localRepoLoading}
           placeholder={chatRepoSnapshot ? `Frage zu ${chatRepoSnapshot.name}…` : 'GitHub URL oder Auftrag…'}
           routeHint={composerRouteHint({ draft: wishText, workerBlocked, agentDisabled })}
+          slashMenu={showSlashCommands ? (
+            <SlashCommandMenu
+              commands={slashMatches}
+              selectedIndex={selectedSlashIndex}
+              onSelect={submitSelectedSlashCommand}
+            />
+          ) : null}
         />
       )}
 

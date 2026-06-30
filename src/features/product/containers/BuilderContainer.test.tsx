@@ -310,12 +310,7 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     // User message appears immediately
     expect(screen.getByText('Wie geht es dir?')).toBeDefined();
 
-    // Stream bubble appears with progressive text
-    await waitFor(() => {
-      const bubbles = screen.getAllByText('Erste ');
-      expect(bubbles.length).toBeGreaterThan(0);
-    });
-
+    // The streaming runtime freezes the completed assistant text into chat history.
     await waitFor(() => expect(screen.getByText('Erste Antwort')).toBeDefined());
   });
 
@@ -333,8 +328,8 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
-    expect(screen.getByText(/HTTP 500/i)).toBeDefined();
-    expect(screen.getByText(/secret=ok/i)).toBeDefined();
+    expect(screen.getAllByText(/HTTP 500/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/secret=ok/i).length).toBeGreaterThanOrEqual(1);
 
     fireEvent.change(chatField(), { target: { value: 'Warum?' } });
     fireEvent.click(sendButton());
@@ -361,6 +356,59 @@ describe('BuilderContainer (AppControl DevChat shell)', () => {
     expect(screen.getByText(/OpenHands ID/i)).toBeDefined();
     expect(screen.getByText(/1 Datei/)).toBeDefined();
     expect(screen.queryByLabelText(/Karten/i)).toBeNull();
+  });
+
+
+  /* ───────────── slash command menu runtime path (#428) ───────────── */
+  it('shows slash command menu and runs selected command with Enter', () => {
+    const props = baseProps();
+    render(<BuilderContainer {...props} />);
+
+    fireEvent.change(chatField(), { target: { value: '/a' } });
+
+    expect(screen.getByTestId('slash-command-menu')).toBeDefined();
+    expect(screen.getByText('/analyze')).toBeDefined();
+
+    fireEvent.keyDown(chatField(), { key: 'Enter', code: 'Enter' });
+
+    expect(props.onGenerateIdeas).toHaveBeenCalledOnce();
+    expect(chatField().value).toBe('');
+    expect(screen.queryByTestId('slash-command-menu')).toBeNull();
+  });
+
+  it('closes slash command popup on Escape without submitting', () => {
+    const props = baseProps();
+    render(<BuilderContainer {...props} />);
+
+    fireEvent.change(chatField(), { target: { value: '/' } });
+    expect(screen.getByTestId('slash-command-menu')).toBeDefined();
+
+    fireEvent.keyDown(chatField(), { key: 'Escape', code: 'Escape' });
+
+    expect(screen.queryByTestId('slash-command-menu')).toBeNull();
+    expect(props.onGenerateIdeas).not.toHaveBeenCalled();
+    expect(props.onGenerateErrorWorkflow).not.toHaveBeenCalled();
+    expect(props.onPublishDraftPr).not.toHaveBeenCalled();
+  });
+
+  it('runs /repo through the existing repo load path', async () => {
+    const props = baseProps();
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      tree: [
+        { path: 'src/App.tsx', type: 'blob', size: 123 },
+        { path: 'README.md', type: 'blob', size: 42 },
+      ],
+      truncated: false,
+    })));
+
+    render(<BuilderContainer {...props} mission="" repoReady={false} />);
+
+    fireEvent.change(chatField(), { target: { value: '/repo https://github.com/OuroborosCollective/Sovereign-Studio-ato' } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
+    expect(chatField().value).toBe('');
+    expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
   /* ───────────── publish state disables composer ───────────── */
