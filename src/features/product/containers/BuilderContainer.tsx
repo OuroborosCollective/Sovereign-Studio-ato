@@ -78,6 +78,7 @@ import {
   startGitHubAccessValidation,
   completeGitHubAccessValidation,
   failGitHubAccessValidation,
+  validateGitHubTokenFormat,
   canPerformGitHubWrite,
   type GitHubAccessSnapshot,
 } from "../runtime/githubAccessRuntime";
@@ -3981,12 +3982,23 @@ export function BuilderContainer({
                 <GitHubAccessCard
                   snapshot={githubAccessState}
                   onProvideToken={(token) => {
-                    setGitHubAccessState(startGitHubAccessValidation(token));
-                    // Simulate validation (in real app, would call GitHub API)
-                    setTimeout(() => {
-                      setGitHubAccessState(completeGitHubAccessValidation(token));
-                      appendChatLine({ role: 'assistant', text: 'Danke, GitHub-Zugang erkannt und nutzbar.' });
-                    }, 1500);
+                    // SECURITY: Real GitHub API validation required before ready state.
+                    // For now, accept format-valid tokens but require explicit re-validation
+                    // on actual GitHub write operations (Draft PR, Push).
+                    // Token masked immediately, real token never stored in runtime state.
+                    const formatResult = validateGitHubTokenFormat(token);
+                    if (formatResult.isValid) {
+                      setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
+                      // NOTE: In production, this would trigger actual GitHub API validation.
+                      // For now, transition to 'requested' to indicate format OK but pending real auth.
+                      setGitHubAccessState(requestGitHubAccess(formatResult.maskedToken));
+                      appendChatLine({ 
+                        role: 'assistant', 
+                        text: `Token-Format akzeptiert (${formatResult.maskedToken}). GitHub-Schreibzugriff wird für Draft PR benötigt.` 
+                      });
+                    } else {
+                      setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
+                    }
                   }}
                   onDismiss={() => {}}
                 />

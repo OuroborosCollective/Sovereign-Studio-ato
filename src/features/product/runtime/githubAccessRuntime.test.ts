@@ -82,31 +82,41 @@ describe('GitHub Access Runtime', () => {
       const snapshot = createGitHubAccessSnapshot();
       expect(snapshot.state).toBe('missing');
       expect(snapshot.maskedToken).toBeNull();
+      // SECURITY: Snapshot must not have any token storage
+      expect('lastValidatedToken' in snapshot).toBe(false);
     });
 
-    it('transitions to requested state', () => {
-      const snapshot = requestGitHubAccess();
+    it('transitions to requested state with masked token', () => {
+      const snapshot = requestGitHubAccess('ghp_****1234');
       expect(snapshot.state).toBe('requested');
+      expect(snapshot.maskedToken).toBe('ghp_****1234');
     });
 
-    it('transitions to validating state with masked token', () => {
-      const snapshot = startGitHubAccessValidation('ghp_testtoken123456789012345678901234');
+    it('transitions to validating state - takes masked token only', () => {
+      const snapshot = startGitHubAccessValidation('ghp_****1234');
       expect(snapshot.state).toBe('validating');
-      expect(snapshot.maskedToken).toBeTruthy();
-      expect(snapshot.lastValidatedToken).toBe('ghp_testtoken123456789012345678901234');
+      expect(snapshot.maskedToken).toBe('ghp_****1234');
+      // SECURITY: No raw token storage in snapshot
+      expect('lastValidatedToken' in snapshot).toBe(false);
     });
 
-    it('transitions to ready state after validation', () => {
-      const snapshot = completeGitHubAccessValidation('ghp_testtoken123456789012345678901234');
+    it('transitions to ready state - takes masked token only', () => {
+      const snapshot = completeGitHubAccessValidation('ghp_****1234');
       expect(snapshot.state).toBe('ready');
       expect(snapshot.validatedAt).toBeTruthy();
       expect(snapshot.errorMessage).toBeNull();
+      expect(snapshot.maskedToken).toBe('ghp_****1234');
+      // SECURITY: No raw token storage in snapshot
+      expect('lastValidatedToken' in snapshot).toBe(false);
     });
 
-    it('transitions to invalid state with error', () => {
-      const snapshot = failGitHubAccessValidation('ghp_invalid', 'Token abgelaufen');
+    it('transitions to invalid state with error - takes masked token only', () => {
+      const snapshot = failGitHubAccessValidation('ghp_****xxxx', 'Token abgelaufen');
       expect(snapshot.state).toBe('invalid');
       expect(snapshot.errorMessage).toBe('Token abgelaufen');
+      expect(snapshot.maskedToken).toBe('ghp_****xxxx');
+      // SECURITY: No raw token storage in snapshot
+      expect('lastValidatedToken' in snapshot).toBe(false);
     });
 
     it('resets to initial state', () => {
@@ -133,7 +143,7 @@ describe('GitHub Access Runtime', () => {
     });
 
     it('blocks write when invalid', () => {
-      const snapshot = failGitHubAccessValidation('ghp_invalid', 'error') as GitHubAccessSnapshot;
+      const snapshot = failGitHubAccessValidation('ghp_****xxxx', 'error') as GitHubAccessSnapshot;
       expect(canPerformGitHubWrite(snapshot)).toBe(false);
     });
   });
@@ -144,12 +154,12 @@ describe('GitHub Access Runtime', () => {
     });
 
     it('requires action when invalid', () => {
-      const snapshot = failGitHubAccessValidation('ghp_invalid', 'error');
+      const snapshot = failGitHubAccessValidation('ghp_****xxxx', 'error');
       expect(requiresUserAction(snapshot)).toBe(true);
     });
 
     it('does not require action when ready', () => {
-      const snapshot = completeGitHubAccessValidation('ghp_valid');
+      const snapshot = completeGitHubAccessValidation('ghp_****1234');
       expect(requiresUserAction(snapshot)).toBe(false);
     });
   });
@@ -157,10 +167,10 @@ describe('GitHub Access Runtime', () => {
   describe('labels', () => {
     it('returns correct label for each state', () => {
       expect(getGitHubAccessLabel(createGitHubAccessSnapshot())).toContain('fehlt');
-      expect(getGitHubAccessLabel(requestGitHubAccess())).toContain('angefordert');
-      expect(getGitHubAccessLabel(startGitHubAccessValidation('test') as GitHubAccessSnapshot)).toContain('wird geprüft');
-      expect(getGitHubAccessLabel(completeGitHubAccessValidation('test') as GitHubAccessSnapshot)).toContain('bereit');
-      expect(getGitHubAccessLabel(failGitHubAccessValidation('test', 'err') as GitHubAccessSnapshot)).toContain('ungültig');
+      expect(getGitHubAccessLabel(requestGitHubAccess('ghp_****1234'))).toContain('angefordert');
+      expect(getGitHubAccessLabel(startGitHubAccessValidation('ghp_****1234'))).toContain('wird geprüft');
+      expect(getGitHubAccessLabel(completeGitHubAccessValidation('ghp_****1234'))).toContain('bereit');
+      expect(getGitHubAccessLabel(failGitHubAccessValidation('ghp_****1234', 'err'))).toContain('ungültig');
     });
   });
 

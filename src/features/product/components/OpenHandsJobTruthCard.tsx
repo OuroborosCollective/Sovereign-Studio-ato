@@ -1,8 +1,9 @@
 /**
  * OpenHands Job Truth Card - Shows real OpenHands job status from runtime state
  * 
- * Displays: erkannt | startet | läuft | blockiert | Draft PR bereit
- * Only shows when a code/Draft PR task is detected in the chat.
+ * This is NOT a progress indicator. It shows the CURRENT runtime state as a
+ * status chain. The stages are not sequential steps but possible states.
+ * Only shows when a code/Draft PR task is detected.
  */
 
 import React from 'react';
@@ -61,60 +62,72 @@ const STAGE_CONFIG: Record<TruthCardStage, {
   'draft-pr-bereit': { label: 'Draft PR bereit', color: C.green, bgColor: C.green + '20', icon: '✓' },
 };
 
-function StageIndicator({ stage, isActive }: { stage: TruthCardStage; isActive: boolean }) {
-  const config = STAGE_CONFIG[stage];
+/**
+ * StatusChain - Displays runtime state as discrete states, NOT as progress.
+ * This is a status visualization, not a progress bar.
+ */
+function StatusChain({ currentStage }: { currentStage: TruthCardStage }) {
+  const stages: TruthCardStage[] = ['erkannt', 'startet', 'läuft', 'blockiert', 'draft-pr-bereit'];
+  const currentIndex = stages.indexOf(currentStage);
+  
   return (
     <div
       style={{
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
-        gap: 4,
-        opacity: isActive ? 1 : 0.4,
-        transition: 'opacity 0.3s',
+        gap: 6,
+        flexWrap: 'wrap',
+        marginBottom: 12,
       }}
+      role="list"
+      aria-label="OpenHands Job Statuskette"
     >
-      <div
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: '50%',
-          background: isActive ? config.bgColor : C.textMuted + '20',
-          border: `2px solid ${isActive ? config.color : C.textMuted + '40'}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 14,
-          transition: 'all 0.3s',
-        }}
-      >
-        {isActive ? config.icon : ''}
-      </div>
-      <span
-        style={{
-          fontSize: 10,
-          color: isActive ? config.color : C.textMuted,
-          fontWeight: isActive ? 600 : 400,
-        }}
-      >
-        {config.label}
-      </span>
+      {stages.map((stage, idx) => {
+        const config = STAGE_CONFIG[stage];
+        const isCurrent = stage === currentStage;
+        const isPast = idx < currentIndex;
+        
+        return (
+          <React.Fragment key={stage}>
+            {idx > 0 && (
+              <span
+                style={{
+                  color: isPast ? C.green : C.textMuted,
+                  fontSize: 10,
+                  marginBottom: 8,
+                }}
+              >
+                →
+              </span>
+            )}
+            <div
+              role="listitem"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '4px 8px',
+                borderRadius: 6,
+                background: isCurrent ? config.bgColor : 'transparent',
+                border: isCurrent ? `1px solid ${config.color}40` : '1px solid transparent',
+                opacity: isCurrent || isPast ? 1 : 0.4,
+              }}
+            >
+              <span style={{ fontSize: 12 }}>{config.icon}</span>
+              <span
+                style={{
+                  fontSize: 10,
+                  color: isCurrent ? config.color : isPast ? C.green : C.textMuted,
+                  fontWeight: isCurrent ? 600 : 400,
+                }}
+              >
+                {config.label}
+              </span>
+            </div>
+          </React.Fragment>
+        );
+      })}
     </div>
-  );
-}
-
-function StageConnector({ isActive }: { isActive: boolean }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        height: 2,
-        background: isActive ? C.green : C.textMuted + '30',
-        margin: '0 4px',
-        marginBottom: 22,
-        transition: 'background 0.3s',
-      }}
-    />
   );
 }
 
@@ -130,12 +143,8 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
 
   const stage: TruthCardStage = mapJobStatusToStage(job.status);
   const config = STAGE_CONFIG[stage];
-  
-  // Get stage order for progress indicator
-  const stages: TruthCardStage[] = ['erkannt', 'startet', 'läuft', 'blockiert', 'draft-pr-bereit'];
-  const currentIndex = stages.indexOf(stage);
 
-  // Check if this is a terminal state that should show action buttons
+  // Determine action buttons based on current state
   const isTerminalBlocked = stage === 'blockiert';
   const isDraftReady = stage === 'draft-pr-bereit';
   const isRunning = stage === 'läuft' || stage === 'startet';
@@ -159,7 +168,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 12,
+          marginBottom: 8,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -182,17 +191,10 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
         </div>
       </div>
 
-      {/* Stage Progress */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 14 }}>
-        {stages.slice(0, -1).map((s, idx) => (
-          <React.Fragment key={s}>
-            <StageIndicator stage={s} isActive={idx <= currentIndex} />
-            {idx < stages.length - 2 && <StageConnector isActive={idx < currentIndex} />}
-          </React.Fragment>
-        ))}
-      </div>
+      {/* Status Chain - NOT progress, but current state indicator */}
+      <StatusChain currentStage={stage} />
 
-      {/* Status Details */}
+      {/* Status Details from real runtime */}
       <div
         style={{
           fontSize: 11,
@@ -222,9 +224,9 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
         )}
       </div>
 
-      {/* Action Buttons - only show based on state */}
+      {/* Action Buttons - based on current runtime state */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {/* Show Start button when erkannt */}
+        {/* Start button when erkannt */}
         {stage === 'erkannt' && onStart && (
           <button
             type="button"
@@ -244,7 +246,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
           </button>
         )}
 
-        {/* Show Preview button when erkannt or startet */}
+        {/* Preview button when erkannt or startet */}
         {(stage === 'erkannt' || stage === 'startet') && onPreview && (
           <button
             type="button"
@@ -263,7 +265,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
           </button>
         )}
 
-        {/* Show Cancel button when running */}
+        {/* Cancel button when running */}
         {isRunning && onCancel && (
           <button
             type="button"
@@ -282,7 +284,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
           </button>
         )}
 
-        {/* Show Open Draft PR button when draft is ready */}
+        {/* Open Draft PR button when draft is ready */}
         {isDraftReady && job.draftPrUrl && onOpenDraftPr && (
           <button
             type="button"
@@ -302,7 +304,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
           </button>
         )}
 
-        {/* Show Retry for blocked */}
+        {/* Retry for blocked */}
         {isTerminalBlocked && onStart && (
           <button
             type="button"

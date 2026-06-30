@@ -4,35 +4,26 @@
  * Manages GitHub PAT (Personal Access Token) state for draft PR operations.
  * States: missing | requested | validating | ready | invalid
  * 
- * Security rules:
- * - Token never stored in chat history, logs, telemetry, or repo
- * - Only masked display
- * - Push/Draft PR blocked until ready state
+ * Security rules (STRICT):
+ * - Token NEVER stored in any state. Only maskedToken allowed.
+ * - Token never in chat history, logs, telemetry, or repo
+ * - Push/Draft PR blocked until ready state after REAL API validation
+ * - Validating state means actual GitHub API call in progress
  */
 
 export type GitHubAccessState = 'missing' | 'requested' | 'validating' | 'ready' | 'invalid';
 
 export interface GitHubAccessSnapshot {
   state: GitHubAccessState;
+  /** Masked token for display only. NEVER contains real token. */
   maskedToken: string | null;
   validatedAt: number | null;
   errorMessage: string | null;
-  lastValidatedToken: string | null;
-}
-
-export interface GitHubAccessValidationInput {
-  token: string;
-  repoUrl?: string;
-}
-
-export interface GitHubAccessValidationResult {
-  isValid: boolean;
-  maskedToken: string;
-  error?: string;
 }
 
 /**
  * Mask a GitHub token for display (show first 4 and last 4 characters)
+ * Input token is discarded immediately after masking.
  */
 export function maskGitHubToken(token: string): string {
   if (token.length <= 8) return '****';
@@ -42,8 +33,8 @@ export function maskGitHubToken(token: string): string {
 }
 
 /**
- * Validate GitHub PAT format (basic validation)
- * Real validation happens on API call
+ * Validate GitHub PAT format (basic format check only).
+ * Real validation requires actual GitHub API call.
  */
 export function validateGitHubTokenFormat(token: string): GitHubAccessValidationResult {
   const trimmed = token.trim();
@@ -63,6 +54,12 @@ export function validateGitHubTokenFormat(token: string): GitHubAccessValidation
   return { isValid: true, maskedToken: maskGitHubToken(trimmed) };
 }
 
+export interface GitHubAccessValidationResult {
+  isValid: boolean;
+  maskedToken: string;
+  error?: string;
+}
+
 /**
  * Create initial GitHub access snapshot
  */
@@ -72,59 +69,57 @@ export function createGitHubAccessSnapshot(): GitHubAccessSnapshot {
     maskedToken: null,
     validatedAt: null,
     errorMessage: null,
-    lastValidatedToken: null,
   };
 }
 
 /**
  * Transition to requested state
  */
-export function requestGitHubAccess(): GitHubAccessSnapshot {
+export function requestGitHubAccess(maskedToken: string): GitHubAccessSnapshot {
   return {
     state: 'requested',
-    maskedToken: null,
+    maskedToken,
     validatedAt: null,
     errorMessage: null,
-    lastValidatedToken: null,
   };
 }
 
 /**
- * Transition to validating state
+ * Transition to validating state.
+ * Takes already-masked token - real token must not enter this runtime.
  */
-export function startGitHubAccessValidation(token: string): GitHubAccessSnapshot {
+export function startGitHubAccessValidation(maskedToken: string): GitHubAccessSnapshot {
   return {
     state: 'validating',
-    maskedToken: maskGitHubToken(token),
+    maskedToken,
     validatedAt: null,
     errorMessage: null,
-    lastValidatedToken: token,
   };
 }
 
 /**
- * Transition to ready state after successful validation
+ * Transition to ready state after successful REAL GitHub API validation.
+ * Takes already-masked token.
  */
-export function completeGitHubAccessValidation(token: string): GitHubAccessSnapshot {
+export function completeGitHubAccessValidation(maskedToken: string): GitHubAccessSnapshot {
   return {
     state: 'ready',
-    maskedToken: maskGitHubToken(token),
+    maskedToken,
     validatedAt: Date.now(),
     errorMessage: null,
-    lastValidatedToken: token,
   };
 }
 
 /**
- * Transition to invalid state after failed validation
+ * Transition to invalid state after failed REAL GitHub API validation.
+ * Takes already-masked token.
  */
-export function failGitHubAccessValidation(token: string, error: string): GitHubAccessSnapshot {
+export function failGitHubAccessValidation(maskedToken: string, error: string): GitHubAccessSnapshot {
   return {
     state: 'invalid',
-    maskedToken: maskGitHubToken(token),
+    maskedToken,
     validatedAt: Date.now(),
     errorMessage: error,
-    lastValidatedToken: token,
   };
 }
 
