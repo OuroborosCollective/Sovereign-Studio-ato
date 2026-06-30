@@ -290,6 +290,54 @@ function extractErrorPayload(text: string): { message?: string; type?: string; c
   }
 }
 
+function createWorkerHttpDiagnostic(args: {
+  readonly response: Response;
+  readonly text: string;
+  readonly model: string;
+  readonly messageCount: number;
+}): { readonly diagnostic: DevChatWorkerDiagnostic; readonly errorMessage: string } {
+  const payload = extractErrorPayload(args.text);
+  const classification = classifyWorkerFailure({
+    status: args.response.status,
+    errorType: payload.type,
+    errorCode: payload.code,
+    bodySnippet: payload.snippet,
+  });
+  const diagnostic: DevChatWorkerDiagnostic = {
+    route: SOVEREIGN_WORKER_CHAT,
+    model: args.model,
+    messageCount: args.messageCount,
+    status: args.response.status,
+    statusText: args.response.statusText,
+    errorType: payload.type,
+    errorCode: payload.code,
+    bodySnippet: payload.snippet,
+    ...classification,
+  };
+  return { diagnostic, errorMessage: payload.message || `Worker Chat HTTP ${args.response.status}` };
+}
+
+function createWorkerRuntimeError(args: {
+  readonly message: string;
+  readonly diagnostic: DevChatWorkerDiagnostic;
+}): Error & { readonly diagnostic: DevChatWorkerDiagnostic; readonly status?: number; readonly statusText?: string; readonly bodySnippet?: string } {
+  const error = new Error(args.message) as Error & { diagnostic: DevChatWorkerDiagnostic; status?: number; statusText?: string; bodySnippet?: string };
+  error.diagnostic = args.diagnostic;
+  error.status = args.diagnostic.status;
+  error.statusText = args.diagnostic.statusText;
+  error.bodySnippet = args.diagnostic.bodySnippet;
+  return error;
+}
+
+function readWorkerContentFromText(text: string): string | undefined {
+  if (!text.trim()) return undefined;
+  try {
+    return readWorkerContent(JSON.parse(text));
+  } catch {
+    return readWorkerContent({ response: text });
+  }
+}
+
 function classifyWorkerFailure(args: {
   readonly status?: number;
   readonly errorType?: string;
@@ -516,11 +564,22 @@ export async function* streamDevChatWorkerReply(
     signal: request.signal,
   });
 
-  if (!response.ok) return;
-  if (!response.body) {
-    // Fallback: fetch non-streaming response and yield content at once
-    const fallback = await fetchDevChatWorkerReply(request);
-    if (fallback.ok && fallback.content) yield fallback.content;
+  if (!response.ok) {
+    const text = await response.text();
+    const { diagnostic, errorMessage } = createWorkerHttpDiagnostic({
+      response,
+      text,
+      model,
+      messageCount: messages.length,
+    });
+    throw createWorkerRuntimeError({ message: errorMessage, diagnostic });
+  }
+
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (!response.body || !contentType.includes('text/event-stream')) {
+    const text = await response.text();
+    const content = readWorkerContentFromText(text);
+    if (content) yield content;
     return;
   }
 
