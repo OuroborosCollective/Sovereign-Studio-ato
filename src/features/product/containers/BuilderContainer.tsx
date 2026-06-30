@@ -1173,26 +1173,16 @@ export function BuilderContainer({
   const [userScrolledAway, setUserScrolledAway] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
 
-  // ── Issue #428: Slash command popup
-  const [showSlashCommands, setShowSlashCommands] = useState(false);
-  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  // ── Slash command definitions (Issue #428)
   const slashCommands = [
-    { cmd: '/analyze', label: '✨ Analyze', action: 'analyze' },
-    { cmd: '/fix', label: '🐛 Fix', action: 'fix' },
-    { cmd: '/pr', label: '📝 Draft PR', action: 'pr' },
-    { cmd: '/repo', label: '📁 Load Repo', action: 'repo' },
-    { cmd: '/clear', label: '🗑️ Clear Chat', action: 'clear' },
+    { cmd: '/analyze', action: 'analyze' },
+    { cmd: '/fix', action: 'fix' },
+    { cmd: '/pr', action: 'pr' },
+    { cmd: '/repo', action: 'repo' },
+    { cmd: '/clear', action: 'clear' },
   ];
 
-  // ── Issue #429: Long-press state for bubble menu
-  const [longPressTarget, setLongPressTarget] = useState<string | null>(null);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-
-  // ── Issue #432: Share state
-  const [shareStatus, setShareStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
-
-  // ── Haptic feedback helper (Issue #429)
+  // ── Haptic feedback helper
   const triggerHaptic = useCallback((type: 'light' | 'medium' | 'heavy' = 'light') => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try {
@@ -1428,8 +1418,6 @@ export function BuilderContainer({
   };
 
   const _processSubmit = async (submittedText: string) => {
-    setShowSlashCommands(false);
-
     // ── Issue #428: Slash command handling
     if (submittedText.startsWith('/')) {
       const cmd = slashCommands.find(c => submittedText === c.cmd || submittedText.startsWith(c.cmd + ' '));
@@ -1709,8 +1697,6 @@ export function BuilderContainer({
                     onRetryWithMessage={(msg) => {
                       setWorkerBlocker(null);
                       addLog('info', 'Worker retry with message from card', 'router');
-                      setWishText(msg);
-                      // Trigger actual retry by calling handleSubmit with the message
                       retrySubmit(msg);
                     }}
                     onExplain={() => {
@@ -1821,16 +1807,13 @@ export function BuilderContainer({
           palStats={palStats}
           chatHistory={chatHistory}
           onExportChat={async () => {
-            setShareStatus('sharing');
             const exported = exportChatHistory(chatHistory, chatRepoSnapshot);
             const result = await shareChatExport(exported);
-            setShareStatus(result === 'shared' || result === 'copied' ? 'done' : 'error');
             if (result === 'copied') {
               appendChatLine({ role: 'assistant', text: 'Chat in Zwischenablage kopiert.' });
             } else if (result === 'failed') {
               appendChatLine({ role: 'assistant', text: 'Chat konnte nicht geteilt werden.' });
             }
-            setTimeout(() => setShareStatus('idle'), 3000);
           }}
         />
       )}
