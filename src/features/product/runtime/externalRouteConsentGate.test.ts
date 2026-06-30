@@ -21,6 +21,7 @@ vi.mock('./sovereignPackageFromRepoFiles', () => ({
 }));
 
 type ConsentRequiredResult = Extract<ExternalRouteConsentGateResult, { ok: false; consentRequired: true }>;
+type NonConsentFailureResult = Extract<ExternalRouteConsentGateResult, { ok: false; consentRequired: false }>;
 
 type MockPackage = Awaited<ReturnType<typeof buildSovereignPackageFromRepoFilesWithLlm>>;
 
@@ -48,6 +49,14 @@ function expectConsentRequired(result: ExternalRouteConsentGateResult): asserts 
 
   expect(result.consentRequired).toBe(true);
   if (!result.consentRequired) throw new Error('Expected consentRequired=true result.');
+}
+
+function expectNonConsentFailure(result: ExternalRouteConsentGateResult): asserts result is NonConsentFailureResult {
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error('Expected failure result, got ok result.');
+
+  expect(result.consentRequired).toBe(false);
+  if (result.consentRequired) throw new Error('Expected consentRequired=false result.');
 }
 
 function mockedBuilder() {
@@ -198,9 +207,7 @@ describe('externalRouteConsentGate', () => {
 
       const result = await buildSovereignPackageWithConsentGate(baseInput);
 
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('Expected error result, got ok result.');
-      expect(result.consentRequired).toBe(false);
+      expectNonConsentFailure(result);
       expect(result.error).toBe('Network error');
     });
 
