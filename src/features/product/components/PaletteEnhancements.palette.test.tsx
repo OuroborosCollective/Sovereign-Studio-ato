@@ -29,10 +29,10 @@ describe('Palette Accessibility Enhancements', () => {
       expect(menuButton).toHaveAttribute('title', 'Menü');
     });
 
-    it('Runtime RT button has title and aria-label', () => {
+    it('Runtime RT button keeps visible label in accessible name', () => {
       render(<BuilderContainer {...baseProps} />);
-      const rtButton = screen.getByRole('button', { name: /Runtime Quelle/i });
-      expect(rtButton).toHaveAttribute('aria-label', 'Runtime Quelle');
+      const rtButton = screen.getByRole('button', { name: /RT.*Runtime Quelle/i });
+      expect(rtButton).toHaveAttribute('aria-label', 'RT – Runtime Quelle');
       expect(rtButton).toHaveAttribute('title', 'Runtime Quelle');
     });
 
