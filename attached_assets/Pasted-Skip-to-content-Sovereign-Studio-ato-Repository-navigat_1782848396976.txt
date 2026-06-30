@@ -1,0 +1,287 @@
+Skip to content
+Sovereign-Studio-ato
+Repository navigation
+Code
+Issues
+2
+ (2)
+Pull requests
+Agents
+Actions
+Projects
+Replit-inspired agent work timeline, secure prompts, and result cards
+ #445
+Closed
+Labels
+runtime
+ux
+Description
+@OuroborosCollective
+OuroborosCollective
+opened 45 minutes ago
+Owner
+Ziel
+Aus dem Replit-Vergleichsvideo ableiten, wie Sovereign verständlicher, vertrauenswürdiger und Android-tauglicher arbeiten soll, ohne zum Dashboard oder zweiten Control Shell zu werden.
+
+Harte Produktregel bleibt:
+
+Baue niemals eine UI, die Wahrheit erzeugt. Baue eine Runtime, die Wahrheit erzeugt. Die UI darf diese Wahrheit nur anzeigen.
+
+Beobachtung aus Replit
+Replit wirkt nicht nur wegen Design stärker, sondern weil Agent-Arbeit als sichtbare, kompakte Ereigniskette erscheint:
+
+Planning ...
+Worked for ...
+Visited URL
+Executing code
+actions grouped/collapsible
+Checkpoint made
+Presented output
+Publishing/Preview/Result cards
+Der Nutzer sieht dadurch: Der Agent hat einen echten Auftrag, macht echte Schritte, kann gestoppt werden und liefert ein sichtbares Ergebnis.
+
+Aktuelles Sovereign-Problem
+Bei Sovereign kann der Chat Arbeit behaupten, obwohl kein belegter Runtime-State existiert:
+
+OpenHands arbeitet ohne echte jobId
+Branch erstellt ohne verifizierten branchName
+Commit erstellt ohne commitSha
+Draft PR erstellt ohne draftPrUrl
+Token/PAT kann in normaler Chat-Eingabe landen
+wichtige Wahrheit liegt zu stark in technischen Tabs statt direkt im Chat-Verlauf
+Das erzeugt User-Vertrauensverlust: Der Nutzer sieht viel Text, aber keine beweisbare Arbeit.
+
+Gewünschtes Produktverhalten
+Chat bleibt die Hauptfläche. Aber jeder Code-/Build-/PR-Auftrag erzeugt sofort eine sichtbare Work-Timeline im Chat.
+
+Beispiel:
+
+Sovereign arbeitet
+
+✓ Auftrag erkannt
+✓ Repo geladen: OuroborosCollective/Sovereign-Studio-ato
+→ GitHub-Zugang benötigt
+□ Executor starten
+□ Branch erstellen
+□ Tests laufen
+□ Draft PR erstellen
+Nach Executor-Start:
+
+Executor läuft
+Job-ID: ...
+Branch: noch nicht erstellt
+Letztes Ereignis: Dateien werden analysiert
+PR: noch nicht erstellt
+Nach Erfolg:
+
+Draft PR bereit
+Branch: feature/...
+Commit: abc123
+PR: #...
+Checks: laufen / grün / rot
+
+[PR öffnen] [Diff ansehen] [Checks beobachten]
+Wenn kein PR existiert, darf keine Erfolgskarte erscheinen.
+
+Replit-inspirierte UI-Patterns für Sovereign
+1. AgentWorkTimeline statt Log-Wand
+Kompakte Timeline im Chat:
+
+Statuszeilen kurz halten
+Details einklappbar gruppieren: 4 Aktionen, 8 Aktionen
+keine harte Prozentanzeige
+keine Fake-Erfolge
+jeder Status aus Runtime-State
+2. AgentQuestionCard
+Rückfragen als Karte, nicht als Textwand.
+
+Beispiel:
+
+Sovereign braucht eine Entscheidung
+
+Was soll passieren?
+○ Bestehenden Code ändern
+○ Neues Feature als Draft PR bauen
+○ Nur Analyse ohne Änderung
+
+[An Agent senden]
+3. SecureInputGuard
+Wenn Nutzer ein Secret/PAT/Token in die normale Chatbox tippt, blockieren:
+
+Sicherer Zugang erkannt.
+Diese Eingabe wurde nicht als Chat gespeichert.
+Bitte nutze das sichere Zugangsfeld.
+
+[PAT sicher eingeben]
+Token darf niemals in Chat-History, Logs, Telemetry, Worker-Prompt, Pattern Memory oder Repo landen.
+
+4. AgentResultCard
+Echte Outputs als Karte:
+
+Ergebnis bereit
+Typ: Draft PR
+PR: #444
+Branch: ...
+Checks: grün
+
+[Öffnen]
+5. Tool Launcher statt technische Tab-Leiste
+Nicht dauerhaft alle Diagnoseflächen zeigen. Android-first Vorschlag:
+
+Hauptnav:
+
+Chat | Preview | Work | Publish | +
++ öffnet Tool Launcher:
+
+Repo
+Files
+Diff
+GitHub Access
+Executor
+Runtime Logs
+Health
+Memory
+Coverage
+Settings
+Technische Flächen bleiben erreichbar, aber nicht als Hauptproduktoberfläche.
+
+Vorgeschlagene Dateien
+src/features/product/runtime/agentWorkRuntime.ts
+src/features/product/runtime/agentWorkRuntime.test.ts
+src/features/product/runtime/chatClaimGuard.ts
+src/features/product/runtime/chatClaimGuard.test.ts
+src/features/product/runtime/secureInputGuard.ts
+src/features/product/runtime/secureInputGuard.test.ts
+src/features/product/components/AgentWorkTimeline.tsx
+src/features/product/components/AgentQuestionCard.tsx
+src/features/product/components/AgentResultCard.tsx
+src/features/product/components/SovereignToolLauncher.tsx
+AgentWorkRuntime State Machine
+type AgentWorkState =
+  | 'idle'
+  | 'intent_detected'
+  | 'question_required'
+  | 'access_required'
+  | 'access_validating'
+  | 'access_ready'
+  | 'executor_starting'
+  | 'executor_running'
+  | 'branch_created'
+  | 'commit_created'
+  | 'checks_running'
+  | 'draft_pr_ready'
+  | 'blocked'
+  | 'failed';
+Pflichtfelder:
+
+interface AgentWorkSnapshot {
+  traceId: string;
+  state: AgentWorkState;
+  repoFullName: string | null;
+  baseBranch: string | null;
+  executorType: 'openhands' | 'cloudflare-worker' | 'github-app' | 'local' | null;
+  jobId: string | null;
+  branchName: string | null;
+  commitSha: string | null;
+  draftPrUrl: string | null;
+  lastVerifiedAt: number | null;
+  blockerReason: string | null;
+  events: AgentWorkEvent[];
+}
+ChatClaimGuard Invarianten
+Antwort enthält PR erstellt oder Draft PR bereit -> draftPrUrl muss existieren.
+Antwort enthält Branch erstellt -> branchName muss existieren und verifiziert sein.
+Antwort enthält Commit erstellt -> commitSha muss existieren.
+Antwort enthält Executor läuft oder OpenHands arbeitet -> jobId und executor_running oder executor_starting müssen existieren.
+Wenn Invariante fehlt, darf die Antwort nicht erscheinen. Stattdessen ehrlicher Runtime-Text:
+Das kann ich noch nicht bestätigen. Aktueller Runtime-State: kein laufender Job.
+Acceptance
+Jeder Code-/Draft-PR-Auftrag erzeugt sofort eine AgentWorkTimeline im Chat.
+Keine Arbeitsbehauptung ohne belegten Runtime-State.
+Secret/PAT in normaler Chat-Eingabe wird erkannt und blockiert.
+PAT-Eingabe läuft nur über sicheres Modal/Karte.
+Rückfragen erscheinen als AgentQuestionCard, nicht als lange Textwand.
+Ergebnisse erscheinen als AgentResultCard mit echten Links/IDs.
+Technische Tools sind über Launcher erreichbar, nicht als dominante Tab-Leiste.
+Android Portrait bleibt lesbar: keine überladene Konsole, keine kryptischen Haupttabs.
+Tests decken Runtime-State, Claim-Guard und Secret-Guard ab.
+Keine harten Prozent-Fortschritte.
+Keine Fake-Erfolge.
+Keine Mocks im Live-Pfad.
+Activity
+
+OuroborosCollective
+added 
+runtime
+ 
+ux
+ 45 minutes ago
+OuroborosCollective commented 29 minutes ago
+@OuroborosCollective
+OuroborosCollective
+29 minutes ago – with ChatGPT Codex Connector
+Owner
+Author
+Architecture note:
+
+src/features/product/containers/BuilderContainer.tsx is the central Sovereign work surface.
+
+New feature UI should be added as components under the existing product surface instead of creating another main shell.
+
+Runtime decisions should stay in src/features/product/runtime/**; UI components should display that state.
+
+OuroborosCollective commented 24 minutes ago
+@OuroborosCollective
+OuroborosCollective
+24 minutes ago – with ChatGPT Codex Connector
+Owner
+Author
+Design note:
+
+Sovereign should stay calm and chat-first.
+
+The main surface is a friendly chat workbench with a quiet tool launcher. Extra panels, logs, memory, health, runtime and file views are inspection tools, not the default room.
+
+Do not create another main shell or a busy dashboard. Keep one central work surface, small status cues, compact lamps, and runtime-backed cards only when useful.
+
+
+OuroborosCollective
+closed this as completedin aabd897now
+Add a comment
+new Comment
+Markdown input: edit mode selected.
+Write
+Preview
+Use Markdown to format your comment
+Metadata
+Assignees
+No one - 
+Labels
+runtime
+ux
+Projects
+No projects
+Milestone
+No milestone
+Relationships
+None yet
+Development
+ for this issue or link a pull request.
+NotificationsCustomize
+You're receiving notifications because you're subscribed to this thread.
+
+Participants
+@OuroborosCollective
+Issue actions
+Footer
+© 2026 GitHub, Inc.
+Footer navigation
+Terms
+Privacy
+Security
+Status
+Community
+Docs
+Contact
+Manage cookies
+Do not share my personal information
