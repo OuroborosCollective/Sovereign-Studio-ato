@@ -76,7 +76,7 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
     togetherApiKey: allowedUserKeys?.together,
     openrouterApiKey: allowedUserKeys?.openrouter,
     geminiApiKey: allowedUserKeys?.gemini,
-    allowExternalNoKey: input.allowExternalNoKey ?? true,
+    allowExternalNoKey: input.allowExternalNoKey ?? false,
     allowOptInRoutes: false,
   }, {
     onEvent: (event) => {
@@ -146,7 +146,7 @@ export function buildSovereignLlmPrompt(input: SovereignLlmRuntimeInput): string
     repoPaths: input.repoPaths,
     selectedFilePath: input.selectedFilePath,
     codeContext: input.previousPreview,
-    allowExternalNoKey: input.allowExternalNoKey ?? true,
+    allowExternalNoKey: input.allowExternalNoKey ?? false,
     memoryContext: input.memoryContext,
     runtimeEvents: input.runtimeEvents,
   });

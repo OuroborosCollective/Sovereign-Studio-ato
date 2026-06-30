@@ -31,6 +31,7 @@ export interface BuildSovereignPackageFromRepoFilesInput {
   palBlockers?: string[];
   automationMode?: PalAutomationMode;
   allowUserKeyRoutes?: boolean;
+  allowExternalNoKey?: boolean;
   userKeys?: {
     gemini?: string;
     groq?: string;
@@ -283,7 +284,7 @@ export async function buildSovereignPackageFromRepoFilesWithLlm(
     previousPreview: input.previousPreview,
     memoryContext: input.memoryContext ?? [],
     runtimeEvents: [...(input.runtimeEvents ?? []), palRuntimeEvent(palDecision)],
-    allowExternalNoKey: true,
+    allowExternalNoKey: input.allowExternalNoKey ?? false,
     allowUserKeyRoutes: input.allowUserKeyRoutes ?? false,
     userKeys: runtimeUserKeys(input),
     cards: input.cards ?? starterCards(),
