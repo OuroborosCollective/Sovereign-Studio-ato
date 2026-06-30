@@ -157,6 +157,33 @@ describe('agentWorkRuntime', () => {
     expect(snap.draftPrUrl).toBe('https://github.com/o/r/pull/1');
   });
 
+  it('allows a verified executor result to become draft_pr_ready without inventing branch or commit truth', () => {
+    let snap = createIdleSnapshot(TRACE);
+    snap = transitionIntentDetected(snap, 'o/r', 'main');
+    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorRunning(snap, 'job-verified');
+
+    snap = transitionDraftPrReady(snap, 'https://github.com/o/r/pull/7');
+
+    expect(snap.state).toBe('draft_pr_ready');
+    expect(snap.jobId).toBe('job-verified');
+    expect(snap.branchName).toBeNull();
+    expect(snap.commitSha).toBeNull();
+    expect(snap.draftPrUrl).toBe('https://github.com/o/r/pull/7');
+    expect(snap.events.at(-1)?.label).toBe('Draft PR bereit');
+  });
+
+  it('still blocks draft_pr_ready without a valid URL or active executor truth', () => {
+    const idle = createIdleSnapshot(TRACE);
+    expect(transitionDraftPrReady(idle, 'https://github.com/o/r/pull/8').state).toBe('idle');
+
+    let snap = transitionIntentDetected(idle, 'o/r', 'main');
+    snap = transitionExecutorStarting(snap, 'openhands');
+    expect(transitionDraftPrReady(snap, 'https://github.com/o/r/pull/8').state).toBe('executor_starting');
+    snap = transitionExecutorRunning(snap, 'job-verified');
+    expect(transitionDraftPrReady(snap, 'not-a-url').state).toBe('executor_running');
+  });
+
   it('accumulates events through full happy path', () => {
     let snap = createIdleSnapshot(TRACE);
     snap = transitionIntentDetected(snap, 'o/r', 'main');
