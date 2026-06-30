@@ -35,6 +35,10 @@ import {
   type DevChatWorkerMessage,
 } from '../runtime/devChatWorkerBridge';
 import { OpenHandsOperatorBriefingPanel } from '../components/OpenHandsOperatorBriefingPanel';
+import { WorkerBlockerCard, WorkerDegradedBanner } from '../components/WorkerBlockerCard';
+import { DraftPrCard } from '../components/DraftPrCard';
+import { ChatMarkdown } from '../components/ChatMarkdown';
+import { exportChatHistory, shareChatExport } from '../runtime/chatExportRuntime';
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -628,12 +632,13 @@ function TopBar({
 
 // Collapsible status/log panel
 function StatusPanel({
-  open, logs, signals, modules,
+  open, logs, signals, modules, onClearLogs,
 }: {
   open: boolean;
   logs: Array<{ ts: string; level: string; msg: string; tabId: string }>;
   signals: Record<string, SignalType>;
   modules: ModuleCfg[];
+  onClearLogs?: () => void;
 }) {
   const [tab, setTab] = useState<'logs'|'signals'>('logs');
   if (!open) return null;
@@ -649,9 +654,30 @@ function StatusPanel({
             {t.toUpperCase()}
           </button>
         ))}
+        {/* Clear logs button */}
+        {tab === 'logs' && logs.length > 0 && (
+          <button
+            type="button"
+            onClick={onClearLogs}
+            title="Logs löschen"
+            style={{
+              position: 'absolute',
+              right: 8,
+              height: 28,
+              padding: '0 8px',
+              background: 'transparent',
+              border: 'none',
+              color: C.textMuted,
+              fontSize: 9,
+              cursor: 'pointer',
+            }}
+          >
+            ✕
+          </button>
+        )}
       </div>
       {/* Pane */}
-      <div style={{ height: 88, overflowY: 'auto', padding: '4px 10px' }}>
+      <div style={{ height: 88, overflowY: 'auto', padding: '4px 10px', position: 'relative' }}>
         {tab === 'logs' && [...logs].reverse().slice(0,25).map((e, i) => (
           <div key={i} style={{ display: 'flex', gap: 6, fontFamily: 'monospace', fontSize: 9.5, lineHeight: 1.65 }}>
             <span style={{ color: C.textMuted, flexShrink: 0 }}>{e.ts}</span>
@@ -721,26 +747,91 @@ function ThoughtBubble({ text }: { text: string }) {
   );
 }
 
-// Bubble (verbatim v3)
-function Bubble({ msg, now }: { msg: ChatLine; now: number }) {
+// Bubble (verbatim v3 + Issue #427 markdown + Issue #429 long-press)
+function Bubble({ msg, now, onLongPress }: { msg: ChatLine; now: number; onLongPress?: (text: string) => void }) {
   const isUser = msg.role === 'user';
+  const [showMenu, setShowMenu] = useState(false);
+  
+  // ── Issue #429: Haptic feedback helper
+  const triggerHaptic = useCallback((type: 'light' | 'medium' | 'heavy' = 'light') => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        const duration = type === 'light' ? 10 : type === 'medium' ? 25 : 50;
+        navigator.vibrate(duration);
+      } catch {
+        // Haptics not supported, silently fail
+      }
+    }
+  }, []);
+  
   if (msg.role === 'system') return (
     <div style={{ padding: '4px 16px', textAlign: 'center' }}>
       <span style={{ display: 'inline-block', fontFamily: 'monospace', fontSize: 10, padding: '3px 12px', borderRadius: 20, background: C.surface, border: `1px solid ${C.border}`, color: C.textMuted }}>{msg.text}</span>
     </div>
   );
   if (msg.role === 'thought') return <ThoughtBubble text={msg.text} />;
+  
+  // ── Issue #429: Long-press for copy/follow-up
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setShowMenu(true);
+    triggerHaptic('light');
+  };
+  
+  const handleCopy = () => {
+    navigator.clipboard.writeText(msg.text);
+    setShowMenu(false);
+    triggerHaptic('light');
+  };
+  
+  const handleFollowUp = () => {
+    onLongPress?.(msg.text);
+    setShowMenu(false);
+  };
+  
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '2px 12px', flexDirection: isUser ? 'row-reverse' : 'row' }}>
+    <div 
+      style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '2px 12px', flexDirection: isUser ? 'row-reverse' : 'row' }}
+      onContextMenu={handleContextMenu}
+    >
       {!isUser && (
         <div style={{ width: 30, height: 30, borderRadius: 10, flexShrink: 0, background: C.surface, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: C.textSub, marginBottom: 2 }}>⬡</div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '82%', alignItems: isUser ? 'flex-end' : 'flex-start', gap: 2 }}>
         <FileBadge path={msg.path} file={msg.file} />
-        <div style={{ padding: '11px 14px', background: isUser ? C.userBg : C.asstBg, borderRadius: isUser ? '18px 18px 4px 18px' : '4px 18px 18px 18px', border: `1px solid ${isUser ? '#243c5a' : C.border}`, color: C.text, fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
-          {msg.text}
+        <div style={{ position: 'relative' }}>
+          {/* ── Issue #427: Markdown rendering for assistant bubbles */}
+          <div style={{ padding: '11px 14px', background: isUser ? C.userBg : C.asstBg, borderRadius: isUser ? '18px 18px 4px 18px' : '4px 18px 18px 18px', border: `1px solid ${isUser ? '#243c5a' : C.border}`, color: C.text, fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
+            {isUser ? msg.text : <ChatMarkdown content={msg.text} />}
+          </div>
+          {/* ── Issue #429: Long-press menu */}
+          {showMenu && (
+            <div 
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: isUser ? 'auto' : 0,
+                right: isUser ? 0 : 'auto',
+                marginTop: 4,
+                background: C.surface,
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: 4,
+                zIndex: 10,
+                minWidth: 120,
+              }}
+              onClick={() => setShowMenu(false)}
+            >
+              <button type="button" onClick={handleCopy} style={{ width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', color: C.text, fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 6 }}>
+                📋 Kopieren
+              </button>
+              <button type="button" onClick={handleFollowUp} style={{ width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', color: C.sky, fontSize: 13, cursor: 'pointer', textAlign: 'left', borderRadius: 6 }}>
+                💬 Zitieren
+              </button>
+            </div>
+          )}
         </div>
-        <span style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>{fmtTime(now)}</span>
+        <span style={{ fontFamily: 'monospace', fontSize: 9, color: C.textMuted }}>{fmtTime(msg.createdAt || now)}</span>
       </div>
     </div>
   );
@@ -905,12 +996,15 @@ function RuntimeSheet({ sources, current, onClose }: { sources: Array<{ id: stri
 function SideDrawer({
   onClose, onGenerateIdeas, onGenerateErrorWorkflow, onPublishDraftPr,
   isPublishing, chatRepoSnapshot, onCancelOpenHands, openhandsIsRunning, palStats,
+  chatHistory, onExportChat,
 }: {
   onClose: () => void; onGenerateIdeas: () => void; onGenerateErrorWorkflow: () => void;
   onPublishDraftPr: () => void; isPublishing: boolean;
   chatRepoSnapshot: DevChatRepoSnapshot | null;
   onCancelOpenHands?: () => void; openhandsIsRunning?: boolean;
   palStats: { total: number; savings: number } | null;
+  chatHistory: ChatLine[];
+  onExportChat?: () => void;
 }) {
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 90, display: 'flex' }}>
@@ -952,6 +1046,12 @@ function SideDrawer({
 
         {/* Actions */}
         <div style={{ flex: 1, padding: '12px 12px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* ── Issue #432: Chat export button */}
+          {onExportChat && (
+            <button type="button" onClick={() => { onExportChat(); onClose(); }} style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: `${C.sky}10`, border: `1px solid ${C.sky}30`, color: C.sky, fontFamily: 'monospace', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>📤</span> Chat teilen
+            </button>
+          )}
           <button type="button" onClick={() => { onGenerateIdeas(); onClose(); }} data-role={SOVEREIGN_ACTION_ANALYZE_MISSION.dataRole} data-testid={SOVEREIGN_ACTION_ANALYZE_MISSION.testId} aria-label={SOVEREIGN_ACTION_ANALYZE_MISSION.ariaLabel} style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: C.bg, border: `1px solid ${C.border}`, color: C.text, fontFamily: 'monospace', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>🔍 Interne Prüfung</button>
           <button type="button" onClick={() => { onGenerateErrorWorkflow(); onClose(); }} style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: 'rgba(251,191,36,0.06)', border: `1px solid ${C.amber}33`, color: C.amber, fontFamily: 'monospace', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}>⚠ Fehleranalyse</button>
           {openhandsIsRunning && onCancelOpenHands && (
@@ -1089,6 +1189,43 @@ export function BuilderContainer({
   const [panelOpen, setPanelOpen]   = useState(false);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [statusLogs, setStatusLogs] = useState<Array<{ ts: string; level: string; msg: string; tabId: string }>>([]);
+
+  // ── Issue #425: Auto-scroll lock and jump badge
+  const [userScrolledAway, setUserScrolledAway] = useState(false);
+  const [unseenCount, setUnseenCount] = useState(0);
+
+  // ── Issue #428: Slash command popup
+  const [showSlashCommands, setShowSlashCommands] = useState(false);
+  const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const slashCommands = [
+    { cmd: '/analyze', label: '✨ Analyze', action: 'analyze' },
+    { cmd: '/fix', label: '🐛 Fix', action: 'fix' },
+    { cmd: '/pr', label: '📝 Draft PR', action: 'pr' },
+    { cmd: '/repo', label: '📁 Load Repo', action: 'repo' },
+    { cmd: '/clear', label: '🗑️ Clear Chat', action: 'clear' },
+  ];
+
+  // ── Issue #429: Long-press state for bubble menu
+  const [longPressTarget, setLongPressTarget] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Issue #430: Repo tree explorer
+  const [showRepoTree, setShowRepoTree] = useState(false);
+
+  // ── Issue #432: Share state
+  const [shareStatus, setShareStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
+
+  // ── Haptic feedback helper (Issue #429)
+  const triggerHaptic = useCallback((type: 'light' | 'medium' | 'heavy' = 'light') => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        const duration = type === 'light' ? 10 : type === 'medium' ? 25 : 50;
+        navigator.vibrate(duration);
+      } catch {
+        // Haptics not supported, silently fail
+      }
+    }
+  }, []);
 
   const addLog = useCallback((level: string, msg: string, tabId = 'sys') => {
     const ts = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1294,16 +1431,59 @@ export function BuilderContainer({
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing) return;
 
     setWishText('');
+    setShowSlashCommands(false);
+
+    // ── Issue #428: Slash command handling
+    if (submittedText.startsWith('/')) {
+      const cmd = slashCommands.find(c => submittedText === c.cmd || submittedText.startsWith(c.cmd + ' '));
+      if (cmd) {
+        if (cmd.action === 'analyze') {
+          triggerHaptic('medium');
+          onGenerateIdeas();
+        } else if (cmd.action === 'fix') {
+          triggerHaptic('medium');
+          onGenerateErrorWorkflow();
+        } else if (cmd.action === 'pr') {
+          triggerHaptic('medium');
+          onPublishDraftPr();
+        } else if (cmd.action === 'repo') {
+          // Extract URL after /repo
+          const urlMatch = submittedText.match(/^\/repo\s+(.+)$/);
+          if (urlMatch) {
+            setWishText(urlMatch[1].trim());
+            triggerHaptic('light');
+          } else {
+            appendChatLine({ role: 'assistant', text: 'Verwendung: /repo <GitHub-URL>' });
+          }
+        } else if (cmd.action === 'clear') {
+          // Clear chat lines but NOT repo, token, remote memory
+          setChatHistory([]);
+          triggerHaptic('light');
+          appendChatLine({ role: 'assistant', text: 'Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.' });
+        }
+        return;
+      } else {
+        // Unknown command
+        appendChatLine({ role: 'assistant', text: `Unbekannter Befehl. Verfügbare: ${slashCommands.map(c => c.cmd).join(', ')}` });
+        return;
+      }
+    }
+
+    // Haptic feedback for send (Issue #429)
+    triggerHaptic('light');
+
     appendChatLine({ role: 'user', text: submittedText });
 
     const parsedRepo = parseDevChatGithubUrl(submittedText);
     if (parsedRepo) {
       setRepoLoading(true);
       setChatRepoError(null);
+      triggerHaptic('medium');
       const result = await fetchDevChatRepoTree(parsedRepo);
       setRepoLoading(false);
       if (result.ok && result.snapshot) {
         setChatRepo(result.snapshot);
+        triggerHaptic('medium');
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
         appendChatLine({
           role: 'assistant',
@@ -1318,6 +1498,7 @@ export function BuilderContainer({
       }
       const errorText = result.error ?? 'Repo konnte nicht geladen werden.';
       setChatRepoError(errorText);
+      triggerHaptic('heavy');
       appendChatLine({ role: 'assistant', text: `Repo-Laden blockiert: ${errorText}` });
       return;
     }
@@ -1477,22 +1658,42 @@ export function BuilderContainer({
       />
 
       {/* COLLAPSIBLE STATUS/LOG PANEL */}
-      <StatusPanel open={panelOpen} logs={statusLogs} signals={signals} modules={MODULES} />
+      <StatusPanel open={panelOpen} logs={statusLogs} signals={signals} modules={MODULES} onClearLogs={() => setStatusLogs([])} />
+
+      {/* ── Issue #426: Worker Degraded Banner */}
+      {workerBlocker && (
+        <WorkerDegradedBanner
+          blocker={workerBlocker}
+          onRetry={() => {
+            setWorkerBlocker(null);
+            // Retry last request
+            if (streamingText !== null || chatHistory.length > 0) {
+              // Retry is handled by clearing the blocker
+              addLog('info', 'Worker retry triggered', 'router');
+            }
+          }}
+        />
+      )}
 
       {/* MAIN CONTENT */}
       {isChat ? (
-        /* ── CHAT VIEW — v3 verbatim layout */
+        /* ── CHAT VIEW with auto-scroll lock (Issue #425) */
         <div
           ref={scrollRef}
           data-testid="sovereign-chat-body-window"
           aria-label="Sovereign Chat Verlauf"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            setUserScrolledAway(!isNearBottom);
+          }}
           style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', background: C.bg, display: 'flex', flexDirection: 'column' }}
         >
           {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0
             ? <WelcomeScreen onIdea={(opt) => setWishText((c) => appendOption(c, opt))} />
             : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 0 8px' }}>
-                {chatLines.map((line) => <Bubble key={line.id} msg={line} now={nowRef.current} />)}
+                {chatLines.map((line) => <Bubble key={line.id} msg={line} now={nowRef.current} onLongPress={(text) => setWishText(`"${text.slice(0, 100)}…"\n\n`)} />)}
                 {streamingText !== null && (
                   <Bubble
                     msg={{ id: 'stream', role: 'assistant', text: streamingText, createdAt: Date.now() }}
@@ -1501,6 +1702,79 @@ export function BuilderContainer({
                 )}
                 {agentStatus === 'thinking' && streamingText === null && <ThinkingDots />}
                 <OutcomeHints hints={outcomeHints} />
+                
+                {/* ── Issue #426: Worker Blocker Card */}
+                {workerBlocker && (
+                  <WorkerBlockerCard
+                    blocker={workerBlocker}
+                    onRetry={() => {
+                      setWorkerBlocker(null);
+                      addLog('info', 'Worker retry from card', 'router');
+                    }}
+                    onExplain={() => {
+                      const explanation = explainDevChatWorkerDiagnostic(workerBlocker.diagnostic);
+                      appendChatLine({ role: 'assistant', text: explanation });
+                    }}
+                    onOpenHandsInstead={(msg) => {
+                      startAgentFromText(msg);
+                    }}
+                    userMessage={chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : undefined}
+                  />
+                )}
+                
+                {/* ── Issue #431: Draft PR Card */}
+                {openhandsJob?.draftPrUrl && (
+                  <DraftPrCard
+                    url={openhandsJob.draftPrUrl}
+                    changedFiles={openhandsJob.changedFiles || []}
+                    onOpenBrowser={() => window.open(openhandsJob.draftPrUrl, '_blank')}
+                    onDiscussInChat={() => setWishText(`Erkläre mir die Änderungen im Draft PR.`)}
+                  />
+                )}
+                
+                {/* ── Issue #425: Scroll-away indicator */}
+                {userScrolledAway && (
+                  <div style={{ 
+                    textAlign: 'center', 
+                    fontSize: 11, 
+                    color: C.textMuted,
+                    padding: '4px 16px',
+                    fontFamily: 'monospace',
+                  }}>
+                    ↑ Nach oben gescrollt · Neue Nachrichten unten
+                  </div>
+                )}
+                
+                {/* ── Issue #425: Jump Badge */}
+                {unseenCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+                      setUnseenCount(0);
+                      setUserScrolledAway(false);
+                    }}
+                    style={{
+                      position: 'sticky',
+                      bottom: 16,
+                      alignSelf: 'center',
+                      padding: '8px 16px',
+                      borderRadius: 20,
+                      background: C.accent,
+                      color: C.bg,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    ↓ {unseenCount} Neue Nachricht{unseenCount > 1 ? 'en' : ''}
+                  </button>
+                )}
+                
                 <div style={{ height: 8 }} />
               </div>
             )
@@ -1543,6 +1817,19 @@ export function BuilderContainer({
           onCancelOpenHands={onCancelOpenHands}
           openhandsIsRunning={openhandsIsRunning}
           palStats={palStats}
+          chatHistory={chatHistory}
+          onExportChat={async () => {
+            setShareStatus('sharing');
+            const exported = exportChatHistory(chatHistory, chatRepoSnapshot);
+            const result = await shareChatExport(exported);
+            setShareStatus(result === 'shared' || result === 'copied' ? 'done' : 'error');
+            if (result === 'copied') {
+              appendChatLine({ role: 'assistant', text: 'Chat in Zwischenablage kopiert.' });
+            } else if (result === 'failed') {
+              appendChatLine({ role: 'assistant', text: 'Chat konnte nicht geteilt werden.' });
+            }
+            setTimeout(() => setShareStatus('idle'), 3000);
+          }}
         />
       )}
       {showOpenHandsBriefing && openhandsConfig && (
