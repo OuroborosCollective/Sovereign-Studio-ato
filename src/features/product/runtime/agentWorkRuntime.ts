@@ -180,9 +180,10 @@ export function transitionDraftPrReady(
   snapshot: AgentWorkSnapshot,
   draftPrUrl: string,
 ): AgentWorkSnapshot {
-  const allowed: AgentWorkState[] = ['commit_created', 'checks_running'];
+  const allowed: AgentWorkState[] = ['executor_running', 'branch_created', 'commit_created', 'checks_running'];
   if (!allowed.includes(snapshot.state)) return snapshot;
   if (!draftPrUrl || !draftPrUrl.startsWith('http')) return snapshot;
+  if (snapshot.state === 'executor_running' && !snapshot.jobId) return snapshot;
   return appendEvent(
     { ...snapshot, draftPrUrl, lastVerifiedAt: Date.now() },
     'draft_pr_ready',
