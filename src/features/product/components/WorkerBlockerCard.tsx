@@ -196,6 +196,9 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
 };
 
 // Degraded banner for TopBar
+
+export default WorkerBlockerCard;
+
 export interface WorkerDegradedBannerProps {
   blocker: {
     readonly message: string;
@@ -203,21 +206,36 @@ export interface WorkerDegradedBannerProps {
     readonly health?: DevChatWorkerHealthResult;
     readonly createdAt: number;
   };
-  onRetry: () => void;
+  /** Legacy callback - clears blocker only */
+  onRetry?: () => void;
+  /** Real retry callback - triggers actual runtime retry */
+  onRetryWithMessage?: (message: string) => void;
+  /** Last user message to retry */
+  userMessage?: string;
 }
 
 export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
   blocker,
   onRetry,
+  onRetryWithMessage,
+  userMessage,
 }) => {
   const scope = formatScope(blocker.diagnostic);
-  
+
+  const handleClick = useCallback(() => {
+    if (onRetryWithMessage && userMessage) {
+      onRetryWithMessage(userMessage);
+    } else if (onRetry) {
+      onRetry();
+    }
+  }, [onRetry, onRetryWithMessage, userMessage]);
+
   return (
     <div
       role="status"
       aria-live="polite"
       data-testid="worker-degraded-banner"
-      onClick={onRetry}
+      onClick={handleClick}
       style={{
         padding: '6px 16px',
         background: C.rose + '20',
@@ -235,9 +253,7 @@ export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
       <span style={{ color: C.textSub }}>·</span>
       <span>scope={scope}</span>
       <span style={{ color: C.textSub }}>·</span>
-      <span>Retry ↩</span>
+      <span>Retry</span>
     </div>
   );
 };
-
-export default WorkerBlockerCard;

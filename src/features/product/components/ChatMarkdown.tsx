@@ -66,7 +66,6 @@ function tokenizeContent(input: string): Segment[] {
     
     // Process inline formatting in current line
     let remaining = line;
-    let lastIndex = 0;
     
     while (remaining.length > 0) {
       // Find next match

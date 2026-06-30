@@ -37,14 +37,12 @@ describe('ChatMarkdown', () => {
 
   it('renders code block', () => {
     const { container } = render(<ChatMarkdown content="```typescript\nconst x = 1;\n```" />);
-    const pre = container.querySelector('pre');
     // Code block renders with language label
     expect(container.textContent).toContain('typescript');
   });
 
   it('renders code block with language', () => {
     const { container } = render(<ChatMarkdown content="```javascript\nalert('hi');\n```" />);
-    const pre = container.querySelector('pre');
     expect(container.textContent).toContain('javascript');
   });
 

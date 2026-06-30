@@ -1,6 +1,6 @@
 /**
- * BuilderContainer intent detection tests
- * Tests for isOpenHandsExecutionIntent, isWorkerRetryIntent, isWorkerDiagnosticQuestion
+ * workerIntentDetector tests
+ * Unit tests for Worker intent detection functions
  */
 
 import {
@@ -8,7 +8,7 @@ import {
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   getWorkerActionHint,
-} from '../runtime/workerIntentDetector';
+} from './workerIntentDetector';
 
 describe('isOpenHandsExecutionIntent', () => {
   it('detects OpenHands keyword', () => {

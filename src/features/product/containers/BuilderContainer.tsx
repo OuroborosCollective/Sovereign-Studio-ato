@@ -332,16 +332,8 @@ function createChatLineId(prefix: ChatRole | 'repo' | 'worker', index: number): 
   return `${prefix}:${Date.now()}:${index}`;
 }
 
-function isOpenHandsExecutionIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  const executionTokens = [
-    'openhands', 'draft pr', 'pull request', 'pr erstellen', 'push', 'commit',
-    'baue', 'bauen', 'implementiere', 'implementieren', 'fixe', 'repariere',
-    'patch', 'ändere datei', 'datei ändern', 'ersatzdatei', 'runtime-check',
-    'tests ergänzen', 'test ergänzen', 'code ändern', 'repo schreiben',
-  ];
-  return executionTokens.some((token) => lower.includes(token));
-}
+// Intent detection from workerIntentDetector module
+import { isOpenHandsExecutionIntent, isWorkerRetryIntent, isWorkerDiagnosticQuestion } from '../runtime/workerIntentDetector';
 
 function buildWorkerSystemPrompt(args: { readonly repoReady: boolean; readonly repoReason: string; readonly chatRepoSnapshot: DevChatRepoSnapshot | null }): string {
   const repoContext = args.chatRepoSnapshot
@@ -385,19 +377,6 @@ function buildWorkerMessages(args: {
     ...recentMessages,
     { role: 'user', content: args.submittedText },
   ];
-}
-
-function isWorkerDiagnosticQuestion(text: string): boolean {
-  const lower = text.toLowerCase();
-  return [
-    'warum', 'wieso', 'weshalb', 'hilfe', 'hilf', 'help', 'erklär', 'erklaer',
-    'diagnose', 'fehler', '500', 'worker', 'cloudflare', 'blockiert', 'kaputt',
-  ].some((token) => lower.includes(token));
-}
-
-function isWorkerRetryIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  return ['retry', 'erneut', 'nochmal', 'noch mal', 'wiederholen', 'testen', 'versuch'].some((token) => lower.includes(token));
 }
 
 function buildWorkerBlockerAnswer(args: {
@@ -1438,8 +1417,17 @@ export function BuilderContainer({
   const handleSubmit = async () => {
     const submittedText = wishText.trim();
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing) return;
+    _processSubmit(submittedText);
+  };
 
+  // Retry submit with a specific message (used by WorkerBlockerCard and Banner)
+  const retrySubmit = async (message: string) => {
+    if (localRepoLoading || chatResponseBusy || isPublishing) return;
     setWishText('');
+    _processSubmit(message);
+  };
+
+  const _processSubmit = async (submittedText: string) => {
     setShowSlashCommands(false);
 
     // ── Issue #428: Slash command handling
@@ -1673,13 +1661,11 @@ export function BuilderContainer({
       {workerBlocker && (
         <WorkerDegradedBanner
           blocker={workerBlocker}
-          onRetry={() => {
+          userMessage={chatHistory.length > 0 ? chatHistory[chatHistory.length - 1].text : undefined}
+          onRetryWithMessage={(msg) => {
             setWorkerBlocker(null);
-            // Retry last request
-            if (streamingText !== null || chatHistory.length > 0) {
-              // Retry is handled by clearing the blocker
-              addLog('info', 'Worker retry triggered', 'router');
-            }
+            addLog('info', 'Worker retry from banner', 'router');
+            retrySubmit(msg);
           }}
         />
       )}
@@ -1724,7 +1710,8 @@ export function BuilderContainer({
                       setWorkerBlocker(null);
                       addLog('info', 'Worker retry with message from card', 'router');
                       setWishText(msg);
-                      // handleSubmit will pick up the updated wishText on next render
+                      // Trigger actual retry by calling handleSubmit with the message
+                      retrySubmit(msg);
                     }}
                     onExplain={() => {
                       const explanation = explainDevChatWorkerDiagnostic(workerBlocker.diagnostic);

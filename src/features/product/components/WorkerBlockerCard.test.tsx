@@ -1,0 +1,138 @@
+/**
+ * WorkerBlockerCard tests
+ */
+
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import React from 'react';
+import { WorkerBlockerCard, WorkerDegradedBanner } from './WorkerBlockerCard';
+
+const mockBlocker = {
+  message: 'Worker unavailable',
+  diagnostic: {
+    scope: 'network' as const,
+    detail: 'Connection timeout',
+    timestamp: Date.now(),
+  },
+  createdAt: Date.now(),
+};
+
+describe('WorkerBlockerCard', () => {
+  it('renders blocker message', () => {
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onRetry={() => {}}
+        onExplain={() => {}}
+      />
+    );
+    expect(screen.getByText('Worker nicht erreichbar')).toBeTruthy();
+  });
+
+  it('calls onRetry when retry button clicked', () => {
+    const onRetry = vi.fn();
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onRetry={onRetry}
+        onExplain={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByText('Retry'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onExplain when explain button clicked', () => {
+    const onExplain = vi.fn();
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onRetry={() => {}}
+        onExplain={onExplain}
+      />
+    );
+    fireEvent.click(screen.getByText('Diagnose erklären'));
+    expect(onExplain).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onRetryWithMessage when retry with message clicked', () => {
+    const onRetryWithMessage = vi.fn();
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onRetry={() => {}}
+        onRetryWithMessage={onRetryWithMessage}
+        onExplain={() => {}}
+        userMessage="retry this"
+      />
+    );
+    fireEvent.click(screen.getByText('Retry'));
+    expect(onRetryWithMessage).toHaveBeenCalledWith('retry this');
+  });
+
+  it('shows OpenHands action when user has code intent', () => {
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onRetry={() => {}}
+        onExplain={() => {}}
+        onOpenHandsInstead={(msg) => {}}
+        userMessage="fix this bug in the code"
+      />
+    );
+    expect(screen.getByText(/OpenHands/i)).toBeTruthy();
+  });
+
+  it('hides OpenHands action when user has no code intent', () => {
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onRetry={() => {}}
+        onExplain={() => {}}
+        onOpenHandsInstead={(msg) => {}}
+        userMessage="hello world"
+      />
+    );
+    expect(screen.queryByText(/OpenHands/i)).toBeNull();
+  });
+});
+
+describe('WorkerDegradedBanner', () => {
+  it('renders offline message', () => {
+    render(<WorkerDegradedBanner blocker={mockBlocker} />);
+    expect(screen.getByText('Worker offline')).toBeTruthy();
+  });
+
+  it('calls onRetry when clicked (legacy)', () => {
+    const onRetry = vi.fn();
+    render(<WorkerDegradedBanner blocker={mockBlocker} onRetry={onRetry} />);
+    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onRetryWithMessage when provided', () => {
+    const onRetryWithMessage = vi.fn();
+    render(
+      <WorkerDegradedBanner
+        blocker={mockBlocker}
+        onRetryWithMessage={onRetryWithMessage}
+        userMessage="retry this request"
+      />
+    );
+    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
+    expect(onRetryWithMessage).toHaveBeenCalledWith('retry this request');
+  });
+
+  it('falls back to onRetry when onRetryWithMessage not provided', () => {
+    const onRetry = vi.fn();
+    render(
+      <WorkerDegradedBanner
+        blocker={mockBlocker}
+        onRetry={onRetry}
+        userMessage="retry this request"
+      />
+    );
+    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+});
