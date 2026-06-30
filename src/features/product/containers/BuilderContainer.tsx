@@ -55,6 +55,12 @@ import {
   type SlashCommandDefinition,
 } from "../runtime/slashCommandRuntime";
 import { createRepoFilePrompt } from "../runtime/repoTreeExplorerRuntime";
+import {
+  copyAndroidBubbleText,
+  createAndroidFollowUpDraft,
+  detectAndroidQuickRepoUrl,
+  triggerAndroidHaptic,
+} from "../runtime/androidQuickInteractionRuntime";
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -601,6 +607,8 @@ function composerRouteHint(args: {
   const clean = args.draft.trim();
   if (!clean)
     return "Worker Chat senden · Repo-URL laden · OpenHands nur bei Code-Auftrag";
+  const quickRepo = detectAndroidQuickRepoUrl(clean);
+  if (quickRepo.recognized) return quickRepo.hint;
   if (parseDevChatGithubUrl(clean)) return "Repo laden · Runtime Snapshot";
   if (isOpenHandsExecutionIntent(clean))
     return args.agentDisabled
@@ -1431,17 +1439,10 @@ function Bubble({
   const isUser = msg.role === "user";
   const [showMenu, setShowMenu] = useState(false);
 
-  // ── Issue #429: Haptic feedback helper
+  // ── Issue #429: Haptic feedback helper using runtime
   const triggerHaptic = useCallback(
     (type: "light" | "medium" | "heavy" = "light") => {
-      if (typeof navigator !== "undefined" && navigator.vibrate) {
-        try {
-          const duration = type === "light" ? 10 : type === "medium" ? 25 : 50;
-          navigator.vibrate(duration);
-        } catch {
-          // Haptics not supported, silently fail
-        }
-      }
+      triggerAndroidHaptic(typeof navigator === "undefined" ? undefined : navigator, type);
     },
     [],
   );
@@ -1467,22 +1468,24 @@ function Bubble({
     );
   if (msg.role === "thought") return <ThoughtBubble text={msg.text} />;
 
-  // ── Issue #429: Long-press for copy/follow-up
+  // ── Issue #429: Long-press for copy/follow-up using runtime helpers
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setShowMenu(true);
     triggerHaptic("light");
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(msg.text);
+  const handleCopy = async () => {
+    await copyAndroidBubbleText(msg.text, typeof navigator === "undefined" ? undefined : navigator);
     setShowMenu(false);
     triggerHaptic("light");
   };
 
   const handleFollowUp = () => {
-    onLongPress?.(msg.text);
+    const draft = createAndroidFollowUpDraft(msg.text);
+    if (draft) onLongPress?.(draft);
     setShowMenu(false);
+    triggerHaptic("light");
   };
 
   return (
@@ -2950,17 +2953,10 @@ export function BuilderContainer({
     slashMatches.length > 0 &&
     !slashMenuDismissed;
 
-  // ── Haptic feedback helper
+  // ── Issue #429: Haptic feedback helper using runtime
   const triggerHaptic = useCallback(
     (type: "light" | "medium" | "heavy" = "light") => {
-      if (typeof navigator !== "undefined" && navigator.vibrate) {
-        try {
-          const duration = type === "light" ? 10 : type === "medium" ? 25 : 50;
-          navigator.vibrate(duration);
-        } catch {
-          // Haptics not supported, silently fail
-        }
-      }
+      triggerAndroidHaptic(typeof navigator === "undefined" ? undefined : navigator, type);
     },
     [],
   );
@@ -3858,9 +3854,7 @@ export function BuilderContainer({
                   key={line.id}
                   msg={line}
                   now={nowRef.current}
-                  onLongPress={(text) =>
-                    setWishText(`"${text.slice(0, 100)}…"\n\n`)
-                  }
+                  onLongPress={(draft) => setWishText(draft)}
                   onOpenFile={openRepoExplorerFromFileBadge}
                 />
               ))}

@@ -597,4 +597,50 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     expect(sendButton()).toBeDisabled();
   });
+
+  /* ───────────── Issue #429: Android quick interactions ───────────── */
+  it("recognizes a pasted GitHub URL with a local load hint without auto-submitting", () => {
+    const props = baseProps();
+    const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: "unused" } }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<BuilderContainer {...props} mission="" repoReady={false} />);
+
+    fireEvent.change(chatField(), {
+      target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" },
+    });
+
+    expect(screen.getByText("Repo erkannt · Laden")).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
+  it("copies visible bubble text from the long-press menu without hidden metadata", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText }, vibrate: vi.fn() });
+
+    render(<BuilderContainer {...baseProps()} />);
+
+    fireEvent.contextMenu(screen.getByText("Package summary"));
+    fireEvent.click(screen.getByText("📋 Kopieren"));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Package summary"));
+  });
+
+  it("fills composer from long-press follow-up without auto-sending", () => {
+    const props = baseProps();
+    render(<BuilderContainer {...props} />);
+
+    fireEvent.contextMenu(screen.getByText("Package summary"));
+    fireEvent.click(screen.getByText("💬 Zitieren"));
+
+    expect(chatField().value).toContain("Package summary");
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+    expect(props.onGenerateIdeas).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Android 393px shell width contract", () => {
+    render(<BuilderContainer {...baseProps()} />);
+    expect(screen.getByTestId("builder-container")).toHaveStyle({ maxWidth: "393px" });
+  });
 });
