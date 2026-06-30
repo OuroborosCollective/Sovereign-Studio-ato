@@ -3,11 +3,18 @@ import React, { useState } from 'react';
 import { BuilderContainer } from './features/product/containers/BuilderContainer';
 import { LlmAdapterProvider } from './features/product/contexts/LlmAdapterContext';
 
+const CHAT_ONLY_STYLE: React.CSSProperties = {
+  height: '100dvh',
+  overflow: 'hidden',
+  background: '#0e1116',
+};
+
 export default function App() {
   const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag schreiben.');
+  const startChatOnlyTask = (nextMission: string) => setMission(nextMission);
   return (
     <LlmAdapterProvider>
-      <main data-testid="chat-only-app" aria-label="Sovereign Chat" style={{ height: '100dvh', overflow: 'hidden', background: '#0e1116' }}>
+      <main data-testid="chat-only-app" data-layout="chat-only-live-entry" aria-label="Sovereign Chat" style={CHAT_ONLY_STYLE}>
         <BuilderContainer
           mission={mission}
           repoReady={false}
@@ -22,7 +29,7 @@ export default function App() {
           onGenerateErrorWorkflow={() => setMission('Fehleranalyse')}
           onPublishDraftPr={() => setMission('Draft PR')}
           openhandsReady={true}
-          onStartOpenHands={setMission}
+          onStartOpenHands={startChatOnlyTask}
         />
       </main>
     </LlmAdapterProvider>
