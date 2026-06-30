@@ -1,7 +1,4 @@
 import { useState, useCallback, useRef } from 'react';
-import type { SovereignLlmRuntimeInput } from '../runtime/sovereignLlmRuntime';
-import { runSovereignLlmRuntime } from '../runtime/sovereignLlmRuntime';
-import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 
 export interface ExternalRouteConsentState {
   consentRequired: boolean;
@@ -18,13 +15,17 @@ export interface UseExternalRouteConsentResult {
    */
   triggerConsentGate: (mission: string, attempts: number) => void;
   /**
-   * User approved - returns the mission to retry with consent enabled.
+   * User approved - clears consent state and returns true for retry.
    */
-  approveConsent: () => string | null;
+  approveConsent: () => boolean;
   /**
    * User denied - clears the consent state.
    */
   denyConsent: () => void;
+  /**
+   * Reset all consent state.
+   */
+  reset: () => void;
 }
 
 /**
@@ -45,8 +46,10 @@ export interface UseExternalRouteConsentResult {
  *   <ExternalRouteConsentGate
  *     attempts={state.consentAttempts}
  *     onApprove={() => {
- *       const mission = approveConsent();
- *       if (mission) retryWithConsent(mission);
+ *       if (approveConsent()) {
+ *         // Set state to retry with allowExternalNoKey: true
+ *         setRetryWithConsent(true);
+ *       }
  *     }}
  *     onDeny={denyConsent}
  *   />
@@ -74,7 +77,7 @@ export function useExternalRouteConsent(): UseExternalRouteConsentResult {
   }, []);
 
   const approveConsent = useCallback(() => {
-    const mission = pendingMissionRef.current;
+    const hadConsent = state.consentRequired;
     pendingMissionRef.current = null;
     setState({
       consentRequired: false,
@@ -82,10 +85,20 @@ export function useExternalRouteConsent(): UseExternalRouteConsentResult {
       isRetrying: false,
       pendingMission: null,
     });
-    return mission;
+    return hadConsent;
   }, []);
 
   const denyConsent = useCallback(() => {
+    pendingMissionRef.current = null;
+    setState({
+      consentRequired: false,
+      consentAttempts: 0,
+      isRetrying: false,
+      pendingMission: null,
+    });
+  }, []);
+
+  const reset = useCallback(() => {
     pendingMissionRef.current = null;
     setState({
       consentRequired: false,
@@ -100,5 +113,6 @@ export function useExternalRouteConsent(): UseExternalRouteConsentResult {
     triggerConsentGate,
     approveConsent,
     denyConsent,
+    reset,
   };
 }

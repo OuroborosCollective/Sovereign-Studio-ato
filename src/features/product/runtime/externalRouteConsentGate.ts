@@ -4,6 +4,11 @@
  * Handles the flow when external no-key routes are blocked and all other
  * routes have failed. Provides a consent-required state that the UI can
  * use to prompt the user for permission to enable external routes.
+ * 
+ * Usage:
+ * 1. Call setExternalRouteConsent(true) when user grants consent
+ * 2. Call setExternalRouteConsent(false) to reset or deny
+ * 3. The next call to buildSovereignPackageFromRepoFilesWithLlm will read this flag
  */
 
 import type { RepoFile } from '../../github/types';
@@ -12,6 +17,26 @@ import type { PalAutomationMode } from './palRouter';
 import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
 import { buildSovereignPackageFromRepoFilesWithLlm } from './sovereignPackageFromRepoFiles';
 import { defaultSettings, starterCards } from '../constants';
+
+// Module-level flag for one-time consent
+let externalRouteConsentGranted = false;
+
+/**
+ * Set the external route consent flag.
+ * When true, the next call to buildSovereignPackageFromRepoFilesWithLlm
+ * will use allowExternalNoKey: true.
+ * The flag is automatically reset after one use.
+ */
+export function setExternalRouteConsent(granted: boolean): void {
+  externalRouteConsentGranted = granted;
+}
+
+/**
+ * Check if external route consent is currently granted.
+ */
+export function isExternalRouteConsentGranted(): boolean {
+  return externalRouteConsentGranted;
+}
 
 export interface ExternalRouteConsentGateInput {
   mission: string;
@@ -59,6 +84,9 @@ export async function buildSovereignPackageWithConsentGate(
   input: ExternalRouteConsentGateInput
 ): Promise<ExternalRouteConsentGateResult> {
   try {
+    // Check if consent was granted via the module-level flag
+    const useConsent = externalRouteConsentGranted;
+    
     const pkg = await buildSovereignPackageFromRepoFilesWithLlm({
       mission: input.mission,
       repoFiles: input.repoFiles,
@@ -71,9 +99,13 @@ export async function buildSovereignPackageWithConsentGate(
       palBlockers: input.palBlockers,
       automationMode: input.automationMode,
       allowUserKeyRoutes: input.allowUserKeyRoutes ?? false,
-      allowExternalNoKey: input.allowExternalNoKey ?? false,
+      // Use consent flag if set, otherwise use input value (defaults to false)
+      allowExternalNoKey: useConsent ? true : (input.allowExternalNoKey ?? false),
       userKeys: input.userKeys,
     });
+
+    // Reset consent flag after use (one-time consent)
+    externalRouteConsentGranted = false;
 
     return { ok: true, package: pkg };
   } catch (error) {
@@ -96,12 +128,14 @@ export async function buildSovereignPackageWithConsentGate(
 
 /**
  * Retry the package build with external routes enabled (after user consent).
+ * This is an alias for buildSovereignPackageWithConsentGate with allowExternalNoKey: true.
  */
 export async function buildSovereignPackageWithConsentGranted(
   input: ExternalRouteConsentGateInput
 ): Promise<ExternalRouteConsentGateResult> {
+  setExternalRouteConsent(true);
   return buildSovereignPackageWithConsentGate({
     ...input,
-    allowExternalNoKey: true, // Grant consent
+    allowExternalNoKey: true, // Grant consent explicitly
   });
 }

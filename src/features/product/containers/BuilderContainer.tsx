@@ -44,6 +44,7 @@ import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { ExternalRouteConsentGate } from "../components/ExternalRouteConsentGate";
+import { setExternalRouteConsent } from "../runtime/externalRouteConsentGate";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
@@ -3054,6 +3055,8 @@ export function BuilderContainer({
   const [externalRouteConsentRequired, setExternalRouteConsentRequired] = useState(false);
   const [externalRouteConsentAttempts, setExternalRouteConsentAttempts] = useState(0);
   const [pendingMissionForConsent, setPendingMissionForConsent] = useState<string | null>(null);
+  // Flag to retry the next mission with allowExternalNoKey: true
+  const [retryWithExternalConsent, setRetryWithExternalConsent] = useState(false);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -4100,18 +4103,25 @@ export function BuilderContainer({
                 <ExternalRouteConsentGate
                   attempts={externalRouteConsentAttempts}
                   onApprove={() => {
-                    // User approved - retry with consent
-                    setExternalRouteConsentRequired(false);
+                    // User approved - set consent flag and retry
                     const mission = pendingMissionForConsent;
+                    setExternalRouteConsentRequired(false);
                     setPendingMissionForConsent(null);
+                    // Set the module-level consent flag
+                    setExternalRouteConsent(true);
                     if (mission) {
-                      // Re-trigger with consent enabled
+                      // Re-trigger the mission with consent enabled
                       appendChatLine({
                         role: 'assistant',
                         text: 'Free-Routen für diese Anfrage aktiviert. Wiederhole den Vorgang...'
                       });
-                      // The retry will happen through the normal workflow
-                      // with allowExternalNoKey: true from the runtime config
+                      // Store mission for retry and trigger submit
+                      setWishText(mission);
+                      // Small delay to ensure state is updated
+                      setTimeout(() => {
+                        const btn = document.querySelector('[data-testid="submit-button"]') as HTMLButtonElement;
+                        if (btn) btn.click();
+                      }, 100);
                     }
                   }}
                   onDeny={() => {
