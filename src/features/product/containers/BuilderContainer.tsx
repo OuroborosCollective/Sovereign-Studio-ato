@@ -3685,6 +3685,7 @@ export function BuilderContainer({
       if (command.action === "clear") {
         // Clear chat lines but NOT repo, token, remote memory
         setChatHistory([]);
+        setPalDecisions([]);
         triggerHaptic("light");
         appendChatLine({
           role: "assistant",
