@@ -5,6 +5,11 @@
  * with the HTTP-only session cookie, then the local display is updated from
  * the confirmed backend result.
  *
+ * This hook subscribes to the Sovereign Redux runtime store directly instead
+ * of requiring a react-redux <Provider>. BuilderContainer is a product shell
+ * used by both the live app and contract/smoke tests; the credit guard must
+ * not make the visible shell depend on a UI wrapper to render.
+ *
  * Usage:
  *   const { credits, chargeCredits, refreshCredits } = useCreditGuard();
  *   const ok = await chargeCredits('gemini-2.0-flash', estimatedTokens);
@@ -13,7 +18,8 @@
  * Issue #458
  */
 
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { useCallback, useSyncExternalStore } from 'react';
+import { store } from '../../store';
 import {
   deductCredits,
   openCreditPaywall,
@@ -24,6 +30,10 @@ import { calculateCredits } from './costConfig';
 const API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
   'https://sovereign-backend.arelorian.de';
+
+function getCreditsSnapshot(): number {
+  return store.getState().billing.credits;
+}
 
 export interface UseCreditGuardResult {
   credits: number;
@@ -38,13 +48,16 @@ export interface UseCreditGuardResult {
 }
 
 export function useCreditGuard(): UseCreditGuardResult {
-  const credits = useAppSelector((s) => s.billing.credits);
-  const dispatch = useAppDispatch();
+  const credits = useSyncExternalStore(
+    store.subscribe,
+    getCreditsSnapshot,
+    getCreditsSnapshot,
+  );
 
-  const chargeCredits = async (costId: string, tokenCount = 0): Promise<boolean> => {
+  const chargeCredits = useCallback(async (costId: string, tokenCount = 0): Promise<boolean> => {
     const cost = calculateCredits(costId, tokenCount);
 
-    // Free operations (unknown cost id or 0-cost) always proceed
+    // Free operations (unknown cost id or 0-cost) always proceed.
     if (cost === 0) return true;
 
     try {
@@ -60,7 +73,7 @@ export function useCreditGuard(): UseCreditGuardResult {
           available?: number;
           required?: number;
         };
-        dispatch(openCreditPaywall({
+        store.dispatch(openCreditPaywall({
           required: data.required ?? cost,
           available: data.available ?? credits,
         }));
@@ -68,17 +81,17 @@ export function useCreditGuard(): UseCreditGuardResult {
       }
 
       const data = await response.json().catch(() => ({})) as { deducted?: number };
-      dispatch(deductCredits(data.deducted ?? cost));
+      store.dispatch(deductCredits(data.deducted ?? cost));
       return true;
     } catch {
-      dispatch(openCreditPaywall({ required: cost, available: credits }));
+      store.dispatch(openCreditPaywall({ required: cost, available: credits }));
       return false;
     }
-  };
+  }, [credits]);
 
-  const refreshCredits = () => {
-    dispatch(fetchUserCredits());
-  };
+  const refreshCredits = useCallback(() => {
+    void store.dispatch(fetchUserCredits());
+  }, []);
 
   return { credits, chargeCredits, refreshCredits };
 }
