@@ -1,16 +1,25 @@
 /**
  * LauncherWindowHost — rendert alle offenen, nicht-minimierten Tool-Fenster.
  *
- * Stub-Implementierung für Issue #452.
- * Vollständige Window-Implementierung → Issue #453.
- *
- * Issue #452 / #453
+ * Sortiert nach z-index damit zuletzt fokussiertes Fenster ganz oben liegt.
+ * Issue #453
  */
 
-// Window-Rendering wird in Issue #453 implementiert (LauncherWindow + LauncherTaskbar).
-// Dieser Host ist bereits in BuilderContainer eingehängt damit Issue #453
-// ohne weitere Core-Änderungen arbeiten kann.
+import React from 'react';
+import { useLauncherStore } from '../useLauncherStore';
+import { LauncherWindow } from './LauncherWindow';
 
 export function LauncherWindowHost() {
-  return null;
+  const windows = useLauncherStore((s) => s.windows);
+
+  return (
+    <>
+      {windows
+        .filter((w) => !w.minimized)
+        .sort((a, b) => a.zIndex - b.zIndex)
+        .map((w) => (
+          <LauncherWindow key={w.id} id={w.id} zIndex={w.zIndex} />
+        ))}
+    </>
+  );
 }

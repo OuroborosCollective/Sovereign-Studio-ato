@@ -108,6 +108,8 @@ import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolL
 import { useLauncherStore } from "../../launcher/useLauncherStore";
 import { LauncherMenu } from "../../launcher/components/LauncherMenu";
 import { LauncherWindowHost } from "../../launcher/components/LauncherWindowHost";
+import { LauncherTaskbar } from "../../launcher/components/LauncherTaskbar";
+import { LauncherProvider, readGeminiApiKeyFromStorage } from "../../launcher/LauncherContext";
 import {
   usePatternMemoryStore,
   loadPatternMemoryStoreFromStorage,
@@ -4333,6 +4335,8 @@ export function BuilderContainer({
       {/* COMPOSER — only in chat view, v3 verbatim */}
       {isChat && (
         <>
+          {/* ── Issue #453: LauncherTaskbar — offene Tools als Chips */}
+          <LauncherTaskbar />
           {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
           <SovereignToolLauncher
             onSelect={(toolId: ToolId) => {
@@ -4394,8 +4398,10 @@ export function BuilderContainer({
       />
 
       {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}
-      <LauncherMenu />
-      <LauncherWindowHost />
+      <LauncherProvider value={{ geminiApiKey: readGeminiApiKeyFromStorage() }}>
+        <LauncherMenu />
+        <LauncherWindowHost />
+      </LauncherProvider>
 
       {/* OVERLAYS — v3 verbatim */}
       {showRuntimeSheet && (
