@@ -44,12 +44,13 @@ export interface LauncherToolProps {
 
 // Tool-Imports — neue Tools hier ergänzen
 import { vpsConnectorEntry } from './tools/vps/index';
+import { adminToolEntry }    from './tools/admin/index';
 
 /**
  * Alle registrierten Launcher-Tools.
  * Neue Einträge einfach anhängen — das LauncherMenu rendert sie automatisch.
  */
 export const LAUNCHER_REGISTRY: LauncherEntry[] = [
-  vpsConnectorEntry,   // Issue #454 — VPS Connector
-  // adminToolEntry    → Issue #460
+  vpsConnectorEntry, // Issue #454 — VPS Connector
+  adminToolEntry,    // Issue #460 — Admin Backend
 ];
