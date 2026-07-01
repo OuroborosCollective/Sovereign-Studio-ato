@@ -82,21 +82,90 @@ export const fetchBillingData = createAsyncThunk(
   }
 );
 
+export interface PurchaseArgs {
+  packageId: string;
+  paymentMethod?: string;
+  [key: string]: unknown;
+}
+
+export interface PurchaseResult {
+  ok?: boolean;
+  orderId?: string;
+  approvalUrl?: string;
+  redirectUrl?: string;
+  walletAddress?: string;
+  coinType?: string;
+  amountEur?: number;
+  credits?: number;
+  packageName?: string;
+  note?: string;
+  creditsAdded?: number;
+  newBalance?: number;
+  subscription?: Subscription | null;
+}
+
 export const purchasePackage = createAsyncThunk(
   'billing/purchasePackage',
-  async (packageId: string, { rejectWithValue }) => {
+  async (args: string | PurchaseArgs, { rejectWithValue }) => {
+    const payload: PurchaseArgs =
+      typeof args === 'string' ? { packageId: args } : args;
     try {
+      const userId = (localStorage.getItem('sovereign-user-id') ?? '').trim();
       const response = await fetch('/api/billing/purchase', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packageId }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(userId ? { 'X-User-Id': userId } : {}),
+        },
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
-        throw new Error('Kauf konnte nicht abgeschlossen werden');
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || 'Kauf konnte nicht abgeschlossen werden');
       }
-      return await response.json();
-    } catch (error: any) {
-      return rejectWithValue(error.message || 'Fehler beim Kauf');
+      return (await response.json()) as PurchaseResult;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler beim Kauf';
+      return rejectWithValue(msg);
+    }
+  }
+);
+
+export const capturePayPalOrder = createAsyncThunk(
+  'billing/capturePayPalOrder',
+  async (orderId: string, { rejectWithValue }) => {
+    try {
+      const userId = (localStorage.getItem('sovereign-user-id') ?? '').trim();
+      const response = await fetch('/api/billing/purchase/paypal/capture', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(userId ? { 'X-User-Id': userId } : {}),
+        },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || 'PayPal Capture fehlgeschlagen');
+      }
+      return (await response.json()) as PurchaseResult;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler beim Capture';
+      return rejectWithValue(msg);
+    }
+  }
+);
+
+export const fetchEnabledPaymentMethods = createAsyncThunk(
+  'billing/fetchEnabledPaymentMethods',
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await fetch('/api/billing/payment-methods');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as { methods: { type: string; label: string }[] };
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler';
+      return rejectWithValue(msg);
     }
   }
 );

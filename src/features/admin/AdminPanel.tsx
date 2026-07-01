@@ -16,7 +16,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users, CreditCard, Grid, Cpu, FileText,
-  Key, CheckCircle, AlertTriangle,
+  Key, CheckCircle, AlertTriangle, Wallet,
 } from 'lucide-react';
 import { AdminGate } from './AdminGate';
 import { UserTable } from './components/UserTable';
@@ -25,12 +25,14 @@ import { TransactionTable } from './components/TransactionTable';
 import { BillingStats } from './components/BillingStats';
 import { LauncherToolEditor } from './components/LauncherToolEditor';
 import { LlmRouteEditor } from './components/LlmRouteEditor';
+import { PaymentMethodEditor } from './components/PaymentMethodEditor';
 import {
   useAdminUsers,
   useAdminTransactions,
   useAdminLauncherTools,
   useAdminLlmRoutes,
   useAdminAuditLog,
+  useAdminPaymentMethods,
 } from './hooks/useAdminApi';
 import {
   type AdminUser,
@@ -46,14 +48,15 @@ const C = {
   accent: '#00d9b1', text: '#cdd9e5', textSub: '#768390', danger: '#f87171',
 } as const;
 
-type Tab = 'users' | 'billing' | 'launcher' | 'llm' | 'audit';
+type Tab = 'users' | 'billing' | 'payments' | 'launcher' | 'llm' | 'audit';
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-  { id: 'users',    label: 'Nutzer',   icon: Users },
-  { id: 'billing',  label: 'Billing',  icon: CreditCard },
-  { id: 'launcher', label: 'Launcher', icon: Grid },
-  { id: 'llm',      label: 'LLM',      icon: Cpu },
-  { id: 'audit',    label: 'Audit',    icon: FileText },
+  { id: 'users',    label: 'Nutzer',    icon: Users },
+  { id: 'billing',  label: 'Billing',   icon: CreditCard },
+  { id: 'payments', label: 'Zahlungen', icon: Wallet },
+  { id: 'launcher', label: 'Launcher',  icon: Grid },
+  { id: 'llm',      label: 'LLM',       icon: Cpu },
+  { id: 'audit',    label: 'Audit',     icon: FileText },
 ];
 
 // ── API Key Setup ─────────────────────────────────────────────────────────────
@@ -170,10 +173,11 @@ function ReadyContent() {
   const [tab, setTab]           = useState<Tab>('users');
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
 
-  const usersApi    = useAdminUsers();
-  const txApi       = useAdminTransactions();
-  const launcherApi = useAdminLauncherTools();
-  const llmApi      = useAdminLlmRoutes();
+  const usersApi      = useAdminUsers();
+  const txApi         = useAdminTransactions();
+  const launcherApi   = useAdminLauncherTools();
+  const llmApi        = useAdminLlmRoutes();
+  const paymentsApi   = useAdminPaymentMethods();
 
   return (
     <AdminGate>
@@ -206,6 +210,7 @@ function ReadyContent() {
               <TransactionTable api={txApi} />
             </div>
           )}
+          {tab === 'payments' && <PaymentMethodEditor api={paymentsApi} />}
           {tab === 'launcher' && <LauncherToolEditor api={launcherApi} />}
           {tab === 'llm'      && <LlmRouteEditor api={llmApi} />}
           {tab === 'audit'    && <AuditLogView />}

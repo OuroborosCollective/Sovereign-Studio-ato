@@ -80,6 +80,30 @@ export interface AuditEntry {
   createdAt: string;
 }
 
+export type PaymentMethodType =
+  | 'paypal' | 'skrill'
+  | 'crypto_btc' | 'crypto_eth' | 'crypto_usdt'
+  | 'google_play';
+
+export interface PaymentMethod {
+  id: string;
+  type: PaymentMethodType | string;
+  label: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  updatedAt: string;
+}
+
+export interface CreditPackage {
+  id: string;
+  name: string;
+  credits: number;
+  priceEur: number;
+  description: string | null;
+  enabled: boolean;
+  sortOrder: number;
+}
+
 // ── Key management ────────────────────────────────────────────────────────────
 
 export function getAdminKey(): string {
@@ -184,5 +208,67 @@ export const adminApiClient = {
     if (p?.page)  q.set('page',  String(p.page));
     if (p?.limit) q.set('limit', String(p.limit));
     return req<{ entries: AuditEntry[]; total: number; page: number }>(`/api/admin/audit-log?${q}`);
+  },
+
+  // ── Payment Methods ──────────────────────────────────────────────────────
+
+  getPaymentMethods() {
+    return req<{ paymentMethods: PaymentMethod[]; error?: string }>(
+      '/api/admin/payment-methods',
+    );
+  },
+
+  updatePaymentMethod(
+    id: string,
+    changes: { enabled?: boolean; label?: string; config?: Record<string, string> },
+  ) {
+    return req<{ ok: boolean }>(`/api/admin/payment-methods/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    });
+  },
+
+  initPaymentMethods() {
+    return req<{ ok: boolean; inserted: number }>('/api/admin/payment-methods/init', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  // ── Credit Packages ──────────────────────────────────────────────────────
+
+  getCreditPackages() {
+    return req<{ packages: CreditPackage[]; error?: string }>(
+      '/api/admin/credit-packages',
+    );
+  },
+
+  initCreditPackages() {
+    return req<{ ok: boolean; inserted: number }>('/api/admin/credit-packages/init', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  updateCreditPackage(
+    id: string,
+    changes: Partial<Pick<CreditPackage, 'name' | 'credits' | 'priceEur' | 'description' | 'enabled' | 'sortOrder'>>,
+  ) {
+    return req<{ ok: boolean }>(`/api/admin/credit-packages/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    });
+  },
+
+  // ── Crypto confirmation (admin only) ─────────────────────────────────────
+
+  confirmCryptoPayment(userId: string, packageId: string, txHash: string) {
+    return req<{ ok: boolean; creditsAdded: number; newBalance: number }>(
+      '/api/admin/payment-methods/crypto/confirm',
+      {
+        method: 'POST',
+        body: JSON.stringify({ userId, packageId, txHash }),
+      },
+    );
   },
 } as const;

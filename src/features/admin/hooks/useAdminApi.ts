@@ -12,6 +12,7 @@ import {
   type LauncherToolOverride,
   type LlmRoute,
   type AuditEntry,
+  type PaymentMethod,
 } from '../api/adminApiClient';
 
 // ── useAdminUsers ─────────────────────────────────────────────────────────────
@@ -192,6 +193,54 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
 
   return { routes, loading, error, updateRoute };
 }
+
+// ── useAdminPaymentMethods ────────────────────────────────────────────────────
+
+export interface UseAdminPaymentMethodsResult {
+  methods: PaymentMethod[];
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
+  toggleMethod: (id: string, enabled: boolean) => Promise<void>;
+  saveConfig: (id: string, config: Record<string, string>) => Promise<void>;
+  initDefaults: () => Promise<void>;
+}
+
+export function useAdminPaymentMethods(): UseAdminPaymentMethodsResult {
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [tick, setTick]       = useState(0);
+  const reload = useCallback(() => setTick(t => t + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    adminApiClient.getPaymentMethods()
+      .then(r => { if (!cancelled) setMethods(r.paymentMethods); })
+      .catch(e => { if (!cancelled) setError(String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  const toggleMethod = useCallback(async (id: string, enabled: boolean) => {
+    await adminApiClient.updatePaymentMethod(id, { enabled });
+    reload();
+  }, [reload]);
+
+  const saveConfig = useCallback(async (id: string, config: Record<string, string>) => {
+    await adminApiClient.updatePaymentMethod(id, { config });
+    reload();
+  }, [reload]);
+
+  const initDefaults = useCallback(async () => {
+    await adminApiClient.initPaymentMethods();
+    reload();
+  }, [reload]);
+
+  return { methods, loading, error, reload, toggleMethod, saveConfig, initDefaults };
+}
+
 
 // ── useAdminAuditLog ──────────────────────────────────────────────────────────
 
