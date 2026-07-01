@@ -10,6 +10,11 @@
  * used by both the live app and contract/smoke tests; the credit guard must
  * not make the visible shell depend on a UI wrapper to render.
  *
+ * Authenticated users are charged against the server ledger. Anonymous chat
+ * previews do not have a server-side user ledger yet, so this guard must not
+ * emit a fake X-User-Id or consume the billing endpoint before a real session
+ * exists.
+ *
  * Usage:
  *   const { credits, chargeCredits, refreshCredits } = useCreditGuard();
  *   const ok = await chargeCredits('gemini-2.0-flash', estimatedTokens);
@@ -20,6 +25,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 import { store } from '../../store';
+import { useUserStore } from '../../user/useUserStore';
 import {
   deductCredits,
   openCreditPaywall,
@@ -59,6 +65,13 @@ export function useCreditGuard(): UseCreditGuardResult {
 
     // Free operations (unknown cost id or 0-cost) always proceed.
     if (cost === 0) return true;
+
+    const sessionUser = useUserStore.getState().user;
+    if (!sessionUser) {
+      // No authenticated ledger exists yet. Let the chat/worker route proceed as
+      // an anonymous preview instead of inventing a client-side billing identity.
+      return true;
+    }
 
     try {
       const response = await fetch(`${API_BASE}/api/billing/deduct`, {
