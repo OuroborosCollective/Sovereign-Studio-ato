@@ -849,19 +849,11 @@ function deriveBudStateFromPalDecisions(
   const budgetSummary =
     parts.length > 0 ? parts.join(" · ") : "Keine Routings in dieser Sitzung.";
 
-  if (palDecisions.length === 0) {
-    return { selectionResult: null, budgetSummary };
-  }
-
-  const lastTier = palDecisions[palDecisions.length - 1].tier;
-  const selectedRoute = BUD_ROUTE_MAP[lastTier];
-  const selectionResult: LlmRouteSelectionResult = {
-    status: "available",
-    selectedRoute,
-    reason: `Route "${selectedRoute.label}" zuletzt genutzt.`,
-    exhaustedRouteIds: [],
-  };
-  return { selectionResult, budgetSummary };
+  // Kein echter Budget-Ledger im BuilderContainer verknüpft.
+  // palDecisions = Routing-Historie dieser Sitzung, kein Budgetstand.
+  // selectionResult bleibt null bis ein echter Ledger-State verfügbar ist.
+  // Anforderung: Keine "available"-Anzeige wenn Budget nicht bekannt. #446
+  return { selectionResult: null, budgetSummary };
 }
 
 function buildRuntimeConfidence(args: {

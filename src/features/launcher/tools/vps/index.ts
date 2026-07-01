@@ -17,4 +17,7 @@ export const vpsConnectorEntry: LauncherEntry = {
   color: 'bg-violet-600',
   component: VpsConnectorTool,
   badge: 'NEU',
+  // Security: Deaktiviert bis server-seitige userId-Bindung, Command-Allowlist
+  // und Destructive-Block implementiert sind. Issue #454.
+  disabled: true,
 };
