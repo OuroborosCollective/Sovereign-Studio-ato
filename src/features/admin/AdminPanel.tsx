@@ -25,6 +25,7 @@ import {
   useAdminAuditLog,
 } from './hooks/useAdminApi';
 import { type AdminUser, getAdminKey, setAdminKey, adminApiClient } from './api/adminApiClient';
+import { useUserStore, type UserRole } from '../user/useUserStore';
 import type { LauncherToolProps } from '../launcher/launcherRegistry';
 
 const C = {
@@ -54,7 +55,19 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
     setAdminKey(input.trim());
     setTesting(true); setError(null);
     try {
-      await adminApiClient.ping();
+      const result = await adminApiClient.ping();
+      // Provision a store user so AdminGate unlocks.
+      // Issue #459 will replace this with a real JWT session.
+      useUserStore.getState().setUser({
+        id:                 'admin-api-key-session',
+        email:              'admin@sovereign-studio',
+        displayName:        'Admin',
+        role:               (result.role as UserRole) ?? 'admin',
+        credits:            0,
+        subscriptionStatus: 'active',
+        isBanned:           false,
+        createdAt:          Date.now(),
+      });
       onReady();
     } catch (e) {
       setError(`Verbindungsfehler: ${String(e)}`);

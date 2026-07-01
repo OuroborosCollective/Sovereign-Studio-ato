@@ -80,8 +80,12 @@ def query(sql: str, params=None, *, one=False, write=False):
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Fail-closed: if ADMIN_API_KEY is unset/empty, always deny.
+        if not ADMIN_API_KEY:
+            return jsonify({"error": "Admin-Schlüssel nicht konfiguriert"}), 503
         auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer ") or auth[7:] != ADMIN_API_KEY:
+        token = auth[7:] if auth.startswith("Bearer ") else ""
+        if not token or token != ADMIN_API_KEY:
             return jsonify({"error": "Nicht autorisiert"}), 401
         return f(*args, **kwargs)
     return decorated
@@ -514,36 +518,63 @@ def health():
 @app.route("/openhands/jobs", methods=["POST"])
 def create_job():
     body = request.get_json(force=True) or {}
-    task = body.get("task", "")
+    # Accept both legacy contract (mission/repoUrl) and simple task field
+    task = (
+        body.get("task")
+        or body.get("mission")
+        or ""
+    )
     if not task:
-        return jsonify({"error": "task required"}), 400
+        return jsonify({"error": "task or mission required"}), 400
 
-    job_id = str(uuid.uuid4())
+    repo_url    = body.get("repoUrl", "")
+    branch      = body.get("branch", "main")
+    draft_only  = body.get("draftPrOnly", True)
+
+    job_id     = str(uuid.uuid4())
     oh_conv_id = None
+    conv_error  = None
 
     try:
         resp = requests.post(
             f"{OPENHANDS_API_URL}/api/conversations",
             headers=oh_headers(),
-            json={"initial_message": task, "runtime_image": "docker.all-hands.ai/all-hands-ai/runtime:0.39-nikolaik"},
+            json={
+                "initial_message": task,
+                "runtime_image": "docker.all-hands.ai/all-hands-ai/runtime:0.39-nikolaik",
+            },
             timeout=30,
         )
         if resp.ok:
             oh_conv_id = resp.json().get("conversation_id")
+        else:
+            conv_error = f"OpenHands HTTP {resp.status_code}"
     except Exception as exc:
-        pass
+        conv_error = str(exc)[:120]
+
+    initial_status = "running" if oh_conv_id else "failed"
+    init_event = {
+        "at": int(time.time()),
+        "level": "info" if oh_conv_id else "error",
+        "stage": "init",
+        "message": "Job gestartet" if oh_conv_id else ("OpenHands-Fehler: " + (conv_error or "unbekannt")),
+    }
 
     job = {
-        "id": job_id,
-        "status": "running",
-        "task": task,
-        "ohConvId": oh_conv_id,
-        "events": [{
-            "at": int(time.time()), "level": "info",
-            "stage": "init", "message": "Job gestartet",
-        }],
-        "result": None,
-        "createdAt": int(time.time()),
+        "id":         job_id,
+        "jobId":      job_id,
+        "status":     initial_status,
+        "task":       task,
+        "repoUrl":    repo_url,
+        "branch":     branch,
+        "ohConvId":   oh_conv_id,
+        "openHandsId": oh_conv_id,
+        "events":     [init_event],
+        "result":     None,
+        "lastError":  conv_error,
+        "draftPrUrl": None,
+        "changedFiles": [],
+        "createdAt":  int(time.time()),
     }
 
     with events_lock:
