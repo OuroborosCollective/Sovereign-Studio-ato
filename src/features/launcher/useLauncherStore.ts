@@ -81,12 +81,15 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
       ),
     })),
 
-  restoreWindow: (id: string) =>
+  restoreWindow: (id: string) => {
+    // Restore bringt das Fenster auch nach vorne (höchster z-index)
+    const maxZ = get().windows.reduce((m, w) => Math.max(m, w.zIndex), 0);
     set((s) => ({
       windows: s.windows.map((w) =>
-        w.id === id ? { ...w, minimized: false } : w,
+        w.id === id ? { ...w, minimized: false, zIndex: maxZ + 1 } : w,
       ),
-    })),
+    }));
+  },
 
   focusWindow: (id: string) => {
     const maxZ = get().windows.reduce((m, w) => Math.max(m, w.zIndex), 0);

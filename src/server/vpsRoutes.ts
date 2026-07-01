@@ -91,8 +91,14 @@ export async function handleVpsConnect(req: ConnectRequest, res: ExpressResponse
  * Body: { sessionId, command }
  * Response: { stdout, stderr, exitCode }
  *
- * SICHERHEIT: Erlaubt nur explizit vom User bestätigte Befehle.
- * Kein Auto-Execute — die Frontend-Komponente erzwingt Bestätigung.
+ * SICHERHEIT:
+ *   - Erlaubt nur explizit vom User bestätigte Befehle.
+ *   - Kein Auto-Execute — die Frontend-Komponente erzwingt Bestätigung.
+ *   - TODO (Produktion): sessionId an authentifizierten User binden.
+ *     Beim Connect req.session.userId (oder Cookie-basierte Auth) am Session-Objekt
+ *     speichern, bei jedem Folge-Request vergleichen:
+ *       if (session.userId !== req.session.userId) return res.status(403).json({ error: 'Forbidden' });
+ *     Ohne diese Bindung ist Besitz der sessionId ausreichend für Exec-Zugriff.
  */
 export async function handleVpsExec(req: ConnectRequest, res: ExpressResponse) {
   const { sessionId, command } = req.body as { sessionId: string; command: string };
