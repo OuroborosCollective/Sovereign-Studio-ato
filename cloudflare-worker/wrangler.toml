@@ -1,15 +1,9 @@
-name = "sovereign-llm-cache"
+name = "sovereign-studio-worker"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
 [vars]
-CACHE_TTL_SECONDS = "1800"  # 30 minutes
+CACHE_TTL_SECONDS = "1800"  # 30 minutes (for future cache endpoint)
 
-# KV Namespace for cache storage
-[[kv_namespaces]]
-binding = "CACHE"
-id = "your-kv-namespace-id"
-
-# Optional: Cloudflare Analytics Engine
-[[analytics_engine_datasets]]
-binding = "ANALYTICS"
+# Note: KV removed - /git/patch endpoint doesn't need KV
+# Add KV back if you want to re-enable the LLM cache endpoints
