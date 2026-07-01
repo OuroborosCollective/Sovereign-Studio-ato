@@ -43,8 +43,6 @@ import { DraftPrCard } from "../components/DraftPrCard";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
-import { ExternalRouteConsentGate } from "../components/ExternalRouteConsentGate";
-import { useExternalRouteConsentStore } from "../store/externalRouteConsentStore";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
@@ -69,7 +67,9 @@ import {
 import {
   deriveRuntimeInspectorSignals,
   type RuntimeInspectorSignal,
+  type BudInspectorState,
 } from "../runtime/runtimeInspectorPanelRuntime";
+import type { LlmRouteSelectionResult } from "../runtime/llmRouteBudgetRuntime";
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -143,7 +143,7 @@ type ChatRole = "system" | "thought" | "user" | "assistant";
 type RuntimeTier = "ready" | "active" | "blocked";
 // AppControl additions
 type ModuleId =
-  "chat" | "init" | "router" | "pattern" | "sync" | "orchestr" | "logger";
+  "chat" | "init" | "router" | "pattern" | "sync" | "orchestr" | "logger" | "budget";
 type SignalType = "idle" | "active" | "processing" | "warning" | "error";
 type AnimPhase =
   "idle" | "spinup" | "working" | "completing" | "done" | "error";
@@ -246,6 +246,7 @@ const MODULES: ModuleCfg[] = [
   { id: "sync", short: "SYN", icon: "⇄", color: C.accent },
   { id: "orchestr", short: "ORC", icon: "⚡", color: C.amber },
   { id: "logger", short: "LOG", icon: "▣", color: C.rose },
+  { id: "budget", short: "BUD", icon: "◎", color: C.green },
 ];
 
 const INIT_CONDITIONS: Partial<Record<ModuleId, ModuleCond[]>> = {
@@ -803,6 +804,42 @@ function sameConditions(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// ── Issue #446: Derive BUD inspector state from real palDecisions
+const BUD_ROUTE_MAP = {
+  fast:  { id: "fast",  label: "Fast",  budgetByPlan: { session: Infinity }, priority: 1 },
+  smart: { id: "smart", label: "Smart", budgetByPlan: { session: Infinity }, priority: 2 },
+  power: { id: "power", label: "Power", budgetByPlan: { session: Infinity }, priority: 3 },
+} as const;
+
+function deriveBudStateFromPalDecisions(
+  palDecisions: Array<{ tier: "fast" | "smart" | "power" }>,
+): BudInspectorState {
+  const fastCount  = palDecisions.filter((d) => d.tier === "fast").length;
+  const smartCount = palDecisions.filter((d) => d.tier === "smart").length;
+  const powerCount = palDecisions.filter((d) => d.tier === "power").length;
+
+  const parts: string[] = [];
+  if (fastCount  > 0) parts.push(`Fast: ${fastCount}`);
+  if (smartCount > 0) parts.push(`Smart: ${smartCount}`);
+  if (powerCount > 0) parts.push(`Power: ${powerCount}`);
+  const budgetSummary =
+    parts.length > 0 ? parts.join(" · ") : "Keine Routings in dieser Sitzung.";
+
+  if (palDecisions.length === 0) {
+    return { selectionResult: null, budgetSummary };
+  }
+
+  const lastTier = palDecisions[palDecisions.length - 1].tier;
+  const selectedRoute = BUD_ROUTE_MAP[lastTier];
+  const selectionResult: LlmRouteSelectionResult = {
+    status: "available",
+    selectedRoute,
+    reason: `Route "${selectedRoute.label}" zuletzt genutzt.`,
+    exhaustedRouteIds: [],
+  };
+  return { selectionResult, budgetSummary };
+}
+
 function buildRuntimeConfidence(args: {
   readonly effectiveRepoReady: boolean;
   readonly openhandsReady?: boolean;
@@ -1006,7 +1043,6 @@ function TopBar({
           type="button"
           onClick={onMenuOpen}
           aria-label="Menü"
-          title="Menü"
           style={{
             width: 40,
             height: 40,
@@ -1111,8 +1147,6 @@ function TopBar({
         <button
           type="button"
           onClick={onSourceClick}
-          aria-label={`RT – Runtime Quelle`}
-          title="Runtime Quelle"
           style={{
             display: "flex",
             alignItems: "center",
@@ -1145,8 +1179,6 @@ function TopBar({
         <button
           type="button"
           onClick={onPanelToggle}
-          aria-label={panelOpen ? "Panel schließen" : "Panel öffnen"}
-          title={panelOpen ? "Panel schließen" : "Panel öffnen"}
           style={{
             background: "transparent",
             border: "none",
@@ -1233,7 +1265,6 @@ function StatusPanel({
           <button
             type="button"
             onClick={onClearLogs}
-            aria-label="Logs löschen"
             title="Logs löschen"
             style={{
               position: "absolute",
@@ -2468,8 +2499,6 @@ function SideDrawer({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Menü schließen"
-            title="Menü schließen"
             style={{
               marginLeft: "auto",
               background: "transparent",
@@ -2840,7 +2869,6 @@ function Composer({
           onClick={onSubmit}
           disabled={disabled || loading}
           aria-label="Senden"
-          title="Senden"
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
           data-testid={SOVEREIGN_ACTION_START_TASK.testId}
           style={{
@@ -3059,14 +3087,6 @@ export function BuilderContainer({
     createGitHubAccessSnapshot(),
   );
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
-
-  // ── External Route Consent Gate State (from global store)
-  const { 
-    isConsentRequired: externalRouteConsentRequired,
-    currentMission,
-    approveConsent: storeApproveConsent,
-    denyConsent: storeDenyConsent,
-  } = useExternalRouteConsentStore();
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -4108,29 +4128,6 @@ export function BuilderContainer({
                 />
               )}
 
-              {/* ── External Route Consent Gate */}
-              {externalRouteConsentRequired && currentMission && (
-                <ExternalRouteConsentGate
-                  attempts={currentMission.attempts}
-                  onApprove={() => {
-                    // User approved - grant consent via store
-                    storeApproveConsent();
-                    appendChatLine({
-                      role: 'assistant',
-                      text: 'Free-Routen für diese Anfrage aktiviert. Bitte Mission erneut senden.'
-                    });
-                  }}
-                  onDeny={() => {
-                    // User denied - clear consent via store
-                    storeDenyConsent();
-                    appendChatLine({
-                      role: 'assistant',
-                      text: 'Free-Routen abgelehnt. Arbeit wird lokal fortgesetzt.'
-                    });
-                  }}
-                />
-              )}
-
               {/* ── Issue #426: Worker Blocker Card */}
               {workerBlocker && (
                 <WorkerBlockerCard
@@ -4253,7 +4250,7 @@ export function BuilderContainer({
             confidence={confidence}
             sequence={sequence}
             inspectorSignals={deriveRuntimeInspectorSignals(
-              activeMod.id.toUpperCase() as "PAT" | "ORC" | "INT",
+              activeMod.id.toUpperCase() as "PAT" | "ORC" | "INT" | "BUD",
               { hasMemory: palDecisions.length > 0, patternCount: palDecisions.length },
               {
                 palDecisions: palDecisions.length,
@@ -4262,6 +4259,7 @@ export function BuilderContainer({
                 powerTierCount: palDecisions.filter((d) => d.tier === "power").length,
               },
               { chatRepoSnapshot },
+              deriveBudStateFromPalDecisions(palDecisions),
             )}
             onSignalClick={(prompt) => setWishText(prompt)}
           />
