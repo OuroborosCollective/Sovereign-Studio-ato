@@ -8,7 +8,7 @@
  * Issue #452
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useLauncherStore } from '../useLauncherStore';
 import { LAUNCHER_REGISTRY, type LauncherEntry } from '../launcherRegistry';
@@ -17,6 +17,14 @@ import { LAUNCHER_REGISTRY, type LauncherEntry } from '../launcherRegistry';
 
 export function LauncherMenu() {
   const { isMenuOpen, closeMenu, launchTool } = useLauncherStore();
+
+  // Document-level ESC-Handler — zuverlässig unabhängig vom Fokus
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMenu(); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isMenuOpen, closeMenu]);
 
   if (!isMenuOpen) return null;
 
