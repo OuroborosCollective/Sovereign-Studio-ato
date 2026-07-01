@@ -278,6 +278,11 @@ const INIT_CONDITIONS: Partial<Record<ModuleId, ModuleCond[]>> = {
     { label: "Logger active", status: "pass" },
     { label: "Buffer not full", status: "pass" },
   ],
+  budget: [
+    { label: "Route active", status: "wait" },
+    { label: "Budget available", status: "pass" },
+    { label: "Ledger synced", status: "pass" },
+  ],
 };
 
 const IDEA_OPTIONS: IdeaOption[] = [
@@ -3540,6 +3545,14 @@ export function BuilderContainer({
           label: "Runtime events recorded",
           status: statusLogs.length > 0 ? "pass" : "wait",
         },
+      ],
+      budget: [
+        {
+          label: "Route active",
+          status: palDecisions.length > 0 ? "pass" : "wait",
+        },
+        { label: "Budget available", status: "pass" },
+        { label: "Ledger synced", status: "pass" },
       ],
     };
 
