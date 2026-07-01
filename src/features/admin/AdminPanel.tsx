@@ -1,15 +1,23 @@
 /**
  * AdminPanel — Admin UI with tab navigation.
  *
- * Hooks only fire AFTER API key validation (ready === true).
- * All hook-using components live in ReadyContent which only mounts when ready.
- * API key stored in localStorage; replaced by JWT auth in Issue #459.
+ * Access flow (until Issue #459 adds real JWT auth):
+ *   1. User opens admin tool → API key setup screen shown (no gate yet).
+ *   2. Valid API key → ping() succeeds → user set in store as admin.
+ *   3. AdminGate unlocks → ReadyContent mounts and all hooks fire.
+ *
+ * AdminGate wraps ONLY ReadyContent, NOT the key-setup screen.
+ * This avoids the deadlock where the gate blocks the only screen that
+ * can establish admin state.
  *
  * Issue #460
  */
 
 import React, { useState, useEffect } from 'react';
-import { Users, CreditCard, Grid, Cpu, FileText, Key, CheckCircle, AlertTriangle } from 'lucide-react';
+import {
+  Users, CreditCard, Grid, Cpu, FileText,
+  Key, CheckCircle, AlertTriangle,
+} from 'lucide-react';
 import { AdminGate } from './AdminGate';
 import { UserTable } from './components/UserTable';
 import { UserEditModal } from './components/UserEditModal';
@@ -24,7 +32,12 @@ import {
   useAdminLlmRoutes,
   useAdminAuditLog,
 } from './hooks/useAdminApi';
-import { type AdminUser, getAdminKey, setAdminKey, adminApiClient } from './api/adminApiClient';
+import {
+  type AdminUser,
+  getAdminKey,
+  setAdminKey,
+  adminApiClient,
+} from './api/adminApiClient';
 import { useUserStore, type UserRole } from '../user/useUserStore';
 import type { LauncherToolProps } from '../launcher/launcherRegistry';
 
@@ -44,6 +57,7 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number 
 ];
 
 // ── API Key Setup ─────────────────────────────────────────────────────────────
+// Renders WITHOUT AdminGate — this IS the entry point for first-time admins.
 
 function ApiKeySetup({ onReady }: { onReady: () => void }) {
   const [input,   setInput]   = useState('');
@@ -53,11 +67,12 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
   const handleSave = async () => {
     if (!input.trim()) return;
     setAdminKey(input.trim());
-    setTesting(true); setError(null);
+    setTesting(true);
+    setError(null);
     try {
       const result = await adminApiClient.ping();
-      // Provision a store user so AdminGate unlocks.
-      // Issue #459 will replace this with a real JWT session.
+      // Provision a store user so AdminGate (wrapping ReadyContent) unlocks.
+      // Issue #459 replaces this with a real JWT session.
       useUserStore.getState().setUser({
         id:                 'admin-api-key-session',
         email:              'admin@sovereign-studio',
@@ -86,7 +101,6 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
           Wird durch JWT-Auth in Issue #459 ersetzt.
         </div>
       </div>
-
       <div style={{ width: '100%', maxWidth: 280, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <input
           type="password"
@@ -114,7 +128,7 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
   );
 }
 
-// ── Audit log (inline) ────────────────────────────────────────────────────────
+// ── Audit log view ────────────────────────────────────────────────────────────
 
 function AuditLogView() {
   const { entries, total, loading, error, reload } = useAdminAuditLog();
@@ -148,8 +162,9 @@ function AuditLogView() {
   );
 }
 
-// ── Ready content — only mounts after API key validated ───────────────────────
-// All hooks live here so they never fire before key is ready.
+// ── Ready content ─────────────────────────────────────────────────────────────
+// Only mounts after key validated AND user set in store.
+// AdminGate lives here — NOT around the whole panel.
 
 function ReadyContent() {
   const [tab, setTab]           = useState<Tab>('users');
@@ -161,75 +176,87 @@ function ReadyContent() {
   const llmApi      = useAdminLlmRoutes();
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.bg }}>
-      {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, overflowX: 'auto', flexShrink: 0 }}>
-        {TABS.map(t => {
-          const Icon = t.icon;
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: `2px solid ${active ? C.accent : 'transparent'}`, color: active ? C.accent : C.textSub, flexShrink: 0, minWidth: 56 }}
-            >
-              <Icon size={14} />
-              <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
+    <AdminGate>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.bg }}>
+        {/* Tab bar */}
+        <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, overflowX: 'auto', flexShrink: 0 }}>
+          {TABS.map(t => {
+            const Icon = t.icon;
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: `2px solid ${active ? C.accent : 'transparent'}`, color: active ? C.accent : C.textSub, flexShrink: 0, minWidth: 56 }}
+              >
+                <Icon size={14} />
+                <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-        {tab === 'users'    && <UserTable api={usersApi} onEdit={setEditUser} />}
-        {tab === 'billing'  && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <BillingStats />
-            <TransactionTable api={txApi} />
-          </div>
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+          {tab === 'users'    && <UserTable api={usersApi} onEdit={setEditUser} />}
+          {tab === 'billing'  && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <BillingStats />
+              <TransactionTable api={txApi} />
+            </div>
+          )}
+          {tab === 'launcher' && <LauncherToolEditor api={launcherApi} />}
+          {tab === 'llm'      && <LlmRouteEditor api={llmApi} />}
+          {tab === 'audit'    && <AuditLogView />}
+        </div>
+
+        {editUser && (
+          <UserEditModal
+            user={editUser}
+            api={usersApi}
+            onClose={() => { setEditUser(null); usersApi.reload(); }}
+          />
         )}
-        {tab === 'launcher' && <LauncherToolEditor api={launcherApi} />}
-        {tab === 'llm'      && <LlmRouteEditor api={llmApi} />}
-        {tab === 'audit'    && <AuditLogView />}
       </div>
-
-      {editUser && (
-        <UserEditModal
-          user={editUser}
-          api={usersApi}
-          onClose={() => { setEditUser(null); usersApi.reload(); }}
-        />
-      )}
-    </div>
+    </AdminGate>
   );
 }
 
 // ── Root panel ────────────────────────────────────────────────────────────────
 
-function PanelContent(_props: LauncherToolProps) {
+export function AdminPanel(_props: LauncherToolProps) {
   const [ready, setReady] = useState(false);
 
-  // Restore key from localStorage and verify it on mount
+  // On mount: if a key exists and user not yet in store, re-validate the key.
   useEffect(() => {
     const key = getAdminKey();
     if (!key) return;
     adminApiClient.ping()
-      .then(() => setReady(true))
-      .catch(() => setReady(false)); // Key present but invalid → show setup screen
+      .then(result => {
+        useUserStore.getState().setUser({
+          id:                 'admin-api-key-session',
+          email:              'admin@sovereign-studio',
+          displayName:        'Admin',
+          role:               (result.role as UserRole) ?? 'admin',
+          credits:            0,
+          subscriptionStatus: 'active',
+          isBanned:           false,
+          createdAt:          Date.now(),
+        });
+        setReady(true);
+      })
+      .catch(() => {
+        // Key present but stale/invalid → show setup screen
+        setReady(false);
+      });
   }, []);
 
-  if (!ready) return <ApiKeySetup onReady={() => setReady(true)} />;
+  if (!ready) {
+    // API key setup renders WITHOUT AdminGate — this is intentional.
+    // The gate only wraps ReadyContent (below), after key is validated.
+    return <ApiKeySetup onReady={() => setReady(true)} />;
+  }
 
-  // ReadyContent mounts only here — all hooks are gated behind this point
   return <ReadyContent />;
-}
-
-export function AdminPanel({ onClose, onMinimize }: LauncherToolProps) {
-  return (
-    <AdminGate>
-      <PanelContent onClose={onClose} onMinimize={onMinimize} />
-    </AdminGate>
-  );
 }
