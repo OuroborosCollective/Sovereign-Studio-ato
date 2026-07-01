@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import os
 import threading
 import time
@@ -1534,6 +1535,258 @@ def user_billing_deduct():
         return jsonify({"ok": True, "deducted": amount})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# USER AUTH  —  Issue #459
+# Routes: /api/auth/register  /api/auth/login  /api/auth/me
+#         /api/auth/logout    /api/auth/google
+#
+# DB columns required (already migrated):
+#   ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+#   ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS google_id TEXT;
+#   ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+# ═════════════════════════════════════════════════════════════════════════════
+
+SESSION_SECRET   = os.getenv("SESSION_SECRET", "")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+_COOKIE          = "sovereign_session"
+_COOKIE_MAX_AGE  = 7 * 24 * 3600  # 7 days
+
+
+def _hash_pw(password: str) -> str:
+    """PBKDF2-SHA256, 260 000 rounds — no extra deps needed."""
+    salt = os.urandom(16)
+    key  = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 260_000)
+    return base64.b64encode(salt + key).decode()
+
+
+def _verify_pw(password: str, stored: str) -> bool:
+    try:
+        raw  = base64.b64decode(stored)
+        salt = raw[:16]
+        key  = raw[16:]
+        new  = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 260_000)
+        return hmac.compare_digest(key, new)
+    except Exception:
+        return False
+
+
+def _make_jwt(user_id: str) -> str:
+    import jwt as pyjwt
+    return pyjwt.encode(
+        {"sub": str(user_id), "exp": int(time.time()) + _COOKIE_MAX_AGE},
+        SESSION_SECRET, algorithm="HS256",
+    )
+
+
+def _decode_jwt(token: str) -> str | None:
+    try:
+        import jwt as pyjwt
+        data = pyjwt.decode(token, SESSION_SECRET, algorithms=["HS256"])
+        return str(data["sub"])
+    except Exception:
+        return None
+
+
+def _user_row_to_dict(row) -> dict:
+    return {
+        "id":                 str(row["id"]),
+        "email":              row["email"],
+        "displayName":        row.get("display_name") or "",
+        "role":               row.get("role") or "user",
+        "credits":            int(row.get("credits") or 0),
+        "subscriptionStatus": row.get("subscription_status") or "free",
+        "isBanned":           bool(row.get("is_banned")),
+        "createdAt":          str(row.get("created_at") or ""),
+        "avatarUrl":          row.get("avatar_url"),
+        "googleId":           row.get("google_id"),
+    }
+
+
+def _set_session_cookie(response, user_id: str):
+    token = _make_jwt(user_id)
+    response.set_cookie(
+        _COOKIE, token,
+        max_age=_COOKIE_MAX_AGE,
+        httponly=True, secure=True, samesite="None",
+        path="/",
+    )
+    return response
+
+
+def _get_session_user_id() -> str | None:
+    token = request.cookies.get(_COOKIE)
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        token = auth[7:] if auth.startswith("Bearer ") else None
+    if not token:
+        return None
+    return _decode_jwt(token)
+
+
+def require_session(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        uid = _get_session_user_id()
+        if not uid:
+            return jsonify({"error": "Nicht eingeloggt"}), 401
+        request.session_user_id = uid
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    try:
+        body         = request.get_json(force=True) or {}
+        email        = (body.get("email") or "").strip().lower()
+        password     = body.get("password") or ""
+        display_name = (body.get("displayName") or body.get("display_name") or "").strip()
+
+        if not email or not password:
+            return jsonify({"error": "E-Mail und Passwort erforderlich"}), 400
+        if len(password) < 8:
+            return jsonify({"error": "Passwort muss mindestens 8 Zeichen haben"}), 400
+
+        existing = query("SELECT id FROM admin_users WHERE email = %s LIMIT 1", (email,), one=True)
+        if existing:
+            return jsonify({"error": "E-Mail bereits registriert"}), 409
+
+        pw_hash = _hash_pw(password)
+        new_id  = str(uuid.uuid4())
+        query(
+            """INSERT INTO admin_users
+               (id, email, display_name, role, credits, subscription_status,
+                is_banned, password_hash, created_at, last_active_at)
+               VALUES (%s::uuid, %s, %s, 'user', 500, 'free', false, %s, NOW(), NOW())""",
+            (new_id, email, display_name or email.split("@")[0], pw_hash),
+            write=True,
+        )
+        row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (new_id,), one=True)
+        resp = make_response(jsonify(_user_row_to_dict(row)))
+        return _set_session_cookie(resp, new_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    try:
+        body     = request.get_json(force=True) or {}
+        email    = (body.get("email") or "").strip().lower()
+        password = body.get("password") or ""
+
+        if not email or not password:
+            return jsonify({"error": "E-Mail und Passwort erforderlich"}), 400
+
+        row = query(
+            "SELECT * FROM admin_users WHERE email = %s LIMIT 1",
+            (email,), one=True,
+        )
+        if not row or not row.get("password_hash"):
+            return jsonify({"error": "Ungültige Zugangsdaten"}), 401
+        if not _verify_pw(password, row["password_hash"]):
+            return jsonify({"error": "Ungültige Zugangsdaten"}), 401
+        if row.get("is_banned"):
+            return jsonify({"error": "Konto gesperrt"}), 403
+
+        query(
+            "UPDATE admin_users SET last_active_at = NOW() WHERE id = %s::uuid",
+            (str(row["id"]),), write=True,
+        )
+        resp = make_response(jsonify(_user_row_to_dict(row)))
+        return _set_session_cookie(resp, str(row["id"]))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/auth/me")
+@require_session
+def auth_me():
+    try:
+        row = query(
+            "SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1",
+            (request.session_user_id,), one=True,
+        )
+        if not row:
+            return jsonify({"error": "User nicht gefunden"}), 404
+        return jsonify(_user_row_to_dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    resp = make_response(jsonify({"ok": True}))
+    resp.delete_cookie(_COOKIE, path="/", samesite="None", secure=True)
+    return resp
+
+
+@app.route("/api/auth/google", methods=["POST"])
+def auth_google():
+    """Verify Google ID token and create/login user."""
+    try:
+        body     = request.get_json(force=True) or {}
+        id_token = body.get("idToken") or body.get("id_token") or ""
+        if not id_token:
+            return jsonify({"error": "ID-Token fehlt"}), 400
+
+        # Verify token with Google's JWKS
+        try:
+            import jwt as pyjwt
+            from jwt import PyJWKClient
+            jwks = PyJWKClient("https://www.googleapis.com/oauth2/v3/certs")
+            signing_key = jwks.get_signing_key_from_jwt(id_token)
+            payload = pyjwt.decode(
+                id_token, signing_key.key,
+                algorithms=["RS256"],
+                audience=GOOGLE_CLIENT_ID if GOOGLE_CLIENT_ID else None,
+                options={"verify_aud": bool(GOOGLE_CLIENT_ID)},
+            )
+        except Exception as verify_err:
+            return jsonify({"error": f"Google-Token ungültig: {verify_err}"}), 401
+
+        google_id   = payload.get("sub") or ""
+        email       = (payload.get("email") or "").lower()
+        display_name= payload.get("name") or email.split("@")[0]
+        avatar_url  = payload.get("picture")
+
+        if not google_id or not email:
+            return jsonify({"error": "Unvollständige Google-Daten"}), 400
+
+        # Find existing user by google_id or email
+        row = query(
+            "SELECT * FROM admin_users WHERE google_id = %s OR email = %s LIMIT 1",
+            (google_id, email), one=True,
+        )
+
+        if row:
+            user_id = str(row["id"])
+            query(
+                """UPDATE admin_users
+                   SET google_id = %s, avatar_url = COALESCE(%s, avatar_url),
+                       last_active_at = NOW()
+                   WHERE id = %s::uuid""",
+                (google_id, avatar_url, user_id), write=True,
+            )
+        else:
+            user_id = str(uuid.uuid4())
+            query(
+                """INSERT INTO admin_users
+                   (id, email, display_name, role, credits, subscription_status,
+                    is_banned, google_id, avatar_url, created_at, last_active_at)
+                   VALUES (%s::uuid, %s, %s, 'user', 500, 'free', false,
+                           %s, %s, NOW(), NOW())""",
+                (user_id, email, display_name, google_id, avatar_url),
+                write=True,
+            )
+
+        row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,), one=True)
+        resp = make_response(jsonify(_user_row_to_dict(row)))
+        return _set_session_cookie(resp, user_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 # ═════════════════════════════════════════════════════════════════════════════

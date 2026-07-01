@@ -590,6 +590,9 @@ import {
 } from "../runtime/workerIntentDetector";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
+import { useUserStore } from '../../user/useUserStore';
+import { LoginModal } from '../../user/components/LoginModal';
+import { UserProfile } from '../../user/components/UserProfile';
 
 function buildWorkerSystemPrompt(args: {
   readonly repoReady: boolean;
@@ -1031,6 +1034,10 @@ function TopBar({
   palTier: string | null;
   palSavings: number | null;
   credits?: number;
+  userAvatar?: string | null;
+  userInitials?: string;
+  userLoggedIn?: boolean;
+  onUserClick?: () => void;
 }) {
   const repoLabel = chatRepoSnapshot
     ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
@@ -1164,6 +1171,35 @@ function TopBar({
         {credits !== undefined && (
           <CreditDisplay credits={credits} />
         )}
+
+        {/* User avatar / login button — Issue #459 */}
+        {onUserClick && (
+          <button
+            type="button"
+            onClick={onUserClick}
+            aria-label={userLoggedIn ? 'Profil' : 'Anmelden'}
+            title={userLoggedIn ? 'Profil' : 'Anmelden'}
+            style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: userLoggedIn ? `${C.accent}22` : C.bg,
+              border: `1px solid ${userLoggedIn ? `${C.accent}55` : C.border}`,
+              color: userLoggedIn ? C.accent : C.textSub,
+              fontSize: userAvatar ? 0 : 13,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
+              overflow: 'hidden', fontWeight: 700,
+              padding: 0,
+            }}
+          >
+            {userAvatar
+              ? <img src={userAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : userLoggedIn
+                ? <span style={{ fontSize: 11 }}>{userInitials || '?'}</span>
+                : <span>👤</span>
+            }
+          </button>
+        )}
+
         <Ampel status={status} />
 
         <button
@@ -3107,6 +3143,11 @@ export function BuilderContainer({
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
   const { credits, chargeCredits } = useCreditGuard();
+  // ── Issue #459: User auth state
+  const { user: authUser, refreshUser } = useUserStore();
+  const [showLogin, setShowLogin]     = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [statusLogs, setStatusLogs] = useState<
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
@@ -4074,6 +4115,13 @@ export function BuilderContainer({
         palTier={lastPal?.tier ?? null}
         palSavings={palStats?.savings ?? null}
         credits={credits}
+        userLoggedIn={!!authUser}
+        userAvatar={authUser?.avatarUrl ?? null}
+        userInitials={authUser
+          ? (authUser.displayName || authUser.email)
+              .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+          : undefined}
+        onUserClick={() => authUser ? setShowProfile(true) : setShowLogin(true)}
       />
 
       {/* COLLAPSIBLE STATUS/LOG PANEL */}
@@ -4521,6 +4569,15 @@ export function BuilderContainer({
         </div>
       )}
     </section>
+
+      {/* Issue #459: Auth modals */}
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+      {showProfile && (
+        <UserProfile
+          onClose={() => setShowProfile(false)}
+          onBuyCredits={() => { setShowProfile(false); }}
+        />
+      )}
   );
 }
 
