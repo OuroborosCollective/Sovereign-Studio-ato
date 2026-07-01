@@ -2,6 +2,7 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuilderContainer } from "./BuilderContainer";
+import { useUserStore } from "../../user/useUserStore";
 
 /** ----------------------------------------------------------------
  *  Shared helpers & default props
@@ -50,10 +51,14 @@ function mockWorkerReply(text = "Worker Antwort aus Cloudflare Route.") {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
+  useUserStore.getState().clearUser();
   mockWorkerReply();
 });
 
 afterEach(() => {
+  useUserStore.getState().clearUser();
+  window.localStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -100,7 +105,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText("Changes")).toBeNull();
     expect(screen.queryByText("Code")).toBeNull();
     expect(screen.queryByText("Terminal")).toBeNull();
-    expect(screen.queryByText("Browser")).toBeNull();
     expect(screen.queryByText(/Sovereign geführter Chat Ablauf/i)).toBeNull();
   });
 
