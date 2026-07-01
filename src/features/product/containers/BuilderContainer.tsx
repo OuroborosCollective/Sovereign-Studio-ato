@@ -74,7 +74,16 @@ import {
   createPatternMemoryStore,
   type PatternMemoryStore,
 } from "../runtime/patternMemoryRuntime";
-import type { LlmRouteSelectionResult } from "../runtime/llmRouteBudgetRuntime";
+import {
+  createBudgetLedger,
+  recordRouteUsage,
+  selectLlmRoute,
+  createRouteRegistry,
+  createUserPlanState,
+  summarizeLlmBudgetState,
+  type LlmBudgetLedger,
+  type LlmRouteSelectionResult,
+} from "../runtime/llmRouteBudgetRuntime";
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -828,32 +837,21 @@ function sameConditions(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-// ── Issue #446: Derive BUD inspector state from real palDecisions
-const BUD_ROUTE_MAP = {
-  fast:  { id: "fast",  label: "Fast",  budgetByPlan: { session: Infinity }, priority: 1 },
-  smart: { id: "smart", label: "Smart", budgetByPlan: { session: Infinity }, priority: 2 },
-  power: { id: "power", label: "Power", budgetByPlan: { session: Infinity }, priority: 3 },
-} as const;
+// ── Issue #446: Real LlmBudgetLedger wiring — routes mirror PAL tiers.
+// Budget ist in dieser Session-Plan unbegrenzt (Infinity), aber die
+// tatsächlich genutzten Counts kommen aus dem echten Ledger-State.
+const BUD_REGISTRY = createRouteRegistry([
+  { id: "fast",  label: "Fast",  budgetByPlan: { session: Infinity }, priority: 1 },
+  { id: "smart", label: "Smart", budgetByPlan: { session: Infinity }, priority: 2 },
+  { id: "power", label: "Power", budgetByPlan: { session: Infinity }, priority: 3 },
+]);
+const BUD_PLAN = createUserPlanState("session", ["fast", "smart", "power"]);
 
-function deriveBudStateFromPalDecisions(
-  palDecisions: Array<{ tier: "fast" | "smart" | "power" }>,
-): BudInspectorState {
-  const fastCount  = palDecisions.filter((d) => d.tier === "fast").length;
-  const smartCount = palDecisions.filter((d) => d.tier === "smart").length;
-  const powerCount = palDecisions.filter((d) => d.tier === "power").length;
-
-  const parts: string[] = [];
-  if (fastCount  > 0) parts.push(`Fast: ${fastCount}`);
-  if (smartCount > 0) parts.push(`Smart: ${smartCount}`);
-  if (powerCount > 0) parts.push(`Power: ${powerCount}`);
-  const budgetSummary =
-    parts.length > 0 ? parts.join(" · ") : "Keine Routings in dieser Sitzung.";
-
-  // Kein echter Budget-Ledger im BuilderContainer verknüpft.
-  // palDecisions = Routing-Historie dieser Sitzung, kein Budgetstand.
-  // selectionResult bleibt null bis ein echter Ledger-State verfügbar ist.
-  // Anforderung: Keine "available"-Anzeige wenn Budget nicht bekannt. #446
-  return { selectionResult: null, budgetSummary };
+/** Leitet BudInspectorState aus dem echten LlmBudgetLedger ab. */
+function deriveBudFromLedger(ledger: LlmBudgetLedger): BudInspectorState {
+  const selectionResult = selectLlmRoute(BUD_REGISTRY, BUD_PLAN, ledger);
+  const budgetSummary   = summarizeLlmBudgetState(BUD_REGISTRY, BUD_PLAN, ledger);
+  return { selectionResult, budgetSummary };
 }
 
 function buildRuntimeConfidence(args: {
@@ -3100,6 +3098,7 @@ export function BuilderContainer({
   const [confidence, setConfidence] = useState(0.12);
   const [panelOpen, setPanelOpen] = useState(false);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
+  const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
   const [statusLogs, setStatusLogs] = useState<
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
@@ -3476,7 +3475,7 @@ export function BuilderContainer({
     const hasOutput =
       (openhandsJob?.changedFiles?.length ?? 0) > 0 ||
       Boolean(openhandsJob?.draftPrUrl);
-    const budState = deriveBudStateFromPalDecisions(palDecisions);
+    const budState = deriveBudFromLedger(budgetLedger);
     const budBlocked = budState.selectionResult?.status === "blocked";
     const nextSignals: Record<string, SignalType> = {
       chat: workerBlocker
@@ -3650,6 +3649,7 @@ export function BuilderContainer({
     openhandsReady,
     outcomeHints.length,
     palDecisions.length,
+    budgetLedger,
     repoBusy,
     repoReady,
     runtimeThinkingActive,
@@ -3742,6 +3742,7 @@ export function BuilderContainer({
         // Clear chat lines but NOT repo, token, remote memory
         setChatHistory([]);
         setPalDecisions([]);
+        setBudgetLedger(createBudgetLedger());
         triggerHaptic("light");
         appendChatLine({
           role: "assistant",
@@ -3780,6 +3781,7 @@ export function BuilderContainer({
           palDecisions,
         );
         setPalDecisions((prev) => [...prev.slice(-99), d]);
+        setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
         addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
         return;
       }
@@ -3828,6 +3830,7 @@ export function BuilderContainer({
       palDecisions,
     );
     setPalDecisions((prev) => [...prev.slice(-99), d]);
+    setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
     addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
 
     if (isOpenHandsExecutionIntent(submittedText)) {
@@ -4316,7 +4319,7 @@ export function BuilderContainer({
                 powerTierCount: palDecisions.filter((d) => d.tier === "power").length,
               },
               { chatRepoSnapshot },
-              deriveBudStateFromPalDecisions(palDecisions),
+              deriveBudFromLedger(budgetLedger),
             )}
             onSignalClick={(prompt) => setWishText(prompt)}
           />
