@@ -1,0 +1,1 @@
+- [Payment module architecture](payment-module.md) — payment_methods + credit_packages DB-Tabellen; kein Mock; alle Zahlungs-Routen in app.py nach Zeile 635.
