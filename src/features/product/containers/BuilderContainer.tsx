@@ -3443,6 +3443,8 @@ export function BuilderContainer({
     const hasOutput =
       (openhandsJob?.changedFiles?.length ?? 0) > 0 ||
       Boolean(openhandsJob?.draftPrUrl);
+    const budState = deriveBudStateFromPalDecisions(palDecisions);
+    const budBlocked = budState.selectionResult?.status === "blocked";
     const nextSignals: Record<string, SignalType> = {
       chat: workerBlocker
         ? "error"
@@ -3476,6 +3478,11 @@ export function BuilderContainer({
             : "idle",
       logger:
         statusLogs.length > 0 || outcomeHints.length > 0 ? "active" : "idle",
+      budget: budBlocked
+        ? "error"
+        : palDecisions.length > 0
+          ? "active"
+          : "idle",
     };
 
     setSignals((previous) =>
@@ -3551,7 +3558,10 @@ export function BuilderContainer({
           label: "Route active",
           status: palDecisions.length > 0 ? "pass" : "wait",
         },
-        { label: "Budget available", status: "pass" },
+        {
+          label: "Budget available",
+          status: budBlocked ? "fail" : "pass",
+        },
         { label: "Ledger synced", status: "pass" },
       ],
     };
