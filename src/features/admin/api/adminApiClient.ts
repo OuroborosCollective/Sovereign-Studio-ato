@@ -1,16 +1,18 @@
 /**
  * adminApiClient — Real HTTP client for sovereign-backend admin API.
  *
- * Base URL : https://sovereign-backend.arelorian.de
- * Auth     : Authorization: Bearer <admin-api-key>
- *
- * The API key is entered once in AdminPanel and stored in localStorage.
- * Flask returns camelCase (via SQL AS-aliases), so all types here are camelCase.
+ * Base URL resolved from VITE_ADMIN_API_BASE env var (set in CI and .env).
+ * Auth: Authorization: Bearer <admin-api-key> stored in localStorage.
+ * Flask returns camelCase via SQL AS-aliases — all types here are camelCase.
  *
  * Issue #460
  */
 
-export const ADMIN_API_BASE = 'https://sovereign-backend.arelorian.de';
+// Resolved at build time by Vite; falls back to production URL.
+export const ADMIN_API_BASE: string =
+  (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
+  'https://sovereign-backend.arelorian.de';
+
 export const ADMIN_KEY_STORAGE = 'sovereign_admin_api_key';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -21,31 +23,31 @@ export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing'
 export interface AdminUser {
   id: string;
   email: string;
-  displayName: string;          // SQL: display_name AS "displayName"
+  displayName: string;
   role: UserRole;
   credits: number;
-  subscriptionStatus: SubscriptionStatus; // SQL: subscription_status AS "subscriptionStatus"
-  isBanned: boolean;            // SQL: is_banned AS "isBanned"
-  createdAt: string;            // SQL: created_at AS "createdAt"
-  lastActiveAt: string | null;  // SQL: last_active_at AS "lastActiveAt"
+  subscriptionStatus: SubscriptionStatus;
+  isBanned: boolean;
+  createdAt: string;
+  lastActiveAt: string | null;
 }
 
 export interface Transaction {
   id: string;
-  userId: string | null;        // SQL: user_id::text AS "userId"
-  userEmail: string;            // SQL: user_email AS "userEmail"
+  userId: string | null;
+  userEmail: string;
   type: 'credit_purchase' | 'subscription' | 'refund' | 'adjustment' | 'usage';
   amount: number;
   currency: string;
   status: 'completed' | 'pending' | 'failed' | 'refunded';
   description: string;
-  createdAt: string;            // SQL: created_at AS "createdAt"
+  createdAt: string;
 }
 
 export interface BillingStats {
   mrr: number;
-  activeSubscriptions: number;  // Flask key: activeSubscriptions
-  totalCredits: number;         // Flask key: totalCredits
+  activeSubscriptions: number;
+  totalCredits: number;
   totalRevenue: number;
   churnRate: number;
 }
@@ -55,27 +57,27 @@ export interface LauncherToolOverride {
   label: string;
   disabled: boolean;
   badge: 'NEU' | 'BETA' | 'PRO' | null;
-  sortOrder: number;            // SQL: sort_order AS "sortOrder"
+  sortOrder: number;
 }
 
 export interface LlmRoute {
   id: string;
-  modelId: string;              // SQL: model_id AS "modelId"
-  modelName: string;            // SQL: model_name AS "modelName"
+  modelId: string;
+  modelName: string;
   provider: string;
-  creditsPerUnit: number;       // SQL: credits_per_unit AS "creditsPerUnit"
+  creditsPerUnit: number;
   disabled: boolean;
   priority: number;
 }
 
 export interface AuditEntry {
   id: string;
-  adminId: string;              // SQL: admin_id AS "adminId"
-  adminEmail: string;           // SQL: admin_email AS "adminEmail"
+  adminId: string;
+  adminEmail: string;
   action: string;
-  targetId: string | null;      // SQL: target_id AS "targetId"
+  targetId: string | null;
   changes: Record<string, unknown>;
-  createdAt: string;            // SQL: created_at AS "createdAt"
+  createdAt: string;
 }
 
 // ── Key management ────────────────────────────────────────────────────────────
@@ -120,7 +122,6 @@ export const adminApiClient = {
     return req<{ ok: boolean; role: string }>('/api/admin/ping');
   },
 
-  // Users
   getUsers(p?: { page?: number; search?: string; limit?: number }) {
     const q = new URLSearchParams();
     if (p?.page)   q.set('page',   String(p.page));
@@ -132,7 +133,7 @@ export const adminApiClient = {
   updateUser(id: string, changes: Partial<Pick<AdminUser, 'role' | 'credits' | 'subscriptionStatus' | 'isBanned'>>) {
     return req<{ ok: boolean; user: AdminUser }>(`/api/admin/users/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(changes), // Flask reads subscriptionStatus, isBanned
+      body: JSON.stringify(changes),
     });
   },
 
@@ -143,7 +144,6 @@ export const adminApiClient = {
     });
   },
 
-  // Transactions
   getTransactions(p?: { userId?: string; type?: string; page?: number; limit?: number }) {
     const q = new URLSearchParams();
     if (p?.userId) q.set('user_id', p.userId);
@@ -153,12 +153,10 @@ export const adminApiClient = {
     return req<{ transactions: Transaction[]; total: number; page: number }>(`/api/admin/transactions?${q}`);
   },
 
-  // Billing
   getBillingStats() {
     return req<BillingStats>('/api/admin/billing/stats');
   },
 
-  // Launcher
   getLauncherTools() {
     return req<{ tools: LauncherToolOverride[] }>('/api/admin/launcher/tools');
   },
@@ -166,11 +164,10 @@ export const adminApiClient = {
   updateLauncherTool(id: string, changes: Partial<Pick<LauncherToolOverride, 'disabled' | 'badge' | 'sortOrder'>>) {
     return req<{ ok: boolean }>(`/api/admin/launcher/tools/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(changes), // Flask reads sortOrder → sort_order
+      body: JSON.stringify(changes),
     });
   },
 
-  // LLM
   getLlmRoutes() {
     return req<{ routes: LlmRoute[] }>('/api/admin/llm/routes');
   },
@@ -178,11 +175,10 @@ export const adminApiClient = {
   updateLlmRoute(id: string, changes: Partial<Pick<LlmRoute, 'creditsPerUnit' | 'disabled' | 'priority'>>) {
     return req<{ ok: boolean }>(`/api/admin/llm/routes/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(changes), // Flask reads creditsPerUnit → credits_per_unit
+      body: JSON.stringify(changes),
     });
   },
 
-  // Audit
   getAuditLog(p?: { page?: number; limit?: number }) {
     const q = new URLSearchParams();
     if (p?.page)  q.set('page',  String(p.page));
