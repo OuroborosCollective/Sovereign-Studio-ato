@@ -105,6 +105,7 @@ import {
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
+import { usePatternMemoryStore } from "../hooks/usePatternMemoryStore";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -3213,6 +3214,17 @@ export function BuilderContainer({
     },
     [],
   );
+
+  // ── Issue #447: Auto-save workflow patterns after Draft PR success
+  usePatternMemoryStore({
+    agentWorkSnapshot,
+    patternMemoryStore,
+    setPatternMemoryStore,
+    mission,
+    repoOwner: chatRepoSnapshot?.owner ?? '',
+    repoName: chatRepoSnapshot?.repo ?? '',
+    appendChatLine,
+  });
 
   // ── Issue #425: Track unseen messages
   const lastChatHistoryLengthRef = useRef(chatHistory.length);
