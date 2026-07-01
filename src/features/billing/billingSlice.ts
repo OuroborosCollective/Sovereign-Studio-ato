@@ -65,7 +65,7 @@ const initialState: BillingState = {
   isPaywallActive: true,
   isSubscribed: false,
   isTrialing: false,
-  // Credits — Issue #458
+  // Credits — Issue #458. Server ledger is the source of truth; default must not fake a balance.
   credits: 0,
   isPaywallOpen: false,
   insufficientFor: null,

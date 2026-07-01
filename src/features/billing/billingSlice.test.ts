@@ -17,7 +17,7 @@ describe('billingSlice reducer', () => {
     isPaywallActive: true,
     isSubscribed: false,
     isTrialing: false,
-    credits: 1000,
+    credits: 0,
     isPaywallOpen: false,
     insufficientFor: null,
   };
