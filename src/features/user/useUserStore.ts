@@ -174,6 +174,9 @@ export const useUserStore = create<UserStore>()(
       },
 
       refreshUser: async () => {
+        const existingUser = get().user;
+        if (!existingUser) return;
+
         try {
           const res = await authFetch('/api/auth/me');
           if (res.ok) {
