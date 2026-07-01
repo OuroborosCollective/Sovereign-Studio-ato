@@ -55,12 +55,15 @@ export interface SovereignToolLauncherProps {
   tools?: readonly ToolEntry[];
   onSelect: (id: ToolId) => void;
   activeToolId?: ToolId | null;
+  /** Öffnet den Sovereign Launcher App-Grid (Issue #452) */
+  onOpenLauncher?: () => void;
 }
 
 export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   tools = DEFAULT_TOOLS,
   onSelect,
   activeToolId = null,
+  onOpenLauncher,
 }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -139,6 +142,40 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
             zIndex: 200,
           }}
         >
+          {/* ── Sovereign Launcher — öffnet App-Grid (Issue #452) ── */}
+          {onOpenLauncher && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { onOpenLauncher(); setOpen(false); }}
+              title="Alle Tools im Launcher"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                width: '100%',
+                padding: '8px 14px 9px',
+                background: `${C.accent}12`,
+                border: 'none',
+                borderBottom: `1px solid ${C.border}`,
+                borderLeft: `2px solid ${C.accent}`,
+                cursor: 'pointer',
+                textAlign: 'left',
+                marginBottom: 4,
+              }}
+              aria-label="Alle Tools im Launcher öffnen"
+            >
+              <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0, color: C.accent }}>
+                ⬡
+              </span>
+              <span style={{ fontSize: 13, color: C.accent, fontWeight: 600 }}>
+                Alle Tools
+              </span>
+              <span style={{ fontSize: 10, color: C.textSub, marginLeft: 'auto' }}>
+                Launcher →
+              </span>
+            </button>
+          )}
           <div
             style={{
               padding: '6px 14px 8px',

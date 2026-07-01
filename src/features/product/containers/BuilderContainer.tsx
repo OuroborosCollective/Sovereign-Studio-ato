@@ -105,6 +105,9 @@ import {
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
+import { useLauncherStore } from "../../launcher/useLauncherStore";
+import { LauncherMenu } from "../../launcher/components/LauncherMenu";
+import { LauncherWindowHost } from "../../launcher/components/LauncherWindowHost";
 import {
   usePatternMemoryStore,
   loadPatternMemoryStoreFromStorage,
@@ -4330,7 +4333,7 @@ export function BuilderContainer({
       {/* COMPOSER — only in chat view, v3 verbatim */}
       {isChat && (
         <>
-          {/* ── Issue #445: SovereignToolLauncher — quick-action "+" launcher */}
+          {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
           <SovereignToolLauncher
             onSelect={(toolId: ToolId) => {
               if (toolId === 'repo') { setShowRepoExplorer(true); return; }
@@ -4348,6 +4351,7 @@ export function BuilderContainer({
                 return;
               }
             }}
+            onOpenLauncher={useLauncherStore.getState().openMenu}
           />
           <Composer
             value={wishText}
@@ -4388,6 +4392,10 @@ export function BuilderContainer({
         signals={signals}
         onTabClick={switchTab}
       />
+
+      {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}
+      <LauncherMenu />
+      <LauncherWindowHost />
 
       {/* OVERLAYS — v3 verbatim */}
       {showRuntimeSheet && (
