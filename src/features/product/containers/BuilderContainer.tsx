@@ -588,6 +588,8 @@ import {
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
 } from "../runtime/workerIntentDetector";
+import { useCreditGuard } from '../../billing/useCreditGuard';
+import { CreditDisplay } from '../../billing/components/CreditDisplay';
 
 function buildWorkerSystemPrompt(args: {
   readonly repoReady: boolean;
@@ -1010,6 +1012,7 @@ function TopBar({
   onPanelToggle,
   palTier,
   palSavings,
+  credits,
 }: {
   status: AgentStatus;
   repoReady: boolean;
@@ -1027,6 +1030,7 @@ function TopBar({
   onPanelToggle: () => void;
   palTier: string | null;
   palSavings: number | null;
+  credits?: number;
 }) {
   const repoLabel = chatRepoSnapshot
     ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
@@ -1157,6 +1161,9 @@ function TopBar({
           </button>
         </div>
 
+        {credits !== undefined && (
+          <CreditDisplay credits={credits} />
+        )}
         <Ampel status={status} />
 
         <button
@@ -3099,6 +3106,7 @@ export function BuilderContainer({
   const [panelOpen, setPanelOpen] = useState(false);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
+  const { credits, chargeCredits } = useCreditGuard();
   const [statusLogs, setStatusLogs] = useState<
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
@@ -3823,6 +3831,14 @@ export function BuilderContainer({
       addLog("info", "Worker retry requested by user", "router");
     }
 
+    // ── #458 Credit guard — charge before LLM call ────────────────────────
+    const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
+    const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
+    if (!_canProceed) {
+      addLog("warn", "Credits nicht ausreichend — Paywall geöffnet", "billing");
+      return;
+    }
+
     const d = palRoute(
       submittedText,
       chatHistory.length + 1,
@@ -4057,6 +4073,7 @@ export function BuilderContainer({
         onPanelToggle={() => setPanelOpen((v) => !v)}
         palTier={lastPal?.tier ?? null}
         palSavings={palStats?.savings ?? null}
+        credits={credits}
       />
 
       {/* COLLAPSIBLE STATUS/LOG PANEL */}

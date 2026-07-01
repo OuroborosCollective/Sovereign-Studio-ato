@@ -44,6 +44,10 @@ export interface BillingState {
   isPaywallActive: boolean;
   isSubscribed: boolean;
   isTrialing: boolean;
+  // Credits system — Issue #458
+  credits: number;
+  isPaywallOpen: boolean;
+  insufficientFor: { required: number; available: number } | null;
 }
 
 const initialState: BillingState = {
@@ -57,6 +61,10 @@ const initialState: BillingState = {
   isPaywallActive: true,
   isSubscribed: false,
   isTrialing: false,
+  // Credits — Issue #458
+  credits: 1000,
+  isPaywallOpen: false,
+  insufficientFor: null,
 };
 
 export const fetchBillingData = createAsyncThunk(
@@ -154,7 +162,22 @@ const billingSlice = createSlice({
     },
     togglePaywall: (state, action: PayloadAction<boolean>) => {
       state.isPaywallActive = action.payload;
-    }
+    },
+    // Credits — Issue #458
+    deductCredits: (state, action: PayloadAction<number>) => {
+      state.credits = Math.max(0, state.credits - action.payload);
+    },
+    addCredits: (state, action: PayloadAction<number>) => {
+      state.credits += action.payload;
+    },
+    openCreditPaywall: (state, action: PayloadAction<{ required: number; available: number }>) => {
+      state.isPaywallOpen = true;
+      state.insufficientFor = action.payload;
+    },
+    closeCreditPaywall: (state) => {
+      state.isPaywallOpen = false;
+      state.insufficientFor = null;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -207,13 +230,47 @@ const billingSlice = createSlice({
       .addCase(restorePurchases.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
+      })
+      // Credits — Issue #458
+      .addCase(fetchUserCredits.fulfilled, (state, action: PayloadAction<number>) => {
+        state.credits = action.payload;
       });
   },
 });
 
-export const { resetBillingState, setBillingError, togglePaywall } = billingSlice.actions;
+export const {
+  resetBillingState,
+  setBillingError,
+  togglePaywall,
+  deductCredits,
+  addCredits,
+  openCreditPaywall,
+  closeCreditPaywall,
+} = billingSlice.actions;
+
+// Thunk: fetch user credit balance from backend — Issue #458
+export const fetchUserCredits = createAsyncThunk(
+  'billing/fetchUserCredits',
+  async (_, { rejectWithValue }) => {
+    try {
+      const userId = (localStorage.getItem('sovereign-user-id') ?? '').trim();
+      const res = await fetch('/api/billing/credits', {
+        headers: { ...(userId ? { 'X-User-Id': userId } : {}) },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { credits: number };
+      return data.credits;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler beim Laden der Credits';
+      return rejectWithValue(msg);
+    }
+  }
+);
 
 // Selectors
+export const selectCredits = (state: { billing: BillingState }) => state.billing.credits;
+export const selectIsPaywallOpen = (state: { billing: BillingState }) => state.billing.isPaywallOpen;
+export const selectInsufficientFor = (state: { billing: BillingState }) => state.billing.insufficientFor;
 export const selectSubscription = (state: { billing: BillingState }) => state.billing.subscription;
 export const selectIsSubscribed = (state: { billing: BillingState }) => state.billing.isSubscribed;
 export const selectIsLoading = (state: { billing: BillingState }) => state.billing.loading;

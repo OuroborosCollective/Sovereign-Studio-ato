@@ -626,3 +626,132 @@ def cancel_job(job_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8787, debug=False)
+
+
+# ── Public LLM Route endpoints (Issue #461) ──────────────────────────────────
+
+@app.route("/api/llm/routes")
+def public_llm_routes():
+    """All active LLM routes — merged DB config for frontend clients."""
+    try:
+        rows = query(
+            """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
+                      provider, credits_per_unit AS "creditsPerUnit",
+                      disabled, priority
+               FROM llm_routes
+               ORDER BY priority ASC"""
+        )
+        routes = []
+        for r in rows:
+            d = dict(r)
+            routes.append({
+                "id":                  d["id"],
+                "defaultModelId":      d["modelId"],
+                "label":               d["modelName"],
+                "description":         d["modelName"],
+                "creditsPerKTokens":   float(d["creditsPerUnit"]),
+                "enabled":             not d["disabled"],
+                "userKeyOverride":     True,
+                "maxTokensPerRequest": 32_000,
+            })
+        return jsonify({"routes": routes})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "routes": []}), 500
+
+
+@app.route("/api/llm/routes/<route_id>")
+def public_llm_route(route_id):
+    """Single LLM route by id — merged DB config for frontend clients."""
+    try:
+        row = query(
+            """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
+                      provider, credits_per_unit AS "creditsPerUnit",
+                      disabled, priority
+               FROM llm_routes
+               WHERE id::text = %s
+               LIMIT 1""",
+            (route_id,), one=True,
+        )
+        if not row:
+            return jsonify({"error": "Route nicht gefunden"}), 404
+        d = dict(row)
+        return jsonify({
+            "id":                  d["id"],
+            "defaultModelId":      d["modelId"],
+            "label":               d["modelName"],
+            "description":         d["modelName"],
+            "creditsPerKTokens":   float(d["creditsPerUnit"]),
+            "enabled":             not d["disabled"],
+            "userKeyOverride":     True,
+            "maxTokensPerRequest": 32_000,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── User Billing endpoints (Issue #458) ──────────────────────────────────────
+
+@app.route("/api/billing/credits")
+def user_billing_credits():
+    """Return credit balance for the authenticated user (X-User-Id header)."""
+    user_id = request.headers.get("X-User-Id", "").strip()
+    if not user_id:
+        return jsonify({"credits": 0}), 200
+    try:
+        row = query(
+            "SELECT credits FROM users WHERE id::text = %s LIMIT 1",
+            (user_id,), one=True,
+        )
+        credits = int(row["credits"]) if row else 0
+        return jsonify({"credits": credits})
+    except Exception as exc:
+        return jsonify({"credits": 0, "error": str(exc)}), 200
+
+
+@app.route("/api/billing/deduct", methods=["POST"])
+def user_billing_deduct():
+    """Server-side credit deduction with validation and usage logging."""
+    body        = request.get_json(force=True) or {}
+    user_id     = request.headers.get("X-User-Id", "").strip()
+    cost_id     = str(body.get("costId",    ""))
+    amount      = int(body.get("amount",    0))
+    token_count = int(body.get("tokenCount", 0))
+
+    if amount <= 0:
+        return jsonify({"ok": True, "deducted": 0})
+
+    try:
+        if user_id:
+            row = query(
+                "SELECT credits FROM users WHERE id::text = %s LIMIT 1",
+                (user_id,), one=True,
+            )
+            if not row:
+                return jsonify({"error": "User nicht gefunden"}), 404
+            current = int(row["credits"])
+            if current < amount:
+                return jsonify({
+                    "error":     "Nicht genug Credits",
+                    "available": current,
+                    "required":  amount,
+                }), 402
+            query(
+                "UPDATE users SET credits = GREATEST(0, credits - %s) WHERE id::text = %s",
+                (amount, user_id), write=True,
+            )
+
+        # Usage log — graceful if table doesn't exist yet
+        try:
+            query(
+                """INSERT INTO credit_usage
+                       (user_id, cost_id, credits_deducted, token_count, created_at)
+                   VALUES (%s, %s, %s, %s, NOW())""",
+                (user_id or None, cost_id, amount, token_count), write=True,
+            )
+        except Exception:
+            pass  # Table may not exist; deduction already applied above
+
+        return jsonify({"ok": True, "deducted": amount})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
