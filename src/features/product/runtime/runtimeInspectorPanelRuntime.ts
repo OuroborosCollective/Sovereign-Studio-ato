@@ -1,5 +1,5 @@
 /**
- * Runtime Inspector Panel Runtime — Issue #433 / #446
+ * Runtime Inspector Panel Runtime — Issue #433 / #446 / #447
  * Derives real runtime signals for PAT, ORC, INT, BUD modules from live state.
  * Integrates with quietInspectorHintPolicy.ts for unified signal format.
  * No fake state, no percentages, no dashboard.
@@ -8,6 +8,7 @@
 import type { DevChatRepoSnapshot } from "./devChatWorkerBridge";
 import { type QuietInspectorSignal, type QuietInspectorLamp, type QuietInspectorTarget } from "./quietInspectorHintPolicy";
 import type { LlmRouteSelectionResult } from "./llmRouteBudgetRuntime";
+import { type PatternMemoryStore, derivePatternMemoryCounters } from "./patternMemoryRuntime";
 
 export type RuntimeInspectorPanelId = "PAT" | "ORC" | "INT" | "BUD";
 
@@ -43,6 +44,27 @@ export function toQuietInspectorSignal(
 export interface PatInspectorState {
   readonly hasMemory: boolean;
   readonly patternCount: number;
+  /** Verified patterns (checked by runtime) — from patternMemoryRuntime */
+  readonly verifiedCount?: number;
+  /** Patterns that pass all 6 local-capability checks */
+  readonly localExecutableCount?: number;
+  /** Patterns reused at least 3 times */
+  readonly frequentlyUsedCount?: number;
+  /** Timestamp of last pattern reuse, or null */
+  readonly lastSuccessfulReuseAt?: number | null;
+}
+
+/** Build PatInspectorState directly from a PatternMemoryStore. */
+export function buildPatInspectorStateFromStore(store: PatternMemoryStore): PatInspectorState {
+  const c = derivePatternMemoryCounters(store);
+  return {
+    hasMemory: c.totalStored > 0,
+    patternCount: c.totalStored,
+    verifiedCount: c.verifiedCount,
+    localExecutableCount: c.localExecutableCount,
+    frequentlyUsedCount: c.frequentlyUsedCount,
+    lastSuccessfulReuseAt: c.lastSuccessfulReuseAt,
+  };
 }
 
 export function derivePatInspectorSignals(state: PatInspectorState): RuntimeInspectorSignal[] {
@@ -59,7 +81,7 @@ export function derivePatInspectorSignals(state: PatInspectorState): RuntimeInsp
     ];
   }
 
-  return [
+  const signals: RuntimeInspectorSignal[] = [
     {
       id: "pat-count",
       label: "Pattern Memory",
@@ -69,6 +91,41 @@ export function derivePatInspectorSignals(state: PatInspectorState): RuntimeInsp
       targetTab: "memory" as const,
     },
   ];
+
+  if (typeof state.verifiedCount === "number" && state.verifiedCount > 0) {
+    signals.push({
+      id: "pat-verified",
+      label: "Geprüfte Abläufe",
+      detail: `${state.verifiedCount} geprüft`,
+      prompt: `Zeige mir die ${state.verifiedCount} geprüften Abläufe.`,
+      lamp: "green" as const,
+      targetTab: "memory" as const,
+    });
+  }
+
+  if (typeof state.localExecutableCount === "number" && state.localExecutableCount > 0) {
+    signals.push({
+      id: "pat-local",
+      label: "Lokal ausführbar",
+      detail: `${state.localExecutableCount} lokal verfügbar`,
+      prompt: `Welche Abläufe kann Sovereign lokal ohne Modellroute vorbereiten?`,
+      lamp: "green" as const,
+      targetTab: "memory" as const,
+    });
+  }
+
+  if (typeof state.frequentlyUsedCount === "number" && state.frequentlyUsedCount > 0) {
+    signals.push({
+      id: "pat-frequent",
+      label: "Häufig genutzt",
+      detail: `${state.frequentlyUsedCount} wiederkehrende Workflows`,
+      prompt: `Zeige mir die häufig genutzten Workflows.`,
+      lamp: "green" as const,
+      targetTab: "memory" as const,
+    });
+  }
+
+  return signals;
 }
 
 // ─────────────────────────────────────────────────────────────

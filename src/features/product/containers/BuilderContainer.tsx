@@ -66,9 +66,14 @@ import {
 } from "../runtime/androidQuickInteractionRuntime";
 import {
   deriveRuntimeInspectorSignals,
+  buildPatInspectorStateFromStore,
   type RuntimeInspectorSignal,
   type BudInspectorState,
 } from "../runtime/runtimeInspectorPanelRuntime";
+import {
+  createPatternMemoryStore,
+  type PatternMemoryStore,
+} from "../runtime/patternMemoryRuntime";
 import type { LlmRouteSelectionResult } from "../runtime/llmRouteBudgetRuntime";
 import type {
   OpenHandsEnterpriseConfig,
@@ -3041,6 +3046,7 @@ export function BuilderContainer({
   onCancelOpenHands,
 }: BuilderContainerProps) {
   // ── Original v3 state (verbatim)
+  const [patternMemoryStore, setPatternMemoryStore] = useState<PatternMemoryStore>(() => createPatternMemoryStore());
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
   const [thinkingFrameIndex, setTFI] = useState(0);
   const [showRuntimeSheet, setShowRuntime] = useState(false);
@@ -4275,7 +4281,7 @@ export function BuilderContainer({
             sequence={sequence}
             inspectorSignals={deriveRuntimeInspectorSignals(
               activeMod.id.toUpperCase() as "PAT" | "ORC" | "INT" | "BUD",
-              { hasMemory: palDecisions.length > 0, patternCount: palDecisions.length },
+              buildPatInspectorStateFromStore(patternMemoryStore),
               {
                 palDecisions: palDecisions.length,
                 fastTierCount: palDecisions.filter((d) => d.tier === "fast").length,

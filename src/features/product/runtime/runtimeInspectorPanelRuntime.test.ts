@@ -6,9 +6,16 @@ import {
   deriveBudInspectorSignals,
   deriveRuntimeInspectorSignals,
   toQuietInspectorSignal,
+  buildPatInspectorStateFromStore,
   type BudInspectorState,
 } from "./runtimeInspectorPanelRuntime";
 import type { LlmRouteSelectionResult } from "./llmRouteBudgetRuntime";
+import {
+  createPatternMemoryStore,
+  addPatternEntry,
+  verifyPatternEntry,
+  recordPatternReuse,
+} from "./patternMemoryRuntime";
 
 describe("runtimeInspectorPanelRuntime", () => {
   /* ───────────── PAT signals ───────────── */
@@ -34,6 +41,118 @@ describe("runtimeInspectorPanelRuntime", () => {
       const signals = derivePatInspectorSignals({ hasMemory: true, patternCount: 3 });
       expect(signals[0].prompt).toContain("Analysiere");
       expect(signals[0].prompt).not.toContain("Enter");
+    });
+
+    it("emits verified signal when verifiedCount > 0", () => {
+      const signals = derivePatInspectorSignals({ hasMemory: true, patternCount: 5, verifiedCount: 3 });
+      const verified = signals.find((s) => s.id === "pat-verified");
+      expect(verified).toBeDefined();
+      expect(verified!.detail).toBe("3 geprüft");
+      expect(verified!.lamp).toBe("green");
+    });
+
+    it("omits verified signal when verifiedCount is 0", () => {
+      const signals = derivePatInspectorSignals({ hasMemory: true, patternCount: 5, verifiedCount: 0 });
+      expect(signals.find((s) => s.id === "pat-verified")).toBeUndefined();
+    });
+
+    it("emits local-executable signal when localExecutableCount > 0", () => {
+      const signals = derivePatInspectorSignals({ hasMemory: true, patternCount: 5, localExecutableCount: 2 });
+      const local = signals.find((s) => s.id === "pat-local");
+      expect(local).toBeDefined();
+      expect(local!.detail).toBe("2 lokal verfügbar");
+      expect(local!.lamp).toBe("green");
+    });
+
+    it("omits local signal when localExecutableCount is 0", () => {
+      const signals = derivePatInspectorSignals({ hasMemory: true, patternCount: 5, localExecutableCount: 0 });
+      expect(signals.find((s) => s.id === "pat-local")).toBeUndefined();
+    });
+
+    it("emits frequently-used signal when frequentlyUsedCount > 0", () => {
+      const signals = derivePatInspectorSignals({ hasMemory: true, patternCount: 5, frequentlyUsedCount: 4 });
+      const frequent = signals.find((s) => s.id === "pat-frequent");
+      expect(frequent).toBeDefined();
+      expect(frequent!.detail).toBe("4 wiederkehrende Workflows");
+    });
+
+    it("emits all four signals when all fields are populated", () => {
+      const signals = derivePatInspectorSignals({
+        hasMemory: true,
+        patternCount: 10,
+        verifiedCount: 7,
+        localExecutableCount: 5,
+        frequentlyUsedCount: 3,
+      });
+      expect(signals.find((s) => s.id === "pat-count")).toBeDefined();
+      expect(signals.find((s) => s.id === "pat-verified")).toBeDefined();
+      expect(signals.find((s) => s.id === "pat-local")).toBeDefined();
+      expect(signals.find((s) => s.id === "pat-frequent")).toBeDefined();
+      signals.forEach((s) => expect(s.lamp).toBe("green"));
+    });
+
+    it("all signals target the memory tab", () => {
+      const signals = derivePatInspectorSignals({
+        hasMemory: true,
+        patternCount: 5,
+        verifiedCount: 2,
+        localExecutableCount: 1,
+        frequentlyUsedCount: 1,
+      });
+      signals.forEach((s) => expect(s.targetTab).toBe("memory"));
+    });
+  });
+
+  /* ───────────── buildPatInspectorStateFromStore ───────────── */
+  describe("buildPatInspectorStateFromStore", () => {
+    it("returns hasMemory=false for empty store", () => {
+      const store = createPatternMemoryStore(1000);
+      const state = buildPatInspectorStateFromStore(store);
+      expect(state.hasMemory).toBe(false);
+      expect(state.patternCount).toBe(0);
+      expect(state.verifiedCount).toBe(0);
+      expect(state.localExecutableCount).toBe(0);
+    });
+
+    it("reflects actual store counts", () => {
+      let store = createPatternMemoryStore(1000);
+      store = addPatternEntry(store, {
+        ownerScope: "local-user",
+        sourceTraceId: "t1",
+        title: "Fix imports",
+        summary: "Remove unused TypeScript imports",
+        now: 1000,
+      });
+      const entryId = store.entries[0].id;
+      store = verifyPatternEntry(store, entryId, true, 2000);
+      store = recordPatternReuse(store, entryId, 3000);
+      store = recordPatternReuse(store, entryId, 4000);
+      store = recordPatternReuse(store, entryId, 5000);
+
+      const state = buildPatInspectorStateFromStore(store);
+      expect(state.hasMemory).toBe(true);
+      expect(state.patternCount).toBe(1);
+      expect(state.verifiedCount).toBe(1);
+      expect(state.localExecutableCount).toBe(1);
+      expect(state.lastSuccessfulReuseAt).toBe(5000);
+    });
+
+    it("derives signals from store via the full pipeline", () => {
+      let store = createPatternMemoryStore(1000);
+      store = addPatternEntry(store, {
+        ownerScope: "local-user",
+        sourceTraceId: "t1",
+        title: "Fix imports",
+        summary: "Remove unused TypeScript imports",
+        verified: true,
+        localExecutable: true,
+        now: 1000,
+      });
+      const state = buildPatInspectorStateFromStore(store);
+      const signals = derivePatInspectorSignals(state);
+      expect(signals.find((s) => s.id === "pat-count")).toBeDefined();
+      expect(signals.find((s) => s.id === "pat-verified")).toBeDefined();
+      expect(signals.find((s) => s.id === "pat-local")).toBeDefined();
     });
   });
 
