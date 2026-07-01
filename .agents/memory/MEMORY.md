@@ -1,0 +1,2 @@
+- [AgentWork state machine path to draft_pr_ready](agentwork-state-machine.md) — transitionDraftPrReady has an allowlist; must walk full chain to reach it in tests.
+- [Accessibility button pattern](a11y-button-pattern.md) — icon-only buttons in BuilderContainer require both aria-label and title; tests assert both.
