@@ -1,5 +1,9 @@
 import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 
+const API_BASE: string =
+  (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
+  'https://sovereign-backend.arelorian.de';
+
 export type SubscriptionTier = 'free' | 'pro' | 'enterprise' | 'custom';
 
 export interface Subscription {
@@ -62,7 +66,7 @@ const initialState: BillingState = {
   isSubscribed: false,
   isTrialing: false,
   // Credits — Issue #458
-  credits: 1000,
+  credits: 0,
   isPaywallOpen: false,
   insufficientFor: null,
 };
@@ -71,7 +75,7 @@ export const fetchBillingData = createAsyncThunk(
   'billing/fetchBillingData',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/billing');
+      const response = await fetch(`${API_BASE}/api/billing`, { credentials: 'include' });
       if (!response.ok) {
         throw new Error('Fehler beim Abrufen der Abrechnungsdaten');
       }
@@ -110,13 +114,10 @@ export const purchasePackage = createAsyncThunk(
     const payload: PurchaseArgs =
       typeof args === 'string' ? { packageId: args } : args;
     try {
-      const userId = (localStorage.getItem('sovereign-user-id') ?? '').trim();
-      const response = await fetch('/api/billing/purchase', {
+      const response = await fetch(`${API_BASE}/api/billing/purchase`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(userId ? { 'X-User-Id': userId } : {}),
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
@@ -135,13 +136,10 @@ export const capturePayPalOrder = createAsyncThunk(
   'billing/capturePayPalOrder',
   async (orderId: string, { rejectWithValue }) => {
     try {
-      const userId = (localStorage.getItem('sovereign-user-id') ?? '').trim();
-      const response = await fetch('/api/billing/purchase/paypal/capture', {
+      const response = await fetch(`${API_BASE}/api/billing/purchase/paypal/capture`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(userId ? { 'X-User-Id': userId } : {}),
-        },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId }),
       });
       if (!response.ok) {
@@ -160,7 +158,7 @@ export const fetchEnabledPaymentMethods = createAsyncThunk(
   'billing/fetchEnabledPaymentMethods',
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch('/api/billing/payment-methods');
+      const res = await fetch(`${API_BASE}/api/billing/payment-methods`, { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return (await res.json()) as { methods: { type: string; label: string }[] };
     } catch (error: unknown) {
@@ -174,8 +172,9 @@ export const cancelSubscription = createAsyncThunk(
   'billing/cancelSubscription',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/billing/cancel', {
+      const response = await fetch(`${API_BASE}/api/billing/cancel`, {
         method: 'POST',
+        credentials: 'include',
       });
       if (!response.ok) {
         throw new Error('Kündigung konnte nicht verarbeitet werden');
@@ -191,7 +190,10 @@ export const restorePurchases = createAsyncThunk(
   'billing/restorePurchases',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/billing/restore', { method: 'POST' });
+      const response = await fetch(`${API_BASE}/api/billing/restore`, {
+        method: 'POST',
+        credentials: 'include',
+      });
       if (!response.ok) {
         throw new Error('Wiederherstellung fehlgeschlagen');
       }
@@ -218,6 +220,25 @@ const updateAccessState = (state: BillingState, subscription: Subscription | nul
   state.isTrialing = subscription.status === 'trialing';
   state.isPaywallActive = !isSubscribed || subscription.tier === 'free';
 };
+
+// Thunk: fetch user credit balance from backend — Issue #458
+export const fetchUserCredits = createAsyncThunk(
+  'billing/fetchUserCredits',
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/billing/credits`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { credits: number };
+      return data.credits;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler beim Laden der Credits';
+      return rejectWithValue(msg);
+    }
+  }
+);
+
 
 const billingSlice = createSlice({
   name: 'billing',
@@ -316,25 +337,6 @@ export const {
   openCreditPaywall,
   closeCreditPaywall,
 } = billingSlice.actions;
-
-// Thunk: fetch user credit balance from backend — Issue #458
-export const fetchUserCredits = createAsyncThunk(
-  'billing/fetchUserCredits',
-  async (_, { rejectWithValue }) => {
-    try {
-      const userId = (localStorage.getItem('sovereign-user-id') ?? '').trim();
-      const res = await fetch('/api/billing/credits', {
-        headers: { ...(userId ? { 'X-User-Id': userId } : {}) },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { credits: number };
-      return data.credits;
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Fehler beim Laden der Credits';
-      return rejectWithValue(msg);
-    }
-  }
-);
 
 // Selectors
 export const selectCredits = (state: { billing: BillingState }) => state.billing.credits;
