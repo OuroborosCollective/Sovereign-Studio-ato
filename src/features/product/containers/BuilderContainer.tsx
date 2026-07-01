@@ -1016,6 +1016,10 @@ function TopBar({
   palTier,
   palSavings,
   credits,
+  userAvatar,
+  userInitials,
+  userLoggedIn,
+  onUserClick,
 }: {
   status: AgentStatus;
   repoReady: boolean;
