@@ -1,14 +1,15 @@
 /**
- * Runtime Inspector Panel Runtime — Issue #433
- * Derives real runtime signals for PAT, ORC, INT modules from live state.
+ * Runtime Inspector Panel Runtime — Issue #433 / #446
+ * Derives real runtime signals for PAT, ORC, INT, BUD modules from live state.
  * Integrates with quietInspectorHintPolicy.ts for unified signal format.
  * No fake state, no percentages, no dashboard.
  */
 
 import type { DevChatRepoSnapshot } from "./devChatWorkerBridge";
 import { type QuietInspectorSignal, type QuietInspectorLamp, type QuietInspectorTarget } from "./quietInspectorHintPolicy";
+import type { LlmRouteSelectionResult } from "./llmRouteBudgetRuntime";
 
-export type RuntimeInspectorPanelId = "PAT" | "ORC" | "INT";
+export type RuntimeInspectorPanelId = "PAT" | "ORC" | "INT" | "BUD";
 
 export interface RuntimeInspectorSignal {
   readonly id: string;
@@ -194,6 +195,69 @@ export function deriveIntInspectorSignals(state: IntInspectorState): RuntimeInsp
 }
 
 // ─────────────────────────────────────────────────────────────
+// BUD — LLM Route Budget signals
+// ─────────────────────────────────────────────────────────────
+
+export interface BudInspectorState {
+  readonly selectionResult: LlmRouteSelectionResult | null;
+  /** Human-readable budget summary line (e.g. from summarizeLlmBudgetState). */
+  readonly budgetSummary: string;
+}
+
+export function deriveBudInspectorSignals(state: BudInspectorState): RuntimeInspectorSignal[] {
+  if (!state.selectionResult) {
+    return [
+      {
+        id: "bud-empty",
+        label: "LLM Budget",
+        detail: "Kein Budget-Status verfügbar.",
+        prompt: "Zeige mir den aktuellen LLM-Routen-Status.",
+        lamp: "yellow" as const,
+        targetTab: "runtime" as const,
+      },
+    ];
+  }
+
+  const { selectionResult: result, budgetSummary } = state;
+
+  if (result.status === "blocked") {
+    return [
+      {
+        id: "bud-blocked",
+        label: "LLM Budget",
+        detail: `Blockiert — ${result.exhaustedRouteIds.length} Route(n) erschöpft.`,
+        prompt: "Zeige mir welche LLM-Routen erschöpft sind und wie ich weitermachen kann.",
+        lamp: "red" as const,
+        targetTab: "runtime" as const,
+      },
+    ];
+  }
+
+  const lamp: QuietInspectorLamp = result.status === "fallback" ? "yellow" : "green";
+  const routeLabel = result.selectedRoute?.label ?? "—";
+  const statusLabel = result.status === "fallback" ? "Fallback" : "Aktiv";
+
+  return [
+    {
+      id: "bud-route",
+      label: "LLM Budget",
+      detail: `${statusLabel}: ${routeLabel}`,
+      prompt: `Zeige mir den Budget-Status für Route "${routeLabel}".`,
+      lamp,
+      targetTab: "runtime" as const,
+    },
+    {
+      id: "bud-summary",
+      label: "Routen-Übersicht",
+      detail: budgetSummary,
+      prompt: "Erkläre mir den aktuellen Verbrauch aller LLM-Routen.",
+      lamp,
+      targetTab: "runtime" as const,
+    },
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────
 // Combined factory
 // ─────────────────────────────────────────────────────────────
 
@@ -202,6 +266,7 @@ export function deriveRuntimeInspectorSignals(
   patState: PatInspectorState,
   orcState: OrcInspectorState,
   intState: IntInspectorState,
+  budState?: BudInspectorState,
 ): RuntimeInspectorSignal[] {
   switch (panelId) {
     case "PAT":
@@ -210,6 +275,8 @@ export function deriveRuntimeInspectorSignals(
       return deriveOrcInspectorSignals(orcState);
     case "INT":
       return deriveIntInspectorSignals(intState);
+    case "BUD":
+      return deriveBudInspectorSignals(budState ?? { selectionResult: null, budgetSummary: "" });
     default:
       return [];
   }

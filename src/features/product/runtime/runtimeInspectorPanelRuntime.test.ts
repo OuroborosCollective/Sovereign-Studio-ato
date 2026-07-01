@@ -3,9 +3,12 @@ import {
   deriveIntInspectorSignals,
   deriveOrcInspectorSignals,
   derivePatInspectorSignals,
+  deriveBudInspectorSignals,
   deriveRuntimeInspectorSignals,
   toQuietInspectorSignal,
+  type BudInspectorState,
 } from "./runtimeInspectorPanelRuntime";
+import type { LlmRouteSelectionResult } from "./llmRouteBudgetRuntime";
 
 describe("runtimeInspectorPanelRuntime", () => {
   /* ───────────── PAT signals ───────────── */
@@ -141,6 +144,91 @@ describe("runtimeInspectorPanelRuntime", () => {
     });
   });
 
+  /* ───────────── BUD signals ───────────── */
+  describe("deriveBudInspectorSignals", () => {
+    it("returns honest empty state when no selection result", () => {
+      const state: BudInspectorState = { selectionResult: null, budgetSummary: "" };
+      const signals = deriveBudInspectorSignals(state);
+      expect(signals).toHaveLength(1);
+      expect(signals[0].id).toBe("bud-empty");
+      expect(signals[0].lamp).toBe("yellow");
+      expect(signals[0].targetTab).toBe("runtime");
+      expect(signals[0].prompt).toBeTruthy();
+    });
+
+    it("returns red blocked signal when all routes are exhausted", () => {
+      const result: LlmRouteSelectionResult = {
+        status: "blocked",
+        selectedRoute: null,
+        reason: "All routes exhausted.",
+        exhaustedRouteIds: ["fast", "smart"],
+      };
+      const signals = deriveBudInspectorSignals({ selectionResult: result, budgetSummary: "Fast: 10/10 · Smart: 3/3" });
+      expect(signals).toHaveLength(1);
+      expect(signals[0].id).toBe("bud-blocked");
+      expect(signals[0].lamp).toBe("red");
+      expect(signals[0].detail).toContain("2 Route(n) erschöpft");
+    });
+
+    it("returns green signals when primary route is available", () => {
+      const result: LlmRouteSelectionResult = {
+        status: "available",
+        selectedRoute: { id: "fast", label: "Fast Model", budgetByPlan: { free: 10 }, priority: 1 },
+        reason: 'Route "Fast Model" selected.',
+        exhaustedRouteIds: [],
+      };
+      const signals = deriveBudInspectorSignals({ selectionResult: result, budgetSummary: "Fast: 4/10" });
+      expect(signals).toHaveLength(2);
+      expect(signals[0].id).toBe("bud-route");
+      expect(signals[0].lamp).toBe("green");
+      expect(signals[0].detail).toContain("Aktiv");
+      expect(signals[0].detail).toContain("Fast Model");
+      expect(signals[1].id).toBe("bud-summary");
+      expect(signals[1].detail).toBe("Fast: 4/10");
+    });
+
+    it("returns yellow signals when on fallback route", () => {
+      const result: LlmRouteSelectionResult = {
+        status: "fallback",
+        selectedRoute: { id: "smart", label: "Smart Model", budgetByPlan: { free: 3 }, priority: 2 },
+        reason: 'Fallback to "Smart Model" (1 route(s) exhausted).',
+        exhaustedRouteIds: ["fast"],
+      };
+      const signals = deriveBudInspectorSignals({ selectionResult: result, budgetSummary: "Fast: 10/10 · Smart: 1/3" });
+      expect(signals).toHaveLength(2);
+      expect(signals[0].lamp).toBe("yellow");
+      expect(signals[0].detail).toContain("Fallback");
+      expect(signals[0].detail).toContain("Smart Model");
+    });
+
+    it("signals never contain percentage text", () => {
+      const result: LlmRouteSelectionResult = {
+        status: "available",
+        selectedRoute: { id: "fast", label: "Fast Model", budgetByPlan: { free: 10 }, priority: 1 },
+        reason: 'Route "Fast Model" selected.',
+        exhaustedRouteIds: [],
+      };
+      const signals = deriveBudInspectorSignals({ selectionResult: result, budgetSummary: "Fast: 4/10" });
+      signals.forEach((s) => {
+        expect(s.detail).not.toMatch(/%/);
+      });
+    });
+
+    it("all signals have non-empty prompts", () => {
+      const result: LlmRouteSelectionResult = {
+        status: "blocked",
+        selectedRoute: null,
+        reason: "Blocked.",
+        exhaustedRouteIds: ["fast"],
+      };
+      const signals = deriveBudInspectorSignals({ selectionResult: result, budgetSummary: "" });
+      signals.forEach((s) => {
+        expect(s.prompt).toBeTruthy();
+        expect(s.prompt).not.toMatch(/submit|send|enter/i);
+      });
+    });
+  });
+
   /* ───────────── Combined factory ───────────── */
   describe("deriveRuntimeInspectorSignals", () => {
     it("routes to correct derivation function by panel id", () => {
@@ -152,6 +240,17 @@ describe("runtimeInspectorPanelRuntime", () => {
 
       const intSignals = deriveRuntimeInspectorSignals("INT", { hasMemory: false, patternCount: 0 }, { palDecisions: 0, fastTierCount: 0, smartTierCount: 0, powerTierCount: 0 }, { chatRepoSnapshot: null });
       expect(intSignals[0].label).toBe("Repo Kontext");
+    });
+
+    it("routes BUD panel to budget signals", () => {
+      const budState: BudInspectorState = { selectionResult: null, budgetSummary: "" };
+      const budSignals = deriveRuntimeInspectorSignals("BUD", { hasMemory: false, patternCount: 0 }, { palDecisions: 0, fastTierCount: 0, smartTierCount: 0, powerTierCount: 0 }, { chatRepoSnapshot: null }, budState);
+      expect(budSignals[0].label).toBe("LLM Budget");
+    });
+
+    it("uses empty budget state when budState is omitted for BUD panel", () => {
+      const budSignals = deriveRuntimeInspectorSignals("BUD", { hasMemory: false, patternCount: 0 }, { palDecisions: 0, fastTierCount: 0, smartTierCount: 0, powerTierCount: 0 }, { chatRepoSnapshot: null });
+      expect(budSignals[0].id).toBe("bud-empty");
     });
   });
 
