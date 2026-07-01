@@ -25,7 +25,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 import { store } from '../../store';
-import { useUserStore } from '../../user/useUserStore';
+import { useUserStore } from '../user/useUserStore';
 import {
   deductCredits,
   openCreditPaywall,
