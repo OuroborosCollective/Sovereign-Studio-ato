@@ -19,7 +19,7 @@ from functools import wraps
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
 import requests
 
@@ -1534,4 +1534,392 @@ def user_billing_deduct():
         return jsonify({"ok": True, "deducted": amount})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# WEB ADMIN PANEL  —  /admin
+# Self-contained single-page admin UI served directly from Flask.
+# No build step required. Auth via ADMIN_API_KEY (Bearer token).
+# ═════════════════════════════════════════════════════════════════════════════
+
+_ADMIN_PANEL_HTML = r"""<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sovereign Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;--accent:#58a6ff;
+  --accent2:#3fb950;--danger:#f85149;--warn:#d29922;
+  --text:#e6edf3;--muted:#8b949e;--radius:8px;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+
+/* ── Login ── */
+#login{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:40px;width:100%;max-width:420px}
+.login-card h1{font-size:22px;margin-bottom:6px}
+.login-card p{color:var(--muted);font-size:14px;margin-bottom:24px}
+.login-err{background:#2d1117;border:1px solid var(--danger);border-radius:var(--radius);color:var(--danger);font-size:13px;padding:10px 14px;margin-bottom:14px;display:none}
+
+/* ── Layout ── */
+#app{display:none;flex-direction:column;min-height:100vh}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;gap:16px;height:56px}
+header .logo{font-weight:700;font-size:16px;letter-spacing:.5px}
+header .logo span{color:var(--accent)}
+header nav{display:flex;gap:2px;margin-left:8px}
+header nav button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:6px 14px;border-radius:6px;transition:all .15s}
+header nav button.active{background:#21262d;color:var(--text)}
+header nav button:hover:not(.active){color:var(--text)}
+.logout{margin-left:auto;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:13px;padding:5px 12px;border-radius:6px}
+.logout:hover{border-color:var(--danger);color:var(--danger)}
+
+main{padding:28px 24px;max-width:960px;width:100%}
+
+/* ── Sections ── */
+.section{display:none}
+.section.active{display:block}
+
+h2{font-size:18px;margin-bottom:20px;font-weight:600}
+.subtitle{color:var(--muted);font-size:13px;margin-top:2px;margin-bottom:20px}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:12px}
+.card-header{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+.card-title{font-weight:600;font-size:15px;flex:1}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+.badge.on{background:#1a3a1a;color:var(--accent2)}
+.badge.off{background:#2d1a1a;color:var(--muted)}
+.card-body{margin-top:18px;border-top:1px solid var(--border);padding-top:18px;display:none}
+.card.open .card-body{display:block}
+.chevron{color:var(--muted);font-size:12px;transition:transform .2s}
+.card.open .chevron{transform:rotate(180deg)}
+
+/* ── Toggle ── */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.toggle-label{font-size:14px;color:var(--muted)}
+.toggle{position:relative;display:inline-block;width:42px;height:24px}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:#30363d;border-radius:24px;cursor:pointer;transition:.2s}
+.slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;bottom:3px;background:#8b949e;border-radius:50%;transition:.2s}
+input:checked+.slider{background:#1a3a1a}
+input:checked+.slider:before{transform:translateX(18px);background:var(--accent2)}
+
+/* ── Form ── */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.form-group input,.form-group select,.form-group textarea{
+  width:100%;background:#0d1117;border:1px solid var(--border);border-radius:6px;
+  color:var(--text);font-size:14px;padding:8px 12px;outline:none;transition:border .15s;
+  font-family:inherit
+}
+.form-group textarea{min-height:90px;resize:vertical}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--accent)}
+.form-group select option{background:#161b22}
+
+.btn{border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;padding:8px 18px;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--accent);color:#0d1117}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-ghost{background:#21262d;color:var(--text);border:1px solid var(--border)}
+.btn-row{display:flex;gap:8px;margin-top:18px}
+
+.msg{font-size:13px;padding:8px 12px;border-radius:6px;margin-top:10px;display:none}
+.msg.ok{background:#1a3a1a;color:var(--accent2)}
+.msg.err{background:#2d1117;color:var(--danger)}
+
+/* ── Package table ── */
+.pkg-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 80px;gap:1px;background:var(--border);border-radius:var(--radius);overflow:hidden}
+.pkg-grid .cell{background:var(--surface);padding:10px 14px;font-size:14px;display:flex;align-items:center}
+.pkg-grid .head{background:#21262d;color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+
+/* ── Spinner ── */
+.spin{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-left:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* inputs */
+input[type=text],input[type=password]{-webkit-appearance:none}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="login-card">
+    <h1>⚙️ Sovereign Admin</h1>
+    <p>Bitte Admin-API-Key eingeben.</p>
+    <div class="login-err" id="loginErr"></div>
+    <div class="form-group">
+      <label>Admin API Key</label>
+      <input type="password" id="keyInput" placeholder="8516ae…" autocomplete="off"/>
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Anmelden</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header>
+    <div class="logo">Sovereign <span>Admin</span></div>
+    <nav>
+      <button class="active" onclick="showSection('payments',this)">💳 Zahlungen</button>
+      <button onclick="showSection('packages',this)">📦 Credit-Pakete</button>
+    </nav>
+    <button class="logout" onclick="doLogout()">Abmelden</button>
+  </header>
+  <main>
+
+    <!-- PAYMENTS -->
+    <div id="s-payments" class="section active">
+      <h2>Zahlungsmethoden</h2>
+      <div class="subtitle">Methoden aktivieren und Zugangsdaten hinterlegen.</div>
+      <div id="pmList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- PACKAGES -->
+    <div id="s-packages" class="section">
+      <h2>Credit-Pakete</h2>
+      <div class="subtitle">Verfügbare Käufe für Nutzer.</div>
+      <div id="pkgList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+const BASE = '';
+let API_KEY = sessionStorage.getItem('sov_admin_key') || '';
+if (API_KEY) initApp();
+
+function hdr(){ return {'Authorization':'Bearer '+API_KEY,'Content-Type':'application/json'}; }
+
+async function doLogin(){
+  const k = document.getElementById('keyInput').value.trim();
+  if(!k) return;
+  const r = await fetch(BASE+'/api/admin/payment-methods',{headers:{'Authorization':'Bearer '+k}});
+  if(r.status===401||r.status===403||r.status===503){
+    const e = document.getElementById('loginErr');
+    e.textContent='Ungültiger API-Key.'; e.style.display='block'; return;
+  }
+  API_KEY = k;
+  sessionStorage.setItem('sov_admin_key', k);
+  initApp();
+}
+
+document.getElementById('keyInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+
+function doLogout(){
+  sessionStorage.removeItem('sov_admin_key');
+  API_KEY='';
+  document.getElementById('app').style.display='none';
+  document.getElementById('login').style.display='flex';
+}
+
+function initApp(){
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='flex';
+  loadPaymentMethods();
+  loadPackages();
+}
+
+function showSection(id, btn){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('header nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('s-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+
+/* ────── PAYMENT METHODS ────── */
+const CONFIG_FIELDS = {
+  paypal:[
+    {key:'client_id',label:'Client ID',type:'text'},
+    {key:'client_secret',label:'Client Secret',type:'password'},
+    {key:'mode',label:'Modus',type:'select',options:['sandbox','live']},
+    {key:'webhook_id',label:'Webhook ID (optional)',type:'text'},
+  ],
+  skrill:[
+    {key:'merchant_email',label:'Merchant Email',type:'text'},
+    {key:'secret_word',label:'Secret Word',type:'password'},
+  ],
+  crypto_btc:[{key:'wallet_address',label:'BTC Wallet-Adresse',type:'text'}],
+  crypto_eth:[{key:'wallet_address',label:'ETH Wallet-Adresse',type:'text'}],
+  crypto_usdt:[
+    {key:'wallet_address',label:'USDT Wallet-Adresse',type:'text'},
+    {key:'network',label:'Netzwerk',type:'select',options:['TRC20','ERC20']},
+  ],
+  google_play:[
+    {key:'package_name',label:'Package Name',type:'text'},
+    {key:'service_account_json',label:'Service Account JSON',type:'textarea'},
+  ],
+};
+
+let pmData = [];
+
+async function loadPaymentMethods(){
+  const r = await fetch(BASE+'/api/admin/payment-methods',{headers:hdr()});
+  const d = await r.json();
+  pmData = d.paymentMethods || [];
+  renderPM();
+}
+
+function renderPM(){
+  const el = document.getElementById('pmList');
+  if(!pmData.length){ el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Methoden gefunden. Seed-Endpunkt bereits aufgerufen?</div>'; return; }
+  el.innerHTML = pmData.map((m,i)=>pmCard(m,i)).join('');
+}
+
+function pmCard(m,i){
+  const fields = CONFIG_FIELDS[m.type] || [];
+  const fieldsHtml = fields.map(f=>{
+    const val = (m.config||{})[f.key]||'';
+    if(f.type==='select'){
+      const opts = f.options.map(o=>`<option value="${o}"${val===o?' selected':''}>${o}</option>`).join('');
+      return `<div class="form-group"><label>${f.label}</label><select id="f_${m.id}_${f.key}">${opts}</select></div>`;
+    }
+    if(f.type==='textarea'){
+      return `<div class="form-group"><label>${f.label}</label><textarea id="f_${m.id}_${f.key}" placeholder="{ … }">${esc(val)}</textarea></div>`;
+    }
+    return `<div class="form-group"><label>${f.label}</label><input type="${f.type}" id="f_${m.id}_${f.key}" value="${esc(val)}" autocomplete="off"/></div>`;
+  }).join('');
+  return `<div class="card" id="card_${m.id}">
+    <div class="card-header" onclick="toggleCard('${m.id}')">
+      <span class="card-title">${esc(m.label)}</span>
+      <span class="badge ${m.enabled?'on':'off'}">${m.enabled?'Aktiv':'Inaktiv'}</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="card-body">
+      <div class="toggle-row">
+        <span class="toggle-label">Methode aktivieren</span>
+        <label class="toggle">
+          <input type="checkbox" id="tog_${m.id}" ${m.enabled?'checked':''} onchange="toggleEnabled('${m.id}',this.checked)"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      ${fieldsHtml}
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveConfig('${m.id}','${m.type}')">Speichern</button>
+      </div>
+      <div class="msg" id="msg_${m.id}"></div>
+    </div>
+  </div>`;
+}
+
+function toggleCard(id){
+  document.getElementById('card_'+id).classList.toggle('open');
+}
+
+async function toggleEnabled(id, enabled){
+  const r = await fetch(BASE+'/api/admin/payment-methods/'+id,{method:'PATCH',headers:hdr(),body:JSON.stringify({enabled})});
+  const m = pmData.find(x=>x.id===id);
+  if(m) m.enabled = enabled;
+  const badge = document.querySelector('#card_'+id+' .badge');
+  if(badge){ badge.textContent=enabled?'Aktiv':'Inaktiv'; badge.className='badge '+(enabled?'on':'off'); }
+}
+
+async function saveConfig(id, type){
+  const fields = CONFIG_FIELDS[type]||[];
+  const config = {};
+  fields.forEach(f=>{ const el=document.getElementById('f_'+id+'_'+f.key); if(el) config[f.key]=el.value; });
+  const r = await fetch(BASE+'/api/admin/payment-methods/'+id,{method:'PATCH',headers:hdr(),body:JSON.stringify({config})});
+  showMsg(id, r.ok, r.ok?'Gespeichert ✓':'Fehler beim Speichern');
+  if(r.ok){ const m=pmData.find(x=>x.id===id); if(m) m.config=config; }
+}
+
+function showMsg(id, ok, text){
+  const el = document.getElementById('msg_'+id);
+  if(!el) return;
+  el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block';
+  setTimeout(()=>{ el.style.display='none'; }, 3000);
+}
+
+/* ────── CREDIT PACKAGES ────── */
+let pkgData = [];
+
+async function loadPackages(){
+  const r = await fetch(BASE+'/api/admin/credit-packages',{headers:hdr()});
+  const d = await r.json();
+  pkgData = d.packages || [];
+  renderPkg();
+}
+
+function renderPkg(){
+  const el = document.getElementById('pkgList');
+  if(!pkgData.length){ el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Pakete gefunden.</div>'; return; }
+  el.innerHTML = pkgData.map(p=>pkgCard(p)).join('');
+}
+
+function pkgCard(p){
+  return `<div class="card" id="pkg_${p.id}">
+    <div class="card-header" onclick="toggleCard2('${p.id}')">
+      <span class="card-title">${esc(p.name)}</span>
+      <span style="color:var(--muted);font-size:13px;margin-right:8px">${p.credits} Credits · €${parseFloat(p.price_eur).toFixed(2)}</span>
+      <span class="badge ${p.enabled?'on':'off'}">${p.enabled?'Aktiv':'Inaktiv'}</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="card-body">
+      <div class="toggle-row">
+        <span class="toggle-label">Paket aktivieren</span>
+        <label class="toggle">
+          <input type="checkbox" id="ptog_${p.id}" ${p.enabled?'checked':''} onchange="togglePkg('${p.id}',this.checked)"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="form-group"><label>Name</label><input type="text" id="pn_${p.id}" value="${esc(p.name)}"/></div>
+      <div class="form-group"><label>Credits</label><input type="text" id="pc_${p.id}" value="${p.credits}"/></div>
+      <div class="form-group"><label>Preis (EUR)</label><input type="text" id="pp_${p.id}" value="${parseFloat(p.price_eur).toFixed(2)}"/></div>
+      <div class="form-group"><label>Beschreibung</label><input type="text" id="pd_${p.id}" value="${esc(p.description||'')}"/></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="savePkg('${p.id}')">Speichern</button>
+      </div>
+      <div class="msg" id="pmsg_${p.id}"></div>
+    </div>
+  </div>`;
+}
+
+function toggleCard2(id){
+  document.getElementById('pkg_'+id).classList.toggle('open');
+}
+
+async function togglePkg(id, enabled){
+  await fetch(BASE+'/api/admin/credit-packages/'+id,{method:'PATCH',headers:hdr(),body:JSON.stringify({enabled})});
+  const p=pkgData.find(x=>x.id===id); if(p) p.enabled=enabled;
+  const badge=document.querySelector('#pkg_'+id+' .badge');
+  if(badge){ badge.textContent=enabled?'Aktiv':'Inaktiv'; badge.className='badge '+(enabled?'on':'off'); }
+}
+
+async function savePkg(id){
+  const body={
+    name: document.getElementById('pn_'+id).value,
+    credits: parseInt(document.getElementById('pc_'+id).value)||0,
+    price_eur: parseFloat(document.getElementById('pp_'+id).value)||0,
+    description: document.getElementById('pd_'+id).value,
+  };
+  const r = await fetch(BASE+'/api/admin/credit-packages/'+id,{method:'PATCH',headers:hdr(),body:JSON.stringify(body)});
+  const ok = r.ok;
+  showPkgMsg(id, ok, ok?'Gespeichert ✓':'Fehler');
+}
+
+function showPkgMsg(id, ok, text){
+  const el=document.getElementById('pmsg_'+id);
+  if(!el) return;
+  el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block';
+  setTimeout(()=>{ el.style.display='none'; },3000);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>"""
+
+
+@app.route("/admin")
+@app.route("/admin/")
+def admin_panel():
+    resp = make_response(_ADMIN_PANEL_HTML)
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
