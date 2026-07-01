@@ -105,7 +105,10 @@ import {
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
-import { usePatternMemoryStore } from "../hooks/usePatternMemoryStore";
+import {
+  usePatternMemoryStore,
+  loadPatternMemoryStoreFromStorage,
+} from "../hooks/usePatternMemoryStore";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -131,6 +134,11 @@ export interface BuilderContainerProps {
   openhandsIsRunning?: boolean;
   onStartOpenHands?: (mission: string) => void;
   onCancelOpenHands?: () => void;
+  /**
+   * Traditional publish path — set by the parent to the PR URL returned by
+   * mergeWhenGreen once approvalConfirmed === true. Omit when not available.
+   */
+  publishedPrUrl?: string;
 }
 
 interface IdeaOption {
@@ -3045,9 +3053,10 @@ export function BuilderContainer({
   openhandsIsRunning,
   onStartOpenHands,
   onCancelOpenHands,
+  publishedPrUrl,
 }: BuilderContainerProps) {
   // ── Original v3 state (verbatim)
-  const [patternMemoryStore, setPatternMemoryStore] = useState<PatternMemoryStore>(() => createPatternMemoryStore());
+  const [patternMemoryStore, setPatternMemoryStore] = useState<PatternMemoryStore>(() => loadPatternMemoryStoreFromStorage());
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
   const [thinkingFrameIndex, setTFI] = useState(0);
   const [showRuntimeSheet, setShowRuntime] = useState(false);
@@ -3224,6 +3233,7 @@ export function BuilderContainer({
     repoOwner: chatRepoSnapshot?.owner ?? '',
     repoName: chatRepoSnapshot?.repo ?? '',
     appendChatLine,
+    publishedPrUrl,
   });
 
   // ── Issue #425: Track unseen messages
