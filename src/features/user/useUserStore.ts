@@ -27,9 +27,8 @@ export interface CurrentUser {
   googleId?: string;
 }
 
-const API_BASE: string =
-  (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
-  'https://sovereign-backend.arelorian.de';
+const configuredApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim();
+const API_BASE: string = configuredApiBase ?? '';
 
 async function authFetch(path: string, options?: RequestInit) {
   return fetch(`${API_BASE}${path}`, {
@@ -37,6 +36,51 @@ async function authFetch(path: string, options?: RequestInit) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
   });
+}
+
+const USER_ROLES: readonly UserRole[] = ['user', 'admin', 'superadmin'];
+const SUBSCRIPTION_STATUSES: readonly SubscriptionStatus[] = ['active', 'canceled', 'past_due', 'trialing', 'free'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function pickString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeCurrentUser(value: unknown): CurrentUser | null {
+  if (!isRecord(value)) return null;
+
+  const id = pickString(value, 'id');
+  const email = pickString(value, 'email');
+  if (!id || !email) return null;
+
+  const displayName = pickString(value, 'displayName') || email.split('@')[0] || 'User';
+  const roleValue = pickString(value, 'role');
+  const statusValue = pickString(value, 'subscriptionStatus');
+  const credits = typeof value.credits === 'number' && Number.isFinite(value.credits)
+    ? Math.max(0, value.credits)
+    : 0;
+  const createdAt = typeof value.createdAt === 'number' && Number.isFinite(value.createdAt)
+    ? value.createdAt
+    : Date.now();
+
+  return {
+    id,
+    email,
+    displayName,
+    role: USER_ROLES.includes(roleValue as UserRole) ? roleValue as UserRole : 'user',
+    credits,
+    subscriptionStatus: SUBSCRIPTION_STATUSES.includes(statusValue as SubscriptionStatus)
+      ? statusValue as SubscriptionStatus
+      : 'free',
+    isBanned: value.isBanned === true,
+    createdAt,
+    avatarUrl: pickString(value, 'avatarUrl') || undefined,
+    googleId: pickString(value, 'googleId') || undefined,
+  };
 }
 
 interface UserStore {
@@ -84,7 +128,11 @@ export const useUserStore = create<UserStore>()(
             set({ isLoading: false, error: (d as { error?: string }).error ?? 'Login fehlgeschlagen' });
             return;
           }
-          const user = await res.json() as CurrentUser;
+          const user = normalizeCurrentUser(await res.json());
+          if (!user) {
+            set({ isLoading: false, error: 'Ungültige User-Antwort vom Server' });
+            return;
+          }
           set({ user, isLoading: false, error: null });
         } catch {
           set({ isLoading: false, error: 'Verbindungsfehler' });
@@ -103,7 +151,11 @@ export const useUserStore = create<UserStore>()(
             set({ isLoading: false, error: (d as { error?: string }).error ?? 'Google-Login fehlgeschlagen' });
             return;
           }
-          const user = await res.json() as CurrentUser;
+          const user = normalizeCurrentUser(await res.json());
+          if (!user) {
+            set({ isLoading: false, error: 'Ungültige User-Antwort vom Server' });
+            return;
+          }
           set({ user, isLoading: false, error: null });
         } catch {
           set({ isLoading: false, error: 'Verbindungsfehler' });
@@ -122,7 +174,11 @@ export const useUserStore = create<UserStore>()(
             set({ isLoading: false, error: (d as { error?: string }).error ?? 'Registrierung fehlgeschlagen' });
             return;
           }
-          const user = await res.json() as CurrentUser;
+          const user = normalizeCurrentUser(await res.json());
+          if (!user) {
+            set({ isLoading: false, error: 'Ungültige User-Antwort vom Server' });
+            return;
+          }
           set({ user, isLoading: false, error: null });
         } catch {
           set({ isLoading: false, error: 'Verbindungsfehler' });
@@ -138,7 +194,7 @@ export const useUserStore = create<UserStore>()(
         try {
           const res = await authFetch('/api/auth/me');
           if (res.ok) {
-            const user = await res.json() as CurrentUser;
+            const user = normalizeCurrentUser(await res.json());
             set({ user });
           } else {
             set({ user: null });
