@@ -1,30 +1,41 @@
-name: Master-Prompt B: Tägliche 14-Tage-Nutzungssimulation (Zero-Cost-Cron)
+# ⚠️ QUARANTINED: Zero-Touch Simulation Workflow
+#
+# THIS WORKFLOW IS QUARANTINED - DO NOT ENABLE AUTOMATED SCHEDULING
+#
+# Original behavior was unsafe:
+# - Proxy-based device simulation for misleading engagement signals
+# - Automated app interaction with random durations
+# - Crash log processing claiming real bugs
+#
+# This workflow is kept as documentation only.
+# For questions, see Issue #475 in the repository.
+
+name: "⚠️ QUARANTINED: Zero-Touch Simulation (DO NOT RUN)"
+
 on:
-  schedule:
-    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      confirm_quarantine:
+        description: 'I understand this workflow is quarantined and should not run unattended'
+        required: true
+        type: boolean
+
 jobs:
-  daily_device_simulation:
+  blocked:
+    name: ❌ BLOCKED - Workflow Quarantined
     runs-on: ubuntu-latest
     steps:
-      - name: Lade diverse IP-Proxy-Liste
+      - name: 🚫 This workflow is quarantined
         run: |
-          PROXY_LIST=$(echo ${{ secrets.PROXY_INFRASTRUCTURE_BASE64 }} | base64 -d)
-          echo "Proxy-Liste für IP-Diversität geladen. Wähle zufälligen, geografisch getrennten Proxy..."
-
-      - name: Starte deterministische Interaktion auf virtuellem Gerät
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          target: default
-          arch: x86_64
-          emulator-options: -tcpdump /tmp/network.cap -http-proxy $PROXY_LIST
-
-      - name: Führe Droidrun-Skript zur 2-10-Minuten-Nutzung aus
-        run: |
-          echo "Simuliere organische Nutzung (zufällige Dauer: 2-10 Minuten) über den Proxy..."
-          ./scripts/droidrun_interact.sh --app_id com.arestudio.nocode.aab --duration $(($RANDOM % 9 + 2))m
-
-      - name: Crash-Logs verarbeiten und als GitHub Issue anlegen
-        run: |
-          python ./scripts/process_logs.py --app_id com.arestudio.nocode.aab --log_type 'CRASH'
-          echo "Log verarbeitet. Ein neues 'bug'-Issue wurde im Repository angelegt."
+          echo "=============================================="
+          echo "⚠️  THIS WORKFLOW IS QUARANTINED"
+          echo "=============================================="
+          echo ""
+          echo "Original issues (Issue #475):"
+          echo "- Proxy-based simulation creating misleading engagement signals"
+          echo "- Random device interaction claiming organic usage"
+          echo "- Automated bug creation from simulated crash logs"
+          echo ""
+          echo "Safe alternative: Real user engagement metrics from"
+          echo "production analytics with human interpretation."
+          exit 1

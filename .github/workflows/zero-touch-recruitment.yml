@@ -1,22 +1,41 @@
-name: Master-Prompt A: Autonome Tester-Akquise (Zero-Cost-Bot)
+# ⚠️ QUARANTINED: Zero-Touch Recruitment Workflow
+#
+# THIS WORKFLOW IS QUARANTINED - DO NOT ENABLE AUTOMATED SCHEDULING
+#
+# Original behavior was unsafe:
+# - Automated tester recruitment via social media bots
+# - Printing success claims without runtime verification
+# - No human review of recruitment activities
+#
+# This workflow is kept as documentation only.
+# For questions, see Issue #475 in the repository.
+
+name: "⚠️ QUARANTINED: Zero-Touch Recruitment (DO NOT RUN)"
+
 on:
-  schedule:
-    - cron: '0 9 * * *'
   workflow_dispatch:
+    inputs:
+      confirm_quarantine:
+        description: 'I understand this workflow is quarantined and should not run unattended'
+        required: true
+        type: boolean
+
 jobs:
-  recruitment_agent:
+  blocked:
+    name: ❌ BLOCKED - Workflow Quarantined
     runs-on: ubuntu-latest
     steps:
-      - name: Konfiguriere Python-Bot-Umgebung
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Social-Media-Bot ausführen (Reddit/Discord)
+      - name: 🚫 This workflow is quarantined
         run: |
-          echo "Suche auf r/AndroidClosedTesting nach 'Test-for-Test'-Angeboten..."
-          PLAY_URL=$(echo ${{ secrets.PLAY_TEST_LINK_BASE64 }} | base64 -d)
-          python bot/social_agent.py --target_platform "Reddit" --app_link $PLAY_URL --repo_name ${{ github.repository }}
-          echo "5 neue Tester rekrutiert und der Play Console hinzugefügt."
-      - name: Starte Follow-up-Agent (Tag 7 Engagement-Prüfung)
-        run: |
-          echo "Prüfe Tester-Liste auf Engagement. Sende sanfte Erinnerung an passive Tester (Tag 7)."
+          echo "=============================================="
+          echo "⚠️  THIS WORKFLOW IS QUARANTINED"
+          echo "=============================================="
+          echo ""
+          echo "Original issues (Issue #475):"
+          echo "- Automated tester recruitment without runtime verification"
+          echo "- Bot behavior on social media platforms"
+          echo "- Success claims printed without real evidence"
+          echo ""
+          echo "Safe alternative: Manual tester recruitment with"
+          echo "real engagement tracking and human review."
+          exit 1

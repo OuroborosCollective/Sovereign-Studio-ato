@@ -1,77 +1,49 @@
-name: Master-Prompt C: ZERO-TOUCH MASTER WORKFLOW (Komplett autonom, ohne Kosten/Wartung)
+# ⚠️ QUARANTINED: Zero-Touch Master Workflow
+#
+# THIS WORKFLOW IS QUARANTINED - DO NOT ENABLE AUTOMATED SCHEDULING
+#
+# Original behavior was unsafe:
+# - Automated tester recruitment and engagement simulation
+# - Automatic AI autofix invocation without human review
+# - Zero-touch deployment to Google Play closed_testing track
+#
+# This workflow is kept as documentation only.
+# To enable any of these capabilities, create a new workflow with proper safety guards:
+# - Human review gates before any external action
+# - Explicit success/failure reporting with runtime evidence
+# - No auto-publish to production tracks
+#
+# For questions, see Issue #475 in the repository.
+
+name: "⚠️ QUARANTINED: Zero-Touch Master (DO NOT RUN)"
 
 on:
-  # 1. Auslöser: Täglicher Cron Job für Engagement-Sicherung und Rekrutierung
-  schedule:
-    - cron: '30 08 * * *'
-  # 2. Auslöser: Code-Änderung (Pull Request Merge) für das Deployment
-  pull_request:
-    types: [closed]
-    branches: [main]
-  # 3. Auslöser: Externer Crash-Report (WebHook vom Firebase Crashlytics)
-  repository_dispatch:
-    types: [crash_report_received]
+  workflow_dispatch:
+    inputs:
+      confirm_quarantine:
+        description: 'I understand this workflow is quarantined and should not run unattended'
+        required: true
+        type: boolean
 
 jobs:
-
-  # JOB 1: Tägliche Rekrutierung und Engagement-Sicherung (Modell A)
-  daily_agent_run:
-    name: Agenten-Ökosystem: Rekrutierung & Interaktion
-    if: github.event_name == 'schedule'
+  blocked:
+    name: ❌ BLOCKED - Workflow Quarantined
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Starte Social-Agent & Daily-Device-Simulation
+      - name: 🚫 This workflow is quarantined
         run: |
-          # Führe beide Prozesse gleichzeitig aus, um Zeit zu sparen.
-          # Rekrutierung (Prompt A Logik): Suche neue Tester & sende Incentives
-          python ./agents/recruiter.py --target "COMMUNITY"
-          # Interaktion (Prompt B Logik): Starte 12 simulierte Geräte mit Proxy-Rotation
-          ./scripts/simulate_engagement.sh --target_count 12 --use_secrets_proxy ${{ secrets.PROXY_INFRASTRUCTURE_BASE64 }}
-
-  # JOB 2: Autonomer KI-Autofix (Modell C - Kybernetische Wartung)
-  ai_autofix_loop:
-    name: KI-Wartung: Jules-basierter Autofix
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'crash_report_received'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Konvertiere Crash-Report in strukturiertes Issue
-        # Nutzt LLM zur Aggregation von unstrukturiertem Feedback aus dem client_payload
-        uses: code-sanitizer/llm-issue-planner@v1
-        with:
-          payload: ${{ github.event.client_payload.crash_details }}
-          output_label: 'bug'
-      - name: Trigger Jules (Google Labs AI Coding Agent)
-        uses: google-labs-code/jules-invoke@v1
-        with:
-          # Jules ist angewiesen, den Bug aus dem zuvor erstellten Issue zu fixen
-          prompt: |
-            Bitte analysiere das zuletzt erstellte GitHub Issue mit dem Label 'bug'.
-            Erstelle einen Code-Patch, der diesen Fehler behebt, schreibe einen begleitenden Unit-Test und öffne einen Pull Request.
-            Architektonische Regeln: Halte dich strikt an das Muster des Stateless Determinism.
-          jules_api_key: ${{ secrets.JULES_API_KEY }}
-
-  # JOB 3: Automatisches Deployment nach Fix (Zero-Touch Publishing)
-  automated_release:
-    name: Zero-Touch-Deployment
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Baue und signiere das Android App Bundle (.aab)
-        # Nutzt Base64-kodierten Keystore aus Secrets
-        uses: build-tools/android-builder@v1
-      - name: Atomares Update in den Closed Test Track pushen
-        # Erfüllt die Forderung nach 2-3 Updates während der 14 Tage
-        uses: r0adkll/upload-google-play@v1
-        with:
-          track: 'closed_testing'
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_API_KEY }}
-          aabFile: './app/release.aab'
+          echo "=============================================="
+          echo "⚠️  THIS WORKFLOW IS QUARANTINED"
+          echo "=============================================="
+          echo ""
+          echo "Original issues (Issue #475):"
+          echo "- Automated tester recruitment without runtime verification"
+          echo "- Simulated engagement claims without real evidence"
+          echo "- Automatic AI autofix invocation bypassing human review"
+          echo "- Zero-touch deployment to Google Play"
+          echo ""
+          echo "To enable safe automation, create a new workflow with:"
+          echo "1. Human confirmation gates"
+          echo "2. Runtime truth verification before claims"
+          echo "3. Draft-only publishing with manual review"
+          exit 1
