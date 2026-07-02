@@ -25,7 +25,13 @@ from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
-CORS(app, origins="*")
+CORS(app,
+     origins=[
+         "https://chat.arelorian.de",
+         "https://arelorian.de",
+         "https://sovereign-backend.arelorian.de",
+     ],
+     supports_credentials=True)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
