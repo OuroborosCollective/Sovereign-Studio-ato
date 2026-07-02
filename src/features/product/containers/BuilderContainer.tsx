@@ -2955,14 +2955,14 @@ export function BuilderContainer({
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing)
       return;
     setWishText("");
-    _processSubmit(submittedText);
+    void _processSubmit(submittedText);
   };
 
   // Retry submit with a specific message (used by WorkerBlockerCard and Banner)
   const retrySubmit = async (message: string) => {
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
     setWishText("");
-    _processSubmit(message);
+    void _processSubmit(message);
   };
 
   const _processSubmit = async (submittedText: string) => {
