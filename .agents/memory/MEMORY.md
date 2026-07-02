@@ -1,3 +1,5 @@
 - [AgentWork state machine path to draft_pr_ready](agentwork-state-machine.md) — transitionDraftPrReady has an allowlist; must walk full chain to reach it in tests.
 - [Accessibility button pattern](a11y-button-pattern.md) — icon-only buttons in BuilderContainer require both aria-label and title; tests assert both.
 - [Payment module architecture](payment-module.md) — payment_methods + credit_packages DB-Tabellen; kein Mock; alle Zahlungs-Routen in app.py nach Zeile 635.
+- [BuilderContainer TopBar constraints](topbar-layout.md) — TopBar is tight on mobile; Ampel must use compact prop; Sovereign title needs whitespace:nowrap; CreditDisplay only when userLoggedIn.
+- [Launcher system architecture](launcher-architecture.md) — LauncherRegistry, LauncherMenu, LauncherWindowHost, LauncherTaskbar all live in src/features/launcher/; new tools added only to LAUNCHER_REGISTRY array.
