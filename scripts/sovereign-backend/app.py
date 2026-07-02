@@ -1790,6 +1790,568 @@ def auth_google():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# SOVEREIGN APP TOOLCHAIN  —  Issue: Toolchain integration
+#
+# Automatisch laden:          Ja
+# GitHub lesen:               Nur nach Login (require_session)
+# Schreiben:                  Nein (confirm=True Pflicht)
+# Push auf main:              Nein (Draft PR only)
+# PR erstellen:               Nur mit confirm=True
+# Draft PR default:           Ja
+# Repo-Allowlist:             Pflicht (TOOLCHAIN_ALLOWED_REPOS env)
+# Audit-Log:                  Pflicht
+#
+# Endpoints:
+#   GET  /api/toolchain/user-tools
+#   POST /api/toolchain/github/read-file
+#   POST /api/toolchain/github/list-directory
+#   POST /api/toolchain/github/list-branches
+#   POST /api/toolchain/github/search-code
+#   POST /api/toolchain/preview-patch
+#   POST /api/toolchain/create-draft-pr
+#   POST /api/toolchain/apply-patch-worker
+#   POST /api/toolchain/sandbox-plan
+#   GET  /api/toolchain/audit-log
+# ═════════════════════════════════════════════════════════════════════════════
+
+import difflib as _difflib
+
+_TC_GITHUB_TOKEN   = os.getenv("TOOLCHAIN_GITHUB_TOKEN") or os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+_TC_ALLOWED_REPOS  = [
+    r.strip().lower()
+    for r in os.getenv("TOOLCHAIN_ALLOWED_REPOS", "OuroborosCollective/Sovereign-Studio-ato").split(",")
+    if r.strip()
+]
+_TC_WORKER_URL     = os.getenv(
+    "TOOLCHAIN_WORKER_URL",
+    "https://sovereign-studio-worker.projectouroboroscollective.workers.dev/git/patch",
+)
+_TC_GH_API         = "https://api.github.com"
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _tc_allowed(owner: str, repo: str) -> None:
+    slug = f"{owner}/{repo}".lower()
+    if "*" not in _TC_ALLOWED_REPOS and slug not in _TC_ALLOWED_REPOS:
+        raise PermissionError(f"Repo {owner}/{repo} ist nicht in der Allowlist")
+
+
+def _tc_gh_headers() -> dict:
+    h = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "sovereign-studio-backend/1.0",
+    }
+    if _TC_GITHUB_TOKEN:
+        h["Authorization"] = f"Bearer {_TC_GITHUB_TOKEN}"
+    return h
+
+
+def _tc_gh_get(path: str) -> dict:
+    url = f"{_TC_GH_API}{path}"
+    req = requests.get(url, headers=_tc_gh_headers(), timeout=20)
+    req.raise_for_status()
+    return req.json()
+
+
+def _tc_gh_put(path: str, body: dict) -> dict:
+    if not _TC_GITHUB_TOKEN:
+        raise PermissionError("TOOLCHAIN_GITHUB_TOKEN nicht konfiguriert")
+    url = f"{_TC_GH_API}{path}"
+    req = requests.put(url, headers=_tc_gh_headers(), json=body, timeout=30)
+    req.raise_for_status()
+    return req.json()
+
+
+def _tc_gh_post(path: str, body: dict) -> dict:
+    if not _TC_GITHUB_TOKEN:
+        raise PermissionError("TOOLCHAIN_GITHUB_TOKEN nicht konfiguriert")
+    url = f"{_TC_GH_API}{path}"
+    req = requests.post(url, headers=_tc_gh_headers(), json=body, timeout=30)
+    req.raise_for_status()
+    return req.json()
+
+
+def _tc_apply_blocks(content: str, blocks: list) -> tuple:
+    """Apply strict SEARCH/REPLACE blocks. Each search must occur exactly once."""
+    updated = content
+    report = []
+    for i, block in enumerate(blocks):
+        search  = block.get("search", "")
+        replace = block.get("replace", "")
+        if not isinstance(search, str) or not isinstance(replace, str):
+            raise ValueError(f"Block {i}: search/replace müssen Strings sein")
+        if not search:
+            raise ValueError(f"Block {i}: search darf nicht leer sein")
+        count = updated.count(search)
+        if count != 1:
+            raise ValueError(
+                f"Block {i}: search muss genau einmal vorkommen, gefunden: {count}"
+            )
+        updated = updated.replace(search, replace, 1)
+        report.append({"index": i, "delta_chars": len(replace) - len(search)})
+    return updated, report
+
+
+def _tc_unified_diff(before: str, after: str, path: str) -> str:
+    return "".join(_difflib.unified_diff(
+        before.splitlines(keepends=True),
+        after.splitlines(keepends=True),
+        fromfile=f"a/{path}",
+        tofile=f"b/{path}",
+    ))[:60_000]
+
+
+def _tc_audit(user_id: str | None, action: str, details: dict) -> None:
+    """Write toolchain action to audit_log."""
+    try:
+        query(
+            """INSERT INTO audit_log (admin_id, admin_email, action, target_id, changes)
+               VALUES (%s::uuid, %s, %s, %s, %s)""",
+            (
+                user_id or "00000000-0000-0000-0000-000000000000",
+                "toolchain",
+                f"toolchain:{action}",
+                details.get("repo", "unknown"),
+                psycopg2.extras.Json(details),
+            ),
+            write=True,
+        )
+    except Exception:
+        pass  # Audit must not break the main action
+
+
+def _tc_read_github_file(owner: str, repo: str, path: str, ref: str | None = None) -> dict:
+    _tc_allowed(owner, repo)
+    qs = f"?ref={urllib.parse.quote(ref)}" if ref else ""
+    data = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
+    if isinstance(data, list):
+        raise ValueError(f"{path} ist ein Verzeichnis, nicht eine Datei")
+    raw = base64.b64decode(data.get("content", "").replace("\n", ""))
+    return {
+        "sha":      data.get("sha", ""),
+        "html_url": data.get("html_url", ""),
+        "bytes":    len(raw),
+        "content":  raw.decode("utf-8", errors="replace"),
+    }
+
+
+def _tc_create_draft_pr(
+    owner: str, repo: str, path: str, new_content: str,
+    message: str, branch_name: str | None,
+    title: str | None, body: str | None, base_branch: str | None,
+) -> dict:
+    _tc_allowed(owner, repo)
+    # Get base SHA
+    base_data = _tc_gh_get(f"/repos/{owner}/{repo}")
+    default_branch = base_branch or base_data.get("default_branch", "main")
+
+    ref_data = _tc_gh_get(f"/repos/{owner}/{repo}/git/ref/heads/{default_branch}")
+    base_sha = ref_data["object"]["sha"]
+
+    # Create branch
+    branch = branch_name or f"toolchain/patch-{int(time.time())}"
+    _tc_gh_post(f"/repos/{owner}/{repo}/git/refs", {
+        "ref": f"refs/heads/{branch}",
+        "sha": base_sha,
+    })
+
+    # Get current file SHA (needed for update)
+    try:
+        current = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}?ref={default_branch}")
+        file_sha = current.get("sha", "")
+    except Exception:
+        file_sha = ""
+
+    # Push file to new branch
+    put_body: dict = {
+        "message": message,
+        "content": base64.b64encode(new_content.encode()).decode(),
+        "branch": branch,
+    }
+    if file_sha:
+        put_body["sha"] = file_sha
+    _tc_gh_put(f"/repos/{owner}/{repo}/contents/{path}", put_body)
+
+    # Create Draft PR
+    pr = _tc_gh_post(f"/repos/{owner}/{repo}/pulls", {
+        "title": title or f"[Toolchain] {message[:80]}",
+        "body": body or (
+            "Erstellt von **Sovereign App Toolchain**.\n\n"
+            "- Kein direkter Push auf `main`\n"
+            "- Muss manuell gemergt werden\n"
+            "- Erstellt mit `confirm=True` nach User-Bestätigung"
+        ),
+        "head": branch,
+        "base": default_branch,
+        "draft": True,
+    })
+    return {
+        "pr_number":  pr.get("number"),
+        "pr_url":     pr.get("html_url"),
+        "branch":     branch,
+        "base":       default_branch,
+        "draft":      True,
+    }
+
+
+# ── Toolchain routes ──────────────────────────────────────────────────────────
+
+@app.route("/api/toolchain/user-tools")
+@require_session
+def tc_user_tools():
+    """List available tools for the logged-in user (auto-loads in app)."""
+    uid = request.session_user_id
+    user_row = query("SELECT role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
+    role = (user_row["role"] if user_row else "user") or "user"
+
+    tools = [
+        {"id": "github_read_file",      "label": "GitHub Datei lesen",       "write": False},
+        {"id": "github_list_directory", "label": "GitHub Verzeichnis listen", "write": False},
+        {"id": "github_list_branches",  "label": "GitHub Branches listen",   "write": False},
+        {"id": "github_search_code",    "label": "GitHub Code suchen",       "write": False},
+        {"id": "preview_patch",         "label": "Patch-Vorschau",           "write": False},
+        {"id": "sandbox_plan",          "label": "Sandbox-Plan",             "write": False},
+    ]
+    if role in ("admin", "superadmin"):
+        tools += [
+            {"id": "create_draft_pr",      "label": "Draft PR erstellen",      "write": True,  "confirm_required": True},
+            {"id": "apply_patch_worker",   "label": "Patch Worker aufrufen",   "write": True,  "confirm_required": True},
+        ]
+    return jsonify({
+        "tools":         tools,
+        "allowed_repos": _TC_ALLOWED_REPOS,
+        "rules": {
+            "auto_load":          True,
+            "github_read":        "after_login",
+            "auto_write":         False,
+            "push_to_main":       False,
+            "pr_mode":            "draft_only",
+            "confirm_required":   True,
+            "audit_log":          True,
+        },
+    })
+
+
+@app.route("/api/toolchain/github/read-file", methods=["POST"])
+@require_session
+def tc_github_read_file():
+    try:
+        b     = request.get_json(force=True) or {}
+        owner = b.get("owner", "")
+        repo  = b.get("repo", "")
+        path  = b.get("path", "")
+        ref   = b.get("ref")
+        if not owner or not repo or not path:
+            return jsonify({"error": "owner, repo und path erforderlich"}), 400
+        data = _tc_read_github_file(owner, repo, path, ref)
+        _tc_audit(request.session_user_id, "read_file", {"owner": owner, "repo": repo, "path": path})
+        content = data["content"]
+        if len(content) > 60_000:
+            content = content[:60_000]
+            data["truncated"] = True
+        data["content"] = content
+        return jsonify(data)
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/github/list-directory", methods=["POST"])
+@require_session
+def tc_github_list_directory():
+    try:
+        b     = request.get_json(force=True) or {}
+        owner = b.get("owner", "")
+        repo  = b.get("repo", "")
+        path  = b.get("path", "")
+        ref   = b.get("ref")
+        if not owner or not repo:
+            return jsonify({"error": "owner und repo erforderlich"}), 400
+        _tc_allowed(owner, repo)
+        qs = f"?ref={urllib.parse.quote(ref)}" if ref else ""
+        items = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
+        if not isinstance(items, list):
+            items = [items]
+        _tc_audit(request.session_user_id, "list_dir", {"owner": owner, "repo": repo, "path": path})
+        return jsonify({"items": [
+            {"name": i["name"], "type": i["type"], "path": i["path"], "size": i.get("size")}
+            for i in items
+        ]})
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/github/list-branches", methods=["POST"])
+@require_session
+def tc_github_list_branches():
+    try:
+        b     = request.get_json(force=True) or {}
+        owner = b.get("owner", "")
+        repo  = b.get("repo", "")
+        if not owner or not repo:
+            return jsonify({"error": "owner und repo erforderlich"}), 400
+        _tc_allowed(owner, repo)
+        branches = _tc_gh_get(f"/repos/{owner}/{repo}/branches?per_page=50")
+        _tc_audit(request.session_user_id, "list_branches", {"owner": owner, "repo": repo})
+        return jsonify({"branches": [{"name": br["name"]} for br in (branches or [])]})
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/github/search-code", methods=["POST"])
+@require_session
+def tc_github_search_code():
+    try:
+        b     = request.get_json(force=True) or {}
+        owner = b.get("owner", "")
+        repo  = b.get("repo", "")
+        query_str = b.get("q", "")
+        if not owner or not repo or not query_str:
+            return jsonify({"error": "owner, repo und q erforderlich"}), 400
+        _tc_allowed(owner, repo)
+        q    = urllib.parse.quote(f"{query_str} repo:{owner}/{repo}")
+        data = _tc_gh_get(f"/search/code?q={q}&per_page=20")
+        _tc_audit(request.session_user_id, "search_code", {"owner": owner, "repo": repo, "q": query_str})
+        return jsonify({"items": [
+            {"path": i["path"], "html_url": i.get("html_url")}
+            for i in (data.get("items") or [])
+        ], "total": data.get("total_count", 0)})
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/preview-patch", methods=["POST"])
+@require_session
+def tc_preview_patch():
+    """Preview SEARCH/REPLACE blocks against a GitHub file — read-only."""
+    try:
+        b      = request.get_json(force=True) or {}
+        owner  = b.get("owner", "")
+        repo   = b.get("repo", "")
+        path   = b.get("path", "")
+        blocks = b.get("blocks", [])
+        ref    = b.get("ref")
+        if not owner or not repo or not path or not blocks:
+            return jsonify({"error": "owner, repo, path und blocks erforderlich"}), 400
+
+        current = _tc_read_github_file(owner, repo, path, ref)
+        before  = current["content"]
+        after, report = _tc_apply_blocks(before, blocks)
+        diff    = _tc_unified_diff(before, after, path)
+
+        _tc_audit(request.session_user_id, "preview_patch",
+                  {"owner": owner, "repo": repo, "path": path, "blocks": len(blocks)})
+        return jsonify({
+            "ok":           True,
+            "write_action": False,
+            "base_sha":     current["sha"],
+            "block_report": report,
+            "diff":         diff,
+            "lines_before": before.count("\n"),
+            "lines_after":  after.count("\n"),
+        })
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 422
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/create-draft-pr", methods=["POST"])
+@require_session
+def tc_create_draft_pr():
+    """Create a GitHub Draft PR. confirm=True required. Direct push to main: never."""
+    try:
+        b       = request.get_json(force=True) or {}
+        owner   = b.get("owner", "")
+        repo    = b.get("repo", "")
+        path    = b.get("path", "")
+        message = b.get("message", "")
+        blocks  = b.get("blocks", [])
+        confirm = b.get("confirm", False)
+
+        if not all([owner, repo, path, message, blocks]):
+            return jsonify({"error": "owner, repo, path, message und blocks erforderlich"}), 400
+
+        if not confirm:
+            # Preview only — no write
+            try:
+                current = _tc_read_github_file(owner, repo, path)
+                after, report = _tc_apply_blocks(current["content"], blocks)
+                diff = _tc_unified_diff(current["content"], after, path)
+            except Exception as prev_err:
+                diff, report = str(prev_err), []
+            return jsonify({
+                "created":       False,
+                "reason":        "confirm=True ist erforderlich für Write-Actions",
+                "write_mode":    "draft_pr_only",
+                "preview_diff":  diff,
+                "block_report":  report,
+            })
+
+        # Check admin role for write actions
+        uid      = request.session_user_id
+        user_row = query("SELECT role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
+        if not user_row or user_row.get("role") not in ("admin", "superadmin"):
+            return jsonify({"error": "Nur Admins dürfen PRs erstellen"}), 403
+
+        current  = _tc_read_github_file(owner, repo, path)
+        new_content, report = _tc_apply_blocks(current["content"], blocks)
+        diff     = _tc_unified_diff(current["content"], new_content, path)
+        pr       = _tc_create_draft_pr(
+            owner=owner, repo=repo, path=path,
+            new_content=new_content, message=message,
+            branch_name=b.get("branch_name"),
+            title=b.get("title"),
+            body=b.get("body"),
+            base_branch=b.get("base_branch"),
+        )
+        _tc_audit(uid, "create_draft_pr", {
+            "owner": owner, "repo": repo, "path": path,
+            "pr_url": pr.get("pr_url"), "blocks": len(blocks),
+        })
+        return jsonify({
+            "created":      True,
+            "write_mode":   "draft_pr_only",
+            "block_report": report,
+            "diff":         diff,
+            **pr,
+        })
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 422
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/apply-patch-worker", methods=["POST"])
+@require_session
+def tc_apply_patch_worker():
+    """Send SEARCH/REPLACE blocks to the external Sovereign patch worker. confirm=True required."""
+    try:
+        b       = request.get_json(force=True) or {}
+        owner   = b.get("owner", "")
+        repo    = b.get("repo", "")
+        path    = b.get("path", "")
+        message = b.get("message", "")
+        blocks  = b.get("blocks", [])
+        confirm = b.get("confirm", False)
+        worker  = b.get("worker_url", _TC_WORKER_URL)
+
+        if not all([owner, repo, path, message, blocks]):
+            return jsonify({"error": "owner, repo, path, message und blocks erforderlich"}), 400
+
+        payload = {"owner": owner, "repo": repo, "path": path, "message": message, "blocks": blocks}
+
+        if not confirm:
+            return jsonify({
+                "sent":    False,
+                "reason":  "confirm=True ist erforderlich",
+                "payload": payload,
+                "worker":  worker,
+            })
+
+        uid      = request.session_user_id
+        user_row = query("SELECT role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
+        if not user_row or user_row.get("role") not in ("admin", "superadmin"):
+            return jsonify({"error": "Nur Admins dürfen den Patch Worker aufrufen"}), 403
+
+        _tc_allowed(owner, repo)
+        resp = requests.post(worker, json=payload, timeout=60)
+        resp.raise_for_status()
+        result = resp.json() if resp.content else {}
+        _tc_audit(uid, "apply_patch_worker", {
+            "owner": owner, "repo": repo, "path": path,
+            "worker": worker, "status": resp.status_code,
+        })
+        return jsonify({"sent": True, "status": resp.status_code, "response": result})
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/sandbox-plan", methods=["POST"])
+@require_session
+def tc_sandbox_plan():
+    """Plan Playwright/verify/doctor commands for a given goal — read-only."""
+    b    = request.get_json(force=True) or {}
+    goal = (b.get("goal") or "").strip()
+
+    COMMANDS = {
+        "verify":   "pnpm run verify",
+        "typecheck":"pnpm run type-check",
+        "test":     "pnpm run test:smoke",
+        "build":    "pnpm run build",
+        "apk":      "pnpm run build:apk:debug",
+        "doctor":   "pnpm exec playwright install --with-deps && pnpm run test:e2e",
+        "lint":     "pnpm run lint",
+        "audit":    "pnpm run audit:sovereign",
+    }
+    detected = []
+    goal_l   = goal.lower()
+    if any(w in goal_l for w in ("type", "ts", "typescript")):  detected.append(COMMANDS["typecheck"])
+    if any(w in goal_l for w in ("smoke", "test")):             detected.append(COMMANDS["test"])
+    if any(w in goal_l for w in ("build", "bundle")):           detected.append(COMMANDS["build"])
+    if any(w in goal_l for w in ("apk", "android", "play")):   detected.append(COMMANDS["apk"])
+    if any(w in goal_l for w in ("playwright", "e2e", "doctor")): detected.append(COMMANDS["doctor"])
+    if any(w in goal_l for w in ("lint",)):                     detected.append(COMMANDS["lint"])
+    if any(w in goal_l for w in ("audit", "security")):         detected.append(COMMANDS["audit"])
+    if not detected:                                            detected.append(COMMANDS["verify"])
+
+    _tc_audit(request.session_user_id, "sandbox_plan", {"goal": goal, "commands": detected})
+    return jsonify({
+        "goal":     goal,
+        "commands": detected,
+        "note":     "Node 22 + pnpm 9 + Playwright. Ausführen im Repo-Root.",
+        "rules": {
+            "push_to_main": False,
+            "draft_pr":     True,
+            "confirm":      True,
+        },
+    })
+
+
+@app.route("/api/toolchain/audit-log")
+@require_session
+def tc_audit_log():
+    """Return toolchain audit log entries for the current user."""
+    try:
+        uid      = request.session_user_id
+        user_row = query("SELECT role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
+        role     = (user_row["role"] if user_row else "user") or "user"
+
+        if role in ("admin", "superadmin"):
+            rows = query(
+                """SELECT id::text, admin_email, action, target_id, changes,
+                          to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ts
+                   FROM audit_log WHERE action LIKE 'toolchain:%'
+                   ORDER BY created_at DESC LIMIT 100"""
+            )
+        else:
+            rows = query(
+                """SELECT id::text, admin_email, action, target_id, changes,
+                          to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ts
+                   FROM audit_log WHERE action LIKE 'toolchain:%' AND admin_id = %s::uuid
+                   ORDER BY created_at DESC LIMIT 50""",
+                (uid,),
+            )
+        return jsonify({"entries": [dict(r) for r in (rows or [])]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # WEB ADMIN PANEL  —  /admin
 # Self-contained single-page admin UI served directly from Flask.
 # No build step required. Auth via ADMIN_API_KEY (Bearer token).
