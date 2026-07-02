@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -329,7 +330,7 @@ import { SkillScanPanel } from '../../toolchain/components/SkillScanPanel';
 // ─────────────────────────────────────────────────────────────
 
 // Module lamps row — AppControl addition
-function ModuleLamps({
+const ModuleLamps = memo(function ModuleLamps({
   modules,
   signals,
   activeTab,
@@ -409,10 +410,10 @@ function ModuleLamps({
         })}
     </div>
   );
-}
+});
 
 // TopBar — v3 verbatim + module lamps + panel toggle + PAL badge
-function TopBar({
+const TopBar = memo(function TopBar({
   status,
   repoReady,
   chatRepoSnapshot,
@@ -683,7 +684,7 @@ function TopBar({
       />
     </div>
   );
-}
+});
 
 // Collapsible status/log panel
 function StatusPanel({
@@ -857,7 +858,7 @@ function StatusPanel({
 }
 
 // Bubble (verbatim v3 + Issue #427 markdown + Issue #429 long-press)
-function Bubble({
+const Bubble = memo(function Bubble({
   msg,
   now,
   onLongPress,
@@ -1044,7 +1045,7 @@ function Bubble({
       </div>
     </div>
   );
-}
+});
 
 // WelcomeScreen (verbatim v3)
 function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
@@ -2173,7 +2174,7 @@ function Composer({
 }
 
 // Bottom tab bar
-function BottomTabBar({
+const BottomTabBar = memo(function BottomTabBar({
   modules,
   activeTab,
   signals,
@@ -2272,7 +2273,7 @@ function BottomTabBar({
       })}
     </nav>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -2339,6 +2340,10 @@ export function BuilderContainer({
     useState<Partial<Record<ModuleId, ModuleCond[]>>>(INIT_CONDITIONS);
   const [confidence, setConfidence] = useState(0.12);
   const [panelOpen, setPanelOpen] = useState(false);
+  const handleMenuOpen = useCallback(() => setShowSide(true), []);
+  const handlePanelToggle = useCallback(() => setPanelOpen((v) => !v), []);
+  const handleSourceClick = useCallback(() => setShowRuntime(true), []);
+  const handleBubbleLongPress = useCallback((draft: string) => setWishText(draft), []);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
   const { credits, chargeCredits } = useCreditGuard();
@@ -3337,7 +3342,25 @@ export function BuilderContainer({
   const submitDisabled =
     localRepoLoading || chatResponseBusy || isPublishing || !wishText.trim();
   const isChat = activeTab === "chat";
-  const activeMod = MODULES.find((m) => m.id === activeTab) ?? MODULES[0];
+  const activeMod = useMemo(() => MODULES.find((m) => m.id === activeTab) ?? MODULES[0], [activeTab]);
+
+  const userInitials = useMemo(() => authUser
+    ? (authUser.displayName || authUser.email)
+        .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+    : undefined, [authUser]);
+
+  const inspectorSignals = useMemo(() => deriveRuntimeInspectorSignals(
+    activeMod.id.toUpperCase() as "PAT" | "ORC" | "INT" | "BUD",
+    buildPatInspectorStateFromStore(patternMemoryStore),
+    {
+      palDecisions: palDecisions.length,
+      fastTierCount: palDecisions.filter((d) => d.tier === "fast").length,
+      smartTierCount: palDecisions.filter((d) => d.tier === "smart").length,
+      powerTierCount: palDecisions.filter((d) => d.tier === "power").length,
+    },
+    { chatRepoSnapshot },
+    deriveBudFromLedger(budgetLedger),
+  ), [activeMod, patternMemoryStore, palDecisions, chatRepoSnapshot, budgetLedger]);
 
   // ─────────────────────────────────────────────────────────────
   // RENDER
@@ -3380,25 +3403,22 @@ export function BuilderContainer({
         repoReady={effectiveRepoReady}
         chatRepoSnapshot={chatRepoSnapshot}
         repoReason={effectiveRepoReason}
-        onMenuOpen={() => setShowSide(true)}
+        onMenuOpen={handleMenuOpen}
         onRepoClick={openRepoExplorer}
-        onSourceClick={() => setShowRuntime(true)}
+        onSourceClick={handleSourceClick}
         source={runtimeSource}
         modules={MODULES}
         signals={signals}
         activeTab={activeTab}
         onTabClick={switchTab}
         panelOpen={panelOpen}
-        onPanelToggle={() => setPanelOpen((v) => !v)}
+        onPanelToggle={handlePanelToggle}
         palTier={lastPal?.tier ?? null}
         palSavings={palStats?.savings ?? null}
         credits={credits}
         userLoggedIn={!!authUser}
         userAvatar={authUser?.avatarUrl ?? null}
-        userInitials={authUser
-          ? (authUser.displayName || authUser.email)
-              .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
-          : undefined}
+        userInitials={userInitials}
         onUserClick={() => authUser ? setShowProfile(true) : setShowLogin(true)}
       />
 
@@ -3468,7 +3488,7 @@ export function BuilderContainer({
                   key={line.id}
                   msg={line}
                   now={nowRef.current}
-                  onLongPress={(draft) => setWishText(draft)}
+                  onLongPress={handleBubbleLongPress}
                   onOpenFile={openRepoExplorerFromFileBadge}
                 />
               ))}
@@ -3652,18 +3672,7 @@ export function BuilderContainer({
             conditions={conditions}
             confidence={confidence}
             sequence={sequence}
-            inspectorSignals={deriveRuntimeInspectorSignals(
-              activeMod.id.toUpperCase() as "PAT" | "ORC" | "INT" | "BUD",
-              buildPatInspectorStateFromStore(patternMemoryStore),
-              {
-                palDecisions: palDecisions.length,
-                fastTierCount: palDecisions.filter((d) => d.tier === "fast").length,
-                smartTierCount: palDecisions.filter((d) => d.tier === "smart").length,
-                powerTierCount: palDecisions.filter((d) => d.tier === "power").length,
-              },
-              { chatRepoSnapshot },
-              deriveBudFromLedger(budgetLedger),
-            )}
+            inspectorSignals={inspectorSignals}
             onSignalClick={(prompt) => setWishText(prompt)}
           />
           <div style={{ height: 12 }} />
