@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { RuntimeContext } from '../runtime/RuntimeIntelligence';
 import type { PredictiveLayerSnapshot } from './types';
+
+type PredictiveGuardContext = RuntimeContext & {
+  [key: string]: unknown;
+};
 import {
   createBuildPredictiveGuard,
   createPredictiveGuardChain,
@@ -9,7 +13,7 @@ import {
   createSystemHealthPredictiveGuard,
 } from './runtimeIntelligenceIntegration';
 
-function runtimeContext(traceId = 'predictive-trace-1'): RuntimeContext {
+function runtimeContext(traceId = 'predictive-trace-1'): PredictiveGuardContext {
   return {
     traceId,
     timestamp: 1,
@@ -21,7 +25,7 @@ function runtimeContext(traceId = 'predictive-trace-1'): RuntimeContext {
 function snapshot(overrides: Partial<PredictiveLayerSnapshot> = {}): PredictiveLayerSnapshot {
   return {
     active: true,
-    phase: 'active',
+    phase: 'predicting',
     nodeCount: 4,
     synapseCount: 6,
     patternCount: 3,
