@@ -1,3 +1,19 @@
+## Streaming Status (Befund F — Audit 2026-07-02)
+
+Streaming ist **erledigt** und kein offenes Feature mehr.
+- `streamDevChatWorkerReply` existiert als echter Async-Generator mit SSE-Parsing.
+- `BuilderContainer.tsx` nutzt den Streaming-Pfad aktiv mit `for await`.
+- `fetchDevChatWorkerReply` bleibt als Fallback-Pfad erhalten.
+
+Offene Stabilisierungspunkte (kein neues Feature, nur Fehlerbehandlung):
+- Fehlendes SSE-Body
+- Nicht-SSE-Antwort
+- Worker 4xx/5xx
+- Abbruch/Timeout
+- Leere Antwort
+
+---
+
 ## Drift Detected:
 * `launch-bot-v1` package lacked dependencies matching root `package.json`, causing drift.
 * `express` version was `^4.19.2`, now `^4.21.2`

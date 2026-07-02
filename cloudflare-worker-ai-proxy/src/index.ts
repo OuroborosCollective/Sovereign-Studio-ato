@@ -131,7 +131,16 @@ const corsHeaders = {
 };
 
 /**
- * Simple in-memory rate limiter (per Worker instance)
+ * Simple in-memory rate limiter (per Worker instance).
+ *
+ * IMPORTANT — Befund I (Audit 2026-07-02):
+ * Cloudflare Workers run as edge isolates. This Map is NOT shared globally —
+ * each warm isolate instance maintains its own counter. A configured limit of
+ * 60 means "60 per isolate/region/warm-context", NOT a global 60-per-minute.
+ *
+ * For true global rate limiting use Cloudflare Durable Objects or a KV-backed
+ * counter. Until then, treat this limit as best-effort / per-isolate only and
+ * do NOT present it as a hard global guarantee in any UI or documentation.
  */
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
@@ -393,16 +402,18 @@ function isModelAllowed(model: string, env: Env): boolean {
 }
 
 /**
- * Simple authentication check
+ * Simple authentication check.
+ * Returns 'missing_key' when PROXY_API_KEY is not configured so the caller
+ * can hard-fail with 503 instead of silently allowing all traffic.
  */
-function validateAuth(request: Request, env: Env): boolean {
+function validateAuth(request: Request, env: Env): 'ok' | 'unauthorized' | 'missing_key' {
   if (!env.PROXY_API_KEY) {
-    return true; // No auth required if secret not set
+    return 'missing_key';
   }
   const authHeader = request.headers.get('Authorization');
   const apiKeyHeader = request.headers.get('X-API-Key');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : apiKeyHeader;
-  return token === env.PROXY_API_KEY;
+  return token === env.PROXY_API_KEY ? 'ok' : 'unauthorized';
 }
 
 /**
@@ -684,7 +695,14 @@ export default {
     }
     
     if (url.pathname === '/v1/models' && request.method === 'GET') {
-      if (!validateAuth(request, env)) {
+      const authResult = validateAuth(request, env);
+      if (authResult === 'missing_key') {
+        return new Response(JSON.stringify({ error: { message: 'Proxy not configured', type: 'server_error', code: 'proxy_not_configured' } }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (authResult === 'unauthorized') {
         return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -694,7 +712,14 @@ export default {
     }
     
     if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
-      if (!validateAuth(request, env)) {
+      const authResult = validateAuth(request, env);
+      if (authResult === 'missing_key') {
+        return new Response(JSON.stringify({ error: { message: 'Proxy not configured', type: 'server_error', code: 'proxy_not_configured' } }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (authResult === 'unauthorized') {
         return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

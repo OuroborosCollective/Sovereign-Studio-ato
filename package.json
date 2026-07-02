@@ -36,6 +36,7 @@
     "type-check": "tsc --noEmit",
     "verify": "pnpm run type-check && pnpm run test:release-gate && pnpm run build:web && pnpm run test:e2e && pnpm run audit:all",
     "verify:release": "pnpm run verify",
+    "audit:coverage": "node scripts/audit-test-coverage-map.mjs",
     "hardcode:scan": "node scripts/hardcode-scanner.mjs --all",
     "hardcode:scan:src": "node scripts/hardcode-scanner.mjs src",
     "smoke:ki-coach": "pnpm run test:e2e",

@@ -1,0 +1,1799 @@
+{
+  "generatedAt": "2026-07-02T12:52:14.203Z",
+  "totalTestFiles": 221,
+  "files": [
+    {
+      "file": "src/App.androidWebView.smoke.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/App.setupState.integration.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/App.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/SovereignAppWrapper.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/appShellContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/components/ErrorBoundary.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/components/Header.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/ai/geminiService.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/ai/hooks/useGemini.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/ai/providerManager.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/ai/routingConfig.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/billing/billingSlice.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/billing/costConfig.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/canvas/CanvasEngine.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/canvas/canvasSlice.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/config/components/ConfigBar.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/githubAuthSession.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/githubPackagePublisher.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/githubWriteProxyContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/hooks/useGithubRepo.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/hooks/useSetupState.input.integration.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/hooks/useSetupState.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/repoSnapshotPersistence.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/utils.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/launcher/components/LauncherMenu.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/launcher/tools/_template/TemplateTool.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/launcher/tools/vps/VpsConnectorTool.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/launcher/useLauncherStore.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/ouroboros/ouroborosRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/ouroboros/ouroborosSlice.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/autoModePolicy.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/brain/sovereignBrainContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/AndroidMessageBubble.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/ChatMarkdown.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/ChatRuntimePanel.palette.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/ChatSidebar.test.tsx",
+      "gates": [
+        "test:integration",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/product/components/DraftPrCard.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/OpenHandsOperatorBriefingPanel.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/PaletteEnhancements.palette.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/RemoteMemoryPanel.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/RepoInsightPanelBridge.contract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/RepoReadinessPanel.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/RepoTreeExplorer.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/SettingsModal.palette.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/SovereignControlFrame.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/SovereignTabErrorBoundary.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/components/WorkerBlockerCard.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/constants.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/containers/BuilderContainer.intent.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/containers/BuilderContainer.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/containers/PatternMemoryContainer.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/containers/RemoteMemoryContainer.releaseSafety.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/containers/RepoSnapshotContainer.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/containers/TelemetryContainer.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/containers/WorkflowContainer.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/flowMessages.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/freeFirstPlan.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/githubWriteGuard.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/hooks/useCoachRuntimeBridge.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/hooks/useLlmAdapters.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/hooks/usePatternMemoryStore.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/hooks/useProductMagic.sequential.test.ts",
+      "gates": [
+        "test:integration",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/product/hooks/useRepoInsightBridge.contract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/llm/llmRevolver.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/llm/primaryBridgeConfig.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/llm/sovereignLlmAdapters.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/agentWorkRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/agentWorkspaceRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/androidDeviceProfile.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/androidInteractionRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/androidQuickInteractionRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/apiKeyValidation.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/appPublishRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/arelogicBrandContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/autoHealFollowupPlan.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/brownfieldExplorer.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/brownfieldInspectorHint.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/builderContainerRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/chatClaimGuard.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/chatExportRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/chatIntentRouter.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/chatRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/chatSidebarRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/containerBridgeValidation.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/containerDecisionBaselineRules.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/containerDecisionGrammar.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/containerDecisionLearning.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/containerIntelligenceCoverage.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/containerIntelligencePatternRules.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/containerRuntimeIntegration.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/cuteThinkingStatus.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/dependencyTelemetryBridge.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/devChatDesignContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/devChatWorkerBridge.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/draftPrBuildStatusRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/evidenceLedger.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/externalMemoryMonitoring.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/externalMemorySync.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/externalRouteConsentGate.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/generatedFileDiffPreview.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/generatedFileReview.selfReview.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/githubAccessRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/llmRouteBudgetRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/localWorkflowCapabilityRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/modelHealthFallback.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/modelHealthRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/openHandsOperatorBriefing.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/openhandsEnterpriseClient.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/openhandsEnterpriseRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/openhandsPatternGatewayBridge.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/openhandsWorkspaceAdapter.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/palRouter.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/palRunGate.smoke.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/patternMemoryProposalRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/patternMemoryRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/patternReusePlanner.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/providerRuntimeChecks.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/publishRuntimeTelemetryFeedback.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/quietInspectorHintPolicy.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/remoteMemoryContainerRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/remoteMemoryGatewayBridge.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/remoteMemoryProductionReadiness.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/remoteMemoryUpdateIntake.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/repoAccessState.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/repoContentScanner.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/repoFileIntegrity.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/repoInsightEngine.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/repoLaunchReadiness.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/repoLaunchReadinessFromFiles.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/repoTreeExplorerRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/responsePacingRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/runtimeFeedbackCoach.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/runtimeInspectorPanelRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/runtimeOutcomeGuard.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/runtimeValidationCoverage.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/scanFindingRegistry.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/secureInputGuard.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sequentialRuntimeGuard.test.ts",
+      "gates": [
+        "test:integration",
+        "test:all",
+        "test:release-gate",
+        "verify"
+      ],
+      "ciWorkflows": [
+        "ci.yml",
+        "release-verification.yml",
+        "sovereign-validation.yml"
+      ],
+      "category": "release-gate"
+    },
+    {
+      "file": "src/features/product/runtime/slashCommandRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/solutionPatternHints.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/solutionPatternMemory.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/solutionPatternPersistence.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignActionContracts.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignAutoViewConditionStack.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignAutoViewRouter.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignAutomationMode.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignChaosSmokePlan.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignCircuitLifecycle.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignComponentContracts.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignContainerBindings.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignContainerContracts.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignControlFrameContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignControlFrameRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignDependencyBrowserSurface.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignDependencyCoachBridge.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignDependencyLifecycle.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignFormContracts.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignFunctionalGuards.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignHealth.self-gate.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignHealth.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignLearningMemory.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignLlmRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignMemoryContext.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignPackageFromRepoFiles.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignPackageFromRepoFilesWithLlm.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignPackagePalGate.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignProductTemplate.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignReleaseGuide.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignSessionMemory.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignStructure.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignStyleContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignTelemetry.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignWorkspaceCommand.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/sovereignWorkspaceCommandAdapter.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/telemetryContainerRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workerIntentDetector.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workflowContainerRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workflowJobEvidence.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workflowJobEvidenceFetch.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workflowRepairPlan.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workflowWatch.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workspaceCommandRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workspaceErrorPolicy.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/runtime/workspaceInspectorRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/types.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/visiblePatch.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/product/workflowAnalysis.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/hooks/useHomePageMetrics.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/live-entry-guard.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/main.entry.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/main.mobileEntrypoint.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-operator-coach-priority.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-operator-coach.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-setup-bridge.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-setup-drawer.direct-fallback.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-setup-drawer.selectors.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-setup-drawer.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-workbench-console.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-workflow-guidance.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-workflow-orchestrator.validation.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-workflow-pattern-rules.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/mobile-workspace-order.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/errorComputer.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/hebbianAdaptor.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/latentSpace.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/predictionGenerator.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/predictiveSafety.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/runtimeIntelligenceIntegration.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/signalProxy.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/predictive/types.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/runtime/RuntimeIntelligence.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/runtime/index.repoSnapshotRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/runtime/repoSnapshotRuntime.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/runtime/rootCauseEngine.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/runtime/runtimeIntelligenceIntegrationContract.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/shared/api/storageService.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/shared/utils/crypto.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/shared/utils/runtimeValidation.test.ts",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/store/hooks.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "scripts/sovereign-e2e-smoke.mjs",
+      "gates": [
+        "verify"
+      ],
+      "ciWorkflows": [
+        "e2e-testing.yml",
+        "ki-coach-integration.yml",
+        "release-verification.yml"
+      ],
+      "category": "e2e"
+    }
+  ]
+}
