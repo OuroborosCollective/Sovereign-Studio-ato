@@ -3113,3 +3113,100 @@ def admin_panel():
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+
+
+# ── Universal Toolchain Proxy ─────────────────────────────────────────────────
+# Proxies requests to the sovereign-universal-toolchain FastAPI/FastMCP server
+# running at TOOLCHAIN_BASE_URL (default: http://127.0.0.1:8001).
+# The TOOLCHAIN_API_KEY is injected server-side — never exposed to frontend.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json as _json
+
+_UTOOLCHAIN_BASE = os.getenv("TOOLCHAIN_BASE_URL", "http://127.0.0.1:8001").rstrip("/")
+_UTOOLCHAIN_KEY  = os.getenv("TOOLCHAIN_API_KEY", "")
+
+
+def _utc_request(method: str, path: str, body=None):
+    """HTTP helper for proxying to the universal toolchain server."""
+    import urllib.request as _ur
+    import urllib.error   as _ue
+    url = f"{_UTOOLCHAIN_BASE}{path}"
+    headers = {"Content-Type": "application/json"}
+    if _UTOOLCHAIN_KEY:
+        headers["X-Toolchain-Key"] = _UTOOLCHAIN_KEY
+    data = _json.dumps(body, ensure_ascii=False).encode() if body is not None else None
+    req = _ur.Request(url, data=data, headers=headers, method=method)
+    try:
+        with _ur.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            return _json.loads(raw) if raw else {}
+    except _ue.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Toolchain {e.code}: {raw[:500]}") from e
+
+
+@app.route("/api/toolchain/universal/status")
+def utc_status():
+    """Health check for the universal toolchain server (public)."""
+    try:
+        data = _utc_request("GET", "/")
+        return jsonify({**data, "proxy_via": _UTOOLCHAIN_BASE})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "proxy_via": _UTOOLCHAIN_BASE}), 502
+
+
+@app.route("/api/toolchain/universal/manifest")
+def utc_manifest():
+    """Return the tool manifest from the universal toolchain (public)."""
+    try:
+        data = _utc_request("GET", "/api/v1/manifest")
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+
+@app.route("/api/toolchain/universal/briefing")
+def utc_briefing():
+    """Return the toolchain briefing for LLM agents (public)."""
+    try:
+        data = _utc_request("GET", "/api/v1/briefing")
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+
+@app.route("/api/toolchain/universal/invoke", methods=["POST"])
+@require_session
+def utc_invoke():
+    """
+    Proxy a tool call to the universal toolchain server.
+    Body: { "tool": "<tool_name>", "args": { ... } }
+    Write tools (write_action=true) require confirm=true in args.
+    """
+    try:
+        b        = request.get_json(force=True) or {}
+        tool     = (b.get("tool") or "").strip()
+        args     = b.get("args") or {}
+        if not tool:
+            return jsonify({"error": "tool name erforderlich"}), 400
+
+        data = _utc_request("POST", f"/api/v1/tools/{tool}", {"args": args})
+
+        # Audit write actions
+        if data.get("ok") and data.get("result", {}) if isinstance(data.get("result"), dict) else False:
+            write_action = isinstance(data.get("result"), dict) and data["result"].get("created")
+            if write_action:
+                _tc_audit(
+                    request.session_user_id,
+                    f"utc_write_{tool}",
+                    {"tool": tool, "args_keys": list(args.keys())},
+                )
+
+        return jsonify(data)
+    except PermissionError as e:
+        return jsonify({"ok": False, "error": str(e)}), 403
+    except RuntimeError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
