@@ -2352,6 +2352,375 @@ def tc_audit_log():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# SOVEREIGN SKILL SYSTEM  —  /api/toolchain/skills/*
+#
+# Scannt beliebige Repos nach Skills (Replit, Cursor, Claude, MCP, Custom),
+# adaptiert sie ans Sovereign-System und speichert sie als user_skills.
+# Keine Schreibzugriffe auf GitHub — nur Lesen + lokale DB-Speicherung.
+# ═════════════════════════════════════════════════════════════════════════════
+
+import re as _re
+import unicodedata as _unicodedata
+
+# Erkennungsmuster je Framework
+_SKILL_PATTERNS = [
+    # (glob-pattern, framework, is_dir_listing)
+    (".agents/skills",         "replit",  True),   # .agents/skills/*/SKILL.md
+    (".cursor/rules",          "cursor",  True),    # .cursor/rules/*.md
+    ("prompts",                "generic", True),    # prompts/*.md
+    ("skills",                 "generic", True),    # skills/*.md
+    ("tools",                  "generic", True),    # tools/*.md
+    (".cursorrules",           "cursor",  False),
+    ("CLAUDE.md",              "claude",  False),
+    ("AGENTS.md",              "openai",  False),
+    ("GEMINI.md",              "gemini",  False),
+    ("server.py",              "fastmcp", False),
+    ("src/agents",             "generic", True),
+    ("agents",                 "generic", True),
+]
+
+_SKILL_EXTENSIONS = {".md", ".txt", ".yaml", ".yml", ".json"}
+
+
+def _slugify(text: str) -> str:
+    text = _unicodedata.normalize("NFD", text.lower())
+    text = "".join(c for c in text if c.isascii())
+    text = _re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return text[:48] or "skill"
+
+
+def _detect_framework_from_content(content: str) -> str:
+    if "FastMCP" in content or "@mcp.tool" in content:
+        return "fastmcp"
+    if "SOVEREIGN" in content or "sovereign" in content.lower():
+        return "replit"
+    if "cursor" in content.lower():
+        return "cursor"
+    return "generic"
+
+
+def _extract_skill_meta(content: str, path: str, framework: str) -> dict:
+    """Rule-based extraction: name, description, adapted_prompt from any skill content."""
+    lines = content.splitlines()
+
+    # Name from first heading or filename
+    name = None
+    for line in lines[:20]:
+        m = _re.match(r"^#+\s+(.+)", line.strip())
+        if m:
+            name = m.group(1).strip().strip("*_")
+            break
+    if not name:
+        name = path.split("/")[-1].replace(".md", "").replace("_", " ").replace("-", " ").title()
+
+    # Description: first non-empty, non-heading paragraph
+    description = ""
+    in_para = False
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("---"):
+            if in_para:
+                break
+            continue
+        if stripped.startswith(("```", "<!--", ">", "|", "-", "*", "1.")):
+            continue
+        description += " " + stripped
+        in_para = True
+        if len(description) > 300:
+            break
+    description = description.strip()[:280]
+
+    # For FastMCP: extract @mcp.tool function names as description
+    if framework == "fastmcp":
+        tools = _re.findall(r"@mcp\.tool\(\)\s*\ndef (\w+)", content)
+        if tools:
+            description = f"MCP Tools: {', '.join(tools[:6])}"
+
+    # Adapted prompt: cleaned version of the full content (capped at 4000 chars)
+    adapted = content[:4000].strip()
+
+    slug = _slugify(name)
+    return {"name": name, "slug": slug, "description": description or name, "adapted_prompt": adapted}
+
+
+def _gh_list_tree(owner: str, repo: str, ref: str | None = None, max_items: int = 300) -> list[dict]:
+    """Fetch full file tree from GitHub (recursive). Returns list of {path, type, size}."""
+    qs = f"?recursive=1"
+    if ref:
+        qs += f"&ref={urllib.parse.quote(ref)}"
+    data = _tc_gh_get(f"/repos/{owner}/{repo}/git/trees/{ref or 'HEAD'}{qs}")
+    return [
+        {"path": item["path"], "type": item["type"], "size": item.get("size", 0)}
+        for item in (data.get("tree") or [])
+        if item.get("type") == "blob"
+    ][:max_items]
+
+
+def _scan_tree_for_skills(tree: list[dict]) -> list[dict]:
+    """Detect skill files from a repo tree using known patterns."""
+    found = []
+    seen_paths = set()
+
+    for item in tree:
+        path = item["path"]
+        if path in seen_paths:
+            continue
+        pl = path.lower()
+        framework = None
+        name = None
+
+        # Exact known files
+        basename = path.split("/")[-1]
+        if basename in ("CLAUDE.md", "AGENTS.md", "GEMINI.md", ".cursorrules", "server.py"):
+            if basename == "server.py":
+                framework = "fastmcp"
+            elif basename == "CLAUDE.md":
+                framework = "claude"
+            elif basename == "AGENTS.md":
+                framework = "openai"
+            elif basename == "GEMINI.md":
+                framework = "gemini"
+            elif basename == ".cursorrules":
+                framework = "cursor"
+
+        # Pattern: .agents/skills/*/SKILL.md
+        if ".agents/skills/" in path and basename.upper() == "SKILL.MD":
+            framework = "replit"
+            # Name from parent folder
+            parts = path.split("/")
+            idx = parts.index("skills") if "skills" in parts else -1
+            if idx >= 0 and idx + 1 < len(parts):
+                name = parts[idx + 1].replace("-", " ").replace("_", " ").title()
+
+        # Pattern: .cursor/rules/*.md
+        elif ".cursor/rules/" in path and path.endswith(".md"):
+            framework = "cursor"
+
+        # Pattern: skills/*.md, prompts/*.md, tools/*.md, agents/*.md
+        elif not framework:
+            top_dir = path.split("/")[0].lower() if "/" in path else ""
+            if top_dir in ("skills", "prompts", "tools", "agents", "src/agents") and \
+               any(path.endswith(ext) for ext in _SKILL_EXTENSIONS):
+                framework = "generic"
+            elif path.endswith(".skill.md"):
+                framework = "generic"
+
+        if framework:
+            ext = "." + path.rsplit(".", 1)[-1] if "." in basename else ""
+            if ext and ext not in _SKILL_EXTENSIONS and framework != "fastmcp":
+                continue
+            if not name:
+                name = basename.replace(".md", "").replace(".txt", "").replace("_", " ").replace("-", " ").title()
+            found.append({
+                "path": path,
+                "name": name or basename,
+                "framework": framework,
+                "size": item.get("size", 0),
+                "preview": "",
+            })
+            seen_paths.add(path)
+
+    return found[:40]  # cap at 40 results
+
+
+@app.route("/api/toolchain/skills/scan", methods=["POST"])
+@require_session
+def tc_skills_scan():
+    """Scan a GitHub repo for skill files — detect any framework/structure."""
+    try:
+        b     = request.get_json(force=True) or {}
+        owner = b.get("owner", "").strip()
+        repo  = b.get("repo", "").strip()
+        ref   = b.get("ref")
+        if not owner or not repo:
+            return jsonify({"error": "owner und repo erforderlich"}), 400
+        _tc_allowed(owner, repo)
+
+        tree  = _gh_list_tree(owner, repo, ref)
+        found = _scan_tree_for_skills(tree)
+
+        # Get previews (first 200 chars) for top 10 results
+        for item in found[:10]:
+            try:
+                data = _tc_gh_get(
+                    f"/repos/{owner}/{repo}/contents/{urllib.parse.quote(item['path'])}"
+                    + (f"?ref={urllib.parse.quote(ref)}" if ref else "")
+                )
+                raw = base64.b64decode(data.get("content", "").replace("\n", ""))
+                preview = raw.decode("utf-8", errors="replace")[:200]
+                item["preview"] = preview
+            except Exception:
+                pass
+
+        frameworks = list({f["framework"] for f in found})
+        _tc_audit(request.session_user_id, "skill_scan",
+                  {"owner": owner, "repo": repo, "found": len(found)})
+        return jsonify({
+            "owner": owner, "repo": repo,
+            "found": found, "total": len(found),
+            "frameworks_detected": frameworks,
+        })
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/skills/read", methods=["POST"])
+@require_session
+def tc_skills_read():
+    """Read a specific skill file from GitHub and detect its framework."""
+    try:
+        b     = request.get_json(force=True) or {}
+        owner = b.get("owner", "")
+        repo  = b.get("repo", "")
+        path  = b.get("path", "")
+        if not owner or not repo or not path:
+            return jsonify({"error": "owner, repo und path erforderlich"}), 400
+        data = _tc_read_github_file(owner, repo, path)
+        content = data["content"]
+        # Detect framework from path + content
+        framework = "generic"
+        if ".agents/skills/" in path and path.endswith("SKILL.md"):
+            framework = "replit"
+        elif ".cursor/rules/" in path or path.endswith(".cursorrules"):
+            framework = "cursor"
+        elif path.endswith("CLAUDE.md"):
+            framework = "claude"
+        elif path.endswith("AGENTS.md"):
+            framework = "openai"
+        elif path.endswith("server.py"):
+            framework = _detect_framework_from_content(content)
+        else:
+            framework = _detect_framework_from_content(content)
+        _tc_audit(request.session_user_id, "skill_read",
+                  {"owner": owner, "repo": repo, "path": path})
+        return jsonify({"content": content[:8000], "framework": framework, "sha": data["sha"]})
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/skills/adapt", methods=["POST"])
+@require_session
+def tc_skills_adapt():
+    """Rule-based adaptation of a skill to the Sovereign system."""
+    try:
+        b       = request.get_json(force=True) or {}
+        owner   = b.get("owner", "")
+        repo    = b.get("repo", "")
+        path    = b.get("path", "")
+        content = b.get("raw_content", "")
+        framework = b.get("framework", "generic")
+        if not content:
+            return jsonify({"error": "raw_content erforderlich"}), 400
+        meta = _extract_skill_meta(content, path, framework)
+        _tc_audit(request.session_user_id, "skill_adapt",
+                  {"owner": owner, "repo": repo, "path": path, "name": meta["name"]})
+        return jsonify({**meta, "framework": framework})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/skills/install", methods=["POST"])
+@require_session
+def tc_skills_install():
+    """Save an adapted skill to the user's library (user_skills table)."""
+    try:
+        b   = request.get_json(force=True) or {}
+        uid = request.session_user_id
+        name  = (b.get("name") or "").strip()[:120]
+        slug  = _slugify(name or b.get("slug", "skill"))
+        descr = (b.get("description") or "")[:500]
+        srepo = (b.get("source_repo") or "")[:200]
+        spath = (b.get("source_path") or "")[:500]
+        frame = (b.get("framework") or "generic")[:40]
+        prompt= (b.get("adapted_prompt") or "")[:8000]
+        if not name:
+            return jsonify({"error": "name erforderlich"}), 400
+
+        existing = query(
+            "SELECT id FROM user_skills WHERE user_id=%s::uuid AND slug=%s LIMIT 1",
+            (uid, slug), one=True,
+        )
+        if existing:
+            query(
+                """UPDATE user_skills SET name=%s, description=%s, source_repo=%s,
+                   source_path=%s, framework=%s, adapted_prompt=%s, is_active=true
+                   WHERE id=%s::uuid""",
+                (name, descr, srepo, spath, frame, prompt, str(existing["id"])),
+                write=True,
+            )
+            skill_id = str(existing["id"])
+        else:
+            rows = query(
+                """INSERT INTO user_skills
+                   (user_id, name, slug, description, source_repo, source_path, framework, adapted_prompt)
+                   VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (uid, name, slug, descr, srepo, spath, frame, prompt),
+                write=True,
+            )
+            skill_id = str(rows[0]["id"]) if rows else "unknown"
+
+        _tc_audit(uid, "skill_install", {"name": name, "slug": slug, "framework": frame})
+        return jsonify({"id": skill_id, "slug": slug, "installed": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/skills/list")
+@require_session
+def tc_skills_list():
+    """List all installed skills for the current user."""
+    try:
+        uid  = request.session_user_id
+        rows = query(
+            """SELECT id::text, name, slug, description, source_repo, source_path,
+                      framework, adapted_prompt, is_active,
+                      to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+               FROM user_skills WHERE user_id=%s::uuid ORDER BY created_at DESC""",
+            (uid,),
+        )
+        return jsonify({"skills": [dict(r) for r in (rows or [])]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/skills/<skill_id>/toggle", methods=["POST"])
+@require_session
+def tc_skills_toggle(skill_id: str):
+    """Toggle a skill on/off."""
+    try:
+        uid       = request.session_user_id
+        b         = request.get_json(force=True) or {}
+        is_active = bool(b.get("is_active", True))
+        query(
+            "UPDATE user_skills SET is_active=%s WHERE id=%s::uuid AND user_id=%s::uuid",
+            (is_active, skill_id, uid), write=True,
+        )
+        return jsonify({"ok": True, "is_active": is_active})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/toolchain/skills/<skill_id>", methods=["DELETE"])
+@require_session
+def tc_skills_delete(skill_id: str):
+    """Delete a skill from the user's library."""
+    try:
+        uid = request.session_user_id
+        query(
+            "DELETE FROM user_skills WHERE id=%s::uuid AND user_id=%s::uuid",
+            (skill_id, uid), write=True,
+        )
+        _tc_audit(uid, "skill_delete", {"skill_id": skill_id})
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # WEB ADMIN PANEL  —  /admin
 # Self-contained single-page admin UI served directly from Flask.
 # No build step required. Auth via ADMIN_API_KEY (Bearer token).

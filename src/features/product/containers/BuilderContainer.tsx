@@ -594,6 +594,8 @@ import { useUserStore } from '../../user/useUserStore';
 import { LoginModal } from '../../user/components/LoginModal';
 import { UserProfile } from '../../user/components/UserProfile';
 import { useToolchainStore } from '../../toolchain/useToolchainStore';
+import { useSkillsStore } from '../../toolchain/useSkillsStore';
+import { SkillScanPanel } from '../../toolchain/components/SkillScanPanel';
 
 function buildWorkerSystemPrompt(args: {
   readonly repoReady: boolean;
@@ -3158,6 +3160,33 @@ export function BuilderContainer({
   useEffect(() => {
     if (authUser && !toolchainLoaded) { loadToolchain(); }
   }, [authUser, toolchainLoaded, loadToolchain]);
+
+  // ── Sovereign Skill System — auto-load + dynamic slash commands
+  const {
+    loadSkills,
+    getActiveSkillContext,
+    getSkillSlashCommands,
+    skills: installedSkills,
+    loaded: skillsLoaded,
+  } = useSkillsStore();
+  useEffect(() => {
+    if (authUser && !skillsLoaded) { loadSkills(); }
+  }, [authUser, skillsLoaded, loadSkills]);
+  const [showSkillScan, setShowSkillScan] = useState(false);
+
+  // Dynamic skill slash commands (from installed skills)
+  const skillSlashCommands = useMemo(
+    () => getSkillSlashCommands().map((s) => ({
+      cmd: s.cmd,
+      label: s.label,
+      action: 'skill-run' as const,
+      description: s.description,
+      adapted_prompt: s.adapted_prompt,
+      is_skill: true,
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [installedSkills],
+  );
   const [statusLogs, setStatusLogs] = useState<
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
@@ -3220,8 +3249,8 @@ export function BuilderContainer({
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
   const slashMatches = useMemo(
-    () => matchingSlashCommands(wishText),
-    [wishText],
+    () => matchingSlashCommands(wishText, skillSlashCommands),
+    [wishText, skillSlashCommands],
   );
   const showSlashCommands =
     shouldShowSlashMenu(wishText) &&
@@ -3761,11 +3790,11 @@ export function BuilderContainer({
 
     // ── Issue #428: Slash command handling
     if (submittedText.startsWith("/")) {
-      const parsedSlash = parseSlashCommand(submittedText);
+      const parsedSlash = parseSlashCommand(submittedText, skillSlashCommands);
       if (!parsedSlash) {
         appendChatLine({
           role: "assistant",
-          text: `Unbekannter Befehl. Verfügbare: ${SOVEREIGN_SLASH_COMMANDS.map((c) => c.cmd).join(", ")}`,
+          text: `Unbekannter Befehl. Verfügbare: ${[...SOVEREIGN_SLASH_COMMANDS, ...skillSlashCommands].map((c) => c.cmd).join(", ")}`,
         });
         return;
       }
@@ -3798,7 +3827,6 @@ export function BuilderContainer({
         return;
       }
       if (command.action === "clear") {
-        // Clear chat lines but NOT repo, token, remote memory
         setChatHistory([]);
         setPalDecisions([]);
         setBudgetLedger(createBudgetLedger());
@@ -3806,6 +3834,39 @@ export function BuilderContainer({
         appendChatLine({
           role: "assistant",
           text: "Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.",
+        });
+        return;
+      }
+      if (command.action === "skills") {
+        const active = installedSkills.filter((s) => s.is_active);
+        if (active.length === 0) {
+          appendChatLine({
+            role: "assistant",
+            text: "Keine Skills installiert. Nutze /scan-skills <owner/repo> um Skills aus einem Repo zu importieren.",
+          });
+        } else {
+          appendChatLine({
+            role: "assistant",
+            text: [
+              `**${active.length} installierte Skills:**`,
+              ...active.map((s) => `• \`/${s.slug}\` — ${s.description}`),
+              "",
+              "Tipp: /scan-skills <owner/repo> für mehr Skills.",
+            ].join("\n"),
+          });
+        }
+        return;
+      }
+      if (command.action === "scan-skills") {
+        setShowSkillScan(true);
+        return;
+      }
+      if (command.action === "skill-run" && command.adapted_prompt) {
+        triggerHaptic("light");
+        appendChatLine({ role: "user", text: submittedText });
+        appendChatLine({
+          role: "assistant",
+          text: `**${command.label}** wird ausgeführt…\n\n${command.adapted_prompt.slice(0, 600)}`,
         });
         return;
       }
@@ -3924,7 +3985,7 @@ export function BuilderContainer({
       repoReady: effectiveRepoReady,
       repoReason: effectiveRepoReason,
       chatRepoSnapshot,
-      toolchainContext: getToolContext(),
+      toolchainContext: [getToolContext(), getActiveSkillContext()].filter(Boolean).join('\n\n'),
     });
 
     // Stream chunks directly into UI for immediate feedback
@@ -4587,6 +4648,19 @@ export function BuilderContainer({
         <UserProfile
           onClose={() => setShowProfile(false)}
           onBuyCredits={() => { setShowProfile(false); }}
+        />
+      )}
+
+      {/* Sovereign Skill Scanner — /scan-skills opens this */}
+      {showSkillScan && (
+        <SkillScanPanel
+          onClose={() => setShowSkillScan(false)}
+          onInstalled={(slug) => {
+            appendChatLine({
+              role: "assistant",
+              text: `✅ Skill \`/${slug}\` installiert. Tippe \`/${slug}\` um ihn zu nutzen.`,
+            });
+          }}
         />
       )}
   );
