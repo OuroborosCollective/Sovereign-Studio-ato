@@ -1,477 +1,86 @@
-name: E2E Testing & Auto-Fix Pipeline
+name: Sovereign E2E Smoke
 
 on:
   push:
     branches: [main, develop, 'feature/**']
     paths:
-      - 'sovereign-studio-rn/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'android/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
+      - 'capacitor.config.*'
+      - '.github/workflows/e2e-testing.yml'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'sovereign-studio-rn/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'android/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
+      - 'capacitor.config.*'
+      - '.github/workflows/e2e-testing.yml'
   workflow_dispatch:
-    inputs:
-      test_suite:
-        description: 'Test suite to run'
-        required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - detox
-          - api-fallback
-          - self-healing
-          - self-learn
-      auto_fix:
-        description: 'Enable auto-fix on failure'
-        required: false
-        default: 'true'
-        type: boolean
-      self_learning:
-        description: 'Enable intelligent self-learning'
-        required: false
-        default: 'true'
-        type: boolean
 
 env:
   NODE_VERSION: '22'
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  JAVA_VERSION: '17'
-  ANDROID_SDK_ROOT: /opt/android-sdk
+  PNPM_VERSION: '9.12.2'
+  CI: 'true'
+  VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
+  VITE_SOVEREIGN_LLM_MODEL: cerebras/zai-glm-4.7
+
+concurrency:
+  group: sovereign-e2e-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  setup:
-    name: Setup Environment
+  e2e-smoke:
+    name: Current App E2E Smoke
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: sovereign-studio-rn/package-lock.json
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Cache Android dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            sovereign-studio-rn/android/.gradle
-          key: ${{ runner.os }}-android-${{ hashFiles('sovereign-studio-rn/android/build.gradle') }}
-          restore-keys: |
-            ${{ runner.os }}-android-
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: |
-          cd sovereign-studio-rn
-          npm ci
+        shell: bash
+        run: pnpm install --frozen-lockfile
 
-      - name: Set matrix
-        id: set-matrix
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "matrix=[\"${{ inputs.test_suite }}\"]" >> $GITHUB_OUTPUT
-          else
-            echo "matrix=[\"detox\", \"api-fallback\", \"self-healing\"]" >> $GITHUB_OUTPUT
-          fi
+      - name: Build web and sync Android handoff
+        shell: bash
+        run: pnpm run build
 
-  detox-e2e:
-    name: Detox E2E Tests
-    needs: setup
-    runs-on: ubuntu-latest
-    if: contains(needs.setup.outputs.matrix, 'detox') || needs.setup.outputs.matrix == '["all"]'
-    timeout-minutes: 45
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Run current app smoke gate
+        shell: bash
+        run: pnpm run test:e2e
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: sovereign-studio-rn/package-lock.json
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Restore Android cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            sovereign-studio-rn/android/.gradle
-          key: ${{ runner.os }}-android-${{ hashFiles('sovereign-studio-rn/android/build.gradle') }}
-
-      - name: Install dependencies
-        run: |
-          cd sovereign-studio-rn
-          npm ci
-
-      - name: Prebuild Android
-        run: |
-          cd sovereign-studio-rn
-          npx expo prebuild --platform android --clean
-
-      - name: Build Detox Android
-        run: |
-          cd sovereign-studio-rn/android
-          ./gradlew assembleDebug assembleAndroidTest --stacktrace
-
-      - name: Create Android Virtual Device
-        run: |
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/avdmanager create avd \
-            -n test-avd -k "system-images;android-35;default;x86_64" --force
-          echo "hw.ramSize=2048" >> ~/.android/avd/test-avd/config.ini
-
-      - name: Wait for emulator
-        run: |
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/emulator -avd test-avd \
-            -no-window -no-audio -wipe-data &
-          timeout 120 bash -c 'until adb shell getprop sys.boot_completed | grep -q 1; do sleep 2; done'
-          adb shell "input keyevent 82"
-          adb shell "am start -a android.intent.action.MAIN -n com.android.systemui/.SystemUIApplication"
-
-      - name: Run Detox Tests
-        uses: nick-invision/retry@v2
-        with:
-          timeout_minutes: 30
-          max_attempts: 3
-          retry_wait_seconds: 10
-          command: |
-            cd sovereign-studio-rn
-            npx detox test --configuration android.debug --loglevel verbose --cleanup
-
-      - name: Upload test results
+      - name: Write E2E smoke summary
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: detox-test-results
-          path: sovereign-studio-rn/e2e/detox/test-results.json
-          retention-days: 7
-
-      - name: Generate report
-        if: always()
+        shell: bash
         run: |
-          cd sovereign-studio-rn
-          cat << 'EOF' > detox-report.json
           {
-            "timestamp": "${{ github.run_id }}",
-            "status": "${{ job.status }}",
-            "suite": "detox"
-          }
-          EOF
-
-  api-fallback-tests:
-    name: API Fallback Tests
-    needs: setup
-    runs-on: ubuntu-latest
-    if: contains(needs.setup.outputs.matrix, 'api-fallback') || needs.setup.outputs.matrix == '["all"]'
-    env:
-      MLVOCA_API_KEY: ${{ secrets.MLVOCA_API_KEY }}
-      P8LINATION_API_KEY: ${{ secrets.P8LINATION_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: sovereign-studio-rn/package-lock.json
-
-      - name: Install dependencies
-        run: |
-          cd sovereign-studio-rn
-          npm ci
-
-      - name: Run API Fallback Tests
-        run: |
-          cd sovereign-studio-rn
-          npx jest --config e2e/api-fallback/jest.config.js --verbose
-        continue-on-error: true
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-fallback-results
-          path: |
-            sovereign-studio-rn/e2e/api-fallback/*.json
-            sovereign-studio-rn/coverage/
-
-  self-healing-tests:
-    name: Self-Healing Tests
-    needs: setup
-    runs-on: ubuntu-latest
-    if: contains(needs.setup.outputs.matrix, 'self-healing') || needs.setup.outputs.matrix == '["all"]'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: sovereign-studio-rn/package-lock.json
-
-      - name: Install dependencies
-        run: |
-          cd sovereign-studio-rn
-          npm ci
-
-      - name: Run Self-Healing Tests
-        run: |
-          cd sovereign-studio-rn
-          npx jest --config e2e/self-healing/jest.config.js --verbose
-        continue-on-error: true
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: self-healing-results
-          path: sovereign-studio-rn/e2e/self-healing/*.json
-
-  self-learning:
-    name: 🧠 Intelligent Self-Learning
-    needs: [detox-e2e, api-fallback-tests, self-healing-tests]
-    if: inputs.self_learning == 'true' || github.event_name != 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 480
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          cd sovereign-studio-rn
-          npm ci
-
-      - name: Run Self-Learning Cycle
-        run: |
-          cd sovereign-studio-rn
-          npx ts-node e2e/self-learn/self-learning-orchestrator.ts run
-
-      - name: Upload Learned Data
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: self-learning-data
-          path: sovereign-studio-rn/e2e/self-learn/data/
-
-  auto-fix:
-    name: 🤖 Auto-Fix Loop (Validiert)
-    needs: [detox-e2e, api-fallback-tests, self-healing-tests]
-    if: inputs.auto_fix == 'true' && failure()
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: sovereign-studio-rn/package-lock.json
-
-      - name: Install dependencies
-        run: |
-          cd sovereign-studio-rn
-          npm ci
-
-      - name: Download Learned Patterns
-        uses: actions/download-artifact@v4
-        with:
-          name: self-learning-data
-          path: sovereign-studio-rn/e2e/self-learn/data/
-        continue-on-error: true
-
-      - name: Run Auto-Fix with Learned Patterns
-        run: |
-          cd sovereign-studio-rn
-          npx ts-node e2e/auto-fix/auto-fix-loop.ts --max=5 --verbose --use-patterns || true
-
-      - name: Run File Creation Validation Tests
-        id: file-validation
-        run: |
-          cd sovereign-studio-rn
-          npx jest --config e2e/validation/file-creation.test.js --verbose --json --outputFile=file-validation-results.json
-
-      - name: Run Full Test Suite
-        id: full-tests
-        run: |
-          cd sovereign-studio-rn
-          npm test -- --verbose --json --outputFile=full-test-results.json
-
-      - name: Validate Test Results
-        id: validate-results
-        run: |
-          cd sovereign-studio-rn
-          if [ ! -f file-validation-results.json ]; then
-            echo "❌ Validation test did not run"
-            exit 1
-          fi
-          PASSED=$(jq -r '.success' file-validation-results.json)
-          if [ "$PASSED" != "true" ]; then
-            echo "❌ File validation failed"
-            exit 1
-          fi
-          echo "✅ File validation passed"
-          echo "validation_passed=true" >> $GITHUB_OUTPUT
-
-      - name: Upload validation results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: auto-fix-validation-results
-          path: |
-            sovereign-studio-rn/file-validation-results.json
-            sovereign-studio-rn/full-test-results.json
-          retention-days: 7
-
-      - name: Create Fix PR
-        if: steps.validate-results.outputs.validation_passed == 'true'
-        uses: peter-evans/create-pull-request@v5
-        with:
-          title: "🤖 Auto-Fix: E2E Test Fixes (Validiert)"
-          body: |
-            ## Auto-Fix Results ✅
-            
-            Dieses PR enthält automatisierte Fixes für E2E-Test-Fehler.
-            
-            ### ✅ Alle Validierungen bestanden:
-            - ✅ App erstellt Dateien eigenständig
-            - ✅ Alle E2E Tests erfolgreich
-            - ✅ Alle Unit Tests erfolgreich
-            
-            ### 🔧 Änderungen:
-            - Fixed test assertions
-            - Updated test timeouts
-            - Applied self-healing recommendations
-            
-            ### 📊 Test-Ergebnisse:
-            - Auto-fix iterations: 5 max
-            - Validation suite: PASSED
-            - Full test suite: PASSED
-            
-            Co-authored-by: auto-fix-bot <auto-fix@sovereign-studio.dev>
-          branch: auto-fix/e2e-fixes-${{ github.run_id }}
-          commit-message: "🤖 Auto-fix: E2E test fixes (vollständig validiert)"
-
-      - name: Notify on auto-fix failure
-        if: steps.validate-results.outputs.validation_passed != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '❌ Auto-fix validation failed. Review logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
-            })
-
-      - name: Validation Failed
-        if: steps.validate-results.outputs.validation_passed != 'true'
-        run: |
-          echo "❌ Auto-fix validation failed - No PR created"
-          echo "The app must successfully create files independently before pushing"
-          exit 1
-
-  merge-check:
-    name: Merge Readiness Check
-    needs: [detox-e2e, api-fallback-tests, self-healing-tests]
-    if: always() && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check test results
-        run: |
-          if [[ "${{ needs.detox-e2e.result }}" == "failure" ]] && [[ "${{ inputs.auto_fix }}" != "true" ]]; then
-            echo "❌ Detox tests failed. Auto-fix not enabled."
-            exit 1
-          fi
-          
-          if [[ "${{ needs.api-fallback-tests.result }}" == "failure" ]]; then
-            echo "⚠️ API fallback tests failed but continuing..."
-          fi
-          
-          if [[ "${{ needs.self-healing-tests.result }}" == "failure" ]]; then
-            echo "⚠️ Self-healing tests failed but continuing..."
-          fi
-          
-          echo "✅ Merge check passed"
-
-      - name: Comment on PR
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## E2E Test Results
-
-              | Suite | Status |
-              |-------|--------|
-              | Detox E2E | ${needs.detox-e2e.result === 'success' ? '✅ Passed' : '❌ Failed'} |
-              | API Fallback | ${needs.api-fallback-tests.result === 'success' ? '✅ Passed' : '⚠️ Warning'} |
-              | Self-Healing | ${needs.self-healing-tests.result === 'success' ? '✅ Passed' : '⚠️ Warning'} |
-
-              ${needs.detox-e2e.result === 'failure' ? '\n⚠️ **Detox tests failed.** Enable auto-fix to automatically resolve failures.' : '\n✅ **All critical tests passed.** Ready to merge.'}
-              `
-            })
-
-  publish-results:
-    name: Publish Results
-    needs: [detox-e2e, api-fallback-tests, self-healing-tests]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Generate summary
-        run: |
-          echo "## E2E Testing Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Detox E2E | ${{ needs.detox-e2e.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| API Fallback | ${{ needs.api-fallback-tests.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Self-Healing | ${{ needs.self-healing-tests.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
-          echo "Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+            echo "## Sovereign E2E Smoke"
+            echo ""
+            echo "- Scope: current Android-first web/Capacitor app"
+            echo "- Guard: pnpm run test:e2e"
+            echo "- Legacy RN path retired: sovereign-studio-rn/** is no longer required"
+          } >> "$GITHUB_STEP_SUMMARY"
