@@ -46,6 +46,7 @@ jobs:
 
       - name: Copy app.py to VPS and rebuild
         run: |
+          # Copy latest backend source if it exists in the repo.
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             scripts/sovereign-backend/app.py \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/sovereign-backend/app.py 2>/dev/null || true
