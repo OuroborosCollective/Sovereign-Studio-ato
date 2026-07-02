@@ -13,6 +13,8 @@ jobs:
   deploy-backend:
     name: Deploy Backend → VPS
     runs-on: ubuntu-latest
+    env:
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,12 +24,31 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+            echo "VPS_HOST secret is not configured." >&2
+            exit 1
+          fi
+          if ! ssh-keyscan -T 10 -p "${VPS_SSH_PORT}" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null; then
+            echo "ssh-keyscan could not prefetch the VPS host key; continuing because SSH uses StrictHostKeyChecking=no." >&2
+          fi
 
       - name: Write .env to VPS
+        env:
+          TOOLCHAIN_BASE_URL_SECRET: ${{ secrets.TOOLCHAIN_BASE_URL }}
+          TOOLCHAIN_API_KEY_SECRET: ${{ secrets.TOOLCHAIN_API_KEY }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash << 'SSHEOF'
+          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash -s << 'SSHEOF'
+          set -euo pipefail
+          EXISTING_ENV=/opt/sovereign-backend/.env
+          EXISTING_TOOLCHAIN_BASE_URL=""
+          EXISTING_TOOLCHAIN_API_KEY=""
+          if [ -f "$EXISTING_ENV" ]; then
+            EXISTING_TOOLCHAIN_BASE_URL="$(grep -E '^TOOLCHAIN_BASE_URL=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
+            EXISTING_TOOLCHAIN_API_KEY="$(grep -E '^TOOLCHAIN_API_KEY=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
+          fi
+          TOOLCHAIN_BASE_URL_VALUE="${TOOLCHAIN_BASE_URL_SECRET:-${EXISTING_TOOLCHAIN_BASE_URL:-http://127.0.0.1:8001}}"
+          TOOLCHAIN_API_KEY_VALUE="${TOOLCHAIN_API_KEY_SECRET:-${EXISTING_TOOLCHAIN_API_KEY:-}}"
           cat > /opt/sovereign-backend/.env << ENVEOF
           POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
           POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
@@ -37,8 +58,8 @@ jobs:
           ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           LLM_PROXY_KEY=${{ secrets.LLM_PROXY_KEY }}
-          TOOLCHAIN_BASE_URL=${{ secrets.TOOLCHAIN_BASE_URL }}
-          TOOLCHAIN_API_KEY=${{ secrets.TOOLCHAIN_API_KEY }}
+          TOOLCHAIN_BASE_URL=$TOOLCHAIN_BASE_URL_VALUE
+          TOOLCHAIN_API_KEY=$TOOLCHAIN_API_KEY_VALUE
           FLASK_ENV=production
           OPENHANDS_API_URL=http://openhands-enterprise-openhands-1:8000
           ENVEOF
@@ -47,10 +68,10 @@ jobs:
       - name: Copy app.py to VPS and rebuild
         run: |
           # Copy latest backend source if it exists in the repo.
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          scp -i ~/.ssh/deploy_key -P "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no \
             scripts/sovereign-backend/app.py \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/sovereign-backend/app.py 2>/dev/null || true
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "cd /opt/sovereign-backend && docker compose build --no-cache && docker compose up -d"
 
