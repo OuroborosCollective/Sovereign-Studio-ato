@@ -28,8 +28,8 @@ env:
   NODE_VERSION: "22"
   CF_ACCOUNT_ID: "4a82319180f1f1cee60d85a971c3041d"
   CF_GATEWAY_NAME: "gatter"
-  DEFAULT_MODEL: "cerebras/gpt-oss-120b"
-  FALLBACK_MODEL: "cerebras/zai-glm-4.7"
+  DEFAULT_MODEL: "deepseek-r1"
+  FALLBACK_MODEL: "llama-3.1-8b"
   DEFAULT_UPSTREAM: "https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions"
 
 jobs:
@@ -65,16 +65,15 @@ jobs:
           }
 
           const DEFAULT_URL = 'https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions';
-          const DEFAULT_MODEL = 'cerebras/gpt-oss-120b';
-          const FALLBACK_MODEL = 'cerebras/zai-glm-4.7';
+          const DEFAULT_MODEL = 'deepseek-r1';
+          const FALLBACK_MODEL = 'llama-3.1-8b';
           const GATEWAY_NAME = 'gatter';
           const MODEL_ALIASES: Record<string, string> = {
-            'llama-3-8b': DEFAULT_MODEL,
-            'llama-3.1-8b': DEFAULT_MODEL,
-            'mistral-7b': DEFAULT_MODEL,
+            'cerebras/gpt-oss-120b': DEFAULT_MODEL,
+            'cerebras/zai-glm-4.7': DEFAULT_MODEL,
+            'llama-3-8b': FALLBACK_MODEL,
             'gemma-7b': DEFAULT_MODEL,
             'qwen-14b': DEFAULT_MODEL,
-            'deepseek-r1': DEFAULT_MODEL,
           };
           const AUTH_HEADER = 'Authorization';
           const MAX_BODY_BYTES = 256000;
