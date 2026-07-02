@@ -536,6 +536,8 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
  * Posts with stream: true and yields SSE delta chunks in real-time.
  * Falls back to the non-streaming route if response.body is unavailable.
  */
+const STREAM_TIMEOUT_MS = 60_000;
+
 export async function* streamDevChatWorkerReply(
   request: DevChatWorkerReplyRequest,
 ): AsyncGenerator<string> {
@@ -546,23 +548,35 @@ export async function* streamDevChatWorkerReply(
 
   if (messages.length === 0) return;
 
-  const response = await fetch(SOVEREIGN_WORKER_CHAT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      'X-Sovereign-Client': 'android-webview',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.2,
-      max_tokens: 4096,
-      reasoning_format: 'parsed',
-      stream: true,
-    }),
-    signal: request.signal,
-  });
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), STREAM_TIMEOUT_MS);
+
+  const combinedSignal = request.signal
+    ? AbortSignal.any([request.signal, timeoutController.signal])
+    : timeoutController.signal;
+
+  let response: Response;
+  try {
+    response = await fetch(SOVEREIGN_WORKER_CHAT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'X-Sovereign-Client': 'android-webview',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.2,
+        max_tokens: 4096,
+        reasoning_format: 'parsed',
+        stream: true,
+      }),
+      signal: combinedSignal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const text = await response.text();

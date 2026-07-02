@@ -50,6 +50,12 @@ import {
   type DevChatWorkerHealthResult,
   type DevChatWorkerMessage,
 } from "../runtime/devChatWorkerBridge";
+import { Ampel } from "../components/Ampel";
+import { FileBadge } from "../components/FileBadge";
+import { ThoughtBubble } from "../components/ThoughtBubble";
+import { ThinkingDots } from "../components/ThinkingDots";
+import { OutcomeHints } from "../components/OutcomeHints";
+import { C, STATUS_COLOR, STATUS_LABEL } from "../components/builderConstants";
 import { OpenHandsOperatorBriefingPanel } from "../components/OpenHandsOperatorBriefingPanel";
 import {
   WorkerBlockerCard,
@@ -225,45 +231,8 @@ interface WorkerRuntimeBlocker {
 const MAX_W = 393;
 const CUTE_THINKING_FRAME_MS = 1100;
 const CUTE_IDLE_FRAME_MS = 1450;
-const WORKSTATE_TYPE_FRAME_MS = 35;
-const WORKSTATE_TYPE_STEP = 2;
 const builderContainerContract = getSovereignContainerContract("builder");
 
-// Original colour palette from BuilderContainer v3 — untouched
-const C = {
-  bg: "#0e1116",
-  surface: "#161c24",
-  border: "#232d3a",
-  borderHov: "#2e3d50",
-  accent: "#00d9b1",
-  accentDim: "#00d9b122",
-  orange: "#f97316",
-  text: "#cdd9e5",
-  textSub: "#768390",
-  textMuted: "#3d4f61",
-  green: "#34d399",
-  sky: "#22d3ee",
-  amber: "#fbbf24",
-  violet: "#a78bfa",
-  rose: "#fb7185",
-  userBg: "#1a2d45",
-  asstBg: "#161c24",
-} as const;
-
-const STATUS_COLOR: Record<AgentStatus, string> = {
-  idle: C.green,
-  thinking: C.sky,
-  editing: C.amber,
-  running: C.violet,
-  error: C.rose,
-};
-const STATUS_LABEL: Record<AgentStatus, string> = {
-  idle: "bereit",
-  thinking: "denkt…",
-  editing: "editiert",
-  running: "läuft",
-  error: "fehler",
-};
 const TIER_COLOR: Record<RuntimeTier, string> = {
   ready: C.green,
   active: C.sky,
@@ -720,45 +689,6 @@ function buildRuntimeConfidence(args: {
 // ─────────────────────────────────────────────────────────────
 // SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
-
-// Ampel (verbatim from v3)
-// compact=true → dots only, no text label (used in TopBar where space is scarce)
-function Ampel({ status, compact = false }: { status: AgentStatus; compact?: boolean }) {
-  const col = STATUS_COLOR[status];
-  return (
-    <div
-      style={{ display: "flex", alignItems: "center", gap: 5 }}
-      title={STATUS_LABEL[status]}
-    >
-      {(["idle", "thinking", "editing"] as AgentStatus[]).map((s) => (
-        <span
-          key={s}
-          style={{
-            display: "inline-block",
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            background: status === s ? STATUS_COLOR[s] : `${STATUS_COLOR[s]}30`,
-            boxShadow: status === s ? `0 0 6px ${STATUS_COLOR[s]}` : "none",
-            transition: "all 0.3s",
-          }}
-        />
-      ))}
-      {!compact && (
-        <span
-          style={{
-            fontFamily: "monospace",
-            fontSize: 10,
-            color: col,
-            marginLeft: 2,
-          }}
-        >
-          {STATUS_LABEL[status]}
-        </span>
-      )}
-    </div>
-  );
-}
 
 // Module lamps row — AppControl addition
 function ModuleLamps({
@@ -1288,127 +1218,6 @@ function StatusPanel({
   );
 }
 
-// FileBadge (verbatim v3 + Issue #430 repo inspector affordance)
-function FileBadge({
-  path,
-  file,
-  onOpenFile,
-}: {
-  path?: string;
-  file?: string;
-  onOpenFile?: (path: string) => void;
-}) {
-  if (!file) return null;
-  const fullPath = `${path ?? ""}${file}`;
-  return (
-    <button
-      type="button"
-      onClick={() => onOpenFile?.(fullPath)}
-      disabled={!onOpenFile}
-      aria-label={`Repo Datei öffnen: ${fullPath}`}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        fontFamily: "monospace",
-        fontSize: 9,
-        padding: "3px 8px",
-        borderRadius: 6,
-        background: "rgba(251,191,36,0.1)",
-        border: "1px solid rgba(251,191,36,0.25)",
-        color: C.amber,
-        marginBottom: 4,
-        maxWidth: "100%",
-        overflow: "hidden",
-        cursor: onOpenFile ? "pointer" : "default",
-      }}
-    >
-      <span style={{ color: C.textMuted }}>{path}</span>
-      <span>{file}</span>
-    </button>
-  );
-}
-
-function useTypedWorkStateText(text: string): string {
-  const [visibleChars, setVisibleChars] = useState(text.length);
-
-  useEffect(() => {
-    setVisibleChars(Math.min(WORKSTATE_TYPE_STEP, text.length));
-    if (!text.length) return undefined;
-
-    const handle = window.setInterval(() => {
-      setVisibleChars((current) => {
-        if (current >= text.length) return current;
-        return Math.min(text.length, current + WORKSTATE_TYPE_STEP);
-      });
-    }, WORKSTATE_TYPE_FRAME_MS);
-
-    return () => window.clearInterval(handle);
-  }, [text]);
-
-  return text.slice(0, visibleChars);
-}
-
-// ThoughtBubble: typed runtime workstate text. It displays derived runtime state only.
-function ThoughtBubble({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const typedText = useTypedWorkStateText(text);
-  const displayText =
-    open || typedText.length <= 96 ? typedText : `${typedText.slice(0, 96)}…`;
-  return (
-    <button
-      type="button"
-      onClick={() => setOpen((v) => !v)}
-      aria-live="polite"
-      style={{
-        width: "100%",
-        background: "transparent",
-        border: "none",
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 8,
-        padding: "4px 16px",
-        cursor: "pointer",
-        textAlign: "left",
-      }}
-    >
-      <span
-        style={{
-          fontFamily: "monospace",
-          fontSize: 12,
-          color: open ? C.sky : C.border,
-          marginTop: 1,
-          flexShrink: 0,
-          transition: "color 0.2s",
-        }}
-      >
-        ✦
-      </span>
-      <span
-        style={{
-          fontFamily: "monospace",
-          fontSize: 10,
-          fontStyle: "italic",
-          lineHeight: 1.6,
-          color: open ? C.textSub : C.textMuted,
-          transition: "color 0.2s",
-        }}
-      >
-        {displayText}
-        <span
-          aria-hidden="true"
-          style={{
-            color: C.sky,
-            animation: "sdc-typing-caret 0.9s steps(2, start) infinite",
-          }}
-        >
-          ▍
-        </span>
-      </span>
-    </button>
-  );
-}
-
 // Bubble (verbatim v3 + Issue #427 markdown + Issue #429 long-press)
 function Bubble({
   msg,
@@ -1594,105 +1403,6 @@ function Bubble({
         >
           {fmtTime(msg.createdAt || now)}
         </span>
-      </div>
-    </div>
-  );
-}
-
-// ThinkingDots (verbatim v3)
-function ThinkingDots() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 16px",
-      }}
-    >
-      <div
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 10,
-          background: C.surface,
-          border: `1px solid ${C.border}`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 13,
-          color: C.textSub,
-        }}
-      >
-        ⬡
-      </div>
-      <div style={{ display: "flex", gap: 5, paddingLeft: 2 }}>
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: C.sky,
-              display: "inline-block",
-              animation: `sdc-pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// OutcomeHints (verbatim v3)
-function OutcomeHints({ hints }: { hints: ChatOutcomeHint[] }) {
-  if (hints.length === 0) return null;
-  return (
-    <div style={{ padding: "0 12px 8px" }}>
-      <div
-        style={{
-          borderRadius: 10,
-          border: `1px solid ${C.border}`,
-          background: C.surface,
-          padding: "10px 12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-        }}
-      >
-        {hints.map((h) => (
-          <div
-            key={`${h.kind}:${h.text}`}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 6,
-              fontSize: 12,
-              color: C.textSub,
-            }}
-          >
-            <span style={{ color: C.border, marginTop: 2, flexShrink: 0 }}>
-              ›
-            </span>
-            {h.href ? (
-              <a
-                href={h.href}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  color: C.sky,
-                  textDecoration: "underline",
-                  textUnderlineOffset: 3,
-                }}
-              >
-                {h.text}
-              </a>
-            ) : (
-              h.text
-            )}
-          </div>
-        ))}
       </div>
     </div>
   );
