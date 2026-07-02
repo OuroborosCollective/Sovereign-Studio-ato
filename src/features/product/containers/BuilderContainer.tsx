@@ -50,6 +50,10 @@ import {
   type DevChatWorkerHealthResult,
   type DevChatWorkerMessage,
 } from "../runtime/devChatWorkerBridge";
+import {
+  buildToolchainAutoContext,
+  formatToolchainAutoContext,
+} from "../runtime/toolchainAutoCallingRuntime";
 import { Ampel } from "../components/Ampel";
 import { FileBadge } from "../components/FileBadge";
 import { ThoughtBubble } from "../components/ThoughtBubble";
@@ -3168,13 +3172,25 @@ export function BuilderContainer({
     setChatResponseBusy(true);
     setStreamingText("");
 
+    // ── Issue #468: Toolchain Auto-Calling — read-only Auto-Calls vor Worker-Messages
+    const toolchainAutoResult = await buildToolchainAutoContext({
+      submittedText,
+      repoSnapshot: chatRepoSnapshot,
+      fetchImpl: globalThis.fetch,
+    });
+    const autoToolchainContext = toolchainAutoResult.context || "";
+
     const workerMessages = buildWorkerMessages({
       submittedText,
       chatHistory,
       repoReady: effectiveRepoReady,
       repoReason: effectiveRepoReason,
       chatRepoSnapshot,
-      toolchainContext: [getToolContext(), getActiveSkillContext()].filter(Boolean).join('\n\n'),
+      toolchainContext: [
+        getToolContext(),
+        getActiveSkillContext(),
+        autoToolchainContext,
+      ].filter(Boolean).join('\n\n'),
     });
 
     // Stream chunks directly into UI for immediate feedback
