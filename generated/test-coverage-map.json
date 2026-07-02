@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-07-02T12:52:14.203Z",
-  "totalTestFiles": 221,
+  "generatedAt": "2026-07-02T13:38:10.533Z",
+  "totalTestFiles": 222,
   "files": [
     {
       "file": "src/App.androidWebView.smoke.test.tsx",
@@ -124,6 +124,14 @@
     },
     {
       "file": "src/features/config/components/ConfigBar.test.tsx",
+      "gates": [
+        "test:all"
+      ],
+      "ciWorkflows": [],
+      "category": "verify-only"
+    },
+    {
+      "file": "src/features/github/gitPatchRuntime.test.ts",
       "gates": [
         "test:all"
       ],
