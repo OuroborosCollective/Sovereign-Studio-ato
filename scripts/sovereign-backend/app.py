@@ -25,23 +25,7 @@ from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
-
-DEFAULT_CORS_ORIGINS = (
-    "https://sovereign-backend.arelorian.de",
-    "https://sovereign-studio.arelorian.de",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8787",
-    "capacitor://localhost",
-)
-
-def _parse_cors_origins(raw: str | None) -> list[str]:
-    if not raw or not raw.strip():
-        return list(DEFAULT_CORS_ORIGINS)
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
-
-CORS_ORIGINS = _parse_cors_origins(os.getenv("CORS_ORIGINS"))
-CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
+CORS(app, origins="*")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -924,7 +908,7 @@ def admin_confirm_crypto_payment():
 @app.route("/api/billing")
 def user_billing_overview():
     """Return available credit packages + current subscription for the user."""
-    user_id = _get_session_user_id() or ""
+    user_id = request.headers.get("X-User-Id", "").strip()
     try:
         pkg_rows = query(
             """SELECT id::text, name, credits,
@@ -1000,9 +984,7 @@ def paypal_create_order():
     """Create a PayPal checkout order and return the approval URL."""
     body       = request.get_json(force=True) or {}
     package_id = str(body.get("packageId", ""))
-    user_id    = _get_session_user_id() or ""
-    if not user_id:
-        return jsonify({"error": "Bitte einloggen"}), 401
+    user_id    = request.headers.get("X-User-Id", "").strip()
     return_url = str(body.get("returnUrl", ""))
     cancel_url = str(body.get("cancelUrl", ""))
 
@@ -1061,9 +1043,7 @@ def paypal_capture_order():
     """Capture a PayPal order after user approval and credit the user."""
     body     = request.get_json(force=True) or {}
     order_id = str(body.get("orderId", ""))
-    user_id  = _get_session_user_id() or ""
-    if not user_id:
-        return jsonify({"error": "Bitte einloggen"}), 401
+    user_id  = request.headers.get("X-User-Id", "").strip()
     if not order_id:
         return jsonify({"error": "orderId fehlt"}), 400
 
@@ -1092,8 +1072,6 @@ def paypal_capture_order():
         uid, pkg_id = parts[0].strip(), parts[1].strip()
         if not uid:
             uid = user_id
-        if uid != user_id:
-            return jsonify({"error": "Order gehört nicht zur aktuellen Session"}), 403
 
         # Capture
         cap_resp = requests.post(
@@ -1151,9 +1129,7 @@ def skrill_init():
     """Return a Skrill Quick Checkout redirect URL for the selected package."""
     body       = request.get_json(force=True) or {}
     package_id = str(body.get("packageId", ""))
-    user_id    = _get_session_user_id() or ""
-    if not user_id:
-        return jsonify({"error": "Bitte einloggen"}), 401
+    user_id    = request.headers.get("X-User-Id", "").strip()
     return_url = str(body.get("returnUrl", ""))
     cancel_url = str(body.get("cancelUrl", ""))
     notify_url = str(body.get(
@@ -1243,9 +1219,6 @@ def crypto_info():
     body       = request.get_json(force=True) or {}
     package_id = str(body.get("packageId", ""))
     coin_type  = str(body.get("coinType", "crypto_btc"))
-    user_id    = _get_session_user_id() or ""
-    if not user_id:
-        return jsonify({"error": "Bitte einloggen"}), 401
 
     pm = _get_payment_method(coin_type)
     if not pm or not pm.get("enabled"):
@@ -1285,9 +1258,7 @@ def google_play_validate():
     body           = request.get_json(force=True) or {}
     purchase_token = str(body.get("purchaseToken", ""))
     product_id     = str(body.get("productId", ""))
-    user_id        = _get_session_user_id() or ""
-    if not user_id:
-        return jsonify({"error": "Bitte einloggen"}), 401
+    user_id        = request.headers.get("X-User-Id", "").strip()
 
     if not purchase_token or not product_id:
         return jsonify({"error": "purchaseToken und productId erforderlich"}), 400
@@ -1503,53 +1474,52 @@ def public_llm_route(route_id):
 
 @app.route("/api/billing/credits")
 def user_billing_credits():
-    """Return credit balance for the authenticated session user."""
-    user_id = _get_session_user_id() or ""
+    """Return credit balance for the authenticated user (X-User-Id header)."""
+    user_id = request.headers.get("X-User-Id", "").strip()
     if not user_id:
-        return jsonify({"credits": 0, "authenticated": False}), 200
+        return jsonify({"credits": 0}), 200
     try:
         row = query(
-            "SELECT credits FROM admin_users WHERE id = %s::uuid LIMIT 1",
+            "SELECT credits FROM users WHERE id::text = %s LIMIT 1",
             (user_id,), one=True,
         )
         credits = int(row["credits"]) if row else 0
-        return jsonify({"credits": credits, "authenticated": True})
+        return jsonify({"credits": credits})
     except Exception as exc:
-        return jsonify({"credits": 0, "error": str(exc)}), 500
+        return jsonify({"credits": 0, "error": str(exc)}), 200
 
 
 @app.route("/api/billing/deduct", methods=["POST"])
 def user_billing_deduct():
     """Server-side credit deduction with validation and usage logging."""
     body        = request.get_json(force=True) or {}
-    user_id     = _get_session_user_id() or ""
+    user_id     = request.headers.get("X-User-Id", "").strip()
     cost_id     = str(body.get("costId",    ""))
     amount      = int(body.get("amount",    0))
     token_count = int(body.get("tokenCount", 0))
 
     if amount <= 0:
         return jsonify({"ok": True, "deducted": 0})
-    if not user_id:
-        return jsonify({"error": "Bitte einloggen"}), 401
 
     try:
-        row = query(
-            "SELECT credits FROM admin_users WHERE id = %s::uuid LIMIT 1",
-            (user_id,), one=True,
-        )
-        if not row:
-            return jsonify({"error": "User nicht gefunden"}), 404
-        current = int(row["credits"])
-        if current < amount:
-            return jsonify({
-                "error":     "Nicht genug Credits",
-                "available": current,
-                "required":  amount,
-            }), 402
-        query(
-            "UPDATE admin_users SET credits = GREATEST(0, credits - %s) WHERE id = %s::uuid",
-            (amount, user_id), write=True,
-        )
+        if user_id:
+            row = query(
+                "SELECT credits FROM users WHERE id::text = %s LIMIT 1",
+                (user_id,), one=True,
+            )
+            if not row:
+                return jsonify({"error": "User nicht gefunden"}), 404
+            current = int(row["credits"])
+            if current < amount:
+                return jsonify({
+                    "error":     "Nicht genug Credits",
+                    "available": current,
+                    "required":  amount,
+                }), 402
+            query(
+                "UPDATE users SET credits = GREATEST(0, credits - %s) WHERE id::text = %s",
+                (amount, user_id), write=True,
+            )
 
         # Usage log — graceful if table doesn't exist yet
         try:
@@ -1582,15 +1552,6 @@ SESSION_SECRET   = os.getenv("SESSION_SECRET", "")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 _COOKIE          = "sovereign_session"
 _COOKIE_MAX_AGE  = 7 * 24 * 3600  # 7 days
-
-
-def _session_secret_ready() -> bool:
-    """Production auth must fail closed when SESSION_SECRET is missing or weak."""
-    return len(SESSION_SECRET.strip()) >= 32
-
-
-def _session_secret_error():
-    return jsonify({"error": "SESSION_SECRET nicht konfiguriert"}), 503
 
 
 def _hash_pw(password: str) -> str:

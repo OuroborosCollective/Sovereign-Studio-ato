@@ -1016,10 +1016,6 @@ function TopBar({
   palTier,
   palSavings,
   credits,
-  userAvatar,
-  userInitials,
-  userLoggedIn,
-  onUserClick,
 }: {
   status: AgentStatus;
   repoReady: boolean;
@@ -4070,28 +4066,27 @@ export function BuilderContainer({
   // RENDER
   // ─────────────────────────────────────────────────────────────
   return (
-    <>
-      <section
-        className={builderContainerContract.rootClass}
-        data-role={builderContainerContract.dataRole}
-        data-testid={builderContainerContract.testId}
-        data-layout="devchat-appcontrol-integrated"
-        aria-label={builderContainerContract.ariaLabel}
-        style={{
-          width: "100%",
-          maxWidth: MAX_W,
-          margin: "0 auto",
-          height: "100dvh",
-          display: "flex",
-          flexDirection: "column",
-          background: C.bg,
-          color: C.text,
-          fontFamily: "system-ui, -apple-system, sans-serif",
-          overflow: "hidden",
-          position: "relative",
-          WebkitTapHighlightColor: "transparent",
-        }}
-      >
+    <section
+      className={builderContainerContract.rootClass}
+      data-role={builderContainerContract.dataRole}
+      data-testid={builderContainerContract.testId}
+      data-layout="devchat-appcontrol-integrated"
+      aria-label={builderContainerContract.ariaLabel}
+      style={{
+        width: "100%",
+        maxWidth: MAX_W,
+        margin: "0 auto",
+        height: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        background: C.bg,
+        color: C.text,
+        fontFamily: "system-ui, -apple-system, sans-serif",
+        overflow: "hidden",
+        position: "relative",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
       <style>{`
         @keyframes sdc-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.8)} }
         @keyframes sdc-typing-caret { 0%,45%{opacity:1} 46%,100%{opacity:.18} }
@@ -4583,7 +4578,6 @@ export function BuilderContainer({
           onBuyCredits={() => { setShowProfile(false); }}
         />
       )}
-    </>
   );
 }
 
