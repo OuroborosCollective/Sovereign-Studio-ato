@@ -11,6 +11,7 @@ on:
 
 env:
   PRIMARY_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
+  PRIMARY_LLM_MODEL: deepseek-r1
 
 jobs:
   smoke:
@@ -43,9 +44,9 @@ jobs:
       - name: Chat completion endpoint
         run: |
           set -euo pipefail
-          cat > payload.json <<'JSON'
+          cat > payload.json <<JSON
           {
-            "model": "llama-3-8b",
+            "model": "$PRIMARY_LLM_MODEL",
             "messages": [
               { "role": "system", "content": "Reply with exactly one short sentence." },
               { "role": "user", "content": "Say Sovereign proxy works." }
