@@ -34,7 +34,7 @@
     "test:run": "vitest run",
     "postinstall": "node patch_capacitor.mjs",
     "type-check": "tsc --noEmit",
-    "verify": "pnpm run type-check && pnpm run test:release-gate && pnpm run build:web && pnpm run audit:all",
+    "verify": "pnpm run type-check && pnpm run test:release-gate && pnpm run build:web && pnpm run test:e2e && pnpm run audit:all",
     "verify:release": "pnpm run verify",
     "hardcode:scan": "node scripts/hardcode-scanner.mjs --all",
     "hardcode:scan:src": "node scripts/hardcode-scanner.mjs src",
