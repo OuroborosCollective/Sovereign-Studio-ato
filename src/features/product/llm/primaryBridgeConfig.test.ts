@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { normalizePrimaryBridgeUrl, resolvePrimaryBridgeConfig } from './primaryBridgeConfig';
 
 describe('primaryBridgeConfig', () => {
-  it('keeps non-secret route metadata and default model', () => {
+  it('keeps non-secret route metadata and live default model', () => {
     const config = resolvePrimaryBridgeConfig();
     expect(config.accountId).toBe('4a82319180f1f1cee60d85a971c3041d');
     expect(config.routeName).toBe('gatter');
     expect(config.upstreamUrl).toContain('/gatter/compat/chat/completions');
-    expect(config.model).toBe('cerebras/zai-glm-4.7');
+    expect(config.model).toBe('deepseek-r1');
   });
 
   it('uses the deployed hosted bridge as buyer-ready default runtime URL', () => {

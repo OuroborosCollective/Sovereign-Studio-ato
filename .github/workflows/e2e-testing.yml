@@ -30,7 +30,7 @@ env:
   PNPM_VERSION: '9.12.2'
   CI: 'true'
   VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
-  VITE_SOVEREIGN_LLM_MODEL: cerebras/zai-glm-4.7
+  VITE_SOVEREIGN_LLM_MODEL: deepseek-r1
 
 concurrency:
   group: sovereign-e2e-smoke-${{ github.ref }}
