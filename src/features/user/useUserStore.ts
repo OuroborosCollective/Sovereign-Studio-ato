@@ -28,7 +28,7 @@ export interface CurrentUser {
 }
 
 const configuredApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim();
-const API_BASE: string = configuredApiBase ?? '';
+const API_BASE: string = configuredApiBase || 'https://sovereign-backend.arelorian.de';
 
 async function authFetch(path: string, options?: RequestInit) {
   return fetch(`${API_BASE}${path}`, {
