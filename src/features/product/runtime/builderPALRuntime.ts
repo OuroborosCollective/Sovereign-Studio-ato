@@ -73,10 +73,12 @@ export function palRoute(
         : powerCount >= 10
           ? "smart"
           : "power";
+  // Models verified live 2026-07-02: deepseek-r1, mistral-7b, llama-3.1-8b only.
+  // llama-3-8b deprecated; qwen-14b and gemma-7b have no Worker route.
   const tierModelMap: Record<string, string[]> = {
-    fast: ["llama-3-8b", "gemma-7b"],
-    smart: ["qwen-14b", "llama-3.1-8b"],
-    power: ["deepseek-r1", "mistral-7b"],
+    fast:  ["llama-3.1-8b", "mistral-7b"],
+    smart: ["mistral-7b",   "llama-3.1-8b"],
+    power: ["deepseek-r1",  "mistral-7b"],
   };
   const matched =
     DEV_CHAT_WORKER_MODELS.find((m) => tierModelMap[tier].includes(m.id)) ??

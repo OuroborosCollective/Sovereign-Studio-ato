@@ -31,10 +31,15 @@ describe('devChatWorkerBridge', () => {
     expect(SOVEREIGN_WORKER_CHAT).toContain('/v1/chat/completions');
     expect(SOVEREIGN_WORKER_KV).toContain('/kv');
     expect(SOVEREIGN_WORKER_HEALTH).toContain('/health');
-    expect(DEV_CHAT_WORKER_DEFAULT_MODEL).toBe('cerebras/gpt-oss-120b');
-    expect(DEV_CHAT_WORKER_FALLBACK_MODEL).toBe('cerebras/zai-glm-4.7');
-    expect(DEV_CHAT_WORKER_MODELS).toHaveLength(2);
+    // Models updated 2026-07-02: cerebras routes removed (no Worker route),
+    // llama-3-8b deprecated. Active: deepseek-r1, mistral-7b, llama-3.1-8b.
+    expect(DEV_CHAT_WORKER_DEFAULT_MODEL).toBe('deepseek-r1');
+    expect(DEV_CHAT_WORKER_FALLBACK_MODEL).toBe('llama-3.1-8b');
+    expect(DEV_CHAT_WORKER_MODELS).toHaveLength(3);
+    // Legacy aliases (dead models) normalise to the new default
     expect(normalizeDevChatWorkerModel('llama-3-8b')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
+    expect(normalizeDevChatWorkerModel('cerebras/gpt-oss-120b')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
+    expect(normalizeDevChatWorkerModel('cerebras/zai-glm-4.7')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
   });
 
   it('parses GitHub URLs typed into the chat', () => {
