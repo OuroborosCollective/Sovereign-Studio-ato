@@ -177,52 +177,40 @@ export interface BuilderContainerProps {
   publishedPrUrl?: string;
 }
 
-// IdeaOption, ChatOutcomeHint, AgentStatus — extracted to builderContainerHelpers.ts
-type ChatRole = "system" | "thought" | "user" | "assistant";
-type RuntimeTier = "ready" | "active" | "blocked";
-// AppControl additions
-type ModuleId =
-  "chat" | "init" | "router" | "pattern" | "sync" | "orchestr" | "logger" | "budget";
-type SignalType = "idle" | "active" | "processing" | "warning" | "error";
-type AnimPhase =
-  "idle" | "spinup" | "working" | "completing" | "done" | "error";
-type CondStatus = "pass" | "fail" | "wait";
-
-interface ChatLine {
-  readonly id: string;
-  readonly role: ChatRole;
-  readonly text: string;
-  readonly file?: string;
-  readonly path?: string;
-  readonly createdAt?: number;
-}
-
-interface RuntimeSource {
-  readonly id: string;
-  readonly label: string;
-  readonly tier: RuntimeTier;
-  readonly description: string;
-  readonly available: boolean;
-}
-
-interface ModuleCfg {
-  id: ModuleId;
-  short: string;
-  icon: string;
-  color: string;
-}
-
-interface ModuleCond {
-  label: string;
-  status: CondStatus;
-}
-
-interface WorkerRuntimeBlocker {
-  readonly message: string;
-  readonly diagnostic: DevChatWorkerDiagnostic;
-  readonly health?: DevChatWorkerHealthResult;
-  readonly createdAt: number;
-}
+// Local types — extracted to builderContainerTypes.ts
+import type {
+  AnimPhase,
+  ChatLine,
+  ChatRole,
+  CondStatus,
+  ModuleCfg,
+  ModuleCond,
+  ModuleId,
+  RuntimeSource,
+  RuntimeTier,
+  SignalType,
+  WorkerRuntimeBlocker,
+} from "../runtime/builderContainerTypes";
+// Chat/PAL helpers — extracted to builderChatHelpers.ts / builderPALRuntime.ts
+import {
+  buildChatLines,
+  buildRuntimeConfidence,
+  buildWorkerBlockerAnswer,
+  buildWorkerMessages,
+  composerRouteHint,
+  confidenceLabel,
+  createChatLineId,
+  phaseFromSignalAndConditions,
+  sameConditions,
+  sameRecord,
+} from "../runtime/builderChatHelpers";
+import {
+  BUD_PLAN,
+  BUD_REGISTRY,
+  deriveBudFromLedger,
+  palRoute,
+  type PALDecision,
+} from "../runtime/builderPALRuntime";
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -313,78 +301,6 @@ const IDEA_OPTIONS: IdeaOption[] = [
 // safeHttpsUrl, splitFilePath, buildOutcomeHints, deriveAgentStatus, fmtTime
 // ─────────────────────────────────────────────────────────────
 
-function buildChatLines(args: {
-  readonly repoReady: boolean;
-  readonly repoReason: string;
-  readonly runtimeThinkingActive: boolean;
-  readonly cuteThinkingLabel: string;
-  readonly sovereignSummary: string;
-  readonly disabledReason?: string;
-  readonly openhandsJob?: OpenHandsJobSnapshot;
-  readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
-  readonly chatRepoError: string | null;
-  readonly chatHistory: readonly ChatLine[];
-}): ChatLine[] {
-  const lines: ChatLine[] = [];
-  const firstFile = splitFilePath(
-    args.openhandsJob?.changedFiles?.[0] ?? args.chatRepoSnapshot?.lastFile,
-  );
-  const effectiveRepoReady = args.repoReady || Boolean(args.chatRepoSnapshot);
-
-  lines.push({
-    id: "system:repo",
-    role: "system",
-    text: effectiveRepoReady
-      ? `Repo verbunden · ${args.chatRepoSnapshot ? summarizeDevChatRepoSnapshot(args.chatRepoSnapshot) : "echte Runtime-Gates aktiv"}`
-      : `Repo fehlt · ${args.repoReason}`,
-  });
-
-  if (args.chatRepoError)
-    lines.push({
-      id: "system:repo-error",
-      role: "system",
-      text: `Repo-Ladefehler: ${args.chatRepoError}`,
-    });
-  if (args.sovereignSummary.trim())
-    lines.push({
-      id: "assistant:summary",
-      role: "assistant",
-      text: args.sovereignSummary.trim(),
-      ...firstFile,
-    });
-
-  lines.push(...args.chatHistory);
-
-  if (
-    args.cuteThinkingLabel.trim() &&
-    (args.runtimeThinkingActive ||
-      args.chatHistory.length > 0 ||
-      args.chatRepoSnapshot ||
-      args.disabledReason?.trim())
-  ) {
-    lines.push({
-      id: "thought:runtime",
-      role: "thought",
-      text: args.cuteThinkingLabel,
-    });
-  }
-
-  if (args.disabledReason?.trim())
-    lines.push({
-      id: "system:blocked",
-      role: "system",
-      text: args.disabledReason.trim(),
-    });
-  return lines;
-}
-
-function createChatLineId(
-  prefix: ChatRole | "repo" | "worker",
-  index: number,
-): string {
-  return `${prefix}:${Date.now()}:${index}`;
-}
-
 // Intent detection from workerIntentDetector module
 import {
   isOpenHandsExecutionIntent,
@@ -400,291 +316,9 @@ import { useToolchainStore } from '../../toolchain/useToolchainStore';
 import { useSkillsStore } from '../../toolchain/useSkillsStore';
 import { SkillScanPanel } from '../../toolchain/components/SkillScanPanel';
 
-function buildWorkerSystemPrompt(args: {
-  readonly repoReady: boolean;
-  readonly repoReason: string;
-  readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
-  readonly toolchainContext?: string;
-}): string {
-  const repoContext = args.chatRepoSnapshot
-    ? [
-        `Repo: ${args.chatRepoSnapshot.owner}/${args.chatRepoSnapshot.repo}`,
-        `Branch: ${args.chatRepoSnapshot.branch}`,
-        `Dateien: ${args.chatRepoSnapshot.fileCount}`,
-        `Top-Level: ${args.chatRepoSnapshot.dirs.join(" · ") || "keine Top-Level-Ordner erkannt"}`,
-        `Letzter relevanter Pfad: ${[args.chatRepoSnapshot.lastPath, args.chatRepoSnapshot.lastFile].filter(Boolean).join("") || "nicht erkannt"}`,
-      ].join("\n")
-    : args.repoReady
-      ? `Repo-Kontext: ${args.repoReason}`
-      : `Repo-Kontext fehlt: ${args.repoReason}`;
-
-  return [
-    "Du bist Sovereign Worker Chat, die Standard-LLM-Route des Sovereign Tools.",
-    "Antworte kurz, freundlich, konkret und ohne erfundene Erfolge.",
-    "Keine Mock-, Stub- oder Facade-Live-Pfade behaupten.",
-    "Wenn Code-Ausführung oder Draft-PR nötig ist, erkläre klar, dass OpenHands der Executor ist.",
-    repoContext,
-    args.toolchainContext || "",
-  ].filter(Boolean).join("\n");
-}
-
-function buildWorkerMessages(args: {
-  readonly submittedText: string;
-  readonly chatHistory: readonly ChatLine[];
-  readonly repoReady: boolean;
-  readonly repoReason: string;
-  readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
-  readonly toolchainContext?: string;
-}): DevChatWorkerMessage[] {
-  const recentMessages = args.chatHistory
-    .filter((line) => line.role === "user" || line.role === "assistant")
-    .slice(-8)
-    .map((line): DevChatWorkerMessage => ({
-      role: line.role === "user" ? "user" : "assistant",
-      content: line.text,
-    }));
-
-  return [
-    { role: "system", content: buildWorkerSystemPrompt(args) },
-    ...recentMessages,
-    { role: "user", content: args.submittedText },
-  ];
-}
-
-function buildWorkerBlockerAnswer(args: {
-  readonly blocker: WorkerRuntimeBlocker;
-  readonly repoReady: boolean;
-  readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
-  readonly openhandsReady?: boolean;
-}): string {
-  const { diagnostic, health } = args.blocker;
-  const repoLine = args.chatRepoSnapshot
-    ? `Repo-Kontext bleibt geladen: ${args.chatRepoSnapshot.owner}/${args.chatRepoSnapshot.repo} · ${args.chatRepoSnapshot.branch} · ${args.chatRepoSnapshot.fileCount} files.`
-    : args.repoReady
-      ? "Repo-Kontext ist weiterhin bereit."
-      : "Repo-Kontext fehlt noch.";
-  const healthLine = health
-    ? `Health: ${health.status ?? "n/a"} · secret=${health.secretConfigured === undefined ? "unbekannt" : health.secretConfigured ? "ok" : "fehlt"} · upstream=${health.upstreamConfigured === undefined ? "unbekannt" : health.upstreamConfigured ? "ok" : "fehlt"} · model=${health.model ?? diagnostic.model}.`
-    : "Health: noch nicht geprüft.";
-  const codeLine = diagnostic.canClientFix
-    ? "Einschätzung: Der Fehler ist wahrscheinlich durch unseren App-Request oder die Route im Code korrigierbar."
-    : "Einschätzung: Der letzte Fehler liegt wahrscheinlich in Worker-Konfiguration, Worker-Runtime oder Upstream-Provider und muss über Cloudflare/Bridge-Diagnose geprüft werden.";
-
-  return [
-    "Ich wiederhole den kaputten Worker-Call nicht blind.",
-    explainDevChatWorkerDiagnostic(diagnostic),
-    healthLine,
-    repoLine,
-    args.openhandsReady
-      ? "OpenHands Executor ist nur für echte Code-/Draft-PR-Aufträge zuständig und wurde für diese Chatfrage nicht gestartet."
-      : "OpenHands Executor ist nicht bereit; normale Chatfragen bleiben Worker-Route.",
-    codeLine,
-  ].join("\n");
-}
-
-function composerRouteHint(args: {
-  readonly draft: string;
-  readonly workerBlocked: boolean;
-  readonly agentDisabled: boolean;
-}): string {
-  const clean = args.draft.trim();
-  if (!clean)
-    return "Worker Chat senden · Repo-URL laden · OpenHands nur bei Code-Auftrag";
-  const quickRepo = detectAndroidQuickRepoUrl(clean);
-  if (quickRepo.recognized) return quickRepo.hint;
-  if (parseDevChatGithubUrl(clean)) return "Repo laden · Runtime Snapshot";
-  if (isOpenHandsExecutionIntent(clean))
-    return args.agentDisabled
-      ? "OpenHands blockiert · Worker erklärt zuerst"
-      : "OpenHands Executor starten";
-  if (args.workerBlocked && !isWorkerRetryIntent(clean))
-    return "Worker blockiert · lokale Diagnose statt blindem Retry";
-  if (args.workerBlocked && isWorkerRetryIntent(clean))
-    return "Worker Retry · Diagnose wird aktualisiert";
-  return "Worker Chat senden · Enter senden · Shift+Enter Zeilenumbruch";
-}
-
-function confidenceLabel(value: number): string {
-  if (value >= 0.65) return "stable";
-  if (value >= 0.35) return "watch";
-  return "low";
-}
-
-function phaseFromSignalAndConditions(
-  signal: SignalType,
-  conds: readonly ModuleCond[],
-): AnimPhase {
-  if (
-    signal === "error" ||
-    conds.some((condition) => condition.status === "fail")
-  )
-    return "error";
-  if (signal === "processing") return "working";
-  if (conds.some((condition) => condition.status === "wait"))
-    return signal === "idle" ? "idle" : "working";
-  if (signal === "warning") return "working";
-  if (signal === "active") return "done";
-  return "idle";
-}
-
 // ─────────────────────────────────────────────────────────────
-// PAL ROUTER  (inline — uses DEV_CHAT_WORKER_MODELS from bridge)
+// PAL ROUTER — imported from builderPALRuntime.ts
 // ─────────────────────────────────────────────────────────────
-
-interface PALDecision {
-  tier: "fast" | "smart" | "power";
-  modelId: string;
-  modelLabel: string;
-  score: number;
-  costFactor: number;
-}
-const ARCH_KW = [
-  "architektur",
-  "architecture",
-  "refactor",
-  "redesign",
-  "migration",
-  "pattern",
-  "dependency",
-  "abstraction",
-  "interface",
-  "contract",
-];
-const PLAN_KW = [
-  "plan",
-  "planung",
-  "roadmap",
-  "strategie",
-  "feature",
-  "implement",
-  "konzept",
-  "vorschlag",
-  "analyse",
-  "überblick",
-];
-const QUICK_KW = [
-  "kurz",
-  "quick",
-  "schnell",
-  "simple",
-  "einfach",
-  "was ist",
-  "what is",
-  "define",
-  "erkläre",
-  "explain",
-  "tipp",
-];
-const THINK_KW = [
-  "denk nach",
-  "think",
-  "tiefgründig",
-  "trade-off",
-  "kompromiss",
-  "komplexität",
-  "algorithmus",
-  "optimiere",
-];
-
-function palRoute(
-  message: string,
-  histDepth: number,
-  fileCount: number,
-  prior: PALDecision[],
-): PALDecision {
-  const lower = message.toLowerCase();
-  let score = 0;
-  const len = message.length;
-  if (len >= 300) score += 15;
-  else if (len >= 150) score += 10;
-  else if (len >= 60) score += 5;
-  score += Math.min(((message.match(/```/g) ?? []).length / 2) * 5, 15);
-  if (fileCount > 0) score += 10;
-  if (ARCH_KW.some((k) => lower.includes(k))) score += 20;
-  if (THINK_KW.some((k) => lower.includes(k))) score += 18;
-  if (PLAN_KW.some((k) => lower.includes(k))) score += 12;
-  if (QUICK_KW.some((k) => lower.includes(k))) score -= 15;
-  if (histDepth > 10) score += 5;
-  score = Math.max(0, Math.min(100, score));
-  const powerCount = prior.filter((d) => d.tier === "power").length;
-  const tier: "fast" | "smart" | "power" =
-    score <= 33
-      ? "fast"
-      : score <= 66
-        ? "smart"
-        : powerCount >= 10
-          ? "smart"
-          : "power";
-  const tierModelMap: Record<string, string[]> = {
-    fast: ["llama-3-8b", "gemma-7b"],
-    smart: ["qwen-14b", "llama-3.1-8b"],
-    power: ["deepseek-r1", "mistral-7b"],
-  };
-  const matched =
-    DEV_CHAT_WORKER_MODELS.find((m) => tierModelMap[tier].includes(m.id)) ??
-    DEV_CHAT_WORKER_MODELS[0];
-  const costMap = { fast: 1, smart: 10, power: 30 };
-  return {
-    tier,
-    modelId: matched?.id ?? "llama-3-8b",
-    modelLabel: matched?.label ?? "Llama 3 8B",
-    score,
-    costFactor: costMap[tier],
-  };
-}
-
-function sameRecord<T extends string>(
-  a: Record<string, T>,
-  b: Record<string, T>,
-): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of keys) {
-    if (a[key] !== b[key]) return false;
-  }
-  return true;
-}
-
-function sameConditions(
-  a: Partial<Record<ModuleId, ModuleCond[]>>,
-  b: Partial<Record<ModuleId, ModuleCond[]>>,
-): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-// ── Issue #446: Real LlmBudgetLedger wiring — routes mirror PAL tiers.
-// Budget ist in dieser Session-Plan unbegrenzt (Infinity), aber die
-// tatsächlich genutzten Counts kommen aus dem echten Ledger-State.
-const BUD_REGISTRY = createRouteRegistry([
-  { id: "fast",  label: "Fast",  budgetByPlan: { session: Infinity }, priority: 1 },
-  { id: "smart", label: "Smart", budgetByPlan: { session: Infinity }, priority: 2 },
-  { id: "power", label: "Power", budgetByPlan: { session: Infinity }, priority: 3 },
-]);
-const BUD_PLAN = createUserPlanState("session", ["fast", "smart", "power"]);
-
-/** Leitet BudInspectorState aus dem echten LlmBudgetLedger ab. */
-function deriveBudFromLedger(ledger: LlmBudgetLedger): BudInspectorState {
-  const selectionResult = selectLlmRoute(BUD_REGISTRY, BUD_PLAN, ledger);
-  const budgetSummary   = summarizeLlmBudgetState(BUD_REGISTRY, BUD_PLAN, ledger);
-  return { selectionResult, budgetSummary };
-}
-
-function buildRuntimeConfidence(args: {
-  readonly effectiveRepoReady: boolean;
-  readonly openhandsReady?: boolean;
-  readonly runtimeThinkingActive: boolean;
-  readonly blocked: boolean;
-  readonly palDecisions: number;
-  readonly outcomeHints: number;
-}): number {
-  let score = 0.12;
-  if (args.effectiveRepoReady) score += 0.22;
-  if (args.openhandsReady) score += 0.2;
-  if (args.runtimeThinkingActive) score += 0.12;
-  if (args.palDecisions > 0) score += 0.12;
-  if (args.outcomeHints > 0) score += 0.1;
-  if (args.blocked) score -= 0.18;
-  return Math.max(0, Math.min(1, score));
-}
 
 // ─────────────────────────────────────────────────────────────
 // SUB-COMPONENTS
