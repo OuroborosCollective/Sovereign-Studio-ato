@@ -593,11 +593,13 @@ import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { useUserStore } from '../../user/useUserStore';
 import { LoginModal } from '../../user/components/LoginModal';
 import { UserProfile } from '../../user/components/UserProfile';
+import { useToolchainStore } from '../../toolchain/useToolchainStore';
 
 function buildWorkerSystemPrompt(args: {
   readonly repoReady: boolean;
   readonly repoReason: string;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
+  readonly toolchainContext?: string;
 }): string {
   const repoContext = args.chatRepoSnapshot
     ? [
@@ -617,7 +619,8 @@ function buildWorkerSystemPrompt(args: {
     "Keine Mock-, Stub- oder Facade-Live-Pfade behaupten.",
     "Wenn Code-Ausführung oder Draft-PR nötig ist, erkläre klar, dass OpenHands der Executor ist.",
     repoContext,
-  ].join("\n");
+    args.toolchainContext || "",
+  ].filter(Boolean).join("\n");
 }
 
 function buildWorkerMessages(args: {
@@ -626,6 +629,7 @@ function buildWorkerMessages(args: {
   readonly repoReady: boolean;
   readonly repoReason: string;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
+  readonly toolchainContext?: string;
 }): DevChatWorkerMessage[] {
   const recentMessages = args.chatHistory
     .filter((line) => line.role === "user" || line.role === "assistant")
@@ -3148,6 +3152,12 @@ export function BuilderContainer({
   const [showLogin, setShowLogin]     = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sovereign App Toolchain — auto-load after login
+  const { loadTools: loadToolchain, getToolContext, loaded: toolchainLoaded } = useToolchainStore();
+  useEffect(() => {
+    if (authUser && !toolchainLoaded) { loadToolchain(); }
+  }, [authUser, toolchainLoaded, loadToolchain]);
   const [statusLogs, setStatusLogs] = useState<
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
@@ -3914,6 +3924,7 @@ export function BuilderContainer({
       repoReady: effectiveRepoReady,
       repoReason: effectiveRepoReason,
       chatRepoSnapshot,
+      toolchainContext: getToolContext(),
     });
 
     // Stream chunks directly into UI for immediate feedback
