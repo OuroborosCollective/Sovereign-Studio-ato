@@ -208,6 +208,13 @@ export const useUserStore = create<UserStore>()(
       name: 'sovereign-user',
       // Only persist the user object — no credentials, no tokens
       partialize: (s) => ({ user: s.user }),
+      merge: (persisted, current) => {
+        const persistedRecord = isRecord(persisted) ? persisted : {};
+        return {
+          ...current,
+          user: normalizeCurrentUser(persistedRecord.user),
+        };
+      },
     },
   ),
 );
