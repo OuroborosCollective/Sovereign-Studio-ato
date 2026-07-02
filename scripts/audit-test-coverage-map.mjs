@@ -85,6 +85,9 @@ const GATE_PATTERNS = {
       'src/features/product/components/ChatSidebar.test.tsx',
       'src/features/product/hooks/useProductMagic.sequential.test.ts',
       'src/features/product/runtime/sequentialRuntimeGuard.test.ts',
+      'src/features/github/gitPatchRuntime.test.ts',
+      'src/features/product/runtime/agentWorkRuntime.test.ts',
+      'src/features/product/runtime/agentWorkspaceRuntime.test.ts',
     ],
   },
   'test:all': {
@@ -103,7 +106,24 @@ const GATE_PATTERNS = {
 };
 
 function matchesPattern(filePath, pattern) {
-  if (pattern.endsWith('**')) return true;
+  // '**' alone — match everything
+  if (pattern === '**') return true;
+  // '**/dir/**' — file is somewhere inside that directory
+  if (pattern.startsWith('**/') && pattern.endsWith('/**')) {
+    const dir = pattern.slice(3, -3);
+    return filePath.includes('/' + dir + '/') || filePath.startsWith(dir + '/');
+  }
+  // 'prefix/**' — file is under that prefix
+  if (pattern.endsWith('/**')) {
+    const prefix = pattern.slice(0, -3);
+    return filePath.startsWith(prefix + '/') || filePath === prefix;
+  }
+  // legacy: bare trailing '**' (should not appear in our patterns, but keep safe)
+  if (pattern.endsWith('**')) {
+    const prefix = pattern.slice(0, -2);
+    return filePath.startsWith(prefix);
+  }
+  // '**/suffix' — file path ends with that suffix (anywhere in tree)
   if (pattern.startsWith('**/')) {
     const suffix = pattern.slice(3);
     return filePath.endsWith(suffix) || filePath.includes('/' + suffix);
