@@ -888,10 +888,14 @@ function buildRuntimeConfidence(args: {
 // ─────────────────────────────────────────────────────────────
 
 // Ampel (verbatim from v3)
-function Ampel({ status }: { status: AgentStatus }) {
+// compact=true → dots only, no text label (used in TopBar where space is scarce)
+function Ampel({ status, compact = false }: { status: AgentStatus; compact?: boolean }) {
   const col = STATUS_COLOR[status];
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+    <div
+      style={{ display: "flex", alignItems: "center", gap: 5 }}
+      title={STATUS_LABEL[status]}
+    >
       {(["idle", "thinking", "editing"] as AgentStatus[]).map((s) => (
         <span
           key={s}
@@ -906,16 +910,18 @@ function Ampel({ status }: { status: AgentStatus }) {
           }}
         />
       ))}
-      <span
-        style={{
-          fontFamily: "monospace",
-          fontSize: 10,
-          color: col,
-          marginLeft: 2,
-        }}
-      >
-        {STATUS_LABEL[status]}
-      </span>
+      {!compact && (
+        <span
+          style={{
+            fontFamily: "monospace",
+            fontSize: 10,
+            color: col,
+            marginLeft: 2,
+          }}
+        >
+          {STATUS_LABEL[status]}
+        </span>
+      )}
     </div>
   );
 }
@@ -1022,6 +1028,10 @@ function TopBar({
   palTier,
   palSavings,
   credits,
+  userAvatar,
+  userInitials,
+  userLoggedIn,
+  onUserClick,
 }: {
   status: AgentStatus;
   repoReady: boolean;
@@ -1093,8 +1103,8 @@ function TopBar({
           ☰
         </button>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
             <span
               style={{
                 fontFamily: "monospace",
@@ -1102,6 +1112,7 @@ function TopBar({
                 fontWeight: 700,
                 color: C.text,
                 letterSpacing: -0.3,
+                whiteSpace: "nowrap",
               }}
             >
               Sovereign
@@ -1174,7 +1185,7 @@ function TopBar({
           </button>
         </div>
 
-        {credits !== undefined && (
+        {userLoggedIn && credits !== undefined && (
           <CreditDisplay credits={credits} />
         )}
 
@@ -1206,7 +1217,7 @@ function TopBar({
           </button>
         )}
 
-        <Ampel status={status} />
+        <Ampel status={status} compact />
 
         <button
           type="button"
@@ -4138,6 +4149,7 @@ export function BuilderContainer({
   // RENDER
   // ─────────────────────────────────────────────────────────────
   return (
+    <>
     <section
       className={builderContainerContract.rootClass}
       data-role={builderContainerContract.dataRole}
@@ -4663,6 +4675,7 @@ export function BuilderContainer({
           }}
         />
       )}
+    </>
   );
 }
 
