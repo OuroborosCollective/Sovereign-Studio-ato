@@ -33,9 +33,6 @@ jobs:
           fi
 
       - name: Write .env to VPS
-        env:
-          TOOLCHAIN_BASE_URL_SECRET: ${{ secrets.TOOLCHAIN_BASE_URL }}
-          TOOLCHAIN_API_KEY_SECRET: ${{ secrets.TOOLCHAIN_API_KEY }}
         run: |
           ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash -s << 'SSHEOF'
@@ -47,8 +44,6 @@ jobs:
             EXISTING_TOOLCHAIN_BASE_URL="$(grep -E '^TOOLCHAIN_BASE_URL=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
             EXISTING_TOOLCHAIN_API_KEY="$(grep -E '^TOOLCHAIN_API_KEY=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
           fi
-          TOOLCHAIN_BASE_URL_VALUE="${TOOLCHAIN_BASE_URL_SECRET:-${EXISTING_TOOLCHAIN_BASE_URL:-http://127.0.0.1:8001}}"
-          TOOLCHAIN_API_KEY_VALUE="${TOOLCHAIN_API_KEY_SECRET:-${EXISTING_TOOLCHAIN_API_KEY:-}}"
           cat > /opt/sovereign-backend/.env << ENVEOF
           POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
           POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
@@ -58,11 +53,15 @@ jobs:
           ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           LLM_PROXY_KEY=${{ secrets.LLM_PROXY_KEY }}
-          TOOLCHAIN_BASE_URL=$TOOLCHAIN_BASE_URL_VALUE
-          TOOLCHAIN_API_KEY=$TOOLCHAIN_API_KEY_VALUE
           FLASK_ENV=production
           OPENHANDS_API_URL=http://openhands-enterprise-openhands-1:8000
           ENVEOF
+          if [ -n "$EXISTING_TOOLCHAIN_BASE_URL" ]; then
+            printf 'TOOLCHAIN_BASE_URL=%s\n' "$EXISTING_TOOLCHAIN_BASE_URL" >> /opt/sovereign-backend/.env
+          fi
+          if [ -n "$EXISTING_TOOLCHAIN_API_KEY" ]; then
+            printf 'TOOLCHAIN_API_KEY=%s\n' "$EXISTING_TOOLCHAIN_API_KEY" >> /opt/sovereign-backend/.env
+          fi
           SSHEOF
 
       - name: Copy app.py to VPS and rebuild
