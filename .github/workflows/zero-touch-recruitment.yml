@@ -1,22 +1,20 @@
-name: Master-Prompt A: Autonome Tester-Akquise (Zero-Cost-Bot)
+name: "Quarantined: Zero-Touch Recruitment Workflow"
+
 on:
-  schedule:
-    - cron: '0 9 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
-  recruitment_agent:
+  quarantined:
+    name: Block unsafe tester recruitment automation
     runs-on: ubuntu-latest
     steps:
-      - name: Konfiguriere Python-Bot-Umgebung
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Social-Media-Bot ausführen (Reddit/Discord)
+      - name: Explain quarantine
         run: |
-          echo "Suche auf r/AndroidClosedTesting nach 'Test-for-Test'-Angeboten..."
-          PLAY_URL=$(echo ${{ secrets.PLAY_TEST_LINK_BASE64 }} | base64 -d)
-          python bot/social_agent.py --target_platform "Reddit" --app_link $PLAY_URL --repo_name ${{ github.repository }}
-          echo "5 neue Tester rekrutiert und der Play Console hinzugefügt."
-      - name: Starte Follow-up-Agent (Tag 7 Engagement-Prüfung)
-        run: |
-          echo "Prüfe Tester-Liste auf Engagement. Sende sanfte Erinnerung an passive Tester (Tag 7)."
+          echo "This legacy recruitment workflow is intentionally quarantined."
+          echo "Reason: automatic tester acquisition and success claims such as recruited testers must not run as unattended CI automation."
+          echo "Sovereign rules require real evidence, no fake success, no spam-like outreach, and no hidden growth automation."
+          echo "If tester coordination is needed later, rebuild it as a reviewed, opt-in, policy-safe process with explicit human approval."
+          exit 1
