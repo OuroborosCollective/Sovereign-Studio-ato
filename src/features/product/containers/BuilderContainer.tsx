@@ -74,7 +74,16 @@ import {
   createPatternMemoryStore,
   type PatternMemoryStore,
 } from "../runtime/patternMemoryRuntime";
-import type { LlmRouteSelectionResult } from "../runtime/llmRouteBudgetRuntime";
+import {
+  createBudgetLedger,
+  recordRouteUsage,
+  selectLlmRoute,
+  createRouteRegistry,
+  createUserPlanState,
+  summarizeLlmBudgetState,
+  type LlmBudgetLedger,
+  type LlmRouteSelectionResult,
+} from "../runtime/llmRouteBudgetRuntime";
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -105,6 +114,11 @@ import {
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
+import { useLauncherStore } from "../../launcher/useLauncherStore";
+import { LauncherMenu } from "../../launcher/components/LauncherMenu";
+import { LauncherWindowHost } from "../../launcher/components/LauncherWindowHost";
+import { LauncherTaskbar } from "../../launcher/components/LauncherTaskbar";
+import { LauncherProvider, readGeminiApiKeyFromStorage } from "../../launcher/LauncherContext";
 import {
   usePatternMemoryStore,
   loadPatternMemoryStoreFromStorage,
@@ -574,11 +588,20 @@ import {
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
 } from "../runtime/workerIntentDetector";
+import { useCreditGuard } from '../../billing/useCreditGuard';
+import { CreditDisplay } from '../../billing/components/CreditDisplay';
+import { useUserStore } from '../../user/useUserStore';
+import { LoginModal } from '../../user/components/LoginModal';
+import { UserProfile } from '../../user/components/UserProfile';
+import { useToolchainStore } from '../../toolchain/useToolchainStore';
+import { useSkillsStore } from '../../toolchain/useSkillsStore';
+import { SkillScanPanel } from '../../toolchain/components/SkillScanPanel';
 
 function buildWorkerSystemPrompt(args: {
   readonly repoReady: boolean;
   readonly repoReason: string;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
+  readonly toolchainContext?: string;
 }): string {
   const repoContext = args.chatRepoSnapshot
     ? [
@@ -598,7 +621,8 @@ function buildWorkerSystemPrompt(args: {
     "Keine Mock-, Stub- oder Facade-Live-Pfade behaupten.",
     "Wenn Code-Ausführung oder Draft-PR nötig ist, erkläre klar, dass OpenHands der Executor ist.",
     repoContext,
-  ].join("\n");
+    args.toolchainContext || "",
+  ].filter(Boolean).join("\n");
 }
 
 function buildWorkerMessages(args: {
@@ -607,6 +631,7 @@ function buildWorkerMessages(args: {
   readonly repoReady: boolean;
   readonly repoReason: string;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
+  readonly toolchainContext?: string;
 }): DevChatWorkerMessage[] {
   const recentMessages = args.chatHistory
     .filter((line) => line.role === "user" || line.role === "assistant")
@@ -823,39 +848,20 @@ function sameConditions(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-// ── Issue #446: Derive BUD inspector state from real palDecisions
-const BUD_ROUTE_MAP = {
-  fast:  { id: "fast",  label: "Fast",  budgetByPlan: { session: Infinity }, priority: 1 },
-  smart: { id: "smart", label: "Smart", budgetByPlan: { session: Infinity }, priority: 2 },
-  power: { id: "power", label: "Power", budgetByPlan: { session: Infinity }, priority: 3 },
-} as const;
+// ── Issue #446: Real LlmBudgetLedger wiring — routes mirror PAL tiers.
+// Budget ist in dieser Session-Plan unbegrenzt (Infinity), aber die
+// tatsächlich genutzten Counts kommen aus dem echten Ledger-State.
+const BUD_REGISTRY = createRouteRegistry([
+  { id: "fast",  label: "Fast",  budgetByPlan: { session: Infinity }, priority: 1 },
+  { id: "smart", label: "Smart", budgetByPlan: { session: Infinity }, priority: 2 },
+  { id: "power", label: "Power", budgetByPlan: { session: Infinity }, priority: 3 },
+]);
+const BUD_PLAN = createUserPlanState("session", ["fast", "smart", "power"]);
 
-function deriveBudStateFromPalDecisions(
-  palDecisions: Array<{ tier: "fast" | "smart" | "power" }>,
-): BudInspectorState {
-  const fastCount  = palDecisions.filter((d) => d.tier === "fast").length;
-  const smartCount = palDecisions.filter((d) => d.tier === "smart").length;
-  const powerCount = palDecisions.filter((d) => d.tier === "power").length;
-
-  const parts: string[] = [];
-  if (fastCount  > 0) parts.push(`Fast: ${fastCount}`);
-  if (smartCount > 0) parts.push(`Smart: ${smartCount}`);
-  if (powerCount > 0) parts.push(`Power: ${powerCount}`);
-  const budgetSummary =
-    parts.length > 0 ? parts.join(" · ") : "Keine Routings in dieser Sitzung.";
-
-  if (palDecisions.length === 0) {
-    return { selectionResult: null, budgetSummary };
-  }
-
-  const lastTier = palDecisions[palDecisions.length - 1].tier;
-  const selectedRoute = BUD_ROUTE_MAP[lastTier];
-  const selectionResult: LlmRouteSelectionResult = {
-    status: "available",
-    selectedRoute,
-    reason: `Route "${selectedRoute.label}" zuletzt genutzt.`,
-    exhaustedRouteIds: [],
-  };
+/** Leitet BudInspectorState aus dem echten LlmBudgetLedger ab. */
+function deriveBudFromLedger(ledger: LlmBudgetLedger): BudInspectorState {
+  const selectionResult = selectLlmRoute(BUD_REGISTRY, BUD_PLAN, ledger);
+  const budgetSummary   = summarizeLlmBudgetState(BUD_REGISTRY, BUD_PLAN, ledger);
   return { selectionResult, budgetSummary };
 }
 
@@ -1015,6 +1021,7 @@ function TopBar({
   onPanelToggle,
   palTier,
   palSavings,
+  credits,
 }: {
   status: AgentStatus;
   repoReady: boolean;
@@ -1032,6 +1039,11 @@ function TopBar({
   onPanelToggle: () => void;
   palTier: string | null;
   palSavings: number | null;
+  credits?: number;
+  userAvatar?: string | null;
+  userInitials?: string;
+  userLoggedIn?: boolean;
+  onUserClick?: () => void;
 }) {
   const repoLabel = chatRepoSnapshot
     ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
@@ -1161,6 +1173,38 @@ function TopBar({
             )}
           </button>
         </div>
+
+        {credits !== undefined && (
+          <CreditDisplay credits={credits} />
+        )}
+
+        {/* User avatar / login button — Issue #459 */}
+        {onUserClick && (
+          <button
+            type="button"
+            onClick={onUserClick}
+            aria-label={userLoggedIn ? 'Profil' : 'Anmelden'}
+            title={userLoggedIn ? 'Profil' : 'Anmelden'}
+            style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: userLoggedIn ? `${C.accent}22` : C.bg,
+              border: `1px solid ${userLoggedIn ? `${C.accent}55` : C.border}`,
+              color: userLoggedIn ? C.accent : C.textSub,
+              fontSize: userAvatar ? 0 : 13,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
+              overflow: 'hidden', fontWeight: 700,
+              padding: 0,
+            }}
+          >
+            {userAvatar
+              ? <img src={userAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : userLoggedIn
+                ? <span style={{ fontSize: 11 }}>{userInitials || '?'}</span>
+                : <span>👤</span>
+            }
+          </button>
+        )}
 
         <Ampel status={status} />
 
@@ -3103,6 +3147,46 @@ export function BuilderContainer({
   const [confidence, setConfidence] = useState(0.12);
   const [panelOpen, setPanelOpen] = useState(false);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
+  const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
+  const { credits, chargeCredits } = useCreditGuard();
+  // ── Issue #459: User auth state
+  const { user: authUser, refreshUser } = useUserStore();
+  const [showLogin, setShowLogin]     = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sovereign App Toolchain — auto-load after login
+  const { loadTools: loadToolchain, getToolContext, loaded: toolchainLoaded } = useToolchainStore();
+  useEffect(() => {
+    if (authUser && !toolchainLoaded) { loadToolchain(); }
+  }, [authUser, toolchainLoaded, loadToolchain]);
+
+  // ── Sovereign Skill System — auto-load + dynamic slash commands
+  const {
+    loadSkills,
+    getActiveSkillContext,
+    getSkillSlashCommands,
+    skills: installedSkills,
+    loaded: skillsLoaded,
+  } = useSkillsStore();
+  useEffect(() => {
+    if (authUser && !skillsLoaded) { loadSkills(); }
+  }, [authUser, skillsLoaded, loadSkills]);
+  const [showSkillScan, setShowSkillScan] = useState(false);
+
+  // Dynamic skill slash commands (from installed skills)
+  const skillSlashCommands = useMemo(
+    () => getSkillSlashCommands().map((s) => ({
+      cmd: s.cmd,
+      label: s.label,
+      action: 'skill-run' as const,
+      description: s.description,
+      adapted_prompt: s.adapted_prompt,
+      is_skill: true,
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [installedSkills],
+  );
   const [statusLogs, setStatusLogs] = useState<
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
@@ -3165,8 +3249,8 @@ export function BuilderContainer({
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
   const slashMatches = useMemo(
-    () => matchingSlashCommands(wishText),
-    [wishText],
+    () => matchingSlashCommands(wishText, skillSlashCommands),
+    [wishText, skillSlashCommands],
   );
   const showSlashCommands =
     shouldShowSlashMenu(wishText) &&
@@ -3479,7 +3563,7 @@ export function BuilderContainer({
     const hasOutput =
       (openhandsJob?.changedFiles?.length ?? 0) > 0 ||
       Boolean(openhandsJob?.draftPrUrl);
-    const budState = deriveBudStateFromPalDecisions(palDecisions);
+    const budState = deriveBudFromLedger(budgetLedger);
     const budBlocked = budState.selectionResult?.status === "blocked";
     const nextSignals: Record<string, SignalType> = {
       chat: workerBlocker
@@ -3653,6 +3737,7 @@ export function BuilderContainer({
     openhandsReady,
     outcomeHints.length,
     palDecisions.length,
+    budgetLedger,
     repoBusy,
     repoReady,
     runtimeThinkingActive,
@@ -3705,11 +3790,11 @@ export function BuilderContainer({
 
     // ── Issue #428: Slash command handling
     if (submittedText.startsWith("/")) {
-      const parsedSlash = parseSlashCommand(submittedText);
+      const parsedSlash = parseSlashCommand(submittedText, skillSlashCommands);
       if (!parsedSlash) {
         appendChatLine({
           role: "assistant",
-          text: `Unbekannter Befehl. Verfügbare: ${SOVEREIGN_SLASH_COMMANDS.map((c) => c.cmd).join(", ")}`,
+          text: `Unbekannter Befehl. Verfügbare: ${[...SOVEREIGN_SLASH_COMMANDS, ...skillSlashCommands].map((c) => c.cmd).join(", ")}`,
         });
         return;
       }
@@ -3742,13 +3827,46 @@ export function BuilderContainer({
         return;
       }
       if (command.action === "clear") {
-        // Clear chat lines but NOT repo, token, remote memory
         setChatHistory([]);
         setPalDecisions([]);
+        setBudgetLedger(createBudgetLedger());
         triggerHaptic("light");
         appendChatLine({
           role: "assistant",
           text: "Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.",
+        });
+        return;
+      }
+      if (command.action === "skills") {
+        const active = installedSkills.filter((s) => s.is_active);
+        if (active.length === 0) {
+          appendChatLine({
+            role: "assistant",
+            text: "Keine Skills installiert. Nutze /scan-skills <owner/repo> um Skills aus einem Repo zu importieren.",
+          });
+        } else {
+          appendChatLine({
+            role: "assistant",
+            text: [
+              `**${active.length} installierte Skills:**`,
+              ...active.map((s) => `• \`/${s.slug}\` — ${s.description}`),
+              "",
+              "Tipp: /scan-skills <owner/repo> für mehr Skills.",
+            ].join("\n"),
+          });
+        }
+        return;
+      }
+      if (command.action === "scan-skills") {
+        setShowSkillScan(true);
+        return;
+      }
+      if (command.action === "skill-run" && command.adapted_prompt) {
+        triggerHaptic("light");
+        appendChatLine({ role: "user", text: submittedText });
+        appendChatLine({
+          role: "assistant",
+          text: `**${command.label}** wird ausgeführt…\n\n${command.adapted_prompt.slice(0, 600)}`,
         });
         return;
       }
@@ -3783,6 +3901,7 @@ export function BuilderContainer({
           palDecisions,
         );
         setPalDecisions((prev) => [...prev.slice(-99), d]);
+        setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
         addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
         return;
       }
@@ -3824,6 +3943,14 @@ export function BuilderContainer({
       addLog("info", "Worker retry requested by user", "router");
     }
 
+    // ── #458 Credit guard — charge before LLM call ────────────────────────
+    const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
+    const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
+    if (!_canProceed) {
+      addLog("warn", "Credits nicht ausreichend — Paywall geöffnet", "billing");
+      return;
+    }
+
     const d = palRoute(
       submittedText,
       chatHistory.length + 1,
@@ -3831,6 +3958,7 @@ export function BuilderContainer({
       palDecisions,
     );
     setPalDecisions((prev) => [...prev.slice(-99), d]);
+    setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
     addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
 
     if (isOpenHandsExecutionIntent(submittedText)) {
@@ -3857,6 +3985,7 @@ export function BuilderContainer({
       repoReady: effectiveRepoReady,
       repoReason: effectiveRepoReason,
       chatRepoSnapshot,
+      toolchainContext: [getToolContext(), getActiveSkillContext()].filter(Boolean).join('\n\n'),
     });
 
     // Stream chunks directly into UI for immediate feedback
@@ -4057,6 +4186,14 @@ export function BuilderContainer({
         onPanelToggle={() => setPanelOpen((v) => !v)}
         palTier={lastPal?.tier ?? null}
         palSavings={palStats?.savings ?? null}
+        credits={credits}
+        userLoggedIn={!!authUser}
+        userAvatar={authUser?.avatarUrl ?? null}
+        userInitials={authUser
+          ? (authUser.displayName || authUser.email)
+              .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+          : undefined}
+        onUserClick={() => authUser ? setShowProfile(true) : setShowLogin(true)}
       />
 
       {/* COLLAPSIBLE STATUS/LOG PANEL */}
@@ -4319,7 +4456,7 @@ export function BuilderContainer({
                 powerTierCount: palDecisions.filter((d) => d.tier === "power").length,
               },
               { chatRepoSnapshot },
-              deriveBudStateFromPalDecisions(palDecisions),
+              deriveBudFromLedger(budgetLedger),
             )}
             onSignalClick={(prompt) => setWishText(prompt)}
           />
@@ -4330,7 +4467,9 @@ export function BuilderContainer({
       {/* COMPOSER — only in chat view, v3 verbatim */}
       {isChat && (
         <>
-          {/* ── Issue #445: SovereignToolLauncher — quick-action "+" launcher */}
+          {/* ── Issue #453: LauncherTaskbar — offene Tools als Chips */}
+          <LauncherTaskbar />
+          {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
           <SovereignToolLauncher
             onSelect={(toolId: ToolId) => {
               if (toolId === 'repo') { setShowRepoExplorer(true); return; }
@@ -4348,6 +4487,7 @@ export function BuilderContainer({
                 return;
               }
             }}
+            onOpenLauncher={useLauncherStore.getState().openMenu}
           />
           <Composer
             value={wishText}
@@ -4388,6 +4528,12 @@ export function BuilderContainer({
         signals={signals}
         onTabClick={switchTab}
       />
+
+      {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}
+      <LauncherProvider value={{ geminiApiKey: readGeminiApiKeyFromStorage() }}>
+        <LauncherMenu />
+        <LauncherWindowHost />
+      </LauncherProvider>
 
       {/* OVERLAYS — v3 verbatim */}
       {showRuntimeSheet && (
@@ -4495,6 +4641,28 @@ export function BuilderContainer({
         </div>
       )}
     </section>
+
+      {/* Issue #459: Auth modals */}
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
+      {showProfile && (
+        <UserProfile
+          onClose={() => setShowProfile(false)}
+          onBuyCredits={() => { setShowProfile(false); }}
+        />
+      )}
+
+      {/* Sovereign Skill Scanner — /scan-skills opens this */}
+      {showSkillScan && (
+        <SkillScanPanel
+          onClose={() => setShowSkillScan(false)}
+          onInstalled={(slug) => {
+            appendChatLine({
+              role: "assistant",
+              text: `✅ Skill \`/${slug}\` installiert. Tippe \`/${slug}\` um ihn zu nutzen.`,
+            });
+          }}
+        />
+      )}
   );
 }
 

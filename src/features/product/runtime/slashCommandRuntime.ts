@@ -1,19 +1,31 @@
-export type SlashCommandAction = 'analyze' | 'fix' | 'pr' | 'repo' | 'clear';
+export type SlashCommandAction =
+  | 'analyze' | 'fix' | 'pr' | 'repo' | 'clear'
+  | 'skills' | 'scan-skills' | 'skill-run';
 
 export interface SlashCommandDefinition {
   readonly cmd: string;
   readonly label: string;
   readonly action: SlashCommandAction;
   readonly description: string;
+  /** For dynamically installed skills — the full adapted prompt */
+  readonly adapted_prompt?: string;
+  /** marks a command as dynamically installed by the skill system */
+  readonly is_skill?: boolean;
 }
 
-export const SOVEREIGN_SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
-  { cmd: '/analyze', label: 'Analyze', action: 'analyze', description: 'Run internal review' },
-  { cmd: '/fix', label: 'Fix', action: 'fix', description: 'Run error review' },
-  { cmd: '/pr', label: 'Draft PR', action: 'pr', description: 'Start Draft PR task' },
-  { cmd: '/repo', label: 'Load repo', action: 'repo', description: 'Load GitHub repo URL' },
-  { cmd: '/clear', label: 'Clear chat', action: 'clear', description: 'Clear local chat only' },
+/** Static built-in commands always available */
+export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
+  { cmd: '/analyze',     label: 'Analyze',       action: 'analyze',     description: 'Internen Review starten' },
+  { cmd: '/fix',         label: 'Fix',           action: 'fix',         description: 'Fehler-Review starten' },
+  { cmd: '/pr',          label: 'Draft PR',      action: 'pr',          description: 'Draft PR erstellen' },
+  { cmd: '/repo',        label: 'Repo laden',    action: 'repo',        description: 'GitHub-Repo URL laden' },
+  { cmd: '/clear',       label: 'Chat leeren',   action: 'clear',       description: 'Nur lokalen Chat löschen' },
+  { cmd: '/skills',      label: 'Skills',        action: 'skills',      description: 'Installierte Skills anzeigen' },
+  { cmd: '/scan-skills', label: 'Skill-Scanner', action: 'scan-skills', description: 'Repo nach Skills scannen & installieren' },
 ];
+
+/** @deprecated use BUILTIN_SLASH_COMMANDS — kept for compatibility */
+export const SOVEREIGN_SLASH_COMMANDS = BUILTIN_SLASH_COMMANDS;
 
 export interface ParsedSlashCommand {
   readonly command: SlashCommandDefinition;
@@ -25,16 +37,35 @@ export function shouldShowSlashMenu(value: string): boolean {
   return clean.startsWith('/') && !clean.includes('\n');
 }
 
-export function matchingSlashCommands(value: string): readonly SlashCommandDefinition[] {
+/**
+ * Returns matching slash commands for the current input.
+ * Merges built-in commands with dynamically installed skill commands.
+ */
+export function matchingSlashCommands(
+  value: string,
+  dynamicSkills: readonly SlashCommandDefinition[] = [],
+): readonly SlashCommandDefinition[] {
   const clean = value.trimStart().toLowerCase();
   if (!clean.startsWith('/')) return [];
-  return SOVEREIGN_SLASH_COMMANDS.filter((command) => command.cmd.startsWith(clean) || clean.startsWith(`${command.cmd} `));
+  const all = [...BUILTIN_SLASH_COMMANDS, ...dynamicSkills];
+  return all.filter(
+    (command) => command.cmd.startsWith(clean) || clean.startsWith(`${command.cmd} `),
+  );
 }
 
-export function parseSlashCommand(value: string): ParsedSlashCommand | null {
+/**
+ * Parses a submitted slash command against built-in + dynamic skills.
+ */
+export function parseSlashCommand(
+  value: string,
+  dynamicSkills: readonly SlashCommandDefinition[] = [],
+): ParsedSlashCommand | null {
   const clean = value.trim();
   if (!clean.startsWith('/')) return null;
-  const command = SOVEREIGN_SLASH_COMMANDS.find((candidate) => clean === candidate.cmd || clean.startsWith(`${candidate.cmd} `));
+  const all = [...BUILTIN_SLASH_COMMANDS, ...dynamicSkills];
+  const command = all.find(
+    (candidate) => clean === candidate.cmd || clean.startsWith(`${candidate.cmd} `),
+  );
   if (!command) return null;
   return { command, argument: clean.slice(command.cmd.length).trim() };
 }

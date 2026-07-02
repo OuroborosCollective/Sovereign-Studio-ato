@@ -224,3 +224,44 @@ Uses Sovereign dark/cyan theme:
 - Borders: `border-cyan-500/20`, `border-cyan-500/30`
 - Text: `text-slate-100`, `text-cyan-400`
 - Quick actions: pill-style chips with `rounded-full`
+
+## Development Commands & Patterns
+
+### Package Manager
+Uses `pnpm` (not npm):
+```bash
+pnpm install          # Install dependencies
+pnpm run dev          # Start dev server (http://localhost:3000)
+pnpm run build:web    # Production web build
+```
+
+### Quality Gates (required before PR)
+```bash
+pnpm run type-check           # TypeScript check
+pnpm run audit:sovereign      # Custom static audit with NoMock validation
+pnpm exec vitest run          # All tests
+pnpm run build:web            # Web build
+```
+
+### Backend
+Python Flask app at `scripts/sovereign-backend/app.py`:
+```bash
+python3 -m py_compile scripts/sovereign-backend/app.py
+```
+
+### Auth Pattern
+Backend uses `_get_session_user_id()` to read JWT from HTTP-only cookie. **Never use `X-User-Id` headers** for authentication.
+
+### CORS Pattern
+Must use explicit origins list, not `origins="*"`:
+```python
+CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
+```
+
+### Credits Ledger
+Server is source of truth. Default credits should be `0`, never fake balance (e.g., 1000).
+
+### Testing Billing
+```bash
+pnpm exec vitest run src/features/billing/billingSlice.test.ts
+```

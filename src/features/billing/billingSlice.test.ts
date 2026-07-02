@@ -17,6 +17,9 @@ describe('billingSlice reducer', () => {
     isPaywallActive: true,
     isSubscribed: false,
     isTrialing: false,
+    credits: 0,
+    isPaywallOpen: false,
+    insufficientFor: null,
   };
 
   it('should handle fetchBillingData.fulfilled with active subscription', () => {

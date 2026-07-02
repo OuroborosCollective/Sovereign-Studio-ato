@@ -24,3 +24,7 @@ Ouroboros-Collective-Sovereign.yaml
 sovereign-studio-rn/dist/
 sovereign-studio-rn/android/
 sovereign-studio-rn/ios/
+android/app/sovereign-release-key.jks
+android/app/*.jks
+android/app/*.keystore
+android/app/*.p12

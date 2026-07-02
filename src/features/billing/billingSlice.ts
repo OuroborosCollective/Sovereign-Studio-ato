@@ -1,5 +1,9 @@
 import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 
+const API_BASE: string =
+  (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
+  'https://sovereign-backend.arelorian.de';
+
 export type SubscriptionTier = 'free' | 'pro' | 'enterprise' | 'custom';
 
 export interface Subscription {
@@ -44,6 +48,10 @@ export interface BillingState {
   isPaywallActive: boolean;
   isSubscribed: boolean;
   isTrialing: boolean;
+  // Credits system — Issue #458
+  credits: number;
+  isPaywallOpen: boolean;
+  insufficientFor: { required: number; available: number } | null;
 }
 
 const initialState: BillingState = {
@@ -57,13 +65,17 @@ const initialState: BillingState = {
   isPaywallActive: true,
   isSubscribed: false,
   isTrialing: false,
+  // Credits — Issue #458. Server ledger is the source of truth; default must not fake a balance.
+  credits: 0,
+  isPaywallOpen: false,
+  insufficientFor: null,
 };
 
 export const fetchBillingData = createAsyncThunk(
   'billing/fetchBillingData',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/billing');
+      const response = await fetch(`${API_BASE}/api/billing`, { credentials: 'include' });
       if (!response.ok) {
         throw new Error('Fehler beim Abrufen der Abrechnungsdaten');
       }
@@ -74,21 +86,84 @@ export const fetchBillingData = createAsyncThunk(
   }
 );
 
+export interface PurchaseArgs {
+  packageId: string;
+  paymentMethod?: string;
+  [key: string]: unknown;
+}
+
+export interface PurchaseResult {
+  ok?: boolean;
+  orderId?: string;
+  approvalUrl?: string;
+  redirectUrl?: string;
+  walletAddress?: string;
+  coinType?: string;
+  amountEur?: number;
+  credits?: number;
+  packageName?: string;
+  note?: string;
+  creditsAdded?: number;
+  newBalance?: number;
+  subscription?: Subscription | null;
+}
+
 export const purchasePackage = createAsyncThunk(
   'billing/purchasePackage',
-  async (packageId: string, { rejectWithValue }) => {
+  async (args: string | PurchaseArgs, { rejectWithValue }) => {
+    const payload: PurchaseArgs =
+      typeof args === 'string' ? { packageId: args } : args;
     try {
-      const response = await fetch('/api/billing/purchase', {
+      const response = await fetch(`${API_BASE}/api/billing/purchase`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packageId }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
-        throw new Error('Kauf konnte nicht abgeschlossen werden');
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || 'Kauf konnte nicht abgeschlossen werden');
       }
-      return await response.json();
-    } catch (error: any) {
-      return rejectWithValue(error.message || 'Fehler beim Kauf');
+      return (await response.json()) as PurchaseResult;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler beim Kauf';
+      return rejectWithValue(msg);
+    }
+  }
+);
+
+export const capturePayPalOrder = createAsyncThunk(
+  'billing/capturePayPalOrder',
+  async (orderId: string, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/billing/purchase/paypal/capture`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || 'PayPal Capture fehlgeschlagen');
+      }
+      return (await response.json()) as PurchaseResult;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler beim Capture';
+      return rejectWithValue(msg);
+    }
+  }
+);
+
+export const fetchEnabledPaymentMethods = createAsyncThunk(
+  'billing/fetchEnabledPaymentMethods',
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/billing/payment-methods`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as { methods: { type: string; label: string }[] };
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler';
+      return rejectWithValue(msg);
     }
   }
 );
@@ -97,8 +172,9 @@ export const cancelSubscription = createAsyncThunk(
   'billing/cancelSubscription',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/billing/cancel', {
+      const response = await fetch(`${API_BASE}/api/billing/cancel`, {
         method: 'POST',
+        credentials: 'include',
       });
       if (!response.ok) {
         throw new Error('Kündigung konnte nicht verarbeitet werden');
@@ -114,7 +190,10 @@ export const restorePurchases = createAsyncThunk(
   'billing/restorePurchases',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await fetch('/api/billing/restore', { method: 'POST' });
+      const response = await fetch(`${API_BASE}/api/billing/restore`, {
+        method: 'POST',
+        credentials: 'include',
+      });
       if (!response.ok) {
         throw new Error('Wiederherstellung fehlgeschlagen');
       }
@@ -142,6 +221,25 @@ const updateAccessState = (state: BillingState, subscription: Subscription | nul
   state.isPaywallActive = !isSubscribed || subscription.tier === 'free';
 };
 
+// Thunk: fetch user credit balance from backend — Issue #458
+export const fetchUserCredits = createAsyncThunk(
+  'billing/fetchUserCredits',
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/billing/credits`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { credits: number };
+      return data.credits;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Fehler beim Laden der Credits';
+      return rejectWithValue(msg);
+    }
+  }
+);
+
+
 const billingSlice = createSlice({
   name: 'billing',
   initialState,
@@ -154,7 +252,22 @@ const billingSlice = createSlice({
     },
     togglePaywall: (state, action: PayloadAction<boolean>) => {
       state.isPaywallActive = action.payload;
-    }
+    },
+    // Credits — Issue #458
+    deductCredits: (state, action: PayloadAction<number>) => {
+      state.credits = Math.max(0, state.credits - action.payload);
+    },
+    addCredits: (state, action: PayloadAction<number>) => {
+      state.credits += action.payload;
+    },
+    openCreditPaywall: (state, action: PayloadAction<{ required: number; available: number }>) => {
+      state.isPaywallOpen = true;
+      state.insufficientFor = action.payload;
+    },
+    closeCreditPaywall: (state) => {
+      state.isPaywallOpen = false;
+      state.insufficientFor = null;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -207,13 +320,28 @@ const billingSlice = createSlice({
       .addCase(restorePurchases.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
+      })
+      // Credits — Issue #458
+      .addCase(fetchUserCredits.fulfilled, (state, action: PayloadAction<number>) => {
+        state.credits = action.payload;
       });
   },
 });
 
-export const { resetBillingState, setBillingError, togglePaywall } = billingSlice.actions;
+export const {
+  resetBillingState,
+  setBillingError,
+  togglePaywall,
+  deductCredits,
+  addCredits,
+  openCreditPaywall,
+  closeCreditPaywall,
+} = billingSlice.actions;
 
 // Selectors
+export const selectCredits = (state: { billing: BillingState }) => state.billing.credits;
+export const selectIsPaywallOpen = (state: { billing: BillingState }) => state.billing.isPaywallOpen;
+export const selectInsufficientFor = (state: { billing: BillingState }) => state.billing.insufficientFor;
 export const selectSubscription = (state: { billing: BillingState }) => state.billing.subscription;
 export const selectIsSubscribed = (state: { billing: BillingState }) => state.billing.isSubscribed;
 export const selectIsLoading = (state: { billing: BillingState }) => state.billing.loading;
