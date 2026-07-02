@@ -66,7 +66,7 @@ afterEach(() => {
  *  Tests
  *  ---------------------------------------------------------------- */
 describe("BuilderContainer (AppControl DevChat shell)", () => {
-  /* ───────────────────────── structure / shell ───────────────────────── */
+  /* âââââââââââââââââââââââââ structure / shell âââââââââââââââââââââââââ */
   it("renders the AppControl DevChat shell structure", () => {
     render(<BuilderContainer {...baseProps()} />);
 
@@ -92,10 +92,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField()).toBeDefined();
 
     // hamburger menu button
-    expect(screen.getByLabelText("Menü")).toBeDefined();
+    expect(screen.getByLabelText("MenÃ¼")).toBeDefined();
   });
 
-  /* ─────────────────────── quiet default surface ─────────────────────── */
+  /* âââââââââââââââââââââââ quiet default surface âââââââââââââââââââââââ */
   it("keeps the default builder surface quiet and chat-first", () => {
     render(<BuilderContainer {...baseProps()} />);
 
@@ -105,10 +105,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText("Changes")).toBeNull();
     expect(screen.queryByText("Code")).toBeNull();
     expect(screen.queryByText("Terminal")).toBeNull();
-    expect(screen.queryByText(/Sovereign geführter Chat Ablauf/i)).toBeNull();
+    expect(screen.queryByText(/Sovereign gefÃ¼hrter Chat Ablauf/i)).toBeNull();
   });
 
-  /* ─────────────── initial repo + mission messages ─────────────── */
+  /* âââââââââââââââ initial repo + mission messages âââââââââââââââ */
   it("keeps DevChat content as runtime-derived messages, not demo flow", () => {
     render(<BuilderContainer {...baseProps()} />);
 
@@ -123,19 +123,19 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/simulate/i)).toBeNull();
   });
 
-  /* ───────────── suggestion chips on empty welcome screen ───────────── */
+  /* âââââââââââââ suggestion chips on empty welcome screen âââââââââââââ */
   it("shows suggestions only in empty chat state and writes them into the input", () => {
     const props = baseProps();
     render(<BuilderContainer {...props} mission="" />);
 
     expect(screen.getByText("Let's build!")).toBeDefined();
-    fireEvent.click(screen.getByText("🔒 Runtime"));
+    fireEvent.click(screen.getByText("ð Runtime"));
 
-    expect(chatField().value).toContain("Prüfe den schwächsten Ablauf");
+    expect(chatField().value).toContain("PrÃ¼fe den schwÃ¤chsten Ablauf");
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── worker route remains available when OpenHands is blocked ───────────── */
+  /* âââââââââââââ worker route remains available when OpenHands is blocked âââââââââââââ */
   it("keeps chat send available when the agent runtime is not start-ready and routes to Worker", async () => {
     const props = baseProps();
     render(<BuilderContainer {...props} openhandsReady={false} />);
@@ -158,7 +158,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── mission adoption → input synchronisation ───────────── */
+  /* âââââââââââââ mission adoption â input synchronisation âââââââââââââ */
   it("syncs externally adopted insight missions only into an untouched empty composer", () => {
     const props = baseProps();
     const { rerender } = render(<BuilderContainer {...props} mission="" />);
@@ -168,10 +168,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       "Verbessere mobile UX und Log-Fenster.",
       "",
       "Repository-Kontext:",
-      "Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.",
+      "Repo-Snapshot ist geladen und darf fÃ¼r konkrete DateiÃ¤nderungen analysiert werden.",
       "",
       "Umsetzung:",
-      "- Erzeuge echte Änderungen im passenden Codepfad.",
+      "- Erzeuge echte Ãnderungen im passenden Codepfad.",
     ].join("\n");
 
     rerender(<BuilderContainer {...props} mission={adoptedMission} />);
@@ -179,7 +179,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe("Verbessere mobile UX und Log-Fenster.");
   });
 
-  /* ───────────── duplicate-header collapse check ───────────── */
+  /* âââââââââââââ duplicate-header collapse check âââââââââââââ */
   it("does not duplicate an already analysed mission when OpenHands execution is requested", () => {
     const props = {
       ...baseProps(),
@@ -204,18 +204,18 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onStartOpenHands).toHaveBeenCalledOnce();
   });
 
-  /* ───────────── side drawer interaction ───────────── */
+  /* âââââââââââââ side drawer interaction âââââââââââââ */
   it("opens the DevChat side menu as overlay without changing the shell structure", () => {
     render(<BuilderContainer {...baseProps()} />);
 
     expect(screen.queryByText("Sovereign Studio")).toBeNull();
-    fireEvent.click(screen.getByLabelText("Menü"));
+    fireEvent.click(screen.getByLabelText("MenÃ¼"));
 
     expect(screen.getByText("Sovereign Studio")).toBeDefined();
     expect(screen.getByText(/Cloudflare Workers/i)).toBeDefined();
   });
 
-  /* ───────────── runtime source sheet interaction ───────────── */
+  /* âââââââââââââ runtime source sheet interaction âââââââââââââ */
   it("opens runtime source sheet with Cloudflare Worker as the standard LLM route", () => {
     render(<BuilderContainer {...baseProps()} openhandsReady />);
 
@@ -228,12 +228,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Runtime Quelle")).toBeDefined();
     expect(screen.getByText("Cloudflare Worker")).toBeDefined();
     expect(
-      screen.getByText("Echte Agent-Runtime für Code/Draft-PR-Aufträge"),
+      screen.getByText("Echte Agent-Runtime fÃ¼r Code/Draft-PR-AuftrÃ¤ge"),
     ).toBeDefined();
   });
 
-  /* ───────────── agent start flow (happy path) ───────────── */
-  it("starts the external agent only for explicit code or Draft-PR execution intent", () => {
+  /* âââââââââââââ agent start flow (happy path) âââââââââââââ */
+`  it
     const props = {
       ...baseProps(),
       openhandsReady: true,
@@ -255,7 +255,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
-  /* ───────────── repo not ready still allows normal Worker chat ───────────── */
+  /* âââââââââââââ repo not ready still allows normal Worker chat âââââââââââââ */
   it("shows repo status when not ready but does not block normal chat", async () => {
     const props = baseProps();
     render(<BuilderContainer {...props} repoReady={false} openhandsReady />);
@@ -263,7 +263,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
     expect(sendButton()).not.toBeDisabled();
     fireEvent.change(chatField(), {
-      target: { value: "Was brauchst du als nächstes?" },
+      target: { value: "Was brauchst du als nÃ¤chstes?" },
     });
     fireEvent.click(sendButton());
 
@@ -276,7 +276,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── repo load keeps input clean and writes to chat history ───────────── */
+  /* âââââââââââââ repo load keeps input clean and writes to chat history âââââââââââââ */
   it("loads a GitHub repo as runtime context without writing analysis into the composer", async () => {
     const props = baseProps();
     vi.stubGlobal(
@@ -310,7 +310,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── normal text after repo load uses Worker, not OpenHands ───────────── */
+  /* âââââââââââââ normal text after repo load uses Worker, not OpenHands âââââââââââââ */
   it("routes normal text after repo load through Cloudflare Worker instead of OpenHands", async () => {
     const props = {
       ...baseProps(),
@@ -328,7 +328,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       .mockResolvedValueOnce(
         jsonResponse({
           choices: [
-            { message: { content: "Repo-Frage über Worker beantwortet." } },
+            { message: { content: "Repo-Frage Ã¼ber Worker beantwortet." } },
           ],
         }),
       );
@@ -345,21 +345,21 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
 
     fireEvent.change(chatField(), {
-      target: { value: "Was ist der nächste sinnvolle Schritt?" },
+      target: { value: "Was ist der nÃ¤chste sinnvolle Schritt?" },
     });
     fireEvent.click(sendButton());
 
     expect(chatField().value).toBe("");
     await waitFor(() =>
       expect(
-        screen.getByText("Repo-Frage über Worker beantwortet."),
+        screen.getByText("Repo-Frage Ã¼ber Worker beantwortet."),
       ).toBeDefined(),
     );
     expect(props.onStartOpenHands).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  /* ───────────── streaming renders live chunks without blocking ───────────── */
+  /* âââââââââââââ streaming renders live chunks without blocking âââââââââââââ */
   it("shows streaming chunks in real-time and freezes final text after stream ends", async () => {
     vi.stubGlobal(
       "fetch",
@@ -391,7 +391,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
   });
 
-  /* ───────────── worker 500 becomes runtime diagnostic state, not blind retry ───────────── */
+  /* âââââââââââââ worker 500 becomes runtime diagnostic state, not blind retry âââââââââââââ */
   it("turns Worker HTTP 500 into a local runtime diagnostic and avoids blind repeat calls", async () => {
     const props = baseProps();
     const fetchMock = vi
@@ -417,7 +417,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     render(<BuilderContainer {...props} repoReady openhandsReady />);
 
     fireEvent.change(chatField(), {
-      target: { value: "Hast du Vorschläge für bessere UI?" },
+      target: { value: "Hast du VorschlÃ¤ge fÃ¼r bessere UI?" },
     });
     fireEvent.click(sendButton());
 
@@ -444,7 +444,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  /* ───────────── OpenHands output renders as hint list ───────────── */
+  /* âââââââââââââ OpenHands output renders as hint list âââââââââââââ */
   it("keeps OpenHands output as plain hints and not result cards", () => {
     render(
       <BuilderContainer
@@ -464,7 +464,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByLabelText(/Karten/i)).toBeNull();
   });
 
-  /* ───────────── slash command menu runtime path (#428) ───────────── */
+  /* âââââââââââââ slash command menu runtime path (#428) âââââââââââââ */
   it("shows slash command menu and runs selected command with Enter", () => {
     const props = baseProps();
     render(<BuilderContainer {...props} />);
@@ -526,7 +526,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── repo tree inspector runtime path (#430) ───────────── */
+  /* âââââââââââââ repo tree inspector runtime path (#430) âââââââââââââ */
   it("opens repo tree inspector from the loaded repo label and fills composer on file tap", async () => {
     const props = baseProps();
     vi.stubGlobal(
@@ -557,12 +557,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
-    fireEvent.click(screen.getByLabelText("Repo Inspector öffnen"));
+    fireEvent.click(screen.getByLabelText("Repo Inspector Ã¶ffnen"));
 
     expect(screen.getByTestId("repo-tree-explorer")).toBeDefined();
     fireEvent.click(screen.getByText("App.tsx"));
 
-    expect(chatField().value).toContain("Erkläre mir src/App.tsx");
+    expect(chatField().value).toContain("ErklÃ¤re mir src/App.tsx");
     expect(props.onMissionChange).not.toHaveBeenCalled();
     expect(screen.queryByTestId("repo-tree-explorer")).toBeNull();
   });
@@ -592,21 +592,21 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
-    fireEvent.click(screen.getByLabelText("Repo Datei öffnen: src/App.tsx"));
+    fireEvent.click(screen.getByLabelText("Repo Datei Ã¶ffnen: src/App.tsx"));
 
     expect(screen.getByTestId("repo-tree-explorer")).toBeDefined();
     expect(chatField().value).toBe("");
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  /* ───────────── publish state disables composer ───────────── */
+  /* âââââââââââââ publish state disables composer âââââââââââââ */
   it("shows publishing state correctly", () => {
     render(<BuilderContainer {...baseProps()} isPublishing />);
 
     expect(sendButton()).toBeDisabled();
   });
 
-  /* ───────────── Issue #429: Android quick interactions ───────────── */
+  /* âââââââââââââ Issue #429: Android quick interactions âââââââââââââ */
   it("recognizes a pasted GitHub URL with a local load hint without auto-submitting", () => {
     const props = baseProps();
     const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: "unused" } }] }));
@@ -618,7 +618,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" },
     });
 
-    expect(screen.getByText("Repo erkannt · Laden")).toBeTruthy();
+    expect(screen.getByText("Repo erkannt Â· Laden")).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
@@ -630,7 +630,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     render(<BuilderContainer {...baseProps()} />);
 
     fireEvent.contextMenu(screen.getByText("Package summary"));
-    fireEvent.click(screen.getByText("📋 Kopieren"));
+    fireEvent.click(screen.getByText("ð Kopieren"));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Package summary"));
   });
@@ -640,7 +640,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     render(<BuilderContainer {...props} />);
 
     fireEvent.contextMenu(screen.getByText("Package summary"));
-    fireEvent.click(screen.getByText("💬 Zitieren"));
+    fireEvent.click(screen.getByText("ð¬ Zitieren"));
 
     expect(chatField().value).toContain("Package summary");
     expect(props.onMissionChange).not.toHaveBeenCalled();
