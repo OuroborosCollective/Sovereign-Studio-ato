@@ -5,7 +5,7 @@
  * Shows detected skills with framework badge, lets user install each.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useSkillsStore } from '../useSkillsStore';
 import type { FoundSkill } from '../skillsApi';
 
@@ -35,34 +35,45 @@ interface Props {
   onInstalled?: (slug: string) => void;
 }
 
+function normalizeRepoInput(value: string): string {
+  return value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+}
+
 export function SkillScanPanel({ onClose, onInstalled }: Props) {
-  const { scanRepo, adaptAndInstall, scanning, scanResult, scanError } = useSkillsStore();
+  const { scanRepo, adaptAndInstall, scanning, scanResult, scanError, skills } = useSkillsStore();
 
   const [repoInput, setRepoInput] = useState('');
   const [installing, setInstalling] = useState<string | null>(null);
   const [installMsg, setInstallMsg] = useState<Record<string, string>>({});
-  const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
+
+  const cleanRepo = normalizeRepoInput(repoInput);
+  const installedPaths = useMemo(
+    () => new Set(
+      skills
+        .filter((skill) => skill.source_repo === cleanRepo)
+        .map((skill) => skill.source_path),
+    ),
+    [cleanRepo, skills],
+  );
 
   const handleScan = async () => {
     setErr(null);
-    const clean = repoInput.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
-    const [owner, repo] = clean.split('/');
+    const [owner, repo] = cleanRepo.split('/');
     if (!owner || !repo) { setErr('Format: owner/repo oder GitHub-URL'); return; }
     try { await scanRepo(owner, repo); }
     catch (e) { setErr((e as Error).message); }
   };
 
   const handleInstall = async (found: FoundSkill) => {
-    const clean = repoInput.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
-    const [owner, repo] = clean.split('/');
+    const [owner, repo] = cleanRepo.split('/');
+    if (!owner || !repo) { setErr('Format: owner/repo oder GitHub-URL'); return; }
     setInstalling(found.path);
     setErr(null);
     try {
       const sk = await adaptAndInstall(owner, repo, found, (msg) =>
         setInstallMsg((m) => ({ ...m, [found.path]: msg })),
       );
-      setInstalled((s) => new Set(s).add(found.path));
       onInstalled?.(sk.slug);
     } catch (e) {
       setErr(`${found.path}: ${(e as Error).message}`);
@@ -144,49 +155,53 @@ export function SkillScanPanel({ onClose, onInstalled }: Props) {
               </div>
             )}
 
-            {scanResult.found.map((found) => (
-              <div
-                key={found.path}
-                style={{
-                  background: C.bg, borderRadius: 12, border: `1px solid ${C.border}`,
-                  padding: 12, display: 'flex', flexDirection: 'column', gap: 6,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{
-                    background: FRAMEWORK_COLORS[found.framework] || FRAMEWORK_COLORS.unknown,
-                    color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 7px',
-                    borderRadius: 6, textTransform: 'uppercase', letterSpacing: 0.5,
-                  }}>
-                    {found.framework}
-                  </span>
-                  <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{found.name}</span>
-                </div>
-                <div style={{ color: C.muted, fontSize: 11, fontFamily: 'monospace' }}>{found.path}</div>
-                {found.preview && (
-                  <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.4 }}>
-                    {found.preview.slice(0, 120)}{found.preview.length > 120 ? '…' : ''}
-                  </div>
-                )}
-                {installMsg[found.path] && (
-                  <div style={{ color: C.accent, fontSize: 11 }}>{installMsg[found.path]}</div>
-                )}
-                <button
-                  onClick={() => handleInstall(found)}
-                  disabled={installing === found.path || installed.has(found.path)}
+            {scanResult.found.map((found) => {
+              const isInstalled = installedPaths.has(found.path);
+
+              return (
+                <div
+                  key={found.path}
                   style={{
-                    background: installed.has(found.path) ? `${C.accent}33` : C.accent,
-                    border: 'none', borderRadius: 8, padding: '6px 14px',
-                    color: installed.has(found.path) ? C.accent : '#000',
-                    fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                    alignSelf: 'flex-start',
-                    opacity: installing === found.path ? 0.7 : 1,
+                    background: C.bg, borderRadius: 12, border: `1px solid ${C.border}`,
+                    padding: 12, display: 'flex', flexDirection: 'column', gap: 6,
                   }}
                 >
-                  {installed.has(found.path) ? '✓ Installiert' : installing === found.path ? '…' : '+ Installieren'}
-                </button>
-              </div>
-            ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      background: FRAMEWORK_COLORS[found.framework] || FRAMEWORK_COLORS.unknown,
+                      color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 7px',
+                      borderRadius: 6, textTransform: 'uppercase', letterSpacing: 0.5,
+                    }}>
+                      {found.framework}
+                    </span>
+                    <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{found.name}</span>
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 11, fontFamily: 'monospace' }}>{found.path}</div>
+                  {found.preview && (
+                    <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.4 }}>
+                      {found.preview.slice(0, 120)}{found.preview.length > 120 ? '…' : ''}
+                    </div>
+                  )}
+                  {installMsg[found.path] && (
+                    <div style={{ color: C.accent, fontSize: 11 }}>{installMsg[found.path]}</div>
+                  )}
+                  <button
+                    onClick={() => handleInstall(found)}
+                    disabled={installing === found.path || isInstalled}
+                    style={{
+                      background: isInstalled ? `${C.accent}33` : C.accent,
+                      border: 'none', borderRadius: 8, padding: '6px 14px',
+                      color: isInstalled ? C.accent : '#000',
+                      fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                      alignSelf: 'flex-start',
+                      opacity: installing === found.path ? 0.7 : 1,
+                    }}
+                  >
+                    {isInstalled ? '✓ Installiert' : installing === found.path ? '…' : '+ Installieren'}
+                  </button>
+                </div>
+              );
+            })}
           </>
         )}
       </div>
