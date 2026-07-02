@@ -174,10 +174,11 @@ function maskSecrets(text: string): string {
   // Google
   masked = masked.replace(/AIza[a-zA-Z0-9_-]{26,60}/g, 'AIza****');
   // AI keys
-  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,120}/g, 'sk-or-v1-****');
-  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,120}/g, 'sk-proj-****');
-  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,120}/g, 'sk-****');
-  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,120}/g, 'gsk_****');
+  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,}/g, 'sk-or-v1-****');
+  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,}/g, 'sk-proj-****');
+  masked = masked.replace(/sk-ant-[a-zA-Z0-9_-]{20,}/g, 'sk-ant-****');
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-****');
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,}/g, 'gsk_****');
   // HuggingFace, Together AI and Pollinations AI
   masked = masked.replace(/hf_[a-zA-Z0-9]{8,100}/g, 'hf_****');
   masked = masked.replace(/together_[a-zA-Z0-9]{8,100}/g, 'together_****');
@@ -186,7 +187,7 @@ function maskSecrets(text: string): string {
   masked = masked.replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer ****');
   // Label-based
   masked = masked.replace(
-    /(["']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
+    /(["']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
     '$1$2$1$3****',
   );
   return masked;
