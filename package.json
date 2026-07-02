@@ -29,7 +29,7 @@
     "test:release-gate": "pnpm run test:smoke && pnpm run test:integration",
     "test:unit": "pnpm run test:smoke",
     "test:integration": "vitest run src/features/product/components/ChatSidebar.test.tsx src/features/product/hooks/useProductMagic.sequential.test.ts src/features/product/runtime/sequentialRuntimeGuard.test.ts",
-    "test:e2e": "tsx sovereign-studio-rn/e2e/run-e2e.ts",
+    "test:e2e": "node scripts/sovereign-e2e-smoke.mjs",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
     "postinstall": "node patch_capacitor.mjs",
