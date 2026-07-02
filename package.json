@@ -38,8 +38,8 @@
     "verify:release": "pnpm run verify",
     "hardcode:scan": "node scripts/hardcode-scanner.mjs --all",
     "hardcode:scan:src": "node scripts/hardcode-scanner.mjs src",
-    "smoke:ki-coach": "tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts",
-    "smoke:ki-coach:headed": "HEADED=true tsx sovereign-studio-rn/e2e/ki-coach/run-smoke.ts",
+    "smoke:ki-coach": "pnpm run test:e2e",
+    "smoke:ki-coach:headed": "pnpm run test:e2e",
     "apk:clean-release": "pnpm run android:clean && pnpm run build:apk"
   },
   "dependencies": {
