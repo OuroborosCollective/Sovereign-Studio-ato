@@ -17,6 +17,8 @@
 
 name: "⚠️ QUARANTINED: Zero-Touch Master (DO NOT RUN)"
 
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
