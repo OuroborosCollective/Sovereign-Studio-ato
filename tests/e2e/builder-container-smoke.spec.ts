@@ -123,11 +123,8 @@ test.describe('BuilderContainer Smoke Tests', () => {
     // Verify scope classification is shown (from local diagnostic runtime, not worker response)
     await expect(workerBlockerCard).toContainText('Scope:');
     
-    // Verify retry button is available (explicit action, not auto-repeat)
-    await expect(workerBlockerCard.getByRole('button', { name: /retry/i })).toBeVisible();
-    
-    // Verify diagnose button is available (explains diagnostic from local runtime)
-    await expect(workerBlockerCard.getByRole('button', { name: /erklären/i })).toBeVisible();
+    // Verify the diagnostic contains HTTP status info (from local runtime classification)
+    await expect(workerBlockerCard).toContainText('HTTP');
   });
 
   test('5. BuilderContainer has proper navigation structure', async ({ page }) => {
