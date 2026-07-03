@@ -272,6 +272,49 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
   });
 
+  it("retries the original Worker request after a diagnostic follow-up", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
+      jsonResponse({
+        ok: true,
+        provider: "sovereign-llm-bridge",
+        gateway: "gatter",
+        model: "cerebras/zai-glm-4.7",
+        upstreamConfigured: true,
+        secretConfigured: true,
+      }),
+      jsonResponse({ choices: [{ message: { content: "Retry beantwortet." } }] }),
+    );
+
+    render(<BuilderContainer {...baseProps()} repoReady openhandsReady />);
+
+    fireEvent.change(chatField(), {
+      target: { value: "Hast du Vorschläge für bessere UI?" },
+    });
+    fireEvent.click(sendButton());
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i),
+      ).toBeDefined(),
+    );
+
+    fireEvent.change(chatField(), { target: { value: "Warum?" } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i).length,
+      ).toBeGreaterThanOrEqual(2),
+    );
+
+    fireEvent.click(screen.getAllByText("Retry")[0]);
+
+    await waitFor(() => expect(screen.getByText("Retry beantwortet.")).toBeDefined());
+    expect(screen.queryByText(/OpenHands für Code-Auftrag/i)).toBeNull();
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
+  });
+
   it("keeps OpenHands output as plain hints and not result cards", () => {
     render(<BuilderContainer {...baseProps()} openhandsReady openhandsJob={{ status: "running", openHandsId: "conv_123", changedFiles: ["src/App.tsx"], events: [] }} />);
     expect(screen.getByText(/OpenHands ID/i)).toBeDefined();
@@ -380,8 +423,8 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
-  it("keeps the Android 393px shell width contract", () => {
+  it("uses a responsive Android tablet shell width instead of a hard phone-only cap", () => {
     render(<BuilderContainer {...baseProps()} />);
-    expect(screen.getByTestId("builder-container")).toHaveStyle({ maxWidth: "393px" });
+    expect(screen.getByTestId("builder-container").style.maxWidth).toBe("min(100vw, 860px)");
   });
 });

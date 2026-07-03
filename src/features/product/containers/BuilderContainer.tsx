@@ -220,7 +220,7 @@ import {
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-const MAX_W = 393;
+const BUILDER_SHELL_MAX_WIDTH = "min(100vw, 860px)";
 const CUTE_THINKING_FRAME_MS = 1100;
 const CUTE_IDLE_FRAME_MS = 1450;
 const builderContainerContract = getSovereignContainerContract("builder");
@@ -2317,6 +2317,7 @@ export function BuilderContainer({
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] =
     useState<WorkerRuntimeBlocker | null>(null);
+  const [lastWorkerRequestMessage, setLastWorkerRequestMessage] = useState<string | null>(null);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
   const ignoreNextMissionSyncRef = useRef(false);
@@ -3169,6 +3170,7 @@ export function BuilderContainer({
       });
     }
 
+    setLastWorkerRequestMessage(submittedText);
     setChatResponseBusy(true);
     setStreamingText("");
 
@@ -3352,7 +3354,7 @@ export function BuilderContainer({
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
-        maxWidth: MAX_W,
+        maxWidth: BUILDER_SHELL_MAX_WIDTH,
         margin: "0 auto",
         height: "100dvh",
         display: "flex",
@@ -3415,11 +3417,7 @@ export function BuilderContainer({
       {workerBlocker && (
         <WorkerDegradedBanner
           blocker={workerBlocker}
-          userMessage={
-            chatHistory.length > 0
-              ? chatHistory[chatHistory.length - 1].text
-              : undefined
-          }
+          userMessage={lastWorkerRequestMessage ?? undefined}
           onRetryWithMessage={(msg) => {
             setWorkerBlocker(null);
             addLog("info", "Worker retry from banner", "router");
@@ -3557,11 +3555,7 @@ export function BuilderContainer({
                   onOpenHandsInstead={(msg) => {
                     startAgentFromText(msg);
                   }}
-                  userMessage={
-                    chatHistory.length > 0
-                      ? chatHistory[chatHistory.length - 1].text
-                      : undefined
-                  }
+                  userMessage={lastWorkerRequestMessage ?? undefined}
                 />
               )}
 
