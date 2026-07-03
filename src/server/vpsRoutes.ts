@@ -16,8 +16,15 @@
  *   GET  /api/vps/tree       → { entries: DirEntry[] }
  *   POST /api/vps/disconnect → { ok }
  *
- * Issue #454
+ * Issue #454, #476
  */
+
+// ── Runtime-Flag ──────────────────────────────────────────────────────────────
+// Solange kein echtes SSH2-Backend existiert, werden alle VPS-Routen
+// geschlossen (fail-closed). Das verhindert einen Fake-Success-Path, bei dem
+// die UI einen verbundenen Zustand zeigt, obwohl keine echte SSH-Verbindung
+// existiert.
+const VPS_BACKEND_ENABLED = false;
 
 // ── Typen ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +46,9 @@ const sessions = new Map<string, VpsSession>();
  * POST /api/vps/connect
  * Body: { host, port, username, authMethod, password?, privateKey? }
  * Response: { sessionId }
+ *
+ * FAIL-CLOSED: Solange VPS_BACKEND_ENABLED === false, wird ein 503 mit
+ * passender Fehlermeldung zurückgegeben. Das verhindert einen Fake-Success-Path.
  */
 export async function handleVpsConnect(req: ConnectRequest, res: ExpressResponse) {
   const { host, port = 22, username, authMethod, password, privateKey } = req.body as {
@@ -58,6 +68,18 @@ export async function handleVpsConnect(req: ConnectRequest, res: ExpressResponse
   }
   if (authMethod === 'key' && !privateKey) {
     return res.status(400).json({ error: 'SSH-Key fehlt' });
+  }
+
+  // ── Fail-Closed Gate ────────────────────────────────────────────────────────
+  // Bis ein echtes SSH2-Backend existiert, wird keine Session erzeugt.
+  // Die UI darf keinen verbundenen Zustand zeigen, wenn keine echte
+  // SSH-Verbindung existiert (Issue #476).
+  if (!VPS_BACKEND_ENABLED) {
+    return res.status(503).json({
+      error: 'VPS-Backend nicht verfügbar',
+      detail: 'SSH2-Verbindung ist noch nicht implementiert. Bitte zuerst das Backend aktivieren.',
+      code: 'VPS_BACKEND_DISABLED',
+    });
   }
 
   // TODO: ssh2-Verbindung aufbauen
@@ -91,6 +113,8 @@ export async function handleVpsConnect(req: ConnectRequest, res: ExpressResponse
  * Body: { sessionId, command }
  * Response: { stdout, stderr, exitCode }
  *
+ * FAIL-CLOSED: Solange VPS_BACKEND_ENABLED === false, wird 503 zurückgegeben.
+ *
  * SICHERHEIT:
  *   - Erlaubt nur explizit vom User bestätigte Befehle.
  *   - Kein Auto-Execute — die Frontend-Komponente erzwingt Bestätigung.
@@ -102,6 +126,16 @@ export async function handleVpsConnect(req: ConnectRequest, res: ExpressResponse
  */
 export async function handleVpsExec(req: ConnectRequest, res: ExpressResponse) {
   const { sessionId, command } = req.body as { sessionId: string; command: string };
+
+  // ── Fail-Closed Gate ────────────────────────────────────────────────────────
+  if (!VPS_BACKEND_ENABLED) {
+    return res.status(503).json({
+      error: 'VPS-Backend nicht verfügbar',
+      detail: 'SSH2-Verbindung ist noch nicht implementiert.',
+      code: 'VPS_BACKEND_DISABLED',
+    });
+  }
+
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: 'Session nicht gefunden oder abgelaufen' });
   if (!command?.trim()) return res.status(400).json({ error: 'Befehl fehlt' });
@@ -126,9 +160,21 @@ export async function handleVpsExec(req: ConnectRequest, res: ExpressResponse) {
 /**
  * GET /api/vps/tree?sessionId=...&path=...
  * Response: { entries: Array<{ name, type, size?, permissions? }> }
+ *
+ * FAIL-CLOSED: Solange VPS_BACKEND_ENABLED === false, wird 503 zurückgegeben.
  */
 export async function handleVpsTree(req: ConnectRequest, res: ExpressResponse) {
   const { sessionId, path = '/' } = req.query as { sessionId: string; path?: string };
+
+  // ── Fail-Closed Gate ────────────────────────────────────────────────────────
+  if (!VPS_BACKEND_ENABLED) {
+    return res.status(503).json({
+      error: 'VPS-Backend nicht verfügbar',
+      detail: 'SSH2-Verbindung ist noch nicht implementiert.',
+      code: 'VPS_BACKEND_DISABLED',
+    });
+  }
+
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: 'Session nicht gefunden' });
 
