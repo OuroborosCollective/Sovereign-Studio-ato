@@ -69,6 +69,7 @@ import { DraftPrCard } from "../components/DraftPrCard";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
+import { SecurityBlockCard } from "../components/SecurityBlockCard";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
@@ -123,7 +124,7 @@ import {
   canPerformGitHubWrite,
   type GitHubAccessSnapshot,
 } from "../runtime/githubAccessRuntime";
-import { evaluateInputPolicy } from "../runtime/secureInputGuard";
+import { evaluateInputPolicy, createSecurityCardDisplay } from "../runtime/secureInputGuard";
 import { checkChatClaim } from "../runtime/chatClaimGuard";
 import {
   createIdleSnapshot,
@@ -2703,6 +2704,12 @@ export function BuilderContainer({
   const [conditions, setConditions] =
     useState<Partial<Record<ModuleId, ModuleCond[]>>>(INIT_CONDITIONS);
   const [confidence, setConfidence] = useState(0.12);
+  // ── Gap 3: Security card state — shown inline when a secret is detected in input
+  const [securityCardPending, setSecurityCardPending] = useState<{
+    title: string; text: string; hint: string; buttonLabel: string;
+  } | null>(null);
+  // When user taps "GitHub-Zugang öffnen" in SecurityBlockCard, force GitHubAccessCard visible
+  const [showGitHubAccessOverride, setShowGitHubAccessOverride] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
   const [openWorkbenchSlot, setOpenWorkbenchSlot] = useState<WorkbenchStatusSlotId | null>(null);
@@ -3355,10 +3362,9 @@ export function BuilderContainer({
     // ── Issue #445: SecureInputGuard — block secrets before any storage or LLM path
     const securePolicy = evaluateInputPolicy(submittedText);
     if (securePolicy.shouldBlock) {
-      appendChatLine({
-        role: "assistant",
-        text: securePolicy.userMessage,
-      });
+      // Show security card with "GitHub-Zugang öffnen" button — never store token or route to LLM
+      const card = createSecurityCardDisplay(securePolicy);
+      if (card) setSecurityCardPending(card);
       addLog("warn", `SecureInputGuard: ${securePolicy.kind ?? "secret"} detected and blocked`, "router");
       return;
     }
@@ -3490,8 +3496,15 @@ export function BuilderContainer({
       return;
     }
 
-    // ── Executor status questions: answer locally from agentWorkSnapshot — never forward to Worker
-    if (isExecutorStatusQuestion(submittedText)) {
+    // ── Executor status questions: answer locally — but only when executor is actually involved.
+    // Guard: if workerBlocker is active and no OpenHands job is running, "warum passiert nichts?"
+    // is a Worker-Diagnose question, not an executor status question — route to workerBlocker handler.
+    const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
+      (openhandsJob != null && openhandsJob.status !== 'idle');
+    // Gap 2: if workerBlocker is active AND executor is idle, "warum passiert nichts?" etc.
+    // must be answered as Worker-Diagnose (not executor status). Without a workerBlocker,
+    // even an idle executor should answer honestly ("Nein, kein Auftrag gestartet").
+    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
       const statusAnswer = buildExecutorStatusAnswer({
         agentState: agentWorkSnapshot.state,
         openhandsStatus: openhandsJob?.status,
@@ -3532,25 +3545,9 @@ export function BuilderContainer({
       addLog("info", "Worker retry requested by user", "router");
     }
 
-    // ── #458 Credit guard — charge before LLM call ────────────────────────
-    const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
-    const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
-    if (!_canProceed) {
-      addLog("warn", "Credits nicht ausreichend — Paywall geöffnet", "billing");
-      return;
-    }
-
-    const d = palRoute(
-      submittedText,
-      chatHistory.length + 1,
-      chatRepoSnapshot?.fileCount ?? 0,
-      palDecisions,
-    );
-    setPalDecisions((prev) => [...prev.slice(-99), d]);
-    setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
-    addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
-
-    // ── #458 + Delegation: Check for OpenHands execution or delegated execution
+    // ── #458 + Delegation: Execution intent routing — BEFORE credit guard.
+    // OpenHands execution does not go through the Worker Chat (gemini-2.0-flash) path;
+    // charging LLM credits for an executor handoff is incorrect.
     const isExecutionIntent = isOpenHandsExecutionIntent(submittedText);
     const isDelegatedExecution = isDelegatedOpenHandsExecutionIntent(submittedText, chatHistory);
 
@@ -3560,6 +3557,16 @@ export function BuilderContainer({
           role: "assistant",
           text: "Ausführungsauftrag erkannt.\nIch starte OpenHands Executor.\nErgebnis bleibt Draft PR, kein Auto-Merge.",
         });
+        // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.
+        const _repo = chatRepoSnapshot
+          ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
+          : 'unknown/repo';
+        setAgentWorkSnapshot((prev) =>
+          prev.state === 'idle'
+            ? transitionIntentDetected(prev, _repo, chatRepoSnapshot?.branch ?? 'main')
+            : prev,
+        );
+        addLog('info', `Execution intent · type=${isDelegatedExecution ? 'delegated' : 'explicit'} · repo=${_repo}`, 'router');
         startAgentFromText(submittedText);
         return;
       }
@@ -3578,6 +3585,24 @@ export function BuilderContainer({
       addLog("warn", `Execution blocked: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
       return;
     }
+
+    // ── #458 Credit guard — only for Worker Chat path (not OpenHands execution) ────────────
+    const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
+    const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
+    if (!_canProceed) {
+      addLog("warn", "Credits nicht ausreichend — Paywall geöffnet", "billing");
+      return;
+    }
+
+    const d = palRoute(
+      submittedText,
+      chatHistory.length + 1,
+      chatRepoSnapshot?.fileCount ?? 0,
+      palDecisions,
+    );
+    setPalDecisions((prev) => [...prev.slice(-99), d]);
+    setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
+    addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
 
     setLastWorkerRequestMessage(submittedText);
     setChatResponseBusy(true);
@@ -3901,7 +3926,7 @@ export function BuilderContainer({
             flexDirection: "column",
           }}
         >
-          {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0 ? (
+          {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0 && !securityCardPending ? (
             <WelcomeScreen
               onIdea={(opt) => setWishText((c) => appendOption(c, opt))}
             />
@@ -3955,8 +3980,23 @@ export function BuilderContainer({
                 />
               )}
 
+              {/* ── Gap 3: Security Block Card — shown when secret detected in chat input */}
+              {securityCardPending && (
+                <SecurityBlockCard
+                  title={securityCardPending.title}
+                  text={securityCardPending.text}
+                  hint={securityCardPending.hint}
+                  buttonLabel={securityCardPending.buttonLabel}
+                  onOpenSecureAccess={() => {
+                    setShowGitHubAccessOverride(true);
+                    setSecurityCardPending(null);
+                  }}
+                  onDismiss={() => setSecurityCardPending(null)}
+                />
+              )}
+
               {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
-              {!githubWriteAllowed && (openhandsJob?.status === 'running' || isPublishing) && (
+              {!githubWriteAllowed && (openhandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
                 <GitHubAccessCard
                   snapshot={githubAccessState}
                   onProvideToken={(token) => {

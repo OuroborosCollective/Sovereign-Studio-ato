@@ -494,27 +494,33 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   // ── Phase 1 spec: Executor / delegation / security tests ────────────────────
 
-  it("blocks GitHub PAT from chat, shows security message, never stores token in chat history", async () => {
+  it("blocks GitHub PAT from chat, shows SecurityBlockCard with action button, never stores token in chat", async () => {
     render(<BuilderContainer {...baseProps()} />);
     const pat = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01";
     fireEvent.change(chatField(), { target: { value: pat } });
     fireEvent.click(sendButton());
+    // SecurityBlockCard renders the card title from evaluateInputPolicy
     await waitFor(() =>
-      expect(screen.getByText(/sicheres Zugangsfeld/i)).toBeDefined(),
+      expect(screen.getByText(/Sicherer GitHub-Zugang erkannt/i)).toBeDefined(),
     );
+    // Must show the secure-access action button
+    expect(screen.getByText(/GitHub-Zugang öffnen/i)).toBeDefined();
     // Token must not appear in rendered chat bubbles
     expect(screen.queryByText(pat)).toBeNull();
   });
 
-  it("security card message never instructs user to enter token in chat", async () => {
+  it("security card never instructs user to enter token in chat", async () => {
     render(<BuilderContainer {...baseProps()} />);
     fireEvent.change(chatField(), { target: { value: "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01" } });
     fireEvent.click(sendButton());
     await waitFor(() =>
-      expect(screen.getByText(/sicheres Zugangsfeld/i)).toBeDefined(),
+      expect(screen.getByText(/Sicherer GitHub-Zugang erkannt/i)).toBeDefined(),
     );
     // Must NOT say "Token im Kanal eingeben"
     expect(screen.queryByText(/Token im Kanal/i)).toBeNull();
+    // Must NOT say "sicheres Zugangsfeld" as a plain chatline (old wording)
+    // Card button exists instead
+    expect(screen.getByText(/GitHub-Zugang öffnen/i)).toBeDefined();
   });
 
   it("shows OpenHands started message on execution intent when executor is ready", async () => {
@@ -562,10 +568,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
   });
 
-  it("answers executor status question locally when executor is idle (no job running)", async () => {
+  it("answers executor status question locally when executor is idle (no job running, no workerBlocker)", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ choices: [{ message: { content: "Worker reply" } }] }),
     );
+    // No workerBlocker → executor status question still answered locally (honest idle state)
     render(<BuilderContainer {...baseProps()} openhandsReady />);
     fireEvent.change(chatField(), { target: { value: "ist er fertig?" } });
     fireEvent.click(sendButton());
