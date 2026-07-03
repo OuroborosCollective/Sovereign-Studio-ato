@@ -45,9 +45,9 @@ describe('maskSecrets', () => {
     expect(maskSecrets(text)).toBe('Authorization: Bearer ****');
   });
 
-  it('masks AI provider style keys', () => {
+  it('masks Anthropic style keys', () => {
     const secret = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz01';
-    expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-****');
+    expect(maskSecrets(`Using ${secret}`)).toBe('Using sk-ant-****');
   });
 
   it('masks Groq style keys', () => {
@@ -76,6 +76,7 @@ describe('maskSecrets', () => {
     expect(maskSecrets('token=ghp_12345')).toBe('token=****');
     expect(maskSecrets('api_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('api_key=****');
     expect(maskSecrets('access-token=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('access-token=****');
+    expect(maskSecrets('private_key=abcdefghijklmnopqrstuvwxyz1234567890')).toBe('private_key=****');
     expect(maskSecrets('secret: somevalue')).toBe('secret: ****');
   });
 

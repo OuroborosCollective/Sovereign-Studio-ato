@@ -19,6 +19,7 @@ export function maskSecrets(text: string): string {
   // AI provider style keys. Do not cap these matches: long credentials must be consumed up to a delimiter.
   masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,}/g, 'sk-or-v1-****');
   masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,}/g, 'sk-proj-****');
+  masked = masked.replace(/sk-ant-[a-zA-Z0-9_-]{20,}/g, 'sk-ant-****');
   masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-****');
   masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,}/g, 'gsk_****');
 
@@ -32,7 +33,7 @@ export function maskSecrets(text: string): string {
 
   // Label-based credentials in common logs or error strings (supports optional quotes and base64 characters)
   masked = masked.replace(
-    /(["']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
+    /(["']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
     '$1$2$1$3****',
   );
 
