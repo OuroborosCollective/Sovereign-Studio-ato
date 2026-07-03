@@ -79,7 +79,7 @@ describe('AgentEventStream', () => {
       />,
     );
 
-    expect(screen.getByText('1 Datei')).toBeTruthy();
+    expect(screen.getByText('Dateien: 1')).toBeTruthy();
     expect(screen.getByText('AgentEventStream.tsx')).toBeTruthy();
   });
 
