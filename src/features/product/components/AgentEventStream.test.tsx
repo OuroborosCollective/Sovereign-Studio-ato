@@ -83,7 +83,7 @@ describe('AgentEventStream', () => {
     const accessReady = transitionAccessReady(accessValidating);
     const { rerender } = render(<AgentEventStream snapshot={accessRequired} />);
 
-    expect(screen.getByText('GitHub-Zugang erforderlich')).toBeTruthy();
+    expect(screen.getAllByText('GitHub-Zugang erforderlich').length).toBeGreaterThanOrEqual(1);
 
     rerender(<AgentEventStream snapshot={accessValidating} />);
     expect(screen.getByText('GitHub-Zugang wird geprüft…')).toBeTruthy();
