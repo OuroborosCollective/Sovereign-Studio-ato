@@ -17,8 +17,6 @@ import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
 import type { OpenHandsJobSnapshot, OpenHandsRuntimeEvent } from "../runtime/openhandsEnterpriseRuntime";
 
-// ─── types ──────────────────────────────────────────────────────────────────
-
 interface StreamEvent {
   readonly id: string;
   readonly ts: number;
@@ -26,7 +24,7 @@ interface StreamEvent {
   readonly iconColor: string;
   readonly label: string;
   readonly detail?: string;
-  readonly isActive: boolean;  // pulsing lamp on last item while running
+  readonly isActive: boolean;
 }
 
 export interface AgentEventStreamProps {
@@ -37,36 +35,44 @@ export interface AgentEventStreamProps {
   readonly onOpenFile?: (path: string) => void;
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-const ACTIVE_STATES: ReadonlySet<AgentWorkState> = new Set([
-  'intent_detected', 'executor_starting', 'executor_running',
+const EXECUTOR_ACTIVE_STATES: ReadonlySet<AgentWorkState> = new Set([
+  'executor_starting', 'executor_running',
   'branch_created', 'commit_created', 'checks_running',
-  'access_validating', 'access_ready',
 ]);
 
 function isExecutorActive(state: AgentWorkState): boolean {
-  return ACTIVE_STATES.has(state);
+  return EXECUTOR_ACTIVE_STATES.has(state);
+}
+
+function isTerminalState(state: AgentWorkState): boolean {
+  return state === 'draft_pr_ready' || state === 'blocked' || state === 'failed';
 }
 
 function stateIcon(state: AgentWorkState): { icon: string; color: string } {
-  if (state === 'draft_pr_ready')  return { icon: '✓', color: C.green };
-  if (state === 'failed')          return { icon: '✗', color: C.rose };
-  if (state === 'blocked')         return { icon: '⊘', color: C.rose };
+  if (state === 'draft_pr_ready') return { icon: '✓', color: C.green };
+  if (state === 'failed') return { icon: '✗', color: C.rose };
+  if (state === 'blocked') return { icon: '⊘', color: C.rose };
   if (state === 'intent_detected') return { icon: '⦿', color: C.amber };
+  if (state === 'access_required') return { icon: '⊘', color: C.amber };
+  if (state === 'access_validating') return { icon: '↻', color: C.amber };
+  if (state === 'access_ready') return { icon: '✓', color: C.amber };
   if (state === 'executor_starting') return { icon: '↗', color: C.sky };
-  if (isExecutorActive(state))     return { icon: '→', color: C.sky };
+  if (isExecutorActive(state)) return { icon: '→', color: C.sky };
   return { icon: '·', color: C.textSub };
 }
 
 function levelIcon(level: OpenHandsRuntimeEvent['level']): { icon: string; color: string } {
   if (level === 'success') return { icon: '✓', color: C.green };
-  if (level === 'error')   return { icon: '✗', color: C.rose };
+  if (level === 'error') return { icon: '✗', color: C.rose };
   if (level === 'warning') return { icon: '⚠', color: C.amber };
   return { icon: '→', color: C.sky };
 }
 
-/** Merge state-machine events and real backend events into one chronological list. */
+function visibleDetail(detail: string | undefined): string | undefined {
+  if (!detail) return undefined;
+  return detail.includes('unknown/repo') ? undefined : detail;
+}
+
 function buildStream(
   snapshot: AgentWorkSnapshot,
   job: OpenHandsJobSnapshot | null | undefined,
@@ -74,7 +80,6 @@ function buildStream(
 ): StreamEvent[] {
   const events: StreamEvent[] = [];
 
-  // State-machine events (agentWorkSnapshot) — these always exist
   for (const e of snapshot.events) {
     const { icon, color } = stateIcon(e.state);
     events.push({
@@ -83,12 +88,11 @@ function buildStream(
       icon,
       iconColor: color,
       label: e.label,
-      detail: e.detail,
+      detail: visibleDetail(e.detail),
       isActive: false,
     });
   }
 
-  // Real backend events from OpenHands (richer, overlaid on top)
   if (job?.events && job.events.length > 0) {
     for (const e of job.events) {
       const { icon, color } = levelIcon(e.level);
@@ -104,13 +108,11 @@ function buildStream(
     }
   }
 
-  // Sort chronologically and deduplicate by id
   const seen = new Set<string>();
   const sorted = events
     .filter((e) => { if (seen.has(e.id)) return false; seen.add(e.id); return true; })
     .sort((a, b) => a.ts - b.ts);
 
-  // Mark only the final entry as active (pulsing) when executor is running
   if (isActive && sorted.length > 0) {
     const last = sorted[sorted.length - 1];
     sorted[sorted.length - 1] = { ...last, isActive: true };
@@ -127,20 +129,9 @@ function formatTime(ts: number): string {
   }
 }
 
-// ─── sub-components ──────────────────────────────────────────────────────────
-
 function EventRow({ event }: { event: StreamEvent }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 8,
-        padding: '4px 0',
-        opacity: event.isActive ? 1 : 0.78,
-      }}
-    >
-      {/* Icon / lamp */}
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0', opacity: event.isActive ? 1 : 0.78 }}>
       <span
         style={{
           flexShrink: 0,
@@ -162,45 +153,18 @@ function EventRow({ event }: { event: StreamEvent }) {
         {event.icon}
       </span>
 
-      {/* Label + detail */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <span
-          style={{
-            fontSize: 12.5,
-            color: event.isActive ? C.text : C.textSub,
-            fontWeight: event.isActive ? 500 : 400,
-            wordBreak: 'break-word',
-          }}
-        >
+        <span style={{ fontSize: 12.5, color: event.isActive ? C.text : C.textSub, fontWeight: event.isActive ? 500 : 400, wordBreak: 'break-word' }}>
           {event.label}
         </span>
         {event.detail && (
-          <span
-            style={{
-              display: 'block',
-              fontSize: 10.5,
-              color: C.textMuted,
-              fontFamily: 'monospace',
-              marginTop: 1,
-              wordBreak: 'break-all',
-            }}
-          >
+          <span style={{ display: 'block', fontSize: 10.5, color: C.textMuted, fontFamily: 'monospace', marginTop: 1, wordBreak: 'break-all' }}>
             {event.detail}
           </span>
         )}
       </div>
 
-      {/* Timestamp */}
-      <span
-        style={{
-          flexShrink: 0,
-          fontSize: 10,
-          color: C.textMuted,
-          fontVariantNumeric: 'tabular-nums',
-          alignSelf: 'flex-start',
-          marginTop: 3,
-        }}
-      >
+      <span style={{ flexShrink: 0, fontSize: 10, color: C.textMuted, fontVariantNumeric: 'tabular-nums', alignSelf: 'flex-start', marginTop: 3 }}>
         {formatTime(event.ts)}
       </span>
     </div>
@@ -234,25 +198,42 @@ function FileBadge({ path, onClick }: { path: string; onClick?: () => void }) {
   );
 }
 
-// ─── main component ──────────────────────────────────────────────────────────
+function headerLabelFor(snapshot: AgentWorkSnapshot, job: OpenHandsJobSnapshot | null | undefined): string {
+  if (snapshot.state === 'draft_pr_ready') return 'Status: Draft PR bereit';
+  if (snapshot.state === 'blocked') return 'Status: Executor blockiert';
+  if (snapshot.state === 'failed') return 'Status: Executor fehlgeschlagen';
+  if (job?.status === 'running') return 'OpenHands arbeitet…';
+  if (snapshot.state === 'executor_starting' || job?.status === 'queued') return 'OpenHands startet…';
+  if (snapshot.state === 'access_required') return 'GitHub-Zugang erforderlich';
+  if (snapshot.state === 'access_validating') return 'GitHub-Zugang wird geprüft…';
+  if (snapshot.state === 'access_ready') return 'GitHub-Zugang bereit';
+  if (snapshot.state === 'intent_detected') return 'Status: Auftrag erkannt';
+  if (isExecutorActive(snapshot.state)) return 'OpenHands arbeitet…';
+  return 'Status: Auftrag erkannt';
+}
 
-export function AgentEventStream({
-  snapshot,
-  job,
-  onCancel,
-  onOpenDraftPr,
-  onOpenFile,
-}: AgentEventStreamProps) {
+function headerColorFor(snapshot: AgentWorkSnapshot): string {
+  if (snapshot.state === 'draft_pr_ready') return C.green;
+  if (snapshot.state === 'failed' || snapshot.state === 'blocked') return C.rose;
+  if (
+    snapshot.state === 'intent_detected' ||
+    snapshot.state === 'access_required' ||
+    snapshot.state === 'access_validating' ||
+    snapshot.state === 'access_ready'
+  ) return C.amber;
+  return C.sky;
+}
+
+export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isActive = isExecutorActive(snapshot.state);
-  const isDone = snapshot.state === 'draft_pr_ready';
-  const isFailed = snapshot.state === 'failed' || snapshot.state === 'blocked';
+  const isActive = !isTerminalState(snapshot.state) && (
+    isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
+  );
   const changedFiles = job?.changedFiles ?? [];
   const draftPrUrl = job?.draftPrUrl ?? snapshot.draftPrUrl ?? null;
 
   const stream = buildStream(snapshot, job, isActive);
 
-  // Auto-scroll to bottom whenever new events arrive
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -261,17 +242,9 @@ export function AgentEventStream({
     }
   }, [stream.length]);
 
-  // Status label for header
-  const headerLabel = isDone
-    ? 'Draft PR bereit'
-    : isFailed
-      ? snapshot.state === 'blocked' ? 'Executor blockiert' : 'Executor fehlgeschlagen'
-      : isActive
-        ? 'OpenHands arbeitet…'
-        : 'Auftrag erkannt';
-
-  const headerColor = isDone ? C.green : isFailed ? C.rose : C.sky;
-  const repoLabel = snapshot.repoFullName
+  const headerLabel = headerLabelFor(snapshot, job);
+  const headerColor = headerColorFor(snapshot);
+  const repoLabel = snapshot.repoFullName && snapshot.repoFullName !== 'unknown/repo'
     ? snapshot.repoFullName + (snapshot.branchName ? ` · ${snapshot.branchName}` : '')
     : null;
 
@@ -279,7 +252,6 @@ export function AgentEventStream({
 
   return (
     <>
-      {/* CSS keyframe for pulsing lamp */}
       <style>{`
         @keyframes aes-pulse {
           0%, 100% { opacity: 1; }
@@ -287,153 +259,40 @@ export function AgentEventStream({
         }
       `}</style>
 
-      <div
-        role="region"
-        aria-label="Ausführungs-Ereignisstrom"
-        style={{
-          margin: '4px 16px',
-          borderRadius: 10,
-          background: C.surface,
-          border: `1px solid ${C.border}`,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        {/* ── Header ───────────────────────────────── */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '9px 12px',
-            borderBottom: `1px solid ${C.border}`,
-            background: '#0e1116cc',
-          }}
-        >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: headerColor,
-              flexShrink: 0,
-              ...(isActive && {
-                animation: 'aes-pulse 1s ease-in-out infinite',
-                boxShadow: `0 0 6px ${headerColor}`,
-              }),
-            }}
-          />
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: headerColor, flex: 1 }}>
-            {headerLabel}
-          </span>
-          {repoLabel && (
-            <span style={{ fontSize: 10.5, color: C.textSub, fontFamily: 'monospace' }}>
-              {repoLabel}
-            </span>
-          )}
+      <div role="region" aria-label="Ausführungs-Ereignisstrom" style={{ margin: '4px 16px', borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderBottom: `1px solid ${C.border}`, background: '#0e1116cc' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: headerColor, flexShrink: 0, ...(isActive && { animation: 'aes-pulse 1s ease-in-out infinite', boxShadow: `0 0 6px ${headerColor}` }) }} />
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: headerColor, flex: 1 }}>{headerLabel}</span>
+          {repoLabel && <span style={{ fontSize: 10.5, color: C.textSub, fontFamily: 'monospace' }}>{repoLabel}</span>}
           {changedFiles.length > 0 && (
-            <span
-              style={{
-                fontSize: 10.5,
-                color: C.amber,
-                background: '#fbbf2415',
-                padding: '1px 6px',
-                borderRadius: 4,
-              }}
-            >
-              {changedFiles.length} Datei{changedFiles.length > 1 ? 'en' : ''}
+            <span style={{ fontSize: 10.5, color: C.amber, background: '#fbbf2415', padding: '1px 6px', borderRadius: 4 }}>
+              Dateien: {changedFiles.length}
             </span>
           )}
         </div>
 
-        {/* ── Event log ────────────────────────────── */}
-        <div
-          ref={scrollRef}
-          style={{
-            padding: '8px 12px',
-            maxHeight: 240,
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0,
-          }}
-        >
-          {stream.map((event) => (
-            <EventRow key={event.id} event={event} />
-          ))}
+        <div ref={scrollRef} style={{ padding: '8px 12px', maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {stream.map((event) => <EventRow key={event.id} event={event} />)}
         </div>
 
-        {/* ── Changed file badges ───────────────────── */}
         {changedFiles.length > 0 && (
-          <div
-            style={{
-              padding: '6px 12px',
-              borderTop: `1px solid ${C.border}`,
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 5,
-            }}
-          >
+          <div style={{ padding: '6px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {changedFiles.slice(0, 12).map((f) => (
-              <FileBadge
-                key={f}
-                path={f}
-                onClick={onOpenFile ? () => onOpenFile(f) : undefined}
-              />
+              <FileBadge key={f} path={f} onClick={onOpenFile ? () => onOpenFile(f) : undefined} />
             ))}
-            {changedFiles.length > 12 && (
-              <span style={{ fontSize: 11, color: C.textMuted, alignSelf: 'center' }}>
-                +{changedFiles.length - 12} weitere
-              </span>
-            )}
+            {changedFiles.length > 12 && <span style={{ fontSize: 11, color: C.textMuted, alignSelf: 'center' }}>+{changedFiles.length - 12} weitere</span>}
           </div>
         )}
 
-        {/* ── Action buttons ────────────────────────── */}
         {(onCancel || draftPrUrl) && (
-          <div
-            style={{
-              padding: '8px 12px',
-              borderTop: `1px solid ${C.border}`,
-              display: 'flex',
-              gap: 8,
-              justifyContent: 'flex-end',
-            }}
-          >
+          <div style={{ padding: '8px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             {isActive && onCancel && (
-              <button
-                type="button"
-                onClick={onCancel}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 7,
-                  background: 'transparent',
-                  color: C.rose,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  border: `1px solid ${C.rose}`,
-                  cursor: 'pointer',
-                }}
-              >
+              <button type="button" onClick={onCancel} style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent', color: C.rose, fontSize: 12, fontWeight: 500, border: `1px solid ${C.rose}`, cursor: 'pointer' }}>
                 Abbrechen
               </button>
             )}
             {draftPrUrl && (
-              <button
-                type="button"
-                onClick={onOpenDraftPr ?? (() => window.open(draftPrUrl, '_blank'))}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 7,
-                  background: C.green,
-                  color: '#000',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
-              >
+              <button type="button" onClick={onOpenDraftPr ?? (() => window.open(draftPrUrl, '_blank'))} style={{ padding: '6px 14px', borderRadius: 7, background: C.green, color: '#000', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
                 Draft PR öffnen ↗
               </button>
             )}
