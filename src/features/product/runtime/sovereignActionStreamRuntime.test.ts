@@ -16,7 +16,7 @@ describe('sovereignActionStreamRuntime', () => {
     const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
       buildInputReceivedEvent('Baue die UX-Verbesserung ein'),
       buildRepoLoadedEvent('Sovereign-Studio-ato · main · 500 files'),
-      buildRouteSelectionEvent({ route: 'code-llm', reason: 'Patch-Erzeugung durch Code-Modell.' }),
+      buildRouteSelectionEvent({ route: 'code-llm', reason: 'Patch-Erzeugung durch Code-Modell.', state: 'running' }),
       buildWorkerRequestEvent('DeepSeek R1'),
       buildWorkerResponseEvent(),
     ]);
@@ -27,7 +27,26 @@ describe('sovereignActionStreamRuntime', () => {
       'code-llm',
       'worker',
       'worker',
+      'github-access',
     ]);
+    expect(stream.lastEvent).toMatchObject({
+      kind: 'github_access_required',
+      route: 'github-access',
+      state: 'blocked',
+    });
+    expect(stream.lastEvent?.detail).toContain('Patch/Diff');
+    expect(stream.activeRoute).toBeNull();
+  });
+
+  it('does not add result gates to normal worker chat', () => {
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+      buildInputReceivedEvent('Was ist Sovereign Studio?'),
+      buildWorkerRequestEvent('Mistral 7B'),
+      buildWorkerResponseEvent(),
+    ]);
+
+    expect(stream.events.map((event) => event.kind)).not.toContain('github_access_required');
+    expect(stream.lastEvent?.kind).toBe('llm_response_received');
     expect(stream.activeRoute).toBeNull();
   });
 
