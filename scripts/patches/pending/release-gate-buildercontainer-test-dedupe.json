@@ -1,0 +1,20 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.test.tsx",
+  "source_ref": "main",
+  "branch_base_ref": "main",
+  "branch": "fix/release-gate-buildercontainer-test-dedupe",
+  "expectedSha": "5ed4c36ad3c795f6c33657f07bda4855a4b81697",
+  "commit_message": "fix(tests): disambiguate action stream duplicate text assertions",
+  "pr_title": "fix(tests): disambiguate action stream duplicate text assertions",
+  "pr_body": "Updates BuilderContainer tests to account for Sovereign Action Stream also displaying submitted text. This keeps assertions truthful without removing the runtime-backed stream.",
+  "blocks": [
+    {
+      "search": "    expect(screen.getByText(repoUrl)).toBeDefined();",
+      "replace": "    expect(screen.getAllByText(repoUrl).length).toBeGreaterThanOrEqual(1);"
+    },
+    {
+      "search": "    expect(screen.getByText(\"Wie geht es dir?\")).toBeDefined();",
+      "replace": "    expect(screen.getAllByText(\"Wie geht es dir?\").length).toBeGreaterThanOrEqual(1);"
+    }
+  ]
+}

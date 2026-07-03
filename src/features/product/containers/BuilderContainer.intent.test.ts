@@ -1,10 +1,11 @@
 /**
  * BuilderContainer intent detection tests
- * Tests for isOpenHandsExecutionIntent, isWorkerRetryIntent, isWorkerDiagnosticQuestion
+ * Tests for executor routing, code-generation intent and Worker diagnostics.
  */
 
 import {
   isOpenHandsExecutionIntent,
+  isCodeGenerationIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   getWorkerActionHint,
@@ -25,14 +26,14 @@ describe('isOpenHandsExecutionIntent', () => {
     expect(isOpenHandsExecutionIntent('commit the changes')).toBe(true);
   });
 
-  it('detects build/implement intent', () => {
-    expect(isOpenHandsExecutionIntent('baue die app')).toBe(true);
-    expect(isOpenHandsExecutionIntent('implementiere feature')).toBe(true);
+  it('keeps generic build/implement intent out of OpenHands-only routing', () => {
+    expect(isOpenHandsExecutionIntent('baue die app')).toBe(false);
+    expect(isOpenHandsExecutionIntent('implementiere feature')).toBe(false);
   });
 
-  it('detects fix intent', () => {
-    expect(isOpenHandsExecutionIntent('fixe den bug')).toBe(true);
-    expect(isOpenHandsExecutionIntent('repariere den server')).toBe(true);
+  it('keeps generic fix intent out of OpenHands-only routing', () => {
+    expect(isOpenHandsExecutionIntent('fixe den bug')).toBe(false);
+    expect(isOpenHandsExecutionIntent('repariere den server')).toBe(false);
   });
 
   it('returns false for non-execution text', () => {
@@ -43,6 +44,20 @@ describe('isOpenHandsExecutionIntent', () => {
   it('is case insensitive', () => {
     expect(isOpenHandsExecutionIntent('openhands')).toBe(true);
     expect(isOpenHandsExecutionIntent('OPENHANDS')).toBe(true);
+  });
+});
+
+describe('isCodeGenerationIntent', () => {
+  it('detects generic code-generation intent without forcing OpenHands', () => {
+    expect(isCodeGenerationIntent('baue die app')).toBe(true);
+    expect(isCodeGenerationIntent('implementiere feature')).toBe(true);
+    expect(isCodeGenerationIntent('fixe den bug')).toBe(true);
+    expect(isCodeGenerationIntent('repariere den server')).toBe(true);
+  });
+
+  it('does not treat ordinary chat as code-generation intent', () => {
+    expect(isCodeGenerationIntent('Hello world')).toBe(false);
+    expect(isCodeGenerationIntent('Was ist dieses Projekt?')).toBe(false);
   });
 });
 
@@ -97,19 +112,26 @@ describe('isWorkerDiagnosticQuestion', () => {
 });
 
 describe('getWorkerActionHint', () => {
-  it('returns OpenHands hint for execution intent', () => {
+  it('returns executor write-route hint for explicit executor intent', () => {
     expect(getWorkerActionHint({
       submittedText: 'Use OpenHands to fix',
       workerBlocked: false,
-    })).toBe('OpenHands Executor starten');
+    })).toBe('Executor-Schreibroute starten');
   });
 
-  it('returns blocked + OpenHands hint when agent disabled', () => {
+  it('returns blocked executor hint when agent disabled', () => {
     expect(getWorkerActionHint({
       submittedText: 'openhands do something',
       workerBlocked: true,
       agentDisabled: true,
-    })).toBe('OpenHands blockiert · Worker erklärt zuerst');
+    })).toBe('Executor blockiert · Code-Route prüft zuerst');
+  });
+
+  it('returns code-LLM hint for generic code-generation intent', () => {
+    expect(getWorkerActionHint({
+      submittedText: 'baue die app',
+      workerBlocked: false,
+    })).toBe('Code-LLM Route · Patch erzeugen');
   });
 
   it('returns diagnostic hint when worker blocked and no retry intent', () => {
