@@ -5,12 +5,20 @@
  * Used by BuilderContainer and can be unit tested directly.
  */
 
-// German + English keywords for intent detection
-const WORKER_EXECUTION_TOKENS = [
-  'openhands', 'draft pr', 'pull request', 'pr erstellen', 'push', 'commit',
+// German + English keywords for intent detection.
+// Important: generic code verbs (baue, implementiere, fixe, repariere) are
+// code-generation intent, not automatically OpenHands/executor intent.
+// OpenHands is one possible executor, not the only coding route.
+const OPENHANDS_EXECUTION_TOKENS = [
+  'openhands', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
+  'push', 'commit', 'repo schreiben', 'github schreiben', 'branch erstellen',
+];
+
+const CODE_GENERATION_TOKENS = [
   'baue', 'bauen', 'implementiere', 'implementieren', 'fixe', 'repariere',
   'patch', 'ändere datei', 'datei ändern', 'ersatzdatei', 'runtime-check',
-  'tests ergänzen', 'test ergänzen', 'code ändern', 'repo schreiben',
+  'tests ergänzen', 'test ergänzen', 'code ändern', 'feature einbauen',
+  'schreibe code', 'code schreiben',
 ];
 
 const WORKER_RETRY_TOKENS = ['retry', 'erneut', 'nochmal', 'noch mal', 'wiederholen', 'testen', 'versuch'];
@@ -66,7 +74,16 @@ const CODE_CONTEXT_TOKENS = [
  */
 export function isOpenHandsExecutionIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  return WORKER_EXECUTION_TOKENS.some((token) => lower.includes(token));
+  return OPENHANDS_EXECUTION_TOKENS.some((token) => lower.includes(token));
+}
+
+/**
+ * Detects code-generation work that should go to code-capable LLM routes
+ * before any external executor is considered.
+ */
+export function isCodeGenerationIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  return CODE_GENERATION_TOKENS.some((token) => lower.includes(token));
 }
 
 /**
@@ -114,12 +131,20 @@ export function hasCodeContextInHistory(recentMessages: readonly { role: string;
  * Combined check: delegation intent + code context = executor candidate.
  * Use this in BuilderContainer routing instead of just isDelegationIntent.
  */
+export function hasExecutorContextInHistory(recentMessages: readonly { role: string; text: string }[]): boolean {
+  const relevant = recentMessages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .slice(-6);
+  const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
+  return OPENHANDS_EXECUTION_TOKENS.some((token) => allText.includes(token));
+}
+
 export function isDelegatedOpenHandsExecutionIntent(
   text: string,
   recentMessages: readonly { role: string; text: string }[],
 ): boolean {
   if (!isDelegationIntent(text)) return false;
-  return hasCodeContextInHistory(recentMessages);
+  return hasExecutorContextInHistory(recentMessages);
 }
 
 /**
@@ -190,8 +215,11 @@ export function getWorkerActionHint(args: {
   const clean = args.submittedText.trim();
   if (isOpenHandsExecutionIntent(clean)) {
     return args.agentDisabled
-      ? 'OpenHands blockiert · Worker erklärt zuerst'
-      : 'OpenHands Executor starten';
+      ? 'Executor blockiert · Code-Route prüft zuerst'
+      : 'Executor-Schreibroute starten';
+  }
+  if (isCodeGenerationIntent(clean)) {
+    return 'Code-LLM Route · Patch erzeugen';
   }
   if (args.workerBlocked && !isWorkerRetryIntent(clean)) {
     return 'Worker blockiert · lokale Diagnose statt blindem Retry';
