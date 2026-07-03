@@ -70,11 +70,12 @@ function ProviderBadge() {
 
 interface RepoInputProps {
   onLoad: (url: string, files: any[]) => void;
+  branch: string;
+  onBranchChange: (branch: string) => void;
 }
 
-function RepoInput({ onLoad }: RepoInputProps) {
+function RepoInput({ onLoad, branch, onBranchChange }: RepoInputProps) {
   const { repoUrl, setRepoUrl, githubToken, setGithubToken } = useRefactor();
-  const [branch, setBranch] = useState('main');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -115,7 +116,7 @@ function RepoInput({ onLoad }: RepoInputProps) {
     } finally {
       setLoading(false);
     }
-  }, [repoUrl, branch, onLoad]);
+  }, [repoUrl, branch, githubToken, onLoad]);
 
   return (
     <div className="space-y-2">
@@ -135,7 +136,7 @@ function RepoInput({ onLoad }: RepoInputProps) {
         <input
           type="text"
           value={branch}
-          onChange={e => setBranch(e.target.value)}
+          onChange={e => onBranchChange(e.target.value)}
           placeholder="main"
           className="w-24 bg-stone-800 border border-stone-700 text-stone-300 placeholder-stone-500 
                      px-3 py-2 rounded-lg font-mono text-sm focus:outline-none focus:border-amber-500"
@@ -357,6 +358,7 @@ export function RefactorPanel() {
   const [activeTab, setActiveTab] = useState<'tasks' | 'history' | 'output'>('tasks');
   const [chatInput, setChatInput] = useState('');
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [branch, setBranch] = useState<string>('main');
 
   const { applyFileChange, repoUrl } = useRefactor();
   const analyze = useAnalyze();
@@ -408,14 +410,14 @@ export function RefactorPanel() {
         filePath,
         code,
         fileObj?.sha,
-        'main' // TODO: make branch dynamic if needed
+        branch
       );
       alert('✅ Code successfully applied to GitHub!');
     } catch (err: any) {
       console.error('Apply failed:', err);
       alert('❌ Failed to apply code: ' + err.message);
     }
-  }, [selectedTask, repoUrl, files, applyFileChange]);
+  }, [selectedTask, repoUrl, files, branch, applyFileChange]);
 
   const handleExplain = useCallback(async () => {
     if (!selectedTask?.generatedCode) return;
@@ -477,7 +479,7 @@ export function RefactorPanel() {
       {/* Content */}
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {/* Repo Input - Always visible */}
-        <RepoInput onLoad={handleLoadRepo} />
+        <RepoInput onLoad={handleLoadRepo} branch={branch} onBranchChange={setBranch} />
 
         {/* Error Display */}
         {error && (
