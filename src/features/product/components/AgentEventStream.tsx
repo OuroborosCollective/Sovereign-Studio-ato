@@ -45,18 +45,18 @@ function isExecutorActive(state: AgentWorkState): boolean {
 }
 
 function stateIcon(state: AgentWorkState): { icon: string; color: string } {
-  if (state === 'draft_pr_ready')  return { icon: '✓', color: C.green };
-  if (state === 'failed')          return { icon: '✗', color: C.rose };
-  if (state === 'blocked')         return { icon: '⊘', color: C.rose };
+  if (state === 'draft_pr_ready') return { icon: '✓', color: C.green };
+  if (state === 'failed') return { icon: '✗', color: C.rose };
+  if (state === 'blocked') return { icon: '⊘', color: C.rose };
   if (state === 'intent_detected') return { icon: '⦿', color: C.amber };
   if (state === 'executor_starting') return { icon: '↗', color: C.sky };
-  if (isExecutorActive(state))     return { icon: '→', color: C.sky };
+  if (isExecutorActive(state)) return { icon: '→', color: C.sky };
   return { icon: '·', color: C.textSub };
 }
 
 function levelIcon(level: OpenHandsRuntimeEvent['level']): { icon: string; color: string } {
   if (level === 'success') return { icon: '✓', color: C.green };
-  if (level === 'error')   return { icon: '✗', color: C.rose };
+  if (level === 'error') return { icon: '✗', color: C.rose };
   if (level === 'warning') return { icon: '⚠', color: C.amber };
   return { icon: '→', color: C.sky };
 }
@@ -239,7 +239,7 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
           {repoLabel && <span style={{ fontSize: 10.5, color: C.textSub, fontFamily: 'monospace' }}>{repoLabel}</span>}
           {changedFiles.length > 0 && (
             <span style={{ fontSize: 10.5, color: C.amber, background: '#fbbf2415', padding: '1px 6px', borderRadius: 4 }}>
-              {changedFiles.length} Datei{changedFiles.length > 1 ? 'en' : ''}
+              Dateien: {changedFiles.length}
             </span>
           )}
         </div>
