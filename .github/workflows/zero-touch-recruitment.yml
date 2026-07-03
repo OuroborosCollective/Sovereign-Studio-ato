@@ -1,5 +1,7 @@
 name: "Quarantined: Zero-Touch Recruitment Workflow"
 
+permissions: {}
+
 on:
   workflow_dispatch:
 
