@@ -127,7 +127,7 @@ test.describe('BuilderContainer Smoke Tests', () => {
     await expect(workerBlockerCard.getByRole('button', { name: /retry/i })).toBeVisible();
     
     // Verify diagnose button is available (explains diagnostic from local runtime)
-    await expect(workerBlockerCard.getByRole('button', { name: /diagnose/i })).toBeVisible();
+    await expect(workerBlockerCard.getByRole('button', { name: /erklären/i })).toBeVisible();
   });
 
   test('5. BuilderContainer has proper navigation structure', async ({ page }) => {
