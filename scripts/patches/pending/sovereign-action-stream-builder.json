@@ -1,0 +1,71 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.tsx",
+  "source_branch": "fix/execution-gate",
+  "branch": "fix/execution-gate",
+  "expectedSha": "e102eba829e374d036b52470c4260689d07f4471",
+  "commit_message": "feat(runtime): wire Sovereign action stream into builder",
+  "pr_title": "feat(runtime): wire Sovereign action stream into builder",
+  "pr_body": "Wires the route-wide Sovereign Action Stream into BuilderContainer so repo, worker, code-LLM, OpenHands and blocker states produce visible runtime events in the chat.",
+  "blocks": [
+    {
+      "search": "import { AgentWorkTimeline } from \"../components/AgentWorkTimeline\";\nimport { AgentEventStream } from \"../components/AgentEventStream\";\nimport { AgentResultCard } from \"../components/AgentResultCard\";",
+      "replace": "import { AgentWorkTimeline } from \"../components/AgentWorkTimeline\";\nimport { AgentEventStream } from \"../components/AgentEventStream\";\nimport { AgentResultCard } from \"../components/AgentResultCard\";\nimport { SovereignActionStreamPanel } from \"../components/SovereignActionStreamPanel\";\nimport {\n  appendSovereignActionEvent,\n  buildBlockedActionEvent,\n  buildInputReceivedEvent,\n  buildRepoLoadedEvent,\n  buildRouteSelectionEvent,\n  buildWorkerRequestEvent,\n  buildWorkerResponseEvent,\n  createSovereignActionStreamState,\n  type SovereignActionEventInput,\n} from \"../runtime/sovereignActionStreamRuntime\";"
+    },
+    {
+      "search": "import {\n  isOpenHandsExecutionIntent,\n  isWorkerRetryIntent,\n  isWorkerDiagnosticQuestion,\n  isDelegatedOpenHandsExecutionIntent,\n  isExecutorStatusQuestion,\n  buildExecutorStatusAnswer,\n} from \"../runtime/workerIntentDetector\";",
+      "replace": "import {\n  isOpenHandsExecutionIntent,\n  isCodeGenerationIntent,\n  isWorkerRetryIntent,\n  isWorkerDiagnosticQuestion,\n  isDelegatedOpenHandsExecutionIntent,\n  isExecutorStatusQuestion,\n  buildExecutorStatusAnswer,\n} from \"../runtime/workerIntentDetector\";"
+    },
+    {
+      "search": "  const addLog = useCallback((level: string, msg: string, tabId = \"sys\") => {\n    const ts = new Date().toLocaleTimeString(\"de-DE\", {\n      hour: \"2-digit\",\n      minute: \"2-digit\",\n      second: \"2-digit\",\n    });\n    setStatusLogs((prev) => [...prev.slice(-199), { ts, level, msg, tabId }]);\n  }, []);",
+      "replace": "  const addLog = useCallback((level: string, msg: string, tabId = \"sys\") => {\n    const ts = new Date().toLocaleTimeString(\"de-DE\", {\n      hour: \"2-digit\",\n      minute: \"2-digit\",\n      second: \"2-digit\",\n    });\n    setStatusLogs((prev) => [...prev.slice(-199), { ts, level, msg, tabId }]);\n  }, []);\n\n  const [actionStream, setActionStream] = useState(() => createSovereignActionStreamState());\n  const appendActionEvent = useCallback((event: SovereignActionEventInput) => {\n    setActionStream((current) => appendSovereignActionEvent(current, event));\n  }, []);"
+    },
+    {
+      "search": "    appendChatLine({ role: \"user\", text: submittedText });\n\n    const parsedRepo = parseDevChatGithubUrl(submittedText);",
+      "replace": "    appendChatLine({ role: \"user\", text: submittedText });\n    appendActionEvent(buildInputReceivedEvent(submittedText));\n\n    const parsedRepo = parseDevChatGithubUrl(submittedText);"
+    },
+    {
+      "search": "      setRepoLoading(true);\n      setChatRepoError(null);\n      triggerHaptic(\"medium\");\n      const result = await fetchDevChatRepoTree(parsedRepo);",
+      "replace": "      setRepoLoading(true);\n      setChatRepoError(null);\n      appendActionEvent({\n        kind: 'route_selected',\n        route: 'repo',\n        label: 'Route gewählt: repo',\n        detail: 'Repo-Snapshot wird geladen.',\n        state: 'running',\n      });\n      triggerHaptic(\"medium\");\n      const result = await fetchDevChatRepoTree(parsedRepo);"
+    },
+    {
+      "search": "        const summary = summarizeDevChatRepoSnapshot(result.snapshot);\n        appendChatLine({",
+      "replace": "        const summary = summarizeDevChatRepoSnapshot(result.snapshot);\n        appendActionEvent(buildRepoLoadedEvent(summary));\n        appendChatLine({"
+    },
+    {
+      "search": "      setChatRepoError(errorText);\n      triggerHaptic(\"heavy\");",
+      "replace": "      setChatRepoError(errorText);\n      appendActionEvent(buildBlockedActionEvent({\n        route: 'repo',\n        label: 'Repo-Laden blockiert',\n        detail: errorText,\n        kind: 'failed',\n      }));\n      triggerHaptic(\"heavy\");"
+    },
+    {
+      "search": "      if (!agentDisabled) {\n        appendChatLine({\n          role: \"assistant\",\n          text: \"Ausführungsauftrag erkannt.\\nIch starte OpenHands Executor.\\nErgebnis bleibt Draft PR, kein Auto-Merge.\",\n        });\n        // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.\n        const _repo = chatRepoSnapshot\n          ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`\n          : 'unknown/repo';",
+      "replace": "      if (!agentDisabled) {\n        // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.\n        const _repo = chatRepoSnapshot\n          ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`\n          : 'unknown/repo';\n        appendActionEvent({\n          kind: 'intent_detected',\n          route: 'runtime',\n          label: 'Ausführungsabsicht erkannt',\n          detail: `Repo: ${_repo}`,\n          state: 'done',\n        });\n        appendActionEvent({\n          kind: 'executor_started',\n          route: 'openhands',\n          label: 'OpenHands Executor wird gestartet',\n          detail: `Repo: ${_repo}`,\n          state: 'running',\n        });\n        appendChatLine({\n          role: \"assistant\",\n          text: \"Ausführungsauftrag erkannt.\\nRoute gewählt: OpenHands Executor.\\nErgebnis bleibt Draft PR, kein Auto-Merge.\",\n        });"
+    },
+    {
+      "search": "    }\n\n    // ── #458 Credit guard — only for Worker Chat path (not OpenHands execution) ────────────",
+      "replace": "    }\n\n    if (isCodeGenerationIntent(submittedText)) {\n      appendActionEvent(buildRouteSelectionEvent({\n        route: 'code-llm',\n        reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',\n        state: 'running',\n      }));\n    }\n\n    // ── #458 Credit guard — only for Worker Chat path (not OpenHands execution) ────────────"
+    },
+    {
+      "search": "    addLog(\"info\", `PAL → ${d.tier} · ${d.modelLabel}`, \"sys\");\n\n    setLastWorkerRequestMessage(submittedText);",
+      "replace": "    addLog(\"info\", `PAL → ${d.tier} · ${d.modelLabel}`, \"sys\");\n    appendActionEvent(buildWorkerRequestEvent(d.modelLabel));\n\n    setLastWorkerRequestMessage(submittedText);"
+    },
+    {
+      "search": "    const autoToolchainContext = toolchainAutoResult.context || \"\";\n\n    const workerMessages = buildWorkerMessages({",
+      "replace": "    const autoToolchainContext = toolchainAutoResult.context || \"\";\n    if (autoToolchainContext.trim()) {\n      appendActionEvent({\n        kind: 'context_collected',\n        route: 'toolchain',\n        label: 'Toolchain-Kontext gesammelt',\n        detail: 'Read-only Auto-Context bereit.',\n        state: 'done',\n      });\n    }\n\n    const workerMessages = buildWorkerMessages({"
+    },
+    {
+      "search": "    if (fullText) {\n      setWorkerBlocker(null);\n      // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display",
+      "replace": "    if (fullText) {\n      setWorkerBlocker(null);\n      appendActionEvent(buildWorkerResponseEvent());\n      // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display"
+    },
+    {
+      "search": "    if (fallback?.ok && fallback.content) {\n      setWorkerBlocker(null);\n      appendChatLine({ role: \"assistant\", text: fallback.content });\n      return;\n    }",
+      "replace": "    if (fallback?.ok && fallback.content) {\n      setWorkerBlocker(null);\n      appendActionEvent(buildWorkerResponseEvent());\n      appendChatLine({ role: \"assistant\", text: fallback.content });\n      return;\n    }"
+    },
+    {
+      "search": "    setWorkerBlocker(blocker);\n    appendChatLine({",
+      "replace": "    appendActionEvent(buildBlockedActionEvent({\n      route: 'worker',\n      label: 'Worker blockiert',\n      detail: diagnostic.nextAction || blocker.message,\n      kind: 'failed',\n    }));\n    setWorkerBlocker(blocker);\n    appendChatLine({"
+    },
+    {
+      "search": "              <OutcomeHints hints={outcomeHints} />\n\n              {/* ── Manus/Replit-style live event stream — replaces AgentWorkTimeline + OpenHandsJobTruthCard */}",
+      "replace": "              <OutcomeHints hints={outcomeHints} />\n              <SovereignActionStreamPanel stream={actionStream} />\n\n              {/* ── Manus/Replit-style live event stream — OpenHands remains one route among several */}"
+    }
+  ]
+}

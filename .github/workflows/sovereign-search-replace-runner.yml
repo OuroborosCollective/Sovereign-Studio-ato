@@ -1,0 +1,75 @@
+name: Sovereign Search/Replace Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      patch_file:
+        description: 'Patch file path (in scripts/patches/pending/)'
+        required: true
+        default: 'pending/sovereign-action-stream-builder.json'
+      dry_run:
+        description: 'Dry run mode (preview only)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9.12.2"
+  CI: "true"
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Debug inputs
+        run: |
+          echo "patch_file: ${{ inputs.patch_file }}"
+          echo "dry_run: ${{ inputs.dry_run }}"
+          echo "REPO_FULL_NAME: ${{ github.repository }}"
+
+      - name: Validate patch file exists
+        run: |
+          PATCH_PATH="scripts/patches/${{ inputs.patch_file }}"
+          if [[ ! -f "${PATCH_PATH}" ]]; then
+            echo "ERROR: Patch file not found: ${PATCH_PATH}"
+            exit 1
+          fi
+          echo "✓ Patch file found: ${PATCH_PATH}"
+
+          if ! jq empty "${PATCH_PATH}" 2>/dev/null; then
+            echo "ERROR: Invalid JSON in ${PATCH_PATH}"
+            exit 1
+          fi
+          echo "✓ JSON structure valid"
+
+          echo ""
+          echo "=== PATCH SUMMARY ==="
+          echo "Target: $(jq -r '.target' "${PATCH_PATH}")"
+          echo "Source: $(jq -r '.source_branch // .base_branch // "main"' "${PATCH_PATH}")"
+          echo "Branch: $(jq -r '.branch // "auto-generated"' "${PATCH_PATH}")"
+          echo "Blocks: $(jq '.blocks | length' "${PATCH_PATH}")"
+          echo "Commit: $(jq -r '.commit_message // "auto-generated"' "${PATCH_PATH}")"
+
+      - name: Run Search/Replace Runner
+        env:
+          GITHUB_TOKEN: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          BASE_BRANCH: main
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          PATCH_PATH="scripts/patches/${{ inputs.patch_file }}"
+          python3 scripts/patches/search_replace_runner.py "${PATCH_PATH}"
