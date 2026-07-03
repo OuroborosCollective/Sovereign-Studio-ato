@@ -38,6 +38,7 @@ const CODE_CONTEXT_TOKENS = [
   'draft', 'repo', 'repository', 'github', 'build', 'bau', 'implementier',
   'fix', 'fehler', 'bug', 'feature', 'änderung', 'aktualisier', 'update',
   'lösche', 'entfern', 'ergänz', 'füge hinzu', 'ersetze', 'schreibe',
+  'test', 'tests', 'hinzufüg', 'ergänz',
 ];
 
 /**
