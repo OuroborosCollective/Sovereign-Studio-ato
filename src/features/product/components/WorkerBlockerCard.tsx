@@ -36,6 +36,33 @@ const C = {
   sky:       '#22d3ee',
 } as const;
 
+const DIAGNOSTIC_MESSAGE_MARKERS = [
+  'worker nicht erreichbar',
+  'worker offline',
+  'worker-call nicht blind',
+  'ich wiederhole den kaputten',
+  'scope:',
+  'scope=',
+  'health:',
+  'route:',
+  'antwortauszug:',
+  'diagnose',
+  'http 500',
+  'failed to fetch',
+];
+
+function normalizeActionMessage(message: string | undefined): string | undefined {
+  const trimmed = message?.trim();
+  if (!trimmed) return undefined;
+
+  const lower = trimmed.toLowerCase();
+  if (DIAGNOSTIC_MESSAGE_MARKERS.some((marker) => lower.includes(marker))) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
 // Check if message contains real code/Draft-PR intent
 function hasCodeIntent(message: string): boolean {
   const codeSignals = [
@@ -80,22 +107,23 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   userMessage,
 }) => {
   const { diagnostic, health } = blocker;
-  const canOpenHands = userMessage && hasCodeIntent(userMessage);
+  const actionMessage = normalizeActionMessage(userMessage);
+  const canOpenHands = Boolean(actionMessage && hasCodeIntent(actionMessage));
   
   // Prefer retry with message when available (cleaner runtime path)
   const handleRetry = useCallback(() => {
-    if (onRetryWithMessage && userMessage) {
-      onRetryWithMessage(userMessage);
+    if (onRetryWithMessage && actionMessage) {
+      onRetryWithMessage(actionMessage);
     } else {
       onRetry();
     }
-  }, [onRetryWithMessage, onRetry, userMessage]);
+  }, [onRetryWithMessage, onRetry, actionMessage]);
   
   const handleOpenHands = useCallback(() => {
-    if (canOpenHands && onOpenHandsInstead) {
-      onOpenHandsInstead(userMessage);
+    if (canOpenHands && actionMessage && onOpenHandsInstead) {
+      onOpenHandsInstead(actionMessage);
     }
-  }, [canOpenHands, onOpenHandsInstead, userMessage]);
+  }, [canOpenHands, onOpenHandsInstead, actionMessage]);
 
   return (
     <div
@@ -221,14 +249,15 @@ export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
   userMessage,
 }) => {
   const scope = formatScope(blocker.diagnostic);
+  const actionMessage = normalizeActionMessage(userMessage);
 
   const handleClick = useCallback(() => {
-    if (onRetryWithMessage && userMessage) {
-      onRetryWithMessage(userMessage);
+    if (onRetryWithMessage && actionMessage) {
+      onRetryWithMessage(actionMessage);
     } else if (onRetry) {
       onRetry();
     }
-  }, [onRetry, onRetryWithMessage, userMessage]);
+  }, [onRetry, onRetryWithMessage, actionMessage]);
 
   return (
     <div

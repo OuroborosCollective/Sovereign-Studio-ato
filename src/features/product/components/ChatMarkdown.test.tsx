@@ -78,6 +78,12 @@ describe('ChatMarkdown', () => {
     expect(container.textContent).toContain('After');
   });
 
+  it('preserves plain text line breaks as visible breaks', () => {
+    const { container } = render(<ChatMarkdown content={"A.\nB.\nC."} />);
+    expect(container.querySelectorAll('br')).toHaveLength(2);
+    expect(container.textContent).toBe('A.B.C.');
+  });
+
   it('preserves text formatting in same line', () => {
     const { container } = render(<ChatMarkdown content="**bold** normal `code` normal" />);
     const text = container.textContent || '';

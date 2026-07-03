@@ -24,6 +24,13 @@ const mockBlocker = {
   createdAt: Date.now(),
 };
 
+const diagnosticText = [
+  'Worker nicht erreichbar',
+  'Scope: network · HTTP 500',
+  'Health: secret=ok · upstream=ok',
+  'Antwortauszug: Failed to fetch',
+].join('\n');
+
 describe('WorkerBlockerCard', () => {
   it('renders blocker message', () => {
     render(
@@ -77,6 +84,27 @@ describe('WorkerBlockerCard', () => {
     expect(onRetryWithMessage).toHaveBeenCalledWith('retry this');
   });
 
+  it('falls back to onRetry and hides OpenHands when the supplied message is a diagnostic', () => {
+    const onRetry = vi.fn();
+    const onRetryWithMessage = vi.fn();
+    const onOpenHandsInstead = vi.fn();
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onRetry={onRetry}
+        onRetryWithMessage={onRetryWithMessage}
+        onExplain={() => {}}
+        onOpenHandsInstead={onOpenHandsInstead}
+        userMessage={diagnosticText}
+      />
+    );
+    expect(screen.queryByText(/OpenHands/i)).toBeNull();
+    fireEvent.click(screen.getByText('Retry'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onRetryWithMessage).not.toHaveBeenCalled();
+    expect(onOpenHandsInstead).not.toHaveBeenCalled();
+  });
+
   it('shows OpenHands action when user has code intent', () => {
     render(
       <WorkerBlockerCard
@@ -128,6 +156,22 @@ describe('WorkerDegradedBanner', () => {
     );
     fireEvent.click(screen.getByTestId('worker-degraded-banner'));
     expect(onRetryWithMessage).toHaveBeenCalledWith('retry this request');
+  });
+
+  it('falls back to onRetry when the supplied message is a diagnostic', () => {
+    const onRetry = vi.fn();
+    const onRetryWithMessage = vi.fn();
+    render(
+      <WorkerDegradedBanner
+        blocker={mockBlocker}
+        onRetry={onRetry}
+        onRetryWithMessage={onRetryWithMessage}
+        userMessage={diagnosticText}
+      />
+    );
+    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onRetryWithMessage).not.toHaveBeenCalled();
   });
 
   it('falls back to onRetry when onRetryWithMessage not provided', () => {
