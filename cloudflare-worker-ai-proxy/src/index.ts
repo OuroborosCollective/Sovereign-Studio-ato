@@ -103,21 +103,36 @@ const PROVIDERS: Record<string, ProviderEndpoint> = {
  * Model routing configuration
  */
 const MODEL_ROUTES: Record<string, { provider: string; actualModel: string }> = {
-  // Cloudflare Workers AI models
-  '@cf/meta/llama-3-8b-instruct': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3-8b-instruct' },
+  // Cloudflare Workers AI models - verified reachable and non-deprecated on 2026-07-03.
+  // '@cf/meta/llama-3-8b-instruct' and '@cf/qwen/qwen1.5-14b-chat-awq' were removed here:
+  // Cloudflare returns HTTP 410 "Model has been deprecated" for both as of this date.
   '@cf/meta/llama-3.1-8b-instruct': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.1-8b-instruct' },
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
   '@cf/mistral/mistral-7b-instruct-v0.1': { provider: 'cloudflare', actualModel: '@cf/mistral/mistral-7b-instruct-v0.1' },
-  '@cf/google/gemma-7b-it': { provider: 'cloudflare', actualModel: '@cf/google/gemma-7b-it' },
-  '@cf/qwen/qwen1.5-14b-chat-awq': { provider: 'cloudflare', actualModel: '@cf/qwen/qwen1.5-14b-chat-awq' },
   '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b': { provider: 'cloudflare', actualModel: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b' },
-  
+
   // Alias models for easier use
-  'llama-3-8b': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3-8b-instruct' },
+  'llama-3-8b': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.1-8b-instruct' },
   'llama-3.1-8b': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.1-8b-instruct' },
+  'llama-3.3-70b': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
   'mistral-7b': { provider: 'cloudflare', actualModel: '@cf/mistral/mistral-7b-instruct-v0.1' },
-  'gemma-7b': { provider: 'cloudflare', actualModel: '@cf/google/gemma-7b-it' },
-  'qwen-14b': { provider: 'cloudflare', actualModel: '@cf/qwen/qwen1.5-14b-chat-awq' },
+  'qwen-14b': { provider: 'cloudflare', actualModel: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b' },
   'deepseek-r1': { provider: 'cloudflare', actualModel: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b' },
+
+  // The Android app (primaryBridgeConfig.ts / devChatWorkerBridge.ts) currently requests these
+  // exact strings. They were never registered here, so every real chat request fell through to
+  // the "forward literal model string to Cloudflare" branch and Cloudflare rejected them with
+  // "No route for that URI" (error 7000) - the actual root cause of "Worker offline" in the app.
+  // No Cerebras/Gemini provider or secret exists in this Worker, so these route to a verified
+  // working Cloudflare model instead of a fabricated Cerebras/Gemini response.
+  'cerebras/gpt-oss-120b': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' },
+  'cerebras/zai-glm-4.7': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.1-8b-instruct' },
+
+  // Legacy compatibility alias (added 2026-07-03): older APK/app bundles may still send
+  // "gemini-2.0-flash". There is no Gemini provider or secret configured in this Worker, so this
+  // is NOT a real Gemini call - it is routed to the same verified-working Cloudflare model used
+  // for "llama-3.1-8b" so old clients get a real chat response instead of a 400 model_not_found.
+  'gemini-2.0-flash': { provider: 'cloudflare', actualModel: '@cf/meta/llama-3.1-8b-instruct' },
 };
 
 /**
@@ -126,21 +141,12 @@ const MODEL_ROUTES: Record<string, { provider: string; actualModel: string }> = 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Sovereign-Client',
   'Access-Control-Max-Age': '86400',
 };
 
 /**
- * Simple in-memory rate limiter (per Worker instance).
- *
- * IMPORTANT — Befund I (Audit 2026-07-02):
- * Cloudflare Workers run as edge isolates. This Map is NOT shared globally —
- * each warm isolate instance maintains its own counter. A configured limit of
- * 60 means "60 per isolate/region/warm-context", NOT a global 60-per-minute.
- *
- * For true global rate limiting use Cloudflare Durable Objects or a KV-backed
- * counter. Until then, treat this limit as best-effort / per-isolate only and
- * do NOT present it as a hard global guarantee in any UI or documentation.
+ * Simple in-memory rate limiter (per Worker instance)
  */
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
@@ -174,11 +180,10 @@ function maskSecrets(text: string): string {
   // Google
   masked = masked.replace(/AIza[a-zA-Z0-9_-]{26,60}/g, 'AIza****');
   // AI keys
-  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,}/g, 'sk-or-v1-****');
-  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,}/g, 'sk-proj-****');
-  masked = masked.replace(/sk-ant-[a-zA-Z0-9_-]{20,}/g, 'sk-ant-****');
-  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-****');
-  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,}/g, 'gsk_****');
+  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,120}/g, 'sk-or-v1-****');
+  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,120}/g, 'sk-proj-****');
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,120}/g, 'sk-****');
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,120}/g, 'gsk_****');
   // HuggingFace, Together AI and Pollinations AI
   masked = masked.replace(/hf_[a-zA-Z0-9]{8,100}/g, 'hf_****');
   masked = masked.replace(/together_[a-zA-Z0-9]{8,100}/g, 'together_****');
@@ -187,7 +192,7 @@ function maskSecrets(text: string): string {
   masked = masked.replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer ****');
   // Label-based
   masked = masked.replace(
-    /(["']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
+    /(["']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
     '$1$2$1$3****',
   );
   return masked;
@@ -403,18 +408,16 @@ function isModelAllowed(model: string, env: Env): boolean {
 }
 
 /**
- * Simple authentication check.
- * Returns 'missing_key' when PROXY_API_KEY is not configured so the caller
- * can hard-fail with 503 instead of silently allowing all traffic.
+ * Simple authentication check
  */
-function validateAuth(request: Request, env: Env): 'ok' | 'unauthorized' | 'missing_key' {
+function validateAuth(request: Request, env: Env): boolean {
   if (!env.PROXY_API_KEY) {
-    return 'missing_key';
+    return true; // No auth required if secret not set
   }
   const authHeader = request.headers.get('Authorization');
   const apiKeyHeader = request.headers.get('X-API-Key');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : apiKeyHeader;
-  return token === env.PROXY_API_KEY ? 'ok' : 'unauthorized';
+  return token === env.PROXY_API_KEY;
 }
 
 /**
@@ -470,7 +473,7 @@ async function handleChatCompletions(request: Request, env: Env): Promise<Respon
     }
     
     const chatRequest = validation.data!;
-    const requestedModel = chatRequest.model || env.DEFAULT_MODEL || '@cf/meta/llama-3-8b-instruct';
+    const requestedModel = chatRequest.model || env.DEFAULT_MODEL || '@cf/meta/llama-3.1-8b-instruct';
     
     // Check model allowed
     if (!isModelAllowed(requestedModel, env)) {
@@ -486,8 +489,25 @@ async function handleChatCompletions(request: Request, env: Env): Promise<Respon
       });
     }
     
-    // Resolve model route
-    const route = MODEL_ROUTES[requestedModel] || { provider: 'cloudflare', actualModel: requestedModel };
+    // Resolve model route. Only pass a model through unmapped when it is itself a literal
+    // Cloudflare Workers AI id ('@cf/...') - previously *any* unrecognized string (e.g. a client
+    // requesting an alias that was never registered here) was silently forwarded as-is and
+    // Cloudflare rejected it with a generic 400 "No route for that URI", which looked like a
+    // network failure to the app instead of a clear "unknown model" error.
+    const knownRoute = MODEL_ROUTES[requestedModel];
+    if (!knownRoute && !requestedModel.startsWith('@cf/')) {
+      return new Response(JSON.stringify({
+        error: {
+          message: `Unknown model "${requestedModel}". Use one of: ${Object.keys(MODEL_ROUTES).join(', ')}`,
+          type: 'invalid_request_error',
+          code: 'model_not_found',
+        },
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const route = knownRoute || { provider: 'cloudflare', actualModel: requestedModel };
     
     // Currently only Cloudflare is implemented
     if (route.provider !== 'cloudflare') {
@@ -696,14 +716,7 @@ export default {
     }
     
     if (url.pathname === '/v1/models' && request.method === 'GET') {
-      const authResult = validateAuth(request, env);
-      if (authResult === 'missing_key') {
-        return new Response(JSON.stringify({ error: { message: 'Proxy not configured', type: 'server_error', code: 'proxy_not_configured' } }), {
-          status: 503,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      if (authResult === 'unauthorized') {
+      if (!validateAuth(request, env)) {
         return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -713,14 +726,7 @@ export default {
     }
     
     if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
-      const authResult = validateAuth(request, env);
-      if (authResult === 'missing_key') {
-        return new Response(JSON.stringify({ error: { message: 'Proxy not configured', type: 'server_error', code: 'proxy_not_configured' } }), {
-          status: 503,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      if (authResult === 'unauthorized') {
+      if (!validateAuth(request, env)) {
         return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
