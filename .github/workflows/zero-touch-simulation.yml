@@ -1,43 +1,20 @@
-# ⚠️ QUARANTINED: Zero-Touch Simulation Workflow
-#
-# THIS WORKFLOW IS QUARANTINED - DO NOT ENABLE AUTOMATED SCHEDULING
-#
-# Original behavior was unsafe:
-# - Proxy-based device simulation for misleading engagement signals
-# - Automated app interaction with random durations
-# - Crash log processing claiming real bugs
-#
-# This workflow is kept as documentation only.
-# For questions, see Issue #475 in the repository.
-
-name: "⚠️ QUARANTINED: Zero-Touch Simulation (DO NOT RUN)"
-
-permissions: {}
+name: "Quarantined: Zero-Touch Usage Simulation Workflow"
 
 on:
   workflow_dispatch:
-    inputs:
-      confirm_quarantine:
-        description: 'I understand this workflow is quarantined and should not run unattended'
-        required: true
-        type: boolean
+
+permissions:
+  contents: read
 
 jobs:
-  blocked:
-    name: ❌ BLOCKED - Workflow Quarantined
+  quarantined:
+    name: Block unsafe usage simulation automation
     runs-on: ubuntu-latest
     steps:
-      - name: 🚫 This workflow is quarantined
+      - name: Explain quarantine
         run: |
-          echo "=============================================="
-          echo "⚠️  THIS WORKFLOW IS QUARANTINED"
-          echo "=============================================="
-          echo ""
-          echo "Original issues (Issue #475):"
-          echo "- Proxy-based simulation creating misleading engagement signals"
-          echo "- Random device interaction claiming organic usage"
-          echo "- Automated bug creation from simulated crash logs"
-          echo ""
-          echo "Safe alternative: Real user engagement metrics from"
-          echo "production analytics with human interpretation."
+          echo "This legacy usage simulation workflow is intentionally quarantined."
+          echo "Reason: scheduled proxy-based usage simulation can create misleading engagement signals and does not represent real user runtime truth."
+          echo "Sovereign rules require real runtime evidence, no fake engagement, no fake success, and no hidden automation that pretends organic use."
+          echo "If device smoke testing is needed later, rebuild it as a transparent E2E/Playwright or Android emulator test with no store-engagement claims."
           exit 1

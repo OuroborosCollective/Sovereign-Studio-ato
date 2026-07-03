@@ -1,41 +1,20 @@
-# ⚠️ QUARANTINED: Zero-Touch Recruitment Workflow
-#
-# THIS WORKFLOW IS QUARANTINED - DO NOT ENABLE AUTOMATED SCHEDULING
-#
-# Original behavior was unsafe:
-# - Automated tester recruitment via social media bots
-# - Printing success claims without runtime verification
-# - No human review of recruitment activities
-#
-# This workflow is kept as documentation only.
-# For questions, see Issue #475 in the repository.
-
-name: "⚠️ QUARANTINED: Zero-Touch Recruitment (DO NOT RUN)"
+name: "Quarantined: Zero-Touch Recruitment Workflow"
 
 on:
   workflow_dispatch:
-    inputs:
-      confirm_quarantine:
-        description: 'I understand this workflow is quarantined and should not run unattended'
-        required: true
-        type: boolean
+
+permissions:
+  contents: read
 
 jobs:
-  blocked:
-    name: ❌ BLOCKED - Workflow Quarantined
+  quarantined:
+    name: Block unsafe tester recruitment automation
     runs-on: ubuntu-latest
     steps:
-      - name: 🚫 This workflow is quarantined
+      - name: Explain quarantine
         run: |
-          echo "=============================================="
-          echo "⚠️  THIS WORKFLOW IS QUARANTINED"
-          echo "=============================================="
-          echo ""
-          echo "Original issues (Issue #475):"
-          echo "- Automated tester recruitment without runtime verification"
-          echo "- Bot behavior on social media platforms"
-          echo "- Success claims printed without real evidence"
-          echo ""
-          echo "Safe alternative: Manual tester recruitment with"
-          echo "real engagement tracking and human review."
+          echo "This legacy recruitment workflow is intentionally quarantined."
+          echo "Reason: automatic tester acquisition and success claims such as recruited testers must not run as unattended CI automation."
+          echo "Sovereign rules require real evidence, no fake success, no spam-like outreach, and no hidden growth automation."
+          echo "If tester coordination is needed later, rebuild it as a reviewed, opt-in, policy-safe process with explicit human approval."
           exit 1

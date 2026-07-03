@@ -1,51 +1,20 @@
-# ⚠️ QUARANTINED: Zero-Touch Master Workflow
-#
-# THIS WORKFLOW IS QUARANTINED - DO NOT ENABLE AUTOMATED SCHEDULING
-#
-# Original behavior was unsafe:
-# - Automated tester recruitment and engagement simulation
-# - Automatic AI autofix invocation without human review
-# - Zero-touch deployment to Google Play closed_testing track
-#
-# This workflow is kept as documentation only.
-# To enable any of these capabilities, create a new workflow with proper safety guards:
-# - Human review gates before any external action
-# - Explicit success/failure reporting with runtime evidence
-# - No auto-publish to production tracks
-#
-# For questions, see Issue #475 in the repository.
-
-name: "⚠️ QUARANTINED: Zero-Touch Master (DO NOT RUN)"
-
-permissions: {}
+name: "Quarantined: Zero-Touch Master Workflow"
 
 on:
   workflow_dispatch:
-    inputs:
-      confirm_quarantine:
-        description: 'I understand this workflow is quarantined and should not run unattended'
-        required: true
-        type: boolean
+
+permissions:
+  contents: read
 
 jobs:
-  blocked:
-    name: ❌ BLOCKED - Workflow Quarantined
+  quarantined:
+    name: Block unsafe zero-touch automation
     runs-on: ubuntu-latest
     steps:
-      - name: 🚫 This workflow is quarantined
+      - name: Explain quarantine
         run: |
-          echo "=============================================="
-          echo "⚠️  THIS WORKFLOW IS QUARANTINED"
-          echo "=============================================="
-          echo ""
-          echo "Original issues (Issue #475):"
-          echo "- Automated tester recruitment without runtime verification"
-          echo "- Simulated engagement claims without real evidence"
-          echo "- Automatic AI autofix invocation bypassing human review"
-          echo "- Zero-touch deployment to Google Play"
-          echo ""
-          echo "To enable safe automation, create a new workflow with:"
-          echo "1. Human confirmation gates"
-          echo "2. Runtime truth verification before claims"
-          echo "3. Draft-only publishing with manual review"
+          echo "This legacy zero-touch workflow is intentionally quarantined."
+          echo "Reason: it combined scheduled tester recruitment, simulated engagement, external AI autofix actions, and automatic Play release behavior."
+          echo "Sovereign rules require real runtime results, no fake engagement, no unreviewed auto-release, and no hidden automation that can publish or create PRs without explicit review."
+          echo "If any part is needed later, rebuild it as a reviewed runtime-backed workflow with tests, explicit approval gates, and no fake success claims."
           exit 1
