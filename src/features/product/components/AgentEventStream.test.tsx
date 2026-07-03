@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { AgentEventStream } from './AgentEventStream';
 import {
   createIdleSnapshot,
+  transitionAccessReady,
+  transitionAccessRequired,
+  transitionAccessValidating,
   transitionBlocked,
   transitionDraftPrReady,
   transitionExecutorRunning,
@@ -37,7 +40,7 @@ describe('AgentEventStream', () => {
   it('shows intent_detected as Auftrag erkannt, not as active OpenHands work', () => {
     render(<AgentEventStream snapshot={intentSnapshot()} />);
 
-    expect(screen.getByText('Auftrag erkannt')).toBeTruthy();
+    expect(screen.getAllByText(/Auftrag erkannt/).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/OpenHands arbeitet/i)).toBeNull();
   });
 
@@ -48,17 +51,44 @@ describe('AgentEventStream', () => {
     expect(screen.queryByText(/OpenHands arbeitet/i)).toBeNull();
   });
 
+  it('lets verified backend running status override a local starting snapshot', () => {
+    render(
+      <AgentEventStream
+        snapshot={transitionExecutorStarting(intentSnapshot(), 'openhands')}
+        job={runningJob()}
+      />,
+    );
+
+    expect(screen.getByText('OpenHands arbeitet…')).toBeTruthy();
+    expect(screen.queryByText('OpenHands startet…')).toBeNull();
+  });
+
   it('shows OpenHands arbeitet only when runtime state or job status is running', () => {
     render(<AgentEventStream snapshot={runningSnapshot()} job={runningJob()} />);
 
     expect(screen.getByText('OpenHands arbeitet…')).toBeTruthy();
   });
 
+  it('keeps access states visible as access truth, not generic intent truth', () => {
+    const accessRequired = transitionAccessRequired(intentSnapshot());
+    const accessValidating = transitionAccessValidating(accessRequired);
+    const accessReady = transitionAccessReady(accessValidating);
+    const { rerender } = render(<AgentEventStream snapshot={accessRequired} />);
+
+    expect(screen.getByText('GitHub-Zugang erforderlich')).toBeTruthy();
+
+    rerender(<AgentEventStream snapshot={accessValidating} />);
+    expect(screen.getByText('GitHub-Zugang wird geprüft…')).toBeTruthy();
+
+    rerender(<AgentEventStream snapshot={accessReady} />);
+    expect(screen.getByText('GitHub-Zugang bereit')).toBeTruthy();
+  });
+
   it('shows blocked, failed and draft-pr-ready terminal truth without fabricating progress', () => {
     const blocked = transitionBlocked(intentSnapshot(), 'GitHub-Schreibzugang fehlt.');
     const { rerender, container } = render(<AgentEventStream snapshot={blocked} />);
 
-    expect(screen.getAllByText('Executor blockiert').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Executor blockiert/).length).toBeGreaterThanOrEqual(1);
 
     const draftReady = transitionDraftPrReady(
       runningSnapshot(),
@@ -66,7 +96,7 @@ describe('AgentEventStream', () => {
     );
     rerender(<AgentEventStream snapshot={draftReady} />);
 
-    expect(screen.getAllByText('Draft PR bereit').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Draft PR bereit/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Draft PR öffnen/i)).toBeTruthy();
     expect(container.textContent).not.toContain('%');
   });
@@ -86,7 +116,7 @@ describe('AgentEventStream', () => {
   it('does not display unknown/repo as real repository truth', () => {
     render(<AgentEventStream snapshot={intentSnapshot('unknown/repo')} />);
 
-    expect(screen.getByText('Auftrag erkannt')).toBeTruthy();
+    expect(screen.getAllByText(/Auftrag erkannt/).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/unknown\/repo/i)).toBeNull();
   });
 
