@@ -195,6 +195,12 @@ import type {
   SignalType,
   WorkerRuntimeBlocker,
 } from "../runtime/builderContainerTypes";
+import {
+  deriveWorkbenchStatusSlots,
+  type WorkbenchStatusSlot,
+  type WorkbenchStatusSlotId,
+  type WorkbenchStatusTone,
+} from "../runtime/builderWorkbenchStatus";
 // Chat/PAL helpers — extracted to builderChatHelpers.ts / builderPALRuntime.ts
 import {
   buildChatLines,
@@ -220,7 +226,6 @@ import {
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-const BUILDER_SHELL_MAX_WIDTH = "min(100vw, 860px)";
 const CUTE_THINKING_FRAME_MS = 1100;
 const CUTE_IDLE_FRAME_MS = 1450;
 const builderContainerContract = getSovereignContainerContract("builder");
@@ -411,7 +416,344 @@ function ModuleLamps({
   );
 }
 
-// TopBar — v3 verbatim + module lamps + panel toggle + PAL badge
+// Workbench status chips — user-facing primary status row (Actions/Files/Logs/Errors/Draft PR).
+// Replaces the technical module lamp row as the default, always-visible navigation.
+const WORKBENCH_STATUS_TONE_COLOR: Record<WorkbenchStatusTone, string> = {
+  neutral: C.textMuted,
+  positive: C.green,
+  warning: C.amber,
+  error: C.rose,
+};
+
+function WorkbenchStatusChips({
+  slots,
+  onSlotClick,
+}: {
+  slots: WorkbenchStatusSlot[];
+  onSlotClick: (id: WorkbenchStatusSlotId) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Werkbank Status"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 10px",
+        borderTop: `1px solid ${C.border}`,
+        overflowX: "auto",
+      }}
+    >
+      {slots.map((slot) => {
+        const color = WORKBENCH_STATUS_TONE_COLOR[slot.tone];
+        return (
+          <button
+            key={slot.id}
+            type="button"
+            onClick={() => onSlotClick(slot.id)}
+            aria-label={`${slot.label}: ${slot.value}`}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              minHeight: 40,
+              padding: "8px 11px",
+              borderRadius: 999,
+              background: `${color}14`,
+              border: `1px solid ${color}33`,
+              color,
+              fontFamily: "monospace",
+              fontSize: 10,
+              cursor: "pointer",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: color,
+                boxShadow: slot.tone !== "neutral" ? `0 0 4px ${color}` : "none",
+                display: "inline-block",
+              }}
+            />
+            <span style={{ color: C.textSub }}>{slot.label}</span>
+            <span style={{ fontWeight: 700 }}>{slot.value}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Workbench slot drawer — generic bottom sheet showing real derived data with an explicit empty state.
+function WorkbenchSlotDrawer({
+  slot,
+  onClose,
+  onOpenDraftPr,
+}: {
+  slot: WorkbenchStatusSlot;
+  onClose: () => void;
+  onOpenDraftPr?: (url: string) => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 82,
+        background: "rgba(14,17,22,0.82)",
+        backdropFilter: "blur(6px)",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "flex-end",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto",
+          maxHeight: "70vh",
+          overflowY: "auto",
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderBottom: "none",
+          borderRadius: "20px 20px 0 0",
+          padding: "14px 16px calc(20px + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: C.text }}>
+            {slot.label}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Schließen"
+            style={{ background: "transparent", border: "none", color: C.textMuted, fontSize: 16, cursor: "pointer" }}
+          >
+            ×
+          </button>
+        </div>
+        {slot.items.length === 0 ? (
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: C.textMuted, padding: "10px 0" }}>
+            {slot.emptyLabel}
+          </div>
+        ) : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+            {slot.items.map((item, index) => (
+              <li
+                key={`${slot.id}-${index}`}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  color: C.textSub,
+                  padding: "6px 8px",
+                  borderRadius: 8,
+                  background: C.bg,
+                  border: `1px solid ${C.border}`,
+                  wordBreak: "break-word",
+                }}
+              >
+                {item}
+              </li>
+            ))}
+          </ul>
+        )}
+        {slot.id === "draftPr" && slot.items[0] && onOpenDraftPr && (
+          <button
+            type="button"
+            onClick={() => onOpenDraftPr(slot.items[0])}
+            style={{
+              marginTop: 12,
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: `${C.green}18`,
+              border: `1px solid ${C.green}44`,
+              color: C.green,
+              fontFamily: "monospace",
+              fontSize: 11,
+              cursor: "pointer",
+            }}
+          >
+            Draft PR öffnen
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Workbench side panel — permanent, always-visible detail view for wide/landscape
+// tablets (e.g. iPad 9th gen "A9" in landscape) and desktop widths, so users don't
+// have to tap a chip to see status. Hidden via CSS on narrow/portrait screens where
+// the chip row + drawer pattern is used instead.
+function WorkbenchSidePanel({
+  slots,
+  onOpenDraftPr,
+  modules,
+  signals,
+  showInspector,
+  onToggleInspector,
+}: {
+  slots: WorkbenchStatusSlot[];
+  onOpenDraftPr?: (url: string) => void;
+  modules: ModuleDef[];
+  signals: Partial<Record<ModuleId, number>>;
+  showInspector: boolean;
+  onToggleInspector: () => void;
+}) {
+  return (
+    <aside
+      className="sovereign-side-panel"
+      aria-label="Werkbank Übersicht"
+      style={{
+        flexDirection: "column",
+        gap: 12,
+        background: C.surface,
+        border: `1px solid ${C.border}`,
+        borderRadius: 16,
+        padding: 14,
+        boxSizing: "border-box",
+      }}
+    >
+      <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: 0.4 }}>
+        WERKBANK
+      </span>
+      {slots.map((slot) => {
+        const color = WORKBENCH_STATUS_TONE_COLOR[slot.tone];
+        return (
+          <div
+            key={slot.id}
+            style={{
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              padding: 10,
+              background: C.bg,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: color,
+                  boxShadow: slot.tone !== "neutral" ? `0 0 4px ${color}` : "none",
+                  display: "inline-block",
+                }}
+              />
+              <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color }}>
+                {slot.label}
+              </span>
+              <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: C.textSub, marginLeft: "auto" }}>
+                {slot.value}
+              </span>
+            </div>
+            {slot.items.length === 0 ? (
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: C.textMuted }}>
+                {slot.emptyLabel}
+              </div>
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                {slot.items.slice(0, 6).map((item, index) => (
+                  <li
+                    key={`${slot.id}-side-${index}`}
+                    style={{
+                      fontFamily: "monospace",
+                      fontSize: 10,
+                      color: C.textSub,
+                      padding: "4px 6px",
+                      borderRadius: 6,
+                      background: C.surface,
+                      border: `1px solid ${C.border}`,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {slot.id === "draftPr" && slot.items[0] && onOpenDraftPr && (
+              <button
+                type="button"
+                onClick={() => onOpenDraftPr(slot.items[0])}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  background: `${C.green}18`,
+                  border: `1px solid ${C.green}44`,
+                  color: C.green,
+                  fontFamily: "monospace",
+                  fontSize: 10,
+                  cursor: "pointer",
+                }}
+              >
+                Draft PR öffnen
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={onToggleInspector}
+        aria-pressed={showInspector}
+        style={{
+          marginTop: 4,
+          padding: "8px 10px",
+          borderRadius: 8,
+          background: showInspector ? `${C.accent}18` : "transparent",
+          border: `1px solid ${showInspector ? C.accent : C.border}`,
+          color: showInspector ? C.accent : C.textSub,
+          fontFamily: "monospace",
+          fontSize: 10,
+          cursor: "pointer",
+        }}
+      >
+        {showInspector ? "Inspector schließen" : "Inspector öffnen (intern)"}
+      </button>
+      {showInspector && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontFamily: "monospace", fontSize: 10, fontWeight: 700, color: C.textMuted }}>
+            Module (intern)
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {modules.map((m) => (
+              <span
+                key={m.id}
+                title={m.label}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 9,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  background: C.bg,
+                  border: `1px solid ${C.border}`,
+                  color: C.textSub,
+                }}
+              >
+                {m.id.toUpperCase()} · {signals[m.id] ?? 0}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+// TopBar — v3 verbatim + Workbench status chips + panel toggle + PAL badge
 function TopBar({
   status,
   repoReady,
@@ -434,6 +776,9 @@ function TopBar({
   userInitials,
   userLoggedIn,
   onUserClick,
+  workbenchStatusSlots,
+  onWorkbenchSlotClick,
+  showInspector,
 }: {
   status: AgentStatus;
   repoReady: boolean;
@@ -456,6 +801,9 @@ function TopBar({
   userInitials?: string;
   userLoggedIn?: boolean;
   onUserClick?: () => void;
+  workbenchStatusSlots: WorkbenchStatusSlot[];
+  onWorkbenchSlotClick: (id: WorkbenchStatusSlotId) => void;
+  showInspector: boolean;
 }) {
   const repoLabel = chatRepoSnapshot
     ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
@@ -674,13 +1022,31 @@ function TopBar({
         </button>
       </div>
 
-      {/* Module lamps row */}
-      <ModuleLamps
-        modules={modules}
-        signals={signals}
-        activeTab={activeTab}
-        onTabClick={onTabClick}
-      />
+      {/* Werkbank Status — Actions/Files/Logs/Errors/Draft PR, primary and always visible */}
+      <WorkbenchStatusChips slots={workbenchStatusSlots} onSlotClick={onWorkbenchSlotClick} />
+
+      {/* Inspector — technical runtime modules, internal-only, hidden unless explicitly opened */}
+      {showInspector && (
+        <>
+          <div
+            style={{
+              padding: "3px 10px 0",
+              fontFamily: "monospace",
+              fontSize: 8,
+              color: C.textMuted,
+              borderTop: `1px solid ${C.border}`,
+            }}
+          >
+            Inspector (intern)
+          </div>
+          <ModuleLamps
+            modules={modules}
+            signals={signals}
+            activeTab={activeTab}
+            onTabClick={onTabClick}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -1101,12 +1467,11 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
         und handelt nur bei echten Stop-Punkten.
       </p>
       <div
+        className="sovereign-idea-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
           gap: 10,
           width: "100%",
-          maxWidth: 340,
         }}
       >
         {IDEA_OPTIONS.map((opt) => (
@@ -1571,11 +1936,16 @@ function RuntimeSheet({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto",
           background: C.surface,
           borderRadius: "20px 20px 0 0",
           border: `1px solid ${C.border}`,
           borderBottom: "none",
           padding: "0 0 24px",
+          maxHeight: "80vh",
+          overflowY: "auto",
         }}
       >
         <div
@@ -2172,18 +2542,22 @@ function Composer({
   );
 }
 
-// Bottom tab bar
+// BottomTabBar — Chat stays the sole primary destination; the Inspector toggle
+// reveals the technical runtime modules (see ModuleLamps) as an internal debug
+// view. Files/Diff/Draft PR/Logs live as understandable Workbench surfaces
+// (WorkbenchStatusChips + drawer), not as bottom-nav module abbreviations.
 function BottomTabBar({
-  modules,
   activeTab,
-  signals,
-  onTabClick,
+  onChatClick,
+  inspectorOpen,
+  onToggleInspector,
 }: {
-  modules: ModuleCfg[];
   activeTab: string;
-  signals: Record<string, SignalType>;
-  onTabClick: (id: string) => void;
+  onChatClick: () => void;
+  inspectorOpen: boolean;
+  onToggleInspector: () => void;
 }) {
+  const isChat = activeTab === "chat";
   return (
     <nav
       style={{
@@ -2191,85 +2565,72 @@ function BottomTabBar({
         background: C.bg,
         borderTop: `1px solid ${C.border}`,
         display: "grid",
-        gridTemplateColumns: `repeat(${modules.length}, 1fr)`,
+        gridTemplateColumns: "repeat(2, 1fr)",
         flexShrink: 0,
       }}
       aria-label="Sovereign Studio Tabs"
     >
-      {modules.map((tab) => {
-        const active = tab.id === activeTab;
-        const sig = (signals[tab.id] ?? "idle") as SignalType;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => onTabClick(tab.id)}
-            aria-current={active ? "page" : undefined}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 3,
-              background: active ? `${tab.color}08` : "transparent",
-              border: "none",
-              borderTop: `2px solid ${active ? tab.color : "transparent"}`,
-              cursor: "pointer",
-              padding: "4px 2px",
-              minWidth: 0,
-            }}
-          >
-            <span
-              style={{
-                position: "relative",
-                fontSize: 15,
-                color: active ? tab.color : C.textMuted,
-                transition: "color 0.15s",
-              }}
-            >
-              {tab.icon}
-              {sig !== "idle" && tab.id !== "chat" && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: -2,
-                    right: -4,
-                    display: "inline-block",
-                    width: 5,
-                    height: 5,
-                    borderRadius: "50%",
-                    background:
-                      sig === "error"
-                        ? C.rose
-                        : sig === "warning"
-                          ? C.amber
-                          : tab.color,
-                    animation:
-                      sig === "processing"
-                        ? "sdc-pulse 1s ease-in-out infinite"
-                        : "none",
-                  }}
-                />
-              )}
-            </span>
-            <span
-              style={{
-                fontFamily: "monospace",
-                fontSize: 7.5,
-                color: active ? tab.color : C.textMuted,
-                transition: "color 0.15s",
-                letterSpacing: 0.3,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: "100%",
-              }}
-            >
-              {tab.short}
-            </span>
-          </button>
-        );
-      })}
+      <button
+        type="button"
+        onClick={onChatClick}
+        aria-current={isChat ? "page" : undefined}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 3,
+          background: isChat ? `${C.sky}08` : "transparent",
+          border: "none",
+          borderTop: `2px solid ${isChat ? C.sky : "transparent"}`,
+          cursor: "pointer",
+          padding: "4px 2px",
+          minWidth: 0,
+        }}
+      >
+        <span style={{ fontSize: 15, color: isChat ? C.sky : C.textMuted }}>⬡</span>
+        <span
+          style={{
+            fontFamily: "monospace",
+            fontSize: 7.5,
+            color: isChat ? C.sky : C.textMuted,
+            letterSpacing: 0.3,
+          }}
+        >
+          CHAT
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onToggleInspector}
+        aria-pressed={inspectorOpen}
+        title="Technische Runtime-Module (intern)"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 3,
+          background: inspectorOpen ? `${C.violet}08` : "transparent",
+          border: "none",
+          borderTop: `2px solid ${inspectorOpen ? C.violet : "transparent"}`,
+          cursor: "pointer",
+          padding: "4px 2px",
+          minWidth: 0,
+        }}
+      >
+        <span style={{ fontSize: 15, color: inspectorOpen ? C.violet : C.textMuted }}>⚙</span>
+        <span
+          style={{
+            fontFamily: "monospace",
+            fontSize: 7.5,
+            color: inspectorOpen ? C.violet : C.textMuted,
+            letterSpacing: 0.3,
+          }}
+        >
+          INSPECTOR
+        </span>
+      </button>
     </nav>
   );
 }
@@ -2340,6 +2701,8 @@ export function BuilderContainer({
     useState<Partial<Record<ModuleId, ModuleCond[]>>>(INIT_CONDITIONS);
   const [confidence, setConfidence] = useState(0.12);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [showInspector, setShowInspector] = useState(false);
+  const [openWorkbenchSlot, setOpenWorkbenchSlot] = useState<WorkbenchStatusSlotId | null>(null);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
   const { credits, chargeCredits } = useCreditGuard();
@@ -2467,6 +2830,21 @@ export function BuilderContainer({
     });
     setStatusLogs((prev) => [...prev.slice(-199), { ts, level, msg, tabId }]);
   }, []);
+
+  // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
+  // derived purely from runtime state, never fabricated. Fronts the technical
+  // module lamps as the primary, always-visible status vocabulary.
+  const workbenchStatusSlots = useMemo(
+    () =>
+      deriveWorkbenchStatusSlots({
+        logs: statusLogs,
+        workerBlocker,
+        chatRepoError,
+        openhandsJob,
+        publishedPrUrl,
+      }),
+    [statusLogs, workerBlocker, chatRepoError, openhandsJob, publishedPrUrl],
+  );
 
   const openRepoExplorer = useCallback(() => {
     if (!chatRepoSnapshot) return;
@@ -3354,7 +3732,6 @@ export function BuilderContainer({
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
-        maxWidth: BUILDER_SHELL_MAX_WIDTH,
         margin: "0 auto",
         height: "100dvh",
         display: "flex",
@@ -3373,10 +3750,24 @@ export function BuilderContainer({
         textarea::placeholder { color: #3d4f61; }
         ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-thumb { background: #232d3a; border-radius: 2px; }
+        /* Responsive shell width — phones and tablets (portrait/landscape, e.g. iPad 9th gen "A9")
+           use the full device viewport; only large desktop/tablet-landscape screens get a
+           comfortable reading-width cap so the chat doesn't stretch edge-to-edge forever. */
+        .sovereign-builder-container { max-width: 100vw; }
+        @media (min-width: 1180px) {
+          .sovereign-builder-container { max-width: 980px; }
+        }
+        .sovereign-idea-grid { grid-template-columns: 1fr 1fr; max-width: 340px; }
+        @media (min-width: 620px) {
+          .sovereign-idea-grid { grid-template-columns: repeat(3, 1fr); max-width: 560px; }
+        }
+        @media (min-width: 900px) {
+          .sovereign-idea-grid { grid-template-columns: repeat(4, 1fr); max-width: 720px; }
+        }
         ::-webkit-scrollbar-track { background: transparent; }
       `}</style>
 
-      {/* TOP BAR — v3 design + module lamps + PAL badge */}
+      {/* TOP BAR — v3 design + Workbench status chips + PAL badge */}
       <TopBar
         status={agentStatus}
         repoReady={effectiveRepoReady}
@@ -3402,6 +3793,15 @@ export function BuilderContainer({
               .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
           : undefined}
         onUserClick={() => authUser ? setShowProfile(true) : setShowLogin(true)}
+        workbenchStatusSlots={workbenchStatusSlots}
+        onWorkbenchSlotClick={(id) => {
+          if (id === "logs") {
+            setPanelOpen((v) => !v);
+            return;
+          }
+          setOpenWorkbenchSlot(id);
+        }}
+        showInspector={showInspector}
       />
 
       {/* COLLAPSIBLE STATUS/LOG PANEL */}
@@ -3412,6 +3812,15 @@ export function BuilderContainer({
         modules={MODULES}
         onClearLogs={() => setStatusLogs([])}
       />
+
+      {/* Werkbank Slot Drawer — Actions/Files/Errors/Draft PR bottom sheet */}
+      {openWorkbenchSlot && (
+        <WorkbenchSlotDrawer
+          slot={workbenchStatusSlots.find((s) => s.id === openWorkbenchSlot) ?? workbenchStatusSlots[0]}
+          onClose={() => setOpenWorkbenchSlot(null)}
+          onOpenDraftPr={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+        />
+      )}
 
       {/* ── Issue #426: Worker Degraded Banner */}
       {workerBlocker && (
@@ -3721,12 +4130,12 @@ export function BuilderContainer({
         </>
       )}
 
-      {/* BOTTOM TAB BAR — 7 tabs, SESSION removed */}
+      {/* BOTTOM TAB BAR — Chat + Inspector toggle; technical modules live behind Inspector */}
       <BottomTabBar
-        modules={MODULES}
         activeTab={activeTab}
-        signals={signals}
-        onTabClick={switchTab}
+        onChatClick={() => switchTab("chat")}
+        inspectorOpen={showInspector}
+        onToggleInspector={() => setShowInspector((v) => !v)}
       />
 
       {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}

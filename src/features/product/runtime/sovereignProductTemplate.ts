@@ -46,6 +46,8 @@ export interface SovereignProductTemplateTabDefinition {
   userVisible: boolean;
 }
 
+export type SovereignWorkbenchStatusSlotId = 'actions' | 'files' | 'logs' | 'errors' | 'draftPr';
+
 export interface SovereignProductTemplateContract {
   version: 1;
   productName: 'Sovereign Studio';
@@ -56,6 +58,10 @@ export interface SovereignProductTemplateContract {
   tabs: SovereignProductTemplateTabDefinition[];
   autoNavigationAllowlist: SovereignProductTemplateAutoNavigationReason[];
   invariants: string[];
+  /** Builder Workbench status vocabulary shown as the primary status surface, replacing raw module abbreviations. */
+  workbenchStatusSlots: SovereignWorkbenchStatusSlotId[];
+  /** Technical runtime module abbreviations. Internal-only, surfaced solely via the Inspector debug view. */
+  internalOnlyModuleAbbreviations: string[];
 }
 
 export interface SovereignProductTemplateValidationReport {
@@ -73,6 +79,15 @@ export const SOVEREIGN_PRODUCT_TRUTH_INVARIANTS = [
   'Repo setup may start from a chat instruction.',
   'The UI must not become a dashboard, monitor or second control shell.',
   'Truth is produced by runtime, not by UI.',
+] as const;
+
+export const SOVEREIGN_BUILDER_WORKBENCH_INVARIANTS = [
+  'The Builder Workbench reframes BuilderContainer in place; it is not a second shell or a fork of the chat surface.',
+  'The permanent user-facing status vocabulary is Actions, Files, Logs, Errors and Draft PR/Workflow status.',
+  'Technical runtime module abbreviations (INT/ROU/PAT/SYN/ORC/LOG/BUD) are internal-only and must never be the primary navigation.',
+  'Technical runtime modules remain reachable only through an explicit Inspector/debug view, never shown by default.',
+  'Every Workbench status slot renders an explicit empty state when there is no runtime data; no fabricated or mock content.',
+  'Chat stays the central, primary surface of the Builder Workbench.',
 ] as const;
 
 export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
@@ -95,7 +110,10 @@ export const SOVEREIGN_PRODUCT_TEMPLATE: SovereignProductTemplateContract = {
     'Passive review, awaiting-intent and side-channel states must not auto-open tabs.',
     'Only active work or red stopper states may auto-open a target view.',
     'Coach, setup drawer and workbench are guidance layers; they must not become state sources for themselves.',
+    ...SOVEREIGN_BUILDER_WORKBENCH_INVARIANTS,
   ],
+  workbenchStatusSlots: ['actions', 'files', 'logs', 'errors', 'draftPr'],
+  internalOnlyModuleAbbreviations: ['INT', 'ROU', 'PAT', 'SYN', 'ORC', 'LOG', 'BUD'],
   tabs: [
     { id: 'repo', label: 'Repo', group: 'primary', phase: 'repo-setup', mainFlowIndex: 0, autoOpenAllowed: true, userVisible: true },
     { id: 'builder', label: 'Chat', group: 'primary', phase: 'intent-planning', mainFlowIndex: 1, autoOpenAllowed: false, userVisible: true },
@@ -210,6 +228,30 @@ export function validateSovereignProductTemplate(
   const tabCount = contract.primaryFlow.length + contract.sideTabs.length + contract.diagnosticTabs.length;
   if (tabCount !== contract.tabs.length) {
     warnings.push('Tab groups do not cover every declared tab exactly once.');
+  }
+
+  for (const invariant of SOVEREIGN_BUILDER_WORKBENCH_INVARIANTS) {
+    if (!contract.invariants.includes(invariant)) {
+      errors.push(`Missing Builder Workbench invariant: ${invariant}`);
+    }
+  }
+
+  const expectedWorkbenchSlots: SovereignWorkbenchStatusSlotId[] = ['actions', 'files', 'logs', 'errors', 'draftPr'];
+  const workbenchSlotsMatch =
+    contract.workbenchStatusSlots.length === expectedWorkbenchSlots.length &&
+    expectedWorkbenchSlots.every((slot) => contract.workbenchStatusSlots.includes(slot));
+  if (!workbenchSlotsMatch) {
+    errors.push('Workbench status slots must be exactly Actions, Files, Logs, Errors and Draft PR.');
+  }
+
+  const overlap = contract.internalOnlyModuleAbbreviations.filter((abbr) =>
+    (contract.workbenchStatusSlots as string[]).includes(abbr),
+  );
+  if (overlap.length) {
+    errors.push(`Internal module abbreviations must not double as Workbench status slots: ${overlap.join(', ')}`);
+  }
+  if (contract.internalOnlyModuleAbbreviations.length === 0) {
+    warnings.push('No internal-only module abbreviations declared; Inspector view would have nothing to show.');
   }
 
   return {

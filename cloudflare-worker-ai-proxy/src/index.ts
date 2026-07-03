@@ -141,7 +141,7 @@ const MODEL_ROUTES: Record<string, { provider: string; actualModel: string }> = 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key, X-Sovereign-Client',
   'Access-Control-Max-Age': '86400',
 };
 

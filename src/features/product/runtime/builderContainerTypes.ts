@@ -57,3 +57,11 @@ export interface WorkerRuntimeBlocker {
   readonly health?: DevChatWorkerHealthResult;
   readonly createdAt: number;
 }
+
+/**
+ * Builder Workbench status slots — the user-facing primary status vocabulary
+ * (Actions, Files, Logs, Errors, Draft PR) that fronts the technical runtime
+ * modules (ModuleId). Technical module abbreviations stay available internally
+ * via the Inspector view, but must never be the primary navigation surface.
+ */
+export type WorkbenchStatusSlotId = "actions" | "files" | "logs" | "errors" | "draftPr";
