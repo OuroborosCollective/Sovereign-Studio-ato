@@ -12,6 +12,8 @@
 
 name: "⚠️ QUARANTINED: Zero-Touch Simulation (DO NOT RUN)"
 
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
