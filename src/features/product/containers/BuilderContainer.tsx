@@ -316,6 +316,8 @@ import {
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   isDelegatedOpenHandsExecutionIntent,
+  isExecutorStatusQuestion,
+  buildExecutorStatusAnswer,
 } from "../runtime/workerIntentDetector";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
@@ -3488,6 +3490,20 @@ export function BuilderContainer({
       return;
     }
 
+    // ── Executor status questions: answer locally from agentWorkSnapshot — never forward to Worker
+    if (isExecutorStatusQuestion(submittedText)) {
+      const statusAnswer = buildExecutorStatusAnswer({
+        agentState: agentWorkSnapshot.state,
+        openhandsStatus: openhandsJob?.status,
+        changedFiles: openhandsJob?.changedFiles?.length ?? 0,
+        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        blockerReason: agentWorkSnapshot.blockerReason,
+      });
+      appendChatLine({ role: 'assistant', text: statusAnswer });
+      addLog('info', `Executor status question answered locally · state=${agentWorkSnapshot.state}`, 'router');
+      return;
+    }
+
     const workerDiagnosticIntent = isWorkerDiagnosticQuestion(submittedText);
     if (
       workerBlocker &&
@@ -3540,19 +3556,26 @@ export function BuilderContainer({
 
     if (isExecutionIntent || isDelegatedExecution) {
       if (!agentDisabled) {
-        const delegationNote = isDelegatedExecution
-          ? "Ausführungsauftrag erkannt. Ich übergebe an OpenHands Executor. Ergebnis bleibt Draft PR, kein Auto-Merge."
-          : "Code-/Draft-PR-Auftrag erkannt. Ich übergebe an OpenHands Executor und halte den Worker Chat als Standardroute bereit.";
-        appendChatLine({ role: "assistant", text: delegationNote });
+        appendChatLine({
+          role: "assistant",
+          text: "Ausführungsauftrag erkannt.\nIch starte OpenHands Executor.\nErgebnis bleibt Draft PR, kein Auto-Merge.",
+        });
         startAgentFromText(submittedText);
         return;
       }
-      // agentDisabled === true: Show blocker card, do NOT fall through to Worker
+      // agentDisabled === true: show clear blocker — no emoji, no vague message
+      const blockerReason = state.disabledReason
+        ? `GitHub-Schreibzugang fehlt: ${state.disabledReason}`
+        : !openhandsReady
+          ? "Executor nicht bereit: OpenHands ist nicht konfiguriert."
+          : !effectiveRepoReady
+            ? "Auftrag nicht ausführbar: Kein Repo geladen."
+            : "Executor nicht bereit.";
       appendChatLine({
         role: "assistant",
-        text: `⚠️ OpenHands Executor blockiert: ${state.disabledReason || effectiveRepoReason}.\n\nBitte GitHub-Zugangsdaten im sicheren Feld hinterlegen, dann kann ich den Auftrag ausführen.`,
+        text: `OpenHands wurde nicht gestartet.\nGrund: ${blockerReason}\nNächste Aktion: Sicheren GitHub-Zugang öffnen.`,
       });
-      addLog("warn", `Execution blocked: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, "router");
+      addLog("warn", `Execution blocked: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
       return;
     }
 
@@ -4108,7 +4131,7 @@ export function BuilderContainer({
                 return;
               }
               if (toolId === 'github_access') {
-                appendChatLine({ role: 'assistant', text: 'GitHub-Zugang: Token im Kanal eingeben oder via Einstellungen hinterlegen.' });
+                appendChatLine({ role: 'assistant', text: 'Token niemals in den Chat eingeben. Bitte nur das sichere Zugangsfeld öffnen.' });
                 return;
               }
               if (toolId === 'runtime_logs') { setPanelOpen((v) => !v); return; }

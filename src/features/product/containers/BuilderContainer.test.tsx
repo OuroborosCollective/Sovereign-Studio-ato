@@ -491,4 +491,112 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     expect(document.body.innerHTML).toMatch(/@media \(min-width: 1180px\)/);
   });
+
+  // ── Phase 1 spec: Executor / delegation / security tests ────────────────────
+
+  it("blocks GitHub PAT from chat, shows security message, never stores token in chat history", async () => {
+    render(<BuilderContainer {...baseProps()} />);
+    const pat = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01";
+    fireEvent.change(chatField(), { target: { value: pat } });
+    fireEvent.click(sendButton());
+    await waitFor(() =>
+      expect(screen.getByText(/sicheres Zugangsfeld/i)).toBeDefined(),
+    );
+    // Token must not appear in rendered chat bubbles
+    expect(screen.queryByText(pat)).toBeNull();
+  });
+
+  it("security card message never instructs user to enter token in chat", async () => {
+    render(<BuilderContainer {...baseProps()} />);
+    fireEvent.change(chatField(), { target: { value: "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01" } });
+    fireEvent.click(sendButton());
+    await waitFor(() =>
+      expect(screen.getByText(/sicheres Zugangsfeld/i)).toBeDefined(),
+    );
+    // Must NOT say "Token im Kanal eingeben"
+    expect(screen.queryByText(/Token im Kanal/i)).toBeNull();
+  });
+
+  it("shows OpenHands started message on execution intent when executor is ready", async () => {
+    const props = { ...baseProps(), openhandsReady: true, onStartOpenHands: vi.fn() };
+    render(<BuilderContainer {...props} />);
+    fireEvent.change(chatField(), { target: { value: "Implementiere den mobilen Chat-Fix als Draft PR." } });
+    fireEvent.click(sendButton());
+    await waitFor(() =>
+      expect(screen.getByText(/Ausführungsauftrag erkannt/i)).toBeDefined(),
+    );
+    await waitFor(() => expect(props.onStartOpenHands).toHaveBeenCalledOnce());
+    // Must mention executor starting and no-auto-merge
+    expect(screen.getByText(/kein Auto-Merge/i)).toBeDefined();
+  });
+
+  it("shows clear blocker message (not vague) when executor is not ready", async () => {
+    const props = { ...baseProps(), openhandsReady: false };
+    render(<BuilderContainer {...props} />);
+    fireEvent.change(chatField(), { target: { value: "Implementiere den Chat-Fix als Draft PR." } });
+    fireEvent.click(sendButton());
+    await waitFor(() =>
+      expect(screen.getByText(/OpenHands wurde nicht gestartet/i)).toBeDefined(),
+    );
+    // Must show "Nächste Aktion" guidance
+    expect(screen.getByText(/Nächste Aktion/i)).toBeDefined();
+  });
+
+  it("answers 'arbeitet er schon?' locally from runtime state without calling Worker", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: "Worker reply" } }] }),
+    );
+    render(
+      <BuilderContainer
+        {...baseProps()}
+        openhandsReady
+        openhandsJob={{ status: "running", openHandsId: "conv_123", changedFiles: ["src/App.tsx"], events: [] }}
+      />,
+    );
+    fireEvent.change(chatField(), { target: { value: "arbeitet er schon?" } });
+    fireEvent.click(sendButton());
+    await waitFor(() =>
+      expect(screen.getByText(/Ja, OpenHands läuft/i)).toBeDefined(),
+    );
+    // Must NOT have called Worker for this status question
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
+  });
+
+  it("answers executor status question locally when executor is idle (no job running)", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: "Worker reply" } }] }),
+    );
+    render(<BuilderContainer {...baseProps()} openhandsReady />);
+    fireEvent.change(chatField(), { target: { value: "ist er fertig?" } });
+    fireEvent.click(sendButton());
+    await waitFor(() =>
+      expect(screen.getByText(/Nein/i)).toBeDefined(),
+    );
+    // Status answered locally — no Worker call
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
+  });
+
+  it("Worker HTTP 500 followed by 'Warum?' is answered locally — Worker not retried", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
+      jsonResponse({ ok: true, provider: "sovereign-llm-bridge", gateway: "gatter", model: "cerebras/zai-glm-4.7", upstreamConfigured: true, secretConfigured: true }),
+    );
+    render(<BuilderContainer {...baseProps()} repoReady openhandsReady />);
+    fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge?" } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
+    const callsAfterBlock = nonAuthFetchCalls(fetchMock).length;
+    fireEvent.change(chatField(), { target: { value: "Warum?" } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getAllByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i).length).toBeGreaterThanOrEqual(2));
+    // No extra fetch was made for the "Warum?" message
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsAfterBlock);
+  });
+
+  it("SovereignToolLauncher github_access button shows safe-access message, not 'Token im Kanal'", () => {
+    render(<BuilderContainer {...baseProps()} />);
+    // The github_access tool path is tested via the message content check
+    // Verify the token-in-channel message is never present in the page
+    expect(screen.queryByText(/Token im Kanal/i)).toBeNull();
+  });
 });

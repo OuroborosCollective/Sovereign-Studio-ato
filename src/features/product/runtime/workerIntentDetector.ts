@@ -27,9 +27,28 @@ const DELEGATION_TOKENS = [
   'mach du das',
   'erledige das',
   'setze das um',
+  'setz das um',
   'übernimm das',
   'kannst du das für mich',
   'mach das für mich',
+];
+
+// Executor status question tokens: user asks if/what the executor is doing
+const EXECUTOR_STATUS_TOKENS = [
+  'arbeitet er schon',
+  'läuft das',
+  'läuft er',
+  'was macht er',
+  'sehe nichts bei replit',
+  'status?',
+  'ist er fertig',
+  'hat er angefangen',
+  'warum passiert nichts',
+  'macht er was',
+  'tut er was',
+  'ist er gestartet',
+  'passiert etwas',
+  'passiert gerade',
 ];
 
 // Code/repo context tokens that make delegation meaningful
@@ -101,6 +120,63 @@ export function isDelegatedOpenHandsExecutionIntent(
 ): boolean {
   if (!isDelegationIntent(text)) return false;
   return hasCodeContextInHistory(recentMessages);
+}
+
+/**
+ * Detects if a message is asking about the current executor/OpenHands status.
+ * These messages should be answered locally from agentWorkSnapshot, not sent to Worker.
+ */
+export function isExecutorStatusQuestion(text: string): boolean {
+  const lower = text.toLowerCase();
+  return EXECUTOR_STATUS_TOKENS.some((token) => lower.includes(token));
+}
+
+export type ExecutorStatusArgs = {
+  readonly agentState: string;
+  readonly openhandsStatus?: string;
+  readonly changedFiles?: number;
+  readonly draftPrUrl?: string | null;
+  readonly blockerReason?: string | null;
+};
+
+/**
+ * Builds a truthful local answer for executor status questions
+ * ("arbeitet er schon?", "läuft das?", etc.) from real runtime state.
+ * Never fabricates — empty/idle states are reported honestly.
+ */
+export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
+  const { agentState, openhandsStatus, changedFiles = 0, draftPrUrl, blockerReason } = args;
+
+  if (agentState === 'idle' && (!openhandsStatus || openhandsStatus === 'idle')) {
+    return 'Nein, OpenHands läuft noch nicht.\nKein Auftrag wurde gestartet.';
+  }
+  if (agentState === 'executor_running' || openhandsStatus === 'running') {
+    const fileInfo = changedFiles > 0
+      ? `Geänderte Dateien bisher: ${changedFiles}.`
+      : 'Geänderte Dateien bisher: 0.';
+    const prInfo = draftPrUrl ? 'Draft PR: wird vorbereitet.' : 'Draft PR: noch nicht bereit.';
+    return `Ja, OpenHands läuft.\n${fileInfo}\n${prInfo}`;
+  }
+  if (agentState === 'executor_starting' || openhandsStatus === 'queued') {
+    return 'OpenHands wird gestartet. Warte auf erste Rückmeldung.';
+  }
+  if (agentState === 'blocked' || openhandsStatus === 'blocked') {
+    const reason = blockerReason || 'Kein Grund angegeben.';
+    return `Nein, OpenHands läuft nicht.\nStatus: blockiert.\nGrund: ${reason}\nNächste Aktion: Sicheren GitHub-Zugang öffnen.`;
+  }
+  if (agentState === 'failed' || openhandsStatus === 'failed') {
+    const reason = blockerReason || 'OpenHands Executor fehlgeschlagen.';
+    return `Nein, OpenHands ist fehlgeschlagen.\nGrund: ${reason}`;
+  }
+  if (agentState === 'draft_pr_ready' || openhandsStatus === 'completed') {
+    return draftPrUrl
+      ? `OpenHands hat einen Draft PR erstellt: ${draftPrUrl}`
+      : 'OpenHands ist fertig. Draft PR wurde erstellt.';
+  }
+  if (agentState === 'intent_detected' || agentState === 'access_required') {
+    return 'Auftrag erkannt. OpenHands wurde noch nicht gestartet.\nGrund: GitHub-Schreibzugang erforderlich.';
+  }
+  return 'Executor-Status wird ermittelt. Bitte kurz warten.';
 }
 
 /**
