@@ -40,7 +40,7 @@ export interface AgentEventStreamProps {
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 const ACTIVE_STATES: ReadonlySet<AgentWorkState> = new Set([
-  'intent_detected', 'executor_starting', 'executor_running',
+  'executor_starting', 'executor_running',
   'branch_created', 'commit_created', 'checks_running',
   'access_validating', 'access_ready',
 ]);
@@ -266,12 +266,22 @@ export function AgentEventStream({
     ? 'Draft PR bereit'
     : isFailed
       ? snapshot.state === 'blocked' ? 'Executor blockiert' : 'Executor fehlgeschlagen'
-      : isActive
-        ? 'OpenHands arbeitet…'
-        : 'Auftrag erkannt';
+      : snapshot.state === 'executor_starting' || job?.status === 'queued'
+        ? 'OpenHands startet…'
+        : snapshot.state === 'intent_detected'
+          ? 'Auftrag erkannt'
+          : isActive || job?.status === 'running'
+            ? 'OpenHands arbeitet…'
+            : 'Auftrag erkannt';
 
-  const headerColor = isDone ? C.green : isFailed ? C.rose : C.sky;
-  const repoLabel = snapshot.repoFullName
+  const headerColor = isDone
+    ? C.green
+    : isFailed
+      ? C.rose
+      : snapshot.state === 'intent_detected'
+        ? C.amber
+        : C.sky;
+  const repoLabel = snapshot.repoFullName && snapshot.repoFullName !== 'unknown/repo'
     ? snapshot.repoFullName + (snapshot.branchName ? ` · ${snapshot.branchName}` : '')
     : null;
 
