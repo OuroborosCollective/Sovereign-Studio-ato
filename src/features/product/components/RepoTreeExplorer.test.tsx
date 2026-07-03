@@ -121,4 +121,34 @@ describe("RepoTreeExplorer", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("has accessibility attributes and titles for folders and files", () => {
+    render(
+      <RepoTreeExplorer
+        snapshot={snapshot()}
+        onClose={() => {}}
+        onFileClick={() => {}}
+      />,
+    );
+
+    // Section should have aria-label
+    expect(screen.getByRole("dialog", { name: "Repo Inspector" })).toBeTruthy();
+
+    // Close button should have title and aria-label
+    const closeBtn = screen.getByRole("button", { name: "Schließen" });
+    expect(closeBtn).toHaveAttribute("title", "Schließen");
+
+    // Folder should have aria-label and title
+    const folderBtn = screen.getByRole("button", { name: "Ordner schließen: src" });
+    expect(folderBtn).toHaveAttribute("title", "Ordner schließen: src");
+
+    // File should have aria-label and title
+    const fileBtn = screen.getByRole("button", { name: "Datei öffnen: README.md" });
+    expect(fileBtn).toHaveAttribute("title", "Datei öffnen: README.md");
+
+    // Toggle folder and check label change
+    fireEvent.click(folderBtn);
+    const folderBtnOpened = screen.getByRole("button", { name: "Ordner öffnen: src" });
+    expect(folderBtnOpened).toHaveAttribute("title", "Ordner öffnen: src");
+  });
 });
