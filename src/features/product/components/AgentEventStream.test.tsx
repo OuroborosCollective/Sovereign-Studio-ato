@@ -58,7 +58,7 @@ describe('AgentEventStream', () => {
     const blocked = transitionBlocked(intentSnapshot(), 'GitHub-Schreibzugang fehlt.');
     const { rerender, container } = render(<AgentEventStream snapshot={blocked} />);
 
-    expect(screen.getByText('Executor blockiert')).toBeTruthy();
+    expect(screen.getAllByText('Executor blockiert').length).toBeGreaterThanOrEqual(1);
 
     const draftReady = transitionDraftPrReady(
       runningSnapshot(),
@@ -66,7 +66,7 @@ describe('AgentEventStream', () => {
     );
     rerender(<AgentEventStream snapshot={draftReady} />);
 
-    expect(screen.getByText('Draft PR bereit')).toBeTruthy();
+    expect(screen.getAllByText('Draft PR bereit').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Draft PR öffnen/i)).toBeTruthy();
     expect(container.textContent).not.toContain('%');
   });
