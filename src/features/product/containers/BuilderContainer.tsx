@@ -141,6 +141,18 @@ import {
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
 import { AgentEventStream } from "../components/AgentEventStream";
 import { AgentResultCard } from "../components/AgentResultCard";
+import { SovereignActionStreamPanel } from "../components/SovereignActionStreamPanel";
+import {
+  appendSovereignActionEvent,
+  buildBlockedActionEvent,
+  buildInputReceivedEvent,
+  buildRepoLoadedEvent,
+  buildRouteSelectionEvent,
+  buildWorkerRequestEvent,
+  buildWorkerResponseEvent,
+  createSovereignActionStreamState,
+  type SovereignActionEventInput,
+} from "../runtime/sovereignActionStreamRuntime";
 import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
 import { useLauncherStore } from "../../launcher/useLauncherStore";
 import { LauncherMenu } from "../../launcher/components/LauncherMenu";
@@ -315,6 +327,7 @@ const IDEA_OPTIONS: IdeaOption[] = [
 // Intent detection from workerIntentDetector module
 import {
   isOpenHandsExecutionIntent,
+  isCodeGenerationIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   isDelegatedOpenHandsExecutionIntent,
@@ -2842,6 +2855,11 @@ export function BuilderContainer({
     setStatusLogs((prev) => [...prev.slice(-199), { ts, level, msg, tabId }]);
   }, []);
 
+  const [actionStream, setActionStream] = useState(() => createSovereignActionStreamState());
+  const appendActionEvent = useCallback((event: SovereignActionEventInput) => {
+    setActionStream((current) => appendSovereignActionEvent(current, event));
+  }, []);
+
   // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
   // derived purely from runtime state, never fabricated. Fronts the technical
   // module lamps as the primary, always-visible status vocabulary.
@@ -3458,11 +3476,19 @@ export function BuilderContainer({
     triggerHaptic("light");
 
     appendChatLine({ role: "user", text: submittedText });
+    appendActionEvent(buildInputReceivedEvent(submittedText));
 
     const parsedRepo = parseDevChatGithubUrl(submittedText);
     if (parsedRepo) {
       setRepoLoading(true);
       setChatRepoError(null);
+      appendActionEvent({
+        kind: 'route_selected',
+        route: 'repo',
+        label: 'Route gewählt: repo',
+        detail: 'Repo-Snapshot wird geladen.',
+        state: 'running',
+      });
       triggerHaptic("medium");
       const result = await fetchDevChatRepoTree(parsedRepo);
       setRepoLoading(false);
@@ -3470,6 +3496,7 @@ export function BuilderContainer({
         setChatRepo(result.snapshot);
         triggerHaptic("medium");
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
+        appendActionEvent(buildRepoLoadedEvent(summary));
         appendChatLine({
           role: "assistant",
           text: `Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(" · ") || "keine Top-Level-Ordner erkannt"}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`,
@@ -3489,6 +3516,12 @@ export function BuilderContainer({
       }
       const errorText = result.error ?? "Repo konnte nicht geladen werden.";
       setChatRepoError(errorText);
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'repo',
+        label: 'Repo-Laden blockiert',
+        detail: errorText,
+        kind: 'failed',
+      }));
       triggerHaptic("heavy");
       appendChatLine({
         role: "assistant",
@@ -3554,14 +3587,28 @@ export function BuilderContainer({
 
     if (isExecutionIntent || isDelegatedExecution) {
       if (!agentDisabled) {
-        appendChatLine({
-          role: "assistant",
-          text: "Ausführungsauftrag erkannt.\nIch starte OpenHands Executor.\nErgebnis bleibt Draft PR, kein Auto-Merge.",
-        });
         // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.
         const _repo = chatRepoSnapshot
           ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
           : 'unknown/repo';
+        appendActionEvent({
+          kind: 'intent_detected',
+          route: 'runtime',
+          label: 'Ausführungsabsicht erkannt',
+          detail: `Repo: ${_repo}`,
+          state: 'done',
+        });
+        appendActionEvent({
+          kind: 'executor_started',
+          route: 'openhands',
+          label: 'OpenHands Executor wird gestartet',
+          detail: `Repo: ${_repo}`,
+          state: 'running',
+        });
+        appendChatLine({
+          role: "assistant",
+          text: "Ausführungsauftrag erkannt.\nRoute gewählt: OpenHands Executor.\nErgebnis bleibt Draft PR, kein Auto-Merge.",
+        });
         setAgentWorkSnapshot((prev) =>
           prev.state === 'idle'
             ? transitionIntentDetected(prev, _repo, chatRepoSnapshot?.branch ?? 'main')
@@ -3587,6 +3634,14 @@ export function BuilderContainer({
       return;
     }
 
+    if (isCodeGenerationIntent(submittedText)) {
+      appendActionEvent(buildRouteSelectionEvent({
+        route: 'code-llm',
+        reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',
+        state: 'running',
+      }));
+    }
+
     // ── #458 Credit guard — only for Worker Chat path (not OpenHands execution) ────────────
     const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
     const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
@@ -3604,6 +3659,7 @@ export function BuilderContainer({
     setPalDecisions((prev) => [...prev.slice(-99), d]);
     setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
     addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
+    appendActionEvent(buildWorkerRequestEvent(d.modelLabel));
 
     setLastWorkerRequestMessage(submittedText);
     setChatResponseBusy(true);
@@ -3616,6 +3672,15 @@ export function BuilderContainer({
       fetchImpl: globalThis.fetch,
     });
     const autoToolchainContext = toolchainAutoResult.context || "";
+    if (autoToolchainContext.trim()) {
+      appendActionEvent({
+        kind: 'context_collected',
+        route: 'toolchain',
+        label: 'Toolchain-Kontext gesammelt',
+        detail: 'Read-only Auto-Context bereit.',
+        state: 'done',
+      });
+    }
 
     const workerMessages = buildWorkerMessages({
       submittedText,
@@ -3665,6 +3730,7 @@ export function BuilderContainer({
 
     if (fullText) {
       setWorkerBlocker(null);
+      appendActionEvent(buildWorkerResponseEvent());
       // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display
       const claimCheck = checkChatClaim(fullText, agentWorkSnapshot);
       const textToAppend =
@@ -3687,6 +3753,7 @@ export function BuilderContainer({
 
     if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
+      appendActionEvent(buildWorkerResponseEvent());
       appendChatLine({ role: "assistant", text: fallback.content });
       return;
     }
@@ -3712,6 +3779,12 @@ export function BuilderContainer({
       health,
       createdAt: Date.now(),
     };
+    appendActionEvent(buildBlockedActionEvent({
+      route: 'worker',
+      label: 'Worker blockiert',
+      detail: diagnostic.nextAction || blocker.message,
+      kind: 'failed',
+    }));
     setWorkerBlocker(blocker);
     appendChatLine({
       role: "assistant",
@@ -3964,8 +4037,9 @@ export function BuilderContainer({
                 <ThinkingDots />
               )}
               <OutcomeHints hints={outcomeHints} />
+              <SovereignActionStreamPanel stream={actionStream} />
 
-              {/* ── Manus/Replit-style live event stream — replaces AgentWorkTimeline + OpenHandsJobTruthCard */}
+              {/* ── Manus/Replit-style live event stream — OpenHands remains one route among several */}
               {agentWorkSnapshot.state !== 'idle' && (
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
