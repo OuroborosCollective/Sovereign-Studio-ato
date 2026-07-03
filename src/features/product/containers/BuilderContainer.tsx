@@ -733,7 +733,7 @@ function WorkbenchSidePanel({
             {modules.map((m) => (
               <span
                 key={m.id}
-                title={m.label}
+                title={m.short}
                 style={{
                   fontFamily: "monospace",
                   fontSize: 9,
