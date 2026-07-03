@@ -10,7 +10,7 @@
  * and add integration tests that verify actual SSH behavior.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { handleVpsConnect, handleVpsExec, handleVpsTree, handleVpsDisconnect } from './vpsRoutes';
 
 function createMockRes() {
