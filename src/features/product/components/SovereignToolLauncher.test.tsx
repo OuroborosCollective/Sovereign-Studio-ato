@@ -27,6 +27,6 @@ describe('SovereignToolLauncher', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }));
 
     expect(onSelect).toHaveBeenCalledWith('settings');
-    expect(useLauncherStore.getState().windows.some((window) => window.id === 'settings')).toBe(true);
+    expect(useLauncherStore.getState().windows.some((entry) => entry.id === 'settings')).toBe(true);
   });
 });
