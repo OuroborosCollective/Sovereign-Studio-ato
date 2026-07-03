@@ -32,86 +32,86 @@ type Segment =
   | { type: 'bold'; content: string }
   | { type: 'code'; content: string }
   | { type: 'link'; content: string; url: string }
-  | { type: 'codeblock'; language: string; content: string };
+  | { type: 'codeblock'; language: string; content: string }
+  | { type: 'linebreak' };
+
+function pushInlineSegments(line: string, segments: Segment[]): void {
+  let remaining = line;
+
+  while (remaining.length > 0) {
+    const patterns = [
+      { regex: /\*\*([^*\n]+)\*\*/, type: 'bold' as const },
+      { regex: /`([^`\n]+)`/, type: 'code' as const },
+      { regex: /\[([^\]\n]+)\]\(([^)\n]+)\)/, type: 'link' as const, urlGroup: 2 },
+    ];
+
+    let earliestMatch: { match: RegExpExecArray; type: string; url?: string } | null = null;
+    let earliestIndex = Infinity;
+
+    for (const p of patterns) {
+      p.regex.lastIndex = 0;
+      const m = p.regex.exec(remaining);
+      if (m && m.index < earliestIndex) {
+        earliestIndex = m.index;
+        earliestMatch = { match: m, type: p.type, url: 'urlGroup' in p ? m[p.urlGroup!] : undefined };
+      }
+    }
+
+    if (earliestMatch && earliestIndex < Infinity) {
+      if (earliestIndex > 0) {
+        segments.push({ type: 'text', content: remaining.slice(0, earliestIndex) });
+      }
+      const segType = earliestMatch.type as 'bold' | 'code' | 'link';
+      if (segType === 'link') {
+        segments.push({ type: 'link', content: earliestMatch.match[1], url: earliestMatch.url! });
+      } else {
+        segments.push({ type: segType, content: earliestMatch.match[1] });
+      }
+      remaining = remaining.slice(earliestIndex + earliestMatch.match[0].length);
+    } else {
+      segments.push({ type: 'text', content: remaining });
+      break;
+    }
+  }
+}
 
 function tokenizeContent(input: string): Segment[] {
   const segments: Segment[] = [];
   const lines = input.split('\n');
   let i = 0;
-  
+
   while (i < lines.length) {
     const line = lines[i];
-    
-    // Check for code block start: ```language
     const codeBlockMatch = line.match(/^```(\w*)$/);
+
     if (codeBlockMatch) {
       const language = codeBlockMatch[1] || 'text';
       const codeLines: string[] = [];
-      i++;
-      
-      // Collect lines until closing ```
+      i += 1;
+
       while (i < lines.length) {
-        const closingMatch = lines[i].match(/^```$/);
-        if (closingMatch) {
-          i++;
+        if (lines[i].match(/^```$/)) {
+          i += 1;
           break;
         }
         codeLines.push(lines[i]);
-        i++;
+        i += 1;
       }
-      
+
       segments.push({ type: 'codeblock', language, content: codeLines.join('\n') });
+      if (i < lines.length) {
+        segments.push({ type: 'linebreak' });
+      }
       continue;
     }
-    
-    // Process inline formatting in current line
-    let remaining = line;
-    
-    while (remaining.length > 0) {
-      // Find next match
-      const patterns = [
-        { regex: /\*\*([^*\n]+)\*\*/, type: 'bold' as const },
-        { regex: /`([^`\n]+)`/, type: 'code' as const },
-        { regex: /\[([^\]\n]+)\]\(([^)\n]+)\)/, type: 'link' as const, urlGroup: 2 },
-      ];
-      
-      let earliestMatch: { match: RegExpExecArray; type: string; url?: string } | null = null;
-      let earliestIndex = Infinity;
-      
-      for (const p of patterns) {
-        p.regex.lastIndex = 0;
-        const m = p.regex.exec(remaining);
-        if (m && m.index < earliestIndex) {
-          earliestIndex = m.index;
-          earliestMatch = { match: m, type: p.type, url: 'urlGroup' in p ? m[p.urlGroup!] : undefined };
-        }
-      }
-      
-      if (earliestMatch && earliestIndex < Infinity) {
-        // Text before match
-        if (earliestIndex > 0) {
-          segments.push({ type: 'text', content: remaining.slice(0, earliestIndex) });
-        }
-        // Matched segment
-        const segType = earliestMatch.type as 'bold' | 'code' | 'link';
-        if (segType === 'link') {
-          segments.push({ type: 'link', content: earliestMatch.match[1], url: earliestMatch.url! });
-        } else {
-          segments.push({ type: segType, content: earliestMatch.match[1] });
-        }
-        remaining = remaining.slice(earliestIndex + earliestMatch.match[0].length);
-      } else {
-        // No more matches
-        if (remaining.length > 0) {
-          segments.push({ type: 'text', content: remaining });
-        }
-        break;
-      }
+
+    pushInlineSegments(line, segments);
+    if (i < lines.length - 1) {
+      segments.push({ type: 'linebreak' });
     }
-    
-    i++;
+    i += 1;
   }
-  
+
   return segments;
 }
 
@@ -192,6 +192,8 @@ function renderTextSegment(seg: Segment, key: number): React.ReactNode {
       );
     case 'text':
       return <span key={key}>{seg.content}</span>;
+    case 'linebreak':
+      return <br key={key} />;
     default:
       return null;
   }
