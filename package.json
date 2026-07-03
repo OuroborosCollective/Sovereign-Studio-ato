@@ -35,7 +35,7 @@
     "test:run": "vitest run",
     "postinstall": "node patch_capacitor.mjs",
     "type-check": "tsc --noEmit",
-    "verify": "pnpm run type-check && pnpm run test:release-gate && pnpm run build:web && pnpm run test:artifact-smoke && pnpm run audit:all",
+    "verify": "pnpm run type-check && pnpm run test:release-gate && pnpm run build:web && pnpm run test:artifact-smoke && pnpm run test:e2e && pnpm run audit:all",
     "verify:release": "pnpm run verify",
     "audit:coverage": "node scripts/audit-test-coverage-map.mjs",
     "hardcode:scan": "node scripts/hardcode-scanner.mjs --all",
@@ -113,5 +113,6 @@
   "engines": {
     "node": ">=22",
     "npm": ">=10"
-  }
+  },
+  "packageManager": "pnpm@11.9.0"
 }
