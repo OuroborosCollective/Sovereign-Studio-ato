@@ -1,6 +1,7 @@
 {
   "target": "src/features/product/containers/BuilderContainer.tsx",
-  "source_branch": "fix/execution-gate",
+  "source_ref": "1fa514b06db83452fd1ce3ba49ff510bbc74eb11",
+  "branch_base_ref": "1fa514b06db83452fd1ce3ba49ff510bbc74eb11",
   "branch": "fix/execution-gate",
   "expectedSha": "e102eba829e374d036b52470c4260689d07f4471",
   "commit_message": "feat(runtime): wire Sovereign action stream into builder",
