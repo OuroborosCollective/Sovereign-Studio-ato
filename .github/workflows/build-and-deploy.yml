@@ -14,6 +14,8 @@ jobs:
     name: Deploy Backend → VPS
     runs-on: ubuntu-latest
     env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
     steps:
       - name: Checkout
@@ -21,21 +23,64 @@ jobs:
 
       - name: Write SSH key
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
           echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+
+      - name: Validate VPS SSH access
+        run: |
+          set -euo pipefail
+          if [ -z "${VPS_HOST:-}" ]; then
             echo "VPS_HOST secret is not configured." >&2
             exit 1
           fi
-          if ! ssh-keyscan -T 10 -p "${VPS_SSH_PORT}" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null; then
-            echo "ssh-keyscan could not prefetch the VPS host key; continuing because SSH uses StrictHostKeyChecking=no." >&2
+          if [ -z "${VPS_USER:-}" ]; then
+            echo "VPS_USER secret is not configured." >&2
+            exit 1
           fi
+          if [ ! -s ~/.ssh/deploy_key ]; then
+            echo "VPS_SSH_KEY secret is not configured or produced an empty deploy key." >&2
+            exit 1
+          fi
+          if ! [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]; then
+            echo "VPS_SSH_PORT must be numeric." >&2
+            exit 1
+          fi
+
+          echo "Checking TCP reachability for the configured VPS SSH endpoint."
+          if command -v nc >/dev/null 2>&1; then
+            if ! nc -vz -w 10 "${VPS_HOST}" "${VPS_SSH_PORT}"; then
+              echo "VPS SSH endpoint is not reachable from GitHub Actions on the configured port." >&2
+              echo "Check VPS_HOST, VPS_SSH_PORT, provider firewall, OS firewall, and sshd status." >&2
+              exit 1
+            fi
+          else
+            if ! timeout 10 bash -c 'cat < /dev/null > /dev/tcp/"$0"/"$1"' "${VPS_HOST}" "${VPS_SSH_PORT}"; then
+              echo "VPS SSH endpoint is not reachable from GitHub Actions on the configured port." >&2
+              echo "Check VPS_HOST, VPS_SSH_PORT, provider firewall, OS firewall, and sshd status." >&2
+              exit 1
+            fi
+          fi
+
+          if ! ssh-keyscan -T 10 -p "${VPS_SSH_PORT}" -H "${VPS_HOST}" >> ~/.ssh/known_hosts 2>/dev/null; then
+            echo "ssh-keyscan could not prefetch the VPS host key after TCP reachability passed." >&2
+            exit 1
+          fi
+
+          timeout 30s ssh \
+            -i ~/.ssh/deploy_key \
+            -p "${VPS_SSH_PORT}" \
+            -o StrictHostKeyChecking=no \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            "${VPS_USER}@${VPS_HOST}" \
+            "echo 'VPS SSH preflight ok'"
 
       - name: Write .env to VPS
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash -s << 'SSHEOF'
+          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+            "${VPS_USER}@${VPS_HOST}" bash -s << 'SSHEOF'
           set -euo pipefail
           EXISTING_ENV=/opt/sovereign-backend/.env
           EXISTING_TOOLCHAIN_BASE_URL=""
@@ -67,11 +112,11 @@ jobs:
       - name: Copy app.py to VPS and rebuild
         run: |
           # Copy latest backend source if it exists in the repo.
-          scp -i ~/.ssh/deploy_key -P "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no \
+          scp -i ~/.ssh/deploy_key -P "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
             scripts/sovereign-backend/app.py \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/sovereign-backend/app.py 2>/dev/null || true
-          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "${VPS_USER}@${VPS_HOST}:/opt/sovereign-backend/app.py" 2>/dev/null || true
+          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+            "${VPS_USER}@${VPS_HOST}" \
             "cd /opt/sovereign-backend && docker compose build --no-cache && docker compose up -d"
 
       - name: Health check
