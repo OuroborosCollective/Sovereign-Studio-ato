@@ -226,7 +226,6 @@ import {
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-const BUILDER_SHELL_MAX_WIDTH = "min(100vw, 860px)";
 const CUTE_THINKING_FRAME_MS = 1100;
 const CUTE_IDLE_FRAME_MS = 1450;
 const builderContainerContract = getSovereignContainerContract("builder");
@@ -458,7 +457,8 @@ function WorkbenchStatusChips({
               display: "flex",
               alignItems: "center",
               gap: 5,
-              padding: "4px 9px",
+              minHeight: 40,
+              padding: "8px 11px",
               borderRadius: 999,
               background: `${color}14`,
               border: `1px solid ${color}33`,
@@ -516,13 +516,16 @@ function WorkbenchSlotDrawer({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto",
           maxHeight: "70vh",
           overflowY: "auto",
           background: C.surface,
           border: `1px solid ${C.border}`,
           borderBottom: "none",
           borderRadius: "20px 20px 0 0",
-          padding: "14px 16px 20px",
+          padding: "14px 16px calc(20px + env(safe-area-inset-bottom, 0px))",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -1302,12 +1305,11 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
         und handelt nur bei echten Stop-Punkten.
       </p>
       <div
+        className="sovereign-idea-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
           gap: 10,
           width: "100%",
-          maxWidth: 340,
         }}
       >
         {IDEA_OPTIONS.map((opt) => (
@@ -1772,11 +1774,16 @@ function RuntimeSheet({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto",
           background: C.surface,
           borderRadius: "20px 20px 0 0",
           border: `1px solid ${C.border}`,
           borderBottom: "none",
           padding: "0 0 24px",
+          maxHeight: "80vh",
+          overflowY: "auto",
         }}
       >
         <div
@@ -3563,7 +3570,6 @@ export function BuilderContainer({
       aria-label={builderContainerContract.ariaLabel}
       style={{
         width: "100%",
-        maxWidth: BUILDER_SHELL_MAX_WIDTH,
         margin: "0 auto",
         height: "100dvh",
         display: "flex",
@@ -3582,6 +3588,20 @@ export function BuilderContainer({
         textarea::placeholder { color: #3d4f61; }
         ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-thumb { background: #232d3a; border-radius: 2px; }
+        /* Responsive shell width — phones and tablets (portrait/landscape, e.g. iPad 9th gen "A9")
+           use the full device viewport; only large desktop/tablet-landscape screens get a
+           comfortable reading-width cap so the chat doesn't stretch edge-to-edge forever. */
+        .sovereign-builder-container { max-width: 100vw; }
+        @media (min-width: 1180px) {
+          .sovereign-builder-container { max-width: 980px; }
+        }
+        .sovereign-idea-grid { grid-template-columns: 1fr 1fr; max-width: 340px; }
+        @media (min-width: 620px) {
+          .sovereign-idea-grid { grid-template-columns: repeat(3, 1fr); max-width: 560px; }
+        }
+        @media (min-width: 900px) {
+          .sovereign-idea-grid { grid-template-columns: repeat(4, 1fr); max-width: 720px; }
+        }
         ::-webkit-scrollbar-track { background: transparent; }
       `}</style>
 

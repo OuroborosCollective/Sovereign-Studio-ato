@@ -479,8 +479,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
-  it("uses a responsive Android tablet shell width instead of a hard phone-only cap", () => {
+  it("uses a responsive tablet/phone shell width instead of a hard phone-only cap", () => {
     render(<BuilderContainer {...baseProps()} />);
-    expect(screen.getByTestId("builder-container").style.maxWidth).toBe("min(100vw, 860px)");
+    const container = screen.getByTestId("builder-container");
+    expect(container.style.maxWidth).toBe("");
+    expect(container.className).toContain("sovereign-builder-container");
+    expect(document.body.innerHTML).toMatch(
+      /\.sovereign-builder-container\s*\{\s*max-width:\s*100vw;?\s*\}/,
+    );
+    expect(document.body.innerHTML).toMatch(/@media \(min-width: 1180px\)/);
   });
 });
