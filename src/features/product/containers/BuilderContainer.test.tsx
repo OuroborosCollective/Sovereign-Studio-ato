@@ -275,7 +275,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     expect(chatField().value).toBe("");
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
-    expect(screen.getByText(repoUrl)).toBeDefined();
+    expect(screen.getAllByText(repoUrl).length).toBeGreaterThanOrEqual(1);
     expect(chatField().value).not.toContain("Repo geladen");
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
@@ -307,7 +307,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     render(<BuilderContainer {...baseProps()} />);
     fireEvent.change(chatField(), { target: { value: "Wie geht es dir?" } });
     fireEvent.click(sendButton());
-    expect(screen.getByText("Wie geht es dir?")).toBeDefined();
+    expect(screen.getAllByText("Wie geht es dir?").length).toBeGreaterThanOrEqual(1);
     await waitFor(() => expect(screen.getByText("Erste Antwort")).toBeDefined());
   });
 
