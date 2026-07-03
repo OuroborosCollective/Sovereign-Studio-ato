@@ -1,0 +1,26 @@
+{
+  "_comment": "Sovereign Search/Replace Patch Template",
+  "_instructions": [
+    "1. Kopiere diese Datei und benenne sie um (z.B. sovereign-action-stream-builder.json)",
+    "2. Setze target auf die zu ändernde Datei",
+    "3. Setze branch, commit_message, pr_title, pr_body",
+    "4. Hole expectedSha von der aktuellen Datei (optional aber empfohlen)",
+    "5. Füge blocks mit search/replace Paaren hinzu",
+    "6. Committe die Datei nach scripts/patches/pending/",
+    "7. Starte den Workflow: sovereign-search-replace-runner.yml"
+  ],
+  
+  "target": "src/features/product/containers/BuilderContainer.tsx",
+  "branch": "sovereign/action-stream-builder-wireup",
+  "commit_message": "feat(runtime): wire Sovereign action stream into builder",
+  "pr_title": "feat(runtime): wire Sovereign action stream into builder",
+  "pr_body": "Adds route-wide Sovereign Action Stream wiring so Repo, Worker, Code-LLM, OpenHands, GitHub access and blockers are visible through one runtime-backed chat stream.",
+  "expectedSha": null,
+  
+  "blocks": [
+    {
+      "search": "// ALTER CODE HIER",
+      "replace": "// NEUER CODE HIER"
+    }
+  ]
+}

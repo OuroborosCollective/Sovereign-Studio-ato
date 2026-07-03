@@ -1,0 +1,74 @@
+name: Sovereign Toolchain Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_path:
+        description: 'Target file path'
+        required: false
+        default: 'scripts/sovereign-backend/app.py'
+      patch_branch:
+        description: 'Branch name for PR'
+        required: false
+        default: 'sovereign/apply-toolchain-guardrails'
+      commit_message:
+        description: 'Commit message'
+        required: false
+        default: 'fix(toolchain): apply backend patch guardrails'
+      pr_title:
+        description: 'PR title'
+        required: false
+        default: 'fix(toolchain): apply backend patch guardrails'
+      pr_body:
+        description: 'PR description'
+        required: false
+        default: 'Applies the verified Toolchain backend guardrails patch from scripts/patches/apply_toolchain_patch_guardrails.py.'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9.12.2"
+  CI: "true"
+
+jobs:
+  run-toolchain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Python syntax check
+        run: python3 -m py_compile scripts/sovereign-backend/app.py
+
+      - name: Apply Toolchain Patch via GitHub API
+        env:
+          GITHUB_TOKEN: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
+          REPO_FULL_NAME: OuroborosCollective/Sovereign-Studio-ato
+          BASE_BRANCH: main
+          PATCH_BRANCH: ${{ inputs.patch_branch }}
+          TARGET_PATH: ${{ inputs.target_path }}
+          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+          PR_TITLE: ${{ inputs.pr_title }}
+          PR_BODY: ${{ inputs.pr_body }}
+        run: |
+          bash scripts/patches/apply_toolchain_patch_guardrails_via_github_api.sh
