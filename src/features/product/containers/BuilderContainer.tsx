@@ -139,6 +139,7 @@ import {
   type AgentWorkSnapshot,
 } from "../runtime/agentWorkRuntime";
 import { AgentWorkTimeline } from "../components/AgentWorkTimeline";
+import { AgentEventStream } from "../components/AgentEventStream";
 import { AgentResultCard } from "../components/AgentResultCard";
 import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
 import { useLauncherStore } from "../../launcher/useLauncherStore";
@@ -3964,19 +3965,18 @@ export function BuilderContainer({
               )}
               <OutcomeHints hints={outcomeHints} />
 
-              {/* ── Issue #445: AgentWorkTimeline — live task progress in chat feed */}
+              {/* ── Manus/Replit-style live event stream — replaces AgentWorkTimeline + OpenHandsJobTruthCard */}
               {agentWorkSnapshot.state !== 'idle' && (
-                <AgentWorkTimeline snapshot={agentWorkSnapshot} />
-              )}
-
-              {/* ── Issue #443: OpenHands Job Truth Card */}
-              {openhandsJob && openhandsJob.status !== 'idle' && (
-                <OpenHandsJobTruthCard
+                <AgentEventStream
+                  snapshot={agentWorkSnapshot}
                   job={openhandsJob}
-                  onStart={onStartOpenHands ? () => onStartOpenHands(wishText) : undefined}
-                  onPreview={() => appendChatLine({ role: 'assistant', text: 'Vorschau wird geladen…' })}
                   onCancel={onCancelOpenHands}
-                  onOpenDraftPr={openhandsJob.draftPrUrl ? () => window.open(openhandsJob.draftPrUrl, '_blank') : undefined}
+                  onOpenDraftPr={
+                    (openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
+                      ? () => window.open((openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
+                      : undefined
+                  }
+                  onOpenFile={openRepoExplorerFromFileBadge}
                 />
               )}
 
