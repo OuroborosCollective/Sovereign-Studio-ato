@@ -49,18 +49,17 @@ jobs:
             exit 1
           fi
           echo "✓ Patch file found: ${PATCH_PATH}"
-          
-          # Validate JSON structure
+
           if ! jq empty "${PATCH_PATH}" 2>/dev/null; then
             echo "ERROR: Invalid JSON in ${PATCH_PATH}"
             exit 1
           fi
           echo "✓ JSON structure valid"
-          
-          # Show patch summary
+
           echo ""
           echo "=== PATCH SUMMARY ==="
           echo "Target: $(jq -r '.target' "${PATCH_PATH}")"
+          echo "Source: $(jq -r '.source_branch // .base_branch // "main"' "${PATCH_PATH}")"
           echo "Branch: $(jq -r '.branch // "auto-generated"' "${PATCH_PATH}")"
           echo "Blocks: $(jq '.blocks | length' "${PATCH_PATH}")"
           echo "Commit: $(jq -r '.commit_message // "auto-generated"' "${PATCH_PATH}")"
@@ -73,4 +72,4 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           PATCH_PATH="scripts/patches/${{ inputs.patch_file }}"
-          bash scripts/patches/search_replace_runner.sh "${PATCH_PATH}"
+          python3 scripts/patches/search_replace_runner.py "${PATCH_PATH}"
