@@ -7,7 +7,9 @@ compatibility_date = "2024-01-01"
 
 [vars]
 # Default AI model
-DEFAULT_MODEL = "@cf/meta/llama-3-8b-instruct"
+# NOTE: "@cf/meta/llama-3-8b-instruct" was removed here - Cloudflare returns HTTP 410
+# "Model has been deprecated" for it as of 2026-05-30. Replaced with a verified-working model.
+DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 
 [observability]
 enabled = true
