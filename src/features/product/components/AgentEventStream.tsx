@@ -44,6 +44,10 @@ function isExecutorActive(state: AgentWorkState): boolean {
   return EXECUTOR_ACTIVE_STATES.has(state);
 }
 
+function isTerminalState(state: AgentWorkState): boolean {
+  return state === 'draft_pr_ready' || state === 'blocked' || state === 'failed';
+}
+
 function stateIcon(state: AgentWorkState): { icon: string; color: string } {
   if (state === 'draft_pr_ready') return { icon: '✓', color: C.green };
   if (state === 'failed') return { icon: '✗', color: C.rose };
@@ -222,7 +226,9 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
 
 export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isActive = isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued';
+  const isActive = !isTerminalState(snapshot.state) && (
+    isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
+  );
   const changedFiles = job?.changedFiles ?? [];
   const draftPrUrl = job?.draftPrUrl ?? snapshot.draftPrUrl ?? null;
 
