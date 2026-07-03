@@ -61,6 +61,11 @@ function levelIcon(level: OpenHandsRuntimeEvent['level']): { icon: string; color
   return { icon: '→', color: C.sky };
 }
 
+function visibleDetail(detail: string | undefined): string | undefined {
+  if (!detail) return undefined;
+  return detail.includes('unknown/repo') ? undefined : detail;
+}
+
 function buildStream(
   snapshot: AgentWorkSnapshot,
   job: OpenHandsJobSnapshot | null | undefined,
@@ -76,7 +81,7 @@ function buildStream(
       icon,
       iconColor: color,
       label: e.label,
-      detail: e.detail,
+      detail: visibleDetail(e.detail),
       isActive: false,
     });
   }
@@ -211,10 +216,10 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
       : snapshot.state === 'executor_starting' || job?.status === 'queued'
         ? 'OpenHands startet…'
         : snapshot.state === 'intent_detected'
-          ? 'Auftrag erkannt'
+          ? 'Status: Auftrag erkannt'
           : isActive || job?.status === 'running'
             ? 'OpenHands arbeitet…'
-            : 'Auftrag erkannt';
+            : 'Status: Auftrag erkannt';
 
   const headerColor = isDone ? C.green : isFailed ? C.rose : snapshot.state === 'intent_detected' ? C.amber : C.sky;
   const repoLabel = snapshot.repoFullName && snapshot.repoFullName !== 'unknown/repo'
