@@ -179,11 +179,12 @@ function maskSecrets(text: string): string {
   masked = masked.replace(/github_pat_[a-zA-Z0-9_]{20,200}/g, 'github_pat_****');
   // Google
   masked = masked.replace(/AIza[a-zA-Z0-9_-]{26,60}/g, 'AIza****');
-  // AI keys
-  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,120}/g, 'sk-or-v1-****');
-  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,120}/g, 'sk-proj-****');
-  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,120}/g, 'sk-****');
-  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,120}/g, 'gsk_****');
+  // AI keys. Do not cap these matches: long credentials must be consumed up to a delimiter.
+  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,}/g, 'sk-or-v1-****');
+  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,}/g, 'sk-proj-****');
+  masked = masked.replace(/sk-ant-[a-zA-Z0-9_-]{20,}/g, 'sk-ant-****');
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-****');
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,}/g, 'gsk_****');
   // HuggingFace, Together AI and Pollinations AI
   masked = masked.replace(/hf_[a-zA-Z0-9]{8,100}/g, 'hf_****');
   masked = masked.replace(/together_[a-zA-Z0-9]{8,100}/g, 'together_****');
@@ -408,11 +409,12 @@ function isModelAllowed(model: string, env: Env): boolean {
 }
 
 /**
- * Simple authentication check
+ * Simple authentication check. Returns false if PROXY_API_KEY is not set
+ * to prevent unauthorized open relay usage.
  */
 function validateAuth(request: Request, env: Env): boolean {
   if (!env.PROXY_API_KEY) {
-    return true; // No auth required if secret not set
+    return false;
   }
   const authHeader = request.headers.get('Authorization');
   const apiKeyHeader = request.headers.get('X-API-Key');
