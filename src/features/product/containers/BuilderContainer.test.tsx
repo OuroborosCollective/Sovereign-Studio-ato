@@ -92,10 +92,66 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("DevChat")).toBeDefined();
     expect(screen.getByLabelText("Sovereign Studio Tabs")).toBeDefined();
     expect(screen.getByText("CHAT")).toBeDefined();
-    expect(screen.getAllByText("ROU").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("INSPECTOR")).toBeDefined();
     expect(screen.getByTestId("sovereign-chat-body-window")).toBeDefined();
     expect(chatField()).toBeDefined();
     expect(screen.getByLabelText("Menü")).toBeDefined();
+  });
+
+  it("shows the Workbench status vocabulary (Actions/Files/Logs/Errors/Draft PR) as primary nav, not technical module abbreviations", () => {
+    render(<BuilderContainer {...baseProps()} />);
+    expect(screen.getByLabelText("Werkbank Status")).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Actions:/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Files:/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Logs:/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Errors:/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Draft PR:/ })).toBeDefined();
+    expect(screen.queryByText("ROU")).toBeNull();
+    expect(screen.queryByText("INT")).toBeNull();
+    expect(screen.queryByText("PAT")).toBeNull();
+  });
+
+  it("keeps technical runtime module abbreviations hidden until the Inspector is explicitly opened", () => {
+    render(<BuilderContainer {...baseProps()} />);
+    expect(screen.queryByText("ROU")).toBeNull();
+    fireEvent.click(screen.getByText("INSPECTOR"));
+    expect(screen.getAllByText("ROU").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Inspector (intern)")).toBeDefined();
+    fireEvent.click(screen.getByText("INSPECTOR"));
+    expect(screen.queryByText("ROU")).toBeNull();
+  });
+
+  it("shows explicit empty states for Actions, Files and Errors instead of fabricated data", () => {
+    render(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Actions:/ }));
+    expect(screen.getByText("Noch keine Actions")).toBeDefined();
+    fireEvent.click(screen.getByLabelText("Schließen"));
+    fireEvent.click(screen.getByRole("button", { name: /^Files:/ }));
+    expect(screen.getByText("Noch keine bearbeiteten Dateien")).toBeDefined();
+    fireEvent.click(screen.getByLabelText("Schließen"));
+    fireEvent.click(screen.getByRole("button", { name: /^Errors:/ }));
+    expect(screen.getByText("Keine Fehler")).toBeDefined();
+  });
+
+  it("shows real changed files and a Draft PR opener once an OpenHands job reports them", () => {
+    render(
+      <BuilderContainer
+        {...baseProps()}
+        openhandsReady
+        openhandsJob={{
+          status: "running",
+          openHandsId: "conv_123",
+          changedFiles: ["src/App.tsx"],
+          events: [],
+          draftPrUrl: "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/1",
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Files:/ }));
+    expect(screen.getByText("src/App.tsx")).toBeDefined();
+    fireEvent.click(screen.getByLabelText("Schließen"));
+    fireEvent.click(screen.getByRole("button", { name: /^Draft PR:/ }));
+    expect(screen.getByText("Draft PR öffnen")).toBeDefined();
   });
 
   it("keeps the default builder surface quiet and chat-first", () => {

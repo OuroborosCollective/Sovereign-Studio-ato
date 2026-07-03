@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  SOVEREIGN_BUILDER_WORKBENCH_INVARIANTS,
   SOVEREIGN_PRODUCT_TEMPLATE,
   SOVEREIGN_PRODUCT_TRUTH_INVARIANTS,
   assertSovereignProductTemplateValid,
@@ -141,5 +142,56 @@ describe('sovereign product template contract', () => {
 
     expect(report.valid).toBe(false);
     expect(report.errors.join(' | ')).toContain('Primary flow tab builder must be group primary');
+  });
+
+  it('declares the Builder Workbench status vocabulary as Actions, Files, Logs, Errors and Draft PR', () => {
+    expect(SOVEREIGN_PRODUCT_TEMPLATE.workbenchStatusSlots).toEqual([
+      'actions',
+      'files',
+      'logs',
+      'errors',
+      'draftPr',
+    ]);
+  });
+
+  it('keeps technical module abbreviations internal-only and non-overlapping with Workbench slots', () => {
+    expect(SOVEREIGN_PRODUCT_TEMPLATE.internalOnlyModuleAbbreviations).toEqual(
+      expect.arrayContaining(['INT', 'ROU', 'PAT', 'SYN', 'ORC', 'LOG', 'BUD']),
+    );
+    for (const abbr of SOVEREIGN_PRODUCT_TEMPLATE.internalOnlyModuleAbbreviations) {
+      expect(SOVEREIGN_PRODUCT_TEMPLATE.workbenchStatusSlots as string[]).not.toContain(abbr);
+    }
+  });
+
+  it('keeps every mandatory Builder Workbench invariant in the runtime contract', () => {
+    for (const invariant of SOVEREIGN_BUILDER_WORKBENCH_INVARIANTS) {
+      expect(SOVEREIGN_PRODUCT_TEMPLATE.invariants).toContain(invariant);
+    }
+  });
+
+  it('rejects a Workbench status vocabulary that drifts from the five canonical slots', () => {
+    const broken = cloneTemplate();
+    broken.workbenchStatusSlots = ['actions', 'files'];
+
+    const report = validateSovereignProductTemplate(broken);
+
+    expect(report.valid).toBe(false);
+    expect(report.errors.join(' | ')).toContain(
+      'Workbench status slots must be exactly Actions, Files, Logs, Errors and Draft PR.',
+    );
+  });
+
+  it('rejects removal of mandatory Builder Workbench invariants', () => {
+    const broken = cloneTemplate();
+    broken.invariants = broken.invariants.filter(
+      (invariant) => invariant !== SOVEREIGN_BUILDER_WORKBENCH_INVARIANTS[2],
+    );
+
+    const report = validateSovereignProductTemplate(broken);
+
+    expect(report.valid).toBe(false);
+    expect(report.errors.join(' | ')).toContain(
+      `Missing Builder Workbench invariant: ${SOVEREIGN_BUILDER_WORKBENCH_INVARIANTS[2]}`,
+    );
   });
 });
