@@ -92,6 +92,54 @@ Actionable targets include:
 Plan-only output must not count as actionable work.
 A PR containing only `docs/SOVEREIGN_PLAN.md` and generated workflow preview artifacts is not acceptable.
 
+## Sovereign Search/Replace Runner workflow rule
+
+For large files or risky edits, agents must prefer the guarded Search/Replace Runner workflow over blind full-file replacement.
+
+Canonical flow:
+
+1. Read the current file from GitHub and identify exact SEARCH blocks.
+2. Create or update a patch file in `scripts/patches/pending/*.json`.
+3. The patch file must include `target`, `blocks`, `commit_message`, `pr_title`, and `pr_body`.
+4. For non-main integration branches, use `source_ref` and `branch_base_ref` with the exact commit SHA when a branch ref is not resolvable in Actions.
+5. Run `Sovereign Search/Replace Runner` with `dry_run=true` first.
+6. Only after dry-run validation succeeds, run the same workflow with `dry_run=false`.
+7. Inspect the resulting Draft PR and CI before merge.
+
+Patch file shape:
+
+```json
+{
+  "target": "src/features/product/containers/BuilderContainer.tsx",
+  "source_ref": "<branch-or-commit-sha>",
+  "branch_base_ref": "<branch-or-commit-sha>",
+  "branch": "<target-patch-branch>",
+  "expectedSha": "<current-file-blob-sha>",
+  "commit_message": "feat(runtime): describe real change",
+  "pr_title": "feat(runtime): describe real change",
+  "pr_body": "Explain runtime result, validation and user-visible effect.",
+  "blocks": [
+    {
+      "search": "exact existing code",
+      "replace": "new code"
+    }
+  ]
+}
+```
+
+Runner guardrails:
+
+- max 20 blocks per patch
+- each `search` must match exactly once
+- max 8 KB per `search` or `replace`
+- max 500 KB target file
+- optional `expectedSha` blocks stale patches
+- dry-run must happen before apply
+- workflow uses `secrets.SOVEREIGN_GITHUB_TOKEN`; never put raw tokens into chat, patch files, logs, or code
+- runner opens or updates a Draft PR; it must never write directly to `main`
+
+This workflow is the default for `BuilderContainer.tsx`, `App.tsx`, workflow files, and any other large or high-risk file.
+
 ## Live-path integrity
 
 No mocks, stubs, facades, fake snapshots, fake success states, or hardcoded green states in the live path.
@@ -256,12 +304,4 @@ Backend uses `_get_session_user_id()` to read JWT from HTTP-only cookie. **Never
 Must use explicit origins list, not `origins="*"`:
 ```python
 CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
-```
-
-### Credits Ledger
-Server is source of truth. Default credits should be `0`, never fake balance (e.g., 1000).
-
-### Testing Billing
-```bash
-pnpm exec vitest run src/features/billing/billingSlice.test.ts
 ```
