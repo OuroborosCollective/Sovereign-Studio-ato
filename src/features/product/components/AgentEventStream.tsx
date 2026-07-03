@@ -35,13 +35,13 @@ export interface AgentEventStreamProps {
   readonly onOpenFile?: (path: string) => void;
 }
 
-const ACTIVE_STATES: ReadonlySet<AgentWorkState> = new Set([
+const EXECUTOR_ACTIVE_STATES: ReadonlySet<AgentWorkState> = new Set([
   'executor_starting', 'executor_running',
   'branch_created', 'commit_created', 'checks_running',
 ]);
 
 function isExecutorActive(state: AgentWorkState): boolean {
-  return ACTIVE_STATES.has(state);
+  return EXECUTOR_ACTIVE_STATES.has(state);
 }
 
 function stateIcon(state: AgentWorkState): { icon: string; color: string } {
@@ -49,6 +49,9 @@ function stateIcon(state: AgentWorkState): { icon: string; color: string } {
   if (state === 'failed') return { icon: '✗', color: C.rose };
   if (state === 'blocked') return { icon: '⊘', color: C.rose };
   if (state === 'intent_detected') return { icon: '⦿', color: C.amber };
+  if (state === 'access_required') return { icon: '⊘', color: C.amber };
+  if (state === 'access_validating') return { icon: '↻', color: C.amber };
+  if (state === 'access_ready') return { icon: '✓', color: C.amber };
   if (state === 'executor_starting') return { icon: '↗', color: C.sky };
   if (isExecutorActive(state)) return { icon: '→', color: C.sky };
   return { icon: '·', color: C.textSub };
@@ -191,11 +194,35 @@ function FileBadge({ path, onClick }: { path: string; onClick?: () => void }) {
   );
 }
 
+function headerLabelFor(snapshot: AgentWorkSnapshot, job: OpenHandsJobSnapshot | null | undefined): string {
+  if (snapshot.state === 'draft_pr_ready') return 'Status: Draft PR bereit';
+  if (snapshot.state === 'blocked') return 'Status: Executor blockiert';
+  if (snapshot.state === 'failed') return 'Status: Executor fehlgeschlagen';
+  if (job?.status === 'running') return 'OpenHands arbeitet…';
+  if (snapshot.state === 'executor_starting' || job?.status === 'queued') return 'OpenHands startet…';
+  if (snapshot.state === 'access_required') return 'GitHub-Zugang erforderlich';
+  if (snapshot.state === 'access_validating') return 'GitHub-Zugang wird geprüft…';
+  if (snapshot.state === 'access_ready') return 'GitHub-Zugang bereit';
+  if (snapshot.state === 'intent_detected') return 'Status: Auftrag erkannt';
+  if (isExecutorActive(snapshot.state)) return 'OpenHands arbeitet…';
+  return 'Status: Auftrag erkannt';
+}
+
+function headerColorFor(snapshot: AgentWorkSnapshot): string {
+  if (snapshot.state === 'draft_pr_ready') return C.green;
+  if (snapshot.state === 'failed' || snapshot.state === 'blocked') return C.rose;
+  if (
+    snapshot.state === 'intent_detected' ||
+    snapshot.state === 'access_required' ||
+    snapshot.state === 'access_validating' ||
+    snapshot.state === 'access_ready'
+  ) return C.amber;
+  return C.sky;
+}
+
 export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isActive = isExecutorActive(snapshot.state);
-  const isDone = snapshot.state === 'draft_pr_ready';
-  const isFailed = snapshot.state === 'failed' || snapshot.state === 'blocked';
+  const isActive = isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued';
   const changedFiles = job?.changedFiles ?? [];
   const draftPrUrl = job?.draftPrUrl ?? snapshot.draftPrUrl ?? null;
 
@@ -209,19 +236,8 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
     }
   }, [stream.length]);
 
-  const headerLabel = isDone
-    ? 'Draft PR bereit'
-    : isFailed
-      ? snapshot.state === 'blocked' ? 'Executor blockiert' : 'Executor fehlgeschlagen'
-      : snapshot.state === 'executor_starting' || job?.status === 'queued'
-        ? 'OpenHands startet…'
-        : snapshot.state === 'intent_detected'
-          ? 'Status: Auftrag erkannt'
-          : isActive || job?.status === 'running'
-            ? 'OpenHands arbeitet…'
-            : 'Status: Auftrag erkannt';
-
-  const headerColor = isDone ? C.green : isFailed ? C.rose : snapshot.state === 'intent_detected' ? C.amber : C.sky;
+  const headerLabel = headerLabelFor(snapshot, job);
+  const headerColor = headerColorFor(snapshot);
   const repoLabel = snapshot.repoFullName && snapshot.repoFullName !== 'unknown/repo'
     ? snapshot.repoFullName + (snapshot.branchName ? ` · ${snapshot.branchName}` : '')
     : null;
