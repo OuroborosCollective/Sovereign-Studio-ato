@@ -46,6 +46,12 @@ export interface LauncherToolProps {
 import { vpsConnectorEntry }      from './tools/vps/index';
 import { adminToolEntry }         from './tools/admin/index';
 import { toolchainToolEntry }     from './tools/toolchain/index';
+import {
+  coverageToolEntry,
+  healthToolEntry,
+  memoryToolEntry,
+  settingsToolEntry,
+} from './tools/sovereign-core/index';
 
 /**
  * Alle registrierten Launcher-Tools.
@@ -55,4 +61,8 @@ export const LAUNCHER_REGISTRY: LauncherEntry[] = [
   vpsConnectorEntry,    // Issue #454 — VPS Connector
   adminToolEntry,       // Issue #460 — Admin Backend
   toolchainToolEntry,   // Universal Toolchain — MCP/REST/OpenAPI
+  settingsToolEntry,    // Core utility — Settings with real session checks
+  memoryToolEntry,      // Core utility — Memory/key inspection without secrets
+  healthToolEntry,      // Core utility — Client health checks
+  coverageToolEntry,    // Core utility — Coverage map gate
 ];

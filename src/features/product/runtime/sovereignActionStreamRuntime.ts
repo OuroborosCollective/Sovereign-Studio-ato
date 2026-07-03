@@ -17,10 +17,13 @@ export type SovereignActionKind =
   | 'context_collected'
   | 'llm_request_started'
   | 'llm_response_received'
+  | 'answer_ready'
   | 'patch_generated'
   | 'patch_validating'
   | 'github_access_required'
+  | 'access_required'
   | 'patch_apply_blocked'
+  | 'patch_blocked'
   | 'executor_started'
   | 'draft_pr_ready'
   | 'blocked'
@@ -57,6 +60,20 @@ const TERMINAL_STATES: ReadonlySet<SovereignActionEventState> = new Set([
   'failed',
 ]);
 
+const CODE_RESULT_KINDS: ReadonlySet<SovereignActionKind> = new Set([
+  'patch_generated',
+  'patch_validating',
+  'github_access_required',
+  'access_required',
+  'patch_apply_blocked',
+  'patch_blocked',
+  'executor_started',
+  'draft_pr_ready',
+  'blocked',
+  'failed',
+  'done',
+]);
+
 export function createSovereignActionStreamState(): SovereignActionStreamState {
   return {
     events: [],
@@ -75,22 +92,75 @@ function eventId(input: SovereignActionEventInput, index: number): string {
   ].join(':');
 }
 
+function createActionEvent(input: SovereignActionEventInput, index: number): SovereignActionEvent {
+  const createdAt = input.createdAt ?? Date.now();
+  return {
+    ...input,
+    id: eventId({ ...input, createdAt }, index),
+    createdAt,
+  };
+}
+
+function eventsSinceLastInput(events: readonly SovereignActionEvent[]): readonly SovereignActionEvent[] {
+  const lastInputIndex = events.reduce(
+    (last, event, index) => (event.kind === 'input_received' ? index : last),
+    -1,
+  );
+  return lastInputIndex >= 0 ? events.slice(lastInputIndex) : events;
+}
+
+function hasUnresolvedCodeResultGate(events: readonly SovereignActionEvent[]): boolean {
+  const scopedEvents = eventsSinceLastInput(events);
+  const hasCodeRoute = scopedEvents.some(
+    (event) => event.route === 'code-llm' && event.kind === 'route_selected' && event.state === 'running',
+  );
+  if (!hasCodeRoute) return false;
+
+  return !scopedEvents.some((event) => {
+    if (!CODE_RESULT_KINDS.has(event.kind)) return false;
+    return event.route === 'code-llm'
+      || event.route === 'github-patch'
+      || event.route === 'github-access'
+      || event.route === 'openhands';
+  });
+}
+
+function buildCodeResultGateEvent(createdAt: number): SovereignActionEventInput {
+  return {
+    kind: 'github_access_required',
+    route: 'github-access',
+    label: 'Code-Auftrag braucht Ergebnis-Gate',
+    detail:
+      'Worker-Antwort ist nur Beratung. Für echte Umsetzung muss Sovereign Patch/Diff erzeugen oder GitHub-Zugang/Draft-PR-Route öffnen.',
+    state: 'blocked',
+    createdAt: createdAt + 1,
+  };
+}
+
 export function appendSovereignActionEvent(
   stream: SovereignActionStreamState,
   input: SovereignActionEventInput,
   maxEvents = 80,
 ): SovereignActionStreamState {
   const createdAt = input.createdAt ?? Date.now();
-  const nextEvent: SovereignActionEvent = {
-    ...input,
-    id: eventId({ ...input, createdAt }, stream.events.length),
-    createdAt,
-  };
-  const events = [...stream.events, nextEvent].slice(-Math.max(1, maxEvents));
+  const nextEvent = createActionEvent({ ...input, createdAt }, stream.events.length);
+  const shouldAddCodeGate =
+    input.kind === 'llm_response_received'
+    && input.route === 'worker'
+    && input.state === 'done'
+    && hasUnresolvedCodeResultGate(stream.events);
+  const appendedEvents = shouldAddCodeGate
+    ? [
+        nextEvent,
+        createActionEvent(buildCodeResultGateEvent(createdAt), stream.events.length + 1),
+      ]
+    : [nextEvent];
+  const events = [...stream.events, ...appendedEvents].slice(-Math.max(1, maxEvents));
+  const lastEvent = events[events.length - 1] ?? null;
   return {
     events,
-    activeRoute: TERMINAL_STATES.has(nextEvent.state) ? null : nextEvent.route,
-    lastEvent: nextEvent,
+    activeRoute: lastEvent && !TERMINAL_STATES.has(lastEvent.state) ? lastEvent.route : null,
+    lastEvent,
   };
 }
 
@@ -145,6 +215,16 @@ export function buildBlockedActionEvent(args: {
     label: args.label,
     detail: args.detail,
     state: 'blocked',
+  };
+}
+
+export function buildAnswerReadyEvent(detail = 'Antwort bereit.'): SovereignActionEventInput {
+  return {
+    kind: 'answer_ready',
+    route: 'free-chat',
+    label: 'Antwort bereit',
+    detail,
+    state: 'done',
   };
 }
 
