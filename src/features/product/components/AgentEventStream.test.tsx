@@ -36,6 +36,14 @@ function runningJob(overrides: Partial<OpenHandsJobSnapshot> = {}): OpenHandsJob
   };
 }
 
+function visibleTextWithoutStyle(container: HTMLElement): string {
+  const clone = container.cloneNode(true) as HTMLElement;
+  for (const style of clone.querySelectorAll('style')) {
+    style.remove();
+  }
+  return clone.textContent ?? '';
+}
+
 describe('AgentEventStream', () => {
   it('shows intent_detected as Auftrag erkannt, not as active OpenHands work', () => {
     render(<AgentEventStream snapshot={intentSnapshot()} />);
@@ -98,7 +106,7 @@ describe('AgentEventStream', () => {
 
     expect(screen.getAllByText(/Draft PR bereit/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Draft PR öffnen/i)).toBeTruthy();
-    expect(container.textContent).not.toContain('%');
+    expect(visibleTextWithoutStyle(container)).not.toContain('%');
   });
 
   it('renders changed files only from supplied OpenHands job snapshot', () => {
