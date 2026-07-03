@@ -20,6 +20,26 @@ const WORKER_DIAGNOSTIC_TOKENS = [
   'diagnose', 'fehler', '500', 'worker', 'cloudflare', 'blockiert', 'kaputt',
 ];
 
+// Delegation tokens: explicit handover to executor
+const DELEGATION_TOKENS = [
+  'tu du das',
+  'mach das',
+  'mach du das',
+  'erledige das',
+  'setze das um',
+  'übernimm das',
+  'kannst du das für mich',
+  'mach das für mich',
+];
+
+// Code/repo context tokens that make delegation meaningful
+const CODE_CONTEXT_TOKENS = [
+  'readme', 'datei', 'code', 'patch', 'commit', 'pr', 'pull request',
+  'draft', 'repo', 'repository', 'github', 'build', 'bau', 'implementier',
+  'fix', 'fehler', 'bug', 'feature', 'änderung', 'aktualisier', 'update',
+  'lösche', 'entfern', 'ergänz', 'füge hinzu', 'ersetze', 'schreibe',
+];
+
 /**
  * Detects if a message is an OpenHands execution intent.
  * These messages should trigger the OpenHands executor.
@@ -45,6 +65,41 @@ export function isWorkerRetryIntent(text: string): boolean {
 export function isWorkerDiagnosticQuestion(text: string): boolean {
   const lower = text.toLowerCase();
   return WORKER_DIAGNOSTIC_TOKENS.some((token) => lower.includes(token));
+}
+
+/**
+ * Detects delegation intent ("Tu du das für mich") without blindly starting OpenHands.
+ * Only qualifies as execution intent if there's prior code/repo context.
+ */
+export function isDelegationIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  return DELEGATION_TOKENS.some((token) => lower.includes(token));
+}
+
+/**
+ * Checks if recent chat context contains code/repo-related content.
+ * Used to determine if a delegation intent should trigger executor.
+ */
+export function hasCodeContextInHistory(recentMessages: readonly { role: string; text: string }[]): boolean {
+  const relevant = recentMessages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .slice(-6); // last 6 messages
+
+  const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
+
+  return CODE_CONTEXT_TOKENS.some((token) => allText.includes(token));
+}
+
+/**
+ * Combined check: delegation intent + code context = executor candidate.
+ * Use this in BuilderContainer routing instead of just isDelegationIntent.
+ */
+export function isDelegatedOpenHandsExecutionIntent(
+  text: string,
+  recentMessages: readonly { role: string; text: string }[],
+): boolean {
+  if (!isDelegationIntent(text)) return false;
+  return hasCodeContextInHistory(recentMessages);
 }
 
 /**

@@ -315,6 +315,7 @@ import {
   isOpenHandsExecutionIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
+  isDelegatedOpenHandsExecutionIntent,
 } from "../runtime/workerIntentDetector";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
@@ -605,7 +606,7 @@ function WorkbenchSidePanel({
 }: {
   slots: WorkbenchStatusSlot[];
   onOpenDraftPr?: (url: string) => void;
-  modules: ModuleDef[];
+  modules: ModuleCfg[];
   signals: Partial<Record<ModuleId, number>>;
   showInspector: boolean;
   onToggleInspector: () => void;
@@ -3533,19 +3534,26 @@ export function BuilderContainer({
     setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
     addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
 
-    if (isOpenHandsExecutionIntent(submittedText)) {
+    // ── #458 + Delegation: Check for OpenHands execution or delegated execution
+    const isExecutionIntent = isOpenHandsExecutionIntent(submittedText);
+    const isDelegatedExecution = isDelegatedOpenHandsExecutionIntent(submittedText, chatHistory);
+
+    if (isExecutionIntent || isDelegatedExecution) {
       if (!agentDisabled) {
-        appendChatLine({
-          role: "assistant",
-          text: "Code-/Draft-PR-Auftrag erkannt. Ich übergebe an OpenHands Executor und halte den Worker Chat als Standardroute bereit.",
-        });
+        const delegationNote = isDelegatedExecution
+          ? "Ausführungsauftrag erkannt. Ich übergebe an OpenHands Executor. Ergebnis bleibt Draft PR, kein Auto-Merge."
+          : "Code-/Draft-PR-Auftrag erkannt. Ich übergebe an OpenHands Executor und halte den Worker Chat als Standardroute bereit.";
+        appendChatLine({ role: "assistant", text: delegationNote });
         startAgentFromText(submittedText);
         return;
       }
+      // agentDisabled === true: Show blocker card, do NOT fall through to Worker
       appendChatLine({
         role: "assistant",
-        text: `OpenHands Executor blockiert: ${state.disabledReason || effectiveRepoReason}. Ich beantworte den Auftrag deshalb zuerst über den Cloudflare Worker.`,
+        text: `⚠️ OpenHands Executor blockiert: ${state.disabledReason || effectiveRepoReason}.\n\nBitte GitHub-Zugangsdaten im sicheren Feld hinterlegen, dann kann ich den Auftrag ausführen.`,
       });
+      addLog("warn", `Execution blocked: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, "router");
+      return;
     }
 
     setLastWorkerRequestMessage(submittedText);
@@ -3757,6 +3765,19 @@ export function BuilderContainer({
         @media (min-width: 1180px) {
           .sovereign-builder-container { max-width: 980px; }
         }
+        /* WorkbenchSidePanel: hidden on phone/tablet portrait, only visible on wide desktop/landscape */
+        .sovereign-side-panel { display: none; }
+        @media (min-width: 1024px) and (min-height: 600px) {
+          .sovereign-side-panel { display: flex; }
+        }
+        /* Responsive chat bubble */
+        .sovereign-chat-bubble { max-width: 92%; }
+        @media (min-width: 640px) {
+          .sovereign-chat-bubble { max-width: min(720px, 88%); }
+        }
+        /* Responsive code blocks */
+        .sovereign-code-block { max-width: 100%; overflow-x: auto; white-space: pre; -webkit-overflow-scrolling: touch; }
+        /* Idea grid */
         .sovereign-idea-grid { grid-template-columns: 1fr 1fr; max-width: 340px; }
         @media (min-width: 620px) {
           .sovereign-idea-grid { grid-template-columns: repeat(3, 1fr); max-width: 560px; }

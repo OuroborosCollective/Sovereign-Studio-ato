@@ -114,6 +114,7 @@ export function buildWorkerSystemPrompt(args: {
   readonly repoReason: string;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
   readonly toolchainContext?: string;
+  readonly userLanguage?: string;
 }): string {
   const repoContext = args.chatRepoSnapshot
     ? [
@@ -128,10 +129,16 @@ export function buildWorkerSystemPrompt(args: {
       : `Repo-Kontext fehlt: ${args.repoReason}`;
 
   return [
-    "Du bist Sovereign Worker Chat, die Standard-LLM-Route des Sovereign Tools.",
+    "Du bist Sovereign Studio Runtime Coach — kein generischer Chatbot.",
+    "Antworte in der Sprache des Users. Bei deutschen Eingaben deutsch antworten.",
     "Antworte kurz, freundlich, konkret und ohne erfundene Erfolge.",
     "Keine Mock-, Stub- oder Facade-Live-Pfade behaupten.",
-    "Wenn Code-Ausführung oder Draft-PR nötig ist, erkläre klar, dass OpenHands der Executor ist.",
+    "Wenn nach UI/UX gefragt wird: konkrete Beobachtungen und nächste Schritte — keine Figma-Floskeln.",
+    "Sage nicht 'I don’t have the ability', wenn du sinnvoll beraten kannst.",
+    "Wenn der User eine Datei-, Repo-, README-, Code-, Patch-, Commit- oder Draft-PR-Änderung will:",
+    "  1. Sage klar, dass OpenHands/Draft-PR der Executor ist.",
+    "  2. Bereite einen kompakten Ausführungsbrief vor (Mission, Ziel, Scope).",
+    "  3. Biete NICHT an, das direkt selbst zu machen — das ist nicht dein Job.",
     repoContext,
     args.toolchainContext || "",
   ].filter(Boolean).join("\n");

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanForSecret, redactSecret, evaluateInputPolicy } from './secureInputGuard';
+import { scanForSecret, redactSecret, evaluateInputPolicy, createSecurityCardDisplay } from './secureInputGuard';
 
 describe('secureInputGuard', () => {
   describe('scanForSecret', () => {
@@ -107,14 +107,30 @@ describe('secureInputGuard', () => {
       const policy = evaluateInputPolicy('Was macht diese Funktion?');
       expect(policy.shouldBlock).toBe(false);
       expect(policy.kind).toBeNull();
+      expect(policy.securityCardTitle).toBe('');
     });
 
-    it('returns shouldBlock=true with message and action for PAT', () => {
+    it('returns shouldBlock=true with message and action for classic GitHub PAT', () => {
       const policy = evaluateInputPolicy('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01');
       expect(policy.shouldBlock).toBe(true);
       expect(policy.kind).toBe('github_pat');
       expect(policy.userMessage).toContain('sicheres Zugangsfeld');
-      expect(policy.actionLabel).toContain('PAT');
+      expect(policy.actionLabel).toContain('GitHub');
+      expect(policy.securityCardTitle).toBe('Sicherer GitHub-Zugang erkannt');
+      expect(policy.securityCardText).toContain('blockiert');
+    });
+
+    it('returns shouldBlock=true with message and action for fine-grained GitHub PAT', () => {
+      const policy = evaluateInputPolicy('github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890');
+      expect(policy.shouldBlock).toBe(true);
+      expect(policy.kind).toBe('github_pat_fine');
+      expect(policy.securityCardTitle).toBe('Sicherer GitHub-Zugang erkannt');
+    });
+
+    it('returns securityCardHint with revocation warning for GitHub tokens', () => {
+      const policy = evaluateInputPolicy('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01');
+      expect(policy.securityCardHint).toContain('widerrufen');
+      expect(policy.securityCardHint).toContain('neu erstellen');
     });
 
     it('user message never exposes the token value', () => {
@@ -122,6 +138,55 @@ describe('secureInputGuard', () => {
       const policy = evaluateInputPolicy(token);
       if (policy.shouldBlock) {
         expect(policy.userMessage).not.toContain(token);
+        expect(policy.securityCardText).not.toContain(token);
+        expect(policy.securityCardHint).not.toContain(token);
+      }
+    });
+
+    it('returns generic "Token erkannt" for OpenAI/Anthropic keys', () => {
+      const policy = evaluateInputPolicy('sk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef');
+      expect(policy.shouldBlock).toBe(true);
+      expect(policy.securityCardTitle).toBe('Sicherer Token erkannt');
+    });
+
+    it('no duplicate chat bubbles for repeated token input - returns correct actionLabel', () => {
+      const policy1 = evaluateInputPolicy('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01');
+      const policy2 = evaluateInputPolicy('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01');
+      expect(policy1.actionLabel).toBe('GitHub-Zugang öffnen');
+      expect(policy2.actionLabel).toBe('GitHub-Zugang öffnen');
+      // The UI layer should use this to show exactly one SecurityCard, not multiple
+    });
+  });
+
+  describe('createSecurityCardDisplay', () => {
+    it('returns null for non-blocked input', () => {
+      const policy = evaluateInputPolicy('Normale Chatnachricht');
+      const card = createSecurityCardDisplay(policy);
+      expect(card).toBeNull();
+    });
+
+    it('returns card display for blocked GitHub PAT', () => {
+      const policy = evaluateInputPolicy('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01');
+      const card = createSecurityCardDisplay(policy);
+      expect(card).not.toBeNull();
+      if (card) {
+        expect(card.title).toBe('Sicherer GitHub-Zugang erkannt');
+        expect(card.text).toContain('blockiert');
+        expect(card.hint).toContain('widerrufen');
+        expect(card.buttonLabel).toBe('GitHub-Zugang öffnen');
+      }
+    });
+
+    it('card display never contains token value', () => {
+      const token = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01';
+      const policy = evaluateInputPolicy(token);
+      const card = createSecurityCardDisplay(policy);
+      expect(card).not.toBeNull();
+      if (card) {
+        expect(card.title).not.toContain(token);
+        expect(card.text).not.toContain(token);
+        expect(card.hint).not.toContain(token);
+        expect(card.buttonLabel).not.toContain(token);
       }
     });
   });

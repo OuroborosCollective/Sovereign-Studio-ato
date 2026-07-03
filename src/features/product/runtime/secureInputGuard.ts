@@ -78,6 +78,9 @@ export interface SecureInputPolicy {
   readonly kind: SecretKind | null;
   readonly userMessage: string;
   readonly actionLabel: string;
+  readonly securityCardTitle: string;
+  readonly securityCardText: string;
+  readonly securityCardHint: string;
 }
 
 export function evaluateInputPolicy(input: string): SecureInputPolicy {
@@ -88,12 +91,46 @@ export function evaluateInputPolicy(input: string): SecureInputPolicy {
       kind: null,
       userMessage: '',
       actionLabel: '',
+      securityCardTitle: '',
+      securityCardText: '',
+      securityCardHint: '',
     };
   }
+
+  const isGitHubToken = result.kind === 'github_pat' || result.kind === 'github_pat_fine';
+
   return {
     shouldBlock: true,
     kind: result.kind,
     userMessage: `Sicherer Zugang erkannt. Diese Eingabe wurde nicht als Chat gespeichert. Bitte nutze das sicheres Zugangsfeld.`,
-    actionLabel: 'PAT sicher eingeben',
+    actionLabel: 'GitHub-Zugang öffnen',
+    securityCardTitle: isGitHubToken
+      ? 'Sicherer GitHub-Zugang erkannt'
+      : 'Sicherer Token erkannt',
+    securityCardText: isGitHubToken
+      ? 'Token wurde aus dem Chat blockiert. Bitte nur im sicheren Zugangsfeld einfügen.'
+      : `${result.hint} wurde aus dem Chat blockiert. Bitte nur im sicheren Zugangsfeld einfügen.`,
+    securityCardHint: isGitHubToken
+      ? 'Falls der Token in Screenshot/Video sichtbar war: widerrufen und neu erstellen.'
+      : 'Falls der Token in Screenshot/Video sichtbar war: widerrufen und neu erstellen.',
+  };
+}
+
+/**
+ * Creates a SecurityCard display object for UI rendering.
+ * Only call this when shouldBlock is true.
+ */
+export function createSecurityCardDisplay(policy: SecureInputPolicy): {
+  readonly title: string;
+  readonly text: string;
+  readonly hint: string;
+  readonly buttonLabel: string;
+} | null {
+  if (!policy.shouldBlock) return null;
+  return {
+    title: policy.securityCardTitle,
+    text: policy.securityCardText,
+    hint: policy.securityCardHint,
+    buttonLabel: policy.actionLabel,
   };
 }
