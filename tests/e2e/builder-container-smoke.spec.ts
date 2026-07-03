@@ -108,45 +108,26 @@ test.describe('BuilderContainer Smoke Tests', () => {
     // Submit the form
     await composer.press('Enter');
     
-    // Wait for the response to arrive
+    // Wait for the response to arrive and be processed
     // The app should NOT be stuck in infinite thinking - it should show diagnostic info
-    // Wait for a reasonable time for the error to be processed
     await page.waitForTimeout(3000);
     
-    // Key assertions for worker-failure diagnostic:
+    // Key assertion: WorkerBlockerCard should appear with diagnostic info
+    // This proves the app shows LOCAL runtime diagnostic, NOT blind repeat
+    const workerBlockerCard = page.locator('[data-testid="worker-blocker-card"]');
+    await expect(workerBlockerCard).toBeVisible();
     
-    // 1. App should NOT be stuck in loading/thinking state (no blind repeat)
-    //    If there's a thinking indicator, it should have resolved by now
-    const thinkingIndicator = page.locator('.thinking-dots, [data-testid*="thinking"]');
-    const isStillThinking = await thinkingIndicator.isVisible().catch(() => false);
+    // Verify the card contains diagnostic text (Scope info from local runtime state)
+    await expect(workerBlockerCard).toContainText('Worker nicht erreichbar');
     
-    // 2. After worker failure, the app should show error/diagnostic content
-    //    NOT a generic "thinking..." spinner that repeats
-    const pageContent = await page.content();
+    // Verify scope classification is shown (from local diagnostic runtime, not worker response)
+    await expect(workerBlockerCard).toContainText('Scope:');
     
-    // 3. Verify the diagnostic infrastructure is present in the page
-    //    The app should surface diagnostic info from local runtime state
-    //    Look for evidence of error handling (not blind repeat)
-    const showsDiagnostic = pageContent.includes('Scope:') || 
-                           pageContent.includes('HTTP 500') ||
-                           pageContent.includes('Fehler') ||
-                           pageContent.includes('Error') ||
-                           pageContent.includes('nicht') ||
-                           pageContent.includes('failed');
+    // Verify retry button is available (explicit action, not auto-repeat)
+    await expect(workerBlockerCard.getByRole('button', { name: /retry/i })).toBeVisible();
     
-    // 4. The sovereign summary should still be present (app is responsive)
-    const sovereignSummary = page.getByText(/Sovereign/);
-    await expect(sovereignSummary.first()).toBeVisible();
-    
-    // The key assertion: After worker failure, the app should surface diagnostic info
-    // from local runtime state, NOT show a blind repeat loading spinner
-    // 
-    // If the app is still thinking after 3 seconds with a 500 error,
-    // that would indicate blind repeat behavior (BAD)
-    // 
-    // If the app shows error/diagnostic content or returns to ready state,
-    // that indicates proper diagnostic handling (GOOD)
-    expect(isStillThinking).toBe(false);
+    // Verify diagnose button is available (explains diagnostic from local runtime)
+    await expect(workerBlockerCard.getByRole('button', { name: /diagnose/i })).toBeVisible();
   });
 
   test('5. BuilderContainer has proper navigation structure', async ({ page }) => {
