@@ -102,10 +102,17 @@ describe('AgentEventStream', () => {
       runningSnapshot(),
       'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/488',
     );
-    rerender(<AgentEventStream snapshot={draftReady} />);
+    rerender(
+      <AgentEventStream
+        snapshot={draftReady}
+        job={runningJob()}
+        onCancel={() => undefined}
+      />,
+    );
 
     expect(screen.getAllByText(/Draft PR bereit/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Draft PR öffnen/i)).toBeTruthy();
+    expect(screen.queryByText('Abbrechen')).toBeNull();
     expect(visibleTextWithoutStyle(container)).not.toContain('%');
   });
 
