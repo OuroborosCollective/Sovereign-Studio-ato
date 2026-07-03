@@ -11,6 +11,8 @@ import {
   hasCodeContextInHistory,
   isDelegatedOpenHandsExecutionIntent,
   getWorkerActionHint,
+  isExecutorStatusQuestion,
+  buildExecutorStatusAnswer,
 } from './workerIntentDetector';
 
 describe('isOpenHandsExecutionIntent', () => {
@@ -227,6 +229,137 @@ describe('isDelegatedOpenHandsExecutionIntent', () => {
       { role: 'user', text: 'Mach das für mich' },
     ];
     expect(isDelegatedOpenHandsExecutionIntent('Mach das für mich', history)).toBe(false);
+  });
+});
+
+describe('isDelegationIntent — Phase 1 spec cases', () => {
+  it('"Tu du das für mich" after README task is delegation intent', () => {
+    expect(isDelegationIntent('Tu du das für mich')).toBe(true);
+  });
+
+  it('"Mach das" is delegation intent', () => {
+    expect(isDelegationIntent('Mach das')).toBe(true);
+  });
+
+  it('"Setz das um" is delegation intent (short form)', () => {
+    expect(isDelegationIntent('Setz das um')).toBe(true);
+  });
+
+  it('"Setze das um" is delegation intent (long form)', () => {
+    expect(isDelegationIntent('Setze das um')).toBe(true);
+  });
+
+  it('"Was ist Sovereign?" is not delegation intent', () => {
+    expect(isDelegationIntent('Was ist Sovereign?')).toBe(false);
+  });
+});
+
+describe('isDelegatedOpenHandsExecutionIntent — Phase 1 spec cases', () => {
+  it('returns true: "Tu du das für mich" after README-Auftrag', () => {
+    const history = [
+      { role: 'assistant', text: 'Ich ändere das README und füge einen Titel ein.' },
+      { role: 'user', text: 'Tu du das für mich' },
+    ];
+    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(true);
+  });
+
+  it('returns false: "Tu du das für mich" after normal chat question (no code context)', () => {
+    const history = [
+      { role: 'user', text: 'Was ist dein Name?' },
+      { role: 'assistant', text: 'Ich bin Sovereign.' },
+      { role: 'user', text: 'Tu du das für mich' },
+    ];
+    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(false);
+  });
+});
+
+describe('isExecutorStatusQuestion', () => {
+  it('detects "arbeitet er schon?"', () => {
+    expect(isExecutorStatusQuestion('arbeitet er schon?')).toBe(true);
+  });
+
+  it('detects "läuft das?"', () => {
+    expect(isExecutorStatusQuestion('läuft das?')).toBe(true);
+  });
+
+  it('detects "was macht er?"', () => {
+    expect(isExecutorStatusQuestion('was macht er?')).toBe(true);
+  });
+
+  it('detects "ist er fertig?"', () => {
+    expect(isExecutorStatusQuestion('ist er fertig?')).toBe(true);
+  });
+
+  it('detects "hat er angefangen?"', () => {
+    expect(isExecutorStatusQuestion('hat er angefangen?')).toBe(true);
+  });
+
+  it('detects "warum passiert nichts?"', () => {
+    expect(isExecutorStatusQuestion('warum passiert nichts?')).toBe(true);
+  });
+
+  it('detects "sehe nichts bei replit"', () => {
+    expect(isExecutorStatusQuestion('sehe nichts bei replit')).toBe(true);
+  });
+
+  it('is case insensitive', () => {
+    expect(isExecutorStatusQuestion('ARBEITET ER SCHON?')).toBe(true);
+    expect(isExecutorStatusQuestion('Läuft Das?')).toBe(true);
+  });
+
+  it('returns false for unrelated messages', () => {
+    expect(isExecutorStatusQuestion('Baue mir ein Feature')).toBe(false);
+    expect(isExecutorStatusQuestion('Was ist das Sovereign Studio?')).toBe(false);
+    expect(isExecutorStatusQuestion('Implementiere den Fix')).toBe(false);
+  });
+
+  it('returns false for generic "Warum?" diagnostic questions (no executor status token)', () => {
+    // "Warum?" alone is a diagnostic question, not an executor status question.
+    // It should go through the workerDiagnosticQuestion route, not executor status.
+    expect(isExecutorStatusQuestion('Warum?')).toBe(false);
+    expect(isExecutorStatusQuestion('Wieso?')).toBe(false);
+  });
+});
+
+describe('buildExecutorStatusAnswer', () => {
+  it('reports idle honestly when no executor is running', () => {
+    const answer = buildExecutorStatusAnswer({ agentState: 'idle' });
+    expect(answer).toContain('Nein');
+    expect(answer).toContain('gestartet');
+  });
+
+  it('reports running with file count and draft PR status', () => {
+    const answer = buildExecutorStatusAnswer({
+      agentState: 'executor_running',
+      openhandsStatus: 'running',
+      changedFiles: 2,
+      draftPrUrl: null,
+    });
+    expect(answer).toContain('Ja');
+    expect(answer).toContain('2');
+    expect(answer).toContain('Draft PR');
+  });
+
+  it('reports blocked with reason', () => {
+    const answer = buildExecutorStatusAnswer({
+      agentState: 'blocked',
+      blockerReason: 'GitHub-Schreibzugang fehlt.',
+    });
+    expect(answer).toContain('blockiert');
+    expect(answer).toContain('GitHub-Schreibzugang fehlt');
+  });
+
+  it('reports draft PR ready with URL', () => {
+    const answer = buildExecutorStatusAnswer({
+      agentState: 'draft_pr_ready',
+      draftPrUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/42',
+    });
+    expect(answer).toContain('https://github.com');
+  });
+
+  it('never fabricates: empty idle state is explicit, not "arbeitet"', () => {
+    const answer = buildExecutorStatusAnswer({ agentState: 'idle', openhandsStatus: 'idle' });
+    expect(answer.toLowerCase()).not.toContain('ja, openhands läuft');
   });
 });
 
