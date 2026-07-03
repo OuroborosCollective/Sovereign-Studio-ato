@@ -15,8 +15,7 @@ import { test, expect } from '@playwright/test';
 test.describe('BuilderContainer Smoke Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    // Wait for the app to fully load
-    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="chat-only-app"]')).toBeVisible();
   });
 
   test('1. App loads with BuilderContainer shell', async ({ page }) => {
