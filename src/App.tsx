@@ -1,7 +1,16 @@
 import './runtime-adapter';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BuilderContainer } from './features/product/containers/BuilderContainer';
 import { LlmAdapterProvider } from './features/product/contexts/LlmAdapterContext';
+import {
+  createOpenHandsEnterpriseClient,
+  type OpenHandsStartJobInput,
+} from './features/product/runtime/openhandsEnterpriseClient';
+import {
+  createOpenHandsIdleSnapshot,
+  resolveOpenHandsEnterpriseConfig,
+  type OpenHandsJobSnapshot,
+} from './features/product/runtime/openhandsEnterpriseRuntime';
 
 const CHAT_ONLY_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -11,7 +20,81 @@ const CHAT_ONLY_STYLE: React.CSSProperties = {
 
 export default function App() {
   const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag schreiben.');
-  const startChatOnlyTask = (nextMission: string) => setMission(nextMission);
+  const openhandsConfig = useMemo(() => resolveOpenHandsEnterpriseConfig(), []);
+  const openhandsClient = useMemo(
+    () => createOpenHandsEnterpriseClient({ config: openhandsConfig }),
+    [openhandsConfig],
+  );
+  const [openhandsJob, setOpenHandsJob] = useState<OpenHandsJobSnapshot>(
+    () => createOpenHandsIdleSnapshot(),
+  );
+
+  const startChatOnlyTask = async (nextMission: string, input?: Partial<OpenHandsStartJobInput>) => {
+    setMission(nextMission);
+    if (!openhandsConfig.ready) {
+      setOpenHandsJob({
+        status: 'blocked',
+        changedFiles: [],
+        events: [{ at: Date.now(), level: 'error', stage: 'openhands-config', message: openhandsConfig.reason }],
+        lastError: openhandsConfig.reason,
+      });
+      return;
+    }
+    if (!input?.repoUrl) {
+      setOpenHandsJob({
+        status: 'blocked',
+        changedFiles: [],
+        events: [{ at: Date.now(), level: 'error', stage: 'openhands-request', message: 'Repository URL fehlt.' }],
+        lastError: 'Repository URL fehlt.',
+      });
+      return;
+    }
+    setOpenHandsJob({
+      status: 'queued',
+      repoUrl: input.repoUrl,
+      branch: input.branch || 'main',
+      changedFiles: [],
+      events: [{ at: Date.now(), level: 'info', stage: 'openhands-request', message: 'Auftrag an die konfigurierte Agent Runtime übergeben.' }],
+    });
+    try {
+      const snapshot = await openhandsClient.startJob({
+        repoUrl: input.repoUrl,
+        branch: input.branch,
+        mission: nextMission,
+      });
+      setOpenHandsJob(snapshot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Agent Runtime Start fehlgeschlagen.';
+      setOpenHandsJob({
+        status: 'failed',
+        repoUrl: input.repoUrl,
+        branch: input.branch || 'main',
+        changedFiles: [],
+        events: [{ at: Date.now(), level: 'error', stage: 'openhands-start', message }],
+        lastError: message,
+      });
+    }
+  };
+
+  const cancelChatOnlyTask = async () => {
+    const jobId = openhandsJob.jobId;
+    if (!openhandsConfig.ready || !jobId) return;
+    try {
+      const snapshot = await openhandsClient.cancelJob(jobId);
+      setOpenHandsJob(snapshot);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Agent Runtime Stop fehlgeschlagen.';
+      setOpenHandsJob((current) => ({
+        ...current,
+        status: 'failed',
+        lastError: message,
+        events: [...current.events, { at: Date.now(), level: 'error', stage: 'openhands-cancel', message }],
+      }));
+    }
+  };
+
+  const openhandsIsRunning = openhandsJob.status === 'queued' || openhandsJob.status === 'running';
+
   return (
     <LlmAdapterProvider>
       <main data-testid="chat-only-app" data-layout="chat-only-live-entry" aria-label="Sovereign Chat" style={CHAT_ONLY_STYLE}>
@@ -28,8 +111,13 @@ export default function App() {
           onGenerateIdeas={() => setMission('Ideen/Build')}
           onGenerateErrorWorkflow={() => setMission('Fehleranalyse')}
           onPublishDraftPr={() => setMission('Draft PR')}
-          openhandsReady={true}
+          openhandsReady={openhandsConfig.ready}
+          openhandsConfig={openhandsConfig}
+          openhandsJob={openhandsJob}
+          openhandsJobStatus={openhandsIsRunning ? 'OpenHands Auftrag läuft' : openhandsJob.lastError}
+          openhandsIsRunning={openhandsIsRunning}
           onStartOpenHands={startChatOnlyTask}
+          onCancelOpenHands={cancelChatOnlyTask}
         />
       </main>
     </LlmAdapterProvider>
