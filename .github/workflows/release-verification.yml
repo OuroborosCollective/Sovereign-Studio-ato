@@ -3,8 +3,28 @@ name: Release Verification
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'android/**'
+      - 'tests/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
+      - 'capacitor.config.*'
   pull_request:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'android/**'
+      - 'tests/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
+      - 'capacitor.config.*'
   workflow_dispatch:
 
 concurrency:
@@ -66,8 +86,18 @@ jobs:
         id: build_sync
         run: pnpm run build
 
-      - name: E2E Smoke Gate
-        id: e2e_smoke
+      - name: Install Playwright browsers
+        id: playwright_install
+        run: pnpm exec playwright install chromium
+
+      - name: Artifact Smoke Gate
+        id: artifact_smoke
+        run: pnpm run test:artifact-smoke
+        env:
+          CI: true
+
+      - name: Playwright Smoke Gate
+        id: playwright_smoke
         run: pnpm run test:e2e
         env:
           CI: true
@@ -90,7 +120,8 @@ jobs:
             echo "| Type Check | ${{ steps.type_check.outcome }} |"
             echo "| Runtime Unit Tests | ${{ steps.unit_tests.outcome }} |"
             echo "| Build Web + Android Sync | ${{ steps.build_sync.outcome }} |"
-            echo "| E2E Smoke Gate | ${{ steps.e2e_smoke.outcome }} |"
+            echo "| Artifact Smoke Gate | ${{ steps.artifact_smoke.outcome }} |"
+            echo "| Playwright Smoke Gate | ${{ steps.playwright_smoke.outcome }} |"
             echo "| Integration Gate | ${{ steps.integration.outcome }} |"
             echo ""
             echo "Integration tests are release-blocking. Closed issues #255 and #257 are no longer used as a non-blocking exception."

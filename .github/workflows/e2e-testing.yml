@@ -7,6 +7,8 @@ on:
       - 'src/**'
       - 'scripts/**'
       - 'android/**'
+      - 'tests/**'
+      - 'playwright.config.ts'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'vite.config.ts'
@@ -18,6 +20,8 @@ on:
       - 'src/**'
       - 'scripts/**'
       - 'android/**'
+      - 'tests/**'
+      - 'playwright.config.ts'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'vite.config.ts'
@@ -69,7 +73,15 @@ jobs:
         shell: bash
         run: pnpm run build
 
-      - name: Run current app smoke gate
+      - name: Install Playwright browsers
+        shell: bash
+        run: pnpm exec playwright install chromium
+
+      - name: Run artifact smoke gate
+        shell: bash
+        run: pnpm run test:artifact-smoke
+
+      - name: Run Playwright smoke gate
         shell: bash
         run: pnpm run test:e2e
 
@@ -81,6 +93,7 @@ jobs:
             echo "## Sovereign E2E Smoke"
             echo ""
             echo "- Scope: current Android-first web/Capacitor app"
-            echo "- Guard: pnpm run test:e2e"
+            echo "- Artifact Gate: pnpm run test:artifact-smoke (validates build handoff)"
+            echo "- Browser Gate: pnpm run test:e2e (Playwright smoke tests)"
             echo "- Legacy RN path retired: sovereign-studio-rn/** is no longer required"
           } >> "$GITHUB_STEP_SUMMARY"
