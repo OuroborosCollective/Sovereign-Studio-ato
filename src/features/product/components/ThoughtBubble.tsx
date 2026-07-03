@@ -23,27 +23,38 @@ function useTypedWorkStateText(text: string): string {
 
 export function ThoughtBubble({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const typedText = useTypedWorkStateText(text);
   const displayText =
     open || typedText.length <= 96 ? typedText : `${typedText.slice(0, 96)}…`;
+
+  const label = open ? 'Gedanken einklappen' : 'Gedanken ausklappen';
+
   return (
     <button
       type="button"
       onClick={() => setOpen((v) => !v)}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       aria-live="polite"
+      aria-expanded={open}
+      title={label}
       style={{
         width: "100%",
-        background: "transparent",
+        background: isHovered ? `${C.border}33` : "transparent",
         border: "none",
+        borderRadius: 8,
         display: "flex",
         alignItems: "flex-start",
         gap: 8,
         padding: "4px 16px",
         cursor: "pointer",
         textAlign: "left",
+        transition: "background 0.2s",
       }}
     >
       <span
+        aria-hidden="true"
         style={{
           fontFamily: "monospace",
           fontSize: 12,
