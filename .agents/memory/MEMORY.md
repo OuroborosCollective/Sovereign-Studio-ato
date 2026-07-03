@@ -1,2 +1,3 @@
 - [Sovereign Studio Workbench status vocabulary](sovereign-workbench-status.md) — user-facing status slots (Actions/Files/Logs/Errors/Draft PR) front technical module lamps; lamps live behind an Inspector toggle only.
 - [BuilderContainer test quirk](builder-container-test-quirk.md) — one pre-existing failing test in BuilderContainer.test.tsx is unrelated to workbench changes; verified against unmodified HEAD.
+- [Sovereign execution routing order](sovereign-execution-routing.md) — correct _processSubmit routing precedence, credit guard placement, security card pattern, immediate timeline update on intent.
