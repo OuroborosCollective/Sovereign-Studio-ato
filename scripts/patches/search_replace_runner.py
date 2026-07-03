@@ -12,6 +12,7 @@ import base64
 import difflib
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -25,6 +26,7 @@ MAX_BLOCK_BYTES = 8_000
 MAX_FILE_BYTES = 500_000
 DEFAULT_REPO = "OuroborosCollective/Sovereign-Studio-ato"
 DEFAULT_BASE = "main"
+SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 
 def fail(message: str) -> None:
@@ -75,8 +77,12 @@ def encoded_path(path: str) -> str:
     return urllib.parse.quote(path, safe="/")
 
 
+def encoded_ref(ref: str) -> str:
+    return urllib.parse.quote(ref, safe="")
+
+
 def read_file(api: GitHubApi, path: str, ref: str) -> tuple[str, str]:
-    data = api.request("GET", f"/contents/{encoded_path(path)}?ref={urllib.parse.quote(ref)}")
+    data = api.request("GET", f"/contents/{encoded_path(path)}?ref={encoded_ref(ref)}")
     sha = str(data.get("sha") or "")
     raw = str(data.get("content") or "")
     if not sha or not raw:
@@ -130,11 +136,13 @@ def print_diff(path: str, before: str, after: str) -> None:
     print("".join(diff)[:20_000])
 
 
-def get_ref_sha(api: GitHubApi, branch: str) -> str:
-    data = api.request("GET", f"/git/ref/heads/{urllib.parse.quote(branch, safe='/')}")
+def resolve_ref_sha(api: GitHubApi, ref: str) -> str:
+    if SHA_RE.fullmatch(ref):
+        return ref
+    data = api.request("GET", f"/git/ref/heads/{urllib.parse.quote(ref, safe='/')}")
     sha = data.get("object", {}).get("sha")
     if not isinstance(sha, str) or not sha:
-        fail(f"Branch SHA nicht gefunden: {branch}")
+        fail(f"Branch SHA nicht gefunden: {ref}")
     return sha
 
 
@@ -185,7 +193,13 @@ def main(argv: list[str]) -> None:
     if not target:
         fail("patch.target ist erforderlich")
 
-    source_branch = str(patch.get("source_branch") or patch.get("base_branch") or env_base).strip()
+    source_ref = str(
+        patch.get("source_ref")
+        or patch.get("source_branch")
+        or patch.get("base_branch")
+        or env_base
+    ).strip()
+    branch_base_ref = str(patch.get("branch_base_ref") or source_ref).strip()
     patch_branch = str(os.environ.get("PATCH_BRANCH") or patch.get("branch") or f"sovereign/patch-{int(time.time())}").strip()
     commit_message = str(patch.get("commit_message") or "chore: apply search/replace patch")
     pr_title = str(os.environ.get("PR_TITLE") or patch.get("pr_title") or commit_message)
@@ -194,10 +208,11 @@ def main(argv: list[str]) -> None:
     expected_sha = str(patch.get("expectedSha") or patch.get("expected_sha") or patch.get("base_sha") or "").strip()
 
     api = GitHubApi(repo, os.environ.get("GITHUB_TOKEN", ""))
-    current_sha, before = read_file(api, target, source_branch)
+    current_sha, before = read_file(api, target, source_ref)
     print(f"Target: {target}")
-    print(f"Source: {source_branch} @ {current_sha}")
-    print(f"Branch: {patch_branch}")
+    print(f"Source ref: {source_ref} @ {current_sha}")
+    print(f"Branch base ref: {branch_base_ref}")
+    print(f"Patch branch: {patch_branch}")
     print(f"Dry run: {dry_run}")
 
     if expected_sha and current_sha != expected_sha:
@@ -212,7 +227,7 @@ def main(argv: list[str]) -> None:
         print("✓ Dry Run abgeschlossen. Keine Änderungen geschrieben.")
         return
 
-    base_sha = get_ref_sha(api, source_branch)
+    base_sha = resolve_ref_sha(api, branch_base_ref)
     ensure_branch(api, patch_branch, base_sha)
     branch_file_sha, _ = read_file(api, target, patch_branch)
     commit_sha = update_file(api, patch_branch, target, branch_file_sha, after, commit_message)
