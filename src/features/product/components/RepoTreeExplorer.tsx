@@ -11,12 +11,18 @@ export interface RepoTreeExplorerProps {
 function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode; readonly level: number; readonly onFileClick: (path: string) => void }) {
   const [open, setOpen] = useState(level < 1);
   const folder = node.type === 'folder';
+  const ariaLabel = folder
+    ? `${open ? 'Ordner schließen' : 'Ordner öffnen'}: ${node.name}`
+    : `Datei öffnen: ${node.name}`;
+
   return (
     <li>
       <button
         type="button"
         onClick={() => folder ? setOpen((value) => !value) : onFileClick(node.path)}
         aria-expanded={folder ? open : undefined}
+        aria-label={ariaLabel}
+        title={ariaLabel}
         style={{ marginLeft: level * 12 }}
       >
         <span aria-hidden="true">{folder ? (open ? '▾' : '▸') : '•'}</span>{' '}
@@ -34,11 +40,23 @@ function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode
 export function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExplorerProps) {
   const tree = useMemo(() => buildRepoTree(snapshot?.files ?? []), [snapshot]);
   return (
-    <section role="dialog" aria-modal="true" data-testid="repo-tree-explorer">
+    <section
+      role="dialog"
+      aria-modal="true"
+      aria-label="Repo Inspector"
+      data-testid="repo-tree-explorer"
+    >
       <header>
         <strong>Repo Inspector</strong>
         <p>{summarizeRepoTreeSnapshot(snapshot)}</p>
-        <button type="button" onClick={onClose}>Schließen</button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Schließen"
+          title="Schließen"
+        >
+          Schließen
+        </button>
       </header>
       {!snapshot ? <p>Kein Repo-Snapshot geladen.</p> : null}
       {snapshot?.truncated ? <p>Snapshot truncated.</p> : null}
