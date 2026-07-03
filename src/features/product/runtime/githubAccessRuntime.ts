@@ -21,6 +21,17 @@ export interface GitHubAccessSnapshot {
   errorMessage: string | null;
 }
 
+export interface GitHubAccessRepositoryTarget {
+  readonly owner: string;
+  readonly repo: string;
+}
+
+export interface GitHubAccessApiValidationResult {
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly canWrite?: boolean;
+}
+
 /**
  * Mask a GitHub token for display (show first 4 and last 4 characters)
  * Input token is discarded immediately after masking.
@@ -58,6 +69,84 @@ export interface GitHubAccessValidationResult {
   isValid: boolean;
   maskedToken: string;
   error?: string;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function hasWritePermission(payload: unknown): boolean {
+  if (!isObject(payload)) return false;
+  const permissions = payload.permissions;
+  if (!isObject(permissions)) return false;
+  return permissions.push === true || permissions.admin === true || permissions.maintain === true;
+}
+
+async function safeReadJson(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate a GitHub token against the real GitHub API without storing it.
+ * The caller must pass the raw token only for this one-shot check and discard it immediately.
+ */
+export async function validateGitHubTokenForRepo(
+  token: string,
+  target: GitHubAccessRepositoryTarget,
+  fetcher: typeof fetch = fetch,
+): Promise<GitHubAccessApiValidationResult> {
+  const format = validateGitHubTokenFormat(token);
+  if (!format.isValid) return { ok: false, error: format.error };
+  const owner = target.owner.trim();
+  const repo = target.repo.trim();
+  if (!owner || !repo) return { ok: false, error: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.' };
+
+  const authHeaders: HeadersInit = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token.trim()}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
+  const userResponse = await fetcher('https://api.github.com/user', { headers: authHeaders });
+  if (!userResponse.ok) {
+    return {
+      ok: false,
+      error: userResponse.status === 401
+        ? 'GitHub-Token wurde abgelehnt.'
+        : `GitHub-User-Prüfung fehlgeschlagen: HTTP ${userResponse.status}`,
+    };
+  }
+
+  const repoResponse = await fetcher(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    { headers: authHeaders },
+  );
+  const repoPayload = await safeReadJson(repoResponse);
+  if (!repoResponse.ok) {
+    return {
+      ok: false,
+      error: repoResponse.status === 404
+        ? 'GitHub-Token hat keinen Zugriff auf dieses Repository.'
+        : `GitHub-Repo-Prüfung fehlgeschlagen: HTTP ${repoResponse.status}`,
+    };
+  }
+
+  const canWrite = hasWritePermission(repoPayload);
+  if (!canWrite) {
+    return {
+      ok: false,
+      canWrite: false,
+      error: 'GitHub-Token ist gültig, hat aber keinen Schreibzugriff auf dieses Repository.',
+    };
+  }
+
+  return { ok: true, canWrite: true };
 }
 
 /**
@@ -164,5 +253,8 @@ export function getGitHubAccessInstruction(snapshot: GitHubAccessSnapshot): stri
   if (snapshot.state === 'invalid') {
     return snapshot.errorMessage || 'Der eingegebene GitHub-Zugang ist ungültig.';
   }
-  return 'GitHub-Zugang benötigt für Draft PR. Bitte TOKEN eingeben.';
+  if (snapshot.state === 'requested') {
+    return 'Format akzeptiert. Echte GitHub-API-Prüfung steht noch aus.';
+  }
+  return 'GitHub-Zugang benötigt für Draft PR. Bitte Zugang eingeben.';
 }

@@ -5,6 +5,7 @@
 
 import {
   isOpenHandsExecutionIntent,
+  isCodeGenerationIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   isDelegationIntent,
@@ -30,14 +31,14 @@ describe('isOpenHandsExecutionIntent', () => {
     expect(isOpenHandsExecutionIntent('commit the changes')).toBe(true);
   });
 
-  it('detects build/implement intent', () => {
-    expect(isOpenHandsExecutionIntent('baue die app')).toBe(true);
-    expect(isOpenHandsExecutionIntent('implementiere feature')).toBe(true);
+  it('does not treat generic build/implement intent as OpenHands-only execution', () => {
+    expect(isOpenHandsExecutionIntent('baue die app')).toBe(false);
+    expect(isOpenHandsExecutionIntent('implementiere feature')).toBe(false);
   });
 
-  it('detects fix intent', () => {
-    expect(isOpenHandsExecutionIntent('fixe den bug')).toBe(true);
-    expect(isOpenHandsExecutionIntent('repariere den server')).toBe(true);
+  it('does not treat generic fix intent as OpenHands-only execution', () => {
+    expect(isOpenHandsExecutionIntent('fixe den bug')).toBe(false);
+    expect(isOpenHandsExecutionIntent('repariere den server')).toBe(false);
   });
 
   it('returns false for non-execution text', () => {
@@ -48,6 +49,19 @@ describe('isOpenHandsExecutionIntent', () => {
   it('is case insensitive', () => {
     expect(isOpenHandsExecutionIntent('openhands')).toBe(true);
     expect(isOpenHandsExecutionIntent('OPENHANDS')).toBe(true);
+  });
+});
+
+describe('isCodeGenerationIntent', () => {
+  it('detects generic code work for code-capable LLM routes', () => {
+    expect(isCodeGenerationIntent('baue die app')).toBe(true);
+    expect(isCodeGenerationIntent('implementiere feature')).toBe(true);
+    expect(isCodeGenerationIntent('fixe den bug')).toBe(true);
+    expect(isCodeGenerationIntent('repariere den server')).toBe(true);
+  });
+
+  it('does not classify normal chat as code generation', () => {
+    expect(isCodeGenerationIntent('Was ist Sovereign Studio?')).toBe(false);
   });
 });
 
@@ -187,19 +201,19 @@ describe('hasCodeContextInHistory', () => {
 });
 
 describe('isDelegatedOpenHandsExecutionIntent', () => {
-  it('returns true when delegation after README task', () => {
+  it('returns false when delegation follows only generic code generation context', () => {
     const history = [
       { role: 'user', text: 'Aktualisiere das README' },
-      { role: 'assistant', text: 'Bereite die Aktualisierung vor.' },
+      { role: 'assistant', text: 'Bereite einen Patchvorschlag vor.' },
       { role: 'user', text: 'Tu du das für mich' },
     ];
-    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(true);
+    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(false);
   });
 
-  it('returns true when delegation after code change task', () => {
+  it('returns true when delegation follows explicit Draft PR executor context', () => {
     const history = [
-      { role: 'user', text: 'Füge einen Test hinzu' },
-      { role: 'assistant', text: 'Ich schlage einen Test vor.' },
+      { role: 'user', text: 'Erstelle einen Draft PR mit einem Test.' },
+      { role: 'assistant', text: 'Draft PR benötigt eine Schreibroute.' },
       { role: 'user', text: 'Mach das' },
     ];
     expect(isDelegatedOpenHandsExecutionIntent('Mach das', history)).toBe(true);
@@ -255,12 +269,12 @@ describe('isDelegationIntent — Phase 1 spec cases', () => {
 });
 
 describe('isDelegatedOpenHandsExecutionIntent — Phase 1 spec cases', () => {
-  it('returns true: "Tu du das für mich" after README-Auftrag', () => {
+  it('returns false: "Tu du das für mich" after README-Auftrag without explicit executor context', () => {
     const history = [
       { role: 'assistant', text: 'Ich ändere das README und füge einen Titel ein.' },
       { role: 'user', text: 'Tu du das für mich' },
     ];
-    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(true);
+    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(false);
   });
 
   it('returns false: "Tu du das für mich" after normal chat question (no code context)', () => {
@@ -364,19 +378,26 @@ describe('buildExecutorStatusAnswer', () => {
 });
 
 describe('getWorkerActionHint', () => {
-  it('returns OpenHands hint for execution intent', () => {
+  it('returns executor hint for explicit execution intent', () => {
     expect(getWorkerActionHint({
       submittedText: 'Use OpenHands to fix',
       workerBlocked: false,
-    })).toBe('OpenHands Executor starten');
+    })).toBe('Executor-Schreibroute starten');
   });
 
-  it('returns blocked + OpenHands hint when agent disabled', () => {
+  it('returns code LLM hint for generic code generation intent', () => {
+    expect(getWorkerActionHint({
+      submittedText: 'implementiere den Fix',
+      workerBlocked: false,
+    })).toBe('Code-LLM Route · Patch erzeugen');
+  });
+
+  it('returns blocked executor hint when agent disabled', () => {
     expect(getWorkerActionHint({
       submittedText: 'openhands do something',
       workerBlocked: true,
       agentDisabled: true,
-    })).toBe('OpenHands blockiert · Worker erklärt zuerst');
+    })).toBe('Executor blockiert · Code-Route prüft zuerst');
   });
 
   it('returns diagnostic hint when worker blocked and no retry intent', () => {
