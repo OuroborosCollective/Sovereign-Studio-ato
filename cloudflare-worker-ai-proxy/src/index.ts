@@ -175,19 +175,20 @@ function maskSecrets(text: string): string {
   if (!text) return text;
   let masked = text;
   // GitHub
-  masked = masked.replace(/(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9_]{8,100}/g, '$1_****');
-  masked = masked.replace(/github_pat_[a-zA-Z0-9_]{20,200}/g, 'github_pat_****');
+  masked = masked.replace(/(ghp|gho|ghu|ghs|ghr)_[a-zA-Z0-9_]{8,}/g, '$1_****');
+  masked = masked.replace(/github_pat_[a-zA-Z0-9_]{20,}/g, 'github_pat_****');
   // Google
-  masked = masked.replace(/AIza[a-zA-Z0-9_-]{26,60}/g, 'AIza****');
-  // AI keys
-  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,120}/g, 'sk-or-v1-****');
-  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,120}/g, 'sk-proj-****');
-  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,120}/g, 'sk-****');
-  masked = masked.replace(/gsk_[a-zA-Z0-9_-]{20,120}/g, 'gsk_****');
+  masked = masked.replace(/AIza[a-zA-Z0-9_-]{26,}/g, 'AIza****');
+  // AI keys (all variants, no length cap)
+  masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]+/g, 'sk-or-v1-****');
+  masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]+/g, 'sk-proj-****');
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]+/g, 'sk-****');
+  masked = masked.replace(/sk-ant-[a-zA-Z0-9_-]+/g, 'sk-ant-****');
+  masked = masked.replace(/gsk_[a-zA-Z0-9_-]+/g, 'gsk_****');
   // HuggingFace, Together AI and Pollinations AI
-  masked = masked.replace(/hf_[a-zA-Z0-9]{8,100}/g, 'hf_****');
-  masked = masked.replace(/together_[a-zA-Z0-9]{8,100}/g, 'together_****');
-  masked = masked.replace(/pollinations_[a-zA-Z0-9]{8,100}/g, 'pollinations_****');
+  masked = masked.replace(/hf_[a-zA-Z0-9]{8,}/g, 'hf_****');
+  masked = masked.replace(/together_[a-zA-Z0-9]{8,}/g, 'together_****');
+  masked = masked.replace(/pollinations_[a-zA-Z0-9]{8,}/g, 'pollinations_****');
   // Bearer
   masked = masked.replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer ****');
   // Label-based
@@ -411,8 +412,9 @@ function isModelAllowed(model: string, env: Env): boolean {
  * Simple authentication check
  */
 function validateAuth(request: Request, env: Env): boolean {
+  // Fail-closed: require authentication if PROXY_API_KEY is configured
   if (!env.PROXY_API_KEY) {
-    return true; // No auth required if secret not set
+    return false;
   }
   const authHeader = request.headers.get('Authorization');
   const apiKeyHeader = request.headers.get('X-API-Key');
