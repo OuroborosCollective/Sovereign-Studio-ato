@@ -25,6 +25,17 @@ const C = {
 };
 
 /**
+ * Sanitizes URLs to prevent XSS (e.g., javascript: protocols)
+ */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim().toLowerCase();
+  if (trimmed.startsWith('javascript:')) {
+    return 'about:blank';
+  }
+  return url;
+}
+
+/**
  * Parse content into segments (code blocks and inline text with formatting)
  */
 type Segment = 
@@ -186,7 +197,7 @@ function renderTextSegment(seg: Segment, key: number): React.ReactNode {
       );
     case 'link':
       return (
-        <a key={key} href={seg.url} target="_blank" rel="noopener noreferrer" style={{ color: C.accent, textDecoration: 'underline' }}>
+        <a key={key} href={sanitizeUrl(seg.url)} target="_blank" rel="noopener noreferrer" style={{ color: C.accent, textDecoration: 'underline' }}>
           {seg.content}
         </a>
       );
