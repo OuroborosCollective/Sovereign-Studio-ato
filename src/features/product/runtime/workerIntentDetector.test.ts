@@ -14,6 +14,8 @@ import {
   getWorkerActionHint,
   isExecutorStatusQuestion,
   buildExecutorStatusAnswer,
+  isAlternativeWriteRouteIntent,
+  buildAlternativeRouteStatusAnswer,
 } from './workerIntentDetector';
 
 describe('isOpenHandsExecutionIntent', () => {
@@ -419,5 +421,154 @@ describe('getWorkerActionHint', () => {
       submittedText: 'What is this project?',
       workerBlocked: false,
     })).toBe('');
+  });
+});
+
+describe('isAlternativeWriteRouteIntent', () => {
+  it('detects "nicht openhands" keyword', () => {
+    expect(isAlternativeWriteRouteIntent('Nutzen wir eine andere Route und nicht OpenHands')).toBe(true);
+    expect(isAlternativeWriteRouteIntent('nicht openhands bitte')).toBe(true);
+  });
+
+  it('detects "ohne openhands" keyword', () => {
+    expect(isAlternativeWriteRouteIntent('Kannst du das ohne openhands machen?')).toBe(true);
+  });
+
+  it('detects alternative route keywords', () => {
+    expect(isAlternativeWriteRouteIntent('Andere Route bitte')).toBe(true);
+    expect(isAlternativeWriteRouteIntent('Alternative Route für diesen Patch?')).toBe(true);
+  });
+
+  it('detects direct GitHub patch keywords', () => {
+    expect(isAlternativeWriteRouteIntent('Direkt über GitHub patchen')).toBe(true);
+    expect(isAlternativeWriteRouteIntent('direkt ueber github')).toBe(true);
+    expect(isAlternativeWriteRouteIntent('GitHub Patch Route')).toBe(true);
+  });
+
+  it('detects "ohne executor" keyword', () => {
+    expect(isAlternativeWriteRouteIntent('Kannst du das ohne Executor machen?')).toBe(true);
+  });
+
+  it('detects simple/direct route keywords', () => {
+    expect(isAlternativeWriteRouteIntent('Einfache Route bitte')).toBe(true);
+    expect(isAlternativeWriteRouteIntent('GitHub direkt nutzen')).toBe(true);
+  });
+
+  it('is case insensitive', () => {
+    expect(isAlternativeWriteRouteIntent('OHNE OPENHANDS')).toBe(true);
+    expect(isAlternativeWriteRouteIntent('DIREKT PATCHEN')).toBe(true);
+  });
+
+  it('returns false for unrelated messages', () => {
+    expect(isAlternativeWriteRouteIntent('Was ist Sovereign Studio?')).toBe(false);
+    expect(isAlternativeWriteRouteIntent('Baue mir ein Feature')).toBe(false);
+    expect(isAlternativeWriteRouteIntent('OpenHands starten')).toBe(false);
+  });
+});
+
+describe('buildAlternativeRouteStatusAnswer', () => {
+  describe('when GitHub access is NOT ready', () => {
+    it('reports GitHub validating state truthfully', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: false,
+        githubAccessState: 'validating',
+        openhandsReady: false,
+        directPatchAvailable: false,
+      });
+      expect(answer).toContain('wird gerade geprüft');
+      expect(answer).not.toContain('OpenHands ist nicht konfiguriert');
+    });
+
+    it('reports GitHub requested state truthfully', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: false,
+        githubAccessState: 'requested',
+        openhandsReady: false,
+        directPatchAvailable: true,
+      });
+      expect(answer).toContain('Format akzeptiert');
+      expect(answer).toContain('echte GitHub-API-Prüfung steht noch aus');
+    });
+
+    it('reports GitHub missing truthfully', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: false,
+        githubAccessState: 'missing',
+        openhandsReady: false,
+        directPatchAvailable: false,
+      });
+      expect(answer).toContain('GitHub-Zugang fehlt');
+    });
+
+    it('does NOT mention OpenHands when GitHub itself is missing', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: false,
+        githubAccessState: 'missing',
+        openhandsReady: false,
+        directPatchAvailable: false,
+      });
+      expect(answer).not.toContain('OpenHands ist nicht konfiguriert');
+    });
+  });
+
+  describe('when GitHub access is ready but OpenHands is NOT ready', () => {
+    it('reports GitHub ready + OpenHands missing + no direct patch', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: true,
+        githubAccessState: 'ready',
+        openhandsReady: false,
+        directPatchAvailable: false,
+      });
+      expect(answer).toContain('GitHub-Zugang ist bereit');
+      expect(answer).toContain('OpenHands ist nicht konfiguriert');
+      expect(answer).toContain('Direct GitHub Patch Route');
+      expect(answer).toContain('Nächste Aktion: OpenHands konfigurieren');
+    });
+
+    it('reports GitHub ready + OpenHands missing + direct patch available', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: true,
+        githubAccessState: 'ready',
+        openhandsReady: false,
+        directPatchAvailable: true,
+      });
+      expect(answer).toContain('GitHub-Zugang ist bereit');
+      expect(answer).toContain('OpenHands ist nicht konfiguriert');
+      expect(answer).toContain('Direct GitHub Patch Route ist verfügbar');
+      expect(answer).not.toContain('Nächste Aktion');
+    });
+
+    it('does NOT claim GitHub access is missing', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: true,
+        githubAccessState: 'ready',
+        openhandsReady: false,
+        directPatchAvailable: false,
+      });
+      expect(answer).not.toContain('GitHub-Zugang fehlt');
+      expect(answer).not.toContain('Sicheren GitHub-Zugang öffnen');
+    });
+
+    it('does NOT say "Nächste Aktion: Sicheren GitHub-Zugang öffnen"', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: true,
+        githubAccessState: 'ready',
+        openhandsReady: false,
+        directPatchAvailable: false,
+      });
+      expect(answer).not.toContain('Nächste Aktion: Sicheren GitHub-Zugang öffnen');
+    });
+  });
+
+  describe('when all routes are ready', () => {
+    it('reports all routes ready', () => {
+      const answer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: true,
+        githubAccessState: 'ready',
+        openhandsReady: true,
+        directPatchAvailable: true,
+      });
+      expect(answer).toContain('Alle Routen sind bereit');
+    });
   });
 });

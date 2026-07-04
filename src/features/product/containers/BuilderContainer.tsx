@@ -338,6 +338,8 @@ import {
   isDelegatedOpenHandsExecutionIntent,
   isExecutorStatusQuestion,
   buildExecutorStatusAnswer,
+  isAlternativeWriteRouteIntent,
+  buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
@@ -3645,11 +3647,12 @@ export function BuilderContainer({
           detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'OpenHands Executor ist nicht konfiguriert.',
           kind: 'patch_blocked',
         }));
+        // #500: Fix message to not claim GitHub access is the issue
         appendChatLine({
           role: 'assistant',
           text: openhandsReady
             ? 'GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
-            : 'GitHub-Zugang ist bereit, aber OpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.',
+            : 'GitHub-Zugang ist bereit, aber OpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.\nFür einfache README-/Docs-Änderungen: Direct GitHub Patch Route nutzen.\nFür große Aufträge: OpenHands konfigurieren.',
         });
         addLog('warn', 'Write intent blocked: patch/draft-pr executor unavailable', 'router');
         return;
@@ -3719,6 +3722,20 @@ export function BuilderContainer({
       addLog("info", "Worker retry requested by user", "router");
     }
 
+    // ── #500 Alternative write route: answer locally without OpenHands lock-in.
+    // These questions must be answered from runtime state, not forwarded to OpenHands.
+    if (isAlternativeWriteRouteIntent(submittedText)) {
+      const altRouteAnswer = buildAlternativeRouteStatusAnswer({
+        githubAccessReady: githubWriteAllowed,
+        githubAccessState: githubAccessState.state,
+        openhandsReady: openhandsReady ?? false,
+        directPatchAvailable: false, // Direct patch not yet implemented
+      });
+      appendChatLine({ role: 'assistant', text: altRouteAnswer });
+      addLog('info', 'Alternative route question answered locally · githubAccessReady=' + githubWriteAllowed, 'router');
+      return;
+    }
+
     // ── #458 + Delegation: Execution intent routing — BEFORE credit guard.
     // OpenHands execution does not go through the Worker Chat (gemini-2.0-flash) path;
     // charging LLM credits for an executor handoff is incorrect.
@@ -3759,16 +3776,30 @@ export function BuilderContainer({
         return;
       }
       // agentDisabled === true: show clear blocker — no emoji, no vague message
+      // #500: Fix blocker reason and next action based on actual missing capability
       const blockerReason = state.disabledReason
         ? `GitHub-Schreibzugang fehlt: ${state.disabledReason}`
-        : !openhandsReady
-          ? "Executor nicht bereit: OpenHands ist nicht konfiguriert."
-          : !effectiveRepoReady
-            ? "Auftrag nicht ausführbar: Kein Repo geladen."
+        : !effectiveRepoReady
+          ? "Auftrag nicht ausführbar: Kein Repo geladen."
+          : !openhandsReady
+            ? "Executor nicht bereit: OpenHands ist nicht konfiguriert."
             : "Executor nicht bereit.";
+      
+      // #500: Fix next action based on what's actually missing
+      let nextAction: string;
+      if (state.disabledReason) {
+        nextAction = "Sicheren GitHub-Zugang öffnen.";
+      } else if (!effectiveRepoReady) {
+        nextAction = "GitHub-Repo-Link einfügen.";
+      } else if (!openhandsReady) {
+        nextAction = "OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.";
+      } else {
+        nextAction = "Executor-Konfiguration prüfen.";
+      }
+      
       appendChatLine({
         role: "assistant",
-        text: `OpenHands wurde nicht gestartet.\nGrund: ${blockerReason}\nNächste Aktion: Sicheren GitHub-Zugang öffnen.`,
+        text: `OpenHands wurde nicht gestartet.\nGrund: ${blockerReason}\nNächste Aktion: ${nextAction}`,
       });
       addLog("warn", `Execution blocked: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
       return;
