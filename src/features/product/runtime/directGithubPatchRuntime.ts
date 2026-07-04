@@ -217,13 +217,16 @@ export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs)
     };
   }
   
-  // If baseContent is provided, validate it
-  if (baseContent !== undefined && !baseContent.trim()) {
-    return {
-      available: false,
-      reason: 'Zieldatei konnte nicht geladen werden.',
-      blocker: 'content_load_failed',
-    };
+  // If baseContent is provided, validate it is real content
+  if (baseContent !== undefined) {
+    // Reject placeholders like "[loaded]"
+    if (baseContent.trim() === '' || baseContent === '[loaded]') {
+      return {
+        available: false,
+        reason: 'Zieldatei konnte nicht geladen werden.',
+        blocker: 'content_load_failed',
+      };
+    }
   }
   
   return {
@@ -437,26 +440,17 @@ export interface BuildDirectPatchPlanArgs {
 /**
  * Builds a complete Direct GitHub Patch plan or returns blockers.
  * This is the main entry point for BuilderContainer.
+ * 
+ * IMPORTANT: baseContent MUST be the real loaded file content.
+ * No placeholder values are allowed in the live path.
  */
 export function buildDirectPatchPlan(
   args: BuildDirectPatchPlanArgs,
 ): { capability: DirectGitHubPatchCapability } | { result: DirectGitHubPatchResult } {
   const { repoContext, instruction, baseContent, githubAccessReady } = args;
   
-  // Check capability first - include baseContent to validate content is loadable
-  const capability = checkDirectPatchCapability({
-    repoContext,
-    githubAccessReady,
-    instruction,
-    baseContent, // Pass baseContent so capability check validates content is loadable
-  });
-  
-  if (!capability.available) {
-    return { capability };
-  }
-  
-  // Detect target
-  const targetPath = detectDirectPatchTarget(instruction, repoContext.files);
+  // Detect target first - needed for capability validation
+  const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
   if (!targetPath) {
     return {
       capability: {
@@ -467,7 +461,19 @@ export function buildDirectPatchPlan(
     };
   }
   
-  // Execute runtime
+  // Check capability - validates github access, repo context, intent, and content
+  const capability = checkDirectPatchCapability({
+    repoContext,
+    githubAccessReady,
+    instruction,
+    baseContent,
+  });
+  
+  if (!capability.available) {
+    return { capability };
+  }
+  
+  // Execute runtime with validated content
   const result = executeDirectPatchRuntime({
     repoContext,
     instruction,

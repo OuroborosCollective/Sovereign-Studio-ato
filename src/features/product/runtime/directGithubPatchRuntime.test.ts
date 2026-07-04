@@ -387,7 +387,7 @@ Run npm install.
 });
 
 describe('Direct GitHub Patch blocker types', () => {
-  const repoContext = {
+  const repoContext: DirectPatchRepoContext = {
     owner: 'test',
     name: 'repo',
     branch: 'main',
@@ -433,5 +433,66 @@ describe('Direct GitHub Patch blocker types', () => {
     });
     expect(result.available).toBe(false);
     expect(result.blocker).toBe('repo_missing');
+  });
+
+  it('rejects "[loaded]" as placeholder baseContent', () => {
+    const result = buildDirectPatchPlan({
+      repoContext,
+      instruction: 'Füge 🐥 in den Titel ein',
+      baseContent: '[loaded]', // This should be rejected - not real content
+      githubAccessReady: true,
+    });
+    expect('capability' in result).toBe(true);
+    if ('capability' in result) {
+      expect(result.capability.available).toBe(false);
+      expect(result.capability.blocker).toBe('content_load_failed');
+    }
+  });
+
+  it('blocks when baseContent is just whitespace', () => {
+    const result = buildDirectPatchPlan({
+      repoContext,
+      instruction: 'Füge 🐥 in den Titel ein',
+      baseContent: '   \n\t  ',
+      githubAccessReady: true,
+    });
+    expect('capability' in result).toBe(true);
+    if ('capability' in result) {
+      expect(result.capability.available).toBe(false);
+      expect(result.capability.blocker).toBe('content_load_failed');
+    }
+  });
+
+  it('no patch suggestion without real README content', () => {
+    // When baseContent is empty or placeholder, should return capability block, not result
+    const result = buildDirectPatchPlan({
+      repoContext,
+      instruction: 'Füge 🐥 in den Titel ein',
+      baseContent: '', // Empty - no real content
+      githubAccessReady: true,
+    });
+    // Must be capability block, not result
+    expect('capability' in result).toBe(true);
+    if ('capability' in result) {
+      expect(result.capability.blocker).toBe('content_load_failed');
+      expect(result.capability.reason).toContain('konnte nicht geladen');
+    }
+  });
+});
+
+describe('detectDirectPatchTarget integration', () => {
+  it('returns null when no matching file in repo', () => {
+    const result = detectDirectPatchTarget('Update the README', ['src/App.tsx', 'docs/api.ts']);
+    expect(result).toBeNull();
+  });
+
+  it('returns README.md when instruction mentions readme', () => {
+    const result = detectDirectPatchTarget('Update the README', ['README.md', 'src/index.ts']);
+    expect(result).toBe('README.md');
+  });
+
+  it('returns docs path when instruction mentions docs', () => {
+    const result = detectDirectPatchTarget('Update the docs', ['README.md', 'docs/guide.md']);
+    expect(result).toBe('docs/guide.md');
   });
 });
