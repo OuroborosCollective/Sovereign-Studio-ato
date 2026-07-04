@@ -1,226 +1,291 @@
 ---
 name: sovereign-studio-agent
-description: This skill should be used when working on Sovereign Studio V3 (OuroborosCollective/Sovereign-Studio-ato). Activate when the user mentions "apply patch", "apply issue", "implement #issue", "BuilderContainer", "sovereign-studio", "main branch", "run checks", "push to main", or asks to close issues. Provides guidance on patch application workflow, runtime library integration, GitHub API usage for issue management, and the Sovereign product rules.
+description: Use this skill when working on Sovereign Studio ATO (OuroborosCollective/Sovereign-Studio-ato). Activate when the user mentions apply patch, implement issue, BuilderContainer, runtime truth, capability router, direct GitHub patch, OpenHands, workspace executor, Draft PR, run checks, push or close issues. Provides guidance on chat-first product rules, runtime library integration, GitHub access safety, branch/Draft PR workflow and issue management.
 ---
 
 # Sovereign Studio Agent Skill
 
-This skill provides procedural knowledge for working with the Sovereign Studio V3 repository, including patch application, runtime library integration patterns, and GitHub issue management.
+This skill provides procedural knowledge for working with the Sovereign Studio ATO repository.
 
-## Core Purpose
+The repository is an Android-first NoCode/AI service tool. It is not Areloria/WASD/MMORPG. The product must stay chat-first and runtime-truth-first.
 
-Execute repository improvements as isolated, tested, verified patches that are pushed to `main` and the corresponding issues are closed via GitHub API.
+## Core purpose
 
-## Patch Application Workflow
+Execute repository improvements as isolated, tested, verified patches. Prefer branch + Draft PR for non-trivial changes. Do not auto-merge. Do not claim green when checks are not visible.
 
-### 1. Analyze the Patch
+## Product law
 
-When a patch bundle (`.zip`) is provided:
+```text
+Do not build a UI that creates truth.
+Build a runtime that creates truth.
+The UI may only display that truth.
+```
 
-1. **Extract the bundle** using Python (avoid `unzip` which may not be available):
-   ```bash
-   python3 -c "import zipfile; zipfile.ZipFile('patch.zip').extractall('extracted_patch')"
-   ```
+Always preserve:
 
-2. **Read the patch instructions** — typically found in:
-   - `APPLY_*.md` files in the root of the extracted bundle
-   - `*_EXTERNAL_AGENT_PROMPT.md` alongside the zip
+- Chat-first default surface.
+- Runtime decisions in `src/features/product/runtime/**`.
+- `BuilderContainer.tsx` as central visible work surface, not product truth source.
+- Repo, Files, Diff, Workflow, Runtime, Telemetry, Health, Coverage, Memory and Inspector as inspection surfaces.
+- No fake success.
+- No hard percent progress unless it is a real measured metric.
+- No mocks, stubs or facades in live paths.
+- No Plan-only Draft PR.
+- No auto-merge.
+- No secrets in chat, logs, telemetry, action events, docs, PR bodies or generated files.
 
-3. **Identify files to replace** — note which files should be:
-   - **Replaced entirely**: New version overwrites existing file
-   - **Modified in-place**: Only specific sections need changes
-   - **Not replaced**: Check if the current `main` already contains required changes
+## Current live path
 
-### 2. Verify Prerequisites
+```text
+src/App.tsx
+→ src/features/product/containers/BuilderContainer.tsx
+→ src/features/product/runtime/**
+```
 
-Before applying changes:
+`BuilderContainer.tsx` is large. Avoid blind full-file replacement. Prefer new runtime modules and targeted SEARCH/REPLACE patches.
 
-1. **Pull latest `main`** to ensure you're working on current state:
-   ```bash
-   git fetch origin main && git pull origin main
-   ```
+## Capability routing baseline
 
-2. **Check if required runtime files exist** on main (not all files need to be created):
-   ```bash
-   ls src/features/product/runtime/<runtime-file>.ts
-   ```
+Do not treat OpenHands as the only write route.
 
-3. **Understand the existing runtime library** — check for related files:
-   - `quietInspectorHintPolicy.ts` — unified signal format
-   - `runtimeInspectorRuntime.ts` — existing inspector state builder
-   - `androidQuickInteractionRuntime.ts` — interaction helpers
+Correct model:
 
-### 3. Apply Changes
+```text
+normal question → worker/model route
+status question → local runtime answer
+README/docs mini-patch → Direct GitHub Patch route
+multi-file code/test/build task → workspace executor or OpenHands
+Draft PR → Draft PR runtime
+```
 
-For each file in the patch:
+OpenHands is not a normal LLM route. It is an optional workspace/code executor that may use an LLM. It can work with files and commands. It must not be the only way to change files.
 
-1. **Compare with existing file** to understand the scope of changes
-2. **Make surgical edits** rather than wholesale replacements when possible
-3. **Follow local code style** (quote style, import order, etc.)
+Related docs:
 
-### 4. Runtime Library Integration
+```text
+docs/SOVEREIGN_PRODUCT_TRUTH.md
+docs/SOVEREIGN_RUNTIME.md
+docs/SOVEREIGN_CAPABILITY_ROUTING.md
+docs/GITHUB_AUTH_SESSION.md
+docs/SOVEREIGN_READER.md
+```
 
-When creating new runtime modules, **integrate with existing patterns**:
+## Current architecture issues
 
-1. **Use existing type definitions** where applicable:
-   ```typescript
-   import { type QuietInspectorSignal, type QuietInspectorLamp, type QuietInspectorTarget } from "./quietInspectorHintPolicy";
-   ```
+Use these issues as the route map:
 
-2. **Export conversion helpers** for unified formats:
-   ```typescript
-   export function toQuietInspectorSignal(signal: MySignal, source: string): QuietInspectorSignal {
-     return { id: signal.id, source, lamp: signal.lamp, message: `${signal.label}: ${signal.detail}`, targetTab: signal.targetTab, visible: true, updatedAt: Date.now() };
-   }
-   ```
+```text
+#500 Route write intents after GitHub ready without OpenHands lock-in
+#501 Direct GitHub Patch route for README/docs changes
+#502 Sovereign Capability Router
+#503 Agent-neutral Workspace Runtime
+#504 Active blocker dedupe and honest status
+#505 Credential handling and Android clipboard guidance
+```
 
-3. **Follow the signal contract**:
-   - `id`: unique identifier (e.g., `"pat-count"`)
-   - `label`: short display label (e.g., `"Pattern Memory"`)
-   - `detail`: descriptive text (e.g., `"5 Einträge gespeichert"`)
-   - `prompt`: proposed action text for composer fill
-   - `lamp`: `"green"` | `"yellow"` | `"red"` for visual state
-   - `targetTab`: `"repo"` | `"memory"` | `"runtime"` | etc.
+Implement in that order unless the user explicitly changes priority.
 
-### 5. Required Verification Gates
+## Patch workflow
 
-Before pushing, run ALL checks:
+### 1. Inspect current state
+
+Before editing:
 
 ```bash
-# Tests
-npm test -- --run src/features/product/runtime/<new-runtime>.test.ts \
-           src/features/product/containers/BuilderContainer.test.tsx
-
-# TypeScript
-npx tsc --noEmit
-
-# Build
-npm run build:web
-
-# Static audit
-node scripts/sovereign-static-audit.mjs
+git fetch origin main
+git checkout main
+git pull --ff-only origin main
+git rev-parse --short HEAD
 ```
 
-If `sovereign-live-path-scan.mjs` exists:
+Then inspect the actual target files. Do not rely on old chat summaries.
+
+### 2. Choose safe change mode
+
+For small/new files:
+
+- full-file replacement is acceptable if the whole file is understood.
+
+For large live-path files:
+
+```text
+src/App.tsx
+src/features/product/containers/BuilderContainer.tsx
+```
+
+use targeted SEARCH/REPLACE patches:
+
+```text
+DATEI: path/to/file.tsx
+<<<<<<< SUCHEN
+exact existing code
+=======
+new code
+>>>>>>> ERSETZEN
+```
+
+No placeholders. No omissions. No “rest stays unchanged” pseudo-files.
+
+### 3. Runtime first
+
+When adding new logic:
+
+1. Create/extend a runtime module under `src/features/product/runtime/**`.
+2. Add tests next to it.
+3. Wire the UI to display the runtime state.
+4. Keep the UI small and calm.
+
+Examples:
+
+```text
+sovereignCapabilityRouter.ts
+sovereignCapabilityRouter.test.ts
+directGithubPatchRuntime.ts
+directGithubPatchRuntime.test.ts
+sovereignBlockerRegistry.ts
+sovereignBlockerRegistry.test.ts
+```
+
+### 4. GitHub access safety
+
+Never treat token format as write access.
+
+Use the GitHub access runtime state:
+
+```text
+missing/requested
+validating
+ready
+invalid/failed
+```
+
+A write path is allowed only when the runtime has confirmed access through the GitHub API for the loaded repo.
+
+Never place raw access values in:
+
+```text
+chat lines
+action events
+logs
+telemetry
+session memory
+docs
+PR body
+issue body
+```
+
+### 5. Required verification gates
+
+Run relevant checks before pushing or marking work complete:
+
 ```bash
-node scripts/sovereign-live-path-scan.mjs
+pnpm run type-check
+pnpm run test:unit
+pnpm run build:web
+pnpm run audit:sovereign
 ```
 
-### 6. Git Commit and Push
-
-1. **Stage only the relevant files** (exclude auto-generated files like `dist/`):
-   ```bash
-   git add src/features/product/runtime/<file>.ts \
-          src/features/product/runtime/<file>.test.ts \
-          src/features/product/containers/BuilderContainer.tsx
-   ```
-
-2. **Write descriptive commit message**:
-   ```
-   feat(#ISSUE): Brief description
-
-   - What was added
-   - Key behavior
-   - Test coverage
-   - Integration points
-
-   Co-authored-by: openhands <openhands@all-hands.dev>
-   ```
-
-3. **Push to main**:
-   ```bash
-   git push origin main
-   ```
-
-### 7. Close Issues via GitHub API
-
-After successful push, close the corresponding issues:
+If present:
 
 ```bash
-# Post comment
-curl -s -X POST "https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments" \
-  -H "Authorization: token $GITHUB_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"body":"## ✅ Issue Completed\n\nAcceptance criteria verified.\n\n**Implementation:** `COMMIT_SHA`\n\nThis comment was created by an AI agent (OpenHands) on behalf of the repository maintainer."}'
-
-# Close issue
-curl -s -X PATCH "https://api.github.com/repos/{owner}/{repo}/issues/{number}" \
-  -H "Authorization: token $GITHUB_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"state":"closed","state_reason":"completed"}'
+pnpm run verify
+pnpm run test:e2e
+pnpm run audit:all
 ```
 
-## Product Rules (Non-Negotiable)
+For targeted runtime work, also run the exact tests for the changed files.
 
-Always follow these rules when implementing features:
+If a check cannot run in the environment, say that honestly. Do not replace missing checks with confidence claims.
 
-| Rule | Description |
-|-------|-------------|
-| **No fake truth** | Build/runtime state creates truth; UI only displays it |
-| **No percentage progress** | Use step counts or honest descriptions |
-| **No mocks in live paths** | Test fixtures only in test files |
-| **No auto-execute** | User confirms before writes |
-| **Guard haptics** | Always no-op when unsupported |
-| **Chat-first default** | No new dashboards or main navigation |
-| **393px layout** | Mobile viewport constraint |
-| **No hidden metadata** | Copy actions copy only visible text |
+## Draft PR workflow
 
-## Common Pitfalls and Prevention
+For non-trivial changes:
 
-### Pitfall 1: Not Pulling Latest Main
+1. Create a branch.
+2. Apply focused commits.
+3. Run checks.
+4. Open a Draft PR.
+5. Do not merge unless the user explicitly approves and the required checks are known.
 
-**Problem**: Applying patch on stale state causes conflicts or missing dependencies.
+Commit message style:
 
-**Prevention**: Always run `git pull origin main` before starting work.
-
-### Pitfall 2: Forgetting Runtime Integration
-
-**Problem**: New runtime module exists in isolation, not connected to existing patterns.
-
-**Prevention**: Check `quietInspectorHintPolicy.ts` and related files for existing types and patterns. Always export conversion helpers.
-
-### Pitfall 3: Skipping Tests
-
-**Problem**: Changes appear to work but break existing functionality.
-
-**Prevention**: Run full test suite before pushing. Add tests for new behavior.
-
-### Pitfall 4: Not Closing Issues
-
-**Problem**: Code is pushed but issue remains open, causing confusion.
-
-**Prevention**: Always close issues via GitHub API after successful push.
-
-### Pitfall 5: Overwriting Unchanged Files
-
-**Problem**: Replacing a file that's already correct causes unnecessary diff noise.
-
-**Prevention**: Check current `main` state before replacing. Only replace if patch explicitly requires it.
-
-## File Structure Reference
-
+```text
+feat(runtime): add capability router
+fix(runtime): route write intent after github ready
+fix(security): harden GitHub access handling
 ```
+
+PR body should include:
+
+```text
+Summary
+Changed files
+Runtime truth/state changes
+Tests/checks run
+Known unchecked gates
+No auto-merge note
+```
+
+## Issue management
+
+Do not close issues for planned work.
+
+Close an issue only when:
+
+- implementation is committed;
+- acceptance criteria are satisfied;
+- relevant tests/checks are run or explicitly reported as unavailable;
+- the issue body is not contradicted by the final state.
+
+When closing, add a comment summarizing commit SHA, files changed and checks.
+
+## Common pitfalls
+
+### Pitfall: creating a second main UI
+
+Do not create a new dashboard, wrapper shell or parallel workbench as the live path. New UI belongs inside the existing product surface or as an inspection component.
+
+### Pitfall: OpenHands lock-in
+
+If GitHub access is ready but OpenHands is missing, the blocker is executor capability, not GitHub access. Check Direct GitHub Patch or Workspace Runtime capability next.
+
+### Pitfall: worker answer equals code change
+
+A model answer can explain or propose. It does not mean files changed. File changes require patch/runtime result, diff and review.
+
+### Pitfall: repeated blocker counted as many errors
+
+The same active blocker should be deduplicated with occurrences. Do not inflate `Errors` for repeated identical route blockers.
+
+### Pitfall: empty CI data treated as green
+
+If workflow runs or combined statuses are empty, say no CI truth is visible.
+
+## File structure reference
+
+```text
 src/features/product/
 ├── containers/
-│   └── BuilderContainer.tsx    # Main chat container, large (~4000 lines)
+│   └── BuilderContainer.tsx          # Main chat workbench, large file
 ├── components/
-│   ├── RepoTreeExplorer.tsx     # File tree inspector
-│   └── DraftPrCard.tsx         # Draft PR display
+│   ├── GitHubAccessCard.tsx          # Secure access UI
+│   └── SovereignActionStreamPanel.tsx# Inline action trace
 └── runtime/
-    ├── androidQuickInteractionRuntime.ts  # Haptics, clipboard, URL detection
-    ├── quietInspectorHintPolicy.ts           # Unified signal format
-    ├── runtimeInspectorPanelRuntime.ts      # PAT/ORC/INT signals
-    └── devChatWorkerBridge.ts              # Worker communication
+    ├── builderChatHelpers.ts         # Chat lines and status answers
+    ├── githubAccessRuntime.ts        # GitHub access validation state
+    ├── workerIntentDetector.ts       # Intent routing helpers
+    ├── sovereignActionStreamRuntime.ts
+    └── devChatWorkerBridge.ts        # Worker communication
 ```
 
-## Additional Resources
+## Final response style
 
-### Reference Files
+Be direct and honest:
 
-- **`references/product-rules.md`** — Detailed product rules and examples
-- **`references/runtime-patterns.md`** — Runtime library integration patterns
-- **`references/git-workflow.md`** — Commit and issue management workflow
+```text
+Done: committed / PR opened.
+Not done: CI not visible / check unavailable / blocked by connector.
+Next real step: ...
+```
 
-### Scripts
-
-- **`scripts/validate-checks.sh`** — Run all required verification gates
+Never say “fertig” when the state is only planned, pushed without checks, or blocked.
