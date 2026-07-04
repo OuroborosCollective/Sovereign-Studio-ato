@@ -53,10 +53,18 @@ export interface RemoteMemoryContainerProps {
   onTelemetry: RemoteMemoryContainerTelemetry;
 }
 
-const LEGACY_BUNDLED_REMOTE_MEMORY_GATEWAY = 'http://46.202.154.25:8088';
+const LEGACY_BUNDLED_REMOTE_MEMORY_HOST = '46.202.154.25';
+const LEGACY_BUNDLED_REMOTE_MEMORY_PORT = '8088';
 
 function isLegacyBundledRemoteMemoryGateway(config: ExternalMemorySyncConfig): boolean {
-  return config.gatewayUrl.trim() === LEGACY_BUNDLED_REMOTE_MEMORY_GATEWAY;
+  try {
+    const gateway = new URL(config.gatewayUrl.trim());
+    return gateway.protocol === 'http:'
+      && gateway.hostname === LEGACY_BUNDLED_REMOTE_MEMORY_HOST
+      && gateway.port === LEGACY_BUNDLED_REMOTE_MEMORY_PORT;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeRemoteMemoryRuntimeConfig(config: ExternalMemorySyncConfig): ExternalMemorySyncConfig {
