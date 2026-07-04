@@ -326,7 +326,6 @@ export function decideSovereignCapabilityRoute(
   const intent = classifyIntent(input.text);
   const complexity = determineTaskComplexity(intent, input.text);
   const blockers = detectBlockers(input);
-  const capability = intentToCapability(intent);
 
   // ─── STATUS QUESTION: Local runtime answer ───
   if (intent === 'status_question') {
