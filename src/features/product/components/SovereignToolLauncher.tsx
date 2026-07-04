@@ -7,6 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useLauncherStore } from '../../launcher/useLauncherStore';
 
 const C = {
   bg:       '#0e1116',
@@ -46,10 +47,22 @@ const DEFAULT_TOOLS: readonly ToolEntry[] = [
   { id: 'executor',      label: 'Executor',       icon: '▶',  available: true },
   { id: 'runtime_logs',  label: 'Runtime Logs',   icon: '≡',  available: true },
   { id: 'health',        label: 'Health',         icon: '♥',  available: true },
-  { id: 'memory',        label: 'Memory',         icon: '◈',  available: true },
-  { id: 'coverage',      label: 'Coverage',       icon: '✦',  available: true },
-  { id: 'settings',      label: 'Settings',       icon: '⚙',  available: true },
+  { id: 'memory',        label: 'Memory',         icon: '◈', available: true },
+  { id: 'coverage',      label: 'Coverage',       icon: '✦', available: true },
+  { id: 'settings',      label: 'Settings',       icon: '⚙', available: true },
 ];
+
+const DIRECT_LAUNCHER_TOOLS: ReadonlySet<ToolId> = new Set([
+  'health',
+  'memory',
+  'coverage',
+  'settings',
+]);
+
+function parentSelectId(id: ToolId): ToolId {
+  // Files is a user-facing shortcut to the existing repo/file explorer surface.
+  return id === 'files' ? 'repo' : id;
+}
 
 export interface SovereignToolLauncherProps {
   tools?: readonly ToolEntry[];
@@ -67,6 +80,7 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const launchTool = useLauncherStore((store) => store.launchTool);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -89,7 +103,10 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   }, [open, close]);
 
   function handleSelect(id: ToolId) {
-    onSelect(id);
+    onSelect(parentSelectId(id));
+    if (DIRECT_LAUNCHER_TOOLS.has(id)) {
+      launchTool(id);
+    }
     setOpen(false);
   }
 
