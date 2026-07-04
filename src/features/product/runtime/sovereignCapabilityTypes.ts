@@ -73,6 +73,8 @@ export interface CapabilityDecision {
   readonly reason: string;
   readonly blocker?: SovereignRouteBlocker;
   readonly nextAction: SovereignNextAction;
+  /** If true, this is a terminal decision - no further routing should happen */
+  readonly isTerminal?: boolean;
 }
 
 /**

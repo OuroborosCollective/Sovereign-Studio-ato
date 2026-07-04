@@ -3559,7 +3559,28 @@ export function BuilderContainer({
     });
 
     // Log routing decision for telemetry
-    addLog("info", `Capability Router: route=${capabilityDecision.route} capability=${capabilityDecision.capability} allowed=${capabilityDecision.allowed}`, "router");
+    addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
+
+    // ── Issue #502: Blocked capability decisions stop legacy routing
+    // If capability router says "not allowed", stop here - no legacy routing continues.
+    if (!capabilityDecision.allowed) {
+      const blockerMessage = capabilityDecision.blocker
+        ? `Route blockiert: ${capabilityDecision.reason}`
+        : `Auftrag nicht erlaubt: ${capabilityDecision.reason}`;
+      appendChatLine({
+        role: 'assistant',
+        text: blockerMessage,
+      });
+      addLog("warn", `Capability Router blocked: ${capabilityDecision.route} - ${capabilityDecision.reason}`, "router");
+      return;
+    }
+
+    // ── Issue #502: Terminal decisions (like local-runtime-answer) stop routing
+    // These are completed immediately - no Worker/executor calls needed.
+    if (capabilityDecision.isTerminal) {
+      addLog("info", `Capability Router: terminal decision, routing complete`, "router");
+      return;
+    }
 
     const parsedRepo = parseDevChatGithubUrl(submittedText);
     if (parsedRepo) {
