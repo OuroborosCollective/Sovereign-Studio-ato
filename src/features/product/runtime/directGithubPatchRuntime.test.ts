@@ -10,6 +10,7 @@ import {
   generateDirectPatchContent,
   executeDirectPatchRuntime,
   buildDirectPatchPlan,
+  loadGitHubFileContent,
 } from './directGithubPatchRuntime';
 import type { DirectPatchRepoContext } from './directGithubPatchTypes';
 import {
@@ -494,5 +495,76 @@ describe('detectDirectPatchTarget integration', () => {
   it('returns docs path when instruction mentions docs', () => {
     const result = detectDirectPatchTarget('Update the docs', ['README.md', 'docs/guide.md']);
     expect(result).toBe('docs/guide.md');
+  });
+});
+
+describe('loadGitHubFileContent', () => {
+  it('handles successful base64 content decode', async () => {
+    // Mock fetch that returns base64-encoded README content
+    const mockFetcher = async () => {
+      // "# Hello" in base64 is "IyBIZWxsbw=="
+      return {
+        ok: true,
+        json: async () => ({
+          content: 'IyBNeSBQcm9qZWN0CgJUaGlzIGlzIHRoZSBwcm9qZWN0IGRlc2NyaXB0aW9uLg==',
+          encoding: 'base64',
+          sha: 'abc123',
+        }),
+      };
+    };
+    
+    const result = await loadGitHubFileContent({
+      owner: 'test-owner',
+      repo: 'test-repo',
+      branch: 'main',
+      filePath: 'README.md',
+      token: 'ghp_test',
+      fetcher: mockFetcher as unknown as typeof fetch,
+    });
+    
+    expect(result.ok).toBe(true);
+    if (result.ok && result.content) {
+      expect(result.content).toContain('# My Project');
+      expect(result.sha).toBe('abc123');
+    }
+  });
+
+  it('handles API failure gracefully', async () => {
+    const mockFetcher = async () => {
+      return {
+        ok: false,
+        status: 404,
+      };
+    };
+    
+    const result = await loadGitHubFileContent({
+      owner: 'test-owner',
+      repo: 'test-repo',
+      branch: 'main',
+      filePath: 'README.md',
+      token: 'ghp_test',
+      fetcher: mockFetcher as unknown as typeof fetch,
+    });
+    
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('404');
+  });
+
+  it('handles network errors gracefully', async () => {
+    const mockFetcher = async () => {
+      throw new Error('Network error');
+    };
+    
+    const result = await loadGitHubFileContent({
+      owner: 'test-owner',
+      repo: 'test-repo',
+      branch: 'main',
+      filePath: 'README.md',
+      token: 'ghp_test',
+      fetcher: mockFetcher as unknown as typeof fetch,
+    });
+    
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Network error');
   });
 });

@@ -341,7 +341,7 @@ import {
   isAlternativeWriteRouteIntent,
   buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
-import { buildDirectPatchPlan, detectDirectPatchTarget } from "../runtime/directGithubPatchRuntime";
+import { buildDirectPatchPlanWithContentLoad, detectDirectPatchTarget } from "../runtime/directGithubPatchRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { useUserStore } from '../../user/useUserStore';
@@ -2790,6 +2790,11 @@ export function BuilderContainer({
   );
   const pendingWriteIntentRef = useRef<string | null>(null);
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
+  
+  // #501: Store validated token in memory for Direct Patch content loading
+  // Token is kept only for the current session (component lifetime)
+  // SECURITY: Never persisted to sessionStorage/localStorage
+  const githubTokenRef = useRef<string | null>(null);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -3644,26 +3649,68 @@ export function BuilderContainer({
       if (agentDisabled) {
         // #501: Check for Direct GitHub Patch capability when OpenHands is not ready
         if (!openhandsReady && chatRepoSnapshot) {
-          // Detect target path first
-          const targetPath = detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []);
-          
-          if (targetPath) {
-            // We cannot proceed without real file content
-            // In a full implementation, this would fetch from GitHub contents API
-            // For now, Direct Patch requires file content to be pre-loaded
-            appendActionEvent(buildBlockedActionEvent({
-              route: 'direct-github-patch',
-              label: 'Direct GitHub Patch Route blockiert',
-              detail: 'Zieldatei konnte nicht geladen werden.',
-              kind: 'patch_blocked',
-            }));
-            appendChatLine({
-              role: 'assistant',
-              text: `Direct GitHub Patch Route erfordert echten Dateiinhalt.\nGrund: Zieldatei "${targetPath}" konnte nicht geladen werden.\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+          // Only proceed if we have a validated token for content loading
+          const token = githubTokenRef.current;
+          if (token && githubWriteAllowed) {
+            // Load content and build patch plan async
+            const directPatchResult = await buildDirectPatchPlanWithContentLoad({
+              repoContext: {
+                owner: chatRepoSnapshot.owner,
+                name: chatRepoSnapshot.repo,
+                branch: chatRepoSnapshot.branch,
+                filePaths: chatRepoSnapshot.filePaths ?? [],
+              },
+              instruction: submittedText,
+              githubAccessReady: true,
+              token,
+              fetcher: globalThis.fetch,
             });
-            addLog('warn', 'Direct Patch blocked: file content not loaded for ' + targetPath, 'router');
-            return;
+            
+            if ('result' in directPatchResult && directPatchResult.result.ok) {
+              appendActionEvent({
+                kind: 'route_selected',
+                route: 'direct-github-patch',
+                label: 'Direct GitHub Patch Route gewählt',
+                detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
+                state: 'running',
+              });
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+              });
+              addLog('info', 'Direct GitHub Patch Route selected for simple README/docs task', 'router');
+              return;
+            }
+            
+            if ('capability' in directPatchResult && !directPatchResult.capability.available) {
+              appendActionEvent(buildBlockedActionEvent({
+                route: 'direct-github-patch',
+                label: 'Direct Patch nicht verfügbar',
+                detail: directPatchResult.capability.reason,
+                kind: 'patch_blocked',
+              }));
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch Route ist nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+              });
+              addLog('warn', 'Direct Patch not available: ' + directPatchResult.capability.reason, 'router');
+              return;
+            }
           }
+          
+          // Token not available - show blocking message
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'direct-github-patch',
+            label: 'Direct GitHub Patch Route blockiert',
+            detail: githubWriteAllowed ? 'Token nicht im Speicher.' : 'GitHub-Zugang nicht bestätigt.',
+            kind: 'patch_blocked',
+          }));
+          appendChatLine({
+            role: 'assistant',
+            text: `Direct GitHub Patch Route erfordert validierten GitHub-Zugang mit Token.\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+          });
+          addLog('warn', 'Direct Patch blocked: no token or GitHub not ready', 'router');
+          return;
         }
         
         appendActionEvent(buildBlockedActionEvent({
@@ -4343,6 +4390,8 @@ export function BuilderContainer({
                     }
 
                     setGitHubAccessState(completeGitHubAccessValidation(formatResult.maskedToken));
+                    // #501: Store token in memory for Direct Patch content loading
+                    githubTokenRef.current = token;
                     appendActionEvent({
                       kind: 'done',
                       route: 'github-access',

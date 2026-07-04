@@ -9,7 +9,7 @@
  * - Token NEVER stored in any state. Only fetcher with auth headers used.
  * - Patch must be validated against content before any GitHub write.
  * - Only safe paths allowed (README.md, docs/*.md, etc.)
- * - No fake success - every action produces verifiable state.
+ * - File content must be loaded before patching.
  */
 
 import type {
@@ -24,6 +24,79 @@ import {
   isDirectPatchForbiddenPath,
   getDirectPatchPathBlocker,
 } from './directGithubPatchTypes';
+
+// ─────────────────────────────────────────────────────────────
+// GitHub Content Loading
+// ─────────────────────────────────────────────────────────────
+
+export interface LoadFileContentArgs {
+  readonly owner: string;
+  readonly repo: string;
+  readonly branch: string;
+  readonly filePath: string;
+  readonly token: string;
+  readonly fetcher?: typeof fetch;
+}
+
+export interface LoadFileContentResult {
+  readonly ok: boolean;
+  readonly content?: string;
+  readonly sha?: string;
+  readonly error?: string;
+}
+
+/**
+ * Loads file content from GitHub Contents API.
+ * Token is passed in and used only for this API call, never stored.
+ */
+export async function loadGitHubFileContent(
+  args: LoadFileContentArgs,
+): Promise<LoadFileContentResult> {
+  const { owner, repo, branch, filePath, token, fetcher = fetch } = args;
+  
+  try {
+    const cleanPath = filePath.trim().replace(/^\/+/, '');
+    const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(cleanPath)}?ref=${encodeURIComponent(branch)}`;
+    
+    const response = await fetcher(apiUrl, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github.v3+json',
+      },
+    });
+    
+    if (!response.ok) {
+      const statusText = `HTTP ${response.status}`;
+      return {
+        ok: false,
+        error: `GitHub Contents API failed: ${statusText}`,
+      };
+    }
+    
+    const data = await response.json() as { content?: string; sha?: string; encoding?: string };
+    
+    // GitHub returns base64-encoded content
+    if (data.encoding === 'base64' && data.content) {
+      // Decode base64 content
+      const decoded = atob(data.content.replace(/\n/g, ''));
+      return {
+        ok: true,
+        content: decoded,
+        sha: data.sha,
+      };
+    }
+    
+    return {
+      ok: false,
+      error: 'Unexpected content format from GitHub API',
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Failed to load file content: ${err instanceof Error ? err.message : 'Unknown error'}`,
+    };
+  }
+}
 
 // ─────────────────────────────────────────────────────────────
 // Intent Detection
@@ -482,4 +555,75 @@ export function buildDirectPatchPlan(
   });
   
   return { result };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Async Builder with Content Loading
+// ─────────────────────────────────────────────────────────────
+
+export interface BuildDirectPatchPlanWithLoadArgs {
+  readonly repoContext: DirectPatchRepoContext;
+  readonly instruction: string;
+  readonly githubAccessReady: boolean;
+  readonly token: string;
+  readonly fetcher?: typeof fetch;
+}
+
+/**
+ * Async version that loads file content from GitHub, then builds the patch plan.
+ * This is the main entry point for BuilderContainer integration.
+ * 
+ * Flow:
+ * 1. Detect target path
+ * 2. Load content from GitHub
+ * 3. If load fails: return blocker
+ * 4. If load succeeds: buildDirectPatchPlan with real content
+ */
+export async function buildDirectPatchPlanWithContentLoad(
+  args: BuildDirectPatchPlanWithLoadArgs,
+): Promise<{ capability: DirectGitHubPatchCapability } | { result: DirectGitHubPatchResult }> {
+  const { repoContext, instruction, githubAccessReady, token, fetcher = fetch } = args;
+  
+  // Step 1: Detect target path
+  const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
+  if (!targetPath) {
+    return {
+      capability: {
+        available: false,
+        reason: 'Zieldatei konnte nicht erkannt werden.',
+        blocker: 'target_not_in_repo',
+      },
+    };
+  }
+  
+  // Step 2: Load content from GitHub
+  const loadResult = await loadGitHubFileContent({
+    owner: repoContext.owner,
+    repo: repoContext.name,
+    branch: repoContext.branch,
+    filePath: targetPath,
+    token,
+    fetcher,
+  });
+  
+  // Step 3: If load fails, return blocker
+  if (!loadResult.ok || !loadResult.content) {
+    return {
+      capability: {
+        available: false,
+        reason: 'Zieldatei konnte nicht geladen werden.',
+        blocker: 'content_load_failed',
+      },
+    };
+  }
+  
+  // Step 4: Build plan with real content
+  const planResult = buildDirectPatchPlan({
+    repoContext,
+    instruction,
+    baseContent: loadResult.content,
+    githubAccessReady,
+  });
+  
+  return planResult;
 }
