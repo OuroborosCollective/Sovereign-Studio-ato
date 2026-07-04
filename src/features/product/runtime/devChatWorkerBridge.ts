@@ -390,12 +390,19 @@ export function explainDevChatWorkerDiagnostic(diagnostic: DevChatWorkerDiagnost
 }
 
 export async function fetchDevChatWorkerHealth(signal?: AbortSignal): Promise<DevChatWorkerHealthResult> {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), WORKER_REPLY_TIMEOUT_MS);
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, timeoutController.signal])
+    : timeoutController.signal;
+
   try {
     const response = await fetch(SOVEREIGN_WORKER_HEALTH, {
       method: 'GET',
       headers: { Accept: 'application/json' },
-      signal,
+      signal: combinedSignal,
     });
+    clearTimeout(timeoutId);
     const text = await response.text();
     const snippet = bodySnippet(text);
     let payload: Record<string, unknown> = {};
@@ -419,6 +426,14 @@ export async function fetchDevChatWorkerHealth(signal?: AbortSignal): Promise<De
       bodySnippet: snippet,
     };
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (isWorkerTimeoutError(error)) {
+      return {
+        ok: false,
+        route: SOVEREIGN_WORKER_HEALTH,
+        error: 'Worker Health Timeout: keine Antwort vom Worker.',
+      };
+    }
     return {
       ok: false,
       route: SOVEREIGN_WORKER_HEALTH,
@@ -445,6 +460,12 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
     return { ok: false, error: 'Worker Chat blockiert: keine gültige Nachricht.', route: SOVEREIGN_WORKER_CHAT, diagnostic };
   }
 
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), WORKER_REPLY_TIMEOUT_MS);
+  const combinedSignal = request.signal
+    ? AbortSignal.any([request.signal, timeoutController.signal])
+    : timeoutController.signal;
+
   try {
     const response = await fetch(SOVEREIGN_WORKER_CHAT, {
       method: 'POST',
@@ -461,8 +482,9 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
         reasoning_format: 'parsed',
         stream: false,
       }),
-      signal: request.signal,
+      signal: combinedSignal,
     });
+    clearTimeout(timeoutId);
 
     const text = await response.text();
     if (!response.ok) {
@@ -517,6 +539,16 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
 
     return { ok: true, content, route: SOVEREIGN_WORKER_CHAT };
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (isWorkerTimeoutError(error)) {
+      const diagnostic = createWorkerTimeoutDiagnostic({ model, messageCount: messages.length, error });
+      return {
+        ok: false,
+        error: 'Worker Chat Timeout: keine Antwort vom Worker.',
+        route: SOVEREIGN_WORKER_CHAT,
+        diagnostic,
+      };
+    }
     const diagnostic: DevChatWorkerDiagnostic = {
       route: SOVEREIGN_WORKER_CHAT,
       model,
@@ -536,11 +568,58 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
 }
 
 /**
+ * Hard timeout for all Worker calls — streaming, blocking fetch, and health check.
+ * After 30 s the request is aborted and a typed timeout diagnostic is returned so
+ * BuilderContainer can route to the workerBlocker path instead of hanging forever.
+ */
+export const WORKER_REPLY_TIMEOUT_MS = 30_000;
+
+/**
+ * Returns true for any error that indicates a request was aborted due to a timeout
+ * or an AbortSignal firing.  Handles AbortError, DOMException, and browsers that
+ * surface timeout-phrased messages.
+ */
+export function isWorkerTimeoutError(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof DOMException && (error.name === 'AbortError' || error.code === 20)) return true;
+  if (error instanceof Error) {
+    const name = error.name.toLowerCase();
+    const msg  = error.message.toLowerCase();
+    if (name === 'aborterror') return true;
+    if (msg.includes('aborted') || msg.includes('timeout') || msg.includes('timed out')) return true;
+    // AbortSignal fires: "signal is aborted without reason"
+    if (msg.includes('signal')) return true;
+  }
+  return false;
+}
+
+/**
+ * Builds a canonical timeout diagnostic with scope='worker_runtime' and
+ * canClientFix=false so the caller never re-tries blindly.
+ */
+export function createWorkerTimeoutDiagnostic(args: {
+  readonly model: string;
+  readonly messageCount: number;
+  readonly error?: unknown;
+}): DevChatWorkerDiagnostic {
+  const errorMsg = args.error instanceof Error ? args.error.message : undefined;
+  return {
+    route: SOVEREIGN_WORKER_CHAT,
+    model: args.model,
+    messageCount: args.messageCount,
+    scope: 'worker_runtime',
+    canClientFix: false,
+    nextAction: 'Worker-Timeout als Runtime-Blocker behandeln; Worker Health prüfen und nicht blind erneut senden.',
+    bodySnippet: errorMsg ? errorMsg.slice(0, 420) : 'Keine Antwort (Timeout).',
+  };
+}
+
+/**
  * Streaming variant of fetchDevChatWorkerReply.
  * Posts with stream: true and yields SSE delta chunks in real-time.
  * Falls back to the non-streaming route if response.body is unavailable.
  */
-const STREAM_TIMEOUT_MS = 60_000;
+// (timeout is shared with all fetch paths — see WORKER_REPLY_TIMEOUT_MS above)
 
 export async function* streamDevChatWorkerReply(
   request: DevChatWorkerReplyRequest,
@@ -553,7 +632,7 @@ export async function* streamDevChatWorkerReply(
   if (messages.length === 0) return;
 
   const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), STREAM_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => timeoutController.abort(), WORKER_REPLY_TIMEOUT_MS);
 
   const combinedSignal = request.signal
     ? AbortSignal.any([request.signal, timeoutController.signal])
@@ -578,8 +657,16 @@ export async function* streamDevChatWorkerReply(
       }),
       signal: combinedSignal,
     });
-  } finally {
     clearTimeout(timeoutId);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (isWorkerTimeoutError(err)) {
+      throw createWorkerRuntimeError({
+        message: 'Worker Chat Timeout: keine Antwort vom Worker.',
+        diagnostic: createWorkerTimeoutDiagnostic({ model, messageCount: messages.length, error: err }),
+      });
+    }
+    throw err;
   }
 
   if (!response.ok) {

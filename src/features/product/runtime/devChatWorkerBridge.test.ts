@@ -13,6 +13,9 @@ import {
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
   summarizeDevChatRepoSnapshot,
+  isWorkerTimeoutError,
+  createWorkerTimeoutDiagnostic,
+  WORKER_REPLY_TIMEOUT_MS,
 } from './devChatWorkerBridge';
 
 afterEach(() => {
@@ -105,6 +108,87 @@ describe('devChatWorkerBridge', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('keine auswertbare Antwort');
     expect(result.route).toBe(SOVEREIGN_WORKER_CHAT);
+  });
+});
+
+describe('devChatWorkerBridge timeout gates', () => {
+  it('isWorkerTimeoutError detects AbortError DOMException', () => {
+    const domEx = new DOMException('The user aborted a request.', 'AbortError');
+    expect(isWorkerTimeoutError(domEx)).toBe(true);
+  });
+
+  it('isWorkerTimeoutError detects Error with aborted/timeout in message', () => {
+    expect(isWorkerTimeoutError(new Error('signal aborted'))).toBe(true);
+    expect(isWorkerTimeoutError(new Error('Request timed out'))).toBe(true);
+    expect(isWorkerTimeoutError(new Error('signal is aborted without reason'))).toBe(true);
+    expect(isWorkerTimeoutError(new Error('Gateway error'))).toBe(false);
+    expect(isWorkerTimeoutError(null)).toBe(false);
+  });
+
+  it('createWorkerTimeoutDiagnostic has scope=worker_runtime and canClientFix=false', () => {
+    const diagnostic = createWorkerTimeoutDiagnostic({ model: 'deepseek-r1', messageCount: 3 });
+    expect(diagnostic.scope).toBe('worker_runtime');
+    expect(diagnostic.canClientFix).toBe(false);
+    expect(diagnostic.route).toBe(SOVEREIGN_WORKER_CHAT);
+    expect(diagnostic.model).toBe('deepseek-r1');
+    expect(diagnostic.messageCount).toBe(3);
+    expect(diagnostic.nextAction).toContain('nicht blind erneut senden');
+  });
+
+  it('WORKER_REPLY_TIMEOUT_MS is 30 seconds — not an open-ended wait', () => {
+    expect(WORKER_REPLY_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it('fetchDevChatWorkerReply returns timeout diagnostic when fetch aborts', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    }));
+
+    const result = await fetchDevChatWorkerReply({
+      model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      messages: [{ role: 'user', content: 'Hallo' }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Timeout');
+    expect(result.diagnostic?.scope).toBe('worker_runtime');
+    expect(result.diagnostic?.canClientFix).toBe(false);
+    expect(result.diagnostic?.nextAction).toContain('nicht blind erneut senden');
+  });
+
+  it('fetchDevChatWorkerHealth returns timeout result when health fetch aborts', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    }));
+
+    const result = await fetchDevChatWorkerHealth();
+
+    expect(result.ok).toBe(false);
+    expect(result.route).toBe(SOVEREIGN_WORKER_HEALTH);
+    expect(result.error).toContain('Timeout');
+  });
+
+  it('streamDevChatWorkerReply throws timeout diagnostic when stream fetch aborts', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    }));
+
+    let thrown: unknown;
+    try {
+      for await (const _chunk of streamDevChatWorkerReply({
+        model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+        messages: [{ role: 'user', content: 'Test' }],
+      })) { /* no chunks expected */ }
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain('Timeout');
+    const diag = (thrown as { diagnostic?: { scope?: string; canClientFix?: boolean; nextAction?: string } }).diagnostic;
+    expect(diag?.scope).toBe('worker_runtime');
+    expect(diag?.canClientFix).toBe(false);
+    expect(diag?.nextAction).toContain('nicht blind erneut senden');
   });
 });
 

@@ -375,8 +375,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("keeps OpenHands output as plain hints and not result cards", () => {
     render(<BuilderContainer {...baseProps()} openhandsReady openhandsJob={{ status: "running", openHandsId: "conv_123", changedFiles: ["src/App.tsx"], events: [] }} />);
-    expect(screen.getByText(/OpenHands ID/i)).toBeDefined();
+    // AgentEventStream shows "OpenHands arbeitet…" when executor is active
+    expect(screen.getByText(/OpenHands arbeitet/i)).toBeDefined();
+    // Changed-file count badge
     expect(screen.getByText(/1 Datei/)).toBeDefined();
+    // No "Karten" label — no card-grid UI
     expect(screen.queryByLabelText(/Karten/i)).toBeNull();
   });
 

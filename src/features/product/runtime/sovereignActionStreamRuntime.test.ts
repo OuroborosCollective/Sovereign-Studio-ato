@@ -88,6 +88,52 @@ describe('sovereignActionStreamRuntime', () => {
     expect(latestSovereignActionByRoute(stream).worker?.label).toBe('Worker blockiert');
   });
 
+  it('worker timeout produces a terminal blocked event with activeRoute null', () => {
+    // Simulates what BuilderContainer does when streamDevChatWorkerReply throws a timeout
+    const stream = appendSovereignActionEvent(
+      createSovereignActionStreamState(),
+      buildBlockedActionEvent({
+        route: 'worker',
+        label: 'Worker blockiert',
+        detail: 'Worker-Timeout als Runtime-Blocker behandeln; Worker Health prüfen und nicht blind erneut senden.',
+        kind: 'failed',
+      }),
+    );
+
+    expect(stream.lastEvent?.state).toBe('blocked');
+    expect(stream.activeRoute).toBeNull();
+    expect(stream.lastEvent?.detail).not.toContain('%');
+    expect(stream.lastEvent?.label).not.toBe('done');
+  });
+
+  it('activeRoute is null after any terminal event — all routes behave equally', () => {
+    const routes = ['worker', 'code-llm', 'openhands', 'free-chat', 'github-patch'] as const;
+    for (const route of routes) {
+      const stream = appendSovereignActionEvent(
+        createSovereignActionStreamState(),
+        buildBlockedActionEvent({ route, label: `${route} blockiert`, detail: 'timeout' }),
+      );
+      expect(stream.activeRoute).toBeNull();
+      expect(stream.lastEvent?.state).toBe('blocked');
+    }
+  });
+
+  it('never marks a timed-out request as done', () => {
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+      buildWorkerRequestEvent('DeepSeek R1'),
+      buildBlockedActionEvent({
+        route: 'worker',
+        label: 'Worker Timeout',
+        detail: 'Keine Antwort nach 30 Sekunden.',
+        kind: 'failed',
+      }),
+    ]);
+
+    expect(stream.lastEvent?.state).toBe('blocked');
+    expect(stream.lastEvent?.state).not.toBe('done');
+    expect(stream.activeRoute).toBeNull();
+  });
+
   it('caps the event list', () => {
     const stream = appendSovereignActionEvents(
       createSovereignActionStreamState(),
