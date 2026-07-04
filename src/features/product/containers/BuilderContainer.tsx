@@ -119,8 +119,10 @@ import {
   createGitHubAccessSnapshot,
   requestGitHubAccess,
   startGitHubAccessValidation,
+  completeGitHubAccessValidation,
   failGitHubAccessValidation,
   validateGitHubTokenFormat,
+  validateGitHubTokenForRepo,
   canPerformGitHubWrite,
   type GitHubAccessSnapshot,
 } from "../runtime/githubAccessRuntime";
@@ -2783,6 +2785,7 @@ export function BuilderContainer({
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
     createGitHubAccessSnapshot(),
   );
+  const pendingWriteIntentRef = useRef<string | null>(null);
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
 
   // ── Issue #445: AgentWorkTimeline state
@@ -3566,6 +3569,7 @@ export function BuilderContainer({
     if (isLocalCompletionStatusQuestion(submittedText)) {
       const statusAnswer = buildLocalStatusAnswer({
         githubWriteAllowed,
+        githubAccessState: githubAccessState.state,
         writeIntentBlockedByRepo: !effectiveRepoReady,
         openhandsRunning: openhandsJob?.status === 'running',
         draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
@@ -3618,6 +3622,7 @@ export function BuilderContainer({
           detail: 'Schreibauftrag erkannt · Worker-Chat wird übersprungen.',
           state: 'blocked',
         });
+        pendingWriteIntentRef.current = submittedText;
         setShowGitHubAccessOverride(true);
         appendChatLine({
           role: 'assistant',
@@ -3626,6 +3631,43 @@ export function BuilderContainer({
         addLog('warn', 'Write intent blocked: GitHub write access missing', 'router');
         return;
       }
+      appendActionEvent({
+        kind: 'route_selected',
+        route: 'github-patch',
+        label: 'Patch/Draft-PR Route gestartet',
+        detail: 'GitHub-Schreibzugang bereit · Schreibauftrag wird an Executor übergeben.',
+        state: 'running',
+      });
+      if (agentDisabled) {
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'github-patch',
+          label: 'Patch/Draft-PR Route blockiert',
+          detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'OpenHands Executor ist nicht konfiguriert.',
+          kind: 'patch_blocked',
+        }));
+        appendChatLine({
+          role: 'assistant',
+          text: openhandsReady
+            ? 'GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
+            : 'GitHub-Zugang ist bereit, aber OpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.',
+        });
+        addLog('warn', 'Write intent blocked: patch/draft-pr executor unavailable', 'router');
+        return;
+      }
+      appendActionEvent({
+        kind: 'executor_started',
+        route: 'openhands',
+        label: 'Executor startet Schreibauftrag',
+        detail: 'Ziel bleibt Draft PR, kein Auto-Merge.',
+        state: 'running',
+      });
+      appendChatLine({
+        role: 'assistant',
+        text: 'GitHub-Zugang ist bereit. Ich starte den Schreibauftrag als Patch/Draft-PR Route. Ergebnis bleibt Draft PR, kein Auto-Merge.',
+      });
+      addLog('info', 'Write intent routed to patch/draft-pr executor after GitHub access gate', 'router');
+      startAgentFromText(submittedText);
+      return;
     }
 
     // ── Executor status questions: answer locally — but only when executor is actually involved.
@@ -4184,24 +4226,115 @@ export function BuilderContainer({
               {!githubWriteAllowed && (openhandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
                 <GitHubAccessCard
                   snapshot={githubAccessState}
-                  onProvideToken={(token) => {
-                    // SECURITY: Real GitHub API validation required before ready state.
-                    // For now, accept format-valid tokens but require explicit re-validation
-                    // on actual GitHub write operations (Draft PR, Push).
-                    // Token masked immediately, real token never stored in runtime state.
+                  onProvideToken={async (token) => {
+                    // SECURITY: Token is only used for this one-shot validation.
+                    // It is never written into chat history, logs, telemetry or action events.
                     const formatResult = validateGitHubTokenFormat(token);
-                    if (formatResult.isValid) {
-                      setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
-                      // NOTE: In production, this would trigger actual GitHub API validation.
-                      // For now, transition to 'requested' to indicate format OK but pending real auth.
-                      setGitHubAccessState(requestGitHubAccess(formatResult.maskedToken));
-                      appendChatLine({ 
-                        role: 'assistant', 
-                        text: `Token-Format akzeptiert (${formatResult.maskedToken}). GitHub-Schreibzugriff wird für Draft PR benötigt.` 
-                      });
-                    } else {
+                    if (!formatResult.isValid) {
                       setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
+                      return;
                     }
+
+                    setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
+                    appendActionEvent({
+                      kind: 'route_selected',
+                      route: 'github-access',
+                      label: 'GitHub-Zugang wird geprüft',
+                      detail: 'Echte GitHub-API-Prüfung läuft.',
+                      state: 'running',
+                    });
+                    appendChatLine({
+                      role: 'assistant',
+                      text: 'Token wurde übernommen. GitHub-Zugang wird jetzt geprüft. Bitte Zwischenablage auf Android leeren, falls das Token kopiert wurde.',
+                    });
+
+                    if (!chatRepoSnapshot) {
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
+                      appendActionEvent(buildBlockedActionEvent({
+                        route: 'github-access',
+                        label: 'GitHub-Zugang fehlgeschlagen',
+                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
+                        kind: 'failed',
+                      }));
+                      return;
+                    }
+
+                    const validation = await validateGitHubTokenForRepo(
+                      token,
+                      { owner: chatRepoSnapshot.owner, repo: chatRepoSnapshot.repo },
+                      globalThis.fetch,
+                    );
+
+                    if (!validation.ok) {
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.'));
+                      appendActionEvent(buildBlockedActionEvent({
+                        route: 'github-access',
+                        label: 'GitHub-Zugang fehlgeschlagen',
+                        detail: validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
+                        kind: 'failed',
+                      }));
+                      appendChatLine({
+                        role: 'assistant',
+                        text: `GitHub-Zugangsprüfung fehlgeschlagen: ${validation.error || 'unbekannter Fehler'}`,
+                      });
+                      return;
+                    }
+
+                    setGitHubAccessState(completeGitHubAccessValidation(formatResult.maskedToken));
+                    appendActionEvent({
+                      kind: 'done',
+                      route: 'github-access',
+                      label: 'GitHub-Zugang bereit',
+                      detail: 'Schreibzugriff auf das geladene Repo wurde bestätigt.',
+                      state: 'done',
+                    });
+
+                    const pendingWriteIntent = pendingWriteIntentRef.current;
+                    pendingWriteIntentRef.current = null;
+                    if (!pendingWriteIntent) {
+                      appendChatLine({
+                        role: 'assistant',
+                        text: 'GitHub-Zugang ist bereit. Es wartet kein blockierter Schreibauftrag.',
+                      });
+                      return;
+                    }
+
+                    appendChatLine({
+                      role: 'assistant',
+                      text: 'GitHub-Zugang ist bereit. Ich nehme den blockierten Schreibauftrag wieder auf.',
+                    });
+                    appendActionEvent({
+                      kind: 'route_selected',
+                      route: 'github-patch',
+                      label: 'Patch/Draft-PR Route gestartet',
+                      detail: 'Blockierter Schreibauftrag wird nach bestätigtem GitHub-Zugang fortgesetzt.',
+                      state: 'running',
+                    });
+
+                    if (agentDisabled) {
+                      appendActionEvent(buildBlockedActionEvent({
+                        route: 'github-patch',
+                        label: 'Patch/Draft-PR Route blockiert',
+                        detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'OpenHands Executor ist nicht konfiguriert.',
+                        kind: 'patch_blocked',
+                      }));
+                      appendChatLine({
+                        role: 'assistant',
+                        text: openhandsReady
+                          ? 'Der GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
+                          : 'Der GitHub-Zugang ist bereit, aber OpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.',
+                      });
+                      return;
+                    }
+
+                    appendActionEvent({
+                      kind: 'executor_started',
+                      route: 'openhands',
+                      label: 'Executor startet Schreibauftrag',
+                      detail: 'Ziel bleibt Draft PR, kein Auto-Merge.',
+                      state: 'running',
+                    });
+                    startAgentFromText(pendingWriteIntent);
                   }}
                   onDismiss={() => {}}
                 />

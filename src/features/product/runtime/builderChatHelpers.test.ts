@@ -74,6 +74,27 @@ describe('buildLocalStatusAnswer', () => {
     expect(answer).toMatch(/GitHub-Zugang fehlt/);
   });
 
+  it('reports GitHub access validation in progress instead of claiming missing or done', () => {
+    const answer = buildLocalStatusAnswer({
+      ...base,
+      githubWriteAllowed: false,
+      githubAccessState: 'validating',
+    });
+
+    expect(answer).toMatch(/GitHub-Zugang wird gerade geprüft/);
+    expect(answer.toLowerCase()).not.toMatch(/^ja/);
+  });
+
+  it('reports format-only GitHub access as not API-validated yet', () => {
+    const answer = buildLocalStatusAnswer({
+      ...base,
+      githubWriteAllowed: false,
+      githubAccessState: 'requested',
+    });
+
+    expect(answer).toMatch(/echte GitHub-API-Prüfung steht noch aus/);
+  });
+
   it('reports repo-missing block before access-missing', () => {
     const answer = buildLocalStatusAnswer({
       ...base,

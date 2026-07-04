@@ -8,7 +8,7 @@ import {
 
 export interface GitHubAccessCardProps {
   snapshot: GitHubAccessSnapshot;
-  onProvideToken: (token: string) => void;
+  onProvideToken: (token: string) => void | Promise<void>;
   onDismiss?: () => void;
 }
 
@@ -53,7 +53,9 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
       setInputError(validation.error || 'Ungültiges Token');
       return;
     }
-    onProvideToken(inputValue);
+    void Promise.resolve(onProvideToken(inputValue)).catch(() => {
+      setInputError('GitHub-Zugangsprüfung konnte nicht gestartet werden.');
+    });
     setShowModal(false);
     setInputValue('');
     setInputError(null);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   maskGitHubToken,
   validateGitHubTokenFormat,
@@ -12,6 +12,7 @@ import {
   requiresUserAction,
   getGitHubAccessLabel,
   getGitHubAccessInstruction,
+  validateGitHubTokenForRepo,
   type GitHubAccessSnapshot,
 } from './githubAccessRuntime';
 
@@ -186,4 +187,50 @@ describe('GitHub Access Runtime', () => {
       expect(instruction).toContain('Token abgelaufen');
     });
   });
+
+  describe('real GitHub API validation contract', () => {
+    const target = { owner: 'OuroborosCollective', repo: 'Sovereign-Studio-ato' };
+    const token = 'ghp_' + 'a'.repeat(40);
+
+    it('requires real repo write permission before reporting ready capability', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+        const value = String(url);
+        if (value.endsWith('/user')) {
+          return new Response(JSON.stringify({ login: 'tester' }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
+      }) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(token, target, fetcher);
+
+      expect(result).toEqual({ ok: true, canWrite: true });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects a valid token without repo write permission', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+        const value = String(url);
+        if (value.endsWith('/user')) {
+          return new Response(JSON.stringify({ login: 'tester' }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ permissions: { pull: true } }), { status: 200 });
+      }) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(token, target, fetcher);
+
+      expect(result.ok).toBe(false);
+      expect(result.canWrite).toBe(false);
+      expect(result.error).toContain('Schreibzugriff');
+    });
+
+    it('does not accept token format alone as API validation success', async () => {
+      const fetcher = vi.fn(async () => new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(token, target, fetcher);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('abgelehnt');
+    });
+  });
+
 });

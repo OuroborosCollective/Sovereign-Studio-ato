@@ -113,6 +113,7 @@ export function isLocalCompletionStatusQuestion(text: string): boolean {
 
 export interface LocalStatusAnswerArgs {
   readonly githubWriteAllowed: boolean;
+  readonly githubAccessState?: string;
   readonly writeIntentBlockedByRepo: boolean;
   readonly openhandsRunning: boolean;
   readonly draftPrUrl?: string | null;
@@ -145,6 +146,15 @@ export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
   }
   if (args.writeIntentBlockedByRepo) {
     return "Nein. Der Schreibauftrag ist blockiert, weil zuerst ein GitHub-Repo geladen werden muss.";
+  }
+  if (args.githubAccessState === 'validating') {
+    return "Nein. Der GitHub-Zugang wird gerade geprüft. Es gibt noch keinen Patch, keinen Diff und keinen Draft PR.";
+  }
+  if (args.githubAccessState === 'requested') {
+    return "Nein. Der GitHub-Zugang wurde nur im Format akzeptiert. Die echte GitHub-API-Prüfung steht noch aus.";
+  }
+  if (args.githubAccessState === 'invalid') {
+    return "Nein. Der Schreibauftrag ist blockiert, weil die GitHub-Zugangsprüfung fehlgeschlagen ist.";
   }
   if (!args.githubWriteAllowed) {
     return "Nein. Der Schreibauftrag ist blockiert, weil sicherer GitHub-Zugang fehlt.";
