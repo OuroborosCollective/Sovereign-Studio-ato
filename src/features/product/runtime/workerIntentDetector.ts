@@ -41,6 +41,23 @@ const DELEGATION_TOKENS = [
   'mach das für mich',
 ];
 
+// Alternative write route tokens: user explicitly asks NOT to use OpenHands
+const ALTERNATIVE_WRITE_ROUTE_TOKENS = [
+  'nicht openhands',
+  'ohne openhands',
+  'andere route',
+  'alternative route',
+  'direkt über github',
+  'direkt ueber github',
+  'direkt patchen',
+  'github patch route',
+  'ohne executor',
+  'ohne agent',
+  'einfache route',
+  'simple route',
+  'github direkt',
+];
+
 // Executor status question tokens: user asks if/what the executor is doing
 const EXECUTOR_STATUS_TOKENS = [
   'arbeitet er schon',
@@ -148,6 +165,21 @@ export function isDelegatedOpenHandsExecutionIntent(
 }
 
 /**
+ * Detects if a message is explicitly asking for an alternative write route
+ * instead of OpenHands. These must be answered locally from runtime state,
+ * not forwarded to OpenHands or Worker.
+ * 
+ * Examples:
+ * - "Nutzen wir eine andere Route und nicht OpenHands"
+ * - "Kannst du direkt über GitHub patchen ohne Executor?"
+ * - "Alternative Route für diesen einfachen Patch?"
+ */
+export function isAlternativeWriteRouteIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ALTERNATIVE_WRITE_ROUTE_TOKENS.some((token) => lower.includes(token));
+}
+
+/**
  * Detects if a message is asking about the current executor/OpenHands status.
  * These messages should be answered locally from agentWorkSnapshot, not sent to Worker.
  */
@@ -168,6 +200,8 @@ export type ExecutorStatusArgs = {
  * Builds a truthful local answer for executor status questions
  * ("arbeitet er schon?", "läuft das?", etc.) from real runtime state.
  * Never fabricates — empty/idle states are reported honestly.
+ * 
+ * #500: Fix next action based on actual missing capability, not GitHub access.
  */
 export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
   const { agentState, openhandsStatus, changedFiles = 0, draftPrUrl, blockerReason } = args;
@@ -187,7 +221,11 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
   }
   if (agentState === 'blocked' || openhandsStatus === 'blocked') {
     const reason = blockerReason || 'Kein Grund angegeben.';
-    return `Nein, OpenHands läuft nicht.\nStatus: blockiert.\nGrund: ${reason}\nNächste Aktion: Sicheren GitHub-Zugang öffnen.`;
+    // #500: Fix next action based on actual blocker type
+    const nextAction = reason.includes('GitHub')
+      ? 'Sicheren GitHub-Zugang öffnen.'
+      : 'OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.';
+    return `Nein, OpenHands läuft nicht.\nStatus: blockiert.\nGrund: ${reason}\nNächste Aktion: ${nextAction}`;
   }
   if (agentState === 'failed' || openhandsStatus === 'failed') {
     const reason = blockerReason || 'OpenHands Executor fehlgeschlagen.';
@@ -199,9 +237,70 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
       : 'OpenHands ist fertig. Draft PR wurde erstellt.';
   }
   if (agentState === 'intent_detected' || agentState === 'access_required') {
-    return 'Auftrag erkannt. OpenHands wurde noch nicht gestartet.\nGrund: GitHub-Schreibzugang erforderlich.';
+    // #500: Report GitHub access as required only when it's actually the blocker
+    const isGithubBlocker = blockerReason && blockerReason.includes('GitHub');
+    if (isGithubBlocker) {
+      return 'Auftrag erkannt. OpenHands wurde noch nicht gestartet.\nGrund: GitHub-Schreibzugang erforderlich.\nNächste Aktion: Sicheren GitHub-Zugang öffnen.';
+    }
+    return 'Auftrag erkannt. OpenHands wurde noch nicht gestartet.\nGrund: Executor nicht bereit.\nNächste Aktion: OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.';
   }
   return 'Executor-Status wird ermittelt. Bitte kurz warten.';
+}
+
+/**
+ * Blocker types for write intents when GitHub is ready but executor is not available.
+ * Used to distinguish between GitHub access issues and executor capability issues.
+ */
+export type WriteRouteBlockerType = 
+  | 'github_access_required'   // GitHub access not yet ready
+  | 'executor_unavailable'      // OpenHands not configured
+  | 'patch_route_unavailable';  // Alternative patch route not available
+
+/**
+ * Builds a truthful local answer for alternative write route questions.
+ * Must NOT claim GitHub access is missing when it is ready.
+ * Must correctly identify the actual blocker type.
+ */
+export function buildAlternativeRouteStatusAnswer(args: {
+  readonly githubAccessReady: boolean;
+  readonly githubAccessState?: string;
+  readonly openhandsReady: boolean;
+  readonly directPatchAvailable: boolean;
+}): string {
+  const { githubAccessReady, githubAccessState, openhandsReady, directPatchAvailable } = args;
+
+  // GitHub access not ready — report this truthfully
+  if (!githubAccessReady) {
+    if (githubAccessState === 'validating') {
+      return 'Der GitHub-Zugang wird gerade geprüft. Bitte warten.';
+    }
+    if (githubAccessState === 'requested') {
+      return 'Der GitHub-Zugang wurde nur im Format akzeptiert. Die echte GitHub-API-Prüfung steht noch aus.';
+    }
+    return 'GitHub-Zugang fehlt. Bitte zuerst sicheren GitHub-Zugang einrichten.';
+  }
+
+  // GitHub is ready, but OpenHands is not configured
+  if (!openhandsReady && !directPatchAvailable) {
+    return [
+      'GitHub-Zugang ist bereit.',
+      'OpenHands ist nicht konfiguriert.',
+      'Für einfache README-/Docs-Änderungen könnte eine Direct GitHub Patch Route genutzt werden, wenn verfügbar.',
+      'Für große Multi-Datei-/Test-Aufträge braucht es einen Workspace-Executor.',
+      'Nächste Aktion: OpenHands konfigurieren oder Direct GitHub Patch Runtime aktivieren.',
+    ].join('\n');
+  }
+
+  if (!openhandsReady && directPatchAvailable) {
+    return [
+      'GitHub-Zugang ist bereit.',
+      'OpenHands ist nicht konfiguriert.',
+      'Direct GitHub Patch Route ist verfügbar für einfache Änderungen.',
+      'Für große Multi-Datei-/Test-Aufträge braucht es einen Workspace-Executor.',
+    ].join('\n');
+  }
+
+  return 'Alle Routen sind bereit.';
 }
 
 /**
