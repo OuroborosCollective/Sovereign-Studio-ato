@@ -5,7 +5,10 @@
  * to OpenHands for small README/docs changes.
  * 
  * Security rules:
- * - Token NEVER stored in any state. Only fetcher with auth headers used.
+ * - Token is ephemeral in memory only (component ref), never persisted.
+ * - Token is never logged, written to chat history, or stored in state.
+ * - Token is cleared on validation failure, repo change, or reset.
+ * - Only fetcher with auth headers used for API calls.
  * - Patch must be validated against content before any GitHub write.
  * - Only safe paths allowed (README.md, docs/*.md, etc.)
  * - File content must be loaded before patching.

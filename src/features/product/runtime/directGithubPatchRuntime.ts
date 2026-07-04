@@ -6,7 +6,10 @@
  * and produces either a diff preview or a Draft PR.
  * 
  * Security rules (STRICT):
- * - Token NEVER stored in any state. Only fetcher with auth headers used.
+ * - Token is ephemeral in memory only, never persisted.
+ * - Token is never logged, written to chat history, or stored in state.
+ * - Token is cleared on validation failure, repo change, or reset.
+ * - Only fetcher with auth headers used for API calls.
  * - Patch must be validated against content before any GitHub write.
  * - Only safe paths allowed (README.md, docs/*.md, etc.)
  * - File content must be loaded before patching.
@@ -56,7 +59,9 @@ export async function loadGitHubFileContent(
   
   try {
     const cleanPath = filePath.trim().replace(/^\/+/, '');
-    const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(cleanPath)}?ref=${encodeURIComponent(branch)}`;
+    // Segment-wise encoding for GitHub Contents API paths
+    const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/');
+    const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
     
     const response = await fetcher(apiUrl, {
       headers: {
