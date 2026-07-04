@@ -98,7 +98,7 @@ const DIRECT_PATCH_FORBIDDEN_PATTERNS: readonly RegExp[] = [
   /^scripts\//,
   /^\.github\//,
   /^workflows?\//,
-  /^\\.github\\//,
+  /^\.github\//,
   /package\.json$/,
   /package-lock\.json$/,
   /\.lock$/,
