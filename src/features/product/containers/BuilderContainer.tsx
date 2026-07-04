@@ -341,6 +341,7 @@ import {
   isAlternativeWriteRouteIntent,
   buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
+import { buildDirectPatchPlanWithContentLoad, detectDirectPatchTarget } from "../runtime/directGithubPatchRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { useUserStore } from '../../user/useUserStore';
@@ -2789,6 +2790,11 @@ export function BuilderContainer({
   );
   const pendingWriteIntentRef = useRef<string | null>(null);
   const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
+  
+  // #501: Store validated token in memory for Direct Patch content loading
+  // Token is kept only for the current session (component lifetime)
+  // SECURITY: Never persisted to sessionStorage/localStorage
+  const githubTokenRef = useRef<string | null>(null);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -2798,6 +2804,12 @@ export function BuilderContainer({
   // ── Issue #445: Sync AgentWorkSnapshot from openhandsJob transitions
   useEffect(() => {
     if (!openhandsJob) return;
+    
+    // #501: Clear token when repo changes or is unloaded
+    // Token is only valid for the loaded repo
+    if (!chatRepoSnapshot) {
+      githubTokenRef.current = null;
+    }
     const repo = chatRepoSnapshot
       ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
       : null;
@@ -3641,6 +3653,72 @@ export function BuilderContainer({
         state: 'running',
       });
       if (agentDisabled) {
+        // #501: Check for Direct GitHub Patch capability when OpenHands is not ready
+        if (!openhandsReady && chatRepoSnapshot) {
+          // Only proceed if we have a validated token for content loading
+          const token = githubTokenRef.current;
+          if (token && githubWriteAllowed) {
+            // Load content and build patch plan async
+            const directPatchResult = await buildDirectPatchPlanWithContentLoad({
+              repoContext: {
+                owner: chatRepoSnapshot.owner,
+                name: chatRepoSnapshot.repo,
+                branch: chatRepoSnapshot.branch,
+                filePaths: chatRepoSnapshot.filePaths ?? [],
+              },
+              instruction: submittedText,
+              githubAccessReady: true,
+              token,
+              fetcher: globalThis.fetch,
+            });
+            
+            if ('result' in directPatchResult && directPatchResult.result.ok) {
+              appendActionEvent({
+                kind: 'route_selected',
+                route: 'direct-github-patch',
+                label: 'Direct GitHub Patch Route gewählt',
+                detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
+                state: 'running',
+              });
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+              });
+              addLog('info', 'Direct GitHub Patch Route selected for simple README/docs task', 'router');
+              return;
+            }
+            
+            if ('capability' in directPatchResult && !directPatchResult.capability.available) {
+              appendActionEvent(buildBlockedActionEvent({
+                route: 'direct-github-patch',
+                label: 'Direct Patch nicht verfügbar',
+                detail: directPatchResult.capability.reason,
+                kind: 'patch_blocked',
+              }));
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch Route ist nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+              });
+              addLog('warn', 'Direct Patch not available: ' + directPatchResult.capability.reason, 'router');
+              return;
+            }
+          }
+          
+          // Token not available - show blocking message
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'direct-github-patch',
+            label: 'Direct GitHub Patch Route blockiert',
+            detail: githubWriteAllowed ? 'Token nicht im Speicher.' : 'GitHub-Zugang nicht bestätigt.',
+            kind: 'patch_blocked',
+          }));
+          appendChatLine({
+            role: 'assistant',
+            text: `Direct GitHub Patch Route erfordert validierten GitHub-Zugang mit Token.\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+          });
+          addLog('warn', 'Direct Patch blocked: no token or GitHub not ready', 'router');
+          return;
+        }
+        
         appendActionEvent(buildBlockedActionEvent({
           route: 'github-patch',
           label: 'Patch/Draft-PR Route blockiert',
@@ -3722,17 +3800,33 @@ export function BuilderContainer({
       addLog("info", "Worker retry requested by user", "router");
     }
 
-    // ── #500 Alternative write route: answer locally without OpenHands lock-in.
+    // ── #500/#501 Alternative write route: answer locally without OpenHands lock-in.
     // These questions must be answered from runtime state, not forwarded to OpenHands.
     if (isAlternativeWriteRouteIntent(submittedText)) {
+      // #501: Calculate directPatchAvailable honestly
+      // Direct Patch is available in principle (route exists) but requires:
+      // - githubWriteAllowed (validated token)
+      // - chatRepoSnapshot (repo loaded)
+      // - target file exists in repo
+      // - token in memory for content loading
+      const targetPath = chatRepoSnapshot 
+        ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? [])
+        : null;
+      const tokenAvailable = Boolean(githubTokenRef.current);
+      const directPatchAvailable = Boolean(
+        githubWriteAllowed && 
+        chatRepoSnapshot && 
+        targetPath !== null &&
+        tokenAvailable
+      );
       const altRouteAnswer = buildAlternativeRouteStatusAnswer({
         githubAccessReady: githubWriteAllowed,
         githubAccessState: githubAccessState.state,
         openhandsReady: openhandsReady ?? false,
-        directPatchAvailable: false, // Direct patch not yet implemented
+        directPatchAvailable,
       });
       appendChatLine({ role: 'assistant', text: altRouteAnswer });
-      addLog('info', 'Alternative route question answered locally · githubAccessReady=' + githubWriteAllowed, 'router');
+      addLog('info', 'Alternative route question answered locally · githubAccessReady=' + githubWriteAllowed + ' · tokenAvailable=' + tokenAvailable + ' · target=' + targetPath, 'router');
       return;
     }
 
@@ -4263,6 +4357,8 @@ export function BuilderContainer({
                     const formatResult = validateGitHubTokenFormat(token);
                     if (!formatResult.isValid) {
                       setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
+                      // #501: Clear token on validation failure
+                      githubTokenRef.current = null;
                       return;
                     }
 
@@ -4281,6 +4377,8 @@ export function BuilderContainer({
 
                     if (!chatRepoSnapshot) {
                       setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
+                      // #501: Clear token on repo target missing
+                      githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
                         label: 'GitHub-Zugang fehlgeschlagen',
@@ -4298,6 +4396,8 @@ export function BuilderContainer({
 
                     if (!validation.ok) {
                       setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.'));
+                      // #501: Clear token on validation failure
+                      githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
                         label: 'GitHub-Zugang fehlgeschlagen',
@@ -4312,6 +4412,8 @@ export function BuilderContainer({
                     }
 
                     setGitHubAccessState(completeGitHubAccessValidation(formatResult.maskedToken));
+                    // #501: Store token in memory for Direct Patch content loading
+                    githubTokenRef.current = token;
                     appendActionEvent({
                       kind: 'done',
                       route: 'github-access',
