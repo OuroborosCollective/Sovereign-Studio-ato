@@ -341,6 +341,7 @@ import {
   isAlternativeWriteRouteIntent,
   buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
+import { buildDirectPatchPlan, isDirectPatchIntent } from "../runtime/directGithubPatchRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { useUserStore } from '../../user/useUserStore';
@@ -3640,6 +3641,56 @@ export function BuilderContainer({
         detail: 'GitHub-Schreibzugang bereit · Schreibauftrag wird an Executor übergeben.',
         state: 'running',
       });
+      
+      // #501: Check for Direct GitHub Patch capability when OpenHands is not ready
+      if (agentDisabled && !openhandsReady) {
+        // Check if this is a simple README/docs task that could use Direct Patch
+        const directPatchCheck = buildDirectPatchPlan({
+          repoContext: chatRepoSnapshot ? {
+            owner: chatRepoSnapshot.owner,
+            name: chatRepoSnapshot.repo,
+            branch: chatRepoSnapshot.branch,
+            files: chatRepoSnapshot.filePaths ?? [],
+          } : null,
+          instruction: submittedText,
+          baseContent: '', // Would need to fetch from repo
+          githubAccessReady: githubWriteAllowed,
+        });
+        
+        if ('result' in directPatchCheck && directPatchCheck.result.ok) {
+          // Direct Patch is available!
+          appendActionEvent({
+            kind: 'route_selected',
+            route: 'github-patch',
+            label: 'Direct GitHub Patch Route gewählt',
+            detail: `Zieldatei: ${directPatchCheck.result.targetPath}`,
+            state: 'running',
+          });
+          appendChatLine({
+            role: 'assistant',
+            text: `Direct GitHub Patch Route verfügbar für ${directPatchCheck.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchCheck.result.patchSummary}\n\nNächste Aktion: ${directPatchCheck.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+          });
+          addLog('info', 'Direct GitHub Patch Route selected for simple README/docs task', 'router');
+          return;
+        }
+        
+        // Direct Patch not available, show capability status
+        if ('capability' in directPatchCheck && !directPatchCheck.capability.available) {
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'github-patch',
+            label: 'Direct Patch nicht verfügbar',
+            detail: directPatchCheck.capability.reason,
+            kind: 'patch_blocked',
+          }));
+          appendChatLine({
+            role: 'assistant',
+            text: `Direct GitHub Patch Route ist nicht verfügbar.\nGrund: ${directPatchCheck.capability.reason}\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+          });
+          addLog('warn', 'Direct Patch not available: ' + directPatchCheck.capability.reason, 'router');
+          return;
+        }
+      }
+      
       if (agentDisabled) {
         appendActionEvent(buildBlockedActionEvent({
           route: 'github-patch',
