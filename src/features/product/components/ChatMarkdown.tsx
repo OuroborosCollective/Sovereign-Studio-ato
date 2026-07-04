@@ -29,7 +29,7 @@ const C = {
  */
 function sanitizeUrl(url: string): string {
   const trimmed = url.trim().toLowerCase();
-  if (trimmed.startsWith('javascript:')) {
+  if (trimmed.startsWith('javascript:') || trimmed.startsWith('data:') || trimmed.startsWith('vbscript:')) {
     return 'about:blank';
   }
   return url;
