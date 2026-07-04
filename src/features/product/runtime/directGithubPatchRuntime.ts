@@ -45,12 +45,6 @@ function decodeBase64Content(content: string): string {
   return atob(content.replace(/\n/g, ''));
 }
 
-/**
- * Loads file content from GitHub Contents API.
- *
- * The token is an ephemeral session value and is only used to build the request
- * header. The function never logs or returns it.
- */
 export async function loadGitHubFileContent(
   args: LoadFileContentArgs,
 ): Promise<LoadFileContentResult> {
@@ -148,6 +142,14 @@ const COMPLEX_TASK_TOKENS = [
   'deployment',
 ] as const;
 
+const TITLE_TARGET_TOKENS = [
+  'titel',
+  'title',
+  'überschrift',
+  'ueberschrift',
+  'heading',
+] as const;
+
 export function isDirectPatchIntent(text: string): boolean {
   const lower = text.toLowerCase();
   const hasDirectPatchKeyword = DIRECT_PATCH_INTENT_TOKENS.some((token) => lower.includes(token));
@@ -165,6 +167,10 @@ function findDocsPath(repoFilePaths: readonly string[]): string | null {
   return repoFilePaths.find((path) => /^docs\/.*\.md$/i.test(path) || /^doc\/.*\.md$/i.test(path) || /^documentation\/.*\.md$/i.test(path)) ?? null;
 }
 
+function shouldUseReadmeForTitleInstruction(lowerInstruction: string): boolean {
+  return TITLE_TARGET_TOKENS.some((token) => lowerInstruction.includes(token));
+}
+
 export function detectDirectPatchTarget(
   instruction: string,
   repoFilePaths: readonly string[],
@@ -180,11 +186,9 @@ export function detectDirectPatchTarget(
     return null;
   }
 
-  if (lower.includes('readme')) {
+  if (lower.includes('readme') || shouldUseReadmeForTitleInstruction(lower)) {
     const readmePath = findReadmePath(repoFilePaths);
     if (readmePath) return readmePath;
-    // BuilderContainer currently may only have a tree snapshot without filePaths.
-    // README.md is the only safe implicit fallback; GitHub content loading verifies it.
     if (repoFilePaths.length === 0) return 'README.md';
   }
 
