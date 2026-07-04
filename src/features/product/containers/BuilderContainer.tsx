@@ -111,6 +111,11 @@ import {
   type LlmBudgetLedger,
   type LlmRouteSelectionResult,
 } from "../runtime/llmRouteBudgetRuntime";
+import {
+  decideSovereignCapabilityRoute,
+  buildCapabilityRouteActionEvent,
+} from "../runtime/sovereignCapabilityRouter";
+import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
 import type {
   OpenHandsEnterpriseConfig,
   OpenHandsJobSnapshot,
@@ -3524,6 +3529,37 @@ export function BuilderContainer({
 
     appendChatLine({ role: "user", text: submittedText });
     appendActionEvent(buildInputReceivedEvent(submittedText));
+
+    // ── Issue #502: Sovereign Capability Router
+    // Central routing decision using real runtime state.
+    // BuilderContainer shows the decision; it does not create it.
+    const capabilityRouterInput: CapabilityRouterInput = {
+      text: submittedText,
+      repoReady: effectiveRepoReady,
+      githubAccessState: githubAccessState.state,
+      openhandsReady: openhandsReady ?? false,
+      directGitHubPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
+      workspaceReady: false, // Workspace executor not yet integrated
+      hasActiveWorkerBlocker: Boolean(workerBlocker),
+      hasPackage: Boolean(openhandsJob?.changedFiles?.length),
+      hasDraft: Boolean(openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
+      hasWorkflowReport: Boolean(agentWorkSnapshot.commitSha),
+    };
+    const capabilityDecision = decideSovereignCapabilityRoute(capabilityRouterInput);
+
+    // Emit action event for Sovereign Action Stream
+    const routeActionEvent = buildCapabilityRouteActionEvent(capabilityDecision, agentWorkSnapshot.traceId, agentWorkSnapshot.events.length);
+    // Cast to match SovereignActionEventInput (capability router uses its own route/kind types)
+    appendActionEvent({
+      kind: 'route_selected',
+      route: routeActionEvent.route as 'repo' | 'free-chat' | 'code-llm' | 'worker' | 'openhands' | 'github-patch' | 'direct-github-patch' | 'github-access' | 'toolchain' | 'runtime',
+      label: routeActionEvent.label,
+      detail: routeActionEvent.detail,
+      state: routeActionEvent.state,
+    });
+
+    // Log routing decision for telemetry
+    addLog("info", `Capability Router: route=${capabilityDecision.route} capability=${capabilityDecision.capability} allowed=${capabilityDecision.allowed}`, "router");
 
     const parsedRepo = parseDevChatGithubUrl(submittedText);
     if (parsedRepo) {
