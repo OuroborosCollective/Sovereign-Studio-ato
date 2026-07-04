@@ -179,88 +179,45 @@ export function SovereignActionStreamPanel({
       aria-label="Sovereign Action Stream"
       role="log"
       data-testid="sovereign-action-stream"
-      data-layout="chat-worker-bubble"
-      style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '2px 12px' }}
+      data-layout="chat-inline-action-trace"
+      style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '1px 12px 1px 46px' }}
     >
-      {/* Avatar */}
-      <div
-        aria-hidden="true"
-        style={{
-          width:       30,
-          height:      30,
-          borderRadius: 10,
-          flexShrink:  0,
-          background:  C.surface,
-          border:      `1px solid ${C.border}`,
-          display:     'flex',
-          alignItems:  'center',
-          justifyContent: 'center',
-          fontSize:    13,
-          color:       C.textSub,
-          marginBottom: 2,
-        }}
-      >
-        ⬡
-      </div>
-
-      {/* Bubble */}
-      <section
-        style={{
-          maxWidth:     '82%',
-          width:        '100%',
-          padding:      '10px 12px',
-          borderRadius: '4px 18px 18px 18px',
-          border:       `1px solid ${C.border}`,
-          background:   (C as Record<string, string>).asstBg ?? C.surface,
-          boxShadow:    '0 1px 4px rgba(0,0,0,0.3)',
-        }}
-      >
+      {/* Inline trace — no card/panel chrome, reads like a small system note under the bubble */}
+      <div style={{ maxWidth: '82%', width: '100%' }}>
         {/* ── Header ──────────────────────────────── */}
         <div
           style={{
             display:     'flex',
             alignItems:  'center',
-            gap:         8,
-            marginBottom: expanded ? 8 : 0,
+            gap:         6,
+            marginBottom: expanded ? 4 : 0,
           }}
         >
           {/* Status dot */}
           <span
             aria-hidden="true"
             style={{
-              width:      7,
-              height:     7,
+              width:      6,
+              height:     6,
               borderRadius: '50%',
               background: dot.color,
               flexShrink: 0,
-              boxShadow:  dot.glow ? `0 0 6px ${dot.color}` : 'none',
+              boxShadow:  dot.glow ? `0 0 5px ${dot.color}` : 'none',
             }}
           />
 
           {/* Title + last-event summary when collapsed */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div
+            <span
               style={{
                 fontFamily: 'monospace',
-                fontSize:   10,
-                color:      C.textSub,
-                fontWeight: 700,
+                fontSize:   9,
+                color:      C.textMuted,
               }}
             >
               {title}
-            </div>
-            {!expanded && lastEvent && (
-              <div
-                style={{
-                  fontFamily: 'monospace',
-                  fontSize:   8.5,
-                  color:      C.textMuted,
-                  marginTop:  1,
-                }}
-              >
-                {lastEvent.label} · {STATE_LABEL[lastEvent.state]}
-              </div>
-            )}
+              {!expanded && lastEvent ? ` · ${lastEvent.label} · ${STATE_LABEL[lastEvent.state]}` : ''}
+            </span>
           </div>
 
           {/* Expand / collapse toggle */}
@@ -270,16 +227,18 @@ export function SovereignActionStreamPanel({
             aria-controls="sovereign-action-stream-events"
             onClick={() => setExpanded((v) => !v)}
             style={{
-              padding:      '2px 8px',
-              borderRadius: 6,
+              padding:      '1px 6px',
+              borderRadius: 5,
               background:   'transparent',
-              border:       `1px solid ${C.border}`,
+              border:       'none',
               color:        C.textSub,
               fontSize:     9,
               fontFamily:   'monospace',
               cursor:       'pointer',
               whiteSpace:   'nowrap',
               flexShrink:   0,
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
             }}
           >
             {expanded ? 'Details ausblenden' : 'Details'}
@@ -290,14 +249,19 @@ export function SovereignActionStreamPanel({
         {expanded && (
           <div
             id="sovereign-action-stream-events"
-            style={{ display: 'grid', gap: 0 }}
+            style={{
+              display: 'grid',
+              gap: 0,
+              padding: '4px 8px',
+              borderLeft: `2px solid ${C.border}`,
+            }}
           >
             {events.map((event) => (
               <EventRow key={`${event.id}:${event.createdAt}`} event={event} />
             ))}
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 }

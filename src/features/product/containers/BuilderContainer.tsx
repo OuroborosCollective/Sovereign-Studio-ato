@@ -218,12 +218,15 @@ import {
 // Chat/PAL helpers — extracted to builderChatHelpers.ts / builderPALRuntime.ts
 import {
   buildChatLines,
+  buildLocalStatusAnswer,
   buildRuntimeConfidence,
   buildWorkerBlockerAnswer,
   buildWorkerMessages,
   composerRouteHint,
   confidenceLabel,
   createChatLineId,
+  isLocalCompletionStatusQuestion,
+  isWriteIntent,
   phaseFromSignalAndConditions,
   sameConditions,
   sameRecord,
@@ -1349,15 +1352,15 @@ function Bubble({
           {/* ── Issue #427: Markdown rendering for assistant bubbles */}
           <div
             style={{
-              padding: "11px 14px",
+              padding: "9px 12px",
               background: isUser ? C.userBg : C.asstBg,
               borderRadius: isUser
                 ? "18px 18px 4px 18px"
                 : "4px 18px 18px 18px",
               border: `1px solid ${isUser ? "#243c5a" : C.border}`,
               color: C.text,
-              fontSize: 14,
-              lineHeight: 1.6,
+              fontSize: 13,
+              lineHeight: 1.45,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
               boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
@@ -2929,19 +2932,24 @@ export function BuilderContainer({
     publishedPrUrl,
   });
 
-  // ── Issue #425: Track unseen messages
-  const lastChatHistoryLengthRef = useRef(chatHistory.length);
+  // ── Aufgabe 5: Track unseen activity — not just chat lines, but also the
+  // inline action stream (Sovereign trace) and streaming worker replies.
+  // Every new chat line, action-stream event, or freshly-started stream
+  // counts as one unit of "unseen" activity while the user has scrolled away.
+  const chatActivitySignal =
+    chatHistory.length + actionStream.events.length + (streamingText !== null ? 1 : 0);
+  const lastChatActivitySignalRef = useRef(chatActivitySignal);
   useEffect(() => {
-    if (chatHistory.length > lastChatHistoryLengthRef.current) {
+    if (chatActivitySignal > lastChatActivitySignalRef.current) {
       if (userScrolledAway) {
         setUnseenCount(
           (prev) =>
-            prev + (chatHistory.length - lastChatHistoryLengthRef.current),
+            prev + (chatActivitySignal - lastChatActivitySignalRef.current),
         );
       }
     }
-    lastChatHistoryLengthRef.current = chatHistory.length;
-  }, [chatHistory.length, userScrolledAway]);
+    lastChatActivitySignalRef.current = chatActivitySignal;
+  }, [chatActivitySignal, userScrolledAway]);
 
   useEffect(() => {
     setSlashMenuDismissed(false);
@@ -3144,10 +3152,32 @@ export function BuilderContainer({
     setWishText(missionToWishText(mission));
   }, [chatHistory.length, mission, wishText]);
 
+  // ── Aufgabe 5: Robust autoscroll — scroll to bottom on any new chat line,
+  // action-stream event, or stream update, UNLESS the user has intentionally
+  // scrolled away. While scrolled away, new activity only bumps the unseen
+  // badge (see chatActivitySignal effect above), never yanks the viewport.
   useEffect(() => {
     if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [chatLines.length, outcomeHints.length, runtimeThinkingActive]);
+    if (userScrolledAway) return;
+    const node = scrollRef.current;
+    const raf = requestAnimationFrame(() => {
+      if (typeof node.scrollTo === "function") {
+        node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+      } else {
+        node.scrollTop = node.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [
+    chatLines.length,
+    outcomeHints.length,
+    runtimeThinkingActive,
+    streamingText,
+    actionStream.events.length,
+    workerBlocker,
+    showGitHubAccessOverride,
+    userScrolledAway,
+  ]);
 
   useEffect(() => {
     nowRef.current = Date.now();
@@ -3530,6 +3560,74 @@ export function BuilderContainer({
       return;
     }
 
+    // ── Aufgabe 2: Local completion-status questions ("bist du fertig?", "wo
+    // ist der patch?", ...) are answered from real runtime state and never
+    // forwarded to the Worker as a new chat request.
+    if (isLocalCompletionStatusQuestion(submittedText)) {
+      const statusAnswer = buildLocalStatusAnswer({
+        githubWriteAllowed,
+        writeIntentBlockedByRepo: !effectiveRepoReady,
+        openhandsRunning: openhandsJob?.status === 'running',
+        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+        hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+        workerBlocker,
+        buildWorkerBlockerAnswer: workerBlocker
+          ? () =>
+              buildWorkerBlockerAnswer({
+                blocker: workerBlocker,
+                repoReady: effectiveRepoReady,
+                chatRepoSnapshot,
+                openhandsReady,
+              })
+          : undefined,
+      });
+      appendChatLine({ role: 'assistant', text: statusAnswer });
+      addLog('info', 'Local completion-status question answered locally', 'router');
+      return;
+    }
+
+    // ── Aufgabe 1: Write intents (README/file/patch/commit/push/PR language)
+    // must never reach the Worker chat while GitHub write access is missing.
+    // Instead of asking for a token in chat, show the GitHubAccessCard.
+    // Explicit OpenHands execution intents ("OpenHands", "Draft PR" with
+    // execution framing, ...) already have their own dedicated executor
+    // readiness gate below (agentDisabled) and must not be short-circuited
+    // here — this gate only covers write-language that would otherwise be
+    // sent straight to the advisory Worker chat.
+    if (isWriteIntent(submittedText) && !isOpenHandsExecutionIntent(submittedText)) {
+      if (!effectiveRepoReady) {
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'github-access',
+          label: 'Schreibauftrag blockiert',
+          detail: 'Kein Repo geladen. GitHub-Repo-Link zuerst einfügen.',
+          kind: 'access_required',
+        }));
+        appendChatLine({
+          role: 'assistant',
+          text: 'Schreibauftrag erkannt.\nEs ist noch kein Repo geladen — bitte zuerst einen GitHub-Repo-Link senden.',
+        });
+        addLog('warn', 'Write intent blocked: no repo loaded', 'router');
+        return;
+      }
+      if (!githubWriteAllowed) {
+        appendActionEvent({
+          kind: 'github_access_required',
+          route: 'github-access',
+          label: 'GitHub-Schreibzugang erforderlich',
+          detail: 'Schreibauftrag erkannt · Worker-Chat wird übersprungen.',
+          state: 'blocked',
+        });
+        setShowGitHubAccessOverride(true);
+        appendChatLine({
+          role: 'assistant',
+          text: 'Schreibauftrag erkannt.\nFür Datei-/Repo-Änderungen wird sicherer GitHub-Schreibzugang benötigt.\nBitte GitHub-Zugang unten einrichten — der Auftrag wird nicht an den Worker-Chat gesendet.',
+        });
+        addLog('warn', 'Write intent blocked: GitHub write access missing', 'router');
+        return;
+      }
+    }
+
     // ── Executor status questions: answer locally — but only when executor is actually involved.
     // Guard: if workerBlocker is active and no OpenHands job is running, "warum passiert nichts?"
     // is a Worker-Diagnose question, not an executor status question — route to workerBlocker handler.
@@ -3638,6 +3736,19 @@ export function BuilderContainer({
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',
+        state: 'running',
+      }));
+    }
+
+    // ── Aufgabe 6: Write-intent result gate. GitHub write access is verified
+    // above, but a mere Worker text response still must not be treated as
+    // "done" — the result gate (sovereignActionStreamRuntime) requires a
+    // patch/diff, Draft PR, or an explicit blocked/access_required state
+    // before the write intent can be considered resolved.
+    if (isWriteIntent(submittedText) && !isCodeGenerationIntent(submittedText)) {
+      appendActionEvent(buildRouteSelectionEvent({
+        route: 'code-llm',
+        reason: 'Schreibauftrag erkannt; Ergebnis gilt erst mit Patch/Diff, Draft PR oder explizitem Blocker als abgeschlossen.',
         state: 'running',
       }));
     }
@@ -4009,8 +4120,8 @@ export function BuilderContainer({
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 10,
-                padding: "16px 0 8px",
+                gap: 6,
+                padding: "12px 0 6px",
               }}
             >
               {chatLines.map((line) => (

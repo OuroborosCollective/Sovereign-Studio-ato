@@ -14,7 +14,7 @@ import {
 } from '../runtime/sovereignActionStreamRuntime';
 
 describe('SovereignActionStreamPanel', () => {
-  it('renders as a chat-worker-bubble — not a separate dashboard card', () => {
+  it('renders as an inline chat action trace — not a separate dashboard card', () => {
     const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
       buildInputReceivedEvent('Baue mir das ein'),
       buildRouteSelectionEvent({ route: 'code-llm', reason: 'Code-Auftrag erkannt.', state: 'running' }),
@@ -25,9 +25,11 @@ describe('SovereignActionStreamPanel', () => {
     render(<SovereignActionStreamPanel stream={stream} />);
 
     const panel = screen.getByTestId('sovereign-action-stream');
-    expect(panel.getAttribute('data-layout')).toBe('chat-worker-bubble');
+    expect(panel.getAttribute('data-layout')).toBe('chat-inline-action-trace');
     expect(panel.getAttribute('role')).toBe('log');
     expect(panel.getAttribute('aria-label')).toBe('Sovereign Action Stream');
+    // No panel/card avatar — the trace has no separate avatar element like a chat bubble does
+    expect(screen.queryByText('⬡')).toBeNull();
     // Shows a result-gate event (code-llm route resolved) — confirms it tracked that route
     expect(screen.getByText(/Code-Auftrag braucht Ergebnis-Gate/i)).toBeTruthy();
   });

@@ -30,6 +30,132 @@ import type {
 } from "./builderContainerTypes";
 
 // ─────────────────────────────────────────────────────────────
+// Write intent detection (Aufgabe 1)
+// ─────────────────────────────────────────────────────────────
+
+// Keywords that mark a message as a WRITE INTENT: the user wants Sovereign
+// to change a real file/repo state (README, docs, code, commit, PR, ...).
+// Kept deliberately broad (German-first) — false positives are safer than
+// silently treating a write request as free chat/advice.
+const WRITE_INTENT_TOKENS = [
+  "readme ändern",
+  "readme anpassen",
+  "dokumentation ändern",
+  "dokumentation anpassen",
+  "datei ändern",
+  "titel ändern",
+  "füge hinzu",
+  "fuege hinzu",
+  "ergänze",
+  "ergaenze",
+  "ersetze",
+  "patch",
+  "diff",
+  "commit",
+  "push",
+  "draft pr",
+  "draft-pr",
+  "pull request",
+  "mach das ins repo",
+  "ändere im repo",
+  "aendere im repo",
+  "bau das ein",
+  "setze das um",
+  "setz das um",
+  "implementiere",
+  "passe an",
+  "passe die",
+  "passe das",
+];
+
+// Regex covers the "passe ... an" pattern (separable German verb) explicitly,
+// since the token list alone cannot match arbitrary infixes.
+const PASSE_AN_PATTERN = /\bpasse\b.*\ban\b/i;
+
+/**
+ * Detects if a message is a WRITE INTENT: the user wants a real file/repo
+ * change (README, docs, code, patch, commit, push, draft PR, ...).
+ * Write intents must never be treated as normal advisory chat — they require
+ * a loaded repo and verified GitHub write access before any executor route.
+ */
+export function isWriteIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (WRITE_INTENT_TOKENS.some((token) => lower.includes(token))) return true;
+  return PASSE_AN_PATTERN.test(lower);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Local completion status questions (Aufgabe 2)
+// ─────────────────────────────────────────────────────────────
+
+const LOCAL_STATUS_QUESTION_TOKENS = [
+  "bist du fertig",
+  "schon fertig",
+  "ist das erledigt",
+  "hast du es geändert",
+  "hast du es geaendert",
+  "wurde es gepusht",
+  "gibt es einen draft pr",
+  "wo ist der patch",
+  "warum passiert nichts",
+  "was ist der status",
+];
+
+/**
+ * Detects local completion-status questions ("bist du fertig?", "wo ist der
+ * patch?", ...). These must be answered locally from runtime state and must
+ * NEVER be forwarded to the Worker as a new request.
+ */
+export function isLocalCompletionStatusQuestion(text: string): boolean {
+  const lower = text.toLowerCase();
+  return LOCAL_STATUS_QUESTION_TOKENS.some((token) => lower.includes(token));
+}
+
+export interface LocalStatusAnswerArgs {
+  readonly githubWriteAllowed: boolean;
+  readonly writeIntentBlockedByRepo: boolean;
+  readonly openhandsRunning: boolean;
+  readonly draftPrUrl?: string | null;
+  readonly hasPatch: boolean;
+  readonly hasWorkerResponse: boolean;
+  readonly workerBlocker?: WorkerRuntimeBlocker | null;
+  readonly buildWorkerBlockerAnswer?: () => string;
+}
+
+/**
+ * Builds a truthful, German, local answer for a completion-status question
+ * from real runtime state. Never fabricates success. Priority order:
+ * draft PR ready > patch generated > OpenHands running > worker blocked >
+ * GitHub access missing > worker-answer-only > nothing happened yet.
+ */
+export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
+  if (args.draftPrUrl) {
+    return `Ja, Draft PR ist bereit: ${args.draftPrUrl}`;
+  }
+  if (args.hasPatch) {
+    return "Ja, ein Patch/Diff wurde erzeugt. Draft PR steht noch aus.";
+  }
+  if (args.openhandsRunning) {
+    return "Noch nicht. OpenHands arbeitet noch.";
+  }
+  if (args.workerBlocker) {
+    return args.buildWorkerBlockerAnswer
+      ? args.buildWorkerBlockerAnswer()
+      : "Nein. Der Worker ist blockiert. Es gibt noch keine Änderung.";
+  }
+  if (args.writeIntentBlockedByRepo) {
+    return "Nein. Der Schreibauftrag ist blockiert, weil zuerst ein GitHub-Repo geladen werden muss.";
+  }
+  if (!args.githubWriteAllowed) {
+    return "Nein. Der Schreibauftrag ist blockiert, weil sicherer GitHub-Zugang fehlt.";
+  }
+  if (args.hasWorkerResponse) {
+    return "Nein. Es wurde bisher nur eine Worker-Antwort erzeugt. Es gibt noch keinen Patch, keinen Diff und keinen Draft PR.";
+  }
+  return "Nein. Es wurde bisher noch kein Auftrag gestartet.";
+}
+
+// ─────────────────────────────────────────────────────────────
 // Chat line builders
 // ─────────────────────────────────────────────────────────────
 
