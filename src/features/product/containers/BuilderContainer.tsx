@@ -3644,47 +3644,58 @@ export function BuilderContainer({
       if (agentDisabled) {
         // #501: Check for Direct GitHub Patch capability when OpenHands is not ready
         if (!openhandsReady && chatRepoSnapshot) {
-          const directPatchCheck = buildDirectPatchPlan({
-            repoContext: {
-              owner: chatRepoSnapshot.owner,
-              name: chatRepoSnapshot.repo,
-              branch: chatRepoSnapshot.branch,
-              files: chatRepoSnapshot.filePaths ?? [],
-            },
-            instruction: submittedText,
-            baseContent: '', // Would need to fetch from repo
-            githubAccessReady: githubWriteAllowed,
-          });
+          // Get target path first to know which file to load
+          const targetPath = detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []);
           
-          if ('result' in directPatchCheck && directPatchCheck.result.ok) {
-            appendActionEvent({
-              kind: 'route_selected',
-              route: 'github-patch',
-              label: 'Direct GitHub Patch Route gewählt',
-              detail: `Zieldatei: ${directPatchCheck.result.targetPath}`,
-              state: 'running',
+          if (targetPath) {
+            // Try to get base content from the lastFile or similar
+            // For now, we'll use an empty string and let the runtime handle the block
+            const baseContent = chatRepoSnapshot.lastFile === targetPath 
+              ? chatRepoSnapshot.files.find(f => f.path === targetPath)?.type === 'blob' ? '[loaded]' : ''
+              : '';
+            
+            const directPatchCheck = buildDirectPatchPlan({
+              repoContext: {
+                owner: chatRepoSnapshot.owner,
+                name: chatRepoSnapshot.repo,
+                branch: chatRepoSnapshot.branch,
+                filePaths: chatRepoSnapshot.filePaths ?? [],
+              },
+              instruction: submittedText,
+              baseContent, // Will be empty if not loaded, triggering content_load_failed blocker
+              githubAccessReady: githubWriteAllowed,
             });
-            appendChatLine({
-              role: 'assistant',
-              text: `Direct GitHub Patch Route verfügbar für ${directPatchCheck.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchCheck.result.patchSummary}\n\nNächste Aktion: ${directPatchCheck.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
-            });
-            addLog('info', 'Direct GitHub Patch Route selected for simple README/docs task', 'router');
-            return;
-          }
-          
-          if ('capability' in directPatchCheck && !directPatchCheck.capability.available) {
-            appendActionEvent(buildBlockedActionEvent({
-              route: 'github-patch',
-              label: 'Direct Patch nicht verfügbar',
-              detail: directPatchCheck.capability.reason,
-              kind: 'patch_blocked',
-            }));
-            appendChatLine({
-              role: 'assistant',
-              text: `Direct GitHub Patch Route ist nicht verfügbar.\nGrund: ${directPatchCheck.capability.reason}\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
-            });
-            addLog('warn', 'Direct Patch not available: ' + directPatchCheck.capability.reason, 'router');
-            return;
+            
+            if ('result' in directPatchCheck && directPatchCheck.result.ok) {
+              appendActionEvent({
+                kind: 'route_selected',
+                route: 'direct-github-patch', // #501: Use dedicated route
+                label: 'Direct GitHub Patch Route gewählt',
+                detail: `Zieldatei: ${directPatchCheck.result.targetPath}`,
+                state: 'running',
+              });
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch Route verfügbar für ${directPatchCheck.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchCheck.result.patchSummary}\n\nNächste Aktion: ${directPatchCheck.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+              });
+              addLog('info', 'Direct GitHub Patch Route selected for simple README/docs task', 'router');
+              return;
+            }
+            
+            if ('capability' in directPatchCheck && !directPatchCheck.capability.available) {
+              appendActionEvent(buildBlockedActionEvent({
+                route: 'direct-github-patch', // #501: Use dedicated route
+                label: 'Direct Patch nicht verfügbar',
+                detail: directPatchCheck.capability.reason,
+                kind: 'patch_blocked',
+              }));
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch Route ist nicht verfügbar.\nGrund: ${directPatchCheck.capability.reason}\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+              });
+              addLog('warn', 'Direct Patch not available: ' + directPatchCheck.capability.reason, 'router');
+              return;
+            }
           }
         }
         

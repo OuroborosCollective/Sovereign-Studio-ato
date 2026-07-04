@@ -113,13 +113,13 @@ export function isDirectPatchIntent(text: string): boolean {
  */
 export function detectDirectPatchTarget(
   instruction: string,
-  repoFiles: readonly string[],
+  repoFilePaths: readonly string[],
 ): string | null {
   const lower = instruction.toLowerCase();
   
   // Common README patterns
   if (lower.includes('readme')) {
-    const readmeFiles = repoFiles.filter((f) =>
+    const readmeFiles = repoFilePaths.filter((f) =>
       /^readme\.md$/i.test(f) || /^readme\.[a-z]{2,3}\.md$/i.test(f),
     );
     if (readmeFiles.length === 1) return readmeFiles[0];
@@ -128,7 +128,7 @@ export function detectDirectPatchTarget(
   
   // docs pattern
   if (lower.includes('docs') || lower.includes('dokumentation')) {
-    const docFiles = repoFiles.filter((f) => /^docs\/.*\.md$/i.test(f) || /^doc\/.*\.md$/i.test(f));
+    const docFiles = repoFilePaths.filter((f) => /^docs\/.*\.md$/i.test(f) || /^doc\/.*\.md$/i.test(f));
     if (docFiles.length > 0) return docFiles[0];
   }
   
@@ -136,7 +136,7 @@ export function detectDirectPatchTarget(
   const pathMatch = instruction.match(/[a-zA-Z0-9_\-./]+\.(md|mdx|mdoc)/i);
   if (pathMatch) {
     const potentialPath = pathMatch[0];
-    if (repoFiles.some((f) => f.toLowerCase() === potentialPath.toLowerCase())) {
+    if (repoFilePaths.some((f) => f.toLowerCase() === potentialPath.toLowerCase())) {
       return potentialPath;
     }
   }
@@ -152,13 +152,15 @@ export interface CheckDirectPatchCapabilityArgs {
   readonly repoContext: DirectPatchRepoContext | null;
   readonly githubAccessReady: boolean;
   readonly instruction: string;
+  readonly baseContent?: string; // Optional - if provided, also checks content availability
 }
 
 /**
  * Checks if the Direct GitHub Patch route is available for the given context.
+ * If baseContent is provided, also validates that content is loadable.
  */
 export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs): DirectGitHubPatchCapability {
-  const { repoContext, githubAccessReady, instruction } = args;
+  const { repoContext, githubAccessReady, instruction, baseContent } = args;
   
   // Check GitHub access
   if (!githubAccessReady) {
@@ -188,7 +190,7 @@ export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs)
   }
   
   // Detect target
-  const targetPath = detectDirectPatchTarget(instruction, repoContext.files);
+  const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
   if (!targetPath) {
     return {
       available: false,
@@ -206,11 +208,21 @@ export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs)
       'repo_missing': 'Repo-Kontext fehlt.',
       'github_access_missing': 'GitHub-Zugang nicht bereit.',
       'target_not_in_repo': 'Zieldatei nicht im Repo gefunden.',
+      'content_load_failed': 'Zieldatei konnte nicht geladen werden.',
     };
     return {
       available: false,
       reason: blockerMessages[pathBlocker],
       blocker: pathBlocker,
+    };
+  }
+  
+  // If baseContent is provided, validate it
+  if (baseContent !== undefined && !baseContent.trim()) {
+    return {
+      available: false,
+      reason: 'Zieldatei konnte nicht geladen werden.',
+      blocker: 'content_load_failed',
     };
   }
   
@@ -336,7 +348,16 @@ export interface DirectPatchRuntimeArgs {
 export function executeDirectPatchRuntime(args: DirectPatchRuntimeArgs): DirectGitHubPatchResult {
   const { repoContext, instruction, baseContent, targetPath } = args;
   
-  // Validate target path
+  // Validate baseContent is loadable
+  if (!baseContent || !baseContent.trim()) {
+    return {
+      ok: false,
+      reason: 'Zieldatei konnte nicht geladen werden.',
+      blocker: 'content_load_failed',
+    };
+  }
+  
+  // Validate target path is allowed for this route
   if (isDirectPatchForbiddenPath(targetPath)) {
     return {
       ok: false,
@@ -422,11 +443,12 @@ export function buildDirectPatchPlan(
 ): { capability: DirectGitHubPatchCapability } | { result: DirectGitHubPatchResult } {
   const { repoContext, instruction, baseContent, githubAccessReady } = args;
   
-  // Check capability first
+  // Check capability first - include baseContent to validate content is loadable
   const capability = checkDirectPatchCapability({
     repoContext,
     githubAccessReady,
     instruction,
+    baseContent, // Pass baseContent so capability check validates content is loadable
   });
   
   if (!capability.available) {

@@ -11,6 +11,7 @@ import {
   executeDirectPatchRuntime,
   buildDirectPatchPlan,
 } from './directGithubPatchRuntime';
+import type { DirectPatchRepoContext } from './directGithubPatchTypes';
 import {
   isDirectPatchAllowedPath,
   isDirectPatchForbiddenPath,
@@ -115,7 +116,7 @@ describe('isDirectPatchIntent', () => {
 });
 
 describe('detectDirectPatchTarget', () => {
-  const repoFiles = [
+  const repoFilePaths = [
     'README.md',
     'docs/intro.md',
     'docs/api.md',
@@ -124,11 +125,11 @@ describe('detectDirectPatchTarget', () => {
   ];
 
   it('detects README.md for readme instructions', () => {
-    expect(detectDirectPatchTarget('Update the README', repoFiles)).toBe('README.md');
+    expect(detectDirectPatchTarget('Update the README', repoFilePaths)).toBe('README.md');
   });
 
   it('detects docs file for docs instructions', () => {
-    const target = detectDirectPatchTarget('Update the docs', repoFiles);
+    const target = detectDirectPatchTarget('Update the docs', repoFilePaths);
     expect(target).toMatch(/^docs\/.*\.md$/);
   });
 
@@ -142,11 +143,11 @@ describe('detectDirectPatchTarget', () => {
 });
 
 describe('checkDirectPatchCapability', () => {
-  const repoContext = {
+  const repoContext: DirectPatchRepoContext = {
     owner: 'test',
     name: 'repo',
     branch: 'main',
-    files: ['README.md', 'docs/intro.md'],
+    filePaths: ['README.md', 'docs/intro.md'],
   };
 
   it('returns unavailable when GitHub access is missing', () => {
@@ -239,11 +240,11 @@ Instructions here.
 });
 
 describe('executeDirectPatchRuntime', () => {
-  const repoContext = {
+  const repoContext: DirectPatchRepoContext = {
     owner: 'test',
     name: 'repo',
     branch: 'main',
-    files: ['README.md'],
+    filePaths: ['README.md'],
   };
 
   it('returns success for valid README patch', () => {
@@ -303,7 +304,7 @@ describe('buildDirectPatchPlan', () => {
     owner: 'test',
     name: 'repo',
     branch: 'main',
-    files: ['README.md'],
+    filePaths: ['README.md'],
   };
 
   it('returns capability check result when not available', () => {
@@ -330,5 +331,107 @@ describe('buildDirectPatchPlan', () => {
     if ('result' in result) {
       expect(result.result.ok).toBe(true);
     }
+  });
+
+  it('blocks when baseContent is empty', () => {
+    const result = buildDirectPatchPlan({
+      repoContext,
+      instruction: 'Füge 🐥 in den Titel ein',
+      baseContent: '',
+      githubAccessReady: true,
+    });
+    expect('capability' in result).toBe(true);
+    if ('capability' in result) {
+      expect(result.capability.available).toBe(false);
+      expect(result.capability.blocker).toBe('content_load_failed');
+      expect(result.capability.reason).toContain('konnte nicht geladen');
+    }
+  });
+
+  it('blocks when baseContent is whitespace only', () => {
+    const result = buildDirectPatchPlan({
+      repoContext,
+      instruction: 'Füge 🐥 in den Titel ein',
+      baseContent: '   ',
+      githubAccessReady: true,
+    });
+    expect('capability' in result).toBe(true);
+    if ('capability' in result) {
+      expect(result.capability.available).toBe(false);
+      expect(result.capability.blocker).toBe('content_load_failed');
+    }
+  });
+
+  it('generates patch with real README base content', () => {
+    const realReadmeContent = `# My Project
+
+This is a real README.
+
+## Installation
+
+Run npm install.
+`;
+    const result = buildDirectPatchPlan({
+      repoContext,
+      instruction: 'Füge 🐥 in den Titel ein',
+      baseContent: realReadmeContent,
+      githubAccessReady: true,
+    });
+    expect('result' in result).toBe(true);
+    if ('result' in result) {
+      expect(result.result.ok).toBe(true);
+      expect(result.result.proposedContent).toContain('🐥');
+      expect(result.result.targetPath).toBe('README.md');
+    }
+  });
+});
+
+describe('Direct GitHub Patch blocker types', () => {
+  const repoContext = {
+    owner: 'test',
+    name: 'repo',
+    branch: 'main',
+    filePaths: ['README.md', 'src/index.ts', 'android/build.gradle'],
+  };
+
+  it('blocks unsafe target (src files)', () => {
+    const result = buildDirectPatchPlan({
+      repoContext,
+      instruction: 'Update src/index.ts',
+      baseContent: 'const x = 1;',
+      githubAccessReady: true,
+    });
+    // Intent detection might not catch this, but path validation should
+    expect('capability' in result || ('result' in result && !result.result.ok)).toBe(true);
+  });
+
+  it('blocks android files', () => {
+    const result = checkDirectPatchCapability({
+      repoContext,
+      instruction: 'Update android/build.gradle',
+      githubAccessReady: true,
+    });
+    // The intent might be detected but target is forbidden
+    expect(result.available).toBe(false);
+  });
+
+  it('requires github access', () => {
+    const result = checkDirectPatchCapability({
+      repoContext,
+      instruction: 'Update README',
+      githubAccessReady: false,
+    });
+    expect(result.available).toBe(false);
+    expect(result.blocker).toBe('github_access_missing');
+  });
+
+  it('requires repo context', () => {
+    const result = checkDirectPatchCapability({
+      repoContext: null,
+      instruction: 'Update README',
+      githubAccessReady: true,
+    });
+    expect(result.available).toBe(false);
+    expect(result.blocker).toBe('repo_missing');
   });
 });

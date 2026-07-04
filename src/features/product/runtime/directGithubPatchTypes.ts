@@ -8,6 +8,7 @@
  * - Token NEVER stored in any state. Only fetcher with auth headers used.
  * - Patch must be validated against content before any GitHub write.
  * - Only safe paths allowed (README.md, docs/*.md, etc.)
+ * - File content must be loaded before patching.
  */
 
 // ─────────────────────────────────────────────────────────────
@@ -18,7 +19,7 @@ export interface DirectPatchRepoContext {
   readonly owner: string;
   readonly name: string;
   readonly branch: string;
-  readonly files: readonly string[]; // Available file paths in repo
+  readonly filePaths: readonly string[]; // Available file paths in repo
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -30,7 +31,8 @@ export type DirectPatchBlocker =
   | 'github_access_missing'  // GitHub token not validated
   | 'unsupported_intent'     // Not a simple README/docs intent
   | 'target_not_in_repo'     // Target file not found in repo snapshot
-  | 'unsafe_target';         // Target path not in allowed list
+  | 'unsafe_target'          // Target path not in allowed list
+  | 'content_load_failed';   // Could not load file content
 
 export interface DirectGitHubPatchCapability {
   readonly available: boolean;

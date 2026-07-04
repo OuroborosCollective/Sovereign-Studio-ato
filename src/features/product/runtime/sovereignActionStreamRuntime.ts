@@ -5,6 +5,7 @@ export type SovereignActionRoute =
   | 'worker'
   | 'openhands'
   | 'github-patch'
+  | 'direct-github-patch'
   | 'github-access'
   | 'toolchain'
   | 'runtime';
