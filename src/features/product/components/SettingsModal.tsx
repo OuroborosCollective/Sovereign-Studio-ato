@@ -122,18 +122,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         value={getProviderKey(provider.id)}
                         onChange={(e) => handleKeyChange(provider.id, e.target.value)}
                         placeholder={provider.keyPlaceholder}
-                        className="w-full p-2 pr-10 text-[11px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                        className="w-full p-2 pr-16 text-[11px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
                         aria-label={`${provider.name} API-Key`}
                       />
-                      <button
-                        type="button"
-                        onClick={() => toggleShowKey(provider.id)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
-                        aria-label={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
-                        title={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
-                      >
-                        {showKeys[provider.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                        {getProviderKey(provider.id) && (
+                          <button
+                            type="button"
+                            onClick={() => handleKeyChange(provider.id, '')}
+                            className="text-stone-400 hover:text-stone-600 p-1"
+                            aria-label="Key löschen"
+                            title="Key löschen"
+                          >
+                            <CircleX size={14} />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => toggleShowKey(provider.id)}
+                          className="text-stone-400 hover:text-stone-600 p-1"
+                          aria-label={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
+                          title={showKeys[provider.id] ? 'Key verbergen' : 'Key anzeigen'}
+                        >
+                          {showKeys[provider.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
                     </div>
                     <p className="text-[9px] text-stone-500 mt-1">{provider.freeTier}</p>
                   </div>
@@ -176,19 +189,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type={showKeys['github'] ? 'text' : 'password'}
                     value={accessKey}
                     onChange={(e) => setAccessKey(e.target.value)}
-                    className="w-full p-2 pr-10 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full p-2 pr-16 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="nur für private Repos"
                     aria-label="GitHub Schreib-Key"
                   />
-                  <button
-                    type="button"
-                    onClick={() => toggleShowKey('github')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
-                    aria-label={showKeys['github'] ? 'Key verbergen' : 'Key anzeigen'}
-                    title={showKeys['github'] ? 'Key verbergen' : 'Key anzeigen'}
-                  >
-                    {showKeys['github'] ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    {accessKey && (
+                      <button
+                        type="button"
+                        onClick={() => setAccessKey('')}
+                        className="text-stone-400 hover:text-stone-600 p-1"
+                        aria-label="Key löschen"
+                        title="Key löschen"
+                      >
+                        <CircleX size={14} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleShowKey('github')}
+                      className="text-stone-400 hover:text-stone-600 p-1"
+                      aria-label={showKeys['github'] ? 'Key verbergen' : 'Key anzeigen'}
+                      title={showKeys['github'] ? 'Key verbergen' : 'Key anzeigen'}
+                    >
+                      {showKeys['github'] ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div>
@@ -198,19 +224,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type={showKeys['gemini'] ? 'text' : 'password'}
                     value={geminiKey}
                     onChange={(e) => setGeminiKey(e.target.value)}
-                    className="w-full p-2 pr-10 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full p-2 pr-16 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="leer lassen ist ok"
                     aria-label="Gemini API-Key"
                   />
-                  <button
-                    type="button"
-                    onClick={() => toggleShowKey('gemini')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
-                    aria-label={showKeys['gemini'] ? 'Key verbergen' : 'Key anzeigen'}
-                    title={showKeys['gemini'] ? 'Key verbergen' : 'Key anzeigen'}
-                  >
-                    {showKeys['gemini'] ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    {geminiKey && (
+                      <button
+                        type="button"
+                        onClick={() => setGeminiKey('')}
+                        className="text-stone-400 hover:text-stone-600 p-1"
+                        aria-label="Key löschen"
+                        title="Key löschen"
+                      >
+                        <CircleX size={14} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleShowKey('gemini')}
+                      className="text-stone-400 hover:text-stone-600 p-1"
+                      aria-label={showKeys['gemini'] ? 'Key verbergen' : 'Key anzeigen'}
+                      title={showKeys['gemini'] ? 'Key verbergen' : 'Key anzeigen'}
+                    >
+                      {showKeys['gemini'] ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
