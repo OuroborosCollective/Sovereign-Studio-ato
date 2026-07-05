@@ -399,25 +399,13 @@ function currentCoachState(): MobileAgentCoachState {
 }
 
 function loadEntries(): MobileAgentLogEntry[] {
-  if (entries.length) return entries;
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) || '[]');
-    if (!Array.isArray(parsed)) return [];
-    entries = parsed
-      .filter((item): item is MobileAgentLogEntry => record(item) && typeof item.id === 'string' && typeof item.ts === 'number' && typeof item.text === 'string')
-      .slice(-MAX_LOG_ENTRIES);
-    return entries;
-  } catch {
-    return [];
-  }
+  return entries;
 }
 
 function saveEntries(): void {
-  try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(-MAX_LOG_ENTRIES)));
-  } catch {
-    // Optional monitor persistence must never break the app.
-  }
+  // ✅ SECURITY: Disabling sessionStorage persistence for monitor logs to prevent
+  // potentially sensitive (even if masked) data from being stored in clear text.
+  // The monitor now relies entirely on in-memory state for the current session.
 }
 
 function pruneEntriesForState(state: MobileAgentCoachState, current: MobileAgentLogEntry[]): MobileAgentLogEntry[] {
@@ -433,7 +421,7 @@ function pruneEntriesForState(state: MobileAgentCoachState, current: MobileAgent
 
 function appendEntry(state: MobileAgentCoachState): void {
   const signature = `${state.lamp}|${state.source ?? 'agent'}|${state.title}|${state.message}|${state.action}|${state.thinking}`;
-  const current = pruneEntriesForState(state, loadEntries());
+  const current = pruneEntriesForState(state, entries);
   if (signature === lastSignature) {
     entries = current.slice(-MAX_LOG_ENTRIES);
     saveEntries();

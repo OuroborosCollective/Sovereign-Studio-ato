@@ -194,19 +194,14 @@ function normalizeState(value: unknown, fallbackSource: CoachSource): ExternalCo
 }
 
 function save(state: ExternalCoachState): void {
-  try { window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, updatedAt: state.updatedAt ?? wallClockMs() })); } catch { /* optional */ }
+  // ✅ SECURITY: Disabling sessionStorage persistence for coach state to prevent
+  // potentially sensitive (even if masked) data from being stored in clear text.
+  void state;
 }
 
 function stored(): ExternalCoachState | null {
-  try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const state = normalizeState(JSON.parse(raw), 'runtime-library');
-    if (!state?.updatedAt || wallClockMs() - state.updatedAt > STORED_STATE_TTL_MS) return null;
-    return state;
-  } catch {
-    return null;
-  }
+  // ✅ SECURITY: No longer reading from sessionStorage.
+  return null;
 }
 
 function remember(state: ExternalCoachState): ExternalCoachState {
