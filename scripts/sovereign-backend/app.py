@@ -20,7 +20,7 @@ from functools import wraps
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-from flask import Flask, jsonify, request, make_response
+from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
@@ -87,18 +87,94 @@ def query(sql: str, params=None, *, one=False, write=False):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+
+def _admin_payload(row, auth_mode: str) -> dict:
+    return {
+        "id": str(row["id"]),
+        "email": row["email"],
+        "role": row["role"],
+        "authMode": auth_mode,
+    }
+
+
+def _lookup_admin_api_key(token: str) -> dict | None:
+    key_hash = hashlib.sha256(token.encode()).hexdigest()
+    admin = query(
+        """SELECT a.id, a.email, a.role
+           FROM admin_users a
+           JOIN admin_api_keys k ON k.admin_id = a.id
+           WHERE k.key_hash = %s AND a.role IN ('admin','superadmin')
+           LIMIT 1""",
+        (key_hash,), one=True,
+    )
+    if not admin:
+        return None
+    query(
+        "UPDATE admin_api_keys SET last_used_at = NOW() WHERE key_hash = %s",
+        (key_hash,), write=True,
+    )
+    return _admin_payload(admin, "admin_api_key")
+
+
+def _lookup_bootstrap_admin(token: str) -> dict | None:
+    if not ADMIN_API_KEY or not hmac.compare_digest(token, ADMIN_API_KEY):
+        return None
+
+    bootstrap_email = os.getenv("ADMIN_BOOTSTRAP_ADMIN_EMAIL", "").strip()
+    if bootstrap_email:
+        admin = query(
+            """SELECT id, email, role
+               FROM admin_users
+               WHERE email = %s AND role IN ('admin','superadmin')
+               LIMIT 1""",
+            (bootstrap_email,), one=True,
+        )
+        return _admin_payload(admin, "bootstrap_env_admin") if admin else None
+
+    count_row = query(
+        "SELECT COUNT(*) AS n FROM admin_users WHERE role IN ('admin','superadmin')",
+        one=True,
+    )
+    if int(count_row["n"]) != 1:
+        return None
+
+    admin = query(
+        """SELECT id, email, role
+           FROM admin_users
+           WHERE role IN ('admin','superadmin')
+           LIMIT 1""",
+        one=True,
+    )
+    return _admin_payload(admin, "bootstrap_single_admin") if admin else None
+
+
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Fail-closed: if ADMIN_API_KEY is unset/empty, always deny.
-        if not ADMIN_API_KEY:
-            return jsonify({"error": "Admin-Schlüssel nicht konfiguriert"}), 503
+        g.current_admin = None
         auth = request.headers.get("Authorization", "")
         token = auth[7:] if auth.startswith("Bearer ") else ""
-        if not token or token != ADMIN_API_KEY:
+        if not token:
             return jsonify({"error": "Nicht autorisiert"}), 401
+
+        admin = _lookup_admin_api_key(token)
+        if not admin:
+            admin = _lookup_bootstrap_admin(token)
+
+        if not admin:
+            return jsonify({
+                "error": "API-Key keinem Admin zugeordnet",
+                "hint": "Admin-Key in admin_api_keys hinterlegen oder ADMIN_BOOTSTRAP_ADMIN_EMAIL eindeutig setzen",
+            }), 401
+
+        g.current_admin = admin
         return f(*args, **kwargs)
     return decorated
+
+
+def get_current_admin() -> dict | None:
+    """Get the currently authenticated admin from request-local Flask context."""
+    return getattr(g, "current_admin", None)
 
 
 # ── Pagination helper ─────────────────────────────────────────────────────────
@@ -119,14 +195,17 @@ def paginate(page_raw, limit_raw, default_limit=50):
 # ── Audit helper ──────────────────────────────────────────────────────────────
 
 def audit(action: str, target_id: str | None, changes: dict):
-    auth = request.headers.get("Authorization", "")
-    key  = auth[7:] if auth.startswith("Bearer ") else ""
-    admin = query(
-        "SELECT id, email FROM admin_users WHERE role IN ('admin','superadmin') LIMIT 1",
-        one=True,
-    )
-    admin_id    = str(admin["id"])    if admin else "system"
-    admin_email = admin["email"]       if admin else "system"
+    """Write an audit log entry with the REAL current admin actor."""
+    admin = get_current_admin()
+    
+    if admin:
+        admin_id = admin["id"]
+        admin_email = admin["email"]
+    else:
+        # System-initiated actions (e.g., from non-authenticated endpoints)
+        admin_id = "system"
+        admin_email = "system"
+    
     query(
         """INSERT INTO audit_log (admin_id, admin_email, action, target_id, changes)
            VALUES (%s, %s, %s, %s, %s::jsonb)""",
@@ -205,10 +284,14 @@ def admin_users():
 @require_admin
 def admin_update_user(uid):
     body = request.get_json(force=True) or {}
-    allowed = {"role", "credits", "subscriptionStatus", "isBanned"}
+    if "credits" in body:
+        return jsonify({
+            "error": "credits dürfen nur über credit-adjustment und append-only ledger geändert werden",
+            "blocker": "credit_ledger_required",
+        }), 400
+    allowed = {"role", "subscriptionStatus", "isBanned"}
     col_map = {
         "role":               "role",
-        "credits":            "credits",
         "subscriptionStatus": "subscription_status",
         "isBanned":           "is_banned",
     }
@@ -241,34 +324,77 @@ def admin_update_user(uid):
 @app.route("/api/admin/users/<uid>/credit-adjustment", methods=["POST"])
 @require_admin
 def admin_credit_adjustment(uid):
+    """
+    Credit adjustment via append-only ledger.
+    Amounts are ALWAYS recorded in the ledger with the real value.
+    Balance is computed from ledger entries, not stored directly.
+    """
     body   = request.get_json(force=True) or {}
     amount = body.get("amount", 0)
     reason = body.get("reason", "")
+    
     if not amount:
         return jsonify({"error": "amount darf nicht 0 sein"}), 400
     if not reason:
         return jsonify({"error": "reason fehlt"}), 400
 
-    query(
-        "UPDATE admin_users SET credits = GREATEST(0, credits + %s) WHERE id = %s::uuid",
-        (amount, uid), write=True,
-    )
+    # Get user info
     user = query(
-        "SELECT email FROM admin_users WHERE id = %s::uuid",
+        "SELECT id, email, credits FROM admin_users WHERE id = %s::uuid",
         (uid,), one=True,
     )
-    if user:
-        sign = "+" if amount > 0 else ""
-        desc = "Admin Credit-Anpassung: " + sign + str(amount) + " (" + reason + ")"
-        query(
-            """INSERT INTO transactions
-                  (user_id, user_email, type, amount, currency, status, description)
-               VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)""",
-            (uid, user["email"], "adjustment", 0, "EUR", "completed", desc),
-            write=True,
-        )
-    audit("admin_credit_adjustment", uid, {"amount": amount, "reason": reason})
-    return jsonify({"ok": True})
+    if not user:
+        return jsonify({"error": "User nicht gefunden"}), 404
+
+    # Create append-only ledger entry with the REAL amount
+    sign_desc = "+" if amount > 0 else ""
+    ledger_type = "manual_adjustment"
+    if amount > 0:
+        ledger_type = "bonus"
+    else:
+        ledger_type = "correction"
+    
+    ledger_desc = f"Admin {sign_desc}{amount}: {reason}"
+    
+    # Insert ledger entry with the ACTUAL amount (not 0!)
+    query(
+        """INSERT INTO credit_ledger
+              (user_id, type, amount, reason, created_by)
+           VALUES (%s::uuid, %s, %s, %s, %s)""",
+        (uid, ledger_type, amount, ledger_desc, get_current_admin()["id"]),
+        write=True,
+    )
+    
+    # Calculate new balance from ledger (append-only principle)
+    balance_row = query(
+        """SELECT COALESCE(SUM(amount), 0) as balance FROM credit_ledger WHERE user_id = %s::uuid""",
+        (uid,), one=True,
+    )
+    new_balance = max(0, int(balance_row["balance"]))
+    
+    # Update admin_users.credits as a CACHED value (for fast reads)
+    # The CACHE MUST be consistent with the ledger
+    query(
+        "UPDATE admin_users SET credits = %s WHERE id = %s::uuid",
+        (new_balance, uid), write=True,
+    )
+    
+    audit("admin_credit_adjustment", uid, {
+        "amount": amount,
+        "reason": reason,
+        "ledgerType": ledger_type,
+        "newBalance": new_balance,
+    })
+    
+    return jsonify({
+        "ok": True,
+        "newBalance": new_balance,
+        "ledgerEntry": {
+            "type": ledger_type,
+            "amount": amount,
+            "reason": ledger_desc,
+        }
+    })
 
 
 # ── Transactions ──────────────────────────────────────────────────────────────
@@ -437,6 +563,596 @@ def admin_audit_log():
         "entries": [dict(r) for r in rows],
         "total":   int(total_row["n"]),
         "page":    page,
+    })
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RUNTIME SETTINGS - Worker, BYOK, CORS (Persisted + Dynamic)
+# ═════════════════════════════════════════════════════════════════════════════
+
+import json as _json
+
+# Config file path (can be overridden via environment)
+_CONFIG_FILE = os.getenv("RUNTIME_CONFIG_FILE", "/opt/sovereign/config/runtime.json")
+
+# Default runtime config
+_DEFAULT_RUNTIME_CONFIG: dict = {
+    "byok_mode": "user-key",  # system-key, user-key, disabled
+    "cors_origins": [
+        "https://chat.arelorian.de",
+        "https://arelorian.de",
+        "https://sovereign-backend.arelorian.de",
+    ],
+    "worker_health": "healthy",
+    "last_deploy_at": None,
+    "version": "1.0",
+}
+
+# Load config from file or use defaults
+def _load_runtime_config() -> dict:
+    """Load runtime config from file with fallback to defaults."""
+    try:
+        if os.path.exists(_CONFIG_FILE):
+            with open(_CONFIG_FILE, "r") as f:
+                loaded = _json.load(f)
+                # Merge with defaults for any missing keys
+                config = dict(_DEFAULT_RUNTIME_CONFIG)
+                config.update(loaded)
+                return config
+    except Exception:
+        pass
+    return dict(_DEFAULT_RUNTIME_CONFIG)
+
+# Save config to file
+def _save_runtime_config(config: dict) -> bool:
+    """Save runtime config to file. Returns True on success."""
+    try:
+        # Ensure directory exists
+        config_dir = os.path.dirname(_CONFIG_FILE)
+        if config_dir and not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True)
+        
+        with open(_CONFIG_FILE, "w") as f:
+            _json.dump(config, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+# Load initial config
+_RUNTIME_CONFIG: dict = _load_runtime_config()
+
+
+def _mask_secrets(config: dict) -> dict:
+    """Mask sensitive values in config for display."""
+    masked = dict(config)
+    for key in masked:
+        if "secret" in key.lower() or "key" in key.lower() or "token" in key.lower():
+            val = str(masked[key] or "")
+            if len(val) > 4:
+                masked[key] = val[:2] + "*" * (len(val) - 4) + val[-2:]
+            else:
+                masked[key] = "****"
+    return masked
+
+
+def _update_cors_from_config():
+    """Update Flask-CORS middleware with current runtime config origins."""
+    global app
+    try:
+        from flask import Flask
+        # Rebuild CORS with current origins
+        origins = _RUNTIME_CONFIG.get("cors_origins", [])
+        if origins:
+            # Create new CORS instance with updated origins
+            from flask_cors import CORS
+            # Remove existing CORS
+            app.extensions = {k: v for k, v in app.extensions.items() if k != 'CORS'}
+            # Re-apply with new origins
+            CORS(app, origins=origins, supports_credentials=True)
+            return True
+    except Exception:
+        return False
+    return False
+
+
+@app.route("/api/admin/runtime/config")
+@require_admin
+def admin_runtime_config():
+    """Get runtime configuration (secrets masked)."""
+    return jsonify({
+        "ok": True,
+        "config": _mask_secrets(_RUNTIME_CONFIG),
+        "persisted": os.path.exists(_CONFIG_FILE),
+        "configFile": _CONFIG_FILE,
+        "corsActive": True,  # Indicates if CORS is being applied from config
+    })
+
+
+@app.route("/api/admin/runtime/config", methods=["PATCH"])
+@require_admin
+def admin_update_runtime_config():
+    """Update runtime configuration with validation, persistence, and CORS update."""
+    global _RUNTIME_CONFIG
+    
+    body = request.get_json(force=True) or {}
+    allowed_keys = {"byok_mode", "cors_origins"}
+    
+    # Filter allowed fields
+    updates = {k: v for k, v in body.items() if k in allowed_keys}
+    
+    if not updates:
+        return jsonify({"error": "Keine erlaubten Felder zum Aktualisieren"}), 400
+    
+    # Validate BYOK mode
+    if "byok_mode" in updates:
+        if updates["byok_mode"] not in ("system-key", "user-key", "disabled"):
+            return jsonify({"error": "Ungültiger BYOK-Modus. Erlaubt: system-key, user-key, disabled"}), 400
+    
+    # Validate CORS origins - block wildcard with credentials
+    if "cors_origins" in updates:
+        origins = updates["cors_origins"]
+        if not isinstance(origins, list):
+            return jsonify({"error": "cors_origins muss eine Liste sein"}), 400
+        
+        for origin in origins:
+            if origin.strip() == "*":
+                return jsonify({
+                    "error": "Wildcard-Origin (*) ist nicht erlaubt. Bitte spezifische Domains angeben.",
+                    "blocker": "cors_wildcard_blocked"
+                }), 400
+            
+            # Check for credentials/authorization with suspicious patterns
+            if any(pattern in origin.lower() for pattern in ["token=", "key=", "auth="]):
+                return jsonify({
+                    "error": "Origin darf keine Auth-Parameter enthalten.",
+                    "blocker": "cors_auth_in_origin_blocked"
+                }), 400
+    
+    # Apply updates to in-memory config
+    _RUNTIME_CONFIG.update(updates)
+    
+    # Persist to file
+    if not _save_runtime_config(_RUNTIME_CONFIG):
+        return jsonify({
+            "error": "Konfiguration gespeichert, aber Persistenz fehlgeschlagen",
+            "ok": True,
+            "config": _mask_secrets(_RUNTIME_CONFIG),
+            "persisted": False,
+        }), 200
+    
+    # ACTUALLY update CORS middleware if origins changed
+    cors_updated = False
+    if "cors_origins" in updates:
+        cors_updated = _update_cors_from_config()
+        if not cors_updated:
+            # Return warning but still succeed
+            audit("admin_update_runtime_config_cors_failed", None, updates)
+            return jsonify({
+                "ok": True,
+                "config": _mask_secrets(_RUNTIME_CONFIG),
+                "persisted": True,
+                "corsUpdated": False,
+                "corsWarning": "CORS-Middleware konnte nicht dynamisch aktualisiert werden. Server-Restart erforderlich."
+            })
+    
+    audit("admin_update_runtime_config", None, updates)
+    
+    return jsonify({
+        "ok": True,
+        "config": _mask_secrets(_RUNTIME_CONFIG),
+        "persisted": True,
+        "corsUpdated": cors_updated,
+    })
+
+
+@app.route("/api/admin/runtime/validate-cors", methods=["POST"])
+@require_admin
+def admin_validate_cors():
+    """Validate CORS configuration before applying."""
+    body = request.get_json(force=True) or {}
+    origins = body.get("origins", [])
+    
+    errors = []
+    warnings = []
+    
+    if not isinstance(origins, list):
+        return jsonify({"error": "origins muss eine Liste sein"}), 400
+    
+    for origin in origins:
+        origin = origin.strip()
+        
+        # Block wildcards
+        if origin == "*":
+            errors.append({
+                "origin": origin,
+                "error": "Wildcard nicht erlaubt",
+                "blocker": "cors_wildcard_blocked"
+            })
+            continue
+        
+        # Block auth in origin
+        if any(pattern in origin.lower() for pattern in ["token=", "key=", "auth="]):
+            errors.append({
+                "origin": origin,
+                "error": "Origin darf keine Auth-Parameter enthalten",
+                "blocker": "cors_auth_in_origin_blocked"
+            })
+            continue
+        
+        # Warn about http (non-HTTPS)
+        if origin.startswith("http://") and not origin.startswith("http://localhost"):
+            warnings.append({
+                "origin": origin,
+                "warning": "Non-HTTPS Origin erkannt. Empfehlung: HTTPS verwenden."
+            })
+    
+    result = {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+    }
+    
+    audit("admin_validate_cors", None, {"origins": origins, "result": result})
+    
+    return jsonify(result)
+
+
+@app.route("/api/admin/runtime/health")
+@require_admin
+def admin_runtime_health():
+    """Check runtime/worker health status with real checks."""
+    health_status = "healthy"
+    blockers = []
+    
+    # Check if config is valid
+    byok = _RUNTIME_CONFIG.get("byok_mode", "user-key")
+    if byok not in ("system-key", "user-key", "disabled"):
+        health_status = "degraded"
+        blockers.append("invalid_byok_config")
+    
+    # Check CORS origins count
+    cors_count = len(_RUNTIME_CONFIG.get("cors_origins", []))
+    if cors_count == 0:
+        health_status = "degraded"
+        blockers.append("no_cors_origins")
+    elif cors_count > 20:
+        health_status = "degraded"
+        blockers.append("too_many_cors_origins")
+    
+    # Check config file persistence
+    if not os.path.exists(_CONFIG_FILE):
+        blockers.append("config_not_persisted")
+    
+    # Check database connection
+    try:
+        test_query = query("SELECT 1 as test", one=True)
+        if not test_query:
+            health_status = "degraded"
+            blockers.append("db_connection_issue")
+    except Exception:
+        health_status = "degraded"
+        blockers.append("db_unavailable")
+    
+    return jsonify({
+        "ok": True,
+        "health": health_status,
+        "byokMode": byok,
+        "corsOriginsCount": cors_count,
+        "blockers": blockers,
+        "configFile": _CONFIG_FILE,
+        "configPersisted": os.path.exists(_CONFIG_FILE),
+    })
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ADMIN API KEYS TABLE (for audit trail)
+# ═════════════════════════════════════════════════════════════════════════════
+# Run this once to create the admin_api_keys table:
+#   CREATE TABLE IF NOT EXISTS admin_api_keys (
+#     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+#     admin_id UUID REFERENCES admin_users(id),
+#     key_hash TEXT UNIQUE NOT NULL,
+#     label TEXT,
+#     created_at TIMESTAMPTZ DEFAULT NOW(),
+#     last_used_at TIMESTAMPTZ
+#   );
+
+# Admin API key management endpoints
+@app.route("/api/admin/api-keys", methods=["GET"])
+@require_admin
+def admin_list_api_keys():
+    """List all API keys for the current admin."""
+    admin = get_current_admin()
+    if not admin:
+        return jsonify({"error": "Nicht autorisiert"}), 401
+    
+    keys = query(
+        """SELECT id::text, label, key_hash, created_at, last_used_at
+           FROM admin_api_keys WHERE admin_id = %s::uuid
+           ORDER BY created_at DESC""",
+        (admin["id"],),
+    )
+    return jsonify({
+        "keys": [
+            {
+                "id": k["id"],
+                "label": k["label"],
+                "keyHint": k["key_hash"][:8] + "...",  # Only show hint
+                "createdAt": k["created_at"],
+                "lastUsedAt": k["last_used_at"],
+            }
+            for k in keys
+        ]
+    })
+
+
+@app.route("/api/admin/api-keys", methods=["POST"])
+@require_admin
+def admin_create_api_key():
+    """Create a new API key for the current admin. Returns the raw key ONCE."""
+    import secrets
+    
+    admin = get_current_admin()
+    if not admin:
+        return jsonify({"error": "Nicht autorisiert"}), 401
+    
+    body = request.get_json(force=True) or {}
+    label = body.get("label", "Admin Key")
+    
+    # Generate a secure random key
+    raw_key = secrets.token_urlsafe(32)
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    
+    # Store the hash, not the key
+    query(
+        """INSERT INTO admin_api_keys (admin_id, key_hash, label)
+           VALUES (%s::uuid, %s, %s)""",
+        (admin["id"], key_hash, label),
+        write=True,
+    )
+    
+    audit("admin_create_api_key", None, {"label": label})
+    
+    # Return the RAW key ONCE - it cannot be recovered!
+    return jsonify({
+        "ok": True,
+        "key": raw_key,  # Only returned ONCE at creation
+        "keyHint": key_hash[:8] + "...",
+        "warning": "Speichere diesen Key sicher. Er wird nie wieder angezeigt!"
+    })
+
+
+@app.route("/api/admin/llm/routes/<rid>/healthcheck", methods=["POST"])
+@require_admin
+def admin_llm_route_healthcheck(rid):
+    """Perform health check on an LLM route by actually pinging the endpoint."""
+    # Get route details
+    route = query(
+        """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
+                  provider, base_url AS "baseUrl", api_key AS "apiKey"
+           FROM llm_routes WHERE id = %s::uuid""",
+        (rid,), one=True,
+    )
+    
+    if not route:
+        return jsonify({"error": "Route nicht gefunden"}), 404
+    
+    provider = route.get("provider", "").lower()
+    base_url = route.get("baseUrl") or ""
+    model_name = route.get("modelName") or route.get("modelId") or "gpt-4"
+    health_status = "healthy"
+    blocker = None
+    response_time_ms = None
+    error_message = None
+    
+    try:
+        # Build the appropriate health check request based on provider
+        headers = {"Content-Type": "application/json"}
+        
+        if provider == "openai":
+            if not base_url:
+                base_url = "https://api.openai.com"
+            # Simple models list request for health check
+            url = f"{base_url.rstrip('/')}/v1/models"
+            if route.get("apiKey"):
+                headers["Authorization"] = f"Bearer {route['apiKey']}"
+            timeout = 10
+        elif provider == "anthropic":
+            if not base_url:
+                base_url = "https://api.anthropic.com"
+            # Health check via models endpoint
+            url = f"{base_url.rstrip('/')}/v1/models"
+            if route.get("apiKey"):
+                headers["x-api-key"] = route["apiKey"]
+                headers["anthropic-version"] = "2023-06-01"
+            timeout = 10
+        elif provider == "deepseek":
+            if not base_url:
+                base_url = "https://api.deepseek.com"
+            url = f"{base_url.rstrip('/')}/v1/models"
+            if route.get("apiKey"):
+                headers["Authorization"] = f"Bearer {route['apiKey']}"
+            timeout = 10
+        elif provider == "gemini":
+            if not base_url:
+                base_url = "https://generativelanguage.googleapis.com"
+            # Gemini health check via model list
+            url = f"{base_url.rstrip('/')}/v1beta1/models?pageSize=1"
+            if route.get("apiKey"):
+                headers["x-goog-api-key"] = route["apiKey"]
+            timeout = 10
+        else:
+            # Generic health check for unknown providers
+            if not base_url:
+                health_status = "degraded"
+                blocker = "missing_base_url"
+                url = None
+            else:
+                url = f"{base_url.rstrip('/')}/health"
+                timeout = 10
+        
+        if url:
+            start_time = time.time()
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            response_time_ms = int((time.time() - start_time) * 1000)
+            
+            if resp.status_code >= 500:
+                health_status = "degraded"
+                blocker = "server_error"
+                error_message = f"HTTP {resp.status_code}"
+            elif resp.status_code >= 400:
+                health_status = "degraded"
+                blocker = "client_error"
+                error_message = f"HTTP {resp.status_code}"
+            else:
+                health_status = "healthy"
+    
+    except requests.exceptions.Timeout:
+        health_status = "degraded"
+        blocker = "timeout"
+        error_message = f"Request timeout after {timeout}s"
+    except requests.exceptions.ConnectionError as e:
+        health_status = "degraded"
+        blocker = "connection_error"
+        error_message = "Verbindung fehlgeschlagen"
+    except Exception as e:
+        health_status = "degraded"
+        blocker = "unknown_error"
+        error_message = str(e)[:100]
+    
+    audit("admin_llm_healthcheck", rid, {
+        "provider": provider,
+        "model": model_name,
+        "status": health_status,
+        "blocker": blocker,
+        "responseTimeMs": response_time_ms,
+    })
+    
+    return jsonify({
+        "ok": True,
+        "routeId": rid,
+        "provider": provider,
+        "model": model_name,
+        "health": health_status,
+        "blocker": blocker,
+        "error": error_message,
+        "responseTimeMs": response_time_ms,
+        "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+
+
+@app.route("/api/admin/launcher/tools/<tid>/healthcheck", methods=["POST"])
+@require_admin
+def admin_tool_healthcheck(tid):
+    """Perform health check on a launcher tool by actually testing the endpoint."""
+    # Get tool details
+    tool = query(
+        """SELECT id::text, label, base_url AS "baseUrl", auth_mode AS "authMode"
+           FROM launcher_overrides WHERE id = %s::uuid""",
+        (tid,), one=True,
+    )
+    
+    if not tool:
+        return jsonify({"error": "Tool nicht gefunden"}), 404
+    
+    label = tool.get("label", "")
+    base_url = tool.get("baseUrl") or ""
+    auth_mode = tool.get("authMode") or "none"
+    health_status = "healthy"
+    blocker = None
+    response_time_ms = None
+    error_message = None
+    
+    try:
+        # Special handling for OpenHands - must actually check if it's reachable
+        if label == "OpenHands":
+            # Check if OpenHands API is reachable
+            oh_url = os.getenv("OPENHANDS_API_URL", "http://127.0.0.1:3000")
+            try:
+                start_time = time.time()
+                resp = requests.get(f"{oh_url.rstrip('/')}/api/agents", timeout=10)
+                response_time_ms = int((time.time() - start_time) * 1000)
+                if resp.status_code < 500:
+                    health_status = "healthy"
+                else:
+                    health_status = "degraded"
+                    blocker = "openhands_unreachable"
+                    error_message = f"OpenHands returned HTTP {resp.status_code}"
+            except requests.exceptions.Timeout:
+                health_status = "degraded"
+                blocker = "timeout"
+                error_message = "OpenHands antwortet nicht"
+            except requests.exceptions.ConnectionError:
+                health_status = "degraded"
+                blocker = "connection_error"
+                error_message = "OpenHands nicht erreichbar"
+        
+        elif not base_url:
+            # For non-OpenHands tools without URL, mark as unknown
+            health_status = "unknown"
+            blocker = "missing_base_url"
+        
+        else:
+            # Perform actual HTTP health check
+            health_paths = ["/health", "/api/health", "/status", "/api/status", ""]
+            timeout = 10
+            
+            for path in health_paths:
+                try:
+                    url = f"{base_url.rstrip('/')}{path}"
+                    start_time = time.time()
+                    resp = requests.get(url, timeout=timeout)
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    
+                    if resp.status_code < 500:
+                        health_status = "healthy"
+                        break
+                except requests.exceptions.RequestException:
+                    continue
+            else:
+                # If no health endpoint worked, try the base URL itself
+                try:
+                    url = base_url.rstrip('/')
+                    start_time = time.time()
+                    resp = requests.get(url, timeout=timeout, allow_redirects=True)
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    
+                    if resp.status_code < 500:
+                        health_status = "healthy"
+                    else:
+                        health_status = "degraded"
+                        blocker = "server_error"
+                        error_message = f"HTTP {resp.status_code}"
+                except requests.exceptions.Timeout:
+                    health_status = "degraded"
+                    blocker = "timeout"
+                    error_message = f"Request timeout after {timeout}s"
+                except requests.exceptions.ConnectionError:
+                    health_status = "degraded"
+                    blocker = "connection_error"
+                    error_message = "Verbindung fehlgeschlagen"
+    
+    except Exception as e:
+        health_status = "degraded"
+        blocker = "unknown_error"
+        error_message = str(e)[:100]
+    
+    audit("admin_tool_healthcheck", tid, {
+        "label": label,
+        "status": health_status,
+        "blocker": blocker,
+        "responseTimeMs": response_time_ms,
+    })
+    
+    return jsonify({
+        "ok": True,
+        "toolId": tid,
+        "label": label,
+        "health": health_status,
+        "blocker": blocker,
+        "error": error_message,
+        "responseTimeMs": response_time_ms,
+        "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })
 
 
@@ -632,10 +1348,6 @@ def cancel_job(job_id):
             "stage": "openhands", "message": "Cancelled by user",
         })
         return jsonify(jobs[job_id])
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8787, debug=False)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -2857,6 +3569,12 @@ input[type=text],input[type=password]{-webkit-appearance:none}
     <nav>
       <button class="active" onclick="showSection('payments',this)">💳 Zahlungen</button>
       <button onclick="showSection('packages',this)">📦 Credit-Pakete</button>
+      <button onclick="showSection('users',this)">👥 Users</button>
+      <button onclick="showSection('billing',this)">📋 Billing</button>
+      <button onclick="showSection('llm',this)">🤖 LLM Routes</button>
+      <button onclick="showSection('tools',this)">🛠️ Tools</button>
+      <button onclick="showSection('runtime',this)">🔧 Runtime</button>
+      <button onclick="showSection('audit',this)">📊 Audit</button>
     </nav>
     <button class="logout" onclick="doLogout()">Abmelden</button>
   </header>
@@ -2874,6 +3592,63 @@ input[type=text],input[type=password]{-webkit-appearance:none}
       <h2>Credit-Pakete</h2>
       <div class="subtitle">Verfügbare Käufe für Nutzer.</div>
       <div id="pkgList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- USERS -->
+    <div id="s-users" class="section">
+      <h2>User Manager</h2>
+      <div class="subtitle">User suchen, bearbeiten, Credits anpassen.</div>
+      <div class="form-group" style="margin-bottom:16px">
+        <input type="text" id="userSearch" placeholder="Suche nach E-Mail, Name…" onkeydown="if(event.key==='Enter')loadUsers()"/>
+        <button class="btn btn-primary" style="margin-top:8px" onclick="loadUsers()">Suchen</button>
+      </div>
+      <div id="userList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- BILLING -->
+    <div id="s-billing" class="section">
+      <h2>Billing History</h2>
+      <div class="subtitle">Alle Transaktionen und Zahlungen.</div>
+      <div class="form-group" style="display:flex;gap:8px;margin-bottom:16px">
+        <input type="text" id="billingUserId" placeholder="User ID (optional)" style="flex:1"/>
+        <select id="billingType" style="width:160px">
+          <option value="">Alle Typen</option>
+          <option value="purchase">Purchase</option>
+          <option value="adjustment">Adjustment</option>
+          <option value="refund">Refund</option>
+          <option value="spend">Spend</option>
+        </select>
+        <button class="btn btn-primary" onclick="loadBilling()">Filtern</button>
+      </div>
+      <div id="billingList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- LLM ROUTES -->
+    <div id="s-llm" class="section">
+      <h2>LLM Routes</h2>
+      <div class="subtitle">Provider aktivieren, deaktivieren, Reihenfolge ändern.</div>
+      <div id="llmList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- TOOLS -->
+    <div id="s-tools" class="section">
+      <h2>Tools & Executors</h2>
+      <div class="subtitle">Workspace-Tools und Executor-Routen verwalten.</div>
+      <div id="toolsList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- RUNTIME -->
+    <div id="s-runtime" class="section">
+      <h2>Runtime Settings</h2>
+      <div class="subtitle">Worker, BYOK-Modus und CORS-Konfiguration.</div>
+      <div id="runtimeList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- AUDIT -->
+    <div id="s-audit" class="section">
+      <h2>Audit Log</h2>
+      <div class="subtitle">Alle Admin-Aktionen im Überblick.</div>
+      <div id="auditList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
     </div>
 
   </main>
@@ -2913,6 +3688,12 @@ function initApp(){
   document.getElementById('app').style.display='flex';
   loadPaymentMethods();
   loadPackages();
+  loadUsers();
+  loadBilling();
+  loadLLMRoutes();
+  loadTools();
+  loadRuntime();
+  loadAudit();
 }
 
 function showSection(id, btn){
@@ -3099,6 +3880,430 @@ function showPkgMsg(id, ok, text){
   setTimeout(()=>{ el.style.display='none'; },3000);
 }
 
+/* ────── USERS ────── */
+let userPage = 1;
+
+async function loadUsers(pg=1){
+  userPage = pg;
+  const search = encodeURIComponent(document.getElementById('userSearch').value);
+  const el = document.getElementById('userList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/users?page='+pg+'&search='+search,{headers:hdr()});
+    const d = await r.json();
+    renderUsers(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderUsers(d){
+  const el = document.getElementById('userList');
+  if(!d.users || !d.users.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine User gefunden.</div>';
+    return;
+  }
+  el.innerHTML = d.users.map(u=>userRow(u)).join('') +
+    '<div style="margin-top:16px;display:flex;gap:8px;align-items:center">' +
+    (d.page>1?'<button class="btn btn-ghost" onclick="loadUsers('+(d.page-1)+')">← Zurück</button>':'') +
+    '<span style="color:var(--muted);font-size:13px">Seite '+d.page+' von '+Math.ceil(d.total/50)+'</span>' +
+    (d.page*50<d.total?'<button class="btn btn-ghost" onclick="loadUsers('+(d.page+1)+')">Weiter →</button>':'') +
+    '</div>';
+}
+
+function userRow(u){
+  const status = u.isBanned?'banned':u.subscriptionStatus||'active';
+  const statusCls = u.isBanned?'off':status==='active'?'on':'off';
+  return `<div class="card" id="ur_${u.id}">
+    <div class="card-header">
+      <span class="card-title">${esc(u.email||'')}</span>
+      <span style="color:var(--muted);font-size:13px">${esc(u.displayName||'')}</span>
+      <span class="badge ${statusCls}">${status}</span>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits</label><div style="font-size:18px;font-weight:600">${u.credits||0}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Rolle</label><div>${esc(u.role||'user')}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Erstellt</label><div style="font-size:12px">${u.createdAt?(new Date(u.createdAt)).toLocaleDateString():''}</div></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="toggleBan('${u.id}',${!u.isBanned})">${u.isBanned?'Entsperren':'Sperren'}</button>
+        <button class="btn btn-ghost" onclick="adjustCredits('${u.id}')">Credits anpassen</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function toggleBan(uid, ban){
+  if(!confirm('User wirklich '+ (ban?'sperren':'entsperren') +'?')) return;
+  await fetch(BASE+'/api/admin/users/'+uid,{method:'PATCH',headers:hdr(),body:JSON.stringify({isBanned:ban})});
+  loadUsers(userPage);
+}
+
+async function adjustCredits(uid){
+  const amount = prompt('Credit-Änderung (positiv = hinzufügen, negativ = abziehen):','0');
+  if(amount===null) return;
+  const amountInt = parseInt(amount);
+  if(isNaN(amountInt)||amountInt===0){ alert('Ungültiger Betrag.'); return; }
+  const reason = prompt('Grund für die Anpassung:');
+  if(!reason) return;
+  const r = await fetch(BASE+'/api/admin/users/'+uid+'/credit-adjustment',{
+    method:'POST',headers:hdr(),body:JSON.stringify({amount:amountInt,reason})
+  });
+  const d = await r.json();
+  if(d.error) alert('Fehler: '+d.error);
+  else { alert('Credits angepasst ✓'); loadUsers(userPage); }
+}
+
+/* ────── BILLING ────── */
+let billingPage = 1;
+
+async function loadBilling(pg=1){
+  billingPage = pg;
+  const uid = encodeURIComponent(document.getElementById('billingUserId').value||'');
+  const ttype = encodeURIComponent(document.getElementById('billingType').value||'');
+  const el = document.getElementById('billingList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    let url = BASE+'/api/admin/transactions?page='+pg;
+    if(uid) url += '&user_id='+uid;
+    if(ttype) url += '&type='+ttype;
+    const r = await fetch(url,{headers:hdr()});
+    const d = await r.json();
+    renderBilling(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderBilling(d){
+  const el = document.getElementById('billingList');
+  if(!d.transactions || !d.transactions.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Transaktionen gefunden.</div>';
+    return;
+  }
+  const html = d.transactions.map(t=>`<tr>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${t.createdAt?(new Date(t.createdAt)).toLocaleString():''}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><code style="font-size:11px">${esc(t.userId||'').substring(0,8)}…</code></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><span class="badge ${t.type==='purchase'?'on':'off'}">${t.type}</span></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${t.amount||0}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><span class="badge ${t.status==='completed'?'on':'off'}">${t.status}</span></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.description||'')}">${esc(t.description||'')}</td>
+  </tr>`).join('');
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#21262d;text-align:left">
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Datum</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">User</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Typ</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Betrag</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Status</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Beschreibung</th>
+  </tr></thead><tbody>${html}</tbody></table>` +
+    '<div style="margin-top:16px;display:flex;gap:8px;align-items:center">' +
+    (d.page>1?'<button class="btn btn-ghost" onclick="loadBilling('+(d.page-1)+')">← Zurück</button>':'') +
+    '<span style="color:var(--muted);font-size:13px">Seite '+d.page+'</span>' +
+    (d.page*50<d.total?'<button class="btn btn-ghost" onclick="loadBilling('+(d.page+1)+')">Weiter →</button>':'') +
+    '</div>';
+}
+
+/* ────── LLM ROUTES ────── */
+async function loadLLMRoutes(){
+  const el = document.getElementById('llmList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/llm/routes',{headers:hdr()});
+    const d = await r.json();
+    renderLLMRoutes(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderLLMRoutes(d){
+  const el = document.getElementById('llmList');
+  if(!d.routes || !d.routes.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine LLM Routes konfiguriert.</div>';
+    return;
+  }
+  el.innerHTML = d.routes.map(r=>`<div class="card" id="lr_${r.id}">
+    <div class="card-header">
+      <span class="card-title">${esc(r.provider||'')} / ${esc(r.modelName||r.modelId||'')}</span>
+      <span class="badge ${r.disabled?'off':'on'}">${r.disabled?'Deaktiviert':'Aktiv'}</span>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Provider</label><div>${esc(r.provider||'')}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits/Unit</label><div>${r.creditsPerUnit||0}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Priorität</label><div>${r.priority||0}</div></div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Route aktivieren</span>
+        <label class="toggle">
+          <input type="checkbox" id="ltog_${r.id}" ${r.disabled?'':'checked'} onchange="toggleLLM('${r.id}',!this.checked)"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="healthcheckLLM('${r.id}')" id="hcbtn_${r.id}">🔍 Healthcheck</button>
+        <span id="hcstatus_${r.id}" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>`).join('');
+}
+
+async function toggleLLM(rid, disabled){
+  await fetch(BASE+'/api/admin/llm/routes/'+rid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})});
+  loadLLMRoutes();
+}
+
+async function healthcheckLLM(rid){
+  const btn = document.getElementById('hcbtn_'+rid);
+  const status = document.getElementById('hcstatus_'+rid);
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Teste…';
+  status.textContent = '';
+  try {
+    const r = await fetch(BASE+'/api/admin/llm/routes/'+rid+'/healthcheck',{method:'POST',headers:hdr()});
+    const d = await r.json();
+    if(d.health === 'healthy'){
+      status.textContent = '✓ Gesund';
+      status.style.color = 'var(--accent2)';
+    } else if(d.health === 'degraded'){
+      status.textContent = '⚠️ '+(d.blocker||'Beeinträchtigt');
+      status.style.color = 'var(--warn)';
+    } else {
+      status.textContent = '? Unbekannt';
+      status.style.color = 'var(--muted)';
+    }
+  } catch(e){
+    status.textContent = '✗ Fehler: '+e.message;
+    status.style.color = 'var(--danger)';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '🔍 Healthcheck';
+}
+
+/* ────── TOOLS ────── */
+async function loadTools(){
+  const el = document.getElementById('toolsList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/launcher/tools',{headers:hdr()});
+    const d = await r.json();
+    renderTools(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderTools(d){
+  const el = document.getElementById('toolsList');
+  if(!d.tools || !d.tools.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Tools konfiguriert.</div>';
+    return;
+  }
+  el.innerHTML = d.tools.map(t=>`<div class="card" id="tr_${t.id}">
+    <div class="card-header">
+      <span class="card-title">${esc(t.label||'')}</span>
+      ${t.badge?'<span class="badge on">'+esc(t.badge)+'</span>':''}
+      <span class="badge ${t.disabled?'off':'on'}">${t.disabled?'Deaktiviert':'Aktiv'}</span>
+    </div>
+    <div class="card-body">
+      <div class="toggle-row">
+        <span class="toggle-label">Tool aktivieren</span>
+        <label class="toggle">
+          <input type="checkbox" id="ttog_${t.id}" ${t.disabled?'':'checked'} onchange="toggleTool('${t.id}',!this.checked)"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="healthcheckTool('${t.id}')" id="thcbtn_${t.id}">🔍 Healthcheck</button>
+        <span id="thcstatus_${t.id}" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>`).join('');
+}
+
+async function toggleTool(tid, disabled){
+  await fetch(BASE+'/api/admin/launcher/tools/'+tid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})});
+  loadTools();
+}
+
+async function healthcheckTool(tid){
+  const btn = document.getElementById('thcbtn_'+tid);
+  const status = document.getElementById('thcstatus_'+tid);
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Teste…';
+  status.textContent = '';
+  try {
+    const r = await fetch(BASE+'/api/admin/launcher/tools/'+tid+'/healthcheck',{method:'POST',headers:hdr()});
+    const d = await r.json();
+    if(d.health === 'healthy'){
+      status.textContent = '✓ Gesund';
+      status.style.color = 'var(--accent2)';
+    } else if(d.health === 'degraded'){
+      status.textContent = '⚠️ '+(d.blocker||'Beeinträchtigt');
+      status.style.color = 'var(--warn)';
+    } else {
+      status.textContent = '? '+d.blocker||'Unbekannt';
+      status.style.color = 'var(--muted)';
+    }
+  } catch(e){
+    status.textContent = '✗ Fehler: '+e.message;
+    status.style.color = 'var(--danger)';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '🔍 Healthcheck';
+}
+
+/* ────── RUNTIME ────── */
+let runtimeConfig = {};
+
+async function loadRuntime(){
+  const el = document.getElementById('runtimeList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const [cfgR, hlthR] = await Promise.all([
+      fetch(BASE+'/api/admin/runtime/config',{headers:hdr()}),
+      fetch(BASE+'/api/admin/runtime/health',{headers:hdr()})
+    ]);
+    const cfg = await cfgR.json();
+    const hlth = await hlthR.json();
+    runtimeConfig = cfg.config || {};
+    renderRuntime(cfg.config, hlth);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderRuntime(cfg, hlth){
+  const el = document.getElementById('runtimeList');
+  if(!cfg) return;
+  const byokMode = cfg.byok_mode || 'user-key';
+  const health = hlth?.health || 'unknown';
+  const healthColor = health==='healthy'?'var(--accent2)':health==='degraded'?'var(--warn)':'var(--muted)';
+  const healthIcon = health==='healthy'?'✓':health==='degraded'?'⚠':'?';
+  el.innerHTML = `<div class="card">
+    <div class="card-header"><span class="card-title">Worker Status</span><span class="badge ${health==='healthy'?'on':'off'}">${healthIcon} ${health}</span></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">BYOK Modus</label>
+          <select id="rt_byok" style="margin-top:4px" onchange="updateRuntime('byok')">
+            <option value="user-key" ${byokMode==='user-key'?'selected':''}>user-key</option>
+            <option value="system-key" ${byokMode==='system-key'?'selected':''}>system-key</option>
+            <option value="disabled" ${byokMode==='disabled'?'selected':''}>disabled</option>
+          </select>
+        </div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">CORS Origins</label><div style="font-size:14px;margin-top:4px">${cfg.cors_origins?.length||0} konfiguriert</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Worker Health</label><div style="color:${healthColor}">${healthIcon} ${health}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Blocker</label><div style="font-size:12px">${hlth?.blockers?.length||0} aktiv</div></div>
+      </div>
+      <button class="btn btn-ghost" onclick="showCorsEditor()" style="margin-bottom:12px">✏️ CORS Origins bearbeiten</button>
+      <div id="corsEditor" style="display:none">
+        <div class="form-group">
+          <label>Origins (eine pro Zeile)</label>
+          <textarea id="corsTextarea" rows="6" placeholder="https://example.com">${(cfg.cors_origins||[]).join('\n')}</textarea>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="validateAndSaveCors()">Validieren & Speichern</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('corsEditor').style.display='none'">Abbrechen</button>
+        </div>
+        <div id="corsMsg" class="msg" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function showCorsEditor(){
+  document.getElementById('corsEditor').style.display='block';
+}
+
+async function updateRuntime(field){
+  let body = {};
+  if(field === 'byok'){
+    body.byok_mode = document.getElementById('rt_byok').value;
+  }
+  try {
+    const r = await fetch(BASE+'/api/admin/runtime/config',{
+      method:'PATCH',headers:hdr(),body:JSON.stringify(body)
+    });
+    const d = await r.json();
+    if(!d.ok) alert('Fehler: '+(d.error||'Unbekannt'));
+    else loadRuntime();
+  } catch(e){ alert('Fehler: '+e.message); }
+}
+
+async function validateAndSaveCors(){
+  const textarea = document.getElementById('corsTextarea');
+  const msg = document.getElementById('corsMsg');
+  const origins = textarea.value.split('\n').map(o=>o.trim()).filter(o=>o);
+  
+  // Validate first
+  const vr = await fetch(BASE+'/api/admin/runtime/validate-cors',{
+    method:'POST',headers:hdr(),body:JSON.stringify({origins})
+  });
+  const vd = await vr.json();
+  
+  if(!vd.valid && vd.errors?.length){
+    const errMsgs = vd.errors.map(e=>e.error).join(', ');
+    msg.textContent = '✗ Validierungsfehler: '+errMsgs;
+    msg.className='msg err'; msg.style.display='block';
+    return;
+  }
+  
+  // Save
+  const sr = await fetch(BASE+'/api/admin/runtime/config',{
+    method:'PATCH',headers:hdr(),body:JSON.stringify({cors_origins:origins})
+  });
+  const sd = await sr.json();
+  
+  if(sd.ok){
+    msg.textContent = '✓ Gespeichert!';
+    msg.className='msg ok'; msg.style.display='block';
+    setTimeout(()=>{ msg.style.display='none'; document.getElementById('corsEditor').style.display='none'; loadRuntime(); },1500);
+  } else {
+    msg.textContent = '✗ Fehler: '+(sd.error||'Unbekannt');
+    msg.className='msg err'; msg.style.display='block';
+  }
+}
+
+/* ────── AUDIT ────── */
+async function loadAudit(){
+  const el = document.getElementById('auditList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/audit-log',{headers:hdr()});
+    const d = await r.json();
+    renderAudit(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderAudit(d){
+  const el = document.getElementById('auditList');
+  if(!d.entries || !d.entries.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Audit-Einträge gefunden.</div>';
+    return;
+  }
+  const html = d.entries.map(e=>`<tr>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${e.createdAt?(new Date(e.createdAt)).toLocaleString():''}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${esc(e.adminEmail||'system')}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><code style="font-size:11px">${esc(e.action||'')}</code></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><code style="font-size:11px">${esc((e.targetId||'').substring(0,8))}…</code></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(JSON.stringify(e.changes||{}))}">${esc(JSON.stringify(e.changes||{}))}</td>
+  </tr>`).join('');
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#21262d;text-align:left">
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Zeit</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Admin</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Aktion</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Target</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Änderungen</th>
+  </tr></thead><tbody>${html}</tbody></table>` +
+    '<div style="margin-top:16px;display:flex;gap:8px;align-items:center">' +
+    (d.page>1?'<button class="btn btn-ghost" onclick="loadAuditPage('+(d.page-1)+')">← Zurück</button>':'') +
+    '<span style="color:var(--muted);font-size:13px">Seite '+d.page+'</span>' +
+    (d.page*50<d.total?'<button class="btn btn-ghost" onclick="loadAuditPage('+(d.page+1)+')">Weiter →</button>':'') +
+    '</div>';
+}
+
+async function loadAuditPage(pg){
+  const el = document.getElementById('auditList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/audit-log?page='+pg,{headers:hdr()});
+    const d = await r.json();
+    renderAudit(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 </script>
 </body>
@@ -3210,3 +4415,21 @@ def utc_invoke():
         return jsonify({"ok": False, "error": str(e)}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═════════════════════════════════════════════════════════════════════════════
+# NOTE: This must be at the END of the file!
+# Routes defined after this block will NOT be registered when running directly.
+# For production, use gunicorn: gunicorn -w 4 -b 0.0.0.0:8787 app:app
+if __name__ == "__main__":
+    # Validate required tables exist before starting
+    try:
+        query("SELECT 1", one=True)
+    except Exception as e:
+        print(f"[WARN] Database connection failed: {e}")
+        print("[WARN] Starting anyway - routes may fail if DB is required.")
+    
+    app.run(host="0.0.0.0", port=8787, debug=False)
+
