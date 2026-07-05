@@ -4539,14 +4539,14 @@ export function BuilderContainer({
                     if (!pendingWriteIntent) {
                       appendChatLine({
                         role: 'assistant',
-                        text: 'GitHub-Zugang ist bereit. Es wartet kein blockierter Schreibauftrag.',
+                        text: 'GitHub-Zugang ist bereit. Der Zugangswert wird nicht im Chat gespeichert. Wenn er in einem Screen Recording oder Clipboard-Verlauf sichtbar war, bitte rotieren.',
                       });
                       return;
                     }
 
                     appendChatLine({
                       role: 'assistant',
-                      text: 'GitHub-Zugang ist bereit. Ich nehme den blockierten Schreibauftrag wieder auf.',
+                      text: 'GitHub-Zugang ist bereit. Ich nehme den blockierten Schreibauftrag wieder auf. Der Zugangswert wird nicht im Chat gespeichert. Wenn er in einem Screen Recording oder Clipboard-Verlauf sichtbar war, bitte rotieren.',
                     });
                     appendActionEvent({
                       kind: 'route_selected',
