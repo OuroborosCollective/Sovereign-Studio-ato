@@ -1,0 +1,42 @@
+# =============================================================================
+# Sovereign Backend Docker Compose Configuration
+# =============================================================================
+# This configuration deploys the Sovereign Backend with automatic database
+# migrations on startup.
+#
+# Networks:
+# - supabase_default: Network for PostgreSQL database access
+# - areloria_arelorian-network: Network for Areloria services
+# - openhands-enterprise_default: Network for OpenHands integration
+# =============================================================================
+
+services:
+  sovereign-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sovereign-backend
+    ports:
+      - "8788:8787"
+    env_file: .env
+    volumes:
+      - /opt/secure:/opt/secure:ro
+    restart: unless-stopped
+    networks:
+      - supabase_default
+      - areloria_arelorian-network
+      - openhands-enterprise_default
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  supabase_default:
+    external: true
+  areloria_arelorian-network:
+    external: true
+  openhands-enterprise_default:
+    external: true

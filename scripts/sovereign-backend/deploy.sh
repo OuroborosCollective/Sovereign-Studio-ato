@@ -2,15 +2,15 @@
 # =============================================================================
 # Sovereign Backend Deployment Script
 # =============================================================================
-# Usage: ./deploy.sh [--restart] [--test]
+# Usage: ./deploy.sh [--rebuild] [--test]
 #
 # This script deploys the Sovereign Backend to the production VPS.
-# It pulls the latest changes from the repository and restarts the service.
+# It builds a new Docker image and restarts the service with automatic migrations.
 #
 # Requirements:
 # - SSH access to VPS with root privileges
-# - Git repository with latest code
-# - Environment variables configured on VPS
+# - Docker and docker-compose installed on VPS
+# - Environment variables configured in .env file
 # =============================================================================
 
 set -e
@@ -19,15 +19,15 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-VPS_HOST="${VPS_HOST:-arelorian.de}"
-VPS_PORT="${VPS_PORT:-21}"
+VPS_HOST="${VPS_HOST:-46.202.154.25}"
+VPS_PORT="${VPS_PORT:-22}"
 VPS_USER="${VPS_USER:-root}"
-REPO_PATH="/opt/sovereign-backend"
+REMOTE_PATH="/opt/sovereign-backend"
 SERVICE_NAME="sovereign-backend"
-BACKEND_PORT="${BACKEND_PORT:-8080}"
 
 # =============================================================================
 # Functions
@@ -45,6 +45,10 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+log_step() {
+    echo -e "${BLUE}[STEP]${NC} $1"
+}
+
 check_ssh() {
     log_info "Checking SSH connection to ${VPS_USER}@${VPS_HOST}:${VPS_PORT}..."
     ssh -p "${VPS_PORT}" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "${VPS_USER}@${VPS_HOST}" "echo 'SSH OK' && uname -a" || {
@@ -55,53 +59,77 @@ check_ssh() {
 
 backup_current() {
     log_info "Creating backup of current deployment..."
-    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "cd ${REPO_PATH} && \
-        cp -r app.py app.py.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true"
-}
-
-pull_latest() {
-    log_info "Pulling latest code from repository..."
-    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "cd ${REPO_PATH} && \
-        git pull origin main || git pull origin master"
-}
-
-install_dependencies() {
-    log_info "Installing Python dependencies..."
-    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "cd ${REPO_PATH} && \
-        pip3 install --quiet psycopg2-binary flask flask-cors requests gunicorn || \
-        pip install --quiet psycopg2-binary flask flask-cors requests gunicorn"
-}
-
-run_migrations() {
-    log_info "Running database migrations..."
-    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "cd ${REPO_PATH} && \
-        python3 scripts/sovereign-backend/migrations/migrate.py 2>/dev/null || \
-        echo 'Migration skipped (DB may not be reachable)'"
-}
-
-restart_service() {
-    log_info "Restarting ${SERVICE_NAME} service..."
-    
-    # Stop any existing process on the port
     ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
-        # Kill existing gunicorn/python processes
-        pkill -f 'gunicorn.*app:app' 2>/dev/null || true; \
-        pkill -f 'python.*app.py' 2>/dev/null || true; \
-        sleep 2; \
-        # Ensure config directory exists
-        mkdir -p /opt/sovereign/config; \
-        # Start with Gunicorn (production)
-        cd ${REPO_PATH} && \
-        nohup gunicorn -w 4 -b 0.0.0.0:${BACKEND_PORT} --timeout 60 --access-logfile /var/log/${SERVICE_NAME}_access.log --error-logfile /var/log/${SERVICE_NAME}_error.log app:app > /var/log/${SERVICE_NAME}_startup.log 2>&1 &"
+        cd ${REMOTE_PATH} && \
+        cp -r app.py app.py.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true && \
+        cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true && \
+        cp Dockerfile Dockerfile.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true"
+}
+
+deploy_files() {
+    log_info "Deploying files to VPS..."
+    
+    # Create a temporary directory for files
+    TEMP_DIR=$(mktemp -d)
+    
+    # Copy necessary files
+    cp app.py "${TEMP_DIR}/"
+    cp Dockerfile "${TEMP_DIR}/"
+    cp docker-compose.yml "${TEMP_DIR}/"
+    cp auto-migrate.sh "${TEMP_DIR}/"
+    cp .env.example "${TEMP_DIR}/" 2>/dev/null || true
+    
+    # Upload files
+    scp -P "${VPS_PORT}" \
+        "${TEMP_DIR}/app.py" \
+        "${TEMP_DIR}/Dockerfile" \
+        "${TEMP_DIR}/docker-compose.yml" \
+        "${TEMP_DIR}/auto-migrate.sh" \
+        "${VPS_USER}@${VPS_HOST}:${REMOTE_PATH}/"
+    
+    # Cleanup
+    rm -rf "${TEMP_DIR}"
+    
+    log_info "Files deployed successfully"
+}
+
+rebuild_container() {
+    log_step "Rebuilding Docker container..."
+    
+    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
+        cd ${REMOTE_PATH} && \
+        chmod +x auto-migrate.sh && \
+        docker compose down && \
+        docker compose up -d --build"
+    
+    log_info "Container rebuilt successfully"
+}
+
+start_container() {
+    log_step "Starting Docker container..."
+    
+    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
+        cd ${REMOTE_PATH} && \
+        docker compose up -d"
+    
+    log_info "Container started successfully"
+}
+
+restart_container() {
+    log_step "Restarting Docker container..."
+    
+    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
+        cd ${REMOTE_PATH} && \
+        docker compose restart"
+    
+    log_info "Container restarted successfully"
 }
 
 check_service() {
     log_info "Checking service health..."
-    sleep 3
     
     local status=$(ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
-        curl -s -o /dev/null -w '%{http_code}' http://localhost:${BACKEND_PORT}/health 2>/dev/null || \
-        curl -s -o /dev/null -w '%{http_code}' http://localhost:${BACKEND_PORT}/api/admin/ping 2>/dev/null || \
+        curl -s -k -o /dev/null -w '%{http_code}' https://localhost:8788/api/admin/ping 2>/dev/null || \
         echo '000'")
     
     if [ "$status" = "200" ] || [ "$status" = "401" ]; then
@@ -114,10 +142,17 @@ check_service() {
 }
 
 show_logs() {
-    log_info "Recent service logs:"
-    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "tail -20 /var/log/${SERVICE_NAME}.log 2>/dev/null || \
-        journalctl -u ${SERVICE_NAME} -n 20 2>/dev/null || \
+    log_info "Recent container logs:"
+    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
+        docker logs --tail 20 ${SERVICE_NAME}-1 2>&1 || \
         echo 'No logs available'"
+}
+
+show_status() {
+    log_info "Container status:"
+    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
+        docker ps --filter 'name=${SERVICE_NAME}' 2>/dev/null || \
+        echo 'Container not running'"
 }
 
 # =============================================================================
@@ -126,29 +161,39 @@ show_logs() {
 
 main() {
     echo "========================================"
-    echo "Sovereign Backend Deployment Script"
+    echo " Sovereign Backend Deployment Script"
     echo "========================================"
     echo ""
     
     # Parse arguments
+    local do_rebuild=false
     local do_restart=false
     local do_test=false
     
     for arg in "$@"; do
         case $arg in
-            --restart|-r)
+            --rebuild|-r)
+                do_rebuild=true
+                ;;
+            --restart|-s)
                 do_restart=true
                 ;;
             --test|-t)
                 do_test=true
                 ;;
             --help|-h)
-                echo "Usage: $0 [--restart] [--test]"
+                echo "Usage: $0 [OPTIONS]"
                 echo ""
                 echo "Options:"
-                echo "  --restart, -r    Restart the service after deployment"
+                echo "  --rebuild, -r    Rebuild Docker image and restart (full deploy)"
+                echo "  --restart, -s    Restart container without rebuilding"
                 echo "  --test, -t       Test deployment without restarting"
                 echo "  --help, -h       Show this help message"
+                echo ""
+                echo "Examples:"
+                echo "  $0 --rebuild     # Full rebuild and deploy"
+                echo "  $0 --restart    # Just restart the container"
+                echo "  $0 --test       # Deploy files without restart"
                 exit 0
                 ;;
         esac
@@ -158,32 +203,49 @@ main() {
     check_ssh
     
     # Deployment steps
-    log_info "Starting deployment to ${VPS_HOST}..."
+    echo ""
+    log_step "Starting deployment to ${VPS_HOST}..."
+    echo ""
     
+    # Always backup current deployment
     backup_current
-    pull_latest
-    install_dependencies
     
-    if [ "$do_restart" = true ]; then
-        run_migrations
-        restart_service
-        sleep 2
+    # Deploy files
+    deploy_files
+    
+    if [ "$do_rebuild" = true ]; then
+        # Full rebuild
+        rebuild_container
+        sleep 5
+        show_status
+        check_service
+    elif [ "$do_restart" = true ]; then
+        # Just restart
+        restart_container
+        sleep 3
+        show_status
+        check_service
+    elif [ "$do_test" = true ]; then
+        log_info "Test mode: files deployed, no restart performed"
+    else
+        # Default: just start (for updates that don't need rebuild)
+        start_container
+        sleep 3
+        show_status
         check_service
     fi
     
-    if [ "$do_test" = true ]; then
-        log_info "Test mode: skipping service restart"
-    fi
-    
+    echo ""
     show_logs
     
     echo ""
+    echo "========================================"
     log_info "Deployment completed!"
+    echo "========================================"
     echo ""
-    echo "Next steps:"
-    echo "  1. Visit https://sovereign-backend.arelorian.de/admin"
-    echo "  2. Check the Audit Log for deployment events"
-    echo "  3. Run health checks on LLM routes and tools"
+    echo "Admin Panel: https://sovereign-backend.arelorian.de/admin"
+    echo "API Key: Use the key configured in .env file"
+    echo ""
 }
 
 # Run main function
