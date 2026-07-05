@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { C } from './builderConstants';
-import { formatBlockerSummary, deriveBlockerNextAction } from '../runtime/sovereignBlockerRegistry';
+import { deriveBlockerNextAction } from '../runtime/sovereignBlockerRegistry';
 import type { GitHubAccessState } from '../runtime/githubAccessRuntime';
 
 export interface SovereignStatusPanelProps {
@@ -25,6 +25,8 @@ export interface SovereignStatusPanelProps {
   openhandsConfigured: boolean;
   /** Whether patch route is available */
   patchRouteAvailable: boolean;
+  /** Whether repo is ready (from runtime state) */
+  repoReady: boolean;
   /** Custom blocker counts from action stream */
   blockerCounts?: {
     activeBlockers: number;
@@ -44,24 +46,6 @@ function statusColor(hasErrors: boolean, hasWarnings: boolean, hasBlockers: bool
   if (hasErrors) return C.rose;
   if (hasWarnings || hasBlockers) return C.amber;
   return C.green;
-}
-
-/**
- * Get status label for GitHub state
- */
-function githubStatusLabel(state: GitHubAccessState): string {
-  switch (state) {
-    case 'missing':
-      return 'GitHub fehlt';
-    case 'requested':
-      return 'GitHub angefordert';
-    case 'validating':
-      return 'GitHub wird geprüft';
-    case 'ready':
-      return 'GitHub bereit';
-    case 'invalid':
-      return 'GitHub ungültig';
-  }
 }
 
 /**
@@ -152,6 +136,7 @@ export function SovereignStatusPanel({
   executorAvailable,
   openhandsConfigured,
   patchRouteAvailable,
+  repoReady,
   blockerCounts,
   customNextAction,
   compact = false,
@@ -172,8 +157,7 @@ export function SovereignStatusPanel({
   const hasBlockers = (blockerCounts?.activeBlockers ?? 0) > 0;
   const mainColor = statusColor(hasErrors, hasWarnings, hasBlockers);
 
-  // Determine overall readiness based on sub-components
-  const repoReady = true; // Would come from runtime in real usage
+  // Determine overall readiness based on sub-components (from runtime state)
   const githubReady = githubState === 'ready';
   const patchReady = patchRouteAvailable;
   const draftPrMissing = !githubReady || !patchReady;

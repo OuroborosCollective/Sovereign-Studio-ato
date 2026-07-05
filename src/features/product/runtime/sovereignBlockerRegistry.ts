@@ -129,7 +129,6 @@ export function registerBlocker(
 
   if (existingIndex >= 0) {
     // Update existing blocker - increment occurrences
-    const existing = state.blockers[existingIndex];
     updatedBlockers = state.blockers.map((b, i) =>
       i === existingIndex
         ? {
