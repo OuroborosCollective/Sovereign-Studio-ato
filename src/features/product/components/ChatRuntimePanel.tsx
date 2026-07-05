@@ -181,6 +181,22 @@ export function ChatRuntimePanel({
   const [isProcessing, setIsProcessing] = useState(false);
   const [exitState, setExitState] = useState<ChatExitState | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (scrollRef.current) {
+      const node = scrollRef.current;
+      if (typeof node.scrollTo === 'function') {
+        node.scrollTo({
+          top: node.scrollHeight,
+          behavior: 'smooth'
+        });
+      } else {
+        node.scrollTop = node.scrollHeight;
+      }
+    }
+  }, [messages, isProcessing]);
 
   // Connect to Runtime Model Health
   const {
@@ -352,7 +368,10 @@ export function ChatRuntimePanel({
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+        >
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Bot className="w-12 h-12 text-slate-600 mb-4" />

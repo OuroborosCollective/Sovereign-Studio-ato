@@ -198,6 +198,9 @@ export function determineTaskComplexity(
 
 /**
  * Check what blockers exist based on runtime state.
+ * Only "ready" allows write actions.
+ * "requested" and "validating" get github_access_validating blocker.
+ * "missing" and "invalid" get github_access_missing blocker.
  */
 export function detectBlockers(input: CapabilityRouterInput): SovereignRouteBlocker[] {
   const blockers: SovereignRouteBlocker[] = [];
@@ -206,12 +209,15 @@ export function detectBlockers(input: CapabilityRouterInput): SovereignRouteBloc
     blockers.push('repo_missing');
   }
 
-  if (input.githubAccessState === 'missing' || input.githubAccessState === 'invalid') {
-    blockers.push('github_access_missing');
-  }
-
-  if (input.githubAccessState === 'validating') {
+  // Only "ready" allows write actions
+  if (input.githubAccessState === 'ready') {
+    // GitHub is ready - no blocker from GitHub
+  } else if (input.githubAccessState === 'validating' || input.githubAccessState === 'requested') {
+    // Both validating and requested block write actions
     blockers.push('github_access_validating');
+  } else {
+    // missing or invalid
+    blockers.push('github_access_missing');
   }
 
   if (!input.openhandsReady && !input.directGitHubPatchReady && !input.workspaceReady) {
@@ -335,6 +341,7 @@ export function decideSovereignCapabilityRoute(
       allowed: true,
       reason: buildReason('local-runtime-answer', 'free_chat'),
       nextAction: 'show_blocker',
+      isTerminal: true,
     };
   }
 
@@ -382,6 +389,7 @@ export function decideSovereignCapabilityRoute(
 
   // ─── DRAFT PR ───
   if (intent === 'draft_pr') {
+    // Package gate: Draft PR requires a generated package - keep this blocker terminal
     if (!input.hasPackage) {
       return {
         route: 'draft-pr-runtime',
@@ -393,6 +401,7 @@ export function decideSovereignCapabilityRoute(
       };
     }
 
+    // Check GitHub access blockers first - these always block Draft PR
     if (blockers.includes('github_access_missing')) {
       return {
         route: 'draft-pr-runtime',
@@ -415,7 +424,7 @@ export function decideSovereignCapabilityRoute(
       };
     }
 
-    // GitHub ready - route to executor for PR creation
+    // Check executor readiness - if available, allow Draft PR
     if (input.openhandsReady) {
       return {
         route: 'openhands',
@@ -534,6 +543,29 @@ export function decideSovereignCapabilityRoute(
 
   // ─── CODE GENERATION ───
   if (intent === 'code_generation') {
+    // Check GitHub access first - write actions require GitHub
+    if (blockers.includes('github_access_validating')) {
+      return {
+        route: 'openhands',
+        capability: 'code_patch_plan',
+        allowed: false,
+        reason: buildReason('openhands', 'code_patch_plan', 'github_access_validating'),
+        blocker: 'github_access_validating',
+        nextAction: 'show_blocker',
+      };
+    }
+
+    if (blockers.includes('github_access_missing')) {
+      return {
+        route: 'openhands',
+        capability: 'code_patch_plan',
+        allowed: false,
+        reason: buildReason('openhands', 'code_patch_plan', 'github_access_missing'),
+        blocker: 'github_access_missing',
+        nextAction: 'validate_github_access',
+      };
+    }
+
     // Complex work requires workspace
     if (complexity === 'complex') {
       if (input.workspaceReady) {
@@ -628,12 +660,25 @@ export function decideSovereignCapabilityRoute(
  * Build an action event for the Sovereign Action Stream.
  * Every decision must produce an ActionEvent.
  * Returns a plain object compatible with SovereignActionEventInput.
+ * 
+ * Terminal decisions (isTerminal=true, local-runtime-answer) get state "done".
+ * Blocked decisions get state "blocked".
+ * Running decisions get state "running".
  */
 export function buildCapabilityRouteActionEvent(
   decision: CapabilityDecision,
   traceId: string,
   index: number,
-): { kind: 'route_selected' | 'capability_checked'; route: string; label: string; detail: string; state: 'running' | 'blocked' } {
+): { kind: 'route_selected' | 'capability_checked'; route: string; label: string; detail: string; state: 'running' | 'blocked' | 'done' } {
+  if (decision.isTerminal) {
+    return {
+      kind: 'route_selected',
+      route: decision.route,
+      label: 'Route gewählt',
+      detail: decision.reason,
+      state: 'done',
+    };
+  }
   return {
     kind: 'route_selected',
     route: decision.route,

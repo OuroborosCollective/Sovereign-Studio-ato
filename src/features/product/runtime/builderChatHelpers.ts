@@ -99,6 +99,35 @@ const LOCAL_STATUS_QUESTION_TOKENS = [
   "wo ist der patch",
   "warum passiert nichts",
   "was ist der status",
+  "arbeitet er schon",
+  "läuft das",
+  "läuft er",
+  "was macht er",
+  "hat er angefangen",
+  "ist er gestartet",
+  "macht er was",
+  "tut er was",
+  "passiert etwas",
+  "passiert gerade",
+  "fertig?",
+  "complete?",
+];
+
+/**
+ * Tokens that ask if OpenHands has STARTED (not if it's done).
+ * For these questions, "Ja, OpenHands läuft" is the expected answer.
+ */
+const STARTUP_QUESTION_TOKENS = [
+  "arbeitet er schon",
+  "läuft das",
+  "läuft er",
+  "was macht er",
+  "hat er angefangen",
+  "ist er gestartet",
+  "macht er was",
+  "tut er was",
+  "passiert etwas",
+  "passiert gerade",
 ];
 
 /**
@@ -111,6 +140,14 @@ export function isLocalCompletionStatusQuestion(text: string): boolean {
   return LOCAL_STATUS_QUESTION_TOKENS.some((token) => lower.includes(token));
 }
 
+/**
+ * Detects if the question is asking if OpenHands has STARTED (not if it's done).
+ */
+export function isStartupQuestion(text: string): boolean {
+  const lower = text.toLowerCase();
+  return STARTUP_QUESTION_TOKENS.some((token) => lower.includes(token));
+}
+
 export interface LocalStatusAnswerArgs {
   readonly githubWriteAllowed: boolean;
   readonly githubAccessState?: string;
@@ -121,15 +158,28 @@ export interface LocalStatusAnswerArgs {
   readonly hasWorkerResponse: boolean;
   readonly workerBlocker?: WorkerRuntimeBlocker | null;
   readonly buildWorkerBlockerAnswer?: () => string;
+  /** Optional question text to determine if this is a startup question */
+  readonly questionText?: string;
 }
 
 /**
  * Builds a truthful, German, local answer for a completion-status question
  * from real runtime state. Never fabricates success. Priority order:
- * draft PR ready > patch generated > OpenHands running > worker blocked >
- * GitHub access missing > worker-answer-only > nothing happened yet.
+ * - For startup questions ("arbeitet er schon?", ...): OpenHands running status first
+ * - For completion questions: draft PR ready > patch generated > OpenHands running
+ * - Then: worker blocked > GitHub access missing > worker-answer-only > nothing happened yet
+ *
+ * For startup questions ("arbeitet er schon?", "läuft er?", ...), returns
+ * "Ja, OpenHands läuft" when OpenHands is running. For completion questions
+ * ("ist er fertig?", "bist du fertig?", ...), returns "Noch nicht..." when
+ * OpenHands is still running.
  */
 export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
+  // Startup questions get priority: "Is OpenHands running?" must answer that directly
+  if (args.questionText && isStartupQuestion(args.questionText) && args.openhandsRunning) {
+    return "Ja, OpenHands läuft.";
+  }
+
   if (args.draftPrUrl) {
     return `Ja, Draft PR ist bereit: ${args.draftPrUrl}`;
   }

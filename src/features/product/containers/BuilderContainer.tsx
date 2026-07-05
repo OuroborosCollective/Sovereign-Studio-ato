@@ -3559,7 +3559,82 @@ export function BuilderContainer({
     });
 
     // Log routing decision for telemetry
-    addLog("info", `Capability Router: route=${capabilityDecision.route} capability=${capabilityDecision.capability} allowed=${capabilityDecision.allowed}`, "router");
+    addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
+
+    // ── Issue #502: Blocked capability decisions stop legacy routing
+    // BUT: Some cases must let legacy flow handle them:
+    // - Worker retry (retry/nochmal) should clear blocker and retry
+    // - Repo-first: no repo + no GitHub → tell user to load repo first
+    // - Legacy fallback: unrecognized intents → Worker handles them
+    if (!capabilityDecision.allowed) {
+      // P1: Worker retry should bypass blocking - let legacy handle it
+      if (isWorkerRetryIntent(submittedText) && workerBlocker) {
+        setWorkerBlocker(null);
+        addLog("info", "Capability Router: worker retry bypasses blocked decision", "router");
+        // Continue to legacy retry flow below
+      }
+      // P1: Repo-first when no repo loaded - GitHub access needs a repo to validate against
+      else if (capabilityDecision.blocker === 'github_access_missing' && !effectiveRepoReady) {
+        appendChatLine({
+          role: 'assistant',
+          text: 'Route blockiert: GitHub-Zugang erfordert ein geladenes Repository.\nBitte zuerst GitHub-Repo-Link senden.',
+        });
+        addLog("warn", "Capability Router blocked: repo-first needed before GitHub access", "router");
+        return;
+      }
+      // P2: Legacy Worker fallback for unrecognized intents
+      else if (capabilityDecision.blocker === 'unsupported_intent') {
+        addLog("info", "Capability Router: unsupported intent, falling through to legacy Worker", "router");
+        // Continue to legacy Worker/executor flow below
+      }
+      // Default: Block with clear message
+      else {
+        const blockerMessage = capabilityDecision.blocker
+          ? `Route blockiert: ${capabilityDecision.reason}`
+          : `Auftrag nicht erlaubt: ${capabilityDecision.reason}`;
+        appendChatLine({
+          role: 'assistant',
+          text: blockerMessage,
+        });
+        addLog("warn", `Capability Router blocked: ${capabilityDecision.route} - ${capabilityDecision.reason}`, "router");
+        return;
+      }
+    }
+
+    // ── Issue #502: Terminal decisions (like local-runtime-answer) stop routing
+    // These are completed immediately - no Worker/executor calls needed.
+    // BUT: local-runtime-answer must still produce an assistant chat line!
+    if (capabilityDecision.isTerminal) {
+      if (capabilityDecision.route === 'local-runtime-answer') {
+        // Build and append the local status answer BEFORE returning
+        // #500: Pass questionText to enable correct startup vs completion question differentiation
+        const statusAnswer = buildLocalStatusAnswer({
+          githubWriteAllowed,
+          githubAccessState: githubAccessState.state,
+          writeIntentBlockedByRepo: !effectiveRepoReady,
+          openhandsRunning: openhandsJob?.status === 'running',
+          draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+          hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+          workerBlocker,
+          buildWorkerBlockerAnswer: workerBlocker
+            ? () =>
+                buildWorkerBlockerAnswer({
+                  blocker: workerBlocker,
+                  repoReady: effectiveRepoReady,
+                  chatRepoSnapshot,
+                  openhandsReady,
+                })
+            : undefined,
+          questionText: submittedText,
+        });
+        appendChatLine({ role: 'assistant', text: statusAnswer });
+        addLog('info', 'Capability Router: local-runtime-answer terminal decision completed', 'router');
+        return;
+      }
+      addLog("info", `Capability Router: terminal decision (${String(capabilityDecision.route)}), routing complete`, "router");
+      return;
+    }
 
     const parsedRepo = parseDevChatGithubUrl(submittedText);
     if (parsedRepo) {
@@ -3635,6 +3710,7 @@ export function BuilderContainer({
                 openhandsReady,
               })
           : undefined,
+        questionText: submittedText,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
       addLog('info', 'Local completion-status question answered locally', 'router');
