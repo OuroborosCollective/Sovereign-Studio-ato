@@ -500,6 +500,117 @@ def admin_update_launcher_tool(tid):
     return jsonify({"ok": True})
 
 
+# ── Toolchain Tools ───────────────────────────────────────────────────────────
+
+@app.route("/api/admin/toolchain/tools")
+@require_admin
+def admin_toolchain_tools():
+    """List all toolchain tools from database."""
+    rows = query(
+        """SELECT id::text, name, description, input_schema,
+                  enabled, write_action, requires_confirm,
+                  sort_order
+           FROM toolchain_tools
+           ORDER BY sort_order ASC"""
+    )
+    return jsonify({
+        "tools": [{
+            "id": r["id"],
+            "name": r["name"],
+            "description": r["description"],
+            "inputSchema": r["input_schema"],
+            "enabled": r["enabled"],
+            "writeAction": r["write_action"],
+            "requiresConfirm": r["requires_confirm"],
+            "sortOrder": r["sort_order"]
+        } for r in rows]
+    })
+
+
+@app.route("/api/admin/toolchain/tools", methods=["POST"])
+@require_admin
+def admin_create_toolchain_tool():
+    """Create a new toolchain tool."""
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Name ist erforderlich"}), 400
+
+    # Check if already exists
+    existing = query(
+        "SELECT id FROM toolchain_tools WHERE name = %s",
+        (name,), one=True
+    )
+    if existing:
+        return jsonify({"error": f"Tool '{name}' existiert bereits"}), 409
+
+    description = body.get("description", "")
+    input_schema = body.get("inputSchema") or {}
+    enabled = body.get("enabled", True)
+    write_action = body.get("writeAction", False)
+    requires_confirm = body.get("requiresConfirm", False)
+    sort_order = body.get("sortOrder", 0)
+
+    row = query(
+        """INSERT INTO toolchain_tools
+              (name, description, input_schema, enabled, write_action, requires_confirm, sort_order)
+           VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s)
+           RETURNING id::text""",
+        (name, description, json.dumps(input_schema), enabled, write_action, requires_confirm, sort_order),
+        one=True, write=True
+    )
+    audit("admin_create_toolchain_tool", row["id"], body)
+    return jsonify({"ok": True, "id": row["id"]}), 201
+
+
+@app.route("/api/admin/toolchain/tools/<tid>", methods=["PATCH"])
+@require_admin
+def admin_update_toolchain_tool(tid):
+    """Update a toolchain tool."""
+    body = request.get_json(force=True) or {}
+    col_map = {
+        "name": "name",
+        "description": "description",
+        "inputSchema": "input_schema",
+        "enabled": "enabled",
+        "writeAction": "write_action",
+        "requiresConfirm": "requires_confirm",
+        "sortOrder": "sort_order",
+    }
+    sets, vals = [], []
+    for k, v in body.items():
+        if k in col_map:
+            sets.append(f"{col_map[k]} = %s")
+            if k == "inputSchema":
+                vals.append(json.dumps(v))
+            else:
+                vals.append(v)
+    if not sets:
+        return jsonify({"error": "Keine Felder"}), 400
+    sets.append("updated_at = NOW()")
+    vals.append(tid)
+    query(
+        f"UPDATE toolchain_tools SET {', '.join(sets)} WHERE id = %s::uuid",
+        vals, write=True,
+    )
+    audit("admin_update_toolchain_tool", tid, body)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/toolchain/tools/<tid>", methods=["DELETE"])
+@require_admin
+def admin_delete_toolchain_tool(tid):
+    """Delete a toolchain tool."""
+    row = query(
+        "DELETE FROM toolchain_tools WHERE id = %s::uuid RETURNING id",
+        (tid,), one=True, write=True
+    )
+    if not row:
+        return jsonify({"error": "Tool nicht gefunden"}), 404
+    audit("admin_delete_toolchain_tool", tid, {"deleted": True})
+    return jsonify({"ok": True})
+
+
 # ── LLM routes ────────────────────────────────────────────────────────────────
 
 @app.route("/api/admin/llm/routes")
@@ -4081,9 +4192,16 @@ async function loadTools(){
   const el = document.getElementById('toolsList');
   el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
   try {
-    const r = await fetch(BASE+'/api/admin/launcher/tools',{headers:hdr()});
-    const d = await r.json();
-    renderTools(d);
+    const [launcherRes, toolchainRes] = await Promise.all([
+      fetch(BASE+'/api/admin/launcher/tools',{headers:hdr()}),
+      fetch(BASE+'/api/toolchain/universal/manifest',{headers:hdr()}).catch(()=>null)
+    ]);
+    const launcherData = await launcherRes.json();
+    let toolchainData = null;
+    if (toolchainRes && toolchainRes.ok !== false) {
+      toolchainData = await toolchainRes.json();
+    }
+    renderTools(launcherData, toolchainData);
   } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
 }
 
@@ -4363,12 +4481,48 @@ def utc_status():
 
 @app.route("/api/toolchain/universal/manifest")
 def utc_manifest():
-    """Return the tool manifest from the universal toolchain (public)."""
+    """Return combined tool manifest: toolchain service + database tools (public)."""
+    all_tools = []
+
+    # 1. Get tools from toolchain service
     try:
-        data = _utc_request("GET", "/api/v1/manifest")
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
+        service_data = _utc_request("GET", "/api/v1/manifest")
+        if service_data and "tools" in service_data:
+            all_tools.extend(service_data["tools"])
+    except Exception:
+        pass  # Service might be unavailable, continue with DB tools
+
+    # 2. Get enabled custom tools from database
+    try:
+        db_tools = query(
+            """SELECT name, description, input_schema, enabled,
+                      write_action, requires_confirm
+               FROM toolchain_tools
+               WHERE enabled = true
+               ORDER BY sort_order ASC"""
+        )
+        for t in db_tools:
+            # Check if tool already exists from service
+            exists = any(st.get("name") == t["name"] for st in all_tools)
+            if not exists:
+                all_tools.append({
+                    "name": t["name"],
+                    "description": t["description"] or "",
+                    "input_schema": t["input_schema"] or {},
+                    "write_action": t["write_action"],
+                    "requires_confirm": t["requires_confirm"],
+                })
+    except Exception:
+        pass  # DB might be unavailable
+
+    return jsonify({
+        "name": "Sovereign Universal Toolchain",
+        "tools": all_tools,
+        "sources": {
+            "service": "sovereign-universal-toolchain",
+            "database": "toolchain_tools"
+        }
+    })
 
 
 @app.route("/api/toolchain/universal/briefing")

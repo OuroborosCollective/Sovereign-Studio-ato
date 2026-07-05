@@ -303,4 +303,57 @@ export const adminApiClient = {
       project_profile: unknown;
     }>('/api/toolchain/universal/briefing');
   },
+
+  // ── Toolchain Tools (Admin) ──────────────────────────────────────────────
+
+  getToolchainTools() {
+    return req<{
+      tools: Array<{
+        id: string;
+        name: string;
+        description: string;
+        inputSchema: unknown;
+        enabled: boolean;
+        writeAction: boolean;
+        requiresConfirm: boolean;
+        sortOrder: number;
+      }>;
+    }>('/api/admin/toolchain/tools');
+  },
+
+  createToolchainTool(data: {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+    enabled?: boolean;
+    writeAction?: boolean;
+    requiresConfirm?: boolean;
+    sortOrder?: number;
+  }) {
+    return req<{ ok: boolean; id: string }>('/api/admin/toolchain/tools', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateToolchainTool(id: string, changes: Partial<{
+    name: string;
+    description: string;
+    inputSchema: unknown;
+    enabled: boolean;
+    writeAction: boolean;
+    requiresConfirm: boolean;
+    sortOrder: number;
+  }>) {
+    return req<{ ok: boolean }>(`/api/admin/toolchain/tools/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    });
+  },
+
+  deleteToolchainTool(id: string) {
+    return req<{ ok: boolean }>(`/api/admin/toolchain/tools/${id}`, {
+      method: 'DELETE',
+    });
+  },
 } as const;

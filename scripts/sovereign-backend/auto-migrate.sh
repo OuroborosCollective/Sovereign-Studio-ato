@@ -189,6 +189,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_launcher_overrides_tool_id ON launcher_ove
 "
 
 # =============================================================================
+# Migration: toolchain_tools table
+# =============================================================================
+echo "[INFO] Checking toolchain_tools table..."
+
+run_sql "
+CREATE TABLE IF NOT EXISTS toolchain_tools (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            TEXT NOT NULL UNIQUE,
+    description     TEXT,
+    input_schema    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    enabled         BOOLEAN NOT NULL DEFAULT true,
+    write_action    BOOLEAN NOT NULL DEFAULT false,
+    requires_confirm BOOLEAN NOT NULL DEFAULT false,
+    sort_order      INTEGER NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_toolchain_tools_enabled ON toolchain_tools(enabled);
+CREATE INDEX IF NOT EXISTS idx_toolchain_tools_sort_order ON toolchain_tools(sort_order);
+"
+
+# Insert default toolchain tools if table is empty
+run_sql "
+INSERT INTO toolchain_tools (name, description, enabled, write_action, requires_confirm, sort_order) VALUES
+    ('github_apply_search_replace_pr', 'Create a Draft PR via GitHub', true, true, true, 1),
+    ('apply_patch_worker', 'Apply patch via Sovereign Worker', true, true, true, 2),
+    ('toolchain_briefing', 'Get project briefing for agents', true, false, false, 3),
+    ('list_archive_files', 'List files in Studio/Sandbox archives', true, false, false, 4),
+    ('read_archive_text', 'Read text file from archives', true, false, false, 5),
+    ('github_read_file', 'Read GitHub file via Contents API', true, false, false, 6),
+    ('make_patch_payload', 'Create Sovereign Patch Worker payload', true, false, false, 7),
+    ('plan_sandbox_commands', 'Plan sandbox commands (no execution)', true, false, false, 8),
+    ('preview_search_replace', 'Preview SEARCH/REPLACE blocks', true, false, false, 9),
+    ('apply_backend_guardrails_patch_pr', 'Apply backend guardrails patch', true, true, true, 10)
+ON CONFLICT (name) DO NOTHING;
+"
+
+# =============================================================================
 # Migration: audit_log table
 # =============================================================================
 echo "[INFO] Checking audit_log table..."
