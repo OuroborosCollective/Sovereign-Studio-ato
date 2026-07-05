@@ -75,19 +75,17 @@ install_dependencies() {
 restart_service() {
     log_info "Restarting ${SERVICE_NAME} service..."
     
-    # Try different service management approaches
+    # Stop any existing process on the port
     ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "\
-        if command -v systemctl &> /dev/null; then \
-            systemctl restart ${SERVICE_NAME} || true; \
-        fi; \
-        if command -v service &> /dev/null; then \
-            service ${SERVICE_NAME} restart 2>/dev/null || true; \
-        fi; \
-        # Fallback: kill and restart manually
+        # Kill existing gunicorn/python processes
+        pkill -f 'gunicorn.*app:app' 2>/dev/null || true; \
         pkill -f 'python.*app.py' 2>/dev/null || true; \
         sleep 2; \
+        # Ensure config directory exists
+        mkdir -p /opt/sovereign/config; \
+        # Start with Gunicorn (production)
         cd ${REPO_PATH} && \
-        nohup python3 app.py > /var/log/${SERVICE_NAME}.log 2>&1 &"
+        nohup gunicorn -w 4 -b 0.0.0.0:${BACKEND_PORT} --timeout 60 --access-logfile /var/log/${SERVICE_NAME}_access.log --error-logfile /var/log/${SERVICE_NAME}_error.log app:app > /var/log/${SERVICE_NAME}_startup.log 2>&1 &"
 }
 
 check_service() {

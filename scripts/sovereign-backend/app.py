@@ -87,18 +87,55 @@ def query(sql: str, params=None, *, one=False, write=False):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+# Cache for current admin (set by require_admin)
+_current_admin: dict | None = None
+
+
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        global _current_admin
         # Fail-closed: if ADMIN_API_KEY is unset/empty, always deny.
         if not ADMIN_API_KEY:
             return jsonify({"error": "Admin-Schlüssel nicht konfiguriert"}), 503
         auth = request.headers.get("Authorization", "")
         token = auth[7:] if auth.startswith("Bearer ") else ""
         if not token or token != ADMIN_API_KEY:
+            _current_admin = None
             return jsonify({"error": "Nicht autorisiert"}), 401
+        
+        # Look up the admin associated with this API key
+        key_hash = hashlib.sha256(token.encode()).hexdigest()
+        admin = query(
+            """SELECT a.id, a.email, a.role 
+               FROM admin_users a
+               JOIN admin_api_keys k ON k.admin_id = a.id
+               WHERE k.key_hash = %s AND a.role IN ('admin','superadmin')
+               LIMIT 1""",
+            (key_hash,), one=True,
+        )
+        
+        # Fallback: if no key mapping exists, deny (don't use first admin)
+        if not admin:
+            _current_admin = None
+            return jsonify({
+                "error": "API-Key keinem Admin zugeordnet",
+                "hint": "Admin muss sich einmalig mit dem Key anmelden"
+            }), 401
+        
+        _current_admin = {
+            "id": str(admin["id"]),
+            "email": admin["email"],
+            "role": admin["role"],
+        }
         return f(*args, **kwargs)
     return decorated
+
+
+def get_current_admin() -> dict | None:
+    """Get the currently authenticated admin from the request context."""
+    global _current_admin
+    return _current_admin
 
 
 # ── Pagination helper ─────────────────────────────────────────────────────────
@@ -119,14 +156,17 @@ def paginate(page_raw, limit_raw, default_limit=50):
 # ── Audit helper ──────────────────────────────────────────────────────────────
 
 def audit(action: str, target_id: str | None, changes: dict):
-    auth = request.headers.get("Authorization", "")
-    key  = auth[7:] if auth.startswith("Bearer ") else ""
-    admin = query(
-        "SELECT id, email FROM admin_users WHERE role IN ('admin','superadmin') LIMIT 1",
-        one=True,
-    )
-    admin_id    = str(admin["id"])    if admin else "system"
-    admin_email = admin["email"]       if admin else "system"
+    """Write an audit log entry with the REAL current admin actor."""
+    admin = get_current_admin()
+    
+    if admin:
+        admin_id = admin["id"]
+        admin_email = admin["email"]
+    else:
+        # System-initiated actions (e.g., from non-authenticated endpoints)
+        admin_id = "system"
+        admin_email = "system"
+    
     query(
         """INSERT INTO audit_log (admin_id, admin_email, action, target_id, changes)
            VALUES (%s, %s, %s, %s, %s::jsonb)""",
@@ -241,34 +281,77 @@ def admin_update_user(uid):
 @app.route("/api/admin/users/<uid>/credit-adjustment", methods=["POST"])
 @require_admin
 def admin_credit_adjustment(uid):
+    """
+    Credit adjustment via append-only ledger.
+    Amounts are ALWAYS recorded in the ledger with the real value.
+    Balance is computed from ledger entries, not stored directly.
+    """
     body   = request.get_json(force=True) or {}
     amount = body.get("amount", 0)
     reason = body.get("reason", "")
+    
     if not amount:
         return jsonify({"error": "amount darf nicht 0 sein"}), 400
     if not reason:
         return jsonify({"error": "reason fehlt"}), 400
 
-    query(
-        "UPDATE admin_users SET credits = GREATEST(0, credits + %s) WHERE id = %s::uuid",
-        (amount, uid), write=True,
-    )
+    # Get user info
     user = query(
-        "SELECT email FROM admin_users WHERE id = %s::uuid",
+        "SELECT id, email, credits FROM admin_users WHERE id = %s::uuid",
         (uid,), one=True,
     )
-    if user:
-        sign = "+" if amount > 0 else ""
-        desc = "Admin Credit-Anpassung: " + sign + str(amount) + " (" + reason + ")"
-        query(
-            """INSERT INTO transactions
-                  (user_id, user_email, type, amount, currency, status, description)
-               VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)""",
-            (uid, user["email"], "adjustment", 0, "EUR", "completed", desc),
-            write=True,
-        )
-    audit("admin_credit_adjustment", uid, {"amount": amount, "reason": reason})
-    return jsonify({"ok": True})
+    if not user:
+        return jsonify({"error": "User nicht gefunden"}), 404
+
+    # Create append-only ledger entry with the REAL amount
+    sign_desc = "+" if amount > 0 else ""
+    ledger_type = "manual_adjustment"
+    if amount > 0:
+        ledger_type = "bonus"
+    else:
+        ledger_type = "correction"
+    
+    ledger_desc = f"Admin {sign_desc}{amount}: {reason}"
+    
+    # Insert ledger entry with the ACTUAL amount (not 0!)
+    query(
+        """INSERT INTO credit_ledger
+              (user_id, type, amount, reason, created_by)
+           VALUES (%s::uuid, %s, %s, %s, %s)""",
+        (uid, ledger_type, amount, ledger_desc, get_current_admin()["id"]),
+        write=True,
+    )
+    
+    # Calculate new balance from ledger (append-only principle)
+    balance_row = query(
+        """SELECT COALESCE(SUM(amount), 0) as balance FROM credit_ledger WHERE user_id = %s::uuid""",
+        (uid,), one=True,
+    )
+    new_balance = max(0, int(balance_row["balance"]))
+    
+    # Update admin_users.credits as a CACHED value (for fast reads)
+    # The CACHE MUST be consistent with the ledger
+    query(
+        "UPDATE admin_users SET credits = %s WHERE id = %s::uuid",
+        (new_balance, uid), write=True,
+    )
+    
+    audit("admin_credit_adjustment", uid, {
+        "amount": amount,
+        "reason": reason,
+        "ledgerType": ledger_type,
+        "newBalance": new_balance,
+    })
+    
+    return jsonify({
+        "ok": True,
+        "newBalance": new_balance,
+        "ledgerEntry": {
+            "type": ledger_type,
+            "amount": amount,
+            "reason": ledger_desc,
+        }
+    })
 
 
 # ── Transactions ──────────────────────────────────────────────────────────────
@@ -441,7 +524,7 @@ def admin_audit_log():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# RUNTIME SETTINGS - Worker, BYOK, CORS (Persisted)
+# RUNTIME SETTINGS - Worker, BYOK, CORS (Persisted + Dynamic)
 # ═════════════════════════════════════════════════════════════════════════════
 
 import json as _json
@@ -509,6 +592,26 @@ def _mask_secrets(config: dict) -> dict:
     return masked
 
 
+def _update_cors_from_config():
+    """Update Flask-CORS middleware with current runtime config origins."""
+    global app
+    try:
+        from flask import Flask
+        # Rebuild CORS with current origins
+        origins = _RUNTIME_CONFIG.get("cors_origins", [])
+        if origins:
+            # Create new CORS instance with updated origins
+            from flask_cors import CORS
+            # Remove existing CORS
+            app.extensions = {k: v for k, v in app.extensions.items() if k != 'CORS'}
+            # Re-apply with new origins
+            CORS(app, origins=origins, supports_credentials=True)
+            return True
+    except Exception:
+        return False
+    return False
+
+
 @app.route("/api/admin/runtime/config")
 @require_admin
 def admin_runtime_config():
@@ -518,13 +621,14 @@ def admin_runtime_config():
         "config": _mask_secrets(_RUNTIME_CONFIG),
         "persisted": os.path.exists(_CONFIG_FILE),
         "configFile": _CONFIG_FILE,
+        "corsActive": True,  # Indicates if CORS is being applied from config
     })
 
 
 @app.route("/api/admin/runtime/config", methods=["PATCH"])
 @require_admin
 def admin_update_runtime_config():
-    """Update runtime configuration with validation and persistence."""
+    """Update runtime configuration with validation, persistence, and CORS update."""
     global _RUNTIME_CONFIG
     
     body = request.get_json(force=True) or {}
@@ -573,12 +677,28 @@ def admin_update_runtime_config():
             "persisted": False,
         }), 200
     
+    # ACTUALLY update CORS middleware if origins changed
+    cors_updated = False
+    if "cors_origins" in updates:
+        cors_updated = _update_cors_from_config()
+        if not cors_updated:
+            # Return warning but still succeed
+            audit("admin_update_runtime_config_cors_failed", None, updates)
+            return jsonify({
+                "ok": True,
+                "config": _mask_secrets(_RUNTIME_CONFIG),
+                "persisted": True,
+                "corsUpdated": False,
+                "corsWarning": "CORS-Middleware konnte nicht dynamisch aktualisiert werden. Server-Restart erforderlich."
+            })
+    
     audit("admin_update_runtime_config", None, updates)
     
     return jsonify({
         "ok": True,
         "config": _mask_secrets(_RUNTIME_CONFIG),
         "persisted": True,
+        "corsUpdated": cors_updated,
     })
 
 
@@ -678,6 +798,84 @@ def admin_runtime_health():
         "blockers": blockers,
         "configFile": _CONFIG_FILE,
         "configPersisted": os.path.exists(_CONFIG_FILE),
+    })
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ADMIN API KEYS TABLE (for audit trail)
+# ═════════════════════════════════════════════════════════════════════════════
+# Run this once to create the admin_api_keys table:
+#   CREATE TABLE IF NOT EXISTS admin_api_keys (
+#     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+#     admin_id UUID REFERENCES admin_users(id),
+#     key_hash TEXT UNIQUE NOT NULL,
+#     label TEXT,
+#     created_at TIMESTAMPTZ DEFAULT NOW(),
+#     last_used_at TIMESTAMPTZ
+#   );
+
+# Admin API key management endpoints
+@app.route("/api/admin/api-keys", methods=["GET"])
+@require_admin
+def admin_list_api_keys():
+    """List all API keys for the current admin."""
+    admin = get_current_admin()
+    if not admin:
+        return jsonify({"error": "Nicht autorisiert"}), 401
+    
+    keys = query(
+        """SELECT id::text, label, key_hash, created_at, last_used_at
+           FROM admin_api_keys WHERE admin_id = %s::uuid
+           ORDER BY created_at DESC""",
+        (admin["id"],),
+    )
+    return jsonify({
+        "keys": [
+            {
+                "id": k["id"],
+                "label": k["label"],
+                "keyHint": k["key_hash"][:8] + "...",  # Only show hint
+                "createdAt": k["created_at"],
+                "lastUsedAt": k["last_used_at"],
+            }
+            for k in keys
+        ]
+    })
+
+
+@app.route("/api/admin/api-keys", methods=["POST"])
+@require_admin
+def admin_create_api_key():
+    """Create a new API key for the current admin. Returns the raw key ONCE."""
+    import secrets
+    
+    admin = get_current_admin()
+    if not admin:
+        return jsonify({"error": "Nicht autorisiert"}), 401
+    
+    body = request.get_json(force=True) or {}
+    label = body.get("label", "Admin Key")
+    
+    # Generate a secure random key
+    raw_key = secrets.token_urlsafe(32)
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    
+    # Store the hash, not the key
+    query(
+        """INSERT INTO admin_api_keys (admin_id, key_hash, label)
+           VALUES (%s::uuid, %s, %s)""",
+        (admin["id"], key_hash, label),
+        write=True,
+    )
+    
+    audit("admin_create_api_key", None, {"label": label})
+    
+    # Return the RAW key ONCE - it cannot be recovered!
+    return jsonify({
+        "ok": True,
+        "key": raw_key,  # Only returned ONCE at creation
+        "keyHint": key_hash[:8] + "...",
+        "warning": "Speichere diesen Key sicher. Er wird nie wieder angezeigt!"
     })
 
 
@@ -823,17 +1021,36 @@ def admin_tool_healthcheck(tid):
     error_message = None
     
     try:
-        # Built-in tools that don't need HTTP health checks
-        builtin_tools = ["OpenHands", "Code Editor", "Terminal", "Git", "File Browser"]
+        # Special handling for OpenHands - must actually check if it's reachable
+        if label == "OpenHands":
+            # Check if OpenHands API is reachable
+            oh_url = os.getenv("OPENHANDS_API_URL", "http://127.0.0.1:3000")
+            try:
+                start_time = time.time()
+                resp = requests.get(f"{oh_url.rstrip('/')}/api/agents", timeout=10)
+                response_time_ms = int((time.time() - start_time) * 1000)
+                if resp.status_code < 500:
+                    health_status = "healthy"
+                else:
+                    health_status = "degraded"
+                    blocker = "openhands_unreachable"
+                    error_message = f"OpenHands returned HTTP {resp.status_code}"
+            except requests.exceptions.Timeout:
+                health_status = "degraded"
+                blocker = "timeout"
+                error_message = "OpenHands antwortet nicht"
+            except requests.exceptions.ConnectionError:
+                health_status = "degraded"
+                blocker = "connection_error"
+                error_message = "OpenHands nicht erreichbar"
         
-        if label in builtin_tools:
-            health_status = "healthy"
         elif not base_url:
+            # For non-OpenHands tools without URL, mark as unknown
             health_status = "unknown"
             blocker = "missing_base_url"
+        
         else:
             # Perform actual HTTP health check
-            # Try common health endpoints
             health_paths = ["/health", "/api/health", "/status", "/api/status", ""]
             timeout = 10
             
@@ -1088,10 +1305,6 @@ def cancel_job(job_id):
             "stage": "openhands", "message": "Cancelled by user",
         })
         return jsonify(jobs[job_id])
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8787, debug=False)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -4159,3 +4372,21 @@ def utc_invoke():
         return jsonify({"ok": False, "error": str(e)}), 502
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═════════════════════════════════════════════════════════════════════════════
+# NOTE: This must be at the END of the file!
+# Routes defined after this block will NOT be registered when running directly.
+# For production, use gunicorn: gunicorn -w 4 -b 0.0.0.0:8787 app:app
+if __name__ == "__main__":
+    # Validate required tables exist before starting
+    try:
+        query("SELECT 1", one=True)
+    except Exception as e:
+        print(f"[WARN] Database connection failed: {e}")
+        print("[WARN] Starting anyway - routes may fail if DB is required.")
+    
+    app.run(host="0.0.0.0", port=8787, debug=False)
+
