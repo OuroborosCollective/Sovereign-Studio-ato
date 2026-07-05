@@ -5,7 +5,7 @@
  * Covers acceptance criteria from Issue #503.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   SovereignWorkspaceRuntime,
   createMockWorkspaceAdapter,
