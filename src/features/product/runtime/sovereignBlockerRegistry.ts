@@ -233,7 +233,7 @@ export function deriveBlockerNextAction(args: {
   }
 
   // GitHub is missing
-  if (!githubReady && !githubValidating) {
+  if (!githubReady) {
     return 'Sicheren GitHub-Zugang öffnen.';
   }
 
