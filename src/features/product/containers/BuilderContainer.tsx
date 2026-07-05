@@ -3607,6 +3607,7 @@ export function BuilderContainer({
     if (capabilityDecision.isTerminal) {
       if (capabilityDecision.route === 'local-runtime-answer') {
         // Build and append the local status answer BEFORE returning
+        // #500: Pass questionText to enable correct startup vs completion question differentiation
         const statusAnswer = buildLocalStatusAnswer({
           githubWriteAllowed,
           githubAccessState: githubAccessState.state,
@@ -3625,6 +3626,7 @@ export function BuilderContainer({
                   openhandsReady,
                 })
             : undefined,
+          questionText: submittedText,
         });
         appendChatLine({ role: 'assistant', text: statusAnswer });
         addLog('info', 'Capability Router: local-runtime-answer terminal decision completed', 'router');

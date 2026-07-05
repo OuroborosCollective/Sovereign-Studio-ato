@@ -165,8 +165,9 @@ export interface LocalStatusAnswerArgs {
 /**
  * Builds a truthful, German, local answer for a completion-status question
  * from real runtime state. Never fabricates success. Priority order:
- * draft PR ready > patch generated > OpenHands running > worker blocked >
- * GitHub access missing > worker-answer-only > nothing happened yet.
+ * - For startup questions ("arbeitet er schon?", ...): OpenHands running status first
+ * - For completion questions: draft PR ready > patch generated > OpenHands running
+ * - Then: worker blocked > GitHub access missing > worker-answer-only > nothing happened yet
  *
  * For startup questions ("arbeitet er schon?", "läuft er?", ...), returns
  * "Ja, OpenHands läuft" when OpenHands is running. For completion questions
@@ -174,6 +175,11 @@ export interface LocalStatusAnswerArgs {
  * OpenHands is still running.
  */
 export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
+  // Startup questions get priority: "Is OpenHands running?" must answer that directly
+  if (args.questionText && isStartupQuestion(args.questionText) && args.openhandsRunning) {
+    return "Ja, OpenHands läuft.";
+  }
+
   if (args.draftPrUrl) {
     return `Ja, Draft PR ist bereit: ${args.draftPrUrl}`;
   }
@@ -181,11 +187,6 @@ export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
     return "Ja, ein Patch/Diff wurde erzeugt. Draft PR steht noch aus.";
   }
   if (args.openhandsRunning) {
-    // Differentiate between startup questions ("hat es angefangen?") and completion questions ("ist es fertig?")
-    const isStartup = args.questionText ? isStartupQuestion(args.questionText) : false;
-    if (isStartup) {
-      return "Ja, OpenHands läuft.";
-    }
     return "Noch nicht. OpenHands arbeitet noch.";
   }
   if (args.workerBlocker) {

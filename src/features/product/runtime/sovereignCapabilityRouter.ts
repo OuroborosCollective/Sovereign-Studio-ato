@@ -389,6 +389,7 @@ export function decideSovereignCapabilityRoute(
 
   // ─── DRAFT PR ───
   if (intent === 'draft_pr') {
+    // Package gate: Draft PR requires a generated package - keep this blocker terminal
     if (!input.hasPackage) {
       return {
         route: 'draft-pr-runtime',
@@ -400,6 +401,7 @@ export function decideSovereignCapabilityRoute(
       };
     }
 
+    // Check GitHub access blockers first - these always block Draft PR
     if (blockers.includes('github_access_missing')) {
       return {
         route: 'draft-pr-runtime',
@@ -422,7 +424,7 @@ export function decideSovereignCapabilityRoute(
       };
     }
 
-    // GitHub ready - route to executor for PR creation
+    // Check executor readiness - if available, allow Draft PR
     if (input.openhandsReady) {
       return {
         route: 'openhands',
