@@ -271,4 +271,36 @@ export const adminApiClient = {
       },
     );
   },
+
+  // ── Toolchain (universal) ────────────────────────────────────────────────
+
+  toolchainManifest() {
+    return req<{
+      name: string;
+      tools: Array<{
+        name: string;
+        description: string;
+        write_action: boolean;
+        requires_confirm?: boolean;
+        input_schema: unknown;
+      }>;
+    }>('/api/toolchain/universal/manifest');
+  },
+
+  toolchainStatus() {
+    return req<{
+      ok: boolean;
+      name: string;
+      proxy_via: string;
+    }>('/api/toolchain/universal/status');
+  },
+
+  toolchainBriefing() {
+    return req<{
+      name: string;
+      interfaces: string[];
+      default_write_policy: unknown;
+      project_profile: unknown;
+    }>('/api/toolchain/universal/briefing');
+  },
 } as const;
