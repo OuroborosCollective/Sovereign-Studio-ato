@@ -653,4 +653,160 @@ describe('Action event creation', () => {
     expect(event.state).toBe('blocked');
     expect(event.route).toBe('direct-github-patch');
   });
+
+  it('should create done event for terminal decisions (local-runtime-answer)', () => {
+    const decision: CapabilityDecision = {
+      route: 'local-runtime-answer',
+      capability: 'free_chat',
+      allowed: true,
+      reason: 'Local answer',
+      nextAction: 'show_blocker',
+      isTerminal: true,
+    };
+
+    const event = buildCapabilityRouteActionEvent(decision, 'trace-1', 0);
+
+    expect(event.state).toBe('done');
+    expect(event.route).toBe('local-runtime-answer');
+    expect(event.detail).toContain('Local answer');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// TEST: githubAccessState "requested" is treated as not-ready
+// ─────────────────────────────────────────────────────────────
+
+describe('GitHub Access State "requested" blocks write routes', () => {
+  // Note: When githubAccessState is 'requested', directGitHubPatchReady must be false
+  // because write actions require githubAccessState === 'ready'
+  const GITHUB_REQUESTED_STATE: CapabilityRouterInput = {
+    text: '',
+    repoReady: true,
+    githubAccessState: 'requested',
+    openhandsReady: true,
+    directGitHubPatchReady: false, // Must be false when not ready
+    workspaceReady: true,
+    hasActiveWorkerBlocker: false,
+  };
+
+  it('should block Draft PR when githubAccessState is "requested"', () => {
+    const input: CapabilityRouterInput = {
+      ...GITHUB_REQUESTED_STATE,
+      text: 'Erstelle einen Draft PR',
+      hasPackage: true,
+    };
+    const decision = decideSovereignCapabilityRoute(input);
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.blocker).toBe('github_access_validating');
+  });
+
+  it('should block Direct Patch when githubAccessState is "requested"', () => {
+    const input: CapabilityRouterInput = {
+      ...GITHUB_REQUESTED_STATE,
+      text: 'Passe README an',
+    };
+    const decision = decideSovereignCapabilityRoute(input);
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.blocker).toBe('github_access_validating');
+  });
+
+  it('should block code generation when githubAccessState is "requested"', () => {
+    const input: CapabilityRouterInput = {
+      ...GITHUB_REQUESTED_STATE,
+      text: 'Baue Feature X ein',
+    };
+    const decision = decideSovereignCapabilityRoute(input);
+
+    // Code generation with complex task requires executor, which requires GitHub
+    // With "requested" state, GitHub is not ready
+    expect(decision.allowed).toBe(false);
+  });
+
+  it('should allow free chat when githubAccessState is "requested"', () => {
+    const input: CapabilityRouterInput = {
+      ...GITHUB_REQUESTED_STATE,
+      text: 'Was ist das?',
+    };
+    const decision = decideSovereignCapabilityRoute(input);
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.route).toBe('worker-chat');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// TEST: detectBlockers treats "requested" as not-ready
+// ─────────────────────────────────────────────────────────────
+
+describe('detectBlockers: "requested" state is not-ready', () => {
+  it('should detect github_access_validating blocker for "requested" state', () => {
+    const blockers = detectBlockers({
+      ...FULL_READY_STATE,
+      githubAccessState: 'requested',
+    });
+    expect(blockers).toContain('github_access_validating');
+  });
+
+  it('should detect github_access_validating blocker for "validating" state', () => {
+    const blockers = detectBlockers({
+      ...FULL_READY_STATE,
+      githubAccessState: 'validating',
+    });
+    expect(blockers).toContain('github_access_validating');
+  });
+
+  it('should detect github_access_missing blocker for "missing" state', () => {
+    const blockers = detectBlockers({
+      ...FULL_READY_STATE,
+      githubAccessState: 'missing',
+    });
+    expect(blockers).toContain('github_access_missing');
+  });
+
+  it('should detect github_access_missing blocker for "invalid" state', () => {
+    const blockers = detectBlockers({
+      ...FULL_READY_STATE,
+      githubAccessState: 'invalid',
+    });
+    expect(blockers).toContain('github_access_missing');
+  });
+
+  it('should NOT detect any GitHub blocker for "ready" state', () => {
+    const blockers = detectBlockers({
+      ...FULL_READY_STATE,
+      githubAccessState: 'ready',
+    });
+    expect(blockers).not.toContain('github_access_missing');
+    expect(blockers).not.toContain('github_access_validating');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// TEST: Terminal decision (local-runtime-answer) isTerminal flag
+// ─────────────────────────────────────────────────────────────
+
+describe('Terminal decisions have isTerminal flag', () => {
+  it('should set isTerminal for local-runtime-answer', () => {
+    const input: CapabilityRouterInput = {
+      ...FULL_READY_STATE,
+      text: 'Bist du fertig?',
+    };
+    const decision = decideSovereignCapabilityRoute(input);
+
+    expect(decision.isTerminal).toBe(true);
+    expect(decision.route).toBe('local-runtime-answer');
+  });
+
+  it('should not set isTerminal for worker-chat', () => {
+    const input: CapabilityRouterInput = {
+      ...FULL_READY_STATE,
+      text: 'Was ist das?',
+    };
+    const decision = decideSovereignCapabilityRoute(input);
+
+    expect(decision.isTerminal).toBeUndefined();
+    expect(decision.route).toBe('worker-chat');
+  });
 });
