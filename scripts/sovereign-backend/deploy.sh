@@ -72,6 +72,13 @@ install_dependencies() {
         pip install --quiet psycopg2-binary flask flask-cors requests gunicorn"
 }
 
+run_migrations() {
+    log_info "Running database migrations..."
+    ssh -p "${VPS_PORT}" "${VPS_USER}@${VPS_HOST}" "cd ${REPO_PATH} && \
+        python3 scripts/sovereign-backend/migrations/migrate.py 2>/dev/null || \
+        echo 'Migration skipped (DB may not be reachable)'"
+}
+
 restart_service() {
     log_info "Restarting ${SERVICE_NAME} service..."
     
@@ -158,6 +165,7 @@ main() {
     install_dependencies
     
     if [ "$do_restart" = true ]; then
+        run_migrations
         restart_service
         sleep 2
         check_service
