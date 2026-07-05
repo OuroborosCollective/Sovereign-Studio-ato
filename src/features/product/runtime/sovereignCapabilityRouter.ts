@@ -389,17 +389,7 @@ export function decideSovereignCapabilityRoute(
 
   // ─── DRAFT PR ───
   if (intent === 'draft_pr') {
-    if (!input.hasPackage) {
-      return {
-        route: 'draft-pr-runtime',
-        capability: 'draft_pr',
-        allowed: false,
-        reason: 'Paket muss zuerst generiert werden.',
-        blocker: 'unsupported_intent',
-        nextAction: 'ask_user',
-      };
-    }
-
+    // Check GitHub access blockers first - these always block Draft PR
     if (blockers.includes('github_access_missing')) {
       return {
         route: 'draft-pr-runtime',
@@ -422,7 +412,7 @@ export function decideSovereignCapabilityRoute(
       };
     }
 
-    // GitHub ready - route to executor for PR creation
+    // Check executor readiness - if available, allow Draft PR (executor will generate package if needed)
     if (input.openhandsReady) {
       return {
         route: 'openhands',
@@ -440,6 +430,18 @@ export function decideSovereignCapabilityRoute(
         allowed: true,
         reason: buildReason('workspace-executor', 'draft_pr'),
         nextAction: 'start_workspace',
+      };
+    }
+
+    // No executor available - block with appropriate message
+    if (!input.hasPackage) {
+      return {
+        route: 'draft-pr-runtime',
+        capability: 'draft_pr',
+        allowed: false,
+        reason: 'Paket muss zuerst generiert werden.',
+        blocker: 'unsupported_intent',
+        nextAction: 'ask_user',
       };
     }
 
