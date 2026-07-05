@@ -85,9 +85,19 @@ jobs:
           EXISTING_ENV=/opt/sovereign-backend/.env
           EXISTING_TOOLCHAIN_BASE_URL=""
           EXISTING_TOOLCHAIN_API_KEY=""
+          EXISTING_POSTGRES_HOST=""
+          # Preserve existing values that should be maintained
           if [ -f "$EXISTING_ENV" ]; then
             EXISTING_TOOLCHAIN_BASE_URL="$(grep -E '^TOOLCHAIN_BASE_URL=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
             EXISTING_TOOLCHAIN_API_KEY="$(grep -E '^TOOLCHAIN_API_KEY=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
+            # Preserve existing POSTGRES_HOST to avoid host.docker.internal issue
+            EXISTING_POSTGRES_HOST="$(grep -E '^POSTGRES_HOST=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
+          fi
+          # Use existing POSTGRES_HOST if valid, otherwise use secret or default to supabase-db
+          if [ -n "$EXISTING_POSTGRES_HOST" ] && [ "$EXISTING_POSTGRES_HOST" != "host.docker.internal" ]; then
+            FINAL_POSTGRES_HOST="$EXISTING_POSTGRES_HOST"
+          else
+            FINAL_POSTGRES_HOST="${POSTGRES_HOST_SECRET:-supabase-db}"
           fi
           cat > /opt/sovereign-backend/.env << ENVEOF
           POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
@@ -101,12 +111,15 @@ jobs:
           FLASK_ENV=production
           OPENHANDS_API_URL=http://openhands-enterprise-openhands-1:8000
           ENVEOF
+          # Override POSTGRES_HOST with the correct value
+          sed -i "s|POSTGRES_HOST=.*|POSTGRES_HOST=${FINAL_POSTGRES_HOST}|" /opt/sovereign-backend/.env
           if [ -n "$EXISTING_TOOLCHAIN_BASE_URL" ]; then
             printf 'TOOLCHAIN_BASE_URL=%s\n' "$EXISTING_TOOLCHAIN_BASE_URL" >> /opt/sovereign-backend/.env
           fi
           if [ -n "$EXISTING_TOOLCHAIN_API_KEY" ]; then
             printf 'TOOLCHAIN_API_KEY=%s\n' "$EXISTING_TOOLCHAIN_API_KEY" >> /opt/sovereign-backend/.env
           fi
+          echo "POSTGRES_HOST set to: $(grep POSTGRES_HOST /opt/sovereign-backend/.env | cut -d= -f2)"
           SSHEOF
 
       - name: Copy app.py to VPS and rebuild
