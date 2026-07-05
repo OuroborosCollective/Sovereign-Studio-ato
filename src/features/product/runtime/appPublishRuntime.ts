@@ -1,6 +1,7 @@
 import type { RepoFile } from '../../github/types';
 import type { SovereignHealthReport } from './sovereignHealth';
 import type { SovereignImplementationPackage } from './sovereignRuntime';
+import { maskSecrets } from '../../../shared/utils/crypto';
 import { getSovereignHealthRuntimeGate, type SovereignHealthRuntimeGate } from './sovereignFunctionalGuards';
 
 export interface PublishGateContext {
@@ -64,12 +65,14 @@ export function evaluateCanPublishPackage(
 export function publishRuntimeFeedback(result: PublishGateResult, nowMs = Date.now()): void {
   if (!canUseWindow()) return;
 
+  // ✅ SECURITY: Mask secrets in feedback messages before publishing.
+  // Health gate and publish messages may contain sensitive info from external providers.
   window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
     detail: {
       lamp: feedbackLamp(result.status),
-      title: result.allowed ? 'Runtime ready' : 'Runtime needs attention',
-      message: result.reason,
-      action: feedbackAction(result),
+      title: maskSecrets(result.allowed ? 'Runtime ready' : 'Runtime needs attention'),
+      message: maskSecrets(result.reason),
+      action: maskSecrets(feedbackAction(result)),
       thinking: false,
       source: 'runtime',
       updatedAt: nowMs,

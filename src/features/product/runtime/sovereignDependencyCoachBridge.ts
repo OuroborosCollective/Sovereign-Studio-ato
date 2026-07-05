@@ -1,3 +1,4 @@
+import { maskSecrets } from '../../../shared/utils/crypto';
 import { summarizeSovereignDependencyLifecycle, type SovereignDependencyLifecycleState } from './sovereignDependencyLifecycle';
 
 export type DependencyCoachLamp = 'green' | 'yellow' | 'red';
@@ -120,11 +121,13 @@ export function publishSovereignDependencyCoachSignal(
   const signal = buildSovereignDependencyCoachSignal(dependency);
 
   if (typeof window !== 'undefined') {
+    // ✅ SECURITY: Proactively mask secrets before publishing to global state.
+    // This protects against credentials leaking from dependency error messages.
     const runtimeCoachState = {
       lamp: signal.lamp,
-      title: signal.title,
-      message: signal.message,
-      action: signal.action,
+      title: maskSecrets(signal.title),
+      message: maskSecrets(signal.message),
+      action: maskSecrets(signal.action),
       thinking: signal.thinking,
       source: signal.source,
       updatedAt: nowMs,
