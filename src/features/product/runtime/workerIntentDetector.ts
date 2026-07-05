@@ -102,7 +102,7 @@ const CODE_CONTEXT_TOKENS = [
 ];
 
 const GREETING_OR_SMALLTALK_TOKENS = [
-  'hallo', 'hi', 'hello', 'hey', 'guten morgen', 'guten tag', 'danke',
+  'hallo', 'hello', 'hey', 'guten morgen', 'guten tag', 'danke',
   'thanks', 'thank you', 'wie geht es dir', 'how are you',
 ];
 
@@ -139,13 +139,12 @@ export function isLikelyIntegrationImplementationIntent(text: string): boolean {
 }
 
 /**
- * Detects if a message is an OpenHands execution intent.
- * These messages should trigger the OpenHands executor.
+ * Detects if a message is an explicit OpenHands execution intent.
+ * Generic implementation text stays code-route until a confirmed executor handoff.
  */
 export function isOpenHandsExecutionIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  return OPENHANDS_EXECUTION_TOKENS.some((token) => lower.includes(token)) ||
-    isLikelyIntegrationImplementationIntent(text);
+  return OPENHANDS_EXECUTION_TOKENS.some((token) => lower.includes(token));
 }
 
 /**
