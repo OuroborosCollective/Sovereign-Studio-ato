@@ -9,6 +9,13 @@ coverage/
 android/app/src/main/assets/public/
 android/app/build/
 
+# Python generated artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
 # Keystores
 *.keystore
 marketing-output/
