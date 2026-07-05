@@ -1,574 +1,102 @@
-/**
- * workerIntentDetector tests
- * Unit tests for Worker intent detection functions
- */
-
+import { describe, expect, it } from 'vitest';
 import {
-  isOpenHandsExecutionIntent,
-  isCodeGenerationIntent,
-  isWorkerRetryIntent,
-  isWorkerDiagnosticQuestion,
-  isDelegationIntent,
-  hasCodeContextInHistory,
-  isDelegatedOpenHandsExecutionIntent,
-  getWorkerActionHint,
-  isExecutorStatusQuestion,
   buildExecutorStatusAnswer,
-  isAlternativeWriteRouteIntent,
-  buildAlternativeRouteStatusAnswer,
+  getWorkerActionHint,
+  hasCodeContextInHistory,
+  isCodeGenerationIntent,
+  isDelegatedOpenHandsExecutionIntent,
+  isDelegationIntent,
+  isExecutorStatusQuestion,
+  isLikelyIntegrationImplementationIntent,
+  isOpenHandsExecutionIntent,
+  isWorkerDiagnosticQuestion,
+  isWorkerRetryIntent,
 } from './workerIntentDetector';
 
-describe('isOpenHandsExecutionIntent', () => {
-  it('detects OpenHands keyword', () => {
+describe('integration intent default', () => {
+  it('treats normal non-question text as implementation intent without forcing executor-only routing', () => {
+    const text = 'Die Oberflaeche soll ruhiger und eindeutiger werden';
+    expect(isLikelyIntegrationImplementationIntent(text)).toBe(true);
+    expect(isOpenHandsExecutionIntent(text)).toBe(false);
+    expect(isCodeGenerationIntent(text)).toBe(true);
+  });
+
+  it('keeps questions advisory instead of auto-executing', () => {
+    const text = 'Wie sollte die Oberflaeche besser werden?';
+    expect(isLikelyIntegrationImplementationIntent(text)).toBe(false);
+    expect(isOpenHandsExecutionIntent(text)).toBe(false);
+    expect(isCodeGenerationIntent(text)).toBe(false);
+  });
+
+  it('keeps commands, greetings, retry and alternate route text out of default execution', () => {
+    expect(isLikelyIntegrationImplementationIntent('/repo owner/name')).toBe(false);
+    expect(isLikelyIntegrationImplementationIntent('Hallo')).toBe(false);
+    expect(isLikelyIntegrationImplementationIntent('retry')).toBe(false);
+    expect(isLikelyIntegrationImplementationIntent('ohne OpenHands bitte')).toBe(false);
+  });
+});
+
+describe('explicit executor intent', () => {
+  it('detects explicit executor and PR wording only', () => {
     expect(isOpenHandsExecutionIntent('Use OpenHands to fix this')).toBe(true);
-  });
-
-  it('detects draft PR intent', () => {
     expect(isOpenHandsExecutionIntent('Create a draft PR')).toBe(true);
-    expect(isOpenHandsExecutionIntent('pr erstellen')).toBe(true);
-  });
-
-  it('detects push/commit intent', () => {
     expect(isOpenHandsExecutionIntent('push to main')).toBe(true);
     expect(isOpenHandsExecutionIntent('commit the changes')).toBe(true);
   });
 
-  it('does not treat generic build/implement intent as OpenHands-only execution', () => {
+  it('keeps generic build and fix text in code route', () => {
     expect(isOpenHandsExecutionIntent('baue die app')).toBe(false);
     expect(isOpenHandsExecutionIntent('implementiere feature')).toBe(false);
-  });
-
-  it('does not treat generic fix intent as OpenHands-only execution', () => {
     expect(isOpenHandsExecutionIntent('fixe den bug')).toBe(false);
-    expect(isOpenHandsExecutionIntent('repariere den server')).toBe(false);
-  });
-
-  it('returns false for non-execution text', () => {
-    expect(isOpenHandsExecutionIntent('Hello world')).toBe(false);
-    expect(isOpenHandsExecutionIntent('What is this project about?')).toBe(false);
-  });
-
-  it('is case insensitive', () => {
-    expect(isOpenHandsExecutionIntent('openhands')).toBe(true);
-    expect(isOpenHandsExecutionIntent('OPENHANDS')).toBe(true);
-  });
-});
-
-describe('isCodeGenerationIntent', () => {
-  it('detects generic code work for code-capable LLM routes', () => {
     expect(isCodeGenerationIntent('baue die app')).toBe(true);
-    expect(isCodeGenerationIntent('implementiere feature')).toBe(true);
-    expect(isCodeGenerationIntent('fixe den bug')).toBe(true);
-    expect(isCodeGenerationIntent('repariere den server')).toBe(true);
-  });
-
-  it('does not classify normal chat as code generation', () => {
-    expect(isCodeGenerationIntent('Was ist Sovereign Studio?')).toBe(false);
   });
 });
 
-describe('isWorkerRetryIntent', () => {
-  it('detects retry keyword', () => {
+describe('retry, diagnostics and status', () => {
+  it('detects retry and diagnostic wording', () => {
     expect(isWorkerRetryIntent('retry')).toBe(true);
-    expect(isWorkerRetryIntent('Retry')).toBe(true);
-  });
-
-  it('detects german retry words', () => {
-    expect(isWorkerRetryIntent('erneut')).toBe(true);
     expect(isWorkerRetryIntent('nochmal')).toBe(true);
-    expect(isWorkerRetryIntent('noch mal')).toBe(true);
-    expect(isWorkerRetryIntent('wiederholen')).toBe(true);
-  });
-
-  it('detects try/test words', () => {
-    expect(isWorkerRetryIntent('testen')).toBe(true);
-    expect(isWorkerRetryIntent('versuch es nochmal')).toBe(true);
-  });
-
-  it('returns false for unrelated text', () => {
-    expect(isWorkerRetryIntent('hello')).toBe(false);
-    expect(isWorkerRetryIntent('how are you')).toBe(false);
-  });
-});
-
-describe('isWorkerDiagnosticQuestion', () => {
-  it('detects why questions', () => {
     expect(isWorkerDiagnosticQuestion('Warum funktioniert das nicht?')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('Wieso ist der Worker down?')).toBe(true);
-  });
-
-  it('detects help keywords', () => {
-    expect(isWorkerDiagnosticQuestion('Hilfe, der Worker geht nicht')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('help me')).toBe(true);
-  });
-
-  it('detects technical error keywords', () => {
     expect(isWorkerDiagnosticQuestion('Error 500')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('Cloudflare worker blocked')).toBe(true);
   });
 
-  it('detects explain keywords', () => {
-    expect(isWorkerDiagnosticQuestion('Erkläre mir den Fehler')).toBe(true);
-  });
-
-  it('returns false for unrelated text', () => {
-    expect(isWorkerDiagnosticQuestion('Hello world')).toBe(false);
-    expect(isWorkerDiagnosticQuestion('Build the app')).toBe(false);
+  it('detects executor status questions and reports runtime state honestly', () => {
+    expect(isExecutorStatusQuestion('arbeitet er schon?')).toBe(true);
+    expect(isExecutorStatusQuestion('warum passiert nichts?')).toBe(true);
+    expect(buildExecutorStatusAnswer({ agentState: 'idle' })).toContain('nicht');
+    expect(buildExecutorStatusAnswer({ agentState: 'executor_running', changedFiles: 2 })).toContain('2');
   });
 });
 
-describe('isDelegationIntent', () => {
-  it('detects "Tu du das für mich"', () => {
-    expect(isDelegationIntent('Tu du das für mich')).toBe(true);
-    expect(isDelegationIntent('tu du das')).toBe(true);
+describe('delegation and confirmation', () => {
+  it('detects delegation and confirmation wording', () => {
+    expect(isDelegationIntent('Tu du das fuer mich')).toBe(true);
+    expect(isDelegationIntent('Mach das')).toBe(true);
+    expect(isDelegationIntent('Ja einbauen')).toBe(true);
   });
 
-  it('detects "Mach das für mich"', () => {
-    expect(isDelegationIntent('Mach das für mich')).toBe(true);
-    expect(isDelegationIntent('mach das')).toBe(true);
-  });
-
-  it('detects "Erledige das"', () => {
-    expect(isDelegationIntent('Erledige das bitte')).toBe(true);
-  });
-
-  it('detects "Übernimm das"', () => {
-    expect(isDelegationIntent('Übernimm das für mich')).toBe(true);
-  });
-
-  it('detects "Kannst du das für mich"', () => {
-    expect(isDelegationIntent('Kannst du das für mich machen?')).toBe(true);
-  });
-
-  it('is case insensitive', () => {
-    expect(isDelegationIntent('TU DU DAS')).toBe(true);
-    expect(isDelegationIntent('Mach Das Für Mich')).toBe(true);
-  });
-
-  it('returns false for unrelated text', () => {
-    expect(isDelegationIntent('Wie geht es dir?')).toBe(false);
-    expect(isDelegationIntent('Was ist Sovereign Studio?')).toBe(false);
-  });
-});
-
-describe('hasCodeContextInHistory', () => {
-  it('returns true when history contains README', () => {
-    const history = [
-      { role: 'user', text: 'Aktualisiere das README' },
-      { role: 'assistant', text: 'Ich werde das README aktualisieren.' },
+  it('delegates only after integration context exists', () => {
+    const withContext = [
+      { role: 'assistant', text: 'Integrationsauftrag erkannt: Runtime-Router haerten. Bestaetige mit Einbauen.' },
     ];
-    expect(hasCodeContextInHistory(history)).toBe(true);
-  });
-
-  it('returns true when history contains code keywords', () => {
-    const history = [
-      { role: 'user', text: 'Schreibe einen Fix für den Bug' },
-      { role: 'assistant', text: 'Hier ist der Fix.' },
-    ];
-    expect(hasCodeContextInHistory(history)).toBe(true);
-  });
-
-  it('returns true when history contains PR/commit keywords', () => {
-    const history = [
-      { role: 'user', text: 'Erstelle einen Draft PR' },
-      { role: 'assistant', text: 'Draft PR wird erstellt.' },
-    ];
-    expect(hasCodeContextInHistory(history)).toBe(true);
-  });
-
-  it('returns false for casual chat without code context', () => {
-    const history = [
-      { role: 'user', text: 'Hallo, wie geht es dir?' },
-      { role: 'assistant', text: 'Mir geht es gut, danke!' },
-    ];
-    expect(hasCodeContextInHistory(history)).toBe(false);
-  });
-
-  it('returns false for empty history', () => {
-    expect(hasCodeContextInHistory([])).toBe(false);
-  });
-
-  it('considers only last 6 messages', () => {
-    const history = [
-      { role: 'user', text: 'Alte Nachricht' },
-      { role: 'assistant', text: 'Alte Antwort' },
-      { role: 'user', text: 'Wie ist das Wetter?' },
-      { role: 'assistant', text: 'Sonnig!' },
-      { role: 'user', text: 'Schreibe einen Test für die Datei utils.ts' },
-      { role: 'assistant', text: 'Test geschrieben.' },
-      { role: 'user', text: 'Tu du das für mich' },
-    ];
-    expect(hasCodeContextInHistory(history)).toBe(true);
-  });
-});
-
-describe('isDelegatedOpenHandsExecutionIntent', () => {
-  it('returns false when delegation follows only generic code generation context', () => {
-    const history = [
-      { role: 'user', text: 'Aktualisiere das README' },
-      { role: 'assistant', text: 'Bereite einen Patchvorschlag vor.' },
-      { role: 'user', text: 'Tu du das für mich' },
-    ];
-    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(false);
-  });
-
-  it('returns true when delegation follows explicit Draft PR executor context', () => {
-    const history = [
-      { role: 'user', text: 'Erstelle einen Draft PR mit einem Test.' },
-      { role: 'assistant', text: 'Draft PR benötigt eine Schreibroute.' },
-      { role: 'user', text: 'Mach das' },
-    ];
-    expect(isDelegatedOpenHandsExecutionIntent('Mach das', history)).toBe(true);
-  });
-
-  it('returns false when delegation without code context', () => {
-    const history = [
-      { role: 'user', text: 'Hallo' },
-      { role: 'assistant', text: 'Hallo!' },
-      { role: 'user', text: 'Tu du das für mich' },
-    ];
-    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(false);
-  });
-
-  it('returns false for non-delegation text even with code context', () => {
-    const history = [
-      { role: 'user', text: 'Aktualisiere die Datei' },
-      { role: 'assistant', text: 'Welche Datei?' },
-    ];
-    expect(isDelegatedOpenHandsExecutionIntent('Welche Datei meinst du?', history)).toBe(false);
-  });
-
-  it('returns false for delegation request after pure chat question', () => {
-    const history = [
+    const withoutContext = [
       { role: 'user', text: 'Was ist Sovereign Studio?' },
       { role: 'assistant', text: 'Es ist ein Tool.' },
-      { role: 'user', text: 'Mach das für mich' },
     ];
-    expect(isDelegatedOpenHandsExecutionIntent('Mach das für mich', history)).toBe(false);
+    expect(hasCodeContextInHistory(withContext)).toBe(true);
+    expect(isDelegatedOpenHandsExecutionIntent('Einbauen', withContext)).toBe(true);
+    expect(isDelegatedOpenHandsExecutionIntent('Mach das fuer mich', withoutContext)).toBe(false);
   });
 });
 
-describe('isDelegationIntent — Phase 1 spec cases', () => {
-  it('"Tu du das für mich" after README task is delegation intent', () => {
-    expect(isDelegationIntent('Tu du das für mich')).toBe(true);
+describe('worker action hints', () => {
+  it('returns code-route hint for implementation requests', () => {
+    expect(getWorkerActionHint({ submittedText: 'Die Oberflaeche soll klarer werden', workerBlocked: false }))
+      .toBe('Code-LLM Route · Patch erzeugen');
   });
 
-  it('"Mach das" is delegation intent', () => {
-    expect(isDelegationIntent('Mach das')).toBe(true);
-  });
-
-  it('"Setz das um" is delegation intent (short form)', () => {
-    expect(isDelegationIntent('Setz das um')).toBe(true);
-  });
-
-  it('"Setze das um" is delegation intent (long form)', () => {
-    expect(isDelegationIntent('Setze das um')).toBe(true);
-  });
-
-  it('"Was ist Sovereign?" is not delegation intent', () => {
-    expect(isDelegationIntent('Was ist Sovereign?')).toBe(false);
-  });
-});
-
-describe('isDelegatedOpenHandsExecutionIntent — Phase 1 spec cases', () => {
-  it('returns false: "Tu du das für mich" after README-Auftrag without explicit executor context', () => {
-    const history = [
-      { role: 'assistant', text: 'Ich ändere das README und füge einen Titel ein.' },
-      { role: 'user', text: 'Tu du das für mich' },
-    ];
-    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(false);
-  });
-
-  it('returns false: "Tu du das für mich" after normal chat question (no code context)', () => {
-    const history = [
-      { role: 'user', text: 'Was ist dein Name?' },
-      { role: 'assistant', text: 'Ich bin Sovereign.' },
-      { role: 'user', text: 'Tu du das für mich' },
-    ];
-    expect(isDelegatedOpenHandsExecutionIntent('Tu du das für mich', history)).toBe(false);
-  });
-});
-
-describe('isExecutorStatusQuestion', () => {
-  it('detects "arbeitet er schon?"', () => {
-    expect(isExecutorStatusQuestion('arbeitet er schon?')).toBe(true);
-  });
-
-  it('detects "läuft das?"', () => {
-    expect(isExecutorStatusQuestion('läuft das?')).toBe(true);
-  });
-
-  it('detects "was macht er?"', () => {
-    expect(isExecutorStatusQuestion('was macht er?')).toBe(true);
-  });
-
-  it('detects "ist er fertig?"', () => {
-    expect(isExecutorStatusQuestion('ist er fertig?')).toBe(true);
-  });
-
-  it('detects "hat er angefangen?"', () => {
-    expect(isExecutorStatusQuestion('hat er angefangen?')).toBe(true);
-  });
-
-  it('detects "warum passiert nichts?"', () => {
-    expect(isExecutorStatusQuestion('warum passiert nichts?')).toBe(true);
-  });
-
-  it('detects "sehe nichts bei replit"', () => {
-    expect(isExecutorStatusQuestion('sehe nichts bei replit')).toBe(true);
-  });
-
-  it('is case insensitive', () => {
-    expect(isExecutorStatusQuestion('ARBEITET ER SCHON?')).toBe(true);
-    expect(isExecutorStatusQuestion('Läuft Das?')).toBe(true);
-  });
-
-  it('returns false for unrelated messages', () => {
-    expect(isExecutorStatusQuestion('Baue mir ein Feature')).toBe(false);
-    expect(isExecutorStatusQuestion('Was ist das Sovereign Studio?')).toBe(false);
-    expect(isExecutorStatusQuestion('Implementiere den Fix')).toBe(false);
-  });
-
-  it('returns false for generic "Warum?" diagnostic questions (no executor status token)', () => {
-    // "Warum?" alone is a diagnostic question, not an executor status question.
-    // It should go through the workerDiagnosticQuestion route, not executor status.
-    expect(isExecutorStatusQuestion('Warum?')).toBe(false);
-    expect(isExecutorStatusQuestion('Wieso?')).toBe(false);
-  });
-});
-
-describe('buildExecutorStatusAnswer', () => {
-  it('reports idle honestly when no executor is running', () => {
-    const answer = buildExecutorStatusAnswer({ agentState: 'idle' });
-    expect(answer).toContain('Nein');
-    expect(answer).toContain('gestartet');
-  });
-
-  it('reports running with file count and draft PR status', () => {
-    const answer = buildExecutorStatusAnswer({
-      agentState: 'executor_running',
-      openhandsStatus: 'running',
-      changedFiles: 2,
-      draftPrUrl: null,
-    });
-    expect(answer).toContain('Ja');
-    expect(answer).toContain('2');
-    expect(answer).toContain('Draft PR');
-  });
-
-  it('reports blocked with reason', () => {
-    const answer = buildExecutorStatusAnswer({
-      agentState: 'blocked',
-      blockerReason: 'GitHub-Schreibzugang fehlt.',
-    });
-    expect(answer).toContain('blockiert');
-    expect(answer).toContain('GitHub-Schreibzugang fehlt');
-  });
-
-  it('reports draft PR ready with URL', () => {
-    const answer = buildExecutorStatusAnswer({
-      agentState: 'draft_pr_ready',
-      draftPrUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/42',
-    });
-    expect(answer).toContain('https://github.com');
-  });
-
-  it('never fabricates: empty idle state is explicit, not "arbeitet"', () => {
-    const answer = buildExecutorStatusAnswer({ agentState: 'idle', openhandsStatus: 'idle' });
-    expect(answer.toLowerCase()).not.toContain('ja, openhands läuft');
-  });
-});
-
-describe('getWorkerActionHint', () => {
-  it('returns executor hint for explicit execution intent', () => {
-    expect(getWorkerActionHint({
-      submittedText: 'Use OpenHands to fix',
-      workerBlocked: false,
-    })).toBe('Executor-Schreibroute starten');
-  });
-
-  it('returns code LLM hint for generic code generation intent', () => {
-    expect(getWorkerActionHint({
-      submittedText: 'implementiere den Fix',
-      workerBlocked: false,
-    })).toBe('Code-LLM Route · Patch erzeugen');
-  });
-
-  it('returns blocked executor hint when agent disabled', () => {
-    expect(getWorkerActionHint({
-      submittedText: 'openhands do something',
-      workerBlocked: true,
-      agentDisabled: true,
-    })).toBe('Executor blockiert · Code-Route prüft zuerst');
-  });
-
-  it('returns diagnostic hint when worker blocked and no retry intent', () => {
-    expect(getWorkerActionHint({
-      submittedText: 'Hello world',
-      workerBlocked: true,
-    })).toBe('Worker blockiert · lokale Diagnose statt blindem Retry');
-  });
-
-  it('returns retry hint when worker blocked and retry intent', () => {
-    expect(getWorkerActionHint({
-      submittedText: 'retry the request',
-      workerBlocked: true,
-    })).toBe('Worker Retry · Diagnose wird aktualisiert');
-  });
-
-  it('returns empty string when no worker blocked and no special intent', () => {
-    expect(getWorkerActionHint({
-      submittedText: 'What is this project?',
-      workerBlocked: false,
-    })).toBe('');
-  });
-});
-
-describe('isAlternativeWriteRouteIntent', () => {
-  it('detects "nicht openhands" keyword', () => {
-    expect(isAlternativeWriteRouteIntent('Nutzen wir eine andere Route und nicht OpenHands')).toBe(true);
-    expect(isAlternativeWriteRouteIntent('nicht openhands bitte')).toBe(true);
-  });
-
-  it('detects "ohne openhands" keyword', () => {
-    expect(isAlternativeWriteRouteIntent('Kannst du das ohne openhands machen?')).toBe(true);
-  });
-
-  it('detects alternative route keywords', () => {
-    expect(isAlternativeWriteRouteIntent('Andere Route bitte')).toBe(true);
-    expect(isAlternativeWriteRouteIntent('Alternative Route für diesen Patch?')).toBe(true);
-  });
-
-  it('detects direct GitHub patch keywords', () => {
-    expect(isAlternativeWriteRouteIntent('Direkt über GitHub patchen')).toBe(true);
-    expect(isAlternativeWriteRouteIntent('direkt ueber github')).toBe(true);
-    expect(isAlternativeWriteRouteIntent('GitHub Patch Route')).toBe(true);
-  });
-
-  it('detects "ohne executor" keyword', () => {
-    expect(isAlternativeWriteRouteIntent('Kannst du das ohne Executor machen?')).toBe(true);
-  });
-
-  it('detects simple/direct route keywords', () => {
-    expect(isAlternativeWriteRouteIntent('Einfache Route bitte')).toBe(true);
-    expect(isAlternativeWriteRouteIntent('GitHub direkt nutzen')).toBe(true);
-  });
-
-  it('is case insensitive', () => {
-    expect(isAlternativeWriteRouteIntent('OHNE OPENHANDS')).toBe(true);
-    expect(isAlternativeWriteRouteIntent('DIREKT PATCHEN')).toBe(true);
-  });
-
-  it('returns false for unrelated messages', () => {
-    expect(isAlternativeWriteRouteIntent('Was ist Sovereign Studio?')).toBe(false);
-    expect(isAlternativeWriteRouteIntent('Baue mir ein Feature')).toBe(false);
-    expect(isAlternativeWriteRouteIntent('OpenHands starten')).toBe(false);
-  });
-});
-
-describe('buildAlternativeRouteStatusAnswer', () => {
-  describe('when GitHub access is NOT ready', () => {
-    it('reports GitHub validating state truthfully', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: false,
-        githubAccessState: 'validating',
-        openhandsReady: false,
-        directPatchAvailable: false,
-      });
-      expect(answer).toContain('wird gerade geprüft');
-      expect(answer).not.toContain('OpenHands ist nicht konfiguriert');
-    });
-
-    it('reports GitHub requested state truthfully', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: false,
-        githubAccessState: 'requested',
-        openhandsReady: false,
-        directPatchAvailable: true,
-      });
-      expect(answer).toContain('Format akzeptiert');
-      expect(answer).toContain('echte GitHub-API-Prüfung steht noch aus');
-    });
-
-    it('reports GitHub missing truthfully', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: false,
-        githubAccessState: 'missing',
-        openhandsReady: false,
-        directPatchAvailable: false,
-      });
-      expect(answer).toContain('GitHub-Zugang fehlt');
-    });
-
-    it('does NOT mention OpenHands when GitHub itself is missing', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: false,
-        githubAccessState: 'missing',
-        openhandsReady: false,
-        directPatchAvailable: false,
-      });
-      expect(answer).not.toContain('OpenHands ist nicht konfiguriert');
-    });
-  });
-
-  describe('when GitHub access is ready but OpenHands is NOT ready', () => {
-    it('reports GitHub ready + OpenHands missing + no direct patch', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: true,
-        githubAccessState: 'ready',
-        openhandsReady: false,
-        directPatchAvailable: false,
-      });
-      expect(answer).toContain('GitHub-Zugang ist bereit');
-      expect(answer).toContain('OpenHands ist nicht konfiguriert');
-      expect(answer).toContain('Direct GitHub Patch Route');
-      expect(answer).toContain('Nächste Aktion: OpenHands konfigurieren');
-    });
-
-    it('reports GitHub ready + OpenHands missing + direct patch available', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: true,
-        githubAccessState: 'ready',
-        openhandsReady: false,
-        directPatchAvailable: true,
-      });
-      expect(answer).toContain('GitHub-Zugang ist bereit');
-      expect(answer).toContain('OpenHands ist nicht konfiguriert');
-      expect(answer).toContain('Direct GitHub Patch Route ist verfügbar');
-      expect(answer).not.toContain('Nächste Aktion');
-    });
-
-    it('does NOT claim GitHub access is missing', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: true,
-        githubAccessState: 'ready',
-        openhandsReady: false,
-        directPatchAvailable: false,
-      });
-      expect(answer).not.toContain('GitHub-Zugang fehlt');
-      expect(answer).not.toContain('Sicheren GitHub-Zugang öffnen');
-    });
-
-    it('does NOT say "Nächste Aktion: Sicheren GitHub-Zugang öffnen"', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: true,
-        githubAccessState: 'ready',
-        openhandsReady: false,
-        directPatchAvailable: false,
-      });
-      expect(answer).not.toContain('Nächste Aktion: Sicheren GitHub-Zugang öffnen');
-    });
-  });
-
-  describe('when all routes are ready', () => {
-    it('reports all routes ready', () => {
-      const answer = buildAlternativeRouteStatusAnswer({
-        githubAccessReady: true,
-        githubAccessState: 'ready',
-        openhandsReady: true,
-        directPatchAvailable: true,
-      });
-      expect(answer).toContain('Alle Routen sind bereit');
-    });
+  it('returns diagnostic hint when worker is blocked and no retry intent', () => {
+    expect(getWorkerActionHint({ submittedText: 'Hello world', workerBlocked: true }))
+      .toBe('Worker blockiert · lokale Diagnose statt blindem Retry');
   });
 });

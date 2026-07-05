@@ -6,9 +6,11 @@
  */
 
 // German + English keywords for intent detection.
-// Important: generic code verbs (baue, implementiere, fixe, repariere) are
-// code-generation intent, not automatically OpenHands/executor intent.
-// OpenHands is one possible executor, not the only coding route.
+// Sovereign is not a generic chatbot inside a connected repository. A normal
+// non-question message is treated as an implementation/integration request by
+// default, unless it is clearly repo loading, status, retry, diagnostic, or a
+// small-talk/greeting phrase. Questions still stay advisory, but the Worker
+// prompt must answer them as repo-specific integration guidance.
 const OPENHANDS_EXECUTION_TOKENS = [
   'openhands', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
   'push', 'commit', 'repo schreiben', 'github schreiben', 'branch erstellen',
@@ -18,7 +20,8 @@ const CODE_GENERATION_TOKENS = [
   'baue', 'bauen', 'implementiere', 'implementieren', 'fixe', 'repariere',
   'patch', 'ändere datei', 'datei ändern', 'ersatzdatei', 'runtime-check',
   'tests ergänzen', 'test ergänzen', 'code ändern', 'feature einbauen',
-  'schreibe code', 'code schreiben',
+  'schreibe code', 'code schreiben', 'integration', 'integriere',
+  'einbauen', 'umsetzen', 'umsetzung', 'stabilisiere', 'härte', 'haerte',
 ];
 
 const WORKER_RETRY_TOKENS = ['retry', 'erneut', 'nochmal', 'noch mal', 'wiederholen', 'testen', 'versuch'];
@@ -28,7 +31,9 @@ const WORKER_DIAGNOSTIC_TOKENS = [
   'diagnose', 'fehler', '500', 'worker', 'cloudflare', 'blockiert', 'kaputt',
 ];
 
-// Delegation tokens: explicit handover to executor
+// Delegation tokens: explicit handover to executor. Includes the confirmation
+// vocabulary emitted by the Integration-Draft UX: user confirms by saying
+// "Einbauen", "Ja einbauen", "Übernehmen", etc.
 const DELEGATION_TOKENS = [
   'tu du das',
   'mach das',
@@ -37,8 +42,17 @@ const DELEGATION_TOKENS = [
   'setze das um',
   'setz das um',
   'übernimm das',
+  'uebernimm das',
   'kannst du das für mich',
   'mach das für mich',
+  'einbauen',
+  'ja einbauen',
+  'bitte einbauen',
+  'übernehmen',
+  'uebernehmen',
+  'bestätigen',
+  'bestaetigen',
+  'freigeben',
 ];
 
 // Alternative write route tokens: user explicitly asks NOT to use OpenHands
@@ -82,12 +96,51 @@ const CODE_CONTEXT_TOKENS = [
   'draft', 'repo', 'repository', 'github', 'build', 'bau', 'implementier',
   'fix', 'fehler', 'bug', 'feature', 'änderung', 'aktualisier', 'update',
   'lösche', 'entfern', 'ergänz', 'füge hinzu', 'ersetze', 'schreibe',
-  'test', 'tests', 'hinzufüg', 'ergänz',
+  'test', 'tests', 'hinzufüg', 'ergänz', 'integrationsauftrag',
+  'integration', 'runtime', 'route', 'router', 'workflow', 'executor',
+  'openhands', 'draft pr', 'einbauen', 'umsetzen', 'umsetzung',
 ];
 
+const GREETING_OR_SMALLTALK_TOKENS = [
+  'hallo', 'hello', 'hey', 'guten morgen', 'guten tag', 'danke',
+  'thanks', 'thank you', 'wie geht es dir', 'how are you',
+];
+
+function hasAnyToken(text: string, tokens: readonly string[]): boolean {
+  const lower = text.toLowerCase();
+  return tokens.some((token) => lower.includes(token));
+}
+
+function isGithubRepoUrl(text: string): boolean {
+  return /^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i.test(text.trim());
+}
+
+function isQuestionText(text: string): boolean {
+  return /\?\s*$/.test(text.trim());
+}
+
 /**
- * Detects if a message is an OpenHands execution intent.
- * These messages should trigger the OpenHands executor.
+ * Runtime default: inside this product, a non-question user sentence is presumed
+ * to be a repository integration request, not advice/small talk. This function
+ * deliberately stays conservative around questions, status checks, retry,
+ * diagnostics and greetings so those routes remain honest.
+ */
+export function isLikelyIntegrationImplementationIntent(text: string): boolean {
+  const clean = text.trim();
+  if (clean.length < 4) return false;
+  if (clean.startsWith('/')) return false;
+  if (isGithubRepoUrl(clean)) return false;
+  if (isQuestionText(clean)) return false;
+  if (hasAnyToken(clean, GREETING_OR_SMALLTALK_TOKENS)) return false;
+  if (hasAnyToken(clean, EXECUTOR_STATUS_TOKENS)) return false;
+  if (hasAnyToken(clean, WORKER_RETRY_TOKENS)) return false;
+  if (hasAnyToken(clean, ALTERNATIVE_WRITE_ROUTE_TOKENS)) return false;
+  return true;
+}
+
+/**
+ * Detects if a message is an explicit OpenHands execution intent.
+ * Generic implementation text stays code-route until a confirmed executor handoff.
  */
 export function isOpenHandsExecutionIntent(text: string): boolean {
   const lower = text.toLowerCase();
@@ -100,7 +153,8 @@ export function isOpenHandsExecutionIntent(text: string): boolean {
  */
 export function isCodeGenerationIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  return CODE_GENERATION_TOKENS.some((token) => lower.includes(token));
+  return CODE_GENERATION_TOKENS.some((token) => lower.includes(token)) ||
+    isLikelyIntegrationImplementationIntent(text);
 }
 
 /**
@@ -122,7 +176,7 @@ export function isWorkerDiagnosticQuestion(text: string): boolean {
 }
 
 /**
- * Detects delegation intent ("Tu du das für mich") without blindly starting OpenHands.
+ * Detects delegation/confirmation intent without blindly starting OpenHands.
  * Only qualifies as execution intent if there's prior code/repo context.
  */
 export function isDelegationIntent(text: string): boolean {
@@ -153,7 +207,11 @@ export function hasExecutorContextInHistory(recentMessages: readonly { role: str
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .slice(-6);
   const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
-  return OPENHANDS_EXECUTION_TOKENS.some((token) => allText.includes(token));
+  return OPENHANDS_EXECUTION_TOKENS.some((token) => allText.includes(token)) ||
+    allText.includes('integrationsauftrag') ||
+    allText.includes('integration') ||
+    allText.includes('einbauen') ||
+    allText.includes('umsetzung');
 }
 
 export function isDelegatedOpenHandsExecutionIntent(
