@@ -27,7 +27,7 @@ services:
       - areloria_arelorian-network
       - openhands-enterprise_default
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8787/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

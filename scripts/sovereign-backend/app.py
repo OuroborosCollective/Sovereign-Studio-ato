@@ -4198,43 +4198,87 @@ async function loadTools(){
   try {
     const [launcherRes, toolchainRes] = await Promise.all([
       fetch(BASE+'/api/admin/launcher/tools',{headers:hdr()}),
-      fetch(BASE+'/api/toolchain/universal/manifest',{headers:hdr()}).catch(()=>null)
+      fetch(BASE+'/api/admin/toolchain/tools',{headers:hdr()}).catch(()=>null)
     ]);
     const launcherData = await launcherRes.json();
     let toolchainData = null;
-    if (toolchainRes && toolchainRes.ok !== false) {
+    if (toolchainRes && toolchainRes.ok) {
       toolchainData = await toolchainRes.json();
     }
     renderTools(launcherData, toolchainData);
   } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
 }
-
-function renderTools(d){
+function renderTools(launcherData, toolchainData){
   const el = document.getElementById('toolsList');
-  if(!d.tools || !d.tools.length){
+  const parts = [];
+  
+  // Render Launcher Tools
+  if (launcherData && launcherData.tools && launcherData.tools.length) {
+    parts.push('<h3 style="font-size:13px;color:var(--accent);margin:0 0 12px;font-weight:700;">Launcher Tools</h3>');
+    launcherData.tools.forEach(t => {
+      const badges = [];
+      if (t.badge) badges.push('<span class="badge on">'+esc(t.badge)+'</span>');
+      parts.push('<div class="card" id="tr_'+t.id+'">'+
+        '<div class="card-header">'+
+          '<span class="card-title">'+esc(t.label||'')+'</span>'+
+          badges.join('')+
+          '<span class="badge '+(t.disabled?'off':'on')+'">'+(t.disabled?'Deaktiviert':'Aktiv')+'</span>'+
+        '</div>'+
+        '<div class="card-body">'+
+          '<div class="toggle-row">'+
+            '<span class="toggle-label">Tool aktivieren</span>'+
+            '<label class="toggle">'+
+              '<input type="checkbox" id="ttog_'+t.id+'" '+(t.disabled?'':'checked')+' onchange="toggleTool(\''+t.id+'\',!this.checked)"/>'+
+              '<span class="slider"></span>'+
+            '</label>'+
+          '</div>'+
+          '<div style="margin-top:12px">'+
+            '<button class="btn btn-ghost" onclick="healthcheckTool(\''+t.id+'\')" id="thcbtn_'+t.id+'">🔍 Healthcheck</button>'+
+            '<span id="thcstatus_'+t.id+'" style="margin-left:12px;font-size:13px"></span>'+
+          '</div>'+
+        '</div>'+
+      '</div>');
+    });
+  }
+  
+  // Render Toolchain Tools
+  if (toolchainData && toolchainData.tools && toolchainData.tools.length) {
+    parts.push('<h3 style="font-size:13px;color:var(--accent);margin:16px 0 12px;font-weight:700;">Toolchain Tools</h3>');
+    toolchainData.tools.forEach(t => {
+      const badges = [];
+      if (t.writeAction) badges.push('<span class="badge" style="background:var(--warn)20;color:var(--warn);border-color:var(--warn)40">WRITE</span>');
+      if (t.requiresConfirm) badges.push('<span class="badge" style="background:#3b82f620;color:#3b82f6;border-color:#3b82f640">CONFIRM</span>');
+      parts.push('<div class="card" id="tct_'+t.id+'">'+
+        '<div class="card-header">'+
+          '<span class="card-title">'+esc(t.name||'')+'</span>'+
+          '<span class="badge '+(t.enabled?'on':'off')+'">'+(t.enabled?'Aktiv':'Deaktiviert')+'</span>'+
+          badges.join('')+
+        '</div>'+
+        '<div class="card-body">'+
+          '<div style="font-size:12px;color:var(--textSub);margin-bottom:8px">'+esc(t.description||'Keine Beschreibung')+'</div>'+
+          '<div class="toggle-row">'+
+            '<span class="toggle-label">Tool aktivieren</span>'+
+            '<label class="toggle">'+
+              '<input type="checkbox" id="tctog_'+t.id+'" '+(t.enabled?'':'checked')+' onchange="toggleToolchainTool(\''+t.id+'\',!this.checked)"/>'+
+              '<span class="slider"></span>'+
+            '</label>'+
+          '</div>'+
+        '</div>'+
+      '</div>');
+    });
+  }
+  
+  if (!parts.length) {
     el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Tools konfiguriert.</div>';
     return;
   }
-  el.innerHTML = d.tools.map(t=>`<div class="card" id="tr_${t.id}">
-    <div class="card-header">
-      <span class="card-title">${esc(t.label||'')}</span>
-      ${t.badge?'<span class="badge on">'+esc(t.badge)+'</span>':''}
-      <span class="badge ${t.disabled?'off':'on'}">${t.disabled?'Deaktiviert':'Aktiv'}</span>
-    </div>
-    <div class="card-body">
-      <div class="toggle-row">
-        <span class="toggle-label">Tool aktivieren</span>
-        <label class="toggle">
-          <input type="checkbox" id="ttog_${t.id}" ${t.disabled?'':'checked'} onchange="toggleTool('${t.id}',!this.checked)"/>
-          <span class="slider"></span>
-        </label>
-      </div>
-      <div style="margin-top:12px">
-        <button class="btn btn-ghost" onclick="healthcheckTool('${t.id}')" id="thcbtn_${t.id}">🔍 Healthcheck</button>
-        <span id="thcstatus_${t.id}" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
-  </div>`).join('');
+  el.innerHTML=parts.join('');
+}
+async function toggleToolchainTool(tid, enabled){
+  try {
+    await fetch(BASE+'/api/admin/toolchain/tools/'+tid,{method:'PATCH',headers:hdr(),body:JSON.stringify({enabled})});
+    loadTools();
+  } catch(e){ alert('Fehler: '+e.message); }
 }
 
 async function toggleTool(tid, disabled){
