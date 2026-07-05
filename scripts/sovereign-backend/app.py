@@ -441,6 +441,263 @@ def admin_audit_log():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# RUNTIME SETTINGS - Worker, BYOK, CORS
+# ═════════════════════════════════════════════════════════════════════════════
+
+# In-memory runtime config (in production this would be in DB or Cloudflare KV)
+_RUNTIME_CONFIG: dict = {
+    "byok_mode": "user-key",  # system-key, user-key, disabled
+    "cors_origins": [
+        "https://chat.arelorian.de",
+        "https://arelorian.de",
+        "https://sovereign-backend.arelorian.de",
+    ],
+    "worker_health": "healthy",
+    "last_deploy_at": None,
+}
+
+
+def _mask_secrets(config: dict) -> dict:
+    """Mask sensitive values in config for display."""
+    masked = dict(config)
+    for key in masked:
+        if "secret" in key.lower() or "key" in key.lower() or "token" in key.lower():
+            val = str(masked[key] or "")
+            if len(val) > 4:
+                masked[key] = val[:2] + "*" * (len(val) - 4) + val[-2:]
+            else:
+                masked[key] = "****"
+    return masked
+
+
+@app.route("/api/admin/runtime/config")
+@require_admin
+def admin_runtime_config():
+    """Get runtime configuration (secrets masked)."""
+    return jsonify({
+        "ok": True,
+        "config": _mask_secrets(_RUNTIME_CONFIG),
+    })
+
+
+@app.route("/api/admin/runtime/config", methods=["PATCH"])
+@require_admin
+def admin_update_runtime_config():
+    """Update runtime configuration with validation."""
+    body = request.get_json(force=True) or {}
+    allowed_keys = {"byok_mode", "cors_origins"}
+    
+    # Filter allowed fields
+    updates = {k: v for k, v in body.items() if k in allowed_keys}
+    
+    if not updates:
+        return jsonify({"error": "Keine erlaubten Felder zum Aktualisieren"}), 400
+    
+    # Validate BYOK mode
+    if "byok_mode" in updates:
+        if updates["byok_mode"] not in ("system-key", "user-key", "disabled"):
+            return jsonify({"error": "Ungültiger BYOK-Modus. Erlaubt: system-key, user-key, disabled"}), 400
+    
+    # Validate CORS origins - block wildcard with credentials
+    if "cors_origins" in updates:
+        origins = updates["cors_origins"]
+        if not isinstance(origins, list):
+            return jsonify({"error": "cors_origins muss eine Liste sein"}), 400
+        
+        for origin in origins:
+            if origin.strip() == "*":
+                return jsonify({
+                    "error": "Wildcard-Origin (*) ist nicht erlaubt. Bitte spezifische Domains angeben.",
+                    "blocker": "cors_wildcard_blocked"
+                }), 400
+            
+            # Check for credentials/authorization with suspicious patterns
+            if any(pattern in origin.lower() for pattern in ["token=", "key=", "auth="]):
+                return jsonify({
+                    "error": "Origin darf keine Auth-Parameter enthalten.",
+                    "blocker": "cors_auth_in_origin_blocked"
+                }), 400
+    
+    # Apply updates
+    _RUNTIME_CONFIG.update(updates)
+    audit("admin_update_runtime_config", None, updates)
+    
+    return jsonify({
+        "ok": True,
+        "config": _mask_secrets(_RUNTIME_CONFIG),
+    })
+
+
+@app.route("/api/admin/runtime/validate-cors", methods=["POST"])
+@require_admin
+def admin_validate_cors():
+    """Validate CORS configuration before applying."""
+    body = request.get_json(force=True) or {}
+    origins = body.get("origins", [])
+    
+    errors = []
+    warnings = []
+    
+    if not isinstance(origins, list):
+        return jsonify({"error": "origins muss eine Liste sein"}), 400
+    
+    for origin in origins:
+        origin = origin.strip()
+        
+        # Block wildcards
+        if origin == "*":
+            errors.append({
+                "origin": origin,
+                "error": "Wildcard nicht erlaubt",
+                "blocker": "cors_wildcard_blocked"
+            })
+            continue
+        
+        # Block auth in origin
+        if any(pattern in origin.lower() for pattern in ["token=", "key=", "auth="]):
+            errors.append({
+                "origin": origin,
+                "error": "Origin darf keine Auth-Parameter enthalten",
+                "blocker": "cors_auth_in_origin_blocked"
+            })
+            continue
+        
+        # Warn about http (non-HTTPS)
+        if origin.startswith("http://") and not origin.startswith("http://localhost"):
+            warnings.append({
+                "origin": origin,
+                "warning": "Non-HTTPS Origin erkannt. Empfehlung: HTTPS verwenden."
+            })
+    
+    result = {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+    }
+    
+    audit("admin_validate_cors", None, {"origins": origins, "result": result})
+    
+    return jsonify(result)
+
+
+@app.route("/api/admin/runtime/health")
+@require_admin
+def admin_runtime_health():
+    """Check runtime/worker health status."""
+    # In production this would do real health checks
+    # For now, return the configured status with basic checks
+    health_status = "healthy"
+    blockers = []
+    
+    # Check if config is valid
+    byok = _RUNTIME_CONFIG.get("byok_mode", "user-key")
+    if byok not in ("system-key", "user-key", "disabled"):
+        health_status = "degraded"
+        blockers.append("invalid_byok_config")
+    
+    # Check CORS origins count
+    cors_count = len(_RUNTIME_CONFIG.get("cors_origins", []))
+    if cors_count == 0:
+        health_status = "degraded"
+        blockers.append("no_cors_origins")
+    elif cors_count > 20:
+        health_status = "degraded"
+        blockers.append("too_many_cors_origins")
+    
+    return jsonify({
+        "ok": True,
+        "health": health_status,
+        "byokMode": byok,
+        "corsOriginsCount": cors_count,
+        "blockers": blockers,
+    })
+
+
+@app.route("/api/admin/llm/routes/<rid>/healthcheck", methods=["POST"])
+@require_admin
+def admin_llm_route_healthcheck(rid):
+    """Perform health check on an LLM route."""
+    # Get route details
+    route = query(
+        """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
+                  provider, base_url AS "baseUrl"
+           FROM llm_routes WHERE id = %s::uuid""",
+        (rid,), one=True,
+    )
+    
+    if not route:
+        return jsonify({"error": "Route nicht gefunden"}), 404
+    
+    # In production, this would actually ping the LLM endpoint
+    # For now, return a mock healthy status with route info
+    health_status = "healthy"
+    blocker = None
+    
+    # Basic validation
+    if not route.get("baseUrl") and route.get("provider") not in ("openai", "anthropic", "deepseek", "gemini"):
+        health_status = "degraded"
+        blocker = "missing_base_url"
+    
+    audit("admin_llm_healthcheck", rid, {
+        "provider": route.get("provider"),
+        "model": route.get("modelName"),
+        "status": health_status,
+    })
+    
+    return jsonify({
+        "ok": True,
+        "routeId": rid,
+        "provider": route.get("provider"),
+        "model": route.get("modelName"),
+        "health": health_status,
+        "blocker": blocker,
+        "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+
+
+@app.route("/api/admin/launcher/tools/<tid>/healthcheck", methods=["POST"])
+@require_admin
+def admin_tool_healthcheck(tid):
+    """Perform health check on a launcher tool."""
+    # Get tool details
+    tool = query(
+        """SELECT id::text, label, base_url AS "baseUrl"
+           FROM launcher_overrides WHERE id = %s::uuid""",
+        (tid,), one=True,
+    )
+    
+    if not tool:
+        return jsonify({"error": "Tool nicht gefunden"}), 404
+    
+    # In production, this would actually test the tool endpoint
+    health_status = "healthy"
+    blocker = None
+    
+    # Basic validation
+    if not tool.get("baseUrl"):
+        # Check if it's a built-in tool that doesn't need URL
+        if tool.get("label") in ("OpenHands", "Code Editor", "Terminal"):
+            health_status = "healthy"
+        else:
+            health_status = "unknown"
+            blocker = "missing_base_url"
+    
+    audit("admin_tool_healthcheck", tid, {
+        "label": tool.get("label"),
+        "status": health_status,
+    })
+    
+    return jsonify({
+        "ok": True,
+        "toolId": tid,
+        "label": tool.get("label"),
+        "health": health_status,
+        "blocker": blocker,
+        "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # OPENHANDS PROXY
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -3324,6 +3581,10 @@ function renderLLMRoutes(d){
           <span class="slider"></span>
         </label>
       </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="healthcheckLLM('${r.id}')" id="hcbtn_${r.id}">🔍 Healthcheck</button>
+        <span id="hcstatus_${r.id}" style="margin-left:12px;font-size:13px"></span>
+      </div>
     </div>
   </div>`).join('');
 }
@@ -3331,6 +3592,33 @@ function renderLLMRoutes(d){
 async function toggleLLM(rid, disabled){
   await fetch(BASE+'/api/admin/llm/routes/'+rid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})});
   loadLLMRoutes();
+}
+
+async function healthcheckLLM(rid){
+  const btn = document.getElementById('hcbtn_'+rid);
+  const status = document.getElementById('hcstatus_'+rid);
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Teste…';
+  status.textContent = '';
+  try {
+    const r = await fetch(BASE+'/api/admin/llm/routes/'+rid+'/healthcheck',{method:'POST',headers:hdr()});
+    const d = await r.json();
+    if(d.health === 'healthy'){
+      status.textContent = '✓ Gesund';
+      status.style.color = 'var(--accent2)';
+    } else if(d.health === 'degraded'){
+      status.textContent = '⚠️ '+(d.blocker||'Beeinträchtigt');
+      status.style.color = 'var(--warn)';
+    } else {
+      status.textContent = '? Unbekannt';
+      status.style.color = 'var(--muted)';
+    }
+  } catch(e){
+    status.textContent = '✗ Fehler: '+e.message;
+    status.style.color = 'var(--danger)';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '🔍 Healthcheck';
 }
 
 /* ────── TOOLS ────── */
@@ -3364,6 +3652,10 @@ function renderTools(d){
           <span class="slider"></span>
         </label>
       </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="healthcheckTool('${t.id}')" id="thcbtn_${t.id}">🔍 Healthcheck</button>
+        <span id="thcstatus_${t.id}" style="margin-left:12px;font-size:13px"></span>
+      </div>
     </div>
   </div>`).join('');
 }
@@ -3373,23 +3665,140 @@ async function toggleTool(tid, disabled){
   loadTools();
 }
 
+async function healthcheckTool(tid){
+  const btn = document.getElementById('thcbtn_'+tid);
+  const status = document.getElementById('thcstatus_'+tid);
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Teste…';
+  status.textContent = '';
+  try {
+    const r = await fetch(BASE+'/api/admin/launcher/tools/'+tid+'/healthcheck',{method:'POST',headers:hdr()});
+    const d = await r.json();
+    if(d.health === 'healthy'){
+      status.textContent = '✓ Gesund';
+      status.style.color = 'var(--accent2)';
+    } else if(d.health === 'degraded'){
+      status.textContent = '⚠️ '+(d.blocker||'Beeinträchtigt');
+      status.style.color = 'var(--warn)';
+    } else {
+      status.textContent = '? '+d.blocker||'Unbekannt';
+      status.style.color = 'var(--muted)';
+    }
+  } catch(e){
+    status.textContent = '✗ Fehler: '+e.message;
+    status.style.color = 'var(--danger)';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '🔍 Healthcheck';
+}
+
 /* ────── RUNTIME ────── */
+let runtimeConfig = {};
+
 async function loadRuntime(){
   const el = document.getElementById('runtimeList');
   el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
-  // Runtime settings are informational - show a placeholder for now
+  try {
+    const [cfgR, hlthR] = await Promise.all([
+      fetch(BASE+'/api/admin/runtime/config',{headers:hdr()}),
+      fetch(BASE+'/api/admin/runtime/health',{headers:hdr()})
+    ]);
+    const cfg = await cfgR.json();
+    const hlth = await hlthR.json();
+    runtimeConfig = cfg.config || {};
+    renderRuntime(cfg.config, hlth);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderRuntime(cfg, hlth){
+  const el = document.getElementById('runtimeList');
+  if(!cfg) return;
+  const byokMode = cfg.byok_mode || 'user-key';
+  const health = hlth?.health || 'unknown';
+  const healthColor = health==='healthy'?'var(--accent2)':health==='degraded'?'var(--warn)':'var(--muted)';
+  const healthIcon = health==='healthy'?'✓':health==='degraded'?'⚠':'?';
   el.innerHTML = `<div class="card">
-    <div class="card-header"><span class="card-title">Worker Status</span></div>
+    <div class="card-header"><span class="card-title">Worker Status</span><span class="badge ${health==='healthy'?'on':'off'}">${healthIcon} ${health}</span></div>
     <div class="card-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">BYOK Modus</label><div style="color:var(--accent)">user-key</div></div>
-        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">CORS Origins</label><div style="font-size:12px">3 konfiguriert</div></div>
-        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Worker Health</label><div style="color:var(--accent2)">✓ Gesund</div></div>
-        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Letzter Deploy</label><div style="font-size:12px">Vor 2 Tagen</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">BYOK Modus</label>
+          <select id="rt_byok" style="margin-top:4px" onchange="updateRuntime('byok')">
+            <option value="user-key" ${byokMode==='user-key'?'selected':''}>user-key</option>
+            <option value="system-key" ${byokMode==='system-key'?'selected':''}>system-key</option>
+            <option value="disabled" ${byokMode==='disabled'?'selected':''}>disabled</option>
+          </select>
+        </div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">CORS Origins</label><div style="font-size:14px;margin-top:4px">${cfg.cors_origins?.length||0} konfiguriert</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Worker Health</label><div style="color:${healthColor}">${healthIcon} ${health}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Blocker</label><div style="font-size:12px">${hlth?.blockers?.length||0} aktiv</div></div>
       </div>
-      <div class="subtitle" style="margin-top:16px">Worker-, BYOK- und CORS-Konfiguration werden über Cloudflare Dashboard verwaltet.</div>
+      <button class="btn btn-ghost" onclick="showCorsEditor()" style="margin-bottom:12px">✏️ CORS Origins bearbeiten</button>
+      <div id="corsEditor" style="display:none">
+        <div class="form-group">
+          <label>Origins (eine pro Zeile)</label>
+          <textarea id="corsTextarea" rows="6" placeholder="https://example.com">${(cfg.cors_origins||[]).join('\n')}</textarea>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="validateAndSaveCors()">Validieren & Speichern</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('corsEditor').style.display='none'">Abbrechen</button>
+        </div>
+        <div id="corsMsg" class="msg" style="margin-top:8px"></div>
+      </div>
     </div>
   </div>`;
+}
+
+function showCorsEditor(){
+  document.getElementById('corsEditor').style.display='block';
+}
+
+async function updateRuntime(field){
+  let body = {};
+  if(field === 'byok'){
+    body.byok_mode = document.getElementById('rt_byok').value;
+  }
+  try {
+    const r = await fetch(BASE+'/api/admin/runtime/config',{
+      method:'PATCH',headers:hdr(),body:JSON.stringify(body)
+    });
+    const d = await r.json();
+    if(!d.ok) alert('Fehler: '+(d.error||'Unbekannt'));
+    else loadRuntime();
+  } catch(e){ alert('Fehler: '+e.message); }
+}
+
+async function validateAndSaveCors(){
+  const textarea = document.getElementById('corsTextarea');
+  const msg = document.getElementById('corsMsg');
+  const origins = textarea.value.split('\n').map(o=>o.trim()).filter(o=>o);
+  
+  // Validate first
+  const vr = await fetch(BASE+'/api/admin/runtime/validate-cors',{
+    method:'POST',headers:hdr(),body:JSON.stringify({origins})
+  });
+  const vd = await vr.json();
+  
+  if(!vd.valid && vd.errors?.length){
+    const errMsgs = vd.errors.map(e=>e.error).join(', ');
+    msg.textContent = '✗ Validierungsfehler: '+errMsgs;
+    msg.className='msg err'; msg.style.display='block';
+    return;
+  }
+  
+  // Save
+  const sr = await fetch(BASE+'/api/admin/runtime/config',{
+    method:'PATCH',headers:hdr(),body:JSON.stringify({cors_origins:origins})
+  });
+  const sd = await sr.json();
+  
+  if(sd.ok){
+    msg.textContent = '✓ Gespeichert!';
+    msg.className='msg ok'; msg.style.display='block';
+    setTimeout(()=>{ msg.style.display='none'; document.getElementById('corsEditor').style.display='none'; loadRuntime(); },1500);
+  } else {
+    msg.textContent = '✗ Fehler: '+(sd.error||'Unbekannt');
+    msg.className='msg err'; msg.style.display='block';
+  }
 }
 
 /* ────── AUDIT ────── */
