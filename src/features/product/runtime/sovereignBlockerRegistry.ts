@@ -12,8 +12,6 @@
  * - Each blocker must have a next allowed action or clear blockage
  */
 
-import { createHash } from 'crypto';
-
 /** Blocker kind classification */
 export type SovereignBlockerKind =
   | 'github_access_required'
@@ -65,6 +63,7 @@ export interface SovereignBlockerRegistryState {
 /**
  * Generate a stable key for blocker deduplication.
  * Key = route + kind + normalized detail
+ * Browser-compatible: uses simple string hashing instead of crypto
  */
 export function generateBlockerKey(input: BlockerEventInput): string {
   const normalizedDetail = input.detail
@@ -73,7 +72,14 @@ export function generateBlockerKey(input: BlockerEventInput): string {
     .trim()
     .slice(0, 200);
   const keySource = `${input.route}:${input.kind}:${normalizedDetail}`;
-  return createHash('sha256').update(keySource).digest('hex').slice(0, 32);
+  
+  // Browser-compatible hash using simple djb2
+  let hash = 5381;
+  for (let i = 0; i < keySource.length; i++) {
+    hash = ((hash << 5) + hash) + keySource.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
 }
 
 /**
