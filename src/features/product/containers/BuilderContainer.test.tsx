@@ -182,15 +182,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("keeps chat send available when the agent runtime is not start-ready and routes to Worker", async () => {
+  it("shows integration intent draft card for normal text inputs when repo is ready", async () => {
     const props = baseProps();
     render(<BuilderContainer {...props} openhandsReady={false} />);
     fireEvent.change(chatField(), { target: { value: "Bitte mobile UX verbessern und Log direkt sichtbar machen." } });
     expect(sendButton()).not.toBeDisabled();
     fireEvent.click(sendButton());
     expect(chatField().value).toBe("");
-    await waitFor(() => expect(screen.getByText("Worker Antwort aus Cloudflare Route.")).toBeDefined());
-    expect(props.onMissionChange).not.toHaveBeenCalled();
+    // Issue #520: Normal text with repo loaded shows draft card instead of routing to Worker
+    await waitFor(() => expect(screen.getByTestId("integration-intent-draft-card")).toBeInTheDocument());
+    // Draft card should show the title
+    expect(screen.getByText(/Ich habe daraus diesen Integrationsauftrag erkannt/)).toBeInTheDocument();
   });
 
   it("syncs externally adopted insight missions only into an untouched empty composer", () => {
