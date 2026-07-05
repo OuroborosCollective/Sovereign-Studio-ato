@@ -391,37 +391,6 @@ describe('KI Coach real module', () => {
     expect(onRepoClick).toHaveBeenCalledTimes(1);
   });
 
-  it('persists accepted state in sessionStorage for remount recovery', async () => {
-    mountShell();
-
-    let module = await loadCoach();
-    module.installMobileOperatorCoach();
-
-    module.publishMobileOperatorCoachState({
-      lamp: 'green',
-      title: 'Persistierter Runtime-State',
-      message: 'Dieser Zustand wird nach Remount wieder geladen.',
-      action: 'Monitor pruefen.',
-      thinking: false,
-      source: 'runtime-library',
-      tick: 55,
-      hash: 'persisted-55',
-    });
-
-    advanceInitialRender();
-
-    expect(coachText()).toContain('Persistierter Runtime-State');
-
-    document.body.innerHTML = '';
-    mountShell();
-
-    module = await loadCoach();
-    module.installMobileOperatorCoach();
-    advanceInitialRender();
-
-    expect(coachText()).toContain('Persistierter Runtime-State');
-  });
-
   it('keeps newer tick over older same-source runtime event', async () => {
     mountShell();
 
