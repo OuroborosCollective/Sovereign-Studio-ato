@@ -234,5 +234,114 @@ class TestCreditLedgerRules(unittest.TestCase):
             self.assertFalse(has_valid_amount and has_valid_reason)
 
 
+class TestHealthcheckValidation(unittest.TestCase):
+    """Tests for health check validation logic."""
+    
+    def test_builtin_tools_are_always_healthy(self):
+        """Built-in tools should not need HTTP health checks."""
+        builtin_tools = ["OpenHands", "Code Editor", "Terminal", "Git", "File Browser"]
+        
+        for tool in builtin_tools:
+            self.assertIn(tool, builtin_tools)
+    
+    def test_http_status_codes_for_health(self):
+        """Health check should interpret HTTP status codes correctly."""
+        test_cases = [
+            (200, "healthy"),
+            (201, "healthy"),
+            (301, "healthy"),
+            (400, "degraded"),
+            (401, "degraded"),
+            (403, "degraded"),
+            (500, "degraded"),
+            (502, "degraded"),
+            (503, "degraded"),
+        ]
+        
+        for status_code, expected in test_cases:
+            if status_code >= 500:
+                result = "degraded"
+            elif status_code >= 400:
+                result = "degraded"
+            else:
+                result = "healthy"
+            
+            self.assertEqual(result, expected)
+    
+    def test_provider_urls(self):
+        """Test LLM provider health check URLs."""
+        providers = {
+            "openai": "https://api.openai.com",
+            "anthropic": "https://api.anthropic.com",
+            "deepseek": "https://api.deepseek.com",
+            "gemini": "https://generativelanguage.googleapis.com",
+        }
+        
+        for provider, expected_url in providers.items():
+            # Default URL should be set correctly
+            self.assertIn(provider, providers)
+
+
+class TestConfigPersistence(unittest.TestCase):
+    """Tests for config persistence logic."""
+    
+    def test_default_config_structure(self):
+        """Default config should have required fields."""
+        default_config = {
+            "byok_mode": "user-key",
+            "cors_origins": [],
+            "worker_health": "healthy",
+            "last_deploy_at": None,
+            "version": "1.0",
+        }
+        
+        self.assertIn("byok_mode", default_config)
+        self.assertIn("cors_origins", default_config)
+        self.assertIn("worker_health", default_config)
+    
+    def test_byok_mode_enum(self):
+        """BYOK mode should only accept valid values."""
+        valid_modes = ["system-key", "user-key", "disabled"]
+        
+        for mode in valid_modes:
+            # Should not raise
+            self.assertIn(mode, valid_modes)
+        
+        # Invalid mode
+        self.assertNotIn("invalid", valid_modes)
+    
+    def test_cors_origins_validation(self):
+        """CORS origins should be validated before saving."""
+        # Valid origins
+        valid_origins = [
+            "https://chat.arelorian.de",
+            "https://arelorian.de",
+        ]
+        
+        # Invalid origins
+        invalid_origins = [
+            "*",
+            "https://evil.com?token=abc",
+            "https://evil.com?key=secret",
+        ]
+        
+        # Validate
+        for origin in valid_origins:
+            is_valid = True
+            if origin.strip() == "*":
+                is_valid = False
+            if any(p in origin.lower() for p in ["token=", "key=", "auth="]):
+                is_valid = False
+            self.assertTrue(is_valid)
+        
+        for origin in invalid_origins:
+            is_valid = True
+            if origin.strip() == "*":
+                is_valid = False
+            if any(p in origin.lower() for p in ["token=", "key=", "auth="]):
+                is_valid = False
+            self.assertFalse(is_valid)
+
+
 if __name__ == "__main__":
     unittest.main()

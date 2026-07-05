@@ -441,11 +441,16 @@ def admin_audit_log():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# RUNTIME SETTINGS - Worker, BYOK, CORS
+# RUNTIME SETTINGS - Worker, BYOK, CORS (Persisted)
 # ═════════════════════════════════════════════════════════════════════════════
 
-# In-memory runtime config (in production this would be in DB or Cloudflare KV)
-_RUNTIME_CONFIG: dict = {
+import json as _json
+
+# Config file path (can be overridden via environment)
+_CONFIG_FILE = os.getenv("RUNTIME_CONFIG_FILE", "/opt/sovereign/config/runtime.json")
+
+# Default runtime config
+_DEFAULT_RUNTIME_CONFIG: dict = {
     "byok_mode": "user-key",  # system-key, user-key, disabled
     "cors_origins": [
         "https://chat.arelorian.de",
@@ -454,7 +459,41 @@ _RUNTIME_CONFIG: dict = {
     ],
     "worker_health": "healthy",
     "last_deploy_at": None,
+    "version": "1.0",
 }
+
+# Load config from file or use defaults
+def _load_runtime_config() -> dict:
+    """Load runtime config from file with fallback to defaults."""
+    try:
+        if os.path.exists(_CONFIG_FILE):
+            with open(_CONFIG_FILE, "r") as f:
+                loaded = _json.load(f)
+                # Merge with defaults for any missing keys
+                config = dict(_DEFAULT_RUNTIME_CONFIG)
+                config.update(loaded)
+                return config
+    except Exception:
+        pass
+    return dict(_DEFAULT_RUNTIME_CONFIG)
+
+# Save config to file
+def _save_runtime_config(config: dict) -> bool:
+    """Save runtime config to file. Returns True on success."""
+    try:
+        # Ensure directory exists
+        config_dir = os.path.dirname(_CONFIG_FILE)
+        if config_dir and not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True)
+        
+        with open(_CONFIG_FILE, "w") as f:
+            _json.dump(config, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+# Load initial config
+_RUNTIME_CONFIG: dict = _load_runtime_config()
 
 
 def _mask_secrets(config: dict) -> dict:
@@ -477,13 +516,17 @@ def admin_runtime_config():
     return jsonify({
         "ok": True,
         "config": _mask_secrets(_RUNTIME_CONFIG),
+        "persisted": os.path.exists(_CONFIG_FILE),
+        "configFile": _CONFIG_FILE,
     })
 
 
 @app.route("/api/admin/runtime/config", methods=["PATCH"])
 @require_admin
 def admin_update_runtime_config():
-    """Update runtime configuration with validation."""
+    """Update runtime configuration with validation and persistence."""
+    global _RUNTIME_CONFIG
+    
     body = request.get_json(force=True) or {}
     allowed_keys = {"byok_mode", "cors_origins"}
     
@@ -518,13 +561,24 @@ def admin_update_runtime_config():
                     "blocker": "cors_auth_in_origin_blocked"
                 }), 400
     
-    # Apply updates
+    # Apply updates to in-memory config
     _RUNTIME_CONFIG.update(updates)
+    
+    # Persist to file
+    if not _save_runtime_config(_RUNTIME_CONFIG):
+        return jsonify({
+            "error": "Konfiguration gespeichert, aber Persistenz fehlgeschlagen",
+            "ok": True,
+            "config": _mask_secrets(_RUNTIME_CONFIG),
+            "persisted": False,
+        }), 200
+    
     audit("admin_update_runtime_config", None, updates)
     
     return jsonify({
         "ok": True,
         "config": _mask_secrets(_RUNTIME_CONFIG),
+        "persisted": True,
     })
 
 
@@ -583,9 +637,7 @@ def admin_validate_cors():
 @app.route("/api/admin/runtime/health")
 @require_admin
 def admin_runtime_health():
-    """Check runtime/worker health status."""
-    # In production this would do real health checks
-    # For now, return the configured status with basic checks
+    """Check runtime/worker health status with real checks."""
     health_status = "healthy"
     blockers = []
     
@@ -604,23 +656,39 @@ def admin_runtime_health():
         health_status = "degraded"
         blockers.append("too_many_cors_origins")
     
+    # Check config file persistence
+    if not os.path.exists(_CONFIG_FILE):
+        blockers.append("config_not_persisted")
+    
+    # Check database connection
+    try:
+        test_query = query("SELECT 1 as test", one=True)
+        if not test_query:
+            health_status = "degraded"
+            blockers.append("db_connection_issue")
+    except Exception:
+        health_status = "degraded"
+        blockers.append("db_unavailable")
+    
     return jsonify({
         "ok": True,
         "health": health_status,
         "byokMode": byok,
         "corsOriginsCount": cors_count,
         "blockers": blockers,
+        "configFile": _CONFIG_FILE,
+        "configPersisted": os.path.exists(_CONFIG_FILE),
     })
 
 
 @app.route("/api/admin/llm/routes/<rid>/healthcheck", methods=["POST"])
 @require_admin
 def admin_llm_route_healthcheck(rid):
-    """Perform health check on an LLM route."""
+    """Perform health check on an LLM route by actually pinging the endpoint."""
     # Get route details
     route = query(
         """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
-                  provider, base_url AS "baseUrl"
+                  provider, base_url AS "baseUrl", api_key AS "apiKey"
            FROM llm_routes WHERE id = %s::uuid""",
         (rid,), one=True,
     )
@@ -628,29 +696,106 @@ def admin_llm_route_healthcheck(rid):
     if not route:
         return jsonify({"error": "Route nicht gefunden"}), 404
     
-    # In production, this would actually ping the LLM endpoint
-    # For now, return a mock healthy status with route info
+    provider = route.get("provider", "").lower()
+    base_url = route.get("baseUrl") or ""
+    model_name = route.get("modelName") or route.get("modelId") or "gpt-4"
     health_status = "healthy"
     blocker = None
+    response_time_ms = None
+    error_message = None
     
-    # Basic validation
-    if not route.get("baseUrl") and route.get("provider") not in ("openai", "anthropic", "deepseek", "gemini"):
+    try:
+        # Build the appropriate health check request based on provider
+        headers = {"Content-Type": "application/json"}
+        
+        if provider == "openai":
+            if not base_url:
+                base_url = "https://api.openai.com"
+            # Simple models list request for health check
+            url = f"{base_url.rstrip('/')}/v1/models"
+            if route.get("apiKey"):
+                headers["Authorization"] = f"Bearer {route['apiKey']}"
+            timeout = 10
+        elif provider == "anthropic":
+            if not base_url:
+                base_url = "https://api.anthropic.com"
+            # Health check via models endpoint
+            url = f"{base_url.rstrip('/')}/v1/models"
+            if route.get("apiKey"):
+                headers["x-api-key"] = route["apiKey"]
+                headers["anthropic-version"] = "2023-06-01"
+            timeout = 10
+        elif provider == "deepseek":
+            if not base_url:
+                base_url = "https://api.deepseek.com"
+            url = f"{base_url.rstrip('/')}/v1/models"
+            if route.get("apiKey"):
+                headers["Authorization"] = f"Bearer {route['apiKey']}"
+            timeout = 10
+        elif provider == "gemini":
+            if not base_url:
+                base_url = "https://generativelanguage.googleapis.com"
+            # Gemini health check via model list
+            url = f"{base_url.rstrip('/')}/v1beta1/models?pageSize=1"
+            if route.get("apiKey"):
+                headers["x-goog-api-key"] = route["apiKey"]
+            timeout = 10
+        else:
+            # Generic health check for unknown providers
+            if not base_url:
+                health_status = "degraded"
+                blocker = "missing_base_url"
+                url = None
+            else:
+                url = f"{base_url.rstrip('/')}/health"
+                timeout = 10
+        
+        if url:
+            start_time = time.time()
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            response_time_ms = int((time.time() - start_time) * 1000)
+            
+            if resp.status_code >= 500:
+                health_status = "degraded"
+                blocker = "server_error"
+                error_message = f"HTTP {resp.status_code}"
+            elif resp.status_code >= 400:
+                health_status = "degraded"
+                blocker = "client_error"
+                error_message = f"HTTP {resp.status_code}"
+            else:
+                health_status = "healthy"
+    
+    except requests.exceptions.Timeout:
         health_status = "degraded"
-        blocker = "missing_base_url"
+        blocker = "timeout"
+        error_message = f"Request timeout after {timeout}s"
+    except requests.exceptions.ConnectionError as e:
+        health_status = "degraded"
+        blocker = "connection_error"
+        error_message = "Verbindung fehlgeschlagen"
+    except Exception as e:
+        health_status = "degraded"
+        blocker = "unknown_error"
+        error_message = str(e)[:100]
     
     audit("admin_llm_healthcheck", rid, {
-        "provider": route.get("provider"),
-        "model": route.get("modelName"),
+        "provider": provider,
+        "model": model_name,
         "status": health_status,
+        "blocker": blocker,
+        "responseTimeMs": response_time_ms,
     })
     
     return jsonify({
         "ok": True,
         "routeId": rid,
-        "provider": route.get("provider"),
-        "model": route.get("modelName"),
+        "provider": provider,
+        "model": model_name,
         "health": health_status,
         "blocker": blocker,
+        "error": error_message,
+        "responseTimeMs": response_time_ms,
         "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })
 
@@ -658,10 +803,10 @@ def admin_llm_route_healthcheck(rid):
 @app.route("/api/admin/launcher/tools/<tid>/healthcheck", methods=["POST"])
 @require_admin
 def admin_tool_healthcheck(tid):
-    """Perform health check on a launcher tool."""
+    """Perform health check on a launcher tool by actually testing the endpoint."""
     # Get tool details
     tool = query(
-        """SELECT id::text, label, base_url AS "baseUrl"
+        """SELECT id::text, label, base_url AS "baseUrl", auth_mode AS "authMode"
            FROM launcher_overrides WHERE id = %s::uuid""",
         (tid,), one=True,
     )
@@ -669,30 +814,84 @@ def admin_tool_healthcheck(tid):
     if not tool:
         return jsonify({"error": "Tool nicht gefunden"}), 404
     
-    # In production, this would actually test the tool endpoint
+    label = tool.get("label", "")
+    base_url = tool.get("baseUrl") or ""
+    auth_mode = tool.get("authMode") or "none"
     health_status = "healthy"
     blocker = None
+    response_time_ms = None
+    error_message = None
     
-    # Basic validation
-    if not tool.get("baseUrl"):
-        # Check if it's a built-in tool that doesn't need URL
-        if tool.get("label") in ("OpenHands", "Code Editor", "Terminal"):
+    try:
+        # Built-in tools that don't need HTTP health checks
+        builtin_tools = ["OpenHands", "Code Editor", "Terminal", "Git", "File Browser"]
+        
+        if label in builtin_tools:
             health_status = "healthy"
-        else:
+        elif not base_url:
             health_status = "unknown"
             blocker = "missing_base_url"
+        else:
+            # Perform actual HTTP health check
+            # Try common health endpoints
+            health_paths = ["/health", "/api/health", "/status", "/api/status", ""]
+            timeout = 10
+            
+            for path in health_paths:
+                try:
+                    url = f"{base_url.rstrip('/')}{path}"
+                    start_time = time.time()
+                    resp = requests.get(url, timeout=timeout)
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    
+                    if resp.status_code < 500:
+                        health_status = "healthy"
+                        break
+                except requests.exceptions.RequestException:
+                    continue
+            else:
+                # If no health endpoint worked, try the base URL itself
+                try:
+                    url = base_url.rstrip('/')
+                    start_time = time.time()
+                    resp = requests.get(url, timeout=timeout, allow_redirects=True)
+                    response_time_ms = int((time.time() - start_time) * 1000)
+                    
+                    if resp.status_code < 500:
+                        health_status = "healthy"
+                    else:
+                        health_status = "degraded"
+                        blocker = "server_error"
+                        error_message = f"HTTP {resp.status_code}"
+                except requests.exceptions.Timeout:
+                    health_status = "degraded"
+                    blocker = "timeout"
+                    error_message = f"Request timeout after {timeout}s"
+                except requests.exceptions.ConnectionError:
+                    health_status = "degraded"
+                    blocker = "connection_error"
+                    error_message = "Verbindung fehlgeschlagen"
+    
+    except Exception as e:
+        health_status = "degraded"
+        blocker = "unknown_error"
+        error_message = str(e)[:100]
     
     audit("admin_tool_healthcheck", tid, {
-        "label": tool.get("label"),
+        "label": label,
         "status": health_status,
+        "blocker": blocker,
+        "responseTimeMs": response_time_ms,
     })
     
     return jsonify({
         "ok": True,
         "toolId": tid,
-        "label": tool.get("label"),
+        "label": label,
         "health": health_status,
         "blocker": blocker,
+        "error": error_message,
+        "responseTimeMs": response_time_ms,
         "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })
 
