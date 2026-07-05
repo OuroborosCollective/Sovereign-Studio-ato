@@ -39,7 +39,7 @@ ADMIN_API_KEY  = os.getenv("ADMIN_API_KEY", "")
 LLM_PROXY_KEY  = os.getenv("LLM_PROXY_KEY", "")
 OPENHANDS_API_URL = os.getenv("OPENHANDS_API_URL", "http://127.0.0.1:3000")
 
-POSTGRES_HOST  = os.getenv("POSTGRES_HOST", "host.docker.internal")
+POSTGRES_HOST  = os.getenv("POSTGRES_HOST", "db")
 POSTGRES_PORT  = int(os.getenv("POSTGRES_PORT", "5432"))
 POSTGRES_DB    = os.getenv("POSTGRES_DB", "postgres")
 POSTGRES_USER  = os.getenv("POSTGRES_USER", "postgres")
