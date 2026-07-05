@@ -551,16 +551,20 @@ def admin_create_toolchain_tool():
     requires_confirm = body.get("requiresConfirm", False)
     sort_order = body.get("sortOrder", 0)
 
-    row = query(
+    # Use write=True and get the returning id
+    cur_row = query(
         """INSERT INTO toolchain_tools
               (name, description, input_schema, enabled, write_action, requires_confirm, sort_order)
            VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s)
            RETURNING id::text""",
-        (name, description, json.dumps(input_schema), enabled, write_action, requires_confirm, sort_order),
+        (name, description, _json.dumps(input_schema), enabled, write_action, requires_confirm, sort_order),
         one=True, write=True
     )
-    audit("admin_create_toolchain_tool", row["id"], body)
-    return jsonify({"ok": True, "id": row["id"]}), 201
+    if cur_row is None:
+        raise RuntimeError("Failed to insert tool")
+    tool_id = cur_row["id"]
+    audit("admin_create_toolchain_tool", tool_id, body)
+    return jsonify({"ok": True, "id": tool_id}), 201
 
 
 @app.route("/api/admin/toolchain/tools/<tid>", methods=["PATCH"])
@@ -582,7 +586,7 @@ def admin_update_toolchain_tool(tid):
         if k in col_map:
             sets.append(f"{col_map[k]} = %s")
             if k == "inputSchema":
-                vals.append(json.dumps(v))
+                vals.append(_json.dumps(v))
             else:
                 vals.append(v)
     if not sets:
