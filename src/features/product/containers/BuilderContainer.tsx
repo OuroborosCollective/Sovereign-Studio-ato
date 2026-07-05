@@ -3562,17 +3562,43 @@ export function BuilderContainer({
     addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
 
     // ── Issue #502: Blocked capability decisions stop legacy routing
-    // If capability router says "not allowed", stop here - no legacy routing continues.
+    // BUT: Some cases must let legacy flow handle them:
+    // - Worker retry (retry/nochmal) should clear blocker and retry
+    // - Repo-first: no repo + no GitHub → tell user to load repo first
+    // - Legacy fallback: unrecognized intents → Worker handles them
     if (!capabilityDecision.allowed) {
-      const blockerMessage = capabilityDecision.blocker
-        ? `Route blockiert: ${capabilityDecision.reason}`
-        : `Auftrag nicht erlaubt: ${capabilityDecision.reason}`;
-      appendChatLine({
-        role: 'assistant',
-        text: blockerMessage,
-      });
-      addLog("warn", `Capability Router blocked: ${capabilityDecision.route} - ${capabilityDecision.reason}`, "router");
-      return;
+      // P1: Worker retry should bypass blocking - let legacy handle it
+      if (isWorkerRetryIntent(submittedText) && workerBlocker) {
+        setWorkerBlocker(null);
+        addLog("info", "Capability Router: worker retry bypasses blocked decision", "router");
+        // Continue to legacy retry flow below
+      }
+      // P1: Repo-first when no repo loaded - GitHub access needs a repo to validate against
+      else if (capabilityDecision.blocker === 'github_access_missing' && !effectiveRepoReady) {
+        appendChatLine({
+          role: 'assistant',
+          text: 'Route blockiert: GitHub-Zugang erfordert ein geladenes Repository.\nBitte zuerst GitHub-Repo-Link senden.',
+        });
+        addLog("warn", "Capability Router blocked: repo-first needed before GitHub access", "router");
+        return;
+      }
+      // P2: Legacy Worker fallback for unrecognized intents
+      else if (capabilityDecision.blocker === 'unsupported_intent') {
+        addLog("info", "Capability Router: unsupported intent, falling through to legacy Worker", "router");
+        // Continue to legacy Worker/executor flow below
+      }
+      // Default: Block with clear message
+      else {
+        const blockerMessage = capabilityDecision.blocker
+          ? `Route blockiert: ${capabilityDecision.reason}`
+          : `Auftrag nicht erlaubt: ${capabilityDecision.reason}`;
+        appendChatLine({
+          role: 'assistant',
+          text: blockerMessage,
+        });
+        addLog("warn", `Capability Router blocked: ${capabilityDecision.route} - ${capabilityDecision.reason}`, "router");
+        return;
+      }
     }
 
     // ── Issue #502: Terminal decisions (like local-runtime-answer) stop routing
