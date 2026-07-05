@@ -3577,8 +3577,34 @@ export function BuilderContainer({
 
     // ── Issue #502: Terminal decisions (like local-runtime-answer) stop routing
     // These are completed immediately - no Worker/executor calls needed.
+    // BUT: local-runtime-answer must still produce an assistant chat line!
     if (capabilityDecision.isTerminal) {
-      addLog("info", `Capability Router: terminal decision, routing complete`, "router");
+      if (capabilityDecision.route === 'local-runtime-answer') {
+        // Build and append the local status answer BEFORE returning
+        const statusAnswer = buildLocalStatusAnswer({
+          githubWriteAllowed,
+          githubAccessState: githubAccessState.state,
+          writeIntentBlockedByRepo: !effectiveRepoReady,
+          openhandsRunning: openhandsJob?.status === 'running',
+          draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+          hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+          workerBlocker,
+          buildWorkerBlockerAnswer: workerBlocker
+            ? () =>
+                buildWorkerBlockerAnswer({
+                  blocker: workerBlocker,
+                  repoReady: effectiveRepoReady,
+                  chatRepoSnapshot,
+                  openhandsReady,
+                })
+            : undefined,
+        });
+        appendChatLine({ role: 'assistant', text: statusAnswer });
+        addLog('info', 'Capability Router: local-runtime-answer terminal decision completed', 'router');
+        return;
+      }
+      addLog("info", `Capability Router: terminal decision (${String(capabilityDecision.route)}), routing complete`, "router");
       return;
     }
 
