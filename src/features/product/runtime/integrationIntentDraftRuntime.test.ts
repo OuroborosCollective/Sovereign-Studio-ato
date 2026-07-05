@@ -7,7 +7,6 @@ import {
   buildDraftCreatedEvent,
   buildDraftConfirmedEvent,
   buildDraftRejectedEvent,
-  buildDraftRephrasedEvent,
   buildRouteStartedEvent,
   buildRouteBlockedEvent,
   createInitialDraftState,
@@ -26,13 +25,14 @@ describe('integrationIntentDraftRuntime', () => {
   describe('createIntegrationIntentDraft', () => {
     it('creates draft from normal implementation text', () => {
       const input = 'Der Bot soll jede Eingabe als Integrationsauftrag verstehen';
-      const draft = createIntegrationIntentDraft(input);
+      const draft = createIntegrationIntentDraft(input, undefined, { now: 1700000000000, idSeed: 'test1' });
 
       expect(draft).not.toBeNull();
       expect(draft?.title).toBe('Der Bot soll jede Eingabe als Integrationsauftrag verstehen');
       expect(draft?.goal).toBeTruthy();
       expect(draft?.originalText).toBe(input);
-      expect(draft?.id).toMatch(/^draft_/);
+      expect(draft?.id).toBe('draft_test1');
+      expect(draft?.createdAt).toBe(1700000000000);
     });
 
     it('returns null for questions ending with ?', () => {
@@ -84,13 +84,13 @@ describe('integrationIntentDraftRuntime', () => {
         { path: 'docs/readme.md', type: 'blob' },
       ];
       const input = 'Verbesser den Chat';
-      const draft = createIntegrationIntentDraft(input, repoFiles);
+      const draft = createIntegrationIntentDraft(input, repoFiles, { now: 1700000000000, idSeed: 'files-test' });
       expect(draft?.affectedFiles).toContain('src/components/Chat.tsx');
     });
 
     it('draft contains no tokens in sensitive fields', () => {
       const input = 'Test input without secrets';
-      const draft = createIntegrationIntentDraft(input);
+      const draft = createIntegrationIntentDraft(input, undefined, { now: 1700000000000, idSeed: 'tokens-test' });
 
       expect(draft?.title).not.toContain('sk-');
       expect(draft?.title).not.toContain('ghp_');
@@ -104,7 +104,7 @@ describe('integrationIntentDraftRuntime', () => {
         type: 'blob' as const,
       }));
       const input = 'Verbesser die UI Komponenten';
-      const draft = createIntegrationIntentDraft(input, repoFiles);
+      const draft = createIntegrationIntentDraft(input, repoFiles, { now: 1700000000000, idSeed: 'limit-test' });
       expect(draft?.affectedFiles.length).toBeLessThanOrEqual(5);
     });
   });
@@ -115,7 +115,7 @@ describe('integrationIntentDraftRuntime', () => {
 
   describe('formatIntegrationIntentDraft', () => {
     it('formats draft with all fields', () => {
-      const draft = createIntegrationIntentDraft('Implementiere einen neuen Button');
+      const draft = createIntegrationIntentDraft('Implementiere einen neuen Button', undefined, { now: 1700000000000, idSeed: 'format-test' });
       if (!draft) throw new Error('Draft should not be null');
 
       const formatted = formatIntegrationIntentDraft(draft);
@@ -133,7 +133,7 @@ describe('integrationIntentDraftRuntime', () => {
 
   describe('canConfirmIntegrationIntentDraft', () => {
     it('allows confirm when repo is ready', () => {
-      const draft = createIntegrationIntentDraft('Test input');
+      const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
       if (!draft) throw new Error('Draft should not be null');
 
       const result = canConfirmIntegrationIntentDraft(draft, {
@@ -147,7 +147,7 @@ describe('integrationIntentDraftRuntime', () => {
     });
 
     it('blocks confirm when repo is not ready', () => {
-      const draft = createIntegrationIntentDraft('Test input');
+      const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
       if (!draft) throw new Error('Draft should not be null');
 
       const result = canConfirmIntegrationIntentDraft(draft, {
@@ -162,7 +162,7 @@ describe('integrationIntentDraftRuntime', () => {
     });
 
     it('allows confirm when openhands is ready even without github', () => {
-      const draft = createIntegrationIntentDraft('Test input');
+      const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
       if (!draft) throw new Error('Draft should not be null');
 
       const result = canConfirmIntegrationIntentDraft(draft, {
@@ -176,7 +176,7 @@ describe('integrationIntentDraftRuntime', () => {
     });
 
     it('blocks confirm when no execution path is available', () => {
-      const draft = createIntegrationIntentDraft('Test input');
+      const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
       if (!draft) throw new Error('Draft should not be null');
 
       const result = canConfirmIntegrationIntentDraft(draft, {
@@ -283,13 +283,13 @@ describe('integrationIntentDraftRuntime', () => {
 
       const pending: IntegrationIntentDraftState = {
         status: 'pending',
-        draft: createIntegrationIntentDraft('test')!,
+        draft: createIntegrationIntentDraft('test', undefined, { now: 1700000000000, idSeed: 'query-test' })!,
       };
       expect(isConfirmedDraft(pending)).toBe(false);
 
       const confirmed: IntegrationIntentDraftState = {
         status: 'confirmed',
-        draft: createIntegrationIntentDraft('test')!,
+        draft: createIntegrationIntentDraft('test', undefined, { now: 1700000000000, idSeed: 'query-test' })!,
       };
       expect(isConfirmedDraft(confirmed)).toBe(true);
     });
@@ -300,7 +300,7 @@ describe('integrationIntentDraftRuntime', () => {
 
       const pending: IntegrationIntentDraftState = {
         status: 'pending',
-        draft: createIntegrationIntentDraft('test')!,
+        draft: createIntegrationIntentDraft('test', undefined, { now: 1700000000000, idSeed: 'query-test' })!,
       };
       expect(hasPendingDraft(pending)).toBe(true);
     });
@@ -311,7 +311,7 @@ describe('integrationIntentDraftRuntime', () => {
 
       const pending: IntegrationIntentDraftState = {
         status: 'pending',
-        draft: createIntegrationIntentDraft('test')!,
+        draft: createIntegrationIntentDraft('test', undefined, { now: 1700000000000, idSeed: 'query-test' })!,
       };
       expect(getCurrentDraft(pending)).not.toBeNull();
     });
@@ -323,7 +323,7 @@ describe('integrationIntentDraftRuntime', () => {
 
   describe('action event builders', () => {
     it('buildDraftCreatedEvent creates valid event', () => {
-      const draft = createIntegrationIntentDraft('Test task');
+      const draft = createIntegrationIntentDraft('Test task', undefined, { now: 1700000000000, idSeed: 'event-test' });
       if (!draft) throw new Error('Draft should not be null');
 
       const event = buildDraftCreatedEvent(draft);
@@ -335,7 +335,7 @@ describe('integrationIntentDraftRuntime', () => {
     });
 
     it('buildDraftConfirmedEvent creates valid event', () => {
-      const draft = createIntegrationIntentDraft('Test task');
+      const draft = createIntegrationIntentDraft('Test task', undefined, { now: 1700000000000, idSeed: 'event-test' });
       if (!draft) throw new Error('Draft should not be null');
 
       const event = buildDraftConfirmedEvent(draft);
@@ -396,11 +396,13 @@ describe('integrationIntentDraftRuntime', () => {
       expect(draft?.title.length).toBeLessThanOrEqual(80);
     });
 
-    it('generates unique IDs', () => {
-      const draft1 = createIntegrationIntentDraft('Task 1');
-      const draft2 = createIntegrationIntentDraft('Task 2');
+    it('generates deterministic IDs when seed provided', () => {
+      const draft1 = createIntegrationIntentDraft('Task 1', undefined, { now: 1700000000000, idSeed: 'det-1' });
+      const draft2 = createIntegrationIntentDraft('Task 2', undefined, { now: 1700000000000, idSeed: 'det-2' });
 
       if (!draft1 || !draft2) throw new Error('Drafts should not be null');
+      expect(draft1.id).toBe('draft_det-1');
+      expect(draft2.id).toBe('draft_det-2');
       expect(draft1.id).not.toBe(draft2.id);
     });
   });

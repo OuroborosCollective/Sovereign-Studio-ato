@@ -63,7 +63,7 @@ export type IntegrationIntentDraftState =
  * Actions that can be performed on the draft
  */
 export type IntegrationIntentDraftAction =
-  | { type: 'CREATE_DRAFT'; input: string; repoFiles?: RepoFile[] }
+  | { type: 'CREATE_DRAFT'; input: string; repoFiles?: RepoFile[]; options?: CreateDraftOptions }
   | { type: 'CONFIRM_DRAFT' }
   | { type: 'REJECT_DRAFT' }
   | { type: 'REPHRASE_DRAFT' }
@@ -73,7 +73,14 @@ export type IntegrationIntentDraftAction =
 // INTERNAL HELPERS
 // ─────────────────────────────────────────────────────────────
 
-function generateId(): string {
+/**
+ * Generate a unique ID for drafts.
+ * Uses provided seed for determinism in tests, falls back to time+random for production.
+ */
+function generateId(seed?: string): string {
+  if (seed) {
+    return `draft_${seed}`;
+  }
   return `draft_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -249,6 +256,13 @@ function createRephrasedText(input: string): string {
 // CORE RUNTIME FUNCTIONS
 // ─────────────────────────────────────────────────────────────
 
+export interface CreateDraftOptions {
+  /** Override timestamp for deterministic testing */
+  now?: number;
+  /** Override ID seed for deterministic testing */
+  idSeed?: string;
+}
+
 /**
  * Create an integration intent draft from user input.
  * Returns null if input should not be treated as an integration request.
@@ -258,10 +272,15 @@ function createRephrasedText(input: string): string {
  * - Repo URLs are load commands, not integration requests
  * - Very short inputs (< 4 chars) are ignored
  * - Commands starting with / are handled by slash command parser
+ *
+ * @param input - The user input text
+ * @param repoFiles - Optional repo files for affected file derivation
+ * @param options - Optional overrides for deterministic testing (now, idSeed)
  */
 export function createIntegrationIntentDraft(
   input: string,
   repoFiles?: RepoFile[],
+  options?: CreateDraftOptions,
 ): IntegrationIntentDraft | null {
   const clean = input.trim();
 
@@ -291,16 +310,16 @@ export function createIntegrationIntentDraft(
     return null;
   }
 
-  const now = Date.now();
+  const timestamp = options?.now ?? Date.now();
 
   return {
-    id: generateId(),
+    id: generateId(options?.idSeed),
     originalText: clean,
     title: extractTitle(clean),
     goal: extractGoal(clean),
     scope: extractScopeKeywords(clean),
     affectedFiles: deriveAffectedFiles(clean, repoFiles),
-    createdAt: now,
+    createdAt: timestamp,
     rephrasedText: createRephrasedText(clean),
   };
 }
@@ -368,7 +387,7 @@ export function reduceIntegrationIntentDraftAction(
 ): IntegrationIntentDraftState {
   switch (action.type) {
     case 'CREATE_DRAFT': {
-      const draft = createIntegrationIntentDraft(action.input, repoFiles);
+      const draft = createIntegrationIntentDraft(action.input, repoFiles, action.options);
       if (!draft) {
         return { status: 'idle' };
       }
