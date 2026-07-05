@@ -31,7 +31,6 @@ import type {
 import {
   createMaskedWorkspaceEvent,
   validateWorkspaceRequest,
-  isPathAllowed,
 } from './sovereignWorkspaceTypes';
 import {
   shouldCreateWorkspace,
