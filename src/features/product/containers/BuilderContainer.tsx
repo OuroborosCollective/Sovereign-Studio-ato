@@ -3635,6 +3635,7 @@ export function BuilderContainer({
                 openhandsReady,
               })
           : undefined,
+        questionText: submittedText,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
       addLog('info', 'Local completion-status question answered locally', 'router');
