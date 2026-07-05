@@ -20,7 +20,7 @@ from functools import wraps
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-from flask import Flask, jsonify, request, make_response
+from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
@@ -87,55 +87,94 @@ def query(sql: str, params=None, *, one=False, write=False):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-# Cache for current admin (set by require_admin)
-_current_admin: dict | None = None
+
+def _admin_payload(row, auth_mode: str) -> dict:
+    return {
+        "id": str(row["id"]),
+        "email": row["email"],
+        "role": row["role"],
+        "authMode": auth_mode,
+    }
+
+
+def _lookup_admin_api_key(token: str) -> dict | None:
+    key_hash = hashlib.sha256(token.encode()).hexdigest()
+    admin = query(
+        """SELECT a.id, a.email, a.role
+           FROM admin_users a
+           JOIN admin_api_keys k ON k.admin_id = a.id
+           WHERE k.key_hash = %s AND a.role IN ('admin','superadmin')
+           LIMIT 1""",
+        (key_hash,), one=True,
+    )
+    if not admin:
+        return None
+    query(
+        "UPDATE admin_api_keys SET last_used_at = NOW() WHERE key_hash = %s",
+        (key_hash,), write=True,
+    )
+    return _admin_payload(admin, "admin_api_key")
+
+
+def _lookup_bootstrap_admin(token: str) -> dict | None:
+    if not ADMIN_API_KEY or not hmac.compare_digest(token, ADMIN_API_KEY):
+        return None
+
+    bootstrap_email = os.getenv("ADMIN_BOOTSTRAP_ADMIN_EMAIL", "").strip()
+    if bootstrap_email:
+        admin = query(
+            """SELECT id, email, role
+               FROM admin_users
+               WHERE email = %s AND role IN ('admin','superadmin')
+               LIMIT 1""",
+            (bootstrap_email,), one=True,
+        )
+        return _admin_payload(admin, "bootstrap_env_admin") if admin else None
+
+    count_row = query(
+        "SELECT COUNT(*) AS n FROM admin_users WHERE role IN ('admin','superadmin')",
+        one=True,
+    )
+    if int(count_row["n"]) != 1:
+        return None
+
+    admin = query(
+        """SELECT id, email, role
+           FROM admin_users
+           WHERE role IN ('admin','superadmin')
+           LIMIT 1""",
+        one=True,
+    )
+    return _admin_payload(admin, "bootstrap_single_admin") if admin else None
 
 
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        global _current_admin
-        # Fail-closed: if ADMIN_API_KEY is unset/empty, always deny.
-        if not ADMIN_API_KEY:
-            return jsonify({"error": "Admin-Schlüssel nicht konfiguriert"}), 503
+        g.current_admin = None
         auth = request.headers.get("Authorization", "")
         token = auth[7:] if auth.startswith("Bearer ") else ""
-        if not token or token != ADMIN_API_KEY:
-            _current_admin = None
+        if not token:
             return jsonify({"error": "Nicht autorisiert"}), 401
-        
-        # Look up the admin associated with this API key
-        key_hash = hashlib.sha256(token.encode()).hexdigest()
-        admin = query(
-            """SELECT a.id, a.email, a.role 
-               FROM admin_users a
-               JOIN admin_api_keys k ON k.admin_id = a.id
-               WHERE k.key_hash = %s AND a.role IN ('admin','superadmin')
-               LIMIT 1""",
-            (key_hash,), one=True,
-        )
-        
-        # Fallback: if no key mapping exists, deny (don't use first admin)
+
+        admin = _lookup_admin_api_key(token)
         if not admin:
-            _current_admin = None
+            admin = _lookup_bootstrap_admin(token)
+
+        if not admin:
             return jsonify({
                 "error": "API-Key keinem Admin zugeordnet",
-                "hint": "Admin muss sich einmalig mit dem Key anmelden"
+                "hint": "Admin-Key in admin_api_keys hinterlegen oder ADMIN_BOOTSTRAP_ADMIN_EMAIL eindeutig setzen",
             }), 401
-        
-        _current_admin = {
-            "id": str(admin["id"]),
-            "email": admin["email"],
-            "role": admin["role"],
-        }
+
+        g.current_admin = admin
         return f(*args, **kwargs)
     return decorated
 
 
 def get_current_admin() -> dict | None:
-    """Get the currently authenticated admin from the request context."""
-    global _current_admin
-    return _current_admin
+    """Get the currently authenticated admin from request-local Flask context."""
+    return getattr(g, "current_admin", None)
 
 
 # ── Pagination helper ─────────────────────────────────────────────────────────
@@ -245,10 +284,14 @@ def admin_users():
 @require_admin
 def admin_update_user(uid):
     body = request.get_json(force=True) or {}
-    allowed = {"role", "credits", "subscriptionStatus", "isBanned"}
+    if "credits" in body:
+        return jsonify({
+            "error": "credits dürfen nur über credit-adjustment und append-only ledger geändert werden",
+            "blocker": "credit_ledger_required",
+        }), 400
+    allowed = {"role", "subscriptionStatus", "isBanned"}
     col_map = {
         "role":               "role",
-        "credits":            "credits",
         "subscriptionStatus": "subscription_status",
         "isBanned":           "is_banned",
     }
