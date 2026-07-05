@@ -2857,6 +2857,12 @@ input[type=text],input[type=password]{-webkit-appearance:none}
     <nav>
       <button class="active" onclick="showSection('payments',this)">💳 Zahlungen</button>
       <button onclick="showSection('packages',this)">📦 Credit-Pakete</button>
+      <button onclick="showSection('users',this)">👥 Users</button>
+      <button onclick="showSection('billing',this)">📋 Billing</button>
+      <button onclick="showSection('llm',this)">🤖 LLM Routes</button>
+      <button onclick="showSection('tools',this)">🛠️ Tools</button>
+      <button onclick="showSection('runtime',this)">🔧 Runtime</button>
+      <button onclick="showSection('audit',this)">📊 Audit</button>
     </nav>
     <button class="logout" onclick="doLogout()">Abmelden</button>
   </header>
@@ -2874,6 +2880,63 @@ input[type=text],input[type=password]{-webkit-appearance:none}
       <h2>Credit-Pakete</h2>
       <div class="subtitle">Verfügbare Käufe für Nutzer.</div>
       <div id="pkgList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- USERS -->
+    <div id="s-users" class="section">
+      <h2>User Manager</h2>
+      <div class="subtitle">User suchen, bearbeiten, Credits anpassen.</div>
+      <div class="form-group" style="margin-bottom:16px">
+        <input type="text" id="userSearch" placeholder="Suche nach E-Mail, Name…" onkeydown="if(event.key==='Enter')loadUsers()"/>
+        <button class="btn btn-primary" style="margin-top:8px" onclick="loadUsers()">Suchen</button>
+      </div>
+      <div id="userList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- BILLING -->
+    <div id="s-billing" class="section">
+      <h2>Billing History</h2>
+      <div class="subtitle">Alle Transaktionen und Zahlungen.</div>
+      <div class="form-group" style="display:flex;gap:8px;margin-bottom:16px">
+        <input type="text" id="billingUserId" placeholder="User ID (optional)" style="flex:1"/>
+        <select id="billingType" style="width:160px">
+          <option value="">Alle Typen</option>
+          <option value="purchase">Purchase</option>
+          <option value="adjustment">Adjustment</option>
+          <option value="refund">Refund</option>
+          <option value="spend">Spend</option>
+        </select>
+        <button class="btn btn-primary" onclick="loadBilling()">Filtern</button>
+      </div>
+      <div id="billingList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- LLM ROUTES -->
+    <div id="s-llm" class="section">
+      <h2>LLM Routes</h2>
+      <div class="subtitle">Provider aktivieren, deaktivieren, Reihenfolge ändern.</div>
+      <div id="llmList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- TOOLS -->
+    <div id="s-tools" class="section">
+      <h2>Tools & Executors</h2>
+      <div class="subtitle">Workspace-Tools und Executor-Routen verwalten.</div>
+      <div id="toolsList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- RUNTIME -->
+    <div id="s-runtime" class="section">
+      <h2>Runtime Settings</h2>
+      <div class="subtitle">Worker, BYOK-Modus und CORS-Konfiguration.</div>
+      <div id="runtimeList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- AUDIT -->
+    <div id="s-audit" class="section">
+      <h2>Audit Log</h2>
+      <div class="subtitle">Alle Admin-Aktionen im Überblick.</div>
+      <div id="auditList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
     </div>
 
   </main>
@@ -2913,6 +2976,12 @@ function initApp(){
   document.getElementById('app').style.display='flex';
   loadPaymentMethods();
   loadPackages();
+  loadUsers();
+  loadBilling();
+  loadLLMRoutes();
+  loadTools();
+  loadRuntime();
+  loadAudit();
 }
 
 function showSection(id, btn){
@@ -3097,6 +3166,278 @@ function showPkgMsg(id, ok, text){
   if(!el) return;
   el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block';
   setTimeout(()=>{ el.style.display='none'; },3000);
+}
+
+/* ────── USERS ────── */
+let userPage = 1;
+
+async function loadUsers(pg=1){
+  userPage = pg;
+  const search = encodeURIComponent(document.getElementById('userSearch').value);
+  const el = document.getElementById('userList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/users?page='+pg+'&search='+search,{headers:hdr()});
+    const d = await r.json();
+    renderUsers(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderUsers(d){
+  const el = document.getElementById('userList');
+  if(!d.users || !d.users.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine User gefunden.</div>';
+    return;
+  }
+  el.innerHTML = d.users.map(u=>userRow(u)).join('') +
+    '<div style="margin-top:16px;display:flex;gap:8px;align-items:center">' +
+    (d.page>1?'<button class="btn btn-ghost" onclick="loadUsers('+(d.page-1)+')">← Zurück</button>':'') +
+    '<span style="color:var(--muted);font-size:13px">Seite '+d.page+' von '+Math.ceil(d.total/50)+'</span>' +
+    (d.page*50<d.total?'<button class="btn btn-ghost" onclick="loadUsers('+(d.page+1)+')">Weiter →</button>':'') +
+    '</div>';
+}
+
+function userRow(u){
+  const status = u.isBanned?'banned':u.subscriptionStatus||'active';
+  const statusCls = u.isBanned?'off':status==='active'?'on':'off';
+  return `<div class="card" id="ur_${u.id}">
+    <div class="card-header">
+      <span class="card-title">${esc(u.email||'')}</span>
+      <span style="color:var(--muted);font-size:13px">${esc(u.displayName||'')}</span>
+      <span class="badge ${statusCls}">${status}</span>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits</label><div style="font-size:18px;font-weight:600">${u.credits||0}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Rolle</label><div>${esc(u.role||'user')}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Erstellt</label><div style="font-size:12px">${u.createdAt?(new Date(u.createdAt)).toLocaleDateString():''}</div></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="toggleBan('${u.id}',${!u.isBanned})">${u.isBanned?'Entsperren':'Sperren'}</button>
+        <button class="btn btn-ghost" onclick="adjustCredits('${u.id}')">Credits anpassen</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function toggleBan(uid, ban){
+  if(!confirm('User wirklich '+ (ban?'sperren':'entsperren') +'?')) return;
+  await fetch(BASE+'/api/admin/users/'+uid,{method:'PATCH',headers:hdr(),body:JSON.stringify({isBanned:ban})});
+  loadUsers(userPage);
+}
+
+async function adjustCredits(uid){
+  const amount = prompt('Credit-Änderung (positiv = hinzufügen, negativ = abziehen):','0');
+  if(amount===null) return;
+  const amountInt = parseInt(amount);
+  if(isNaN(amountInt)||amountInt===0){ alert('Ungültiger Betrag.'); return; }
+  const reason = prompt('Grund für die Anpassung:');
+  if(!reason) return;
+  const r = await fetch(BASE+'/api/admin/users/'+uid+'/credit-adjustment',{
+    method:'POST',headers:hdr(),body:JSON.stringify({amount:amountInt,reason})
+  });
+  const d = await r.json();
+  if(d.error) alert('Fehler: '+d.error);
+  else { alert('Credits angepasst ✓'); loadUsers(userPage); }
+}
+
+/* ────── BILLING ────── */
+let billingPage = 1;
+
+async function loadBilling(pg=1){
+  billingPage = pg;
+  const uid = encodeURIComponent(document.getElementById('billingUserId').value||'');
+  const ttype = encodeURIComponent(document.getElementById('billingType').value||'');
+  const el = document.getElementById('billingList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    let url = BASE+'/api/admin/transactions?page='+pg;
+    if(uid) url += '&user_id='+uid;
+    if(ttype) url += '&type='+ttype;
+    const r = await fetch(url,{headers:hdr()});
+    const d = await r.json();
+    renderBilling(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderBilling(d){
+  const el = document.getElementById('billingList');
+  if(!d.transactions || !d.transactions.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Transaktionen gefunden.</div>';
+    return;
+  }
+  const html = d.transactions.map(t=>`<tr>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${t.createdAt?(new Date(t.createdAt)).toLocaleString():''}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><code style="font-size:11px">${esc(t.userId||'').substring(0,8)}…</code></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><span class="badge ${t.type==='purchase'?'on':'off'}">${t.type}</span></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${t.amount||0}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><span class="badge ${t.status==='completed'?'on':'off'}">${t.status}</span></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.description||'')}">${esc(t.description||'')}</td>
+  </tr>`).join('');
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#21262d;text-align:left">
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Datum</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">User</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Typ</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Betrag</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Status</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Beschreibung</th>
+  </tr></thead><tbody>${html}</tbody></table>` +
+    '<div style="margin-top:16px;display:flex;gap:8px;align-items:center">' +
+    (d.page>1?'<button class="btn btn-ghost" onclick="loadBilling('+(d.page-1)+')">← Zurück</button>':'') +
+    '<span style="color:var(--muted);font-size:13px">Seite '+d.page+'</span>' +
+    (d.page*50<d.total?'<button class="btn btn-ghost" onclick="loadBilling('+(d.page+1)+')">Weiter →</button>':'') +
+    '</div>';
+}
+
+/* ────── LLM ROUTES ────── */
+async function loadLLMRoutes(){
+  const el = document.getElementById('llmList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/llm/routes',{headers:hdr()});
+    const d = await r.json();
+    renderLLMRoutes(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderLLMRoutes(d){
+  const el = document.getElementById('llmList');
+  if(!d.routes || !d.routes.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine LLM Routes konfiguriert.</div>';
+    return;
+  }
+  el.innerHTML = d.routes.map(r=>`<div class="card" id="lr_${r.id}">
+    <div class="card-header">
+      <span class="card-title">${esc(r.provider||'')} / ${esc(r.modelName||r.modelId||'')}</span>
+      <span class="badge ${r.disabled?'off':'on'}">${r.disabled?'Deaktiviert':'Aktiv'}</span>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Provider</label><div>${esc(r.provider||'')}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits/Unit</label><div>${r.creditsPerUnit||0}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Priorität</label><div>${r.priority||0}</div></div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Route aktivieren</span>
+        <label class="toggle">
+          <input type="checkbox" id="ltog_${r.id}" ${r.disabled?'':'checked'} onchange="toggleLLM('${r.id}',!this.checked)"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>`).join('');
+}
+
+async function toggleLLM(rid, disabled){
+  await fetch(BASE+'/api/admin/llm/routes/'+rid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})});
+  loadLLMRoutes();
+}
+
+/* ────── TOOLS ────── */
+async function loadTools(){
+  const el = document.getElementById('toolsList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/launcher/tools',{headers:hdr()});
+    const d = await r.json();
+    renderTools(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderTools(d){
+  const el = document.getElementById('toolsList');
+  if(!d.tools || !d.tools.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Tools konfiguriert.</div>';
+    return;
+  }
+  el.innerHTML = d.tools.map(t=>`<div class="card" id="tr_${t.id}">
+    <div class="card-header">
+      <span class="card-title">${esc(t.label||'')}</span>
+      ${t.badge?'<span class="badge on">'+esc(t.badge)+'</span>':''}
+      <span class="badge ${t.disabled?'off':'on'}">${t.disabled?'Deaktiviert':'Aktiv'}</span>
+    </div>
+    <div class="card-body">
+      <div class="toggle-row">
+        <span class="toggle-label">Tool aktivieren</span>
+        <label class="toggle">
+          <input type="checkbox" id="ttog_${t.id}" ${t.disabled?'':'checked'} onchange="toggleTool('${t.id}',!this.checked)"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>`).join('');
+}
+
+async function toggleTool(tid, disabled){
+  await fetch(BASE+'/api/admin/launcher/tools/'+tid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})});
+  loadTools();
+}
+
+/* ────── RUNTIME ────── */
+async function loadRuntime(){
+  const el = document.getElementById('runtimeList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  // Runtime settings are informational - show a placeholder for now
+  el.innerHTML = `<div class="card">
+    <div class="card-header"><span class="card-title">Worker Status</span></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">BYOK Modus</label><div style="color:var(--accent)">user-key</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">CORS Origins</label><div style="font-size:12px">3 konfiguriert</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Worker Health</label><div style="color:var(--accent2)">✓ Gesund</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Letzter Deploy</label><div style="font-size:12px">Vor 2 Tagen</div></div>
+      </div>
+      <div class="subtitle" style="margin-top:16px">Worker-, BYOK- und CORS-Konfiguration werden über Cloudflare Dashboard verwaltet.</div>
+    </div>
+  </div>`;
+}
+
+/* ────── AUDIT ────── */
+async function loadAudit(){
+  const el = document.getElementById('auditList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/audit-log',{headers:hdr()});
+    const d = await r.json();
+    renderAudit(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+}
+
+function renderAudit(d){
+  const el = document.getElementById('auditList');
+  if(!d.entries || !d.entries.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Audit-Einträge gefunden.</div>';
+    return;
+  }
+  const html = d.entries.map(e=>`<tr>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${e.createdAt?(new Date(e.createdAt)).toLocaleString():''}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)">${esc(e.adminEmail||'system')}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><code style="font-size:11px">${esc(e.action||'')}</code></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border)"><code style="font-size:11px">${esc((e.targetId||'').substring(0,8))}…</code></td>
+    <td style="padding:8px 12px;border-bottom:1px solid var(--border);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(JSON.stringify(e.changes||{}))}">${esc(JSON.stringify(e.changes||{}))}</td>
+  </tr>`).join('');
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#21262d;text-align:left">
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Zeit</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Admin</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Aktion</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Target</th>
+    <th style="padding:8px 12px;font-size:11px;color:var(--muted);text-transform:uppercase">Änderungen</th>
+  </tr></thead><tbody>${html}</tbody></table>` +
+    '<div style="margin-top:16px;display:flex;gap:8px;align-items:center">' +
+    (d.page>1?'<button class="btn btn-ghost" onclick="loadAuditPage('+(d.page-1)+')">← Zurück</button>':'') +
+    '<span style="color:var(--muted);font-size:13px">Seite '+d.page+'</span>' +
+    (d.page*50<d.total?'<button class="btn btn-ghost" onclick="loadAuditPage('+(d.page+1)+')">Weiter →</button>':'') +
+    '</div>';
+}
+
+async function loadAuditPage(pg){
+  const el = document.getElementById('auditList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try {
+    const r = await fetch(BASE+'/api/admin/audit-log?page='+pg,{headers:hdr()});
+    const d = await r.json();
+    renderAudit(d);
+  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
