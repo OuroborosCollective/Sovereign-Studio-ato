@@ -1,3 +1,9 @@
+// Import blocker types for registry integration
+import type {
+  SovereignBlockerKind,
+  SovereignBlockerSeverity,
+} from './sovereignBlockerRegistry';
+
 export type SovereignActionRoute =
   | 'repo'
   | 'free-chat'
@@ -9,6 +15,9 @@ export type SovereignActionRoute =
   | 'github-access'
   | 'toolchain'
   | 'runtime';
+
+// Re-export blocker types for consumers
+export type { SovereignBlockerKind, SovereignBlockerSeverity } from './sovereignBlockerRegistry';
 
 export type SovereignActionKind =
   | 'input_received'
@@ -53,6 +62,16 @@ export interface SovereignActionStreamState {
   readonly events: readonly SovereignActionEvent[];
   readonly activeRoute: SovereignActionRoute | null;
   readonly lastEvent: SovereignActionEvent | null;
+}
+
+/** Extended state with blocker registry integration */
+export interface SovereignActionStreamStateWithBlockers extends SovereignActionStreamState {
+  readonly blockerCounts: {
+    readonly activeBlockers: number;
+    readonly warnings: number;
+    readonly errors: number;
+  };
+  readonly blockedEventCount: number;
 }
 
 const TERMINAL_STATES: ReadonlySet<SovereignActionEventState> = new Set([
@@ -265,5 +284,100 @@ export function buildWorkerResponseEvent(): SovereignActionEventInput {
     route: 'worker',
     label: 'Worker-Antwort erhalten',
     state: 'done',
+  };
+}
+
+/**
+ * Map action event kinds to blocker kinds for registry integration
+ */
+function mapEventKindToBlockerKind(kind: SovereignActionKind): SovereignBlockerKind | null {
+  switch (kind) {
+    case 'github_access_required':
+      return 'github_access_required';
+    case 'access_required':
+      return 'github_access_required';
+    case 'patch_apply_blocked':
+      return 'patch_route_unavailable';
+    case 'patch_blocked':
+      return 'patch_route_unavailable';
+    case 'blocked':
+      return 'worker_blocked';
+    case 'failed':
+      return 'runtime_error';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Map action event state to severity
+ */
+function mapEventStateToSeverity(state: SovereignActionEventState): SovereignBlockerSeverity {
+  switch (state) {
+    case 'blocked':
+      return 'warning';
+    case 'failed':
+      return 'error';
+    default:
+      return 'info';
+  }
+}
+
+/**
+ * Get blocker counts from events without registry (for inline display).
+ * This deduplicates by route+kind so repeated blocked events don't inflate counts.
+ */
+export function deriveBlockerCountsFromEvents(
+  events: readonly SovereignActionEvent[],
+): { activeBlockers: number; warnings: number; errors: number; blockedEventCount: number } {
+  // Track unique blockers by route+kind
+  const uniqueBlockers = new Map<string, { kind: SovereignBlockerKind; severity: SovereignBlockerSeverity }>();
+  
+  let blockedCount = 0;
+
+  for (const event of events) {
+    if (event.state === 'blocked' || event.state === 'failed') {
+      blockedCount++;
+      
+      const blockerKind = mapEventKindToBlockerKind(event.kind);
+      if (blockerKind) {
+        const key = `${event.route}:${blockerKind}`;
+        if (!uniqueBlockers.has(key)) {
+          uniqueBlockers.set(key, {
+            kind: blockerKind,
+            severity: mapEventStateToSeverity(event.state),
+          });
+        }
+      }
+    }
+  }
+
+  const blockers = Array.from(uniqueBlockers.values());
+  const warnings = blockers.filter((b) => b.severity === 'warning').length;
+  const errors = blockers.filter((b) => b.severity === 'error').length;
+
+  return {
+    activeBlockers: blockers.length,
+    warnings,
+    errors,
+    blockedEventCount: blockedCount,
+  };
+}
+
+/**
+ * Extend action stream state with blocker counts
+ */
+export function extendWithBlockerCounts(
+  stream: SovereignActionStreamState,
+): SovereignActionStreamStateWithBlockers {
+  const counts = deriveBlockerCountsFromEvents(stream.events);
+  return {
+    ...stream,
+    blockerCounts: {
+      activeBlockers: counts.activeBlockers,
+      warnings: counts.warnings,
+      errors: counts.errors,
+    },
+    blockedEventCount: counts.blockedEventCount,
   };
 }
