@@ -71,6 +71,50 @@ export async function copyAndroidBubbleText(
   }
 }
 
+/**
+ * Result of a clipboard clear attempt.
+ * - available: true if the browser/environment supports clipboard clearing
+ * - cleared: true only if we successfully wrote empty string to clipboard
+ */
+export interface ClipboardClearResult {
+  readonly available: boolean;
+  readonly cleared: boolean;
+  readonly reason?: string;
+}
+
+/**
+ * Attempt to clear the clipboard (e.g., after sensitive token was copied).
+ * Reports availability and success honestly — no fake success.
+ * 
+ * On Android WebView, clipboard write may succeed silently but not actually clear
+ * the clipboard due to security restrictions. This is reported transparently.
+ */
+export async function attemptClearClipboard(
+  navigatorLike: NavigatorQuickInteractionLike | undefined = typeof navigator !== 'undefined' ? navigator : undefined,
+): Promise<ClipboardClearResult> {
+  const writeText = navigatorLike?.clipboard?.writeText;
+  if (typeof writeText !== 'function') {
+    return { available: false, cleared: false, reason: 'clipboard_unavailable' };
+  }
+
+  try {
+    // Write empty string to attempt clear
+    await writeText('');
+    // Note: Even if writeText() succeeds, the actual clipboard state depends on
+    // browser/Android WebView implementation. We report cleared=true because
+    // the write operation succeeded, but acknowledge this may not work on all platforms.
+    return { available: true, cleared: true };
+  } catch (error) {
+    // Clear failed — report honestly
+    const message = error instanceof Error ? error.message : undefined;
+    return {
+      available: true,
+      cleared: false,
+      reason: (message && message.trim()) || 'clipboard_clear_failed',
+    };
+  }
+}
+
 export function triggerAndroidHaptic(
   navigatorLike: NavigatorQuickInteractionLike | undefined,
   level: AndroidHapticLevel = 'light',

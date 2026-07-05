@@ -5,6 +5,7 @@ import {
   getGitHubAccessLabel,
   getGitHubAccessInstruction,
 } from '../runtime/githubAccessRuntime';
+import { attemptClearClipboard } from '../runtime/androidQuickInteractionRuntime';
 
 export interface GitHubAccessCardProps {
   snapshot: GitHubAccessSnapshot;
@@ -34,11 +35,13 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
   const [inputValue, setInputValue] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
+  const [clipboardClearState, setClipboardClearState] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
 
   const handleOpenModal = useCallback(() => {
     setShowModal(true);
     setInputValue('');
     setInputError(null);
+    setClipboardClearState('idle');
   }, []);
 
   const handleCloseModal = useCallback(() => {
@@ -60,6 +63,16 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
     setInputValue('');
     setInputError(null);
   }, [inputValue, onProvideToken]);
+
+  const handleClearClipboard = useCallback(async () => {
+    setClipboardClearState('clearing');
+    const result = await attemptClearClipboard();
+    if (result.cleared) {
+      setClipboardClearState('cleared');
+    } else {
+      setClipboardClearState(result.available ? 'failed' : 'idle');
+    }
+  }, []);
 
   const getStateColor = () => {
     switch (snapshot.state) {
@@ -203,16 +216,71 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
       {snapshot.state === 'ready' && snapshot.maskedToken && (
         <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 11,
-            color: C.green,
-            marginBottom: 8,
+            background: C.surface,
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+            padding: '12px 16px',
+            marginBottom: 12,
           }}
         >
-          <span>✓</span>
-          <span>GitHub {snapshot.maskedToken} nutzbar</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12,
+              color: C.green,
+              marginBottom: 8,
+            }}
+          >
+            <span>✓</span>
+            <span>GitHub {snapshot.maskedToken} nutzbar</span>
+          </div>
+          {/* Rotation guidance */}
+          <div
+            style={{
+              fontSize: 11,
+              color: C.textSub,
+              marginBottom: 12,
+            }}
+          >
+            Bitte den Token rotieren, falls er in einem Screen Recording oder Clipboard-Verlauf sichtbar war.
+          </div>
+          {/* Optional clipboard clear button */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {clipboardClearState === 'idle' && (
+              <button
+                type="button"
+                onClick={handleClearClipboard}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  background: 'transparent',
+                  color: C.textSub,
+                  fontSize: 11,
+                  border: `1px solid ${C.border}`,
+                  cursor: 'pointer',
+                }}
+              >
+                Zwischenablage leeren
+              </button>
+            )}
+            {clipboardClearState === 'clearing' && (
+              <span style={{ fontSize: 11, color: C.textSub }}>
+                Leere Zwischenablage…
+              </span>
+            )}
+            {clipboardClearState === 'cleared' && (
+              <span style={{ fontSize: 11, color: C.green }}>
+                ✓ Zwischenablage geleert
+              </span>
+            )}
+            {clipboardClearState === 'failed' && (
+              <span style={{ fontSize: 11, color: C.amber }}>
+                Zwischenablage kann hier nicht automatisch geleert werden. Bitte manuell leeren.
+              </span>
+            )}
+          </div>
         </div>
       )}
 

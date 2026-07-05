@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  attemptClearClipboard,
   copyAndroidBubbleText,
   createAndroidFollowUpDraft,
   detectAndroidQuickRepoUrl,
@@ -47,5 +48,31 @@ describe('androidQuickInteractionRuntime', () => {
     expect(vibrate).toHaveBeenCalledWith(25);
 
     expect(triggerAndroidHaptic({ vibrate: () => { throw new Error('unsupported'); } }, 'heavy')).toBe(false);
+  });
+
+  describe('attemptClearClipboard', () => {
+    it('reports unavailable when clipboard API is missing', async () => {
+      const result = await attemptClearClipboard({});
+      expect(result).toEqual({ available: false, cleared: false, reason: 'clipboard_unavailable' });
+    });
+
+    it('successfully clears clipboard when writeText is available and succeeds', async () => {
+      const writeText = vi.fn(async () => undefined);
+      const result = await attemptClearClipboard({ clipboard: { writeText } });
+      expect(result).toEqual({ available: true, cleared: true });
+      expect(writeText).toHaveBeenCalledWith('');
+    });
+
+    it('reports failure honestly when clipboard write fails', async () => {
+      const writeText = vi.fn(async () => { throw new Error('SecurityError'); });
+      const result = await attemptClearClipboard({ clipboard: { writeText } });
+      expect(result).toEqual({ available: true, cleared: false, reason: 'SecurityError' });
+    });
+
+    it('reports failure with default reason when error has no message', async () => {
+      const writeText = vi.fn(async () => { throw new Error(); });
+      const result = await attemptClearClipboard({ clipboard: { writeText } });
+      expect(result).toEqual({ available: true, cleared: false, reason: 'clipboard_clear_failed' });
+    });
   });
 });
