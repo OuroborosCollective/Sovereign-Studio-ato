@@ -160,6 +160,22 @@ import {
   createSovereignActionStreamState,
   type SovereignActionEventInput,
 } from "../runtime/sovereignActionStreamRuntime";
+import {
+  createInitialDraftState,
+  createIntegrationIntentDraft,
+  canConfirmIntegrationIntentDraft,
+  buildDraftCreatedEvent,
+  buildDraftConfirmedEvent,
+  buildDraftRejectedEvent,
+  buildDraftRephrasedEvent,
+  buildRouteStartedEvent,
+  buildRouteBlockedEvent,
+  hasPendingDraft,
+  type IntegrationIntentDraftState,
+  type IntegrationIntentDraft,
+  type IntegrationIntentDraftGateSnapshot,
+} from "../runtime/integrationIntentDraftRuntime";
+import { IntegrationIntentDraftCard } from "../components/IntegrationIntentDraftCard";
 import { SovereignToolLauncher, type ToolId } from "../components/SovereignToolLauncher";
 import { useLauncherStore } from "../../launcher/useLauncherStore";
 import { LauncherMenu } from "../../launcher/components/LauncherMenu";
@@ -340,6 +356,7 @@ import {
   isCodeGenerationIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
+  isDelegationIntent,
   isDelegatedOpenHandsExecutionIntent,
   isExecutorStatusQuestion,
   buildExecutorStatusAnswer,
@@ -2806,6 +2823,12 @@ export function BuilderContainer({
     () => createIdleSnapshot(`sovereign-${Date.now()}`),
   );
 
+  // ── Issue #520: Integration Intent Draft State
+  // Shows draft card for recognized integration tasks before execution
+  const [intentDraftState, setIntentDraftState] = useState<IntegrationIntentDraftState>(
+    createInitialDraftState,
+  );
+
   // ── Issue #445: Sync AgentWorkSnapshot from openhandsJob transitions
   useEffect(() => {
     if (!openhandsJob) return;
@@ -3529,6 +3552,32 @@ export function BuilderContainer({
 
     appendChatLine({ role: "user", text: submittedText });
     appendActionEvent(buildInputReceivedEvent(submittedText));
+
+    // ── Issue #520: Integration Intent Draft Detection
+    // Normal non-question inputs with a connected repo are treated as potential
+    // integration/implementation requests. Show a draft card for confirmation.
+    // BUT: Explicit executor commands and delegation intents bypass the draft card
+    // to maintain backward compatibility with existing test expectations.
+    if (effectiveRepoReady &&
+        !isOpenHandsExecutionIntent(submittedText) &&
+        !isDelegationIntent(submittedText) &&
+        !isDelegatedOpenHandsExecutionIntent(submittedText, chatHistory)) {
+      const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
+        path,
+        type: 'blob' as const,
+        size: 0,
+        sha: '',
+      })) ?? [];
+
+      const draft = createIntegrationIntentDraft(submittedText, repoFiles);
+      if (draft) {
+        appendActionEvent(buildDraftCreatedEvent(draft));
+        setIntentDraftState({ status: 'pending', draft });
+        addLog('info', `Integration intent draft created: ${draft.title}`, 'router');
+        // Don't continue to capability router - wait for user confirmation
+        return;
+      }
+    }
 
     // ── Issue #502: Sovereign Capability Router
     // Central routing decision using real runtime state.
@@ -4428,6 +4477,80 @@ export function BuilderContainer({
               )}
               <OutcomeHints hints={outcomeHints} />
               <SovereignActionStreamPanel stream={actionStream} />
+
+              {/* ── Issue #520: Integration Intent Draft Card — shows recognized integration task with action buttons */}
+              {hasPendingDraft(intentDraftState) && (() => {
+                const draft = intentDraftState.draft;
+                const gateSnapshot: IntegrationIntentDraftGateSnapshot = {
+                  repoReady: effectiveRepoReady,
+                  githubWriteReady: githubWriteAllowed,
+                  directPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
+                  openhandsReady: openhandsReady ?? false,
+                };
+                const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
+                return (
+                  <IntegrationIntentDraftCard
+                    draft={draft}
+                    gateSnapshot={gateSnapshot}
+                    canConfirm={confirmCheck.canConfirm}
+                    confirmBlocker={confirmCheck.blocker}
+                    onConfirm={() => {
+                      // Confirm the draft and start execution via capability router
+                      appendActionEvent(buildDraftConfirmedEvent(draft));
+                      setIntentDraftState({ status: 'confirmed', draft });
+
+                      // Determine route: Direct Patch > OpenHands > Blocked
+                      if (gateSnapshot.directPatchReady) {
+                        // Direct GitHub Patch route
+                        appendActionEvent(buildRouteStartedEvent('direct-github-patch'));
+                        addLog('info', 'Integration confirmed: Direct GitHub Patch route', 'router');
+                        // Start with the confirmed text
+                        startAgentFromText(draft.originalText);
+                      } else if (gateSnapshot.openhandsReady) {
+                        // OpenHands route
+                        appendActionEvent(buildRouteStartedEvent('openhands'));
+                        addLog('info', 'Integration confirmed: OpenHands route', 'router');
+                        startAgentFromText(draft.originalText);
+                      } else if (!gateSnapshot.githubWriteReady) {
+                        // No GitHub access - show GitHub access card
+                        appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                        setShowGitHubAccessOverride(true);
+                        appendChatLine({
+                          role: 'assistant',
+                          text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
+                        });
+                      } else {
+                        // No executor available
+                        appendActionEvent(buildRouteBlockedEvent('Kein Executor verfügbar'));
+                        appendChatLine({
+                          role: 'assistant',
+                          text: 'Integrationsauftrag bestätigt.\nOpenHands ist nicht konfiguriert. Bitte OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.',
+                        });
+                      }
+
+                      // Clear the draft state after confirmation
+                      setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                    }}
+                    onRephrase={() => {
+                      // Rephrase the draft - put rephrased text in input, don't execute
+                      appendActionEvent(buildDraftRephrasedEvent(draft));
+                      setWishText(draft.rephrasedText);
+                      setIntentDraftState({ status: 'idle' });
+                      addLog('info', 'Integration draft rephrased, text updated in input', 'router');
+                    }}
+                    onReject={() => {
+                      // Reject the draft - clear state and log honest rejection
+                      appendActionEvent(buildDraftRejectedEvent());
+                      setIntentDraftState({ status: 'idle' });
+                      appendChatLine({
+                        role: 'assistant',
+                        text: 'Integrationsauftrag verworfen. Bitte formuliere den Auftrag neu.',
+                      });
+                      addLog('info', 'Integration draft rejected by user', 'router');
+                    }}
+                  />
+                );
+              })()}
 
               {/* ── Manus/Replit-style live event stream — OpenHands remains one route among several */}
               {agentWorkSnapshot.state !== 'idle' && (
