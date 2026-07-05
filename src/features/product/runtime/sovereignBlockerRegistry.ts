@@ -238,7 +238,7 @@ export function deriveBlockerNextAction(args: {
   }
 
   // GitHub is ready but executor is unavailable
-  if (githubReady && !executorAvailable) {
+  if (!executorAvailable) {
     if (!openhandsConfigured) {
       return 'OpenHands konfigurieren.';
     }
@@ -246,17 +246,12 @@ export function deriveBlockerNextAction(args: {
   }
 
   // GitHub is ready but patch route is blocked
-  if (githubReady && !patchRouteAvailable) {
+  if (!patchRouteAvailable) {
     return 'Direct GitHub Patch Runtime aktivieren.';
   }
 
   // GitHub ready, everything available
-  if (githubReady && executorAvailable && patchRouteAvailable) {
-    return 'Auftrag eingeben und ausführen.';
-  }
-
-  // Default fallback
-  return 'Warte auf verfügbare Ressourcen.';
+  return 'Auftrag eingeben und ausführen.';
 }
 
 /**
