@@ -659,6 +659,204 @@ def admin_update_llm_route(rid):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admin/llm/worker-ai/status", methods=["GET"])
+@require_admin
+def admin_worker_ai_status():
+    """Get Worker AI health status and available models from Cloudflare."""
+    try:
+        # Get Worker AI proxy URL from environment or config
+        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+        
+        # Test health endpoint
+        resp = requests.get(f"{worker_url}/health", timeout=10)
+        health_data = resp.json() if resp.ok else {}
+        
+        # Get available models
+        models_resp = requests.get(
+            f"{worker_url}/v1/models",
+            headers={"Authorization": f"Bearer {os.getenv('WORKER_AI_PROXY_KEY', '')}"},
+            timeout=10
+        )
+        
+        available_models = []
+        if models_resp.ok:
+            models_data = models_resp.json()
+            available_models = models_data.get("data", [])
+        
+        return jsonify({
+            "status": health_data.get("status", "unknown"),
+            "configured": health_data.get("configured", False),
+            "provider": "cloudflare",
+            "workerUrl": worker_url,
+            "availableModels": available_models,
+            "modelCount": len(available_models),
+            "providers": health_data.get("providers", {}),
+            "timestamp": health_data.get("timestamp"),
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "configured": False,
+            "availableModels": [],
+            "modelCount": 0,
+        }), 500
+
+
+@app.route("/api/admin/llm/worker-ai/sync", methods=["POST"])
+@require_admin
+def admin_worker_ai_sync():
+    """Auto-discover and sync LLM routes from Worker AI.
+    
+    Creates/updates/deletes llm_routes entries based on available models
+    in the Cloudflare Worker AI proxy.
+    """
+    try:
+        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+        
+        # Get available models from Worker
+        resp = requests.get(f"{worker_url}/v1/models", timeout=15)
+        if not resp.ok:
+            return jsonify({"error": f"Worker AI nicht erreichbar: HTTP {resp.status_code}"}), 502
+        
+        worker_models = resp.json().get("data", [])
+        
+        # Map Worker models to our route format
+        # Cloudflare Worker AI format: @cf/meta/llama-3.1-8b-instruct
+        # We store as: llama-3.1-8b (user-friendly name)
+        
+        created = []
+        updated = []
+        deleted = []
+        
+        for wm in worker_models:
+            model_id = wm.get("id", "")
+            if not model_id:
+                continue
+            
+            # Convert @cf/xxx/yyy to friendly name: xxx-yyy
+            friendly_name = model_id
+            if model_id.startswith("@cf/"):
+                parts = model_id.replace("@cf/", "").split("/")
+                if len(parts) >= 2:
+                    friendly_name = f"{parts[0]}-{parts[1]}"
+            
+            # Check if route exists
+            existing = query(
+                """SELECT id::text, model_id FROM llm_routes WHERE model_id = %s LIMIT 1""",
+                (model_id,), one=True,
+            )
+            
+            if existing:
+                # Update if needed (provider is already set)
+                updated.append({"id": existing["id"], "model": model_id})
+            else:
+                # Create new route
+                # Default credits: 0.001 (1 credit per 1000 tokens)
+                # Priority: based on model size (smaller = higher priority)
+                priority = 50
+                if "32b" in model_id.lower() or "70b" in model_id.lower():
+                    priority = 100
+                elif "7b" in model_id.lower():
+                    priority = 25
+                
+                new_id = query(
+                    """INSERT INTO llm_routes 
+                       (model_id, model_name, provider, base_url, credits_per_unit, priority, disabled)
+                       VALUES (%s, %s, 'cloudflare', %s, 0.001, %s, false)
+                       ON CONFLICT (model_id) DO UPDATE SET
+                         model_name = EXCLUDED.model_name,
+                         updated_at = NOW()
+                       RETURNING id::text""",
+                    (model_id, friendly_name, worker_url, priority),
+                    write=True, one=True,
+                )
+                created.append({"id": new_id["id"], "model": model_id, "name": friendly_name})
+        
+        # Sync: Disable routes that no longer exist in Worker AI
+        all_worker_ids = [wm.get("id", "") for wm in worker_models]
+        if all_worker_ids:
+            disabled_routes = query(
+                """UPDATE llm_routes SET disabled = true, updated_at = NOW()
+                   WHERE provider = 'cloudflare' 
+                     AND model_id NOT IN %s
+                     AND disabled = false
+                   RETURNING id::text, model_id""",
+                (tuple(all_worker_ids),), write=True,
+            )
+            deleted = [{"id": r["id"], "model": r["model_id"]} for r in disabled_routes]
+        
+        audit("admin_worker_ai_sync", None, {
+            "created": len(created),
+            "updated": len(updated),
+            "disabled": len(deleted),
+            "workerModels": len(worker_models),
+        })
+        
+        return jsonify({
+            "ok": True,
+            "synced": {
+                "created": created,
+                "updated": updated,
+                "disabled": deleted,
+            },
+            "totalWorkerModels": len(worker_models),
+            "totalRoutes": len(created) + len(updated),
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/llm/worker-ai/models", methods=["GET"])
+@require_admin
+def admin_worker_ai_models():
+    """List models available in Worker AI with health status."""
+    try:
+        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+        
+        resp = requests.get(f"{worker_url}/v1/models", timeout=15)
+        if not resp.ok:
+            return jsonify({"error": f"Worker AI Fehler: HTTP {resp.status_code}"}), 502
+        
+        worker_models = resp.json().get("data", [])
+        
+        # Get our configured routes
+        our_routes = query(
+            """SELECT model_id, model_name, disabled, priority, credits_per_unit
+               FROM llm_routes WHERE provider = 'cloudflare'"""
+        )
+        route_map = {r["model_id"]: r for r in our_routes}
+        
+        # Merge info
+        result = []
+        for wm in worker_models:
+            model_id = wm.get("id", "")
+            our_route = route_map.get(model_id, {})
+            
+            # Friendly name
+            friendly_name = model_id
+            if model_id.startswith("@cf/"):
+                parts = model_id.replace("@cf/", "").split("/")
+                if len(parts) >= 2:
+                    friendly_name = f"{parts[0]}-{parts[1]}"
+            
+            result.append({
+                "modelId": model_id,
+                "friendlyName": friendly_name,
+                "ownedBy": wm.get("owned_by", "cloudflare"),
+                "inDatabase": model_id in route_map,
+                "enabled": our_route.get("disabled", True) == False if our_route else False,
+                "priority": our_route.get("priority", 50),
+                "creditsPerUnit": our_route.get("credits_per_unit", 0.001),
+            })
+        
+        return jsonify({"models": result, "total": len(result)})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def require_session(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -4128,7 +4326,51 @@ input[type=text],input[type=password]{-webkit-appearance:none}
     <!-- LLM ROUTES -->
     <div id="s-llm" class="section">
       <h2>LLM Routes</h2>
-      <div class="subtitle">Provider aktivieren, deaktivieren, Reihenfolge ändern.</div>
+      <div class="subtitle">Worker AI Modelle und Routing konfigurieren.</div>
+      
+      <!-- Worker AI Status -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span class="card-title">🤖 Cloudflare Worker AI</span>
+          <span class="badge" id="wai-status-badge">Lade…</span>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="card-body" id="wai-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
+            <div>
+              <label style="color:var(--muted);font-size:11px;text-transform:uppercase">Status</label>
+              <div id="wai-status" style="font-size:16px;font-weight:500">-</div>
+            </div>
+            <div>
+              <label style="color:var(--muted);font-size:11px;text-transform:uppercase">Verfügbare Modelle</label>
+              <div id="wai-model-count" style="font-size:16px;font-weight:500">-</div>
+            </div>
+            <div>
+              <label style="color:var(--muted);font-size:11px;text-transform:uppercase">Letzte Prüfung</label>
+              <div id="wai-timestamp" style="font-size:14px">-</div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="syncWorkerAI()">🔄 Worker AI synchronisieren</button>
+            <button class="btn btn-ghost" onclick="loadWorkerAIStatus()">🔍 Status prüfen</button>
+          </div>
+          <div class="msg" id="wai-msg" style="display:none;margin-top:12px"></div>
+        </div>
+      </div>
+      
+      <!-- Available Models from Worker AI -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span class="card-title">📋 Verfügbare Modelle</span>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="card-body" id="wai-models-body">
+          <div id="wai-models-list"><div style="color:var(--muted)">Klicke "Status prüfen" um Modelle zu laden…</div></div>
+        </div>
+      </div>
+      
+      <!-- Configured Routes -->
+      <h3 style="margin:24px 0 12px;font-size:14px;color:var(--muted)">KONFIGURIERTE ROUTES</h3>
       <div id="llmList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
     </div>
 
@@ -4203,6 +4445,12 @@ function showSection(id, btn){
   document.querySelectorAll('header nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('s-'+id).classList.add('active');
   btn.classList.add('active');
+  
+  // Load Worker AI status when LLM section is shown
+  if(id === 'llm'){
+    loadWorkerAIStatus();
+    loadLLMRoutes();
+  }
 }
 
 /* ────── PAYMENT METHODS ────── */
@@ -4535,6 +4783,83 @@ function renderBilling(d){
     '<span style="color:var(--muted);font-size:13px">Seite '+d.page+'</span>' +
     (d.page*50<d.total?'<button class="btn btn-ghost" onclick="loadBilling('+(d.page+1)+')">Weiter →</button>':'') +
     '</div>';
+}
+
+/* ────── WORKER AI ────── */
+async function loadWorkerAIStatus(){
+  try {
+    const r = await fetch(BASE+'/api/admin/llm/worker-ai/status',{headers:hdr()});
+    const d = await r.json();
+    
+    // Update status badge
+    const badge = document.getElementById('wai-status-badge');
+    badge.className = 'badge ' + (d.status === 'healthy' ? 'on' : 'off');
+    badge.textContent = d.status === 'healthy' ? 'Aktiv' : d.status === 'error' ? 'Fehler' : 'Unbekannt';
+    
+    // Update info
+    document.getElementById('wai-status').textContent = d.status === 'healthy' ? '✓ Verbunden' : d.status === 'error' ? '✗ Fehler' : '? Unbekannt';
+    document.getElementById('wai-model-count').textContent = d.modelCount || 0;
+    document.getElementById('wai-timestamp').textContent = d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : '-';
+    
+    // Show models list
+    if(d.availableModels && d.availableModels.length > 0){
+      const modelsHtml = d.availableModels.map(m => {
+        const id = m.id || '';
+        const friendly = id.replace('@cf/', '').replace(/\//g, ' / ');
+        return `<div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:500">${friendly}</div>
+            <div style="font-size:12px;color:var(--muted)">${id}</div>
+          </div>
+          <span style="font-size:11px;padding:2px 8px;background:var(--success);color:white;border-radius:4px">✓ Verfügbar</span>
+        </div>`;
+      }).join('');
+      document.getElementById('wai-models-list').innerHTML = modelsHtml;
+    } else {
+      document.getElementById('wai-models-list').innerHTML = '<div style="color:var(--muted)">Keine Modelle gefunden</div>';
+    }
+    
+    showWaiMsg('Worker AI Status aktualisiert', true);
+  } catch(e){
+    showWaiMsg('Fehler: ' + e.message, false);
+  }
+}
+
+function showWaiMsg(text, ok){
+  const el = document.getElementById('wai-msg');
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+  el.style.display = 'block';
+  if(ok) setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+async function syncWorkerAI(){
+  const btn = event.target;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Synchronisiere…';
+  
+  try {
+    const r = await fetch(BASE+'/api/admin/llm/worker-ai/sync',{method:'POST',headers:hdr()});
+    const d = await r.json();
+    
+    if(d.ok){
+      const created = d.synced?.created?.length || 0;
+      const updated = d.synced?.updated?.length || 0;
+      const disabled = d.synced?.disabled?.length || 0;
+      showWaiMsg(`✓ Sync完成: ${created} erstellt, ${updated} aktualisiert, ${disabled} deaktiviert`, true);
+      
+      // Reload routes list
+      loadLLMRoutes();
+      loadWorkerAIStatus();
+    } else {
+      showWaiMsg('Fehler: ' + (d.error || 'Unbekannt'), false);
+    }
+  } catch(e){
+    showWaiMsg('Fehler: ' + e.message, false);
+  }
+  
+  btn.disabled = false;
+  btn.innerHTML = '🔄 Worker AI synchronisieren';
 }
 
 /* ────── LLM ROUTES ────── */
