@@ -324,8 +324,14 @@ export function createIntegrationIntentDraft(
   }
 
   // Placeholder missions that don't provide real direction
-  const placeholderPattern = /^(fehler|error|idee|ideen|plan|workflow|fehleranalyse|runtime\s+check|test\s+plan|mach\s+weiter)/i;
+  // Issue #522 P2 Fix 4: Extended to include more vague inputs that lack concrete targets
+  const placeholderPattern = /^(fehler|error|idee|ideen|idee:|plan|workflow|fehleranalyse|runtime\s+check|test\s+plan|mach\s+weiter|weiter|mach\s+was|mach\s+etwas|fix\s+me)$/i;
   if (placeholderPattern.test(clean)) {
+    return null;
+  }
+
+  // Single-word or very short vague commands that lack context
+  if (clean.length <= 12 && /^(fehler|plan|idee|ideen|weiter|mach|fix|verbesser|optimier|korrigier|beheb|hilf|hilfe|helfen)$/i.test(clean)) {
     return null;
   }
 

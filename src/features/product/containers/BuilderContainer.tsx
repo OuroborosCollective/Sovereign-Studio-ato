@@ -3553,6 +3553,109 @@ export function BuilderContainer({
     appendChatLine({ role: "user", text: submittedText });
     appendActionEvent(buildInputReceivedEvent(submittedText));
 
+    // ── Issue #522 P2 Fix 2 & 3: Local routing BEFORE Integration Intent Draft Detection
+    // Status, diagnostic, and retry intents must be handled locally FIRST.
+    // They should NOT create an integration draft card.
+    // Order matters: local routes > createIntegrationIntentDraft > capability router
+
+    // P2 Fix 2: Status questions - answered locally from runtime state
+    if (isLocalCompletionStatusQuestion(submittedText)) {
+      const statusAnswer = buildLocalStatusAnswer({
+        githubWriteAllowed,
+        githubAccessState: githubAccessState.state,
+        writeIntentBlockedByRepo: !effectiveRepoReady,
+        openhandsRunning: openhandsJob?.status === 'running',
+        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+        hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+        workerBlocker,
+        buildWorkerBlockerAnswer: workerBlocker
+          ? () =>
+              buildWorkerBlockerAnswer({
+                blocker: workerBlocker,
+                repoReady: effectiveRepoReady,
+                chatRepoSnapshot,
+                openhandsReady,
+              })
+          : undefined,
+        questionText: submittedText,
+      });
+      appendChatLine({ role: 'assistant', text: statusAnswer });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Status-Frage',
+        detail: 'Lokale Antwort aus Runtime-State',
+        kind: 'local',
+      }));
+      addLog('info', 'Issue #522 P2 Fix 2: Status question handled locally - no draft created', 'router');
+      return;
+    }
+
+    // P2 Fix 2: Worker retry intents - clear blocker and retry, NOT a new draft
+    if (isWorkerRetryIntent(submittedText) && workerBlocker) {
+      setWorkerBlocker(null);
+      appendChatLine({
+        role: 'assistant',
+        text: 'Worker-Blocker zurückgesetzt. Bitte Auftrag erneut senden.',
+      });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Retry',
+        detail: 'Worker-Blocker zurückgesetzt',
+        kind: 'local',
+      }));
+      addLog('info', 'Issue #522 P2 Fix 2: Retry intent clears blocker - no draft created', 'router');
+      return;
+    }
+
+    // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
+    const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
+      (openhandsJob != null && openhandsJob.status !== 'idle');
+    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
+      const statusAnswer = buildExecutorStatusAnswer({
+        agentState: agentWorkSnapshot.state,
+        openhandsStatus: openhandsJob?.status,
+        changedFiles: openhandsJob?.changedFiles?.length ?? 0,
+        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        blockerReason: agentWorkSnapshot.blockerReason,
+      });
+      appendChatLine({ role: 'assistant', text: statusAnswer });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Diagnose-Frage',
+        detail: 'Lokale Antwort aus Runtime-State',
+        kind: 'local',
+      }));
+      addLog('info', 'Issue #522 P2 Fix 3: Diagnostic question answered locally - no draft created', 'router');
+      return;
+    }
+
+    // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
+    const workerDiagnosticIntent = isWorkerDiagnosticQuestion(submittedText);
+    if (
+      workerBlocker &&
+      !isWorkerRetryIntent(submittedText) &&
+      !isOpenHandsExecutionIntent(submittedText)
+    ) {
+      appendChatLine({
+        role: "assistant",
+        text: buildWorkerBlockerAnswer({
+          blocker: workerBlocker,
+          repoReady: effectiveRepoReady,
+          chatRepoSnapshot,
+          openhandsReady,
+        }),
+      });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Worker-Diagnose',
+        detail: workerBlocker.diagnostic.scope,
+        kind: 'local',
+      }));
+      addLog('info', `Issue #522 P2 Fix 3: Worker diagnostic answered locally - no draft created`, 'router');
+      return;
+    }
+
     // ── Issue #520: Integration Intent Draft Detection
     // Normal non-question inputs with a connected repo are treated as potential
     // integration/implementation requests. Show a draft card for confirmation.
@@ -3737,34 +3840,9 @@ export function BuilderContainer({
       return;
     }
 
-    // ── Aufgabe 2: Local completion-status questions ("bist du fertig?", "wo
-    // ist der patch?", ...) are answered from real runtime state and never
-    // forwarded to the Worker as a new chat request.
-    if (isLocalCompletionStatusQuestion(submittedText)) {
-      const statusAnswer = buildLocalStatusAnswer({
-        githubWriteAllowed,
-        githubAccessState: githubAccessState.state,
-        writeIntentBlockedByRepo: !effectiveRepoReady,
-        openhandsRunning: openhandsJob?.status === 'running',
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        hasPatch: Boolean(openhandsJob?.changedFiles?.length),
-        hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
-        workerBlocker,
-        buildWorkerBlockerAnswer: workerBlocker
-          ? () =>
-              buildWorkerBlockerAnswer({
-                blocker: workerBlocker,
-                repoReady: effectiveRepoReady,
-                chatRepoSnapshot,
-                openhandsReady,
-              })
-          : undefined,
-        questionText: submittedText,
-      });
-      appendChatLine({ role: 'assistant', text: statusAnswer });
-      addLog('info', 'Local completion-status question answered locally', 'router');
-      return;
-    }
+    // ── Aufgabe 2: Local completion-status questions
+    // NOTE: Handled earlier in the flow (see Issue #522 P2 Fix 2 above)
+    // to ensure status questions don't create integration drafts.
 
     // ── Aufgabe 1: Write intents (README/file/patch/commit/push/PR language)
     // must never reach the Worker chat while GitHub write access is missing.
@@ -3912,56 +3990,9 @@ export function BuilderContainer({
       return;
     }
 
-    // ── Executor status questions: answer locally — but only when executor is actually involved.
-    // Guard: if workerBlocker is active and no OpenHands job is running, "warum passiert nichts?"
-    // is a Worker-Diagnose question, not an executor status question — route to workerBlocker handler.
-    const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
-      (openhandsJob != null && openhandsJob.status !== 'idle');
-    // Gap 2: if workerBlocker is active AND executor is idle, "warum passiert nichts?" etc.
-    // must be answered as Worker-Diagnose (not executor status). Without a workerBlocker,
-    // even an idle executor should answer honestly ("Nein, kein Auftrag gestartet").
-    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
-      const statusAnswer = buildExecutorStatusAnswer({
-        agentState: agentWorkSnapshot.state,
-        openhandsStatus: openhandsJob?.status,
-        changedFiles: openhandsJob?.changedFiles?.length ?? 0,
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        blockerReason: agentWorkSnapshot.blockerReason,
-      });
-      appendChatLine({ role: 'assistant', text: statusAnswer });
-      addLog('info', `Executor status question answered locally · state=${agentWorkSnapshot.state}`, 'router');
-      return;
-    }
-
-    const workerDiagnosticIntent = isWorkerDiagnosticQuestion(submittedText);
-    if (
-      workerBlocker &&
-      !isWorkerRetryIntent(submittedText) &&
-      !isOpenHandsExecutionIntent(submittedText)
-    ) {
-      appendChatLine({
-        role: "assistant",
-        text: buildWorkerBlockerAnswer({
-          blocker: workerBlocker,
-          repoReady: effectiveRepoReady,
-          chatRepoSnapshot,
-          openhandsReady,
-        }),
-      });
-      addLog(
-        "warn",
-        `Worker blocked · ${workerBlocker.diagnostic.scope}${workerDiagnosticIntent ? " · local explanation" : " · retry prevented"}`,
-        "router",
-      );
-      return;
-    }
-
-    if (workerBlocker && isWorkerRetryIntent(submittedText)) {
-      setWorkerBlocker(null);
-      addLog("info", "Worker retry requested by user", "router");
-    }
-
     // ── #500/#501 Alternative write route: answer locally without OpenHands lock-in.
+    // NOTE: Status, diagnostic, and retry intents are handled earlier in the flow
+    // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.
     // These questions must be answered from runtime state, not forwarded to OpenHands.
     if (isAlternativeWriteRouteIntent(submittedText)) {
       // #501: Calculate directPatchAvailable honestly

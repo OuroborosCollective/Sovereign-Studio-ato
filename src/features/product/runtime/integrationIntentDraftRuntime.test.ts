@@ -84,12 +84,23 @@ describe('integrationIntentDraftRuntime', () => {
     });
 
     it('returns null for placeholder missions (P2 Fix 4)', () => {
+      // Basic placeholders
       expect(createIntegrationIntentDraft('Fehler')).toBeNull();
       expect(createIntegrationIntentDraft('Idee')).toBeNull();
       expect(createIntegrationIntentDraft('Ideen')).toBeNull();
       expect(createIntegrationIntentDraft('Plan')).toBeNull();
       expect(createIntegrationIntentDraft('Workflow')).toBeNull();
       expect(createIntegrationIntentDraft('Mach weiter')).toBeNull();
+      
+      // Issue #522 P2 Fix 4: Extended vague placeholders
+      expect(createIntegrationIntentDraft('Weiter')).toBeNull();
+      expect(createIntegrationIntentDraft('Mach was')).toBeNull();
+      expect(createIntegrationIntentDraft('Mach etwas')).toBeNull();
+      expect(createIntegrationIntentDraft('Fix me')).toBeNull();
+      
+      // Single-word short vague commands
+      expect(createIntegrationIntentDraft('Hilf')).toBeNull();
+      expect(createIntegrationIntentDraft('Hilfe')).toBeNull();
     });
 
     it('extracts correct goal for fix intent', () => {
