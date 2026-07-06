@@ -65,6 +65,33 @@ describe('integrationIntentDraftRuntime', () => {
       expect(createIntegrationIntentDraft('Danke für die Hilfe')).toBeNull();
     });
 
+    // ── Issue #522: P2 Fix 2 & 4 - Status/Retry Intents and Placeholder Missions
+
+    it('returns null for status queries (P2 Fix 2)', () => {
+      expect(createIntegrationIntentDraft('Was ist der Status?')).toBeNull();
+      expect(createIntegrationIntentDraft('Wie ist der Stand?')).toBeNull();
+      expect(createIntegrationIntentDraft('Status')).toBeNull();
+      expect(createIntegrationIntentDraft('Fortschritt?')).toBeNull();
+      expect(createIntegrationIntentDraft('Was läuft gerade?')).toBeNull();
+    });
+
+    it('returns null for retry intents (P2 Fix 2)', () => {
+      expect(createIntegrationIntentDraft('Nochmal')).toBeNull();
+      expect(createIntegrationIntentDraft('Noch ein Versuch')).toBeNull();
+      expect(createIntegrationIntentDraft('Versuch es nochmal')).toBeNull();
+      expect(createIntegrationIntentDraft('Es klappt nicht')).toBeNull();
+      expect(createIntegrationIntentDraft('Funktioniert nicht')).toBeNull();
+    });
+
+    it('returns null for placeholder missions (P2 Fix 4)', () => {
+      expect(createIntegrationIntentDraft('Fehler')).toBeNull();
+      expect(createIntegrationIntentDraft('Idee')).toBeNull();
+      expect(createIntegrationIntentDraft('Ideen')).toBeNull();
+      expect(createIntegrationIntentDraft('Plan')).toBeNull();
+      expect(createIntegrationIntentDraft('Workflow')).toBeNull();
+      expect(createIntegrationIntentDraft('Mach weiter')).toBeNull();
+    });
+
     it('extracts correct goal for fix intent', () => {
       const input = 'Fix den Bug im Chat';
       const draft = createIntegrationIntentDraft(input);
