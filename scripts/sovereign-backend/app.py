@@ -754,7 +754,7 @@ def user_create_openhands_job():
 
 @app.route("/api/user/openhands/jobs/<job_id>")
 def user_get_openhands_job(job_id):
-    """Get a specific OpenHands job."""
+    """Get a specific OpenHands job. Polls OpenHands for status on read."""
     user_id = get_user_id_from_auth()
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
@@ -771,32 +771,149 @@ def user_get_openhands_job(job_id):
     if not row:
         return jsonify({"error": "Job nicht gefunden"}), 404
     
+    # Poll OpenHands if job is running
+    if row["status"] == "running" and row["external_conv_id"]:
+        _update_job_status_from_openhands(job_id, row["external_conv_id"])
+        # Re-fetch updated row
+        row = query(
+            """SELECT id::text, job_id, external_conv_id, repo_url, branch, mission,
+                      status, draft_pr_url, changed_files, events, last_error,
+                      started_at, completed_at, created_at, updated_at
+               FROM user_openhands_jobs
+               WHERE job_id = %s AND user_id = %s::uuid""",
+            (job_id, user_id), one=True
+        )
+    
     return jsonify(dict(row))
+
+
+def _update_job_status_from_openhands(job_id, oh_conv_id):
+    """Poll OpenHands and update job status in database."""
+    try:
+        # Get conversation status
+        resp = requests.get(
+            f"{OPENHANDS_API_URL}/api/conversations/{oh_conv_id}",
+            headers=oh_headers(),
+            timeout=30
+        )
+        
+        if not resp.ok:
+            return
+        
+        conv_data = resp.json()
+        exec_status = conv_data.get("execution_status", "idle")
+        
+        # Map OpenHands status to our status
+        status_map = {
+            "idle": "running",
+            "running": "running",
+            "waiting_for_user_input": "waiting-for-user",
+            "finished": "completed",
+            "stopped": "completed",
+            "failed": "failed",
+        }
+        new_status = status_map.get(exec_status, "running")
+        
+        # Check if completed
+        if new_status in ("completed", "failed"):
+            # Get events to extract draft PR URL
+            events_resp = requests.get(
+                f"{OPENHANDS_API_URL}/api/conversations/{oh_conv_id}/events/search"
+                "?limit=50&sort_order=TIMESTAMP_DESC",
+                headers=oh_headers(),
+                timeout=30
+            )
+            
+            draft_pr_url = None
+            if events_resp.ok:
+                events = events_resp.json().get("items", [])
+                for e in events:
+                    if e.get("kind") == "FileChangeSummariesEvent":
+                        draft_pr_url = e.get("summary", {}).get("draft_pr_url")
+            
+            query(
+                """UPDATE user_openhands_jobs
+                   SET status = %s, draft_pr_url = COALESCE(%s, draft_pr_url),
+                       completed_at = NOW(), updated_at = NOW()
+                   WHERE job_id = %s AND status NOT IN ('completed', 'failed')""",
+                (new_status, draft_pr_url, job_id), write=True
+            )
+        else:
+            query(
+                """UPDATE user_openhands_jobs
+                   SET status = %s, updated_at = NOW()
+                   WHERE job_id = %s""",
+                (new_status, job_id), write=True
+            )
+    except Exception:
+        pass  # Silently fail - status will be checked on next read
 
 
 @app.route("/api/user/openhands/jobs/<job_id>/cancel", methods=["POST"])
 def user_cancel_openhands_job(job_id):
-    """Cancel a running OpenHands job."""
+    """Cancel a running OpenHands job by stopping the conversation."""
     user_id = get_user_id_from_auth()
     if not user_id:
         return jsonify({"error": "Unauthorized"}), 401
     
+    # Get job details
     row = query(
-        """UPDATE user_openhands_jobs
-           SET status = 'blocked', last_error = 'Cancelled by user', completed_at = NOW()
-           WHERE job_id = %s AND user_id = %s::uuid AND status IN ('pending', 'queued', 'running')
-           RETURNING id""",
-        (job_id, user_id), one=True, write=True
+        """SELECT id, external_conv_id, status FROM user_openhands_jobs
+           WHERE job_id = %s AND user_id = %s::uuid""",
+        (job_id, user_id), one=True
     )
     
     if not row:
-        return jsonify({"error": "Job nicht gefunden oder nicht abbrechbar"}), 404
+        return jsonify({"error": "Job nicht gefunden"}), 404
     
-    return jsonify({"ok": True, "message": "Job abgebrochen"})
+    if row["status"] not in ("pending", "queued", "running"):
+        return jsonify({"error": "Job kann nicht mehr abgebrochen werden"}), 400
+    
+    # Try to stop the OpenHands conversation
+    cancelled_by_oh = False
+    if row["external_conv_id"]:
+        try:
+            resp = requests.post(
+                f"{OPENHANDS_API_URL}/api/conversations/{row['external_conv_id']}/stop",
+                headers=oh_headers(),
+                timeout=10
+            )
+            cancelled_by_oh = resp.ok
+        except Exception:
+            pass  # Will mark as cancelled in DB anyway
+    
+    # Update job status in database
+    if cancelled_by_oh:
+        query(
+            """UPDATE user_openhands_jobs
+               SET status = 'blocked', last_error = 'Cancelled by user (OpenHands stopped)',
+                   completed_at = NOW()
+               WHERE job_id = %s""",
+            (job_id,), write=True
+        )
+        return jsonify({
+            "ok": True, 
+            "message": "Job abgebrochen",
+            "openhands_stopped": True
+        })
+    else:
+        query(
+            """UPDATE user_openhands_jobs
+               SET status = 'blocked', last_error = 'Cancelled by user (stop pending)',
+                   completed_at = NOW()
+               WHERE job_id = %s""",
+            (job_id,), write=True
+        )
+        return jsonify({
+            "ok": True, 
+            "message": "Job zum Abbruch markiert",
+            "openhands_stopped": False,
+            "warning": "OpenHands hat möglicherweise nicht reagiert"
+        })
 
 
 def _start_openhands_job(job_id, user_id, repo_url, branch, mission):
-    """Background thread to start and poll OpenHands job."""
+    """Background thread to start OpenHands job."""
     try:
         # Update status to queued
         query(
@@ -806,20 +923,35 @@ def _start_openhands_job(job_id, user_id, repo_url, branch, mission):
             (job_id,), write=True
         )
         
-        # Call OpenHands via backend's existing /openhands/jobs endpoint
+        # Build mission with repo context if provided
+        full_mission = mission
+        if repo_url:
+            full_mission = f"""Repository: {repo_url}
+Branch: {branch}
+
+Task: {mission}"""
+        
+        # Call OpenHands API with correct format
         resp = requests.post(
             f"{OPENHANDS_API_URL}/api/conversations",
             headers=oh_headers(),
             json={
-                "initial_message": {"content": [{"TextContent": {"text": mission}}]},
-                "workspace": {"working_dir": "/projects"}
+                "workspace": {"working_dir": "/projects"},
+                "agent_settings": {
+                    "llm_config": {
+                        "model": "openai/gpt-4o",
+                        "api_key": "env:OPENAI_API_KEY"
+                    },
+                    "agent": "CodeActAgent"
+                },
+                "initial_message": {"content": [{"text": full_mission}]}
             },
             timeout=30
         )
         
         if resp.ok:
             conv_data = resp.json()
-            oh_conv_id = conv_data.get("conversation_id")
+            oh_conv_id = conv_data.get("id")  # Use 'id' not 'conversation_id'
             
             query(
                 """UPDATE user_openhands_jobs
@@ -827,20 +959,14 @@ def _start_openhands_job(job_id, user_id, repo_url, branch, mission):
                    WHERE job_id = %s""",
                 (oh_conv_id, job_id), write=True
             )
-            
-            # Start polling thread
-            t = threading.Thread(
-                target=_poll_openhands_job,
-                args=(job_id, oh_conv_id),
-                daemon=True
-            )
-            t.start()
+            # Note: Polling happens on-read, not in background thread
         else:
+            error_detail = resp.json().get("detail", str(resp.status_code))
             query(
                 """UPDATE user_openhands_jobs
                    SET status = 'failed', last_error = %s, completed_at = NOW()
                    WHERE job_id = %s""",
-                (f"OpenHands HTTP {resp.status_code}", job_id), write=True
+                (f"OpenHands HTTP {resp.status_code}: {error_detail}"[:200], job_id), write=True
             )
     except Exception as e:
         query(
@@ -851,56 +977,6 @@ def _start_openhands_job(job_id, user_id, repo_url, branch, mission):
         )
 
 
-def _poll_openhands_job(job_id, oh_conv_id):
-    """Poll OpenHands conversation for events and status."""
-    import time as time_module
-    
-    while True:
-        time_module.sleep(5)
-        
-        try:
-            resp = requests.get(
-                f"{OPENHANDS_API_URL}/api/conversations/{oh_conv_id}/events/search"
-                "?limit=50&sort_order=TIMESTAMP_DESC",
-                headers=oh_headers(),
-                timeout=30
-            )
-            
-            if not resp.ok:
-                break
-            
-            events = resp.json().get("items", [])
-            
-            # Check for completion
-            for e in events:
-                if e.get("kind") == "ConversationStatusEvent" and \
-                   e.get("status") in ("stopped", "finished", "failed"):
-                    status = "completed" if e.get("status") == "finished" else "failed"
-                    
-                    # Extract draft PR URL if available
-                    draft_pr = None
-                    for ev in events:
-                        if ev.get("kind") == "FileChangeSummariesEvent":
-                            draft_pr = ev.get("summary", {}).get("draft_pr_url")
-                    
-                    query(
-                        """UPDATE user_openhands_jobs
-                           SET status = %s, draft_pr_url = %s, completed_at = NOW()
-                           WHERE job_id = %s""",
-                        (status, draft_pr, job_id), write=True
-                    )
-                    return
-            
-            # Update events in database
-            query(
-                """UPDATE user_openhands_jobs
-                   SET events = %s
-                   WHERE job_id = %s""",
-                (json.dumps(events[:20]), job_id), write=True
-            )
-            
-        except Exception:
-            break
 
 
 # ── Admin: List all user OpenHands jobs ──────────────────────────────────────
