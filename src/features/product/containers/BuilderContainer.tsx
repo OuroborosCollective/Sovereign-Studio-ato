@@ -4513,51 +4513,37 @@ export function BuilderContainer({
                   directPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
                   openhandsReady: openhandsReady ?? false,
                 };
+                
+                // P2 Fix 4: canConfirm requires repo ready AND at least one write path available
+                const hasGitHubAccess = gateSnapshot.githubWriteReady;
+                const hasDirectPatch = gateSnapshot.directPatchReady;
+                const hasOpenHands = gateSnapshot.openhandsReady;
+                const canExecute = hasGitHubAccess || hasDirectPatch || hasOpenHands;
+                
+                // P2 Fix 4: Blocker message depends on what's missing
+                const needsGitHubAccess = gateSnapshot.repoReady && !hasGitHubAccess && !hasOpenHands;
+                
                 const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
+                
                 return (
                   <IntegrationIntentDraftCard
                     draft={draft}
                     gateSnapshot={gateSnapshot}
-                    canConfirm={confirmCheck.canConfirm}
-                    confirmBlocker={confirmCheck.blocker}
+                    canConfirm={effectiveRepoReady && canExecute}
+                    confirmBlocker={!effectiveRepoReady ? confirmCheck.blocker : undefined}
                     onConfirm={() => {
-                      // Confirm the draft and start execution via capability router
+                      // This is called when execution can proceed directly
+                      // (GitHub write or OpenHands ready)
                       appendActionEvent(buildDraftConfirmedEvent(draft));
                       setIntentDraftState({ status: 'confirmed', draft });
 
-                      // ── Issue #522: P1 & P2 Fixes - Proper gate checking before execution
-                      // Order: GitHub write check FIRST > Direct Patch > OpenHands > Blocked
+                      // ── Issue #522 P2 Fix 1: Proper gate checking before execution
+                      // Order: Direct Patch > OpenHands (GitHub write already validated by canConfirm)
 
-                      // P1 Fix: If OpenHands is ready but GitHub access is missing, check GitHub first
-                      // This prevents starting OpenHands without proper GitHub write access
-                      if (!gateSnapshot.githubWriteReady) {
-                        if (gateSnapshot.openhandsReady) {
-                          // OpenHands ready but needs GitHub access - show GitHub access card
-                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
-                          setShowGitHubAccessOverride(true);
-                          appendChatLine({
-                            role: 'assistant',
-                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag mit OpenHands auszuführen.',
-                          });
-                        } else {
-                          // No GitHub access and no executor
-                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
-                          setShowGitHubAccessOverride(true);
-                          appendChatLine({
-                            role: 'assistant',
-                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
-                          });
-                        }
-                        setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                        return;
-                      }
-
-                      // P2 Fix 1: Direct Patch should use proper runtime, not startAgentFromText
+                      // Direct Patch route - use proper runtime, NOT startAgentFromText
                       if (gateSnapshot.directPatchReady) {
-                        // Direct GitHub Patch route - use proper runtime
                         appendActionEvent(buildRouteStartedEvent('direct-github-patch'));
                         addLog('info', 'Integration confirmed: Direct GitHub Patch route', 'router');
-                        // Build the patch plan async - this shows results without starting OpenHands
                         buildDirectPatchPlanWithContentLoad({
                           repoContext: {
                             owner: chatRepoSnapshot!.owner,
@@ -4585,21 +4571,45 @@ export function BuilderContainer({
                           }
                         });
                       } else if (gateSnapshot.openhandsReady) {
-                        // OpenHands route
+                        // OpenHands route - ONLY if GitHub write is confirmed
+                        // P1 Fix: Never start OpenHands without validated GitHub write access
+                        if (!gateSnapshot.githubWriteReady) {
+                          // This should not happen if canConfirm is working, but as safety:
+                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                          setShowGitHubAccessOverride(true);
+                          appendChatLine({
+                            role: 'assistant',
+                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
+                          });
+                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                          return;
+                        }
                         appendActionEvent(buildRouteStartedEvent('openhands'));
                         addLog('info', 'Integration confirmed: OpenHands route', 'router');
                         startAgentFromText(draft.originalText);
-                      } else {
-                        // No executor available
-                        appendActionEvent(buildRouteBlockedEvent('Kein Executor verfügbar'));
-                        appendChatLine({
-                          role: 'assistant',
-                          text: 'Integrationsauftrag bestätigt.\nOpenHands ist nicht konfiguriert. Bitte OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.',
-                        });
                       }
 
                       // Clear the draft state after confirmation
                       setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                    }}
+                    onConfirmWithGitHubAccess={() => {
+                      // P2 Fix 4: Called when user clicks "GitHub-Zugang benötigt"
+                      // Opens the GitHub Access Gate
+                      appendActionEvent({
+                        kind: 'github_access_required',
+                        route: 'github-access',
+                        label: 'GitHub-Schreibzugang erforderlich',
+                        detail: 'Draft bestätigt aber GitHub-Zugang fehlt',
+                        state: 'blocked',
+                      });
+                      pendingWriteIntentRef.current = draft.originalText;
+                      setShowGitHubAccessOverride(true);
+                      appendChatLine({
+                        role: 'assistant',
+                        text: 'Integrationsauftrag bestätigt.\nGitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.',
+                      });
+                      setIntentDraftState({ status: 'idle' });
+                      addLog('info', 'Integration draft confirmed: GitHub access gate opened', 'router');
                     }}
                     onRephrase={() => {
                       // Rephrase the draft - put rephrased text in input, don't execute

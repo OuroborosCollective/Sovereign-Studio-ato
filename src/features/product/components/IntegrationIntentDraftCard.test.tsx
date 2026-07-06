@@ -224,9 +224,9 @@ describe('IntegrationIntentDraftCard', () => {
       expect(onReject).toHaveBeenCalledTimes(1);
     });
 
-    it('disables Einbauen button when canConfirm is false', () => {
+    it('disables Einbauen button when repo is not ready', () => {
       const draft = createMockDraft();
-      const gates = createMockGates();
+      const gates = createMockGates({ repoReady: false });
 
       render(
         <IntegrationIntentDraftCard
@@ -242,9 +242,60 @@ describe('IntegrationIntentDraftCard', () => {
       expect(screen.getByTestId('btn-confirm')).toBeDisabled();
     });
 
-    it('shows blocker message when confirm is blocked', () => {
+    it('enables button with GitHub-Zugang benötigt label when repo ready but no GitHub write', () => {
       const draft = createMockDraft();
-      const gates = createMockGates();
+      const gates = createMockGates({
+        repoReady: true,
+        githubWriteReady: false,
+        directPatchReady: false,
+        openhandsReady: false,
+      });
+
+      render(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={gates}
+          onConfirm={vi.fn()}
+          onConfirmWithGitHubAccess={vi.fn()}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      expect(screen.getByTestId('btn-confirm')).not.toBeDisabled();
+      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang benötigt');
+    });
+
+    it('calls onConfirmWithGitHubAccess when button clicked with GitHub access needed', () => {
+      const onConfirm = vi.fn();
+      const onConfirmWithGitHubAccess = vi.fn();
+      const draft = createMockDraft();
+      const gates = createMockGates({
+        repoReady: true,
+        githubWriteReady: false,
+        directPatchReady: false,
+        openhandsReady: false,
+      });
+
+      render(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={gates}
+          onConfirm={onConfirm}
+          onConfirmWithGitHubAccess={onConfirmWithGitHubAccess}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      fireEvent.click(screen.getByTestId('btn-confirm'));
+      expect(onConfirmWithGitHubAccess).toHaveBeenCalledTimes(1);
+      expect(onConfirm).not.toHaveBeenCalled();
+    });
+
+    it('shows blocker message when repo is not ready', () => {
+      const draft = createMockDraft();
+      const gates = createMockGates({ repoReady: false });
 
       render(
         <IntegrationIntentDraftCard

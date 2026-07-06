@@ -374,6 +374,11 @@ export function formatIntegrationIntentDraft(draft: IntegrationIntentDraft): {
 /**
  * Check if a draft can be confirmed based on current gate state.
  * Returns false if confirmation would fail due to missing prerequisites.
+ * 
+ * P2 Fix 4: Considers all valid execution paths:
+ * - GitHub write ready (for Direct Patch)
+ * - Direct Patch ready (valid token + repo)
+ * - OpenHands ready (but GitHub write is still needed for actual writes)
  */
 export function canConfirmIntegrationIntentDraft(
   draft: IntegrationIntentDraft,
@@ -387,15 +392,26 @@ export function canConfirmIntegrationIntentDraft(
     };
   }
 
-  // For GitHub write operations, need GitHub write ready OR executor ready
-  if (gates.githubWriteReady || gates.openhandsReady || gates.directPatchReady) {
+  // P2 Fix 4: Accept any valid execution path
+  // Direct Patch and GitHub write are sufficient
+  // OpenHands requires GitHub write for actual writes, but we allow the path
+  // because the user can set up GitHub access when prompted
+  if (gates.directPatchReady || gates.githubWriteReady) {
     return { canConfirm: true };
+  }
+
+  // OpenHands without GitHub write - show access gate option
+  if (gates.openhandsReady) {
+    return {
+      canConfirm: false,
+      blocker: 'GitHub-Zugang erforderlich für OpenHands-Ausführung.',
+    };
   }
 
   // No write path available
   return {
     canConfirm: false,
-    blocker: gates.blockerMessage || 'Kein Ausführungspfad verfügbar. Executor oder GitHub-Zugang erforderlich.',
+    blocker: gates.blockerMessage || 'Kein Ausführungspfad verfügbar. Bitte GitHub-Zugang oder OpenHands konfigurieren.',
   };
 }
 

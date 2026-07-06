@@ -19,8 +19,10 @@ export interface IntegrationIntentDraftCardProps {
   draft: IntegrationIntentDraft;
   /** Current gate snapshot from runtime */
   gateSnapshot: IntegrationIntentDraftGateSnapshot;
-  /** Called when user confirms the draft */
+  /** Called when user confirms the draft and execution path is ready */
   onConfirm: () => void;
+  /** Called when user confirms but GitHub access is needed - opens GitHub Access Gate */
+  onConfirmWithGitHubAccess?: () => void;
   /** Called when user wants to rephrase the draft */
   onRephrase: () => void;
   /** Called when user rejects the draft */
@@ -75,11 +77,30 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
   draft,
   gateSnapshot,
   onConfirm,
+  onConfirmWithGitHubAccess,
   onRephrase,
   onReject,
   canConfirm = true,
   confirmBlocker,
 }) => {
+  // Determine if we need GitHub access to proceed
+  const needsGitHubAccess = gateSnapshot.repoReady && 
+    !gateSnapshot.githubWriteReady && 
+    !gateSnapshot.openhandsReady;
+  
+  // The "Einbauen" button should be enabled if repo is ready
+  // Even without GitHub write, clicking it should lead to the access gate
+  const einbauenEnabled = gateSnapshot.repoReady && (canConfirm || needsGitHubAccess);
+  
+  // Handler for Einbauen - uses GitHub access flow if needed
+  const handleEinbauen = () => {
+    if (needsGitHubAccess && onConfirmWithGitHubAccess) {
+      onConfirmWithGitHubAccess();
+    } else if (canConfirm) {
+      onConfirm();
+    }
+  };
+
   return (
     <div
       className="mx-3 my-2 rounded-xl border border-cyan-500/30 bg-slate-900/80 backdrop-blur-sm overflow-hidden"
@@ -190,17 +211,19 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           {/* Einbauen */}
           <button
             type="button"
-            onClick={onConfirm}
-            disabled={!canConfirm}
+            onClick={handleEinbauen}
+            disabled={!einbauenEnabled}
             className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-              canConfirm
-                ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 active:scale-[0.98]'
+              einbauenEnabled
+                ? needsGitHubAccess
+                  ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 active:scale-[0.98]'
+                  : 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/30 active:scale-[0.98]'
                 : 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed'
             }`}
             data-testid="btn-confirm"
             aria-label="Integrationsauftrag einbauen"
           >
-            Einbauen
+            {needsGitHubAccess ? 'GitHub-Zugang benötigt' : 'Einbauen'}
           </button>
 
           {/* Neu formulieren */}

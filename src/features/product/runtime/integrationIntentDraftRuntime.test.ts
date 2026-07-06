@@ -199,7 +199,8 @@ describe('integrationIntentDraftRuntime', () => {
       expect(result.blocker).toContain('Repository nicht geladen');
     });
 
-    it('allows confirm when openhands is ready even without github', () => {
+    it('blocks confirm when openhands is ready but github is missing', () => {
+      // P1 Fix: OpenHands without GitHub write should be blocked
       const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
       if (!draft) throw new Error('Draft should not be null');
 
@@ -208,6 +209,21 @@ describe('integrationIntentDraftRuntime', () => {
         githubWriteReady: false,
         directPatchReady: false,
         openhandsReady: true,
+      });
+
+      expect(result.canConfirm).toBe(false);
+      expect(result.blocker).toContain('GitHub-Zugang erforderlich');
+    });
+
+    it('allows confirm when direct patch is ready', () => {
+      const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
+      if (!draft) throw new Error('Draft should not be null');
+
+      const result = canConfirmIntegrationIntentDraft(draft, {
+        repoReady: true,
+        githubWriteReady: false,
+        directPatchReady: true,
+        openhandsReady: false,
       });
 
       expect(result.canConfirm).toBe(true);
