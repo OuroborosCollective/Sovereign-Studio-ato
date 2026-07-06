@@ -3628,7 +3628,6 @@ export function BuilderContainer({
     }
 
     // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
-    const workerDiagnosticIntent = isWorkerDiagnosticQuestion(submittedText);
     if (
       workerBlocker &&
       !isWorkerRetryIntent(submittedText) &&
