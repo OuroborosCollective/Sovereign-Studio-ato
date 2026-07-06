@@ -4499,26 +4499,70 @@ export function BuilderContainer({
                       appendActionEvent(buildDraftConfirmedEvent(draft));
                       setIntentDraftState({ status: 'confirmed', draft });
 
-                      // Determine route: Direct Patch > OpenHands > Blocked
+                      // ── Issue #522: P1 & P2 Fixes - Proper gate checking before execution
+                      // Order: GitHub write check FIRST > Direct Patch > OpenHands > Blocked
+
+                      // P1 Fix: If OpenHands is ready but GitHub access is missing, check GitHub first
+                      // This prevents starting OpenHands without proper GitHub write access
+                      if (!gateSnapshot.githubWriteReady) {
+                        if (gateSnapshot.openhandsReady) {
+                          // OpenHands ready but needs GitHub access - show GitHub access card
+                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                          setShowGitHubAccessOverride(true);
+                          appendChatLine({
+                            role: 'assistant',
+                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag mit OpenHands auszuführen.',
+                          });
+                        } else {
+                          // No GitHub access and no executor
+                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                          setShowGitHubAccessOverride(true);
+                          appendChatLine({
+                            role: 'assistant',
+                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
+                          });
+                        }
+                        setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                        return;
+                      }
+
+                      // P2 Fix 1: Direct Patch should use proper runtime, not startAgentFromText
                       if (gateSnapshot.directPatchReady) {
-                        // Direct GitHub Patch route
+                        // Direct GitHub Patch route - use proper runtime
                         appendActionEvent(buildRouteStartedEvent('direct-github-patch'));
                         addLog('info', 'Integration confirmed: Direct GitHub Patch route', 'router');
-                        // Start with the confirmed text
-                        startAgentFromText(draft.originalText);
+                        // Build the patch plan async - this shows results without starting OpenHands
+                        buildDirectPatchPlanWithContentLoad({
+                          repoContext: {
+                            owner: chatRepoSnapshot!.owner,
+                            name: chatRepoSnapshot!.repo,
+                            branch: chatRepoSnapshot!.branch,
+                            filePaths: chatRepoSnapshot!.filePaths ?? [],
+                          },
+                          instruction: draft.originalText,
+                          githubAccessReady: true,
+                          token: githubTokenRef.current!,
+                          fetcher: globalThis.fetch,
+                        }).then((result) => {
+                          if ('result' in result && result.result.ok) {
+                            appendActionEvent({
+                              kind: 'route_selected',
+                              route: 'direct-github-patch',
+                              label: 'Direct GitHub Patch Route gewählt',
+                              detail: `Zieldatei: ${result.result.targetPath}`,
+                              state: 'running',
+                            });
+                            appendChatLine({
+                              role: 'assistant',
+                              text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+                            });
+                          }
+                        });
                       } else if (gateSnapshot.openhandsReady) {
                         // OpenHands route
                         appendActionEvent(buildRouteStartedEvent('openhands'));
                         addLog('info', 'Integration confirmed: OpenHands route', 'router');
                         startAgentFromText(draft.originalText);
-                      } else if (!gateSnapshot.githubWriteReady) {
-                        // No GitHub access - show GitHub access card
-                        appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
-                        setShowGitHubAccessOverride(true);
-                        appendChatLine({
-                          role: 'assistant',
-                          text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
-                        });
                       } else {
                         // No executor available
                         appendActionEvent(buildRouteBlockedEvent('Kein Executor verfügbar'));
