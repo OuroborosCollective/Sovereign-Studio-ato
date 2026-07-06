@@ -1465,6 +1465,14 @@ def admin_llm_route_healthcheck(rid):
             if route.get("apiKey"):
                 headers["x-goog-api-key"] = route["apiKey"]
             timeout = 10
+        elif provider == "mistral":
+            if not base_url:
+                base_url = "https://api.mistral.ai"
+            # Mistral health check via models endpoint
+            url = f"{base_url.rstrip('/')}/v1/models"
+            if route.get("apiKey"):
+                headers["Authorization"] = f"Bearer {route['apiKey']}"
+            timeout = 10
         else:
             # Generic health check for unknown providers
             if not base_url:
@@ -1490,6 +1498,13 @@ def admin_llm_route_healthcheck(rid):
                 error_message = f"HTTP {resp.status_code}"
             else:
                 health_status = "healthy"
+            
+            # Validate response is JSON (API returned valid data)
+            content_type = resp.headers.get("content-type", "")
+            if "application/json" not in content_type and resp.status_code >= 400:
+                health_status = "degraded"
+                blocker = "invalid_response"
+                error_message = f"API Fehler: HTTP {resp.status_code} (erwartet JSON)"
     
     except requests.exceptions.Timeout:
         health_status = "degraded"
