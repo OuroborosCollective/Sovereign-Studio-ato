@@ -84,12 +84,23 @@ describe('integrationIntentDraftRuntime', () => {
     });
 
     it('returns null for placeholder missions (P2 Fix 4)', () => {
+      // Basic placeholders
       expect(createIntegrationIntentDraft('Fehler')).toBeNull();
       expect(createIntegrationIntentDraft('Idee')).toBeNull();
       expect(createIntegrationIntentDraft('Ideen')).toBeNull();
       expect(createIntegrationIntentDraft('Plan')).toBeNull();
       expect(createIntegrationIntentDraft('Workflow')).toBeNull();
       expect(createIntegrationIntentDraft('Mach weiter')).toBeNull();
+      
+      // Issue #522 P2 Fix 4: Extended vague placeholders
+      expect(createIntegrationIntentDraft('Weiter')).toBeNull();
+      expect(createIntegrationIntentDraft('Mach was')).toBeNull();
+      expect(createIntegrationIntentDraft('Mach etwas')).toBeNull();
+      expect(createIntegrationIntentDraft('Fix me')).toBeNull();
+      
+      // Single-word short vague commands
+      expect(createIntegrationIntentDraft('Hilf')).toBeNull();
+      expect(createIntegrationIntentDraft('Hilfe')).toBeNull();
     });
 
     it('extracts correct goal for fix intent', () => {
@@ -188,7 +199,8 @@ describe('integrationIntentDraftRuntime', () => {
       expect(result.blocker).toContain('Repository nicht geladen');
     });
 
-    it('allows confirm when openhands is ready even without github', () => {
+    it('blocks confirm when openhands is ready but github is missing', () => {
+      // P1 Fix: OpenHands without GitHub write should be blocked
       const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
       if (!draft) throw new Error('Draft should not be null');
 
@@ -197,6 +209,21 @@ describe('integrationIntentDraftRuntime', () => {
         githubWriteReady: false,
         directPatchReady: false,
         openhandsReady: true,
+      });
+
+      expect(result.canConfirm).toBe(false);
+      expect(result.blocker).toContain('GitHub-Zugang erforderlich');
+    });
+
+    it('allows confirm when direct patch is ready', () => {
+      const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
+      if (!draft) throw new Error('Draft should not be null');
+
+      const result = canConfirmIntegrationIntentDraft(draft, {
+        repoReady: true,
+        githubWriteReady: false,
+        directPatchReady: true,
+        openhandsReady: false,
       });
 
       expect(result.canConfirm).toBe(true);

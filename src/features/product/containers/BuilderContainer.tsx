@@ -3553,6 +3553,104 @@ export function BuilderContainer({
     appendChatLine({ role: "user", text: submittedText });
     appendActionEvent(buildInputReceivedEvent(submittedText));
 
+    // ── Issue #522 P2 Fix 2 & 3: Local routing BEFORE Integration Intent Draft Detection
+    // Status, diagnostic, and retry intents must be handled locally FIRST.
+    // They should NOT create an integration draft card.
+    // Order matters: local routes > createIntegrationIntentDraft > capability router
+
+    // P2 Fix 2: Status questions - answered locally from runtime state
+    if (isLocalCompletionStatusQuestion(submittedText)) {
+      const statusAnswer = buildLocalStatusAnswer({
+        githubWriteAllowed,
+        githubAccessState: githubAccessState.state,
+        writeIntentBlockedByRepo: !effectiveRepoReady,
+        openhandsRunning: openhandsJob?.status === 'running',
+        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+        hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+        workerBlocker,
+        buildWorkerBlockerAnswer: workerBlocker
+          ? () =>
+              buildWorkerBlockerAnswer({
+                blocker: workerBlocker,
+                repoReady: effectiveRepoReady,
+                chatRepoSnapshot,
+                openhandsReady,
+              })
+          : undefined,
+        questionText: submittedText,
+      });
+      appendChatLine({ role: 'assistant', text: statusAnswer });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Status-Frage',
+        detail: 'Lokale Antwort aus Runtime-State',
+      }));
+      addLog('info', 'Issue #522 P2 Fix 2: Status question handled locally - no draft created', 'router');
+      return;
+    }
+
+    // P2 Fix 2: Worker retry intents - clear blocker and retry, NOT a new draft
+    if (isWorkerRetryIntent(submittedText) && workerBlocker) {
+      setWorkerBlocker(null);
+      appendChatLine({
+        role: 'assistant',
+        text: 'Worker-Blocker zurückgesetzt. Bitte Auftrag erneut senden.',
+      });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Retry',
+        detail: 'Worker-Blocker zurückgesetzt',
+      }));
+      addLog('info', 'Issue #522 P2 Fix 2: Retry intent clears blocker - no draft created', 'router');
+      return;
+    }
+
+    // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
+    const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
+      (openhandsJob != null && openhandsJob.status !== 'idle');
+    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
+      const statusAnswer = buildExecutorStatusAnswer({
+        agentState: agentWorkSnapshot.state,
+        openhandsStatus: openhandsJob?.status,
+        changedFiles: openhandsJob?.changedFiles?.length ?? 0,
+        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        blockerReason: agentWorkSnapshot.blockerReason,
+      });
+      appendChatLine({ role: 'assistant', text: statusAnswer });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Diagnose-Frage',
+        detail: 'Lokale Antwort aus Runtime-State',
+      }));
+      addLog('info', 'Issue #522 P2 Fix 3: Diagnostic question answered locally - no draft created', 'router');
+      return;
+    }
+
+    // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
+    if (
+      workerBlocker &&
+      !isWorkerRetryIntent(submittedText) &&
+      !isOpenHandsExecutionIntent(submittedText)
+    ) {
+      appendChatLine({
+        role: "assistant",
+        text: buildWorkerBlockerAnswer({
+          blocker: workerBlocker,
+          repoReady: effectiveRepoReady,
+          chatRepoSnapshot,
+          openhandsReady,
+        }),
+      });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Worker-Diagnose',
+        detail: workerBlocker.diagnostic.scope,
+      }));
+      addLog('info', `Issue #522 P2 Fix 3: Worker diagnostic answered locally - no draft created`, 'router');
+      return;
+    }
+
     // ── Issue #520: Integration Intent Draft Detection
     // Normal non-question inputs with a connected repo are treated as potential
     // integration/implementation requests. Show a draft card for confirmation.
@@ -3737,34 +3835,9 @@ export function BuilderContainer({
       return;
     }
 
-    // ── Aufgabe 2: Local completion-status questions ("bist du fertig?", "wo
-    // ist der patch?", ...) are answered from real runtime state and never
-    // forwarded to the Worker as a new chat request.
-    if (isLocalCompletionStatusQuestion(submittedText)) {
-      const statusAnswer = buildLocalStatusAnswer({
-        githubWriteAllowed,
-        githubAccessState: githubAccessState.state,
-        writeIntentBlockedByRepo: !effectiveRepoReady,
-        openhandsRunning: openhandsJob?.status === 'running',
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        hasPatch: Boolean(openhandsJob?.changedFiles?.length),
-        hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
-        workerBlocker,
-        buildWorkerBlockerAnswer: workerBlocker
-          ? () =>
-              buildWorkerBlockerAnswer({
-                blocker: workerBlocker,
-                repoReady: effectiveRepoReady,
-                chatRepoSnapshot,
-                openhandsReady,
-              })
-          : undefined,
-        questionText: submittedText,
-      });
-      appendChatLine({ role: 'assistant', text: statusAnswer });
-      addLog('info', 'Local completion-status question answered locally', 'router');
-      return;
-    }
+    // ── Aufgabe 2: Local completion-status questions
+    // NOTE: Handled earlier in the flow (see Issue #522 P2 Fix 2 above)
+    // to ensure status questions don't create integration drafts.
 
     // ── Aufgabe 1: Write intents (README/file/patch/commit/push/PR language)
     // must never reach the Worker chat while GitHub write access is missing.
@@ -3912,56 +3985,9 @@ export function BuilderContainer({
       return;
     }
 
-    // ── Executor status questions: answer locally — but only when executor is actually involved.
-    // Guard: if workerBlocker is active and no OpenHands job is running, "warum passiert nichts?"
-    // is a Worker-Diagnose question, not an executor status question — route to workerBlocker handler.
-    const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
-      (openhandsJob != null && openhandsJob.status !== 'idle');
-    // Gap 2: if workerBlocker is active AND executor is idle, "warum passiert nichts?" etc.
-    // must be answered as Worker-Diagnose (not executor status). Without a workerBlocker,
-    // even an idle executor should answer honestly ("Nein, kein Auftrag gestartet").
-    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
-      const statusAnswer = buildExecutorStatusAnswer({
-        agentState: agentWorkSnapshot.state,
-        openhandsStatus: openhandsJob?.status,
-        changedFiles: openhandsJob?.changedFiles?.length ?? 0,
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        blockerReason: agentWorkSnapshot.blockerReason,
-      });
-      appendChatLine({ role: 'assistant', text: statusAnswer });
-      addLog('info', `Executor status question answered locally · state=${agentWorkSnapshot.state}`, 'router');
-      return;
-    }
-
-    const workerDiagnosticIntent = isWorkerDiagnosticQuestion(submittedText);
-    if (
-      workerBlocker &&
-      !isWorkerRetryIntent(submittedText) &&
-      !isOpenHandsExecutionIntent(submittedText)
-    ) {
-      appendChatLine({
-        role: "assistant",
-        text: buildWorkerBlockerAnswer({
-          blocker: workerBlocker,
-          repoReady: effectiveRepoReady,
-          chatRepoSnapshot,
-          openhandsReady,
-        }),
-      });
-      addLog(
-        "warn",
-        `Worker blocked · ${workerBlocker.diagnostic.scope}${workerDiagnosticIntent ? " · local explanation" : " · retry prevented"}`,
-        "router",
-      );
-      return;
-    }
-
-    if (workerBlocker && isWorkerRetryIntent(submittedText)) {
-      setWorkerBlocker(null);
-      addLog("info", "Worker retry requested by user", "router");
-    }
-
     // ── #500/#501 Alternative write route: answer locally without OpenHands lock-in.
+    // NOTE: Status, diagnostic, and retry intents are handled earlier in the flow
+    // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.
     // These questions must be answered from runtime state, not forwarded to OpenHands.
     if (isAlternativeWriteRouteIntent(submittedText)) {
       // #501: Calculate directPatchAvailable honestly
@@ -4487,51 +4513,34 @@ export function BuilderContainer({
                   directPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
                   openhandsReady: openhandsReady ?? false,
                 };
+                
+                // P2 Fix 4: canConfirm requires repo ready AND at least one write path available
+                const hasGitHubAccess = gateSnapshot.githubWriteReady;
+                const hasDirectPatch = gateSnapshot.directPatchReady;
+                const hasOpenHands = gateSnapshot.openhandsReady;
+                const canExecute = hasGitHubAccess || hasDirectPatch || hasOpenHands;
+                
                 const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
+                
                 return (
                   <IntegrationIntentDraftCard
                     draft={draft}
                     gateSnapshot={gateSnapshot}
-                    canConfirm={confirmCheck.canConfirm}
-                    confirmBlocker={confirmCheck.blocker}
+                    canConfirm={effectiveRepoReady && canExecute}
+                    confirmBlocker={!effectiveRepoReady ? confirmCheck.blocker : undefined}
                     onConfirm={() => {
-                      // Confirm the draft and start execution via capability router
+                      // This is called when execution can proceed directly
+                      // (GitHub write or OpenHands ready)
                       appendActionEvent(buildDraftConfirmedEvent(draft));
                       setIntentDraftState({ status: 'confirmed', draft });
 
-                      // ── Issue #522: P1 & P2 Fixes - Proper gate checking before execution
-                      // Order: GitHub write check FIRST > Direct Patch > OpenHands > Blocked
+                      // ── Issue #522 P2 Fix 1: Proper gate checking before execution
+                      // Order: Direct Patch > OpenHands (GitHub write already validated by canConfirm)
 
-                      // P1 Fix: If OpenHands is ready but GitHub access is missing, check GitHub first
-                      // This prevents starting OpenHands without proper GitHub write access
-                      if (!gateSnapshot.githubWriteReady) {
-                        if (gateSnapshot.openhandsReady) {
-                          // OpenHands ready but needs GitHub access - show GitHub access card
-                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
-                          setShowGitHubAccessOverride(true);
-                          appendChatLine({
-                            role: 'assistant',
-                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag mit OpenHands auszuführen.',
-                          });
-                        } else {
-                          // No GitHub access and no executor
-                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
-                          setShowGitHubAccessOverride(true);
-                          appendChatLine({
-                            role: 'assistant',
-                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
-                          });
-                        }
-                        setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                        return;
-                      }
-
-                      // P2 Fix 1: Direct Patch should use proper runtime, not startAgentFromText
+                      // Direct Patch route - use proper runtime, NOT startAgentFromText
                       if (gateSnapshot.directPatchReady) {
-                        // Direct GitHub Patch route - use proper runtime
                         appendActionEvent(buildRouteStartedEvent('direct-github-patch'));
                         addLog('info', 'Integration confirmed: Direct GitHub Patch route', 'router');
-                        // Build the patch plan async - this shows results without starting OpenHands
                         buildDirectPatchPlanWithContentLoad({
                           repoContext: {
                             owner: chatRepoSnapshot!.owner,
@@ -4559,21 +4568,45 @@ export function BuilderContainer({
                           }
                         });
                       } else if (gateSnapshot.openhandsReady) {
-                        // OpenHands route
+                        // OpenHands route - ONLY if GitHub write is confirmed
+                        // P1 Fix: Never start OpenHands without validated GitHub write access
+                        if (!gateSnapshot.githubWriteReady) {
+                          // This should not happen if canConfirm is working, but as safety:
+                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                          setShowGitHubAccessOverride(true);
+                          appendChatLine({
+                            role: 'assistant',
+                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
+                          });
+                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                          return;
+                        }
                         appendActionEvent(buildRouteStartedEvent('openhands'));
                         addLog('info', 'Integration confirmed: OpenHands route', 'router');
                         startAgentFromText(draft.originalText);
-                      } else {
-                        // No executor available
-                        appendActionEvent(buildRouteBlockedEvent('Kein Executor verfügbar'));
-                        appendChatLine({
-                          role: 'assistant',
-                          text: 'Integrationsauftrag bestätigt.\nOpenHands ist nicht konfiguriert. Bitte OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.',
-                        });
                       }
 
                       // Clear the draft state after confirmation
                       setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                    }}
+                    onConfirmWithGitHubAccess={() => {
+                      // P2 Fix 4: Called when user clicks "GitHub-Zugang benötigt"
+                      // Opens the GitHub Access Gate
+                      appendActionEvent({
+                        kind: 'github_access_required',
+                        route: 'github-access',
+                        label: 'GitHub-Schreibzugang erforderlich',
+                        detail: 'Draft bestätigt aber GitHub-Zugang fehlt',
+                        state: 'blocked',
+                      });
+                      pendingWriteIntentRef.current = draft.originalText;
+                      setShowGitHubAccessOverride(true);
+                      appendChatLine({
+                        role: 'assistant',
+                        text: 'Integrationsauftrag bestätigt.\nGitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.',
+                      });
+                      setIntentDraftState({ status: 'idle' });
+                      addLog('info', 'Integration draft confirmed: GitHub access gate opened', 'router');
                     }}
                     onRephrase={() => {
                       // Rephrase the draft - put rephrased text in input, don't execute
