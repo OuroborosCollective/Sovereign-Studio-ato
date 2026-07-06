@@ -668,7 +668,9 @@ def admin_worker_ai_status():
         worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
         
         # Test health endpoint
+        start = time.time()
         resp = requests.get(f"{worker_url}/health", timeout=10)
+        response_time_ms = int((time.time() - start) * 1000)
         health_data = resp.json() if resp.ok else {}
         
         # Get available models
@@ -692,7 +694,24 @@ def admin_worker_ai_status():
             "modelCount": len(available_models),
             "providers": health_data.get("providers", {}),
             "timestamp": health_data.get("timestamp"),
+            "responseTimeMs": response_time_ms,
         })
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "status": "timeout",
+            "error": "Worker AI request timed out",
+            "configured": False,
+            "availableModels": [],
+            "modelCount": 0,
+        }), 504
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            "status": "unreachable",
+            "error": "Cannot connect to Worker AI",
+            "configured": False,
+            "availableModels": [],
+            "modelCount": 0,
+        }), 503
     except Exception as e:
         return jsonify({
             "status": "error",
@@ -701,6 +720,86 @@ def admin_worker_ai_status():
             "availableModels": [],
             "modelCount": 0,
         }), 500
+
+
+@app.route("/api/admin/system/health", methods=["GET"])
+@require_admin
+def admin_system_health():
+    """Comprehensive system health check for all components."""
+    health = {
+        "ok": True,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "components": {},
+    }
+    
+    # 1. Database check
+    try:
+        start = time.time()
+        result = query("SELECT 1 as test, NOW() as now", one=True)
+        db_time = int((time.time() - start) * 1000)
+        health["components"]["database"] = {
+            "status": "healthy",
+            "responseTimeMs": db_time,
+        }
+    except Exception as e:
+        health["ok"] = False
+        health["components"]["database"] = {
+            "status": "unhealthy",
+            "error": str(e)[:100],
+        }
+    
+    # 2. Worker AI check
+    try:
+        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+        start = time.time()
+        resp = requests.get(f"{worker_url}/health", timeout=10)
+        wai_time = int((time.time() - start) * 1000)
+        if resp.ok:
+            data = resp.json()
+            health["components"]["worker_ai"] = {
+                "status": data.get("status", "healthy"),
+                "configured": data.get("configured", False),
+                "modelCount": data.get("modelCount", 0),
+                "responseTimeMs": wai_time,
+            }
+        else:
+            health["ok"] = False
+            health["components"]["worker_ai"] = {
+                "status": "degraded",
+                "error": f"HTTP {resp.status_code}",
+                "responseTimeMs": wai_time,
+            }
+    except Exception as e:
+        health["ok"] = False
+        health["components"]["worker_ai"] = {
+            "status": "unhealthy",
+            "error": str(e)[:100],
+        }
+    
+    # 3. LLM Routes check
+    try:
+        routes = query("SELECT COUNT(*) as count FROM llm_routes WHERE disabled = false", one=True)
+        total = query("SELECT COUNT(*) as count FROM llm_routes", one=True)
+        health["components"]["llm_routes"] = {
+            "status": "healthy",
+            "activeRoutes": routes["count"] if routes else 0,
+            "totalRoutes": total["count"] if total else 0,
+        }
+    except Exception as e:
+        health["components"]["llm_routes"] = {
+            "status": "degraded",
+            "error": str(e)[:100],
+        }
+    
+    # 4. Config file check
+    config_file = _CONFIG_FILE
+    if config_file:
+        health["components"]["config"] = {
+            "status": "healthy" if os.path.exists(config_file) else "missing",
+            "path": config_file,
+        }
+    
+    return jsonify(health)
 
 
 @app.route("/api/admin/llm/worker-ai/sync", methods=["POST"])
