@@ -762,8 +762,8 @@ def admin_worker_ai_sync():
                 
                 new_id = query(
                     """INSERT INTO llm_routes 
-                       (model_id, model_name, provider, base_url, credits_per_unit, priority, disabled)
-                       VALUES (%s, %s, 'cloudflare', %s, 0.001, %s, false)
+                       (id, model_id, model_name, provider, base_url, credits_per_unit, priority, disabled)
+                       VALUES (gen_random_uuid(), %s, %s, 'cloudflare', %s, 0.001, %s, false)
                        ON CONFLICT (model_id) DO UPDATE SET
                          model_name = EXCLUDED.model_name,
                          updated_at = NOW()
