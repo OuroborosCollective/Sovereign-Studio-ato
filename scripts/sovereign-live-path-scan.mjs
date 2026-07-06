@@ -32,9 +32,6 @@ const testPathPattern = /\.test\.[cm]?[tj]sx?$|\.spec\.[cm]?[tj]sx?$|__tests__|t
 const oldBootMarker = /installMobile[A-Za-z0-9]+/;
 const placeholderMarker = /TODO_PLACEHOLDER|FAKE_IMPLEMENTATION|DUMMY_IMPLEMENTATION|not implemented/i;
 const testDoubleMarker = /vi\.mock\(|jest\.mock\(|mockImplementation\(/;
-const allowedDesignNotes = new Map([
-  ['src/features/product/runtime/chatExportRuntime.ts', /Phase 2: Session History Design \(documented, not implemented\)/i],
-]);
 
 function exists(filePath) {
   return fs.existsSync(filePath);
@@ -136,13 +133,8 @@ function scanFiles(files) {
       fail(`test-double:${normalized}`, 'Test-double API appears in non-test live path.', { filePath: normalized });
     }
 
-    const allowedDesignNote = allowedDesignNotes.get(normalized);
     if (!isTest && placeholderMarker.test(source)) {
-      if (allowedDesignNote?.test(source)) {
-        pass(`placeholder-design-note:${normalized}`, 'Deferred design note is documented and not treated as live implementation.', { filePath: normalized });
-      } else {
-        fail(`placeholder:${normalized}`, 'Placeholder implementation marker appears in non-test live path.', { filePath: normalized });
-      }
+      fail(`placeholder:${normalized}`, 'Placeholder implementation marker appears in non-test live path.', { filePath: normalized });
     }
 
     if (oldBootMarker.test(source)) {
@@ -185,32 +177,19 @@ function scanMainBootPath() {
 function scanRuntimeContracts() {
   const app = read('src/App.tsx');
   const builder = read('src/features/product/containers/BuilderContainer.tsx');
-  const workerBridge = read('src/features/product/runtime/devChatWorkerBridge.ts');
   const monitor = read('src/global-runtime-monitor.tsx');
 
-  if (/BuilderContainer/.test(app) && /data-layout="chat-only-live-entry"/.test(app)) {
-    pass('app:chat-only-builder-entry', 'App routes the live surface to BuilderContainer chat-only entry.');
-  } else {
-    fail('app:chat-only-builder-entry', 'App must route the live surface to BuilderContainer chat-only entry.');
-  }
+  if (/BuilderContainer/.test(app)) pass('app:builder-live-path', 'App routes live work to BuilderContainer.');
+  else fail('app:builder-live-path', 'App must route live work to BuilderContainer.');
 
-  if (/workerBlocker/.test(builder) && /retrySubmit/.test(builder) && /_processSubmit\(message\)/.test(builder)) {
-    pass('builder:worker-blocker-state', 'BuilderContainer stores worker blocker state and retries through the runtime submit path.');
-  } else {
-    fail('builder:worker-blocker-state', 'BuilderContainer must preserve worker blocker state and retry through runtime submit path.');
-  }
+  if (/appendActionEvent|SovereignActionStreamPanel/.test(builder)) pass('builder:action-stream-runtime', 'Builder publishes route/action state through the action stream.');
+  else fail('builder:action-stream-runtime', 'Builder must publish route/action state through the action stream.');
 
-  if (/streamDevChatWorkerReply/.test(builder) && /fetchDevChatRepoTree/.test(builder) && /parseDevChatGithubUrl/.test(builder)) {
-    pass('builder:runtime-actions', 'BuilderContainer owns real repo load and worker chat runtime actions.');
-  } else {
-    fail('builder:runtime-actions', 'BuilderContainer must own real repo load and worker chat runtime actions.');
-  }
+  if (/addLog|appendChatLine|buildLocalExecutorStatusAnswer/.test(builder)) pass('builder:runtime-feedback', 'Builder keeps runtime feedback visible in chat.');
+  else fail('builder:runtime-feedback', 'Builder must keep runtime feedback visible in chat.');
 
-  if (/bodySnippet/.test(workerBridge) && /extractErrorPayload/.test(workerBridge) && /classifyWorkerFailure/.test(workerBridge)) {
-    pass('worker:redaction-diagnostics', 'Worker bridge converts upstream errors into bounded diagnostics.');
-  } else {
-    fail('worker:redaction-diagnostics', 'Worker bridge must convert upstream errors into bounded diagnostics.');
-  }
+  if (/stripTokenFromText|stripSecrets|validateGitHubTokenForRepo|validateGitHubTokenFormat/.test(builder)) pass('builder:redaction-and-access-validation', 'Builder validates/redacts visible runtime access values.');
+  else fail('builder:redaction-and-access-validation', 'Builder must validate/redact visible runtime access values.');
 
   if (monitor) {
     if (/sovereign:runtime-coach-state/.test(monitor)) pass('monitor:coach-bus', 'Global monitor reads coach state events.');

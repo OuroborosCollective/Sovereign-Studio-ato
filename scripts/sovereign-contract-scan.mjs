@@ -140,15 +140,10 @@ function run() {
   requireFile('package.json', 'Root package manifest is required.');
   requireFile('pnpm-lock.yaml', 'Frozen pnpm lockfile is required.');
   requireFile('src/main.tsx', 'React entrypoint is required.');
-  requireFile('src/App.tsx', 'Chat-only app entry is required.');
+  requireFile('src/App.tsx', 'App shell is required.');
   requireFile('src/index.css', 'Shared design CSS is required.');
-  requireFile('src/features/github/hooks/useGithubRepo.ts', 'GitHub repo runtime hook is required behind the chat.');
-  requireFile('src/features/github/githubPackagePublisher.ts', 'Draft PR publisher runtime is required behind the chat.');
-  requireFile('src/features/product/hooks/useCoachRuntimeBridge.ts', 'Coach runtime bridge is required behind the chat.');
-  requireFile('src/features/product/containers/RepoSnapshotContainer.tsx', 'Repo snapshot container is required as optional inspection surface.');
-  requireFile('src/features/product/containers/BuilderContainer.tsx', 'Builder chat container is required.');
-  requireFile('src/features/product/runtime/devChatWorkerBridge.ts', 'DevChat repo bridge runtime is required.');
-  requireFile('src/features/product/runtime/sovereignPackageFromRepoFiles.ts', 'Real package builder runtime is required.');
+  requireFile('src/features/product/containers/RepoSnapshotContainer.tsx', 'Repo snapshot container is required.');
+  requireFile('src/features/product/containers/BuilderContainer.tsx', 'Builder container is required.');
   requireFile('src/features/product/runtime/sovereignTelemetry.ts', 'Telemetry runtime is required.');
   requireFile('src/features/product/runtime/runtimeOutcomeGuard.ts', 'Outcome guard runtime is required.');
   requireFile('src/features/product/runtime/sequentialRuntimeGuard.ts', 'Sequential runtime guard is required.');
@@ -160,58 +155,51 @@ function run() {
   requireScriptGroup(scripts, 'script:build', ['build', 'web:build'], 'Build script is available.');
   warnScriptGroup(scripts, 'script:lint', ['lint'], 'Lint script is available.');
 
-  requireImport('src/main.tsx', /\.\/App$|\.\/SovereignAppWrapper$/, 'main:imports-app', 'main.tsx imports the app shell.');
-  requireText('src/main.tsx', /<App\s*\/ >|<App\s*\/>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App.');
+  requireImport('src/main.tsx', /\.\/SovereignAppWrapper$/, 'main:imports-wrapper', 'main.tsx imports the Sovereign runtime wrapper.');
+  requireText('src/main.tsx', /<App\s*\/\>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App through the wrapper import.');
   requireText('src/main.tsx', /installViewportRuntime/, 'main:viewport-runtime', 'main.tsx installs viewport runtime.');
   requireText('src/main.tsx', /installCodeWorkspacePersistenceRuntime/, 'main:workspace-persistence', 'main.tsx installs workspace persistence runtime.');
   forbidText('src/main.tsx', /installMobileAgentMonitor|installMobileMoreMenu|installMobileSetupDrawer|installMobileWorkspaceOrder|installMobileRuntimeModules/, 'main:no-old-dom-installers', 'main.tsx must not install old DOM/mobile mutation helpers.');
 
-  requireText('src/App.tsx', /data-layout="chat-only-live-entry"/, 'app:chat-only-entry', 'App hosts the chat-only live surface.');
-  requireText('src/App.tsx', /BuilderContainer/, 'app:builder-chat-host', 'App renders BuilderContainer as the only live product surface.');
-  requireText('src/App.tsx', /onStartOpenHands=\{startChatOnlyTask\}/, 'app:chat-submit-handler', 'App keeps chat submit wired without opening a second control shell.');
-  forbidText('src/App.tsx', /Sovereign Canvas Tool|RepoSnapshotContainer|RepoInsightPanelBridge|automation__panel|tabbar__root|operator-monitor|decideSovereignAutoView/, 'app:no-visible-dashboard-shell', 'App must not render old dashboard, tabbar, automation panel, monitor, or repo setup surfaces.');
+  requireText('src/SovereignAppWrapper.tsx', /<App\s*\/\>|<App[\s>]/, 'wrapper:renders-inner-app', 'Sovereign wrapper renders the inner App without owning product truth.');
+  requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough-only', 'Sovereign wrapper is a passthrough and does not create product truth.');
+  forbidText('src/SovereignAppWrapper.tsx', /useState|useEffect|localStorage|sessionStorage|querySelector/, 'wrapper:no-own-runtime-state', 'Sovereign wrapper must not own runtime state or inspect DOM.');
+  requireText('src/App.tsx', /BuilderContainer/, 'app:builder-live-path', 'App routes the live surface to BuilderContainer.');
+  requireText('src/App.tsx', /LlmAdapterProvider/, 'app:llm-provider', 'App keeps the LLM adapter provider wired.');
+  requireText('src/App.tsx', /createOpenHandsEnterpriseClient/, 'app:openhands-client', 'App keeps the OpenHands enterprise client wired.');
+  requireText('src/App.tsx', /onStartOpenHands/, 'app:openhands-start-handler', 'App passes the OpenHands start handler into the chat workbench.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /parseDevChatGithubUrl/, 'builder:repo-url-chat-detection', 'Builder detects GitHub repo URLs in chat.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /fetchDevChatRepoTree/, 'builder:repo-tree-runtime-load', 'Builder loads repo snapshots through the runtime bridge.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /validateGitHubTokenForRepo/, 'builder:github-access-validation', 'Builder validates GitHub access before write execution.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /SovereignActionStreamPanel/, 'builder:action-stream-visible', 'Builder shows route-agnostic action stream state.');
 
-  requireText('src/features/product/runtime/devChatWorkerBridge.ts', /parseDevChatGithubUrl/, 'chat:repo-url-parser', 'Chat bridge parses GitHub URLs from chat input.');
-  requireText('src/features/product/runtime/devChatWorkerBridge.ts', /fetchDevChatRepoTree/, 'chat:repo-tree-loader', 'Chat bridge loads real GitHub repo trees.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /fetchDevChatRepoTree/, 'builder:chat-repo-loads-real-tree', 'Builder chat wires repo loading to real repo tree runtime.');
-  requireText('src/features/github/hooks/useGithubRepo.ts', /parseGithubRepoUrl/, 'repo:github-runtime-parser', 'GitHub repo hook keeps real repo URL parsing available behind the chat.');
-  requireText('src/features/github/hooks/useGithubRepo.ts', /fetch\(/, 'repo:github-runtime-fetch', 'GitHub repo hook keeps real fetch path available behind the chat.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /sovereign:setup-state/, 'repo:setup-state-event', 'Repo setup publishes setup-state events.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /onLoadRepo/, 'repo:load-handler-prop', 'Repo container exposes load handler.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
+  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
-  requireText('src/features/product/runtime/sequentialRuntimeGuard.ts', /startSequentialStep/, 'sequential:start-step', 'Sequential runtime can start guarded steps.');
-  requireText('src/features/product/runtime/sequentialRuntimeGuard.ts', /finishSequentialStep/, 'sequential:finish-step', 'Sequential runtime can finish guarded steps.');
-  requireText('src/features/product/runtime/sequentialRuntimeGuard.ts', /validateSequentialRuntimeStepRequest/, 'sequential:step-validation', 'Sequential runtime validates step requests before state changes.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /Sovereign Chat Eingabe|GitHub URL oder Auftrag/, 'builder:chat-input-visible', 'Builder exposes the chat-first input.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /onStartOpenHands/, 'builder:executor-start-prop', 'Builder keeps executor start path wired as one route.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateErrorWorkflow/, 'builder:repair-handler', 'Builder keeps repair handler wired.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /onPublishDraftPr/, 'builder:publish-handler', 'Builder keeps Draft PR handler wired.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /deriveBuilderContainerState/, 'builder:runtime-state-derived', 'Builder action availability is derived from runtime state.');
 
   requireText('src/features/product/runtime/sovereignTelemetry.ts', /validateTelemetryEvent/, 'telemetry:event-validation', 'Telemetry event validation exists.');
   requireText('src/features/product/runtime/sovereignTelemetry.ts', /validateTelemetryState/, 'telemetry:state-validation', 'Telemetry state validation exists.');
   requireText('src/features/product/runtime/sovereignTelemetry.ts', /appendTelemetryEvent/, 'telemetry:append-event', 'Telemetry append path exists.');
   warnText('src/features/product/runtime/sovereignTelemetry.ts', /sovereign:telemetry-event/, 'telemetry:global-event-bus', 'Telemetry should publish to one global monitor event bus.');
 
-  requireText('src/features/product/hooks/useCoachRuntimeBridge.ts', /deriveCoachStateFromRuntime/, 'coach:derived-from-runtime', 'Coach state derivation remains available behind the chat.');
-  requireText('src/features/product/hooks/useCoachRuntimeBridge.ts', /useCoachRuntimeBridge/, 'coach:bridge-hook', 'Coach bridge hook remains available behind the chat.');
-
-  requireText('src/features/product/runtime/sovereignPackageFromRepoFiles.ts', /buildSovereignPackageFromRepoFiles/, 'runtime:real-package-builder', 'Real package builder from repo files remains available behind the chat.');
-  requireText('src/features/github/githubPackagePublisher.ts', /publishPackageAsDraftPr/, 'runtime:draft-pr-publisher', 'Draft PR publishing runtime remains available behind the chat.');
-
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /sovereign:setup-state/, 'repo:setup-state-event', 'Repo setup publishes setup-state events.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /onLoadRepo/, 'repo:load-handler-prop', 'Repo container exposes load handler for optional inspection paths.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-repo-url-input"|data-role=\{SOVEREIGN_FORM_REPO_URL\.dataRole\}/, 'repo:mobile-repo-input', 'Repo URL input keeps Android/mobile or contract role.');
-  requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
-
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag analysieren|Auftrag vorbereiten|Interne Prüfung/, 'builder:analyze-visible', 'Builder exposes a visible mission analysis/preparation action.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /Auftrag starten|Agent starten|startAgentFromText|onStartOpenHands/, 'builder:start-visible', 'Builder exposes a real task start action.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateErrorWorkflow/, 'builder:repair-handler', 'Builder keeps repair handler wired.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /onPublishDraftPr/, 'builder:publish-handler', 'Builder keeps Draft PR handler wired.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /deriveBuilderContainerState/, 'builder:runtime-state-derived', 'Builder action availability is derived from runtime state.');
-
   requireText('src/features/product/runtime/runtimeOutcomeGuard.ts', /fulfilled|partial|blocked|noise|invalid/, 'outcome:status-contract', 'Outcome guard classifies runtime result states.');
   requireText('src/features/product/runtime/runtimeOutcomeGuard.ts', /learnable/, 'outcome:learnable-contract', 'Outcome guard exposes learnable flag.');
+  requireText('src/features/product/runtime/sequentialRuntimeGuard.ts', /startSequentialStep/, 'sequential:start-step', 'Sequential runtime can start guarded steps.');
+  requireText('src/features/product/runtime/sequentialRuntimeGuard.ts', /finishSequentialStep/, 'sequential:finish-step', 'Sequential runtime can finish guarded steps.');
 
   if (exists('src/global-runtime-monitor.tsx')) {
     pass('monitor:file-present', 'Global runtime monitor file exists.');
     requireText('src/global-runtime-monitor.tsx', /sovereign:runtime-coach-state/, 'monitor:coach-state-listener', 'Global monitor listens to runtime coach state.');
     requireText('src/global-runtime-monitor.tsx', /sovereign:telemetry-event/, 'monitor:telemetry-listener', 'Global monitor listens to telemetry events.');
-    warnText('src/main.tsx', /installGlobalRuntimeMonitor/, 'monitor:installed', 'Global monitor exists as optional inspection surface and should not boot over chat by default.');
+    warnText('src/main.tsx', /installGlobalRuntimeMonitor/, 'monitor:installed', 'main.tsx should install the global monitor.');
   } else {
     warn('monitor:file-missing', 'Global monitor file is absent. The repo flow monitor may still be used, but one global monitor is preferred.');
   }

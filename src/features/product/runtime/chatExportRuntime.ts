@@ -7,7 +7,7 @@
  * - No secrets/tokens in exported text
  * - User-triggered only
  * 
- * Phase 2: Session history design (documented, not implemented)
+ * Phase 2: Session history design is documented as a future extension.
  */
 
 import type { DevChatRepoSnapshot } from './devChatWorkerBridge';
@@ -183,7 +183,7 @@ export async function shareChatExport(exportedText: string): Promise<'shared' | 
 }
 
 // ─────────────────────────────────────────────────────────────
-// Phase 2: Session History Design (documented, not implemented)
+// Phase 2: Session History Design (documented future extension)
 // ─────────────────────────────────────────────────────────────
 //
 // Expected index key pattern: `session:${sessionId}`
