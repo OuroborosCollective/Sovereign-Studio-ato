@@ -882,17 +882,18 @@ def admin_worker_ai_sync():
                         updated.append({"id": existing["id"], "model": model_id})
         
         # Sync: Disable routes that no longer exist in Worker AI
-        all_worker_ids = [wm.get("id", "") for wm in worker_models]
-        if all_worker_ids:
+        all_worker_ids = [wm.get("id", "") for wm in worker_models if wm.get("id")]
+        if all_worker_ids and len(all_worker_ids) > 0:
+            # Use list instead of tuple for IN clause to avoid type issues
             disabled_routes = query(
                 """UPDATE llm_routes SET disabled = true, updated_at = NOW()
                    WHERE provider = 'cloudflare' 
-                     AND model_id NOT IN %s
+                     AND model_id != ALL(%s)
                      AND disabled = false
                    RETURNING id::text, model_id""",
-                (tuple(all_worker_ids),), write=True,
+                (all_worker_ids,), write=True,
             )
-            deleted = [{"id": r["id"], "model": r["model_id"]} for r in disabled_routes]
+            deleted = [{"id": r["id"], "model": r["model_id"]} for r in disabled_routes] if disabled_routes else []
         
         audit("admin_worker_ai_sync", None, {
             "created": len(created),
@@ -1716,11 +1717,11 @@ def admin_create_api_key():
 @require_admin
 def admin_llm_route_healthcheck(rid):
     """Perform health check on an LLM route by actually pinging the endpoint."""
-    # Get route details
+    # Get route details (id is text, not uuid)
     route = query(
         """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                   provider, base_url AS "baseUrl", api_key AS "apiKey"
-           FROM llm_routes WHERE id = %s::uuid""",
+           FROM llm_routes WHERE id = %s""",
         (rid,), one=True,
     )
     
