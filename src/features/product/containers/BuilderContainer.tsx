@@ -3585,7 +3585,6 @@ export function BuilderContainer({
         route: 'runtime',
         label: 'Status-Frage',
         detail: 'Lokale Antwort aus Runtime-State',
-        kind: 'local',
       }));
       addLog('info', 'Issue #522 P2 Fix 2: Status question handled locally - no draft created', 'router');
       return;
@@ -3602,7 +3601,6 @@ export function BuilderContainer({
         route: 'runtime',
         label: 'Retry',
         detail: 'Worker-Blocker zurückgesetzt',
-        kind: 'local',
       }));
       addLog('info', 'Issue #522 P2 Fix 2: Retry intent clears blocker - no draft created', 'router');
       return;
@@ -3624,7 +3622,6 @@ export function BuilderContainer({
         route: 'runtime',
         label: 'Diagnose-Frage',
         detail: 'Lokale Antwort aus Runtime-State',
-        kind: 'local',
       }));
       addLog('info', 'Issue #522 P2 Fix 3: Diagnostic question answered locally - no draft created', 'router');
       return;
@@ -3650,7 +3647,6 @@ export function BuilderContainer({
         route: 'runtime',
         label: 'Worker-Diagnose',
         detail: workerBlocker.diagnostic.scope,
-        kind: 'local',
       }));
       addLog('info', `Issue #522 P2 Fix 3: Worker diagnostic answered locally - no draft created`, 'router');
       return;
