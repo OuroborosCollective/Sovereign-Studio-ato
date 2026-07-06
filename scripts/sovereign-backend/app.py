@@ -659,8 +659,18 @@ def admin_update_llm_route(rid):
     return jsonify({"ok": True})
 
 
+def require_session(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        uid = _get_session_user_id()
+        if not uid:
+            return jsonify({"error": "Nicht eingeloggt"}), 401
+        request.session_user_id = uid
+        return f(*args, **kwargs)
+    return decorated
 # ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
 
+@require_session
 @app.route("/api/user/openhands/jobs")
 @require_session
 def user_list_openhands_jobs():
@@ -695,6 +705,7 @@ def user_list_openhands_jobs():
     })
 
 
+@require_session
 @app.route("/api/user/openhands/jobs", methods=["POST"])
 @require_session
 def user_create_openhands_job():
@@ -739,6 +750,7 @@ def user_create_openhands_job():
     }), 201
 
 
+@require_session
 @app.route("/api/user/openhands/jobs/<job_id>")
 @require_session
 def user_get_openhands_job(job_id):
@@ -835,6 +847,7 @@ def _update_job_status_from_openhands(job_id, oh_conv_id):
         pass  # Silently fail - status will be checked on next read
 
 
+@require_session
 @app.route("/api/user/openhands/jobs/<job_id>/cancel", methods=["POST"])
 @require_session
 def user_cancel_openhands_job(job_id):
@@ -2749,7 +2762,7 @@ def user_billing_deduct():
 #   ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 # ═════════════════════════════════════════════════════════════════════════════
 
-SESSION_SECRET   = os.getenv("SESSION_SECRET", "")
+JWT_SECRET   = os.getenv("JWT_SECRET", "")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 _COOKIE          = "sovereign_session"
 _COOKIE_MAX_AGE  = 7 * 24 * 3600  # 7 days
@@ -2777,14 +2790,14 @@ def _make_jwt(user_id: str) -> str:
     import jwt as pyjwt
     return pyjwt.encode(
         {"sub": str(user_id), "exp": int(time.time()) + _COOKIE_MAX_AGE},
-        SESSION_SECRET, algorithm="HS256",
+        JWT_SECRET, algorithm="HS256",
     )
 
 
 def _decode_jwt(token: str) -> str | None:
     try:
         import jwt as pyjwt
-        data = pyjwt.decode(token, SESSION_SECRET, algorithms=["HS256"])
+        data = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         return str(data["sub"])
     except Exception:
         return None
@@ -2826,15 +2839,6 @@ def _get_session_user_id() -> str | None:
     return _decode_jwt(token)
 
 
-def require_session(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        uid = _get_session_user_id()
-        if not uid:
-            return jsonify({"error": "Nicht eingeloggt"}), 401
-        request.session_user_id = uid
-        return f(*args, **kwargs)
-    return decorated
 
 
 @app.route("/api/auth/register", methods=["POST"])
