@@ -25,6 +25,9 @@ from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
+
+# JWT Configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "supersecretkey-change-me")
 CORS(app,
      origins=[
          "https://chat.arelorian.de",
