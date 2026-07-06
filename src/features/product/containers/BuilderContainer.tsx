@@ -4520,9 +4520,6 @@ export function BuilderContainer({
                 const hasOpenHands = gateSnapshot.openhandsReady;
                 const canExecute = hasGitHubAccess || hasDirectPatch || hasOpenHands;
                 
-                // P2 Fix 4: Blocker message depends on what's missing
-                const needsGitHubAccess = gateSnapshot.repoReady && !hasGitHubAccess && !hasOpenHands;
-                
                 const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
                 
                 return (
