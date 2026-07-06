@@ -661,26 +661,11 @@ def admin_update_llm_route(rid):
 
 # ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
 
-def get_user_id_from_auth():
-    """Extract user ID from Authorization header."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return None
-    token = auth[7:]
-    try:
-        import jwt
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        return payload.get("sub") or payload.get("user_id")
-    except Exception:
-        return None
-
-
 @app.route("/api/user/openhands/jobs")
+@require_session
 def user_list_openhands_jobs():
     """List user's OpenHands jobs."""
-    user_id = get_user_id_from_auth()
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
+    user_id = request.session_user_id
     
     page = int(request.args.get("page", 1))
     limit = min(int(request.args.get("limit", 20)), 100)
@@ -711,11 +696,10 @@ def user_list_openhands_jobs():
 
 
 @app.route("/api/user/openhands/jobs", methods=["POST"])
+@require_session
 def user_create_openhands_job():
     """Create a new OpenHands job for the user."""
-    user_id = get_user_id_from_auth()
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
+    user_id = request.session_user_id
     
     body = request.get_json(force=True) or {}
     
@@ -756,11 +740,10 @@ def user_create_openhands_job():
 
 
 @app.route("/api/user/openhands/jobs/<job_id>")
+@require_session
 def user_get_openhands_job(job_id):
     """Get a specific OpenHands job. Polls OpenHands for status on read."""
-    user_id = get_user_id_from_auth()
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
+    user_id = request.session_user_id
     
     row = query(
         """SELECT id::text, job_id, external_conv_id, repo_url, branch, mission,
@@ -853,11 +836,10 @@ def _update_job_status_from_openhands(job_id, oh_conv_id):
 
 
 @app.route("/api/user/openhands/jobs/<job_id>/cancel", methods=["POST"])
+@require_session
 def user_cancel_openhands_job(job_id):
     """Cancel a running OpenHands job by stopping the conversation."""
-    user_id = get_user_id_from_auth()
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
+    user_id = request.session_user_id
     
     # Get job details
     row = query(
