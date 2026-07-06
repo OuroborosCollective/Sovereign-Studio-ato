@@ -389,7 +389,7 @@ export function canConfirmIntegrationIntentDraft(
   // No write path available
   return {
     canConfirm: false,
-    blocker: gates.blockerMessage || 'Kein AusfГјhrungspfad verfГјgbar. Executor oder GitHub-Zugang erforderlich.',
+    blocker: gates.blockerMessage || 'Kein Ausführungspfad verfügbar. Executor oder GitHub-Zugang erforderlich.',
   };
 }
 
