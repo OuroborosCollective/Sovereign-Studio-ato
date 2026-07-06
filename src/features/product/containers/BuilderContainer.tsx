@@ -2949,6 +2949,10 @@ export function BuilderContainer({
     [addLog],
   );
 
+  const closeRepoExplorer = useCallback(() => {
+    setShowRepoExplorer(false);
+  }, []);
+
   const appendChatLine = useCallback(
     (
       line: Omit<ChatLine, "id" | "createdAt"> & {
@@ -5113,7 +5117,7 @@ export function BuilderContainer({
           >
             <RepoTreeExplorer
               snapshot={chatRepoSnapshot}
-              onClose={() => setShowRepoExplorer(false)}
+              onClose={closeRepoExplorer}
               onFileClick={handleRepoExplorerFileClick}
             />
           </div>

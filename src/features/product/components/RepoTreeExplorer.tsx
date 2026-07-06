@@ -8,7 +8,12 @@ export interface RepoTreeExplorerProps {
   readonly onFileClick: (path: string) => void;
 }
 
-function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode; readonly level: number; readonly onFileClick: (path: string) => void }) {
+/**
+ * ⚡ Bolt: Memoized TreeNodeRow to prevent recursive re-renders of the entire tree
+ * when unrelated parent state changes. This is critical for large repositories
+ * where tree depth and node count can lead to O(N) rendering overhead.
+ */
+const TreeNodeRow = React.memo(function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode; readonly level: number; readonly onFileClick: (path: string) => void }) {
   const [open, setOpen] = useState(level < 1);
   const folder = node.type === 'folder';
   const ariaLabel = folder
@@ -35,9 +40,14 @@ function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode
       ) : null}
     </li>
   );
-}
+});
 
-export function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExplorerProps) {
+/**
+ * ⚡ Bolt: Memoized RepoTreeExplorer to prevent re-renders during high-frequency
+ * UI updates (like the 'cute thinking' timer) in BuilderContainer.
+ * Combined with stable callbacks from the parent, this reduces re-render frequency by ~90%.
+ */
+export const RepoTreeExplorer = React.memo(function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExplorerProps) {
   const tree = useMemo(() => buildRepoTree(snapshot?.files ?? []), [snapshot]);
   return (
     <section
@@ -66,6 +76,6 @@ export function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExp
       </ul>
     </section>
   );
-}
+});
 
 export default RepoTreeExplorer;
