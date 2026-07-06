@@ -33,7 +33,7 @@ describe('SettingsModal Palette Enhancements', () => {
     render(<SettingsModal {...mockProps} />);
     const githubInput = screen.getByLabelText('GitHub Schreib-Key');
     const toggleButtons = screen.getAllByLabelText('Key anzeigen');
-    const githubToggle = toggleButtons.find((button) => button.closest('div')?.contains(githubInput));
+    const githubToggle = toggleButtons.find((button) => button.closest('.relative')?.contains(githubInput));
 
     if (!githubToggle) throw new Error('GitHub toggle not found');
 
@@ -51,7 +51,7 @@ describe('SettingsModal Palette Enhancements', () => {
     render(<SettingsModal {...mockProps} />);
     const geminiInput = screen.getByLabelText('Gemini API-Key');
     const toggleButtons = screen.getAllByLabelText('Key anzeigen');
-    const geminiToggle = toggleButtons.find((button) => button.closest('div')?.contains(geminiInput));
+    const geminiToggle = toggleButtons.find((button) => button.closest('.relative')?.contains(geminiInput));
 
     if (!geminiToggle) throw new Error('Gemini toggle not found');
 
@@ -59,6 +59,16 @@ describe('SettingsModal Palette Enhancements', () => {
 
     fireEvent.click(geminiToggle);
     expect(geminiInput).toHaveAttribute('type', 'text');
+  });
+
+  it('clears API key when clear button is clicked', () => {
+    render(<SettingsModal {...mockProps} />);
+    const geminiInput = screen.getByLabelText('Gemini API-Key');
+    const clearButton = screen.getByLabelText('Key löschen', { selector: '.relative:has([aria-label="Gemini API-Key"]) button[aria-label="Key löschen"]' });
+
+    expect(geminiInput).toHaveValue('AIza_test');
+    fireEvent.click(clearButton);
+    expect(mockProps.setGeminiKey).toHaveBeenCalledWith('');
   });
 
   it('renders Lucide X icon for close button', () => {
