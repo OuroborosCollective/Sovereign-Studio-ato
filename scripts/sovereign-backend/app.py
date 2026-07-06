@@ -656,6 +656,301 @@ def admin_update_llm_route(rid):
     return jsonify({"ok": True})
 
 
+# ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
+
+def get_user_id_from_auth():
+    """Extract user ID from Authorization header."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:]
+    try:
+        import jwt
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload.get("sub") or payload.get("user_id")
+    except Exception:
+        return None
+
+
+@app.route("/api/user/openhands/jobs")
+def user_list_openhands_jobs():
+    """List user's OpenHands jobs."""
+    user_id = get_user_id_from_auth()
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    page = int(request.args.get("page", 1))
+    limit = min(int(request.args.get("limit", 20)), 100)
+    offset = (page - 1) * limit
+    
+    rows = query(
+        """SELECT id::text, job_id, external_conv_id, repo_url, branch, mission,
+                  status, draft_pr_url, changed_files, events, last_error,
+                  started_at, completed_at, created_at, updated_at
+           FROM user_openhands_jobs
+           WHERE user_id = %s::uuid
+           ORDER BY created_at DESC
+           LIMIT %s OFFSET %s""",
+        (user_id, limit, offset)
+    )
+    
+    count_row = query(
+        "SELECT COUNT(*) as n FROM user_openhands_jobs WHERE user_id = %s::uuid",
+        (user_id,), one=True
+    )
+    
+    return jsonify({
+        "jobs": [dict(r) for r in rows],
+        "total": count_row["n"],
+        "page": page,
+        "limit": limit
+    })
+
+
+@app.route("/api/user/openhands/jobs", methods=["POST"])
+def user_create_openhands_job():
+    """Create a new OpenHands job for the user."""
+    user_id = get_user_id_from_auth()
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    body = request.get_json(force=True) or {}
+    
+    # Validate required fields
+    required = ["repoUrl", "mission"]
+    for field in required:
+        if field not in body:
+            return jsonify({"error": f"Field '{field}' is required"}), 400
+    
+    job_id = str(uuid.uuid4())
+    repo_url = body["repoUrl"]
+    branch = body.get("branch", "main")
+    mission = body["mission"]
+    
+    # Create job record
+    query(
+        """INSERT INTO user_openhands_jobs 
+           (user_id, job_id, repo_url, branch, mission, status)
+           VALUES (%s::uuid, %s, %s, %s, %s, 'pending')""",
+        (user_id, job_id, repo_url, branch, mission),
+        write=True
+    )
+    
+    # Start OpenHands job in background
+    import threading
+    t = threading.Thread(
+        target=_start_openhands_job,
+        args=(job_id, user_id, repo_url, branch, mission),
+        daemon=True
+    )
+    t.start()
+    
+    return jsonify({
+        "jobId": job_id,
+        "status": "pending",
+        "message": "Job gestartet"
+    }), 201
+
+
+@app.route("/api/user/openhands/jobs/<job_id>")
+def user_get_openhands_job(job_id):
+    """Get a specific OpenHands job."""
+    user_id = get_user_id_from_auth()
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    row = query(
+        """SELECT id::text, job_id, external_conv_id, repo_url, branch, mission,
+                  status, draft_pr_url, changed_files, events, last_error,
+                  started_at, completed_at, created_at, updated_at
+           FROM user_openhands_jobs
+           WHERE job_id = %s AND user_id = %s::uuid""",
+        (job_id, user_id), one=True
+    )
+    
+    if not row:
+        return jsonify({"error": "Job nicht gefunden"}), 404
+    
+    return jsonify(dict(row))
+
+
+@app.route("/api/user/openhands/jobs/<job_id>/cancel", methods=["POST"])
+def user_cancel_openhands_job(job_id):
+    """Cancel a running OpenHands job."""
+    user_id = get_user_id_from_auth()
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    row = query(
+        """UPDATE user_openhands_jobs
+           SET status = 'blocked', last_error = 'Cancelled by user', completed_at = NOW()
+           WHERE job_id = %s AND user_id = %s::uuid AND status IN ('pending', 'queued', 'running')
+           RETURNING id""",
+        (job_id, user_id), one=True, write=True
+    )
+    
+    if not row:
+        return jsonify({"error": "Job nicht gefunden oder nicht abbrechbar"}), 404
+    
+    return jsonify({"ok": True, "message": "Job abgebrochen"})
+
+
+def _start_openhands_job(job_id, user_id, repo_url, branch, mission):
+    """Background thread to start and poll OpenHands job."""
+    try:
+        # Update status to queued
+        query(
+            """UPDATE user_openhands_jobs
+               SET status = 'queued', started_at = NOW()
+               WHERE job_id = %s""",
+            (job_id,), write=True
+        )
+        
+        # Call OpenHands via backend's existing /openhands/jobs endpoint
+        resp = requests.post(
+            f"{OPENHANDS_API_URL}/api/conversations",
+            headers=oh_headers(),
+            json={
+                "initial_message": {"content": [{"TextContent": {"text": mission}}]},
+                "workspace": {"working_dir": "/projects"}
+            },
+            timeout=30
+        )
+        
+        if resp.ok:
+            conv_data = resp.json()
+            oh_conv_id = conv_data.get("conversation_id")
+            
+            query(
+                """UPDATE user_openhands_jobs
+                   SET status = 'running', external_conv_id = %s, started_at = NOW()
+                   WHERE job_id = %s""",
+                (oh_conv_id, job_id), write=True
+            )
+            
+            # Start polling thread
+            t = threading.Thread(
+                target=_poll_openhands_job,
+                args=(job_id, oh_conv_id),
+                daemon=True
+            )
+            t.start()
+        else:
+            query(
+                """UPDATE user_openhands_jobs
+                   SET status = 'failed', last_error = %s, completed_at = NOW()
+                   WHERE job_id = %s""",
+                (f"OpenHands HTTP {resp.status_code}", job_id), write=True
+            )
+    except Exception as e:
+        query(
+            """UPDATE user_openhands_jobs
+               SET status = 'failed', last_error = %s, completed_at = NOW()
+               WHERE job_id = %s""",
+            (str(e)[:200], job_id), write=True
+        )
+
+
+def _poll_openhands_job(job_id, oh_conv_id):
+    """Poll OpenHands conversation for events and status."""
+    import time as time_module
+    
+    while True:
+        time_module.sleep(5)
+        
+        try:
+            resp = requests.get(
+                f"{OPENHANDS_API_URL}/api/conversations/{oh_conv_id}/events/search"
+                "?limit=50&sort_order=TIMESTAMP_DESC",
+                headers=oh_headers(),
+                timeout=30
+            )
+            
+            if not resp.ok:
+                break
+            
+            events = resp.json().get("items", [])
+            
+            # Check for completion
+            for e in events:
+                if e.get("kind") == "ConversationStatusEvent" and \
+                   e.get("status") in ("stopped", "finished", "failed"):
+                    status = "completed" if e.get("status") == "finished" else "failed"
+                    
+                    # Extract draft PR URL if available
+                    draft_pr = None
+                    for ev in events:
+                        if ev.get("kind") == "FileChangeSummariesEvent":
+                            draft_pr = ev.get("summary", {}).get("draft_pr_url")
+                    
+                    query(
+                        """UPDATE user_openhands_jobs
+                           SET status = %s, draft_pr_url = %s, completed_at = NOW()
+                           WHERE job_id = %s""",
+                        (status, draft_pr, job_id), write=True
+                    )
+                    return
+            
+            # Update events in database
+            query(
+                """UPDATE user_openhands_jobs
+                   SET events = %s
+                   WHERE job_id = %s""",
+                (json.dumps(events[:20]), job_id), write=True
+            )
+            
+        except Exception:
+            break
+
+
+# ── Admin: List all user OpenHands jobs ──────────────────────────────────────
+
+@app.route("/api/admin/openhands/jobs")
+@require_admin
+def admin_list_all_openhands_jobs():
+    """Admin: List all OpenHands jobs across users."""
+    page = int(request.args.get("page", 1))
+    limit = min(int(request.args.get("limit", 50)), 200)
+    offset = (page - 1) * limit
+    user_filter = request.args.get("userId")
+    
+    if user_filter:
+        rows = query(
+            """SELECT uoj.id::text, uoj.job_id, uoj.user_id::text, au.email,
+                      uoj.repo_url, uoj.branch, uoj.mission, uoj.status,
+                      uoj.draft_pr_url, uoj.last_error, uoj.created_at, uoj.updated_at
+               FROM user_openhands_jobs uoj
+               JOIN admin_users au ON au.id = uoj.user_id
+               WHERE uoj.user_id = %s::uuid
+               ORDER BY uoj.created_at DESC
+               LIMIT %s OFFSET %s""",
+            (user_filter, limit, offset)
+        )
+        count_row = query(
+            "SELECT COUNT(*) as n FROM user_openhands_jobs WHERE user_id = %s::uuid",
+            (user_filter,), one=True
+        )
+    else:
+        rows = query(
+            """SELECT uoj.id::text, uoj.job_id, uoj.user_id::text, au.email,
+                      uoj.repo_url, uoj.branch, uoj.mission, uoj.status,
+                      uoj.draft_pr_url, uoj.last_error, uoj.created_at, uoj.updated_at
+               FROM user_openhands_jobs uoj
+               JOIN admin_users au ON au.id = uoj.user_id
+               ORDER BY uoj.created_at DESC
+               LIMIT %s OFFSET %s""",
+            (limit, offset)
+        )
+        count_row = query("SELECT COUNT(*) as n FROM user_openhands_jobs", one=True)
+    
+    return jsonify({
+        "jobs": [dict(r) for r in rows],
+        "total": count_row["n"],
+        "page": page,
+        "limit": limit
+    })
+
+
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/admin/audit-log")
@@ -1381,7 +1676,7 @@ def create_job():
             f"{OPENHANDS_API_URL}/api/conversations",
             headers=oh_headers(),
             json={
-                "initial_message": task,
+                "initial_message": {"content": task},
                 "runtime_image": "docker.all-hands.ai/all-hands-ai/runtime:0.39-nikolaik",
             },
             timeout=30,
