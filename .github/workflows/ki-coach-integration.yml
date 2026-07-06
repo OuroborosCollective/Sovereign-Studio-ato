@@ -238,7 +238,7 @@ jobs:
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
           sleep 10
-          curl -s http://localhost:3000 > /dev/null && echo "Server ready" || echo "Server not ready"
+          curl -s http://localhost:5000 > /dev/null && echo "Server ready" || echo "Server not ready"
           
       - name: Run Real E2E Smoke Test
         id: smoke-test
@@ -249,7 +249,7 @@ jobs:
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           
           # Check if server is running
-          if curl -s http://localhost:3000 > /dev/null 2>&1; then
+          if curl -s http://localhost:5000 > /dev/null 2>&1; then
             echo "| App Server | ✅ Running |" >> $GITHUB_STEP_SUMMARY
             SERVER_OK=true
           else

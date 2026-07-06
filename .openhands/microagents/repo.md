@@ -225,7 +225,7 @@ src/
 pnpm install
 
 # Development
-pnpm run dev              # Start dev server (http://localhost:3000)
+pnpm run dev              # Start dev server (http://localhost:5000)
 pnpm run build:web        # Production build
 
 # Quality Gates (required before PR)

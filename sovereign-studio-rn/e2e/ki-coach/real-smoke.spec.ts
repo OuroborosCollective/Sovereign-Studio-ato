@@ -6,7 +6,7 @@
 
 import { test, expect, Page, Browser, chromium } from '@playwright/test';
 
-const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+const APP_URL = process.env.APP_URL || 'http://localhost:5000';
 const TEST_REPO = process.env.TEST_REPO_URL || 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
 const TEST_TOKEN = process.env.GITHUB_TOKEN || '';
 

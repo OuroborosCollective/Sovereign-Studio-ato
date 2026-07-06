@@ -204,7 +204,7 @@ class KICoachSmokeTest {
 
   private async checkAppServer(): Promise<boolean> {
     return new Promise((resolve) => {
-      const req = spawn('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:3000']);
+      const req = spawn('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', 'http://localhost:5000']);
       req.on('close', (code) => {
         resolve(code === 200);
       });

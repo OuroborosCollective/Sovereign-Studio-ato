@@ -279,7 +279,7 @@ Uses Sovereign dark/cyan theme:
 Uses `pnpm` (not npm):
 ```bash
 pnpm install          # Install dependencies
-pnpm run dev          # Start dev server (http://localhost:3000)
+pnpm run dev          # Start dev server (http://localhost:5000)
 pnpm run build:web    # Production web build
 ```
 
