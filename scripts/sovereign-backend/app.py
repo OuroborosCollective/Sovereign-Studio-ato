@@ -760,18 +760,27 @@ def admin_worker_ai_sync():
                 elif "7b" in model_id.lower():
                     priority = 25
                 
-                new_id = query(
-                    """INSERT INTO llm_routes 
-                       (id, model_id, model_name, provider, base_url, credits_per_unit, priority, disabled)
-                       VALUES (gen_random_uuid(), %s, %s, 'cloudflare', %s, 0.001, %s, false)
-                       ON CONFLICT (model_id) DO UPDATE SET
-                         model_name = EXCLUDED.model_name,
-                         updated_at = NOW()
-                       RETURNING id::text""",
-                    (model_id, friendly_name, worker_url, priority),
-                    write=True, one=True,
-                )
-                created.append({"id": new_id["id"], "model": model_id, "name": friendly_name})
+                try:
+                    new_id = query(
+                        """INSERT INTO llm_routes 
+                           (id, model_id, model_name, provider, base_url, credits_per_unit, priority, disabled)
+                           VALUES (gen_random_uuid(), %s, %s, 'cloudflare', %s, 0.001, %s, false)
+                           RETURNING id::text""",
+                        (model_id, friendly_name, worker_url, priority),
+                        write=True, one=True,
+                    )
+                    created.append({"id": new_id["id"], "model": model_id, "name": friendly_name})
+                except Exception as insert_err:
+                    # If insert fails (e.g., duplicate), just update
+                    query(
+                        """UPDATE llm_routes SET model_name = %s, base_url = %s, priority = %s, updated_at = NOW()
+                           WHERE model_id = %s""",
+                        (friendly_name, worker_url, priority, model_id),
+                        write=True,
+                    )
+                    existing = query("SELECT id::text FROM llm_routes WHERE model_id = %s", (model_id,), one=True)
+                    if existing:
+                        updated.append({"id": existing["id"], "model": model_id})
         
         # Sync: Disable routes that no longer exist in Worker AI
         all_worker_ids = [wm.get("id", "") for wm in worker_models]
@@ -1671,6 +1680,11 @@ def admin_llm_route_healthcheck(rid):
             if route.get("apiKey"):
                 headers["Authorization"] = f"Bearer {route['apiKey']}"
             timeout = 10
+        elif provider == "cloudflare":
+            # Cloudflare Worker AI health check
+            worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+            url = f"{worker_url}/health"
+            timeout = 15
         else:
             # Generic health check for unknown providers
             if not base_url:
