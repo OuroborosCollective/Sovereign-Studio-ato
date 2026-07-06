@@ -1708,6 +1708,18 @@ def admin_update_credit_package(pid):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admin/credit-packages/<pid>", methods=["DELETE"])
+@require_admin
+def admin_delete_credit_package(pid):
+    """Delete a credit package (soft delete by setting enabled=false)."""
+    query(
+        "UPDATE credit_packages SET enabled = false WHERE id = %s::uuid",
+        (pid,), write=True,
+    )
+    audit("admin_delete_credit_package", pid, {"deleted": True})
+    return jsonify({"ok": True})
+
+
 # ── Admin: Crypto Confirmation ─────────────────────────────────────────────────
 
 @app.route("/api/admin/payment-methods/crypto/confirm", methods=["POST"])
@@ -3959,6 +3971,7 @@ function pkgCard(p){
       <div class="form-group"><label>Beschreibung</label><input type="text" id="pd_${p.id}" value="${esc(p.description||'')}"/></div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="savePkg('${p.id}')">Speichern</button>
+        <button class="btn btn-danger" onclick="deletePkg('${p.id}')" style="margin-left:8px">Löschen</button>
       </div>
       <div class="msg" id="pmsg_${p.id}"></div>
     </div>
@@ -3967,6 +3980,18 @@ function pkgCard(p){
 
 function toggleCard2(id){
   document.getElementById('pkg_'+id).classList.toggle('open');
+}
+
+async function deletePkg(id){
+  if(!confirm('Credit-Paket wirklich löschen? Es wird deaktiviert und verschwindet aus dem Shop.')) return;
+  const r = await fetch(BASE+'/api/admin/credit-packages/'+id,{method:'DELETE',headers:hdr()});
+  if(r.ok){
+    pkgData = pkgData.filter(p=>p.id!==id);
+    renderPkg();
+    alert('Paket gelöscht ✓');
+  } else {
+    alert('Fehler beim Löschen');
+  }
 }
 
 async function togglePkg(id, enabled){
@@ -4028,23 +4053,29 @@ function userRow(u){
   const status = u.isBanned?'banned':u.subscriptionStatus||'active';
   const statusCls = u.isBanned?'off':status==='active'?'on':'off';
   return `<div class="card" id="ur_${u.id}">
-    <div class="card-header">
+    <div class="card-header" onclick="toggleUserCard('${u.id}')">
       <span class="card-title">${esc(u.email||'')}</span>
       <span style="color:var(--muted);font-size:13px">${esc(u.displayName||'')}</span>
       <span class="badge ${statusCls}">${status}</span>
+      <span class="chevron">▼</span>
     </div>
-    <div class="card-body">
+    <div class="card-body" id="ubody_${u.id}">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
-        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits</label><div style="font-size:18px;font-weight:600">${u.credits||0}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits</label><div style="font-size:18px;font-weight:600;cursor:pointer" onclick="quickAddCredits('${u.id}',${u.credits||0})">${u.credits||0} 💎</div></div>
         <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Rolle</label><div>${esc(u.role||'user')}</div></div>
         <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Erstellt</label><div style="font-size:12px">${u.createdAt?(new Date(u.createdAt)).toLocaleDateString():''}</div></div>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost" onclick="toggleBan('${u.id}',${!u.isBanned})">${u.isBanned?'Entsperren':'Sperren'}</button>
         <button class="btn btn-ghost" onclick="adjustCredits('${u.id}')">Credits anpassen</button>
+        <button class="btn btn-primary" onclick="quickAddCredits('${u.id}',${u.credits||0})">+ Credits</button>
       </div>
     </div>
   </div>`;
+}
+
+function toggleUserCard(id){
+  document.getElementById('ur_'+id).classList.toggle('open');
 }
 
 async function toggleBan(uid, ban){
@@ -4066,6 +4097,21 @@ async function adjustCredits(uid){
   const d = await r.json();
   if(d.error) alert('Fehler: '+d.error);
   else { alert('Credits angepasst ✓'); loadUsers(userPage); }
+}
+
+async function quickAddCredits(uid, currentCredits){
+  const add = prompt('Credits hinzufügen (aktueller Stand: '+currentCredits+'):','500');
+  if(add===null) return;
+  const addInt = parseInt(add);
+  if(isNaN(addInt)||addInt<=0){ alert('Ungültiger Betrag.'); return; }
+  const reason = prompt('Grund:','Admin-Gutschrift');
+  if(!reason) return;
+  const r = await fetch(BASE+'/api/admin/users/'+uid+'/credit-adjustment',{
+    method:'POST',headers:hdr(),body:JSON.stringify({amount:addInt,reason})
+  });
+  const d = await r.json();
+  if(d.error) alert('Fehler: '+d.error);
+  else { alert('+' + addInt + ' Credits hinzugefügt ✓'); loadUsers(userPage); }
 }
 
 /* ────── BILLING ────── */
@@ -4134,15 +4180,24 @@ function renderLLMRoutes(d){
     return;
   }
   el.innerHTML = d.routes.map(r=>`<div class="card" id="lr_${r.id}">
-    <div class="card-header">
+    <div class="card-header" onclick="toggleLLMCard('${r.id}')">
       <span class="card-title">${esc(r.provider||'')} / ${esc(r.modelName||r.modelId||'')}</span>
       <span class="badge ${r.disabled?'off':'on'}">${r.disabled?'Deaktiviert':'Aktiv'}</span>
+      <span class="chevron">▼</span>
     </div>
-    <div class="card-body">
+    <div class="card-body" id="lrbody_${r.id}">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
         <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Provider</label><div>${esc(r.provider||'')}</div></div>
-        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits/Unit</label><div>${r.creditsPerUnit||0}</div></div>
-        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Priorität</label><div>${r.priority||0}</div></div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Credits/Unit (€)</label>
+          <div class="form-group" style="margin:4px 0 0 0">
+            <input type="number" step="0.001" min="0" id="lcpu_${r.id}" value="${r.creditsPerUnit||0.001}" style="width:100%;background:#0d1117;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;font-size:14px"/>
+          </div>
+        </div>
+        <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">Priorität</label>
+          <div class="form-group" style="margin:4px 0 0 0">
+            <input type="number" step="1" min="0" id="lprio_${r.id}" value="${r.priority||0}" style="width:100%;background:#0d1117;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;font-size:14px"/>
+          </div>
+        </div>
       </div>
       <div class="toggle-row">
         <span class="toggle-label">Route aktivieren</span>
@@ -4151,17 +4206,39 @@ function renderLLMRoutes(d){
           <span class="slider"></span>
         </label>
       </div>
-      <div style="margin-top:12px">
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveLLMCost('${r.id}')">Kosten speichern</button>
         <button class="btn btn-ghost" onclick="healthcheckLLM('${r.id}')" id="hcbtn_${r.id}">🔍 Healthcheck</button>
         <span id="hcstatus_${r.id}" style="margin-left:12px;font-size:13px"></span>
       </div>
+      <div class="msg" id="lmsg_${r.id}"></div>
     </div>
   </div>`).join('');
+}
+
+function toggleLLMCard(id){
+  document.getElementById('lr_'+id).classList.toggle('open');
 }
 
 async function toggleLLM(rid, disabled){
   await fetch(BASE+'/api/admin/llm/routes/'+rid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})});
   loadLLMRoutes();
+}
+
+async function saveLLMCost(rid){
+  const cpu = parseFloat(document.getElementById('lcpu_'+rid).value)||0.001;
+  const prio = parseInt(document.getElementById('lprio_'+rid).value)||0;
+  const r = await fetch(BASE+'/api/admin/llm/routes/'+rid,{
+    method:'PATCH',headers:hdr(),body:JSON.stringify({creditsPerUnit:cpu,priority:prio})
+  });
+  showLLMMsg(rid, r.ok, r.ok?'Kosten gespeichert ✓':'Fehler beim Speichern');
+}
+
+function showLLMMsg(rid, ok, text){
+  const el = document.getElementById('lmsg_'+rid);
+  if(!el) return;
+  el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block';
+  setTimeout(()=>{ el.style.display='none'; },3000);
 }
 
 async function healthcheckLLM(rid){

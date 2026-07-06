@@ -260,6 +260,12 @@ export const adminApiClient = {
     });
   },
 
+  deleteCreditPackage(id: string) {
+    return req<{ ok: boolean }>(`/api/admin/credit-packages/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
   // ── Crypto confirmation (admin only) ─────────────────────────────────────
 
   confirmCryptoPayment(userId: string, packageId: string, txHash: string) {

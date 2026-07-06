@@ -1,0 +1,145 @@
+import { describe, expect, it } from 'vitest';
+import {
+  classifySovereignExecutorIntent,
+  decideSovereignExecutorRoute,
+} from './sovereignExecutorRuntime';
+import { buildSovereignToolCapabilityRegistry } from './sovereignToolCapabilityRuntime';
+import { createSovereignWorkspaceScope } from './sovereignWorkspaceScopeRuntime';
+
+function capabilities(overrides: Partial<Parameters<typeof buildSovereignToolCapabilityRegistry>[0]> = {}) {
+  return buildSovereignToolCapabilityRegistry({
+    repoReady: true,
+    githubAccessState: 'ready',
+    githubTokenPresent: true,
+    directPatchSupported: true,
+    openhandsConfigured: true,
+    workerAvailable: true,
+    workspaceConfigured: true,
+    draftPrSupported: true,
+    activeExecutorStatus: 'idle',
+    ...overrides,
+  });
+}
+
+function workspaceScope(overrides: Partial<Parameters<typeof createSovereignWorkspaceScope>[0]> = {}) {
+  return createSovereignWorkspaceScope({
+    repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',
+    branch: 'main',
+    allowedPaths: ['src/features/product/runtime/', 'README.md'],
+    forbiddenPaths: ['src/secrets/'],
+    draftPrOnly: true,
+    githubWriteValidated: true,
+    maxAction: 'draft_pr',
+    ...overrides,
+  });
+}
+
+describe('sovereignExecutorRuntime', () => {
+  it('classifies common executor intents without starting a route', () => {
+    expect(classifySovereignExecutorIntent('Was ist der Status?')).toBe('status');
+    expect(classifySovereignExecutorIntent('Bitte README Titel ändern')).toBe('direct_patch');
+    expect(classifySovereignExecutorIntent('Implementiere Tests in src/foo.test.ts')).toBe('code_execution');
+    expect(classifySovereignExecutorIntent('Erstelle einen Draft PR')).toBe('draft_pr');
+    expect(classifySovereignExecutorIntent('Warum ist das so?')).toBe('question');
+  });
+
+  it('routes status questions locally and terminally', () => {
+    const decision = decideSovereignExecutorRoute({
+      text: 'was ist der status',
+      intent: 'status',
+      capabilities: capabilities(),
+    });
+
+    expect(decision.route).toBe('local_status');
+    expect(decision.state).toBe('allowed');
+    expect(decision.terminal).toBe(true);
+    expect(decision.event.route).toBe('runtime');
+  });
+
+  it('blocks write intents before repo is loaded', () => {
+    const decision = decideSovereignExecutorRoute({
+      text: 'Implementiere einen Fix',
+      intent: 'code_execution',
+      capabilities: capabilities({ repoReady: false }),
+    });
+
+    expect(decision.state).toBe('blocked');
+    expect(decision.blocker).toBe('repo_missing');
+    expect(decision.nextAllowedAction).toBe('load_repo');
+  });
+
+  it('opens GitHub access route before OpenHands when write access is missing', () => {
+    const decision = decideSovereignExecutorRoute({
+      text: 'Implementiere einen Fix und erstelle einen Draft PR',
+      intent: 'code_execution',
+      capabilities: capabilities({
+        githubAccessState: 'missing',
+        githubTokenPresent: false,
+        openhandsConfigured: true,
+      }),
+      workspaceScope: workspaceScope({ githubWriteValidated: false }),
+    });
+
+    expect(decision.route).toBe('github_access');
+    expect(decision.state).toBe('blocked');
+    expect(decision.requiredCapability).toBe('github_write');
+    expect(decision.event.kind).toBe('github_access_required');
+    expect(decision.nextAllowedAction).toBe('request_github_access');
+  });
+
+  it('selects Direct Patch for small documentation work when ready', () => {
+    const decision = decideSovereignExecutorRoute({
+      text: 'Bitte README Titel ändern',
+      intent: 'direct_patch',
+      capabilities: capabilities(),
+      workspaceScope: workspaceScope(),
+      candidatePath: 'README.md',
+    });
+
+    expect(decision.route).toBe('direct_patch');
+    expect(decision.state).toBe('allowed');
+    expect(decision.nextAllowedAction).toBe('run_direct_patch');
+    expect(decision.event.route).toBe('direct-github-patch');
+  });
+
+  it('selects OpenHands for complex code work only when GitHub write is ready', () => {
+    const decision = decideSovereignExecutorRoute({
+      text: 'Implementiere eine Runtime und Tests in src/features/product/runtime/foo.ts',
+      intent: 'code_execution',
+      capabilities: capabilities({ directPatchSupported: false }),
+      workspaceScope: workspaceScope(),
+      candidatePath: 'src/features/product/runtime/foo.ts',
+    });
+
+    expect(decision.route).toBe('openhands');
+    expect(decision.state).toBe('allowed');
+    expect(decision.requiredCapability).toBe('openhands');
+    expect(decision.nextAllowedAction).toBe('start_openhands');
+  });
+
+  it('blocks code work outside workspace scope', () => {
+    const decision = decideSovereignExecutorRoute({
+      text: 'Implementiere Secret Handling in src/secrets/token.ts',
+      intent: 'code_execution',
+      capabilities: capabilities({ directPatchSupported: false }),
+      workspaceScope: workspaceScope(),
+      candidatePath: 'src/secrets/token.ts',
+    });
+
+    expect(decision.route).toBe('workspace');
+    expect(decision.state).toBe('blocked');
+    expect(decision.blocker).toBe('workspace_scope_blocked');
+    expect(decision.reason).toContain('forbidden');
+  });
+
+  it('keeps unclear input on Worker Chat instead of starting write executors', () => {
+    const decision = decideSovereignExecutorRoute({
+      text: 'Mach mal besser',
+      intent: 'unknown',
+      capabilities: capabilities(),
+    });
+
+    expect(decision.route).toBe('worker_chat');
+    expect(decision.nextAllowedAction).toBe('start_worker_chat');
+  });
+});

@@ -186,6 +186,12 @@ import {
   usePatternMemoryStore,
   loadPatternMemoryStoreFromStorage,
 } from "../hooks/usePatternMemoryStore";
+import { buildSovereignToolCapabilityRegistry } from "../runtime/sovereignToolCapabilityRuntime";
+import { createSovereignWorkspaceScope } from "../runtime/sovereignWorkspaceScopeRuntime";
+import {
+  classifySovereignExecutorIntent,
+  decideSovereignExecutorRoute,
+} from "../runtime/sovereignExecutorRuntime";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -4504,24 +4510,52 @@ export function BuilderContainer({
               <OutcomeHints hints={outcomeHints} />
               <SovereignActionStreamPanel stream={actionStream} />
 
-              {/* ── Issue #520: Integration Intent Draft Card — shows recognized integration task with action buttons */}
+              {/* ── Issue #520 + #522: Integration Intent Draft Card — runtime-contracted routing */}
               {hasPendingDraft(intentDraftState) && (() => {
                 const draft = intentDraftState.draft;
+                
+                // Build Capability Registry from runtime truth (no tokens, no fakes)
+                const capabilities = buildSovereignToolCapabilityRegistry({
+                  repoReady: effectiveRepoReady,
+                  githubAccessState: githubAccessState.state,
+                  githubTokenPresent: Boolean(githubTokenRef.current),
+                  directPatchSupported: Boolean(chatRepoSnapshot && githubWriteAllowed && githubTokenRef.current),
+                  openhandsConfigured: openhandsReady ?? false,
+                  workerAvailable: true,
+                  workspaceConfigured: openhandsReady ?? false,
+                  draftPrSupported: githubWriteAllowed,
+                  activeExecutorStatus:
+                    agentWorkSnapshot.state !== 'idle' || (openhandsJob && openhandsJob.status !== 'idle')
+                      ? 'running'
+                      : 'idle',
+                });
+
+                // Build Workspace Scope only when repo is loaded (no fake scope)
+                const workspaceScope = chatRepoSnapshot
+                  ? createSovereignWorkspaceScope({
+                      repoFullName: `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`,
+                      repoUrl: `https://github.com/${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`,
+                      branch: chatRepoSnapshot.branch,
+                      allowedPaths: ['src/', 'tests/', 'scripts/', 'README.md', 'docs/'],
+                      forbiddenPaths: ['.env', '.env.local', 'node_modules/', 'dist/', 'build/', 'android/app/build/'],
+                      draftPrOnly: true,
+                      githubWriteValidated: githubWriteAllowed,
+                      maxAction: 'draft_pr',
+                    })
+                  : null;
+
+                // Gate snapshot for card display (kept for backward compatibility)
                 const gateSnapshot: IntegrationIntentDraftGateSnapshot = {
                   repoReady: effectiveRepoReady,
-                  githubWriteReady: githubWriteAllowed,
-                  directPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
-                  openhandsReady: openhandsReady ?? false,
+                  githubWriteReady: capabilities.githubWrite.status === 'ready',
+                  directPatchReady: capabilities.directPatch.canStart,
+                  openhandsReady: capabilities.openhands.canStart,
                 };
-                
-                // P2 Fix 4: canConfirm requires repo ready AND at least one write path available
-                const hasGitHubAccess = gateSnapshot.githubWriteReady;
-                const hasDirectPatch = gateSnapshot.directPatchReady;
-                const hasOpenHands = gateSnapshot.openhandsReady;
-                const canExecute = hasGitHubAccess || hasDirectPatch || hasOpenHands;
-                
+
+                // canExecute from runtime truth
+                const canExecute = capabilities.directPatch.canStart || capabilities.openhands.canStart;
                 const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
-                
+
                 return (
                   <IntegrationIntentDraftCard
                     draft={draft}
@@ -4529,64 +4563,116 @@ export function BuilderContainer({
                     canConfirm={effectiveRepoReady && canExecute}
                     confirmBlocker={!effectiveRepoReady ? confirmCheck.blocker : undefined}
                     onConfirm={() => {
-                      // This is called when execution can proceed directly
-                      // (GitHub write or OpenHands ready)
+                      // Use runtime contracts for route decision
+                      const intent = classifySovereignExecutorIntent(draft.originalText);
+                      const decision = decideSovereignExecutorRoute({
+                        text: draft.originalText,
+                        intent,
+                        capabilities,
+                        workspaceScope: workspaceScope ?? undefined,
+                      });
+
+                      // Log confirmed draft
                       appendActionEvent(buildDraftConfirmedEvent(draft));
                       setIntentDraftState({ status: 'confirmed', draft });
 
-                      // ── Issue #522 P2 Fix 1: Proper gate checking before execution
-                      // Order: Direct Patch > OpenHands (GitHub write already validated by canConfirm)
-
-                      // Direct Patch route - use proper runtime, NOT startAgentFromText
-                      if (gateSnapshot.directPatchReady) {
-                        appendActionEvent(buildRouteStartedEvent('direct-github-patch'));
-                        addLog('info', 'Integration confirmed: Direct GitHub Patch route', 'router');
-                        buildDirectPatchPlanWithContentLoad({
-                          repoContext: {
-                            owner: chatRepoSnapshot!.owner,
-                            name: chatRepoSnapshot!.repo,
-                            branch: chatRepoSnapshot!.branch,
-                            filePaths: chatRepoSnapshot!.filePaths ?? [],
-                          },
-                          instruction: draft.originalText,
-                          githubAccessReady: true,
-                          token: githubTokenRef.current!,
-                          fetcher: globalThis.fetch,
-                        }).then((result) => {
-                          if ('result' in result && result.result.ok) {
-                            appendActionEvent({
-                              kind: 'route_selected',
-                              route: 'direct-github-patch',
-                              label: 'Direct GitHub Patch Route gewählt',
-                              detail: `Zieldatei: ${result.result.targetPath}`,
-                              state: 'running',
-                            });
-                            appendChatLine({
-                              role: 'assistant',
-                              text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
-                            });
-                          }
-                        });
-                      } else if (gateSnapshot.openhandsReady) {
-                        // OpenHands route - ONLY if GitHub write is confirmed
-                        // P1 Fix: Never start OpenHands without validated GitHub write access
-                        if (!gateSnapshot.githubWriteReady) {
-                          // This should not happen if canConfirm is working, but as safety:
-                          appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                      switch (decision.route) {
+                        case 'github_access':
+                          // Open GitHub Access Gate, no executor starts
+                          appendActionEvent(decision.event);
+                          pendingWriteIntentRef.current = draft.originalText;
                           setShowGitHubAccessOverride(true);
                           appendChatLine({
                             role: 'assistant',
-                            text: 'Integrationsauftrag bestätigt.\nGitHub-Zugang wird benötigt um den Auftrag auszuführen.',
+                            text: 'GitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.',
                           });
-                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                          return;
-                        }
-                        appendActionEvent(buildRouteStartedEvent('openhands'));
-                        addLog('info', 'Integration confirmed: OpenHands route', 'router');
-                        startAgentFromText(draft.originalText);
+                          break;
+
+                        case 'direct_patch':
+                          // Direct Patch route via proper runtime
+                          if (!chatRepoSnapshot) break;
+                          appendActionEvent(decision.event);
+                          addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
+                          buildDirectPatchPlanWithContentLoad({
+                            repoContext: {
+                              owner: chatRepoSnapshot.owner,
+                              name: chatRepoSnapshot.repo,
+                              branch: chatRepoSnapshot.branch,
+                              filePaths: chatRepoSnapshot.filePaths ?? [],
+                            },
+                            instruction: draft.originalText,
+                            githubAccessReady: true,
+                            token: githubTokenRef.current!,
+                            fetcher: globalThis.fetch,
+                          }).then((result) => {
+                            if ('result' in result && result.result.ok) {
+                              appendActionEvent({
+                                kind: 'route_selected',
+                                route: 'direct-github-patch',
+                                label: 'Direct GitHub Patch Route gewählt',
+                                detail: `Zieldatei: ${result.result.targetPath}`,
+                                state: 'running',
+                              });
+                              appendChatLine({
+                                role: 'assistant',
+                                text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+                              });
+                            }
+                          });
+                          break;
+
+                        case 'openhands':
+                          // OpenHands route — ONLY with validated GitHub write
+                          if (!githubWriteAllowed) {
+                            // Defensive: block and open access gate
+                            appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                            setShowGitHubAccessOverride(true);
+                            appendChatLine({
+                              role: 'assistant',
+                              text: 'OpenHands benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.',
+                            });
+                            break;
+                          }
+                          appendActionEvent(decision.event);
+                          addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
+                          startAgentFromText(draft.originalText);
+                          break;
+
+                        case 'workspace':
+                          // Workspace route detected but not yet connected — honest block
+                          appendActionEvent(decision.event);
+                          appendChatLine({
+                            role: 'assistant',
+                            text: `Workspace-Route erkannt, aber noch nicht verbunden.\n\nGrund: ${decision.reason}`,
+                          });
+                          break;
+
+                        case 'worker_chat':
+                          // Worker Chat — advisory only, no write success
+                          appendActionEvent(decision.event);
+                          appendChatLine({
+                            role: 'assistant',
+                            text: 'Beratungsroute erkannt. Worker Chat kann Rückfragen beantworten.',
+                          });
+                          break;
+
+                        case 'local_status':
+                          // Status query — answer from runtime state
+                          appendActionEvent(decision.event);
+                          break;
+
+                        case 'blocked':
+                        default:
+                          // Honest block with reason
+                          appendActionEvent(decision.event);
+                          appendChatLine({
+                            role: 'assistant',
+                            text: `Auftrag blockiert.\n\nGrund: ${decision.reason}`,
+                          });
+                          break;
                       }
 
-                      // Clear the draft state after confirmation
+                      // Clear draft state after processing
                       setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
                     }}
                     onConfirmWithGitHubAccess={() => {
