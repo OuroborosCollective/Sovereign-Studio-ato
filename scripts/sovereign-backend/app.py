@@ -24,6 +24,41 @@ from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
+# ── Worker AI Helper ───────────────────────────────────────────────────────────
+
+WORKER_AI_BASE = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+WORKER_AI_TIMEOUT = 15  # seconds
+
+def _worker_headers() -> dict:
+    """Standard headers for Worker AI API calls."""
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("WORKER_AI_PROXY_KEY", "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+def fetch_worker_ai(path: str, method: str = "GET", json_data: dict = None) -> tuple[requests.Response | None, str]:
+    """
+    Centralized Worker AI fetch with consistent base URL, headers, timeout, and error handling.
+    Returns (response, error_message). If error_message is empty, response is valid.
+    """
+    url = f"{WORKER_AI_BASE.rstrip('/')}/{path.lstrip('/')}"
+    try:
+        if method == "GET":
+            resp = requests.get(url, headers=_worker_headers(), timeout=WORKER_AI_TIMEOUT)
+        elif method == "POST":
+            resp = requests.post(url, headers=_worker_headers(), json=json_data, timeout=WORKER_AI_TIMEOUT)
+        else:
+            return None, f"Unsupported method: {method}"
+        
+        return resp, ""  # Success (caller checks resp.ok)
+    except requests.exceptions.Timeout:
+        return None, f"Request to Worker AI timed out after {WORKER_AI_TIMEOUT}s"
+    except requests.exceptions.ConnectionError as e:
+        return None, f"Cannot connect to Worker AI: {e}"
+    except Exception as e:
+        return None, f"Worker AI request failed: {e}"
+
 app = Flask(__name__)
 
 # JWT Configuration
@@ -652,7 +687,7 @@ def admin_update_llm_route(rid):
     sets.append("updated_at = NOW()")
     vals.append(rid)
     query(
-        f"UPDATE llm_routes SET {', '.join(sets)} WHERE id = %s::uuid",
+        f"UPDATE llm_routes SET {', '.join(sets)} WHERE id = %s",
         vals, write=True,
     )
     audit("admin_update_llm_route", rid, body)
@@ -663,63 +698,43 @@ def admin_update_llm_route(rid):
 @require_admin
 def admin_worker_ai_status():
     """Get Worker AI health status and available models from Cloudflare."""
-    try:
-        # Get Worker AI proxy URL from environment or config
-        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
-        
-        # Test health endpoint
-        start = time.time()
-        resp = requests.get(f"{worker_url}/health", timeout=10)
-        response_time_ms = int((time.time() - start) * 1000)
-        health_data = resp.json() if resp.ok else {}
-        
-        # Get available models
-        models_resp = requests.get(
-            f"{worker_url}/v1/models",
-            headers={"Authorization": f"Bearer {os.getenv('WORKER_AI_PROXY_KEY', '')}"},
-            timeout=10
-        )
-        
-        available_models = []
-        if models_resp.ok:
-            models_data = models_resp.json()
-            available_models = models_data.get("data", [])
-        
-        return jsonify({
-            "status": health_data.get("status", "unknown"),
-            "configured": health_data.get("configured", False),
-            "provider": "cloudflare",
-            "workerUrl": worker_url,
-            "availableModels": available_models,
-            "modelCount": len(available_models),
-            "providers": health_data.get("providers", {}),
-            "timestamp": health_data.get("timestamp"),
-            "responseTimeMs": response_time_ms,
-        })
-    except requests.exceptions.Timeout:
-        return jsonify({
-            "status": "timeout",
-            "error": "Worker AI request timed out",
-            "configured": False,
-            "availableModels": [],
-            "modelCount": 0,
-        }), 504
-    except requests.exceptions.ConnectionError:
-        return jsonify({
-            "status": "unreachable",
-            "error": "Cannot connect to Worker AI",
-            "configured": False,
-            "availableModels": [],
-            "modelCount": 0,
-        }), 503
-    except Exception as e:
+    start = time.time()
+    
+    # Test health endpoint
+    resp, _err = fetch_worker_ai("health")
+    response_time_ms = int((time.time() - start) * 1000)
+    
+    if _err:
         return jsonify({
             "status": "error",
-            "error": str(e),
+            "error": _err,
             "configured": False,
             "availableModels": [],
             "modelCount": 0,
+            "responseTimeMs": response_time_ms,
         }), 500
+    
+    health_data = resp.json() if resp.ok else {}
+
+    # Get available models
+    models_resp, _err = fetch_worker_ai("v1/models")
+    
+    available_models = []
+    if models_resp and models_resp.ok:
+        models_data = models_resp.json()
+        available_models = models_data.get("data", [])
+
+    return jsonify({
+        "status": health_data.get("status", "unknown"),
+        "configured": health_data.get("configured", False),
+        "provider": "cloudflare",
+        "workerUrl": WORKER_AI_BASE,
+        "availableModels": available_models,
+        "modelCount": len(available_models),
+        "providers": health_data.get("providers", {}),
+        "timestamp": health_data.get("timestamp"),
+        "responseTimeMs": response_time_ms,
+    })
 
 
 @app.route("/api/admin/system/health", methods=["GET"])
@@ -750,9 +765,12 @@ def admin_system_health():
     
     # 2. Worker AI check
     try:
-        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+        worker_url = WORKER_AI_BASE
         start = time.time()
-        resp = requests.get(f"{worker_url}/health", timeout=10)
+        resp, _err = fetch_worker_ai("health")
+        if _err:
+            return jsonify({"status": "error", "error": _err, "configured": False, "availableModels": [], "modelCount": 0}), 500
+        start = time.time()
         wai_time = int((time.time() - start) * 1000)
         if resp.ok:
             data = resp.json()
@@ -811,10 +829,12 @@ def admin_worker_ai_sync():
     in the Cloudflare Worker AI proxy.
     """
     try:
-        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+        worker_url = WORKER_AI_BASE
         
         # Get available models from Worker
-        resp = requests.get(f"{worker_url}/v1/models", timeout=15)
+        resp, _err = fetch_worker_ai("v1/models")
+        if _err:
+            return jsonify({"error": f"Worker AI sync failed: {_err}"}), 500
         if not resp.ok:
             return jsonify({"error": f"Worker AI nicht erreichbar: HTTP {resp.status_code}"}), 502
         
@@ -922,9 +942,11 @@ def admin_worker_ai_sync():
 def admin_worker_ai_models():
     """List models available in Worker AI with health status."""
     try:
-        worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+        worker_url = WORKER_AI_BASE
         
-        resp = requests.get(f"{worker_url}/v1/models", timeout=15)
+        resp, _err = fetch_worker_ai("v1/models")
+        if _err:
+            return jsonify({"error": f"Worker AI sync failed: {_err}"}), 500
         if not resp.ok:
             return jsonify({"error": f"Worker AI Fehler: HTTP {resp.status_code}"}), 502
         
@@ -1782,7 +1804,7 @@ def admin_llm_route_healthcheck(rid):
             timeout = 10
         elif provider == "cloudflare":
             # Cloudflare Worker AI health check
-            worker_url = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
+            worker_url = WORKER_AI_BASE
             url = f"{worker_url}/health"
             timeout = 15
         else:
