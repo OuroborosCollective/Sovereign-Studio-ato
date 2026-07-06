@@ -37,8 +37,18 @@ function formatCompact(value: number): string {
 }
 
 /**
+ * Maps confidence value to label
+ */
+function getConfidenceLabel(avgConfidence: number): string {
+  if (avgConfidence >= 0.7) return 'high';
+  if (avgConfidence >= 0.4) return 'medium';
+  return 'low';
+}
+
+/**
  * Compact health snapshot for footer display.
  * Single line showing key metrics.
+ * Rule: No percentage display - only labels for confidence.
  */
 export const SovereignHealthSnapshot: React.FC<SovereignHealthSnapshotProps> = ({
   stats,
@@ -52,7 +62,8 @@ export const SovereignHealthSnapshot: React.FC<SovereignHealthSnapshotProps> = (
   // Intelligence status
   if (predictive.active) {
     const icon = getHealthIcon(predictive.active, predictive.avgConfidence);
-    parts.push(`${icon} Intel`);
+    const confLabel = getConfidenceLabel(predictive.avgConfidence);
+    parts.push(`${icon} Intel ${confLabel}`);
   } else {
     parts.push('⚪ Intel');
   }
@@ -66,10 +77,10 @@ export const SovereignHealthSnapshot: React.FC<SovereignHealthSnapshotProps> = (
     parts.push(`${formatCompact(predictive.patternCount)} Patterns`);
   }
 
-  // Learning stats
+  // Learning stats - use labels instead of percentages
   if (learning.totalSignals > 0) {
-    const rateText = learning.successRate >= 80 ? '✓' : learning.successRate >= 50 ? '~' : '!';
-    parts.push(`${formatCompact(learning.totalSignals)} Sig ${rateText}`);
+    const rateLabel = learning.successRate >= 80 ? 'strong' : learning.successRate >= 50 ? 'mixed' : 'weak';
+    parts.push(`${formatCompact(learning.totalSignals)} Sig ${rateLabel}`);
   }
 
   if (parts.length === 0) {
@@ -96,7 +107,7 @@ export const SovereignHealthSnapshot: React.FC<SovereignHealthSnapshotProps> = (
               {predictive.active ? 'Active' : 'Inactive'}
               {predictive.nodeCount > 0 && ` • ${predictive.nodeCount} nodes`}
               {predictive.patternCount > 0 && ` • ${predictive.patternCount} patterns`}
-              {predictive.avgConfidence > 0 && ` • ${(predictive.avgConfidence * 100).toFixed(0)}% conf`}
+              {predictive.avgConfidence > 0 && ` • conf: ${getConfidenceLabel(predictive.avgConfidence)}`}
             </span>
           </div>
           <div>
@@ -105,7 +116,7 @@ export const SovereignHealthSnapshot: React.FC<SovereignHealthSnapshotProps> = (
               {learning.totalSignals} signals
               {learning.successCount > 0 && ` • ${learning.successCount} ✓`}
               {learning.failureCount > 0 && ` • ${learning.failureCount} ✗`}
-              {learning.successRate > 0 && ` • ${learning.successRate.toFixed(0)}% rate`}
+              {learning.successRate > 0 && ` • track: ${getConfidenceLabel(learning.successRate / 100)}`}
             </span>
           </div>
         </div>

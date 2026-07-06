@@ -24,21 +24,28 @@ describe('SovereignHealthSnapshot', () => {
     },
   };
 
-  it('renders compact snapshot', () => {
+  it('renders compact snapshot with labels (not percentages)', () => {
     render(<SovereignHealthSnapshot stats={mockStats} />);
 
     expect(screen.getByTestId('health-snapshot-compact')).toBeInTheDocument();
     expect(screen.getByText(/Intel/)).toBeInTheDocument();
     expect(screen.getByText(/Nodes/)).toBeInTheDocument();
     expect(screen.getByText(/Sig/)).toBeInTheDocument();
+    // Should use labels, not percentages
+    // avgConfidence 0.78 = high, successRate 75 = mixed (50-80)
+    expect(screen.getByText(/Intel high/)).toBeInTheDocument();
+    expect(screen.getByText(/Sig mixed/)).toBeInTheDocument();
   });
 
-  it('renders detailed snapshot', () => {
+  it('renders detailed snapshot with labels', () => {
     render(<SovereignHealthSnapshot stats={mockStats} showDetails />);
 
     expect(screen.getByTestId('health-snapshot-detailed')).toBeInTheDocument();
     expect(screen.getByText(/Predictive/)).toBeInTheDocument();
     expect(screen.getByText(/Learning/)).toBeInTheDocument();
+    // Should use labels in details too
+    expect(screen.getByText(/conf: high/)).toBeInTheDocument();
+    expect(screen.getByText(/track: high/)).toBeInTheDocument();
   });
 
   it('shows inactive indicator when no active stats', () => {
