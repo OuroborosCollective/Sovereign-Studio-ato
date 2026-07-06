@@ -22,3 +22,8 @@
 **Vulnerability:** Chat messages and suggestions were normalized and stored in application state before any redaction occurred. While outgoing AI calls were protected, the raw secrets remained in the local runtime state and UI-bound objects.
 **Learning:** Security controls like secret masking should be applied as early as possible (at the entry/normalization layer) to minimize the "blast radius" of sensitive data within the application's memory and state management.
 **Prevention:** Integrate `maskSecrets` directly into normalization utilities (like `trimText` or `validateChatEntry`) that process user-provided or external content before it is committed to state.
+
+## 2026-07-24 - Dual-Layer Redaction for Runtime Monitors
+**Vulnerability:** Runtime monitors and "Coach" components captured DOM text and unmasked runtime signals, potentially displaying API keys or tokens in persistent UI logs or session storage.
+**Learning:** Masking at the source (publishers) is necessary but insufficient if components also scrape the DOM. A dual-layer strategy—masking at the publishing layer (e.g., `useCoachRuntimeBridge`) AND the UI rendering layer (e.g., `AgentMonitor`)—provides robust protection against secrets entering the UI from multiple paths.
+**Prevention:** Always apply `maskSecrets` at the point of data publishing (CustomEvents/Window state) and as a final filter during UI rendering of captured or log-based text.

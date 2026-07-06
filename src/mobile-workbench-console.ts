@@ -1,5 +1,6 @@
 import { canSovereignProductTemplateAutoOpen, type SovereignProductTemplateAutoNavigationReason } from './features/product/runtime/sovereignProductTemplate';
 import { assertMobileWorkflowDecisionValid, decideMobileWorkflow, type MobileWorkflowOrchestratorDecision } from './mobile-workflow-orchestrator';
+import { maskSecrets } from './shared/utils/crypto';
 
 const ROOT_ID = 'sovereign-mobile-workbench-console';
 const STYLE_ID = 'sovereign-mobile-workbench-style';
@@ -149,7 +150,14 @@ function render(): void {
     root.className = decision.lamp;
     const dots = decision.mode === 'matrix-work' ? '<span class="dots"></span>' : '';
     const target = decision.targetNav ? `→ ${escapeHtml(decision.targetNav)}` : 'bereit';
-    root.innerHTML = `<div class="head"><div><div class="title">Live Arbeitsmonitor · ${escapeHtml(decision.title)}${dots}</div><div class="mode">${escapeHtml(decision.mode)}</div></div><div>${target}</div></div><div class="body"><div class="summary">${escapeHtml(decision.summary)}</div><pre>${decision.lines.map(escapeHtml).join('\n')}</pre></div>`;
+
+    // ✅ SECURITY: Redact potential secrets from workbench guidance.
+    // Since the workbench captures DOM text, it's a high-risk area for credential leakage.
+    const maskedTitle = maskSecrets(decision.title);
+    const maskedSummary = maskSecrets(decision.summary);
+    const maskedLines = decision.lines.map((line) => maskSecrets(line));
+
+    root.innerHTML = `<div class="head"><div><div class="title">Live Arbeitsmonitor · ${escapeHtml(maskedTitle)}${dots}</div><div class="mode">${escapeHtml(decision.mode)}</div></div><div>${target}</div></div><div class="body"><div class="summary">${escapeHtml(maskedSummary)}</div><pre>${maskedLines.map(escapeHtml).join('\n')}</pre></div>`;
   } catch {
     // The workbench is guidance only. It must never break the real app runtime.
   }

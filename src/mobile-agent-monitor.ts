@@ -1,5 +1,6 @@
 import { canSovereignProductTemplateAutoOpen, type SovereignProductTemplateAutoNavigationReason } from './features/product/runtime/sovereignProductTemplate';
 import { assertMobileWorkflowDecisionValid, decideMobileWorkflow, type MobileWorkflowOrchestratorDecision } from './mobile-workflow-orchestrator';
+import { maskSecrets } from './shared/utils/crypto';
 
 export type MobileAgentLamp = 'green' | 'yellow' | 'red';
 
@@ -398,25 +399,13 @@ function currentCoachState(): MobileAgentCoachState {
 }
 
 function loadEntries(): MobileAgentLogEntry[] {
-  if (entries.length) return entries;
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) || '[]');
-    if (!Array.isArray(parsed)) return [];
-    entries = parsed
-      .filter((item): item is MobileAgentLogEntry => record(item) && typeof item.id === 'string' && typeof item.ts === 'number' && typeof item.text === 'string')
-      .slice(-MAX_LOG_ENTRIES);
-    return entries;
-  } catch {
-    return [];
-  }
+  return entries;
 }
 
 function saveEntries(): void {
-  try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(-MAX_LOG_ENTRIES)));
-  } catch {
-    // Optional monitor persistence must never break the app.
-  }
+  // ✅ SECURITY: Disabling sessionStorage persistence for monitor logs to prevent
+  // potentially sensitive (even if masked) data from being stored in clear text.
+  // The monitor now relies entirely on in-memory state for the current session.
 }
 
 function pruneEntriesForState(state: MobileAgentCoachState, current: MobileAgentLogEntry[]): MobileAgentLogEntry[] {
@@ -432,7 +421,7 @@ function pruneEntriesForState(state: MobileAgentCoachState, current: MobileAgent
 
 function appendEntry(state: MobileAgentCoachState): void {
   const signature = `${state.lamp}|${state.source ?? 'agent'}|${state.title}|${state.message}|${state.action}|${state.thinking}`;
-  const current = pruneEntriesForState(state, loadEntries());
+  const current = pruneEntriesForState(state, entries);
   if (signature === lastSignature) {
     entries = current.slice(-MAX_LOG_ENTRIES);
     saveEntries();
@@ -447,7 +436,7 @@ function appendEntry(state: MobileAgentCoachState): void {
       ts: state.updatedAt ?? now(),
       lamp: state.lamp,
       source: state.source ?? 'agent',
-      text: `${state.title}: ${state.message}`,
+      text: maskSecrets(`${state.title}: ${state.message}`),
     },
   ].slice(-MAX_LOG_ENTRIES);
   saveEntries();
@@ -555,18 +544,24 @@ function render(): void {
   const logEntries = loadEntries();
   const thinking = state.thinking ? `<span class="dots">denkt</span>` : 'bereit';
 
+  // ✅ SECURITY: Mask display values to prevent leakage if underlying state wasn't masked.
+  // Defense in depth ensures secrets are redacted even if they originate from unmasked DOM capture.
+  const maskedTitle = maskSecrets(state.title);
+  const maskedMessage = maskSecrets(state.message);
+  const maskedAction = maskSecrets(state.action);
+
   root.className = state.lamp;
   root.innerHTML = `
     <div class="agent-head">
       <div><div class="agent-title">Agenten-Monitor · Sovereign Bot</div><div class="agent-badge">Coach · Live Log · Actions</div></div>
-      <div class="agent-face">${escapeHtml(face(`${state.title}${state.message}`))}</div>
+      <div class="agent-face">${escapeHtml(face(`${maskedTitle}${maskedMessage}`))}</div>
     </div>
     <div class="agent-log" data-agent-log="true">
-      ${logEntries.map((entry) => `<div class="agent-entry ${entry.lamp}"><span class="agent-dot"></span><div><span class="agent-meta">${new Date(entry.ts).toLocaleTimeString()} · ${escapeHtml(entry.source)}</span>${escapeHtml(entry.text)}</div></div>`).join('')}
+      ${logEntries.map((entry) => `<div class="agent-entry ${entry.lamp}"><span class="agent-dot"></span><div><span class="agent-meta">${new Date(entry.ts).toLocaleTimeString()} · ${escapeHtml(entry.source)}</span>${escapeHtml(maskSecrets(entry.text))}</div></div>`).join('')}
     </div>
     <div class="agent-thinking">
-      <span>${escapeHtml(state.title)} · ${thinking}</span>
-      <span>${escapeHtml(state.action)}</span>
+      <span>${escapeHtml(maskedTitle)} · ${thinking}</span>
+      <span>${escapeHtml(maskedAction)}</span>
     </div>
     <div class="agent-actions">
       ${ACTIONS.map((action) => `<button type="button" data-agent-action="${escapeHtml(action.label)}">${escapeHtml(action.label)}</button>`).join('')}

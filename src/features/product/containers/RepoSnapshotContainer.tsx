@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { maskSecrets } from '../../../shared/utils/crypto';
 import { RepoFileList } from '../../github/components/RepoFileList';
 import type { RepoFile } from '../../github/types';
 import { buildRepoSnapshotSummary, getRepoSnapshotStatus } from '../runtime/sovereignFunctionalGuards';
@@ -80,7 +81,8 @@ function publishRepoSetupState(input: {
     repoReady: input.ready,
     setupPhase: setupPhase({ ready: input.ready, busy: input.busy, repoUrl: input.repoUrl, repoStatus: input.repoStatus }),
     isBusy: input.busy,
-    status: input.repoStatus,
+    // ✅ SECURITY: Mask repoStatus as it may contain error messages from providers with API keys
+    status: maskSecrets(input.repoStatus),
     redactedToken: redactAccessValue(input.accessValue),
     dependencyHealthy: true,
     updatedAt: Date.now(),
@@ -159,11 +161,11 @@ function ReactCoachMonitor(): React.ReactElement {
 
       <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <strong>{coachState.title}</strong>
+          <strong>{maskSecrets(coachState.title)}</strong>
           <span className="text-xs text-slate-400">{coachState.source} · {formatCoachTime(coachState.updatedAt)}</span>
         </div>
-        <p className="mt-2 text-sm leading-5 text-slate-300">{coachState.message}</p>
-        <p className="mt-2 text-xs font-bold text-cyan-200">Aktion: {coachState.action}</p>
+        <p className="mt-2 text-sm leading-5 text-slate-300">{maskSecrets(coachState.message)}</p>
+        <p className="mt-2 text-xs font-bold text-cyan-200">Aktion: {maskSecrets(coachState.action)}</p>
       </div>
 
       <div className="mt-3 max-h-36 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300">
@@ -171,7 +173,7 @@ function ReactCoachMonitor(): React.ReactElement {
           <div key={`${entry.updatedAt}-${entry.title}-${index}`} className={index === 0 ? 'pb-2' : 'border-t border-slate-800 py-2'}>
             <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${coachLampClassName(entry.lamp)}`} />
             <span className="font-mono text-slate-400">{formatCoachTime(entry.updatedAt)} · {entry.source}</span>
-            <span className="ml-2">{entry.title}: {entry.message}</span>
+            <span className="ml-2">{maskSecrets(entry.title)}: {maskSecrets(entry.message)}</span>
           </div>
         ))}
       </div>

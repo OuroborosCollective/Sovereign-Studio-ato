@@ -5,6 +5,7 @@
  * to the Coach without going through the error path.
  */
 
+import { maskSecrets } from '../../../shared/utils/crypto';
 import type { PublishGateResult } from './appPublishRuntime';
 
 export type TelemetryFeedbackLamp = 'green' | 'yellow' | 'red';
@@ -37,11 +38,12 @@ function deriveAction(result: PublishGateResult): string {
 }
 
 export function createTelemetryFeedback(result: PublishGateResult, nowMs = Date.now()): TelemetryFeedback {
+  // ✅ SECURITY: Proactively mask secrets in telemetry feedback.
   return {
     lamp: mapStatusToLamp(result.status),
-    title: result.allowed ? 'Runtime ready' : 'Runtime needs attention',
-    message: result.reason,
-    action: deriveAction(result),
+    title: maskSecrets(result.allowed ? 'Runtime ready' : 'Runtime needs attention'),
+    message: maskSecrets(result.reason),
+    action: maskSecrets(deriveAction(result)),
     thinking: false,
     source: 'health-gate',
     updatedAt: nowMs,

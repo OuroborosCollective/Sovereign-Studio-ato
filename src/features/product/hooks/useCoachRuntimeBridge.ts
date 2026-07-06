@@ -6,6 +6,7 @@
  */
 
 import { useEffect } from 'react';
+import { maskSecrets } from '../../../shared/utils/crypto';
 import { wallClockMs } from '../../../mobile-operator-coach';
 import type { SequentialRuntimeState } from '../runtime/sequentialRuntimeGuard';
 import { getLatestSovereignHealthReport, type SovereignHealthStatus } from '../runtime/sovereignHealth';
@@ -262,10 +263,19 @@ export function useCoachRuntimeBridge({ coachState }: UseCoachRuntimeBridgeOptio
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    (window as typeof window & { __sovereignRuntimeCoachState?: CoachRuntimeState }).__sovereignRuntimeCoachState = coachState;
+    // ✅ SECURITY: Proactively mask secrets before publishing to global state or external monitors.
+    // This prevents accidental leakage of API keys or tokens in UI logs or telemetry.
+    const maskedState: CoachRuntimeState = {
+      ...coachState,
+      title: maskSecrets(coachState.title),
+      message: maskSecrets(coachState.message),
+      action: maskSecrets(coachState.action),
+    };
+
+    (window as typeof window & { __sovereignRuntimeCoachState?: CoachRuntimeState }).__sovereignRuntimeCoachState = maskedState;
 
     window.dispatchEvent(new CustomEvent('sovereign:runtime-coach-state', {
-      detail: coachState,
+      detail: maskedState,
     }));
   }, [coachState]);
 }
