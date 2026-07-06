@@ -46,6 +46,7 @@ export interface LauncherToolProps {
 import { vpsConnectorEntry }      from './tools/vps/index';
 import { adminToolEntry }         from './tools/admin/index';
 import { toolchainToolEntry }     from './tools/toolchain/index';
+import { openHandsToolEntry }     from './tools/openhands/index';
 import {
   coverageToolEntry,
   healthToolEntry,
@@ -61,6 +62,7 @@ export const LAUNCHER_REGISTRY: LauncherEntry[] = [
   vpsConnectorEntry,    // Issue #454 — VPS Connector
   adminToolEntry,       // Issue #460 — Admin Backend
   toolchainToolEntry,   // Universal Toolchain — MCP/REST/OpenAPI
+  openHandsToolEntry,   // Issue #529 — OpenHands AI-Coding Jobs
   settingsToolEntry,    // Core utility — Settings with real session checks
   memoryToolEntry,      // Core utility — Memory/key inspection without secrets
   healthToolEntry,      // Core utility — Client health checks
