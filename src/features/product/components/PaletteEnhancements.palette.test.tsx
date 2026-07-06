@@ -109,5 +109,38 @@ describe('Palette Accessibility Enhancements', () => {
       expect(settingsButton).toHaveAttribute('aria-label', 'Einstellungen');
       expect(settingsButton).toHaveAttribute('title', 'Einstellungen');
     });
+
+    it('inputs and file buttons have correct accessibility attributes', () => {
+      const sidebarProps = {
+        settings: { repoMode: 'single', packageManager: 'npm', linter: 'eslint', maxFixLoops: 3, specialization: '' },
+        buildProduct: vi.fn(),
+        blueprint: '',
+        setBlueprint: vi.fn(),
+        addCard: vi.fn(),
+        log: vi.fn(),
+        selectedFile: { path: 'README.md', icon: '📄' },
+        setSelectedFile: vi.fn(),
+        setWorkView: vi.fn(),
+        repoUrl: 'https://github.com/user/repo',
+        setRepoUrl: vi.fn(),
+        setShowSettings: vi.fn(),
+      };
+      render(<Sidebar {...sidebarProps as any} />);
+
+      const repoInput = screen.getByLabelText('GitHub Repository URL');
+      expect(repoInput).toBeInTheDocument();
+
+      const searchInput = screen.getByLabelText('Datei suchen');
+      expect(searchInput).toBeInTheDocument();
+
+      // Check file buttons in list
+      const fileButtons = screen.getAllByRole('button').filter(b => b.hasAttribute('title') && b.getAttribute('title')?.includes('.'));
+      expect(fileButtons.length).toBeGreaterThan(0);
+      fileButtons.forEach(btn => {
+        expect(btn).toHaveAttribute('title');
+        // The text content should be present
+        expect(btn.textContent).toBeTruthy();
+      });
+    });
   });
 });

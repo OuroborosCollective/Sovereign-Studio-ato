@@ -34,7 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const handleChipClick = (chip: string) => {
     setBlueprint(chip);
-    log(`Idee ausgewaehlt: ${chip}`);
+    log(`Idee ausgewählt: ${chip}`);
   };
 
   return (
@@ -46,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           value={repoUrl}
           onChange={(e) => setRepoUrl(e.target.value)}
           placeholder="https://github.com/user/repo"
+          aria-label="GitHub Repository URL"
           className="w-full p-2 text-[10px] border border-indigo-200 rounded focus:outline-none focus:border-indigo-500 bg-white shadow-inner"
         />
         <div className="flex items-center justify-between mt-2">
@@ -86,7 +87,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             disabled={isWorking}
             className="flex-1 bg-stone-800 hover:bg-black disabled:bg-stone-400 text-white py-1.5 rounded text-[11px] font-bold uppercase shadow-sm"
           >
-            <Wand2 size={13} className="inline mr-1"/>Uebernehmen
+            <Wand2 size={13} className="inline mr-1"/>Übernehmen
           </button>
           <button
             onClick={addCard}
@@ -111,11 +112,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
         
-        <p className="text-[9px] text-stone-500 mt-2">Fuer echte GitHub-Schreibaktionen: PAT Token im Zahnrad eintragen.</p>
+        <p className="text-[9px] text-stone-500 mt-2">Für echte GitHub-Schreibaktionen: PAT Token im Zahnrad eintragen.</p>
       </div>
 
       <div className="p-2 bg-indigo-50/50 border-b border-stone-200 flex items-center gap-2 shrink-0">
-        <input placeholder="Datei suchen" className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner" />
+        <input
+          placeholder="Datei suchen"
+          aria-label="Datei suchen"
+          className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner"
+        />
         <button onClick={() => log('Dateisuche vorbereitet.')} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold uppercase shrink-0">Suche</button>
       </div>
 
@@ -123,7 +128,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {demoFiles.map((file) => (
           <button
             key={file.path}
-            onClick={() => { setSelectedFile(file); setWorkView('editor'); log(`Datei gewaehlt: ${file.path}`); }}
+            title={file.path}
+            onClick={() => { setSelectedFile(file); setWorkView('editor'); log(`Datei gewählt: ${file.path}`); }}
             className={`w-full p-3 border-b border-stone-100 text-[13px] flex items-center gap-2 text-left hover:bg-stone-50 ${selectedFile.path === file.path ? 'bg-teal-50 text-teal-700 border-l-4 border-l-teal-600 font-semibold' : 'text-stone-600'}`}
           >
             <span>{file.icon}</span>
