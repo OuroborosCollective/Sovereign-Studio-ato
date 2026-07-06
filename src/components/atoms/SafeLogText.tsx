@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from 'react';
+import { maskSecrets } from '../../shared/utils/crypto';
 
 interface SafeLogTextProps {
   text: string;
@@ -29,7 +30,9 @@ export const SafeLogText: React.FC<SafeLogTextProps> = ({
   enableHardening = true
 }) => {
   const maskSensitiveData = useCallback((val: string): string => {
-    if (!isSensitive) return val;
+    // Defense in depth: even if not explicitly marked sensitive, mask known secret patterns.
+    const patternMasked = maskSecrets(val);
+    if (!isSensitive) return patternMasked;
     return '********';
   }, [isSensitive]);
 
@@ -51,7 +54,8 @@ export const SafeLogText: React.FC<SafeLogTextProps> = ({
 
       window.SovereignBridge.reportHardenedError(payload);
     } catch (e) {
-      console.error('Sovereign Bridge Transmission Failed', e);
+      const errorMsg = e instanceof Error ? maskSecrets(e.message) : 'Unknown error';
+      console.error(`Sovereign Bridge Transmission Failed: ${errorMsg}`);
     }
   }, [text]);
 

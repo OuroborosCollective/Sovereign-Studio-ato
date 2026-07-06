@@ -16,6 +16,16 @@ export function maskSecrets(text: string): string {
   // Google Cloud / Gemini API keys
   masked = masked.replace(/AIza[a-zA-Z0-9_-]{26,60}/g, 'AIza****');
 
+  // AWS Access Key ID
+  masked = masked.replace(/AKIA[0-9A-Z]{16}/g, 'AKIA****');
+
+  // Slack tokens
+  masked = masked.replace(/xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,64}/g, 'xox****');
+  masked = masked.replace(/xox[baprs]-[0-9]{10,13}-[a-zA-Z0-9]{10,48}/g, 'xox****');
+
+  // Generic private key blocks (e.g. PEM)
+  masked = masked.replace(/-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]*?-----END[A-Z ]+PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]');
+
   // AI provider style keys. Do not cap these matches: long credentials must be consumed up to a delimiter.
   masked = masked.replace(/sk-or-v1-[a-zA-Z0-9_-]{20,}/g, 'sk-or-v1-****');
   masked = masked.replace(/sk-proj-[a-zA-Z0-9_-]{20,}/g, 'sk-proj-****');

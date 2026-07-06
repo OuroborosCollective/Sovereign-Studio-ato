@@ -91,6 +91,23 @@ describe('maskSecrets', () => {
     expect(maskSecrets(text)).toBe('Keys: ghp_**** and AIza****');
   });
 
+  it('masks AWS Access Key IDs', () => {
+    const secret = 'AKIA1234567890ABCDEF';
+    expect(maskSecrets(`Access: ${secret}`)).toBe('Access: AKIA****');
+  });
+
+  it('masks Slack tokens', () => {
+    const botToken = 'xoxb-123456789012-123456789012-123456789012-abcdefghijklmnopqrstuvwx1234';
+    expect(maskSecrets(`Slack: ${botToken}`)).toBe('Slack: xox****');
+    const userToken = 'xoxp-123456789012-abcdefghijklmnopqrstuvwx';
+    expect(maskSecrets(`Slack: ${userToken}`)).toBe('Slack: xox****');
+  });
+
+  it('masks private key blocks', () => {
+    const privateKey = '-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA75...\n-----END RSA PRIVATE KEY-----';
+    expect(maskSecrets(`Key:\n${privateKey}`)).toBe('Key:\n[REDACTED PRIVATE KEY]');
+  });
+
   it('leaves normal text untouched', () => {
     const text = 'This is a normal error message with no secrets.';
     expect(maskSecrets(text)).toBe(text);
