@@ -4910,7 +4910,7 @@ export function BuilderContainer({
 
                     if (agentDisabled) {
                       const tokenForDirectPatch = githubTokenRef.current;
-                      if (!openhandsReady && chatRepoSnapshot && tokenForDirectPatch && githubWriteAllowed) {
+                      if (!openhandsReady && tokenForDirectPatch && validation.canWrite === true) {
                         const directPatchResult = await buildDirectPatchPlanWithContentLoad({
                           repoContext: {
                             owner: chatRepoSnapshot.owner,
