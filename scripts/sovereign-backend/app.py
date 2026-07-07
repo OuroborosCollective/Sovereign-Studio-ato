@@ -5737,6 +5737,197 @@ def public_llm_chat():
         return jsonify({"error": str(e)}), 500
 
 
+
+
+# =============================================================================
+# CLOUDFLARE AI GATEWAY - VERBESSERTE INTEGRATION
+# =============================================================================
+
+PROVIDER_MODELS = {
+    "openai": {
+        "name": "OpenAI",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
+        "format": "openai/{model}",
+        "default": "gpt-4o-mini"
+    },
+    "anthropic": {
+        "name": "Anthropic",
+        "models": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
+        "format": "anthropic/{model}",
+        "default": "claude-3-5-sonnet-20240620"
+    },
+    "mistral": {
+        "name": "Mistral AI",
+        "models": ["mistral-large-latest", "mistral-small-latest", "mistral-nemo"],
+        "format": "mistral/{model}",
+        "default": "mistral-large-latest"
+    },
+    "cohere": {
+        "name": "Cohere",
+        "models": ["command-r-plus", "command-r"],
+        "format": "cohere/{model}",
+        "default": "command-r-plus"
+    },
+    "google": {
+        "name": "Google AI",
+        "models": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash-exp"],
+        "format": "google/{model}",
+        "default": "gemini-1.5-flash"
+    }
+}
+
+def test_provider_available(provider):
+    if provider not in PROVIDER_MODELS:
+        return False, f"Unknown provider: {provider}", []
+    model_info = PROVIDER_MODELS[provider]
+    test_model = model_info["models"][0]
+    resp, err = fetch_ai_gateway("/compat/v1/chat/completions", method="POST", json_data={
+        "model": test_model,
+        "messages": [{"role": "user", "content": "test"}],
+        "max_tokens": 5
+    }, provider=provider)
+    if err:
+        return False, f"Gateway Error: {err}", []
+    if resp.status_code == 401:
+        return False, f"No {provider} key configured", []
+    if resp.status_code == 429:
+        return True, f"{provider} key configured (rate limited)", model_info["models"]
+    if resp.status_code and resp.status_code < 500:
+        return True, f"{provider} available", model_info["models"]
+    return False, f"{provider} error: HTTP {resp.status_code}", []
+
+@app.route("/api/admin/llm/gateway/providers", methods=["GET"])
+@require_admin
+def admin_llm_gateway_providers():
+    results = []
+    for provider_id, info in PROVIDER_MODELS.items():
+        available, message, models = test_provider_available(provider_id)
+        results.append({
+            "provider": provider_id,
+            "name": info["name"],
+            "configured": available,
+            "status": message,
+            "models": models if available else info["models"],
+            "defaultModel": info["default"] if available else None,
+        })
+    results.append({
+        "provider": "cloudflare",
+        "name": "Cloudflare Worker AI",
+        "configured": True,
+        "status": "Always available (free)",
+        "models": [],
+        "defaultModel": "@cf/meta/llama-3.1-8b-instruct"
+    })
+    return jsonify({"ok": True, "providers": results, "gatewayUrl": AI_GATEWAY_BASE})
+
+@app.route("/api/admin/llm/gateway/sync", methods=["POST"])
+@require_admin
+def admin_llm_gateway_sync():
+    try:
+        results = {"providers": {}, "workerAiSync": None, "errors": []}
+        for provider_id, info in PROVIDER_MODELS.items():
+            available, message, _ = test_provider_available(provider_id)
+            if not available:
+                results["providers"][provider_id] = {"configured": False, "status": message, "created": 0, "updated": 0}
+                continue
+            created, updated = 0, 0
+            for model in info["models"]:
+                full_model_id = info["format"].format(model=model)
+                existing = query("SELECT id::text FROM llm_routes WHERE model_id = %s", (full_model_id,), one=True)
+                priority = 50
+                if any(x in model.lower() for x in ["mini", "lite", "haiku", "flash"]):
+                    priority = 10
+                elif any(x in model.lower() for x in ["large", "ultra", "opus", "pro"]):
+                    priority = 100
+                try:
+                    if existing:
+                        query("UPDATE llm_routes SET model_name = %s, base_url = %s, priority = %s, disabled = false, updated_at = NOW() WHERE model_id = %s",
+                              (model, AI_GATEWAY_BASE, priority, full_model_id), write=True)
+                        updated += 1
+                    else:
+                        query("INSERT INTO llm_routes (id, model_id, model_name, provider, base_url, credits_per_unit, priority, disabled) VALUES (gen_random_uuid(), %s, %s, %s, %s, 0.01, %s, false)",
+                              (full_model_id, model, provider_id, AI_GATEWAY_BASE, priority), write=True)
+                        created += 1
+                except Exception as e:
+                    results["errors"].append(f"{full_model_id}: {str(e)}")
+            results["providers"][provider_id] = {"configured": True, "status": message, "modelCount": len(info["models"]), "created": created, "updated": updated}
+        try:
+            resp, err = fetch_worker_ai("v1/models")
+            if not err and resp and resp.ok:
+                worker_models = resp.json().get("data", [])
+                w_c, w_u = 0, 0
+                for wm in worker_models:
+                    mid = wm.get("id", "")
+                    if not mid: continue
+                    existing = query("SELECT id::text FROM llm_routes WHERE model_id = %s", (mid,), one=True)
+                    p = 50
+                    if "70b" in mid or "32b" in mid: p = 100
+                    elif "7b" in mid: p = 25
+                    try:
+                        if existing:
+                            query("UPDATE llm_routes SET model_name = %s, base_url = %s, priority = %s, disabled = false, updated_at = NOW() WHERE model_id = %s",
+                                  (mid, WORKER_AI_BASE, p, mid), write=True)
+                            w_u += 1
+                        else:
+                            query("INSERT INTO llm_routes (id, model_id, model_name, provider, base_url, credits_per_unit, priority, disabled) VALUES (gen_random_uuid(), %s, %s, 'cloudflare', %s, 0.001, %s, false)",
+                                  (mid, mid, WORKER_AI_BASE, p), write=True)
+                            w_c += 1
+                    except: pass
+                results["workerAiSync"] = {"ok": True, "totalModels": len(worker_models), "created": w_c, "updated": w_u}
+        except Exception as e:
+            results["workerAiSync"] = {"ok": False, "error": str(e)}
+        audit("admin_llm_gateway_sync", None, results)
+        return jsonify({"ok": True, "results": results, "message": "AI Gateway sync completed."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/llm/auto-route", methods=["POST"])
+def public_llm_auto_route():
+    try:
+        routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
+        if not routes:
+            return jsonify({"error": "Keine LLM Routes verfuegbar", "suggestion": "Sync ausfuehren"}), 503
+        selected = routes[0]
+        provider = selected.get("provider", "")
+        if provider == "cloudflare":
+            return jsonify({"ok": True, "selected": {"modelId": selected["model_id"], "modelName": selected["model_name"], "provider": provider, "baseUrl": selected["base_url"], "creditsPerUnit": float(selected["credits_per_unit"]), "routeType": "worker-ai"}, "fallback": [r for r in routes[1:5]] if len(routes) > 1 else [], "message": f"Worker AI: {selected['model_name']}"})
+        if provider in PROVIDER_MODELS:
+            available, _, _ = test_provider_available(provider)
+            if available:
+                return jsonify({"ok": True, "selected": {"modelId": selected["model_id"], "modelName": selected["model_name"], "provider": provider, "baseUrl": selected["base_url"], "creditsPerUnit": float(selected["credits_per_unit"]), "routeType": "gateway"}, "fallback": [r for r in routes[1:3]] if len(routes) > 1 else [], "message": f"AI Gateway: {selected['model_name']}"})
+        worker_routes = [r for r in routes if r.get("provider") == "cloudflare"]
+        if worker_routes:
+            return jsonify({"ok": True, "selected": {"modelId": worker_routes[0]["model_id"], "modelName": worker_routes[0]["model_name"], "provider": "cloudflare", "baseUrl": worker_routes[0]["base_url"], "creditsPerUnit": float(worker_routes[0]["credits_per_unit"]), "routeType": "worker-ai-fallback"}, "fallback": [], "message": "Fallback to Worker AI"})
+        return jsonify({"error": "Keine Route verfuegbar"}), 503
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/llm/chat", methods=["POST"])
+def public_llm_chat():
+    try:
+        body = request.get_json(force=True) or {}
+        model = body.get("model", "")
+        messages = body.get("messages", [])
+        max_tokens = body.get("max_tokens", 1000)
+        if not messages:
+            return jsonify({"error": "messages required"}), 400
+        if model.startswith("@cf/"):
+            resp, err = fetch_worker_ai("v1/chat/competitions", method="POST", json_data={"model": model, "messages": messages, "max_tokens": max_tokens})
+            if err: return jsonify({"error": err}), 500
+            if not resp.ok: return jsonify({"error": resp.text}), resp.status_code
+            return jsonify(resp.json())
+        if "/" in model:
+            parts = model.split("/", 1)
+            provider, model_name = parts[0], parts[1]
+            resp, err = fetch_ai_gateway("/compat/v1/chat/completions", method="POST", json_data={"model": model_name, "messages": messages, "max_tokens": max_tokens}, provider=provider)
+            if err: return jsonify({"error": err}), 500
+            if not resp.ok: return jsonify({"error": resp.text}), resp.status_code
+            return jsonify(resp.json())
+        return jsonify({"error": f"Unbekanntes Model: {model}"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     # Validate required tables exist before starting
     try:
