@@ -3947,6 +3947,86 @@ export function BuilderContainer({
           return;
         }
 
+        if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
+          const tokenForDirectPatch = githubTokenRef.current;
+          if (chatRepoSnapshot && tokenForDirectPatch) {
+            const directPatchResult = await buildDirectPatchPlanWithContentLoad({
+              repoContext: {
+                owner: chatRepoSnapshot.owner,
+                name: chatRepoSnapshot.repo,
+                branch: chatRepoSnapshot.branch,
+                filePaths: chatRepoSnapshot.filePaths ?? [],
+              },
+              instruction: submittedText,
+              githubAccessReady: true,
+              token: tokenForDirectPatch,
+              fetcher: globalThis.fetch,
+            });
+
+            if ('result' in directPatchResult && directPatchResult.result.ok) {
+              appendActionEvent({
+                kind: 'route_selected',
+                route: 'direct-github-patch',
+                label: 'Direct GitHub Patch Route gewählt',
+                detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
+                state: 'running',
+              });
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.
+
+Patch-Vorschlag:
+${directPatchResult.result.patchSummary}
+
+Nächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+              });
+              addLog('info', 'Write intent routed through Direct GitHub Patch Route after bridge allow', 'router');
+              return;
+            }
+
+            if ('capability' in directPatchResult && !directPatchResult.capability.available) {
+              appendActionEvent({
+                kind: 'done',
+                route: 'github-patch',
+                label: 'Patch/Draft-PR Route geprüft',
+                detail: `Route erlaubt; Direct Patch noch nicht verfügbar: ${directPatchResult.capability.reason}`,
+                state: 'done',
+              });
+              appendChatLine({
+                role: 'assistant',
+                text: `Schreibauftrag erkannt.
+${executorBridgeDecision.reason}
+
+Route ist erlaubt, aber Direct Patch konnte noch keinen Patchplan erzeugen.
+Grund: ${directPatchResult.capability.reason}
+
+Es wurde noch keine Datei geändert. Nächste Aktion: Zielpfad präzisieren oder Executor verbinden.`,
+              });
+              addLog('info', 'Write intent bridge allowed; direct patch not available: ' + directPatchResult.capability.reason, 'router');
+              return;
+            }
+          }
+
+          appendActionEvent({
+            kind: 'done',
+            route: 'github-patch',
+            label: 'Patch/Draft-PR Route geprüft',
+            detail: 'Route erlaubt; Patchplan wartet auf Zielpfad oder Executor.',
+            state: 'done',
+          });
+          appendChatLine({
+            role: 'assistant',
+            text: `Schreibauftrag erkannt.
+${executorBridgeDecision.reason}
+
+Route ist erlaubt, aber es wurde noch kein Patch/Diff erzeugt.
+Nächste Aktion: Zielpfad nennen oder Executor verbinden.
+Es wurde noch keine Datei geändert.`,
+          });
+          addLog('info', 'Write intent bridge allowed without patch result: ' + executorBridgeDecision.reason, 'router');
+          return;
+        }
+
         // Bridge blocked - show clear blocker message with reason
         appendChatLine({
           role: 'assistant',
@@ -4072,6 +4152,27 @@ export function BuilderContainer({
           text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nOpenHands bleibt optional und wird nicht als Pflicht-Executor behandelt.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
         });
         addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
+        return;
+      }
+
+      if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
+        appendActionEvent({
+          kind: 'done',
+          route: 'github-patch',
+          label: 'Patch/Draft-PR Route geprüft',
+          detail: executorBridgeDecision.reason,
+          state: 'done',
+        });
+        appendChatLine({
+          role: "assistant",
+          text: `Ausführungsauftrag erkannt.
+Route gewählt: Patch/Draft-PR Runtime.
+
+${executorBridgeDecision.reason}
+
+OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
+        });
+        addLog('info', `Execution intent allowed by bridge without mandatory OpenHands · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
       }
 
@@ -4268,6 +4369,13 @@ export function BuilderContainer({
 
   const handlePresetActionSelect = (actionId: SovereignPresetActionId) => {
     const action = getSovereignPresetAction(actionId);
+    const submitted = buildSovereignPresetActionSubmission(action, {
+      repoReady: effectiveRepoReady,
+      repoFullName: chatRepoSnapshot ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}` : null,
+      branch: chatRepoSnapshot?.branch ?? null,
+      githubWriteReady: githubWriteAllowed,
+      openhandsReady: openhandsReady ?? false,
+    });
     const gate = evaluateSovereignPresetActionGate(action, {
       repoReady: effectiveRepoReady,
       githubWriteReady: githubWriteAllowed,
@@ -4275,6 +4383,29 @@ export function BuilderContainer({
     });
 
     if (!gate.canStart) {
+      if (action.requiresGithubWrite && effectiveRepoReady && !githubWriteAllowed) {
+        pendingWriteIntentRef.current = submitted;
+        setShowGitHubAccessOverride(true);
+        appendActionEvent({
+          kind: 'github_access_required',
+          route: 'github-access',
+          label: `GitHub-Schreibzugang erforderlich: ${action.shortLabel}`,
+          detail: 'Preset-Auftrag wurde vorgemerkt; Worker-Chat wird übersprungen.',
+          state: 'blocked',
+        });
+        appendChatLine({
+          role: 'assistant',
+          text: [
+            `${action.icon} ${action.label}`,
+            `Status: ${gate.reason}`,
+            'Ich habe diesen Auftrag vorgemerkt.',
+            'Bitte GitHub-Zugang im sicheren Feld eingeben — danach läuft dieser Auftrag automatisch weiter.',
+          ].join('\n'),
+        });
+        addLog('warn', `Preset write action blocked: GitHub access gate opened for ${action.id}`, 'router');
+        return;
+      }
+
       appendActionEvent(buildBlockedActionEvent({
         route: action.requiresRepo ? 'repo' : 'runtime',
         label: `Preset blockiert: ${action.shortLabel}`,
@@ -4291,14 +4422,6 @@ export function BuilderContainer({
       });
       return;
     }
-
-    const submitted = buildSovereignPresetActionSubmission(action, {
-      repoReady: effectiveRepoReady,
-      repoFullName: chatRepoSnapshot ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}` : null,
-      branch: chatRepoSnapshot?.branch ?? null,
-      githubWriteReady: githubWriteAllowed,
-      openhandsReady: openhandsReady ?? false,
-    });
 
     if (action.risk === 'safe_analysis') {
       appendActionEvent(buildRouteSelectionEvent({
@@ -5133,7 +5256,25 @@ export function BuilderContainer({
                 return;
               }
               if (toolId === 'github_access') {
-                appendChatLine({ role: 'assistant', text: 'Token niemals in den Chat eingeben. Bitte nur das sichere Zugangsfeld öffnen.' });
+                if (!githubWriteAllowed) {
+                  setShowGitHubAccessOverride(true);
+                  appendActionEvent({
+                    kind: 'access_required',
+                    route: 'github-access',
+                    label: 'GitHub-Zugang geöffnet',
+                    detail: 'Sicheres Zugangsfeld wurde über das Tool-Menü geöffnet.',
+                    state: 'blocked',
+                  });
+                  appendChatLine({
+                    role: 'assistant',
+                    text: 'Sicheres GitHub-Zugangsfeld geöffnet. Bitte Token nur dort eingeben, niemals im Chat.',
+                  });
+                  return;
+                }
+                appendChatLine({
+                  role: 'assistant',
+                  text: 'GitHub-Zugang ist bereits bereit. Der Zugangswert wird nicht im Chat angezeigt oder gespeichert.',
+                });
                 return;
               }
               if (toolId === 'runtime_logs') { setPanelOpen((v) => !v); return; }
