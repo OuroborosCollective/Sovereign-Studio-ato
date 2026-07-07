@@ -149,3 +149,34 @@ describe('sovereignActionStreamRuntime', () => {
     expect(stream.events[0].detail).toBe('zwei');
   });
 });
+
+describe('sovereignActionStreamRuntime hardening', () => {
+  it('deduplicates a repeated identical active blocker instead of spamming events', async () => {
+    const blocked = buildBlockedActionEvent({
+      route: 'worker',
+      label: 'Worker blockiert',
+      detail: 'HTTP 500',
+      kind: 'failed',
+    });
+
+    const once = appendSovereignActionEvent(createSovereignActionStreamState(), blocked);
+    const twice = appendSovereignActionEvent(once, blocked);
+
+    expect(twice.events).toHaveLength(1);
+    expect(twice.lastEvent?.detail).toBe('HTTP 500');
+  });
+
+  it('can answer local status from an active blocker without another route call', async () => {
+    const { buildLocalStatusAnswerFromActionStream } = await import('./sovereignActionStreamRuntime');
+    const stream = appendSovereignActionEvent(
+      createSovereignActionStreamState(),
+      buildBlockedActionEvent({ route: 'worker', label: 'Worker blockiert', detail: 'HTTP 500', kind: 'failed' }),
+    );
+
+    const answer = buildLocalStatusAnswerFromActionStream(stream);
+
+    expect(answer).toContain('Status: blockiert');
+    expect(answer).toContain('HTTP 500');
+    expect(answer).toContain('keinen kaputten');
+  });
+});

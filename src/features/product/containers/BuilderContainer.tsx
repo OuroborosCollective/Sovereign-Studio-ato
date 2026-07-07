@@ -4888,6 +4888,53 @@ export function BuilderContainer({
                     });
 
                     if (agentDisabled) {
+                      const tokenForDirectPatch = githubTokenRef.current;
+                      if (!openhandsReady && chatRepoSnapshot && tokenForDirectPatch && githubWriteAllowed) {
+                        const directPatchResult = await buildDirectPatchPlanWithContentLoad({
+                          repoContext: {
+                            owner: chatRepoSnapshot.owner,
+                            name: chatRepoSnapshot.repo,
+                            branch: chatRepoSnapshot.branch,
+                            filePaths: chatRepoSnapshot.filePaths ?? [],
+                          },
+                          instruction: pendingWriteIntent,
+                          githubAccessReady: true,
+                          token: tokenForDirectPatch,
+                          fetcher: globalThis.fetch,
+                        });
+
+                        if ('result' in directPatchResult && directPatchResult.result.ok) {
+                          appendActionEvent({
+                            kind: 'route_selected',
+                            route: 'direct-github-patch',
+                            label: 'Direct GitHub Patch Route gewählt',
+                            detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
+                            state: 'running',
+                          });
+                          appendChatLine({
+                            role: 'assistant',
+                            text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+                          });
+                          addLog('info', 'Pending write intent resumed through Direct GitHub Patch Route', 'router');
+                          return;
+                        }
+
+                        if ('capability' in directPatchResult && !directPatchResult.capability.available) {
+                          appendActionEvent(buildBlockedActionEvent({
+                            route: 'direct-github-patch',
+                            label: 'Direct Patch nicht verfügbar',
+                            detail: directPatchResult.capability.reason,
+                            kind: 'patch_blocked',
+                          }));
+                          appendChatLine({
+                            role: 'assistant',
+                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nOpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.`,
+                          });
+                          addLog('warn', 'Pending write intent direct patch unavailable: ' + directPatchResult.capability.reason, 'router');
+                          return;
+                        }
+                      }
+
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-patch',
                         label: 'Patch/Draft-PR Route blockiert',
@@ -4898,7 +4945,7 @@ export function BuilderContainer({
                         role: 'assistant',
                         text: openhandsReady
                           ? 'Der GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
-                          : 'Der GitHub-Zugang ist bereit, aber OpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.',
+                          : 'Der GitHub-Zugang ist bereit, aber weder Direct GitHub Patch noch OpenHands ist für diesen Auftrag verfügbar. Es wurde noch keine Datei geändert.',
                       });
                       return;
                     }

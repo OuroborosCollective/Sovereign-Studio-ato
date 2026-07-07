@@ -157,11 +157,25 @@ function buildCodeResultGateEvent(createdAt: number): SovereignActionEventInput 
   };
 }
 
+function sameActiveBlocker(left: SovereignActionEvent | null, right: SovereignActionEventInput): boolean {
+  if (!left) return false;
+  if (left.state !== 'blocked' && left.state !== 'failed') return false;
+  if (right.state !== 'blocked' && right.state !== 'failed') return false;
+  return left.route === right.route
+    && left.kind === right.kind
+    && left.label.trim() === right.label.trim()
+    && (left.detail ?? '').trim() === (right.detail ?? '').trim();
+}
+
 export function appendSovereignActionEvent(
   stream: SovereignActionStreamState,
   input: SovereignActionEventInput,
   maxEvents = 80,
 ): SovereignActionStreamState {
+  if (sameActiveBlocker(stream.lastEvent, input)) {
+    return stream;
+  }
+
   const createdAt = input.createdAt ?? Date.now();
   const nextEvent = createActionEvent({ ...input, createdAt }, stream.events.length);
   const shouldAddCodeGate =
@@ -202,6 +216,34 @@ export function latestSovereignActionByRoute(
     (latest, event) => ({ ...latest, [event.route]: event }),
     {},
   );
+}
+
+export function findActiveSovereignActionBlocker(stream: SovereignActionStreamState): SovereignActionEvent | null {
+  for (let index = stream.events.length - 1; index >= 0; index -= 1) {
+    const event = stream.events[index];
+    if (event.state === 'blocked' || event.state === 'failed') return event;
+    if (event.kind === 'input_received') return null;
+  }
+  return null;
+}
+
+export function buildLocalStatusAnswerFromActionStream(stream: SovereignActionStreamState): string {
+  const blocker = findActiveSovereignActionBlocker(stream);
+  if (blocker) {
+    return [
+      `Status: blockiert durch ${blocker.label}.`,
+      blocker.detail ? `Grund: ${blocker.detail}` : '',
+      'Ich wiederhole keinen kaputten Worker-/Executor-Call blind. Nächste Aktion: Blocker prüfen oder passende Reparaturroute öffnen.',
+    ].filter(Boolean).join('\n');
+  }
+
+  if (stream.activeRoute) {
+    return `Status: ${stream.activeRoute} läuft. Ich warte auf ein echtes Ergebnis, bevor ich Erfolg melde.`;
+  }
+
+  const last = stream.lastEvent;
+  if (!last) return 'Status: noch keine Runtime-Aktion im Action Stream.';
+  return `Status: letzte Runtime-Aktion: ${describeSovereignActionEvent(last)} (${last.state}).`;
 }
 
 export function describeSovereignActionEvent(event: SovereignActionEvent): string {
