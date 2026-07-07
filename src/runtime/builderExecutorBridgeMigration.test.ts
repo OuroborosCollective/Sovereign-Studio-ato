@@ -1,0 +1,27 @@
+import { describe, expect, it } from 'vitest';
+import { decideSovereignExecutorBridgeRoute } from './sovereignExecutorBridgeRuntime';
+import { buildSovereignToolCapabilityRegistry } from '../features/product/runtime/sovereignToolCapabilityRuntime';
+
+describe('builder executor bridge migration contract', () => {
+  it('defines the runtime call BuilderContainer must use for blocked code execution', () => {
+    const decision = decideSovereignExecutorBridgeRoute({
+      text: 'Baue internen Operator Fallback mit Tests',
+      intent: 'code_execution',
+      capabilities: buildSovereignToolCapabilityRegistry({
+        repoReady: true,
+        githubAccessState: 'ready',
+        githubTokenPresent: true,
+        directPatchSupported: false,
+        openhandsConfigured: false,
+        workerAvailable: true,
+        workspaceConfigured: false,
+        draftPrSupported: true,
+        activeExecutorStatus: 'idle',
+      }),
+    });
+
+    expect(decision.bridgeRoute).toBe('sovereign_internal_operator');
+    expect(decision.nextAction).toBe('run_internal_operator');
+    expect(decision.event.route).toBe('toolchain');
+  });
+});
