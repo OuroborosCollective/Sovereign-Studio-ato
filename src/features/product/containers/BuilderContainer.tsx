@@ -396,7 +396,7 @@ import { SkillScanPanel } from '../../toolchain/components/SkillScanPanel';
 // ─────────────────────────────────────────────────────────────
 
 // Module lamps row — AppControl addition
-function ModuleLamps({
+const ModuleLamps = React.memo(function ModuleLamps({
   modules,
   signals,
   activeTab,
@@ -476,7 +476,7 @@ function ModuleLamps({
         })}
     </div>
   );
-}
+});
 
 // Workbench status chips — user-facing primary status row (Actions/Files/Logs/Errors/Draft PR).
 // Replaces the technical module lamp row as the default, always-visible navigation.
@@ -487,7 +487,7 @@ const WORKBENCH_STATUS_TONE_COLOR: Record<WorkbenchStatusTone, string> = {
   error: C.rose,
 };
 
-function WorkbenchStatusChips({
+const WorkbenchStatusChips = React.memo(function WorkbenchStatusChips({
   slots,
   onSlotClick,
 }: {
@@ -549,7 +549,7 @@ function WorkbenchStatusChips({
       })}
     </div>
   );
-}
+});
 
 // Workbench slot drawer — generic bottom sheet showing real derived data with an explicit empty state.
 function WorkbenchSlotDrawer({
@@ -816,7 +816,7 @@ function WorkbenchSidePanel({
 }
 
 // TopBar — v3 verbatim + Workbench status chips + panel toggle + PAL badge
-function TopBar({
+const TopBar = React.memo(function TopBar({
   status,
   repoReady,
   chatRepoSnapshot,
@@ -1111,7 +1111,7 @@ function TopBar({
       )}
     </div>
   );
-}
+});
 
 // Collapsible status/log panel
 function StatusPanel({
@@ -1285,7 +1285,7 @@ function StatusPanel({
 }
 
 // Bubble (verbatim v3 + Issue #427 markdown + Issue #429 long-press)
-function Bubble({
+const Bubble = React.memo(function Bubble({
   msg,
   now,
   onLongPress,
@@ -1472,7 +1472,7 @@ function Bubble({
       </div>
     </div>
   );
-}
+});
 
 // WelcomeScreen (verbatim v3)
 function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
@@ -2608,7 +2608,7 @@ function Composer({
 // reveals the technical runtime modules (see ModuleLamps) as an internal debug
 // view. Files/Diff/Draft PR/Logs live as understandable Workbench surfaces
 // (WorkbenchStatusChips + drawer), not as bottom-nav module abbreviations.
-function BottomTabBar({
+const BottomTabBar = React.memo(function BottomTabBar({
   activeTab,
   onChatClick,
   inspectorOpen,
@@ -2695,7 +2695,7 @@ function BottomTabBar({
       </button>
     </nav>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -2731,6 +2731,7 @@ export function BuilderContainer({
   const [showSideMenu, setShowSide] = useState(false);
   const [showRepoExplorer, setShowRepoExplorer] = useState(false);
   const [showOpenHandsBriefing, setOHB] = useState(false);
+
   const [chatRepoSnapshot, setChatRepo] = useState<DevChatRepoSnapshot | null>(
     null,
   );
@@ -2778,6 +2779,21 @@ export function BuilderContainer({
   const { user: authUser, refreshUser } = useUserStore();
   const [showLogin, setShowLogin]     = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+
+  // Stabilize callbacks to prevent re-renders of memoized children during timer ticks
+  const handleMenuOpen = useCallback(() => setShowSide(true), []);
+  const handlePanelToggle = useCallback(() => setPanelOpen((v) => !v), []);
+  const handleSourceClick = useCallback(() => setShowRuntime(true), []);
+  const handleUserClick = useCallback(() => authUser ? setShowProfile(true) : setShowLogin(true), [authUser]);
+  const handleWorkbenchSlotClick = useCallback((id: WorkbenchStatusSlotId) => {
+    if (id === "logs") {
+      setPanelOpen((v) => !v);
+      return;
+    }
+    setOpenWorkbenchSlot(id);
+  }, []);
+  const closeRepoExplorer = useCallback(() => setShowRepoExplorer(false), []);
+  const handleBubbleLongPress = useCallback((draft: string) => setWishText(draft), []);
   useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sovereign App Toolchain — auto-load after login
@@ -3050,6 +3066,11 @@ export function BuilderContainer({
   );
 
   // ── Original v3 derived values (verbatim)
+  const userInitials = useMemo(() => authUser
+    ? (authUser.displayName || authUser.email)
+        .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+    : undefined, [authUser]);
+
   const state = deriveBuilderContainerState({
     repoReady: repoReady || Boolean(chatRepoSnapshot),
     repoBusy: repoBusy || localRepoLoading,
@@ -4427,34 +4448,25 @@ export function BuilderContainer({
         repoReady={effectiveRepoReady}
         chatRepoSnapshot={chatRepoSnapshot}
         repoReason={effectiveRepoReason}
-        onMenuOpen={() => setShowSide(true)}
+        onMenuOpen={handleMenuOpen}
         onRepoClick={openRepoExplorer}
-        onSourceClick={() => setShowRuntime(true)}
+        onSourceClick={handleSourceClick}
         source={runtimeSource}
         modules={MODULES}
         signals={signals}
         activeTab={activeTab}
         onTabClick={switchTab}
         panelOpen={panelOpen}
-        onPanelToggle={() => setPanelOpen((v) => !v)}
+        onPanelToggle={handlePanelToggle}
         palTier={lastPal?.tier ?? null}
         palSavings={palStats?.savings ?? null}
         credits={credits}
         userLoggedIn={!!authUser}
         userAvatar={authUser?.avatarUrl ?? null}
-        userInitials={authUser
-          ? (authUser.displayName || authUser.email)
-              .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
-          : undefined}
-        onUserClick={() => authUser ? setShowProfile(true) : setShowLogin(true)}
+        userInitials={userInitials}
+        onUserClick={handleUserClick}
         workbenchStatusSlots={workbenchStatusSlots}
-        onWorkbenchSlotClick={(id) => {
-          if (id === "logs") {
-            setPanelOpen((v) => !v);
-            return;
-          }
-          setOpenWorkbenchSlot(id);
-        }}
+        onWorkbenchSlotClick={handleWorkbenchSlotClick}
         showInspector={showInspector}
       />
 
@@ -4529,7 +4541,7 @@ export function BuilderContainer({
                   key={line.id}
                   msg={line}
                   now={nowRef.current}
-                  onLongPress={(draft) => setWishText(draft)}
+                  onLongPress={handleBubbleLongPress}
                   onOpenFile={openRepoExplorerFromFileBadge}
                 />
               ))}
@@ -5208,7 +5220,7 @@ export function BuilderContainer({
       )}
       {showRepoExplorer && (
         <div
-          onClick={() => setShowRepoExplorer(false)}
+          onClick={closeRepoExplorer}
           style={{
             position: "fixed",
             inset: 0,
@@ -5234,7 +5246,7 @@ export function BuilderContainer({
           >
             <RepoTreeExplorer
               snapshot={chatRepoSnapshot}
-              onClose={() => setShowRepoExplorer(false)}
+              onClose={closeRepoExplorer}
               onFileClick={handleRepoExplorerFileClick}
             />
           </div>

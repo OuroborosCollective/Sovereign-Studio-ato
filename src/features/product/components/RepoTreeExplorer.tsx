@@ -8,7 +8,7 @@ export interface RepoTreeExplorerProps {
   readonly onFileClick: (path: string) => void;
 }
 
-function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode; readonly level: number; readonly onFileClick: (path: string) => void }) {
+const TreeNodeRow = React.memo(function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode; readonly level: number; readonly onFileClick: (path: string) => void }) {
   const [open, setOpen] = useState(level < 1);
   const folder = node.type === 'folder';
   const ariaLabel = folder
@@ -35,9 +35,9 @@ function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode
       ) : null}
     </li>
   );
-}
+});
 
-export function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExplorerProps) {
+export const RepoTreeExplorer = React.memo(function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExplorerProps) {
   const tree = useMemo(() => buildRepoTree(snapshot?.files ?? []), [snapshot]);
   return (
     <section
@@ -66,6 +66,6 @@ export function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExp
       </ul>
     </section>
   );
-}
+});
 
 export default RepoTreeExplorer;
