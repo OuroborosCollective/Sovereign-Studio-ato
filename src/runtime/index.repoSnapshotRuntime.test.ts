@@ -6,12 +6,16 @@ import runtimeDefault, {
   RuntimeIntelligenceCore,
   RuntimeRepoSnapshotRuntime,
   RuntimeTelemetry,
+  SovereignExecutorBridgeRuntime,
+  SovereignInternalOperatorRuntime,
   attachRepoSnapshotRuntime,
   clearRuntimeRepoSnapshot,
   coreRuntimeIntelligence,
   createRuntimeIntelligence,
   createRuntimeIntelligenceWithRepoSnapshot,
   createRuntimeRepoSnapshot,
+  decideSovereignExecutorBridgeRoute,
+  decideSovereignInternalOperator,
   defaultTraceIdProvider,
   inspectRuntimeRepoSnapshotStorage,
   loadRuntimeRepoSnapshot,
@@ -102,6 +106,17 @@ describe('runtime index repo snapshot exports', () => {
     expect(attached).toBe(runtime);
     expect(attached.createRepoSnapshot).toBe(createRuntimeRepoSnapshot);
     expect(attached.saveRepoSnapshot).toBe(saveRuntimeRepoSnapshot);
+  });
+
+  it('exports sovereign operator and executor bridge runtime helpers', () => {
+    const runtime = createRuntimeIntelligenceWithRepoSnapshot();
+
+    expect(decideSovereignInternalOperator).toBeDefined();
+    expect(decideSovereignExecutorBridgeRoute).toBeDefined();
+    expect(SovereignInternalOperatorRuntime.decideSovereignInternalOperator).toBe(decideSovereignInternalOperator);
+    expect(SovereignExecutorBridgeRuntime.decideSovereignExecutorBridgeRoute).toBe(decideSovereignExecutorBridgeRoute);
+    expect(runtime.decideSovereignInternalOperator).toBe(decideSovereignInternalOperator);
+    expect(runtime.decideSovereignExecutorBridgeRoute).toBe(decideSovereignExecutorBridgeRoute);
   });
 
   it('exports repo snapshot runtime namespace', () => {
