@@ -22,6 +22,8 @@ import {
   saveRuntimeRepoSnapshot,
 } from './repoSnapshotRuntime';
 
+import { decideSovereignInternalOperator } from './sovereignInternalOperatorRuntime';
+
 export {
   RuntimeCircuitBreaker,
   RuntimeGuardError,
@@ -87,8 +89,20 @@ export type {
   RuntimeRepoSnapshotStorageStatus,
 } from './repoSnapshotRuntime';
 
+export { decideSovereignInternalOperator } from './sovereignInternalOperatorRuntime';
+
+export type {
+  SovereignInternalOperatorDecision,
+  SovereignInternalOperatorInput,
+  SovereignInternalOperatorNode,
+  SovereignInternalOperatorRoute,
+  SovereignInternalOperatorSignal,
+  SovereignInternalOperatorStage,
+} from './sovereignInternalOperatorRuntime';
+
 export * as RuntimeIntelligenceCore from './RuntimeIntelligence';
 export * as RuntimeRepoSnapshotRuntime from './repoSnapshotRuntime';
+export * as SovereignInternalOperatorRuntime from './sovereignInternalOperatorRuntime';
 
 const REPO_SNAPSHOT_RUNTIME_METHODS = {
   createRepoSnapshot: createRuntimeRepoSnapshot,
@@ -97,17 +111,27 @@ const REPO_SNAPSHOT_RUNTIME_METHODS = {
   clearRepoSnapshot: clearRuntimeRepoSnapshot,
 } as const;
 
+const SOVEREIGN_INTERNAL_OPERATOR_RUNTIME_METHODS = {
+  decideSovereignInternalOperator,
+} as const;
+
 export type RuntimeRepoSnapshotMethods = typeof REPO_SNAPSHOT_RUNTIME_METHODS;
+export type SovereignInternalOperatorRuntimeMethods = typeof SOVEREIGN_INTERNAL_OPERATOR_RUNTIME_METHODS;
 
 export type RuntimeIntelligenceWithRepoSnapshot = ReturnType<
   typeof createBaseRuntimeIntelligence
 > &
-  RuntimeRepoSnapshotMethods;
+  RuntimeRepoSnapshotMethods &
+  SovereignInternalOperatorRuntimeMethods;
 
 export function attachRepoSnapshotRuntime<TTarget extends object>(
   target: TTarget,
-): TTarget & RuntimeRepoSnapshotMethods {
-  return Object.assign(target, REPO_SNAPSHOT_RUNTIME_METHODS);
+): TTarget & RuntimeRepoSnapshotMethods & SovereignInternalOperatorRuntimeMethods {
+  return Object.assign(
+    target,
+    REPO_SNAPSHOT_RUNTIME_METHODS,
+    SOVEREIGN_INTERNAL_OPERATOR_RUNTIME_METHODS,
+  );
 }
 
 export function createRuntimeIntelligenceWithRepoSnapshot(
