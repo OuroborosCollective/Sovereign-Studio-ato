@@ -1,0 +1,104 @@
+import { describe, expect, it } from 'vitest';
+import {
+  decideSovereignInternalOperator,
+  type SovereignInternalOperatorSignal,
+} from './sovereignInternalOperatorRuntime';
+import { buildSovereignToolCapabilityRegistry } from '../features/product/runtime/sovereignToolCapabilityRuntime';
+
+function capabilities(overrides: Partial<Parameters<typeof buildSovereignToolCapabilityRegistry>[0]> = {}) {
+  return buildSovereignToolCapabilityRegistry({
+    repoReady: true,
+    githubAccessState: 'ready',
+    githubTokenPresent: true,
+    directPatchSupported: true,
+    openhandsConfigured: true,
+    workerAvailable: true,
+    workspaceConfigured: true,
+    draftPrSupported: true,
+    activeExecutorStatus: 'idle',
+    ...overrides,
+  });
+}
+
+describe('sovereignInternalOperatorRuntime', () => {
+  it('uses direct patch for small documentation changes', () => {
+    const decision = decideSovereignInternalOperator({
+      text: 'Bitte README Titel ändern',
+      capabilities: capabilities(),
+      traceIdProvider: () => 'test-direct',
+    });
+
+    expect(decision.state).toBe('allowed');
+    expect(decision.route).toBe('direct_patch');
+    expect(decision.nextAction).toBe('run_direct_patch');
+    expect(decision.stages).toContain('diff_guard');
+  });
+
+  it('prefers the own workspace before the optional OpenHands bridge', () => {
+    const decision = decideSovereignInternalOperator({
+      text: 'Implementiere eine Runtime mit Tests',
+      capabilities: capabilities({ directPatchSupported: false }),
+      traceIdProvider: () => 'test-workspace',
+    });
+
+    expect(decision.state).toBe('allowed');
+    expect(decision.route).toBe('internal_workspace');
+    expect(decision.nextAction).toBe('start_workspace');
+    expect(decision.stages).toContain('test_selection');
+  });
+
+  it('falls back to the internal runtime patch path when OpenHands and workspace are absent', () => {
+    const decision = decideSovereignInternalOperator({
+      text: 'Baue den internen Operator ein und teste die Route',
+      capabilities: capabilities({
+        directPatchSupported: false,
+        openhandsConfigured: false,
+        workspaceConfigured: false,
+      }),
+      traceIdProvider: () => 'test-internal',
+    });
+
+    expect(decision.state).toBe('allowed');
+    expect(decision.route).toBe('internal_runtime_patch');
+    expect(decision.nextAction).toBe('run_internal_operator');
+    expect(decision.reason).toContain('ohne OpenHands-Pflicht');
+    expect(decision.stages).toContain('draft_pr_gate');
+  });
+
+  it('blocks hard when repo or write access is not ready', () => {
+    const decision = decideSovereignInternalOperator({
+      text: 'Implementiere eine Runtime',
+      capabilities: capabilities({
+        githubAccessState: 'missing',
+        githubTokenPresent: false,
+      }),
+      traceIdProvider: () => 'test-blocked',
+    });
+
+    expect(decision.state).toBe('blocked');
+    expect(decision.route).toBe('blocked');
+    expect(decision.nextAction).toBe('show_blocker');
+    expect(decision.confidence).toBe(0);
+  });
+
+  it('lets learning signals adjust confidence but not bypass guards', () => {
+    const signals: SovereignInternalOperatorSignal[] = [
+      { route: 'internal_runtime_patch', accepted: true, weight: 1 },
+    ];
+
+    const decision = decideSovereignInternalOperator({
+      text: 'Baue den internen Operator ein',
+      capabilities: capabilities({
+        directPatchSupported: false,
+        openhandsConfigured: false,
+        workspaceConfigured: false,
+      }),
+      signals,
+      traceIdProvider: () => 'test-learning',
+    });
+
+    expect(decision.route).toBe('internal_runtime_patch');
+    expect(decision.learningDelta).toBeGreaterThan(0);
+    expect(decision.confidence).toBeGreaterThan(0.78);
+  });
+});
