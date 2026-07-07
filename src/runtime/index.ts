@@ -23,6 +23,7 @@ import {
 } from './repoSnapshotRuntime';
 
 import { decideSovereignInternalOperator } from './sovereignInternalOperatorRuntime';
+import { decideSovereignExecutorBridgeRoute } from './sovereignExecutorBridgeRuntime';
 
 export {
   RuntimeCircuitBreaker,
@@ -100,9 +101,17 @@ export type {
   SovereignInternalOperatorStage,
 } from './sovereignInternalOperatorRuntime';
 
+export { decideSovereignExecutorBridgeRoute } from './sovereignExecutorBridgeRuntime';
+
+export type {
+  SovereignExecutorBridgeDecision,
+  SovereignExecutorBridgeRoute,
+} from './sovereignExecutorBridgeRuntime';
+
 export * as RuntimeIntelligenceCore from './RuntimeIntelligence';
 export * as RuntimeRepoSnapshotRuntime from './repoSnapshotRuntime';
 export * as SovereignInternalOperatorRuntime from './sovereignInternalOperatorRuntime';
+export * as SovereignExecutorBridgeRuntime from './sovereignExecutorBridgeRuntime';
 
 const REPO_SNAPSHOT_RUNTIME_METHODS = {
   createRepoSnapshot: createRuntimeRepoSnapshot,
@@ -113,6 +122,7 @@ const REPO_SNAPSHOT_RUNTIME_METHODS = {
 
 const SOVEREIGN_INTERNAL_OPERATOR_RUNTIME_METHODS = {
   decideSovereignInternalOperator,
+  decideSovereignExecutorBridgeRoute,
 } as const;
 
 export type RuntimeRepoSnapshotMethods = typeof REPO_SNAPSHOT_RUNTIME_METHODS;
