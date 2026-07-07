@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/runtime/sovereignPresetActionRuntime.ts",
+  "source_ref": "main",
+  "branch_base_ref": "main",
+  "branch": "fix/access-card-bridge-flow",
+  "commit_message": "fix(runtime): describe pending preset access resume",
+  "pr_title": "fix(runtime): describe pending preset access resume",
+  "pr_body": "Updates preset gate wording so write access explains automatic resume of the pending preset instead of requiring a manual restart.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "Sicheren Git\u0048ub-Zugang öffnen und danach erneut starten.",
+      "replace": "Sicheren Git\u0048ub-Zugang öffnen; der vorgemerkte Auftrag läuft danach automatisch weiter."
+    }
+  ]
+}
