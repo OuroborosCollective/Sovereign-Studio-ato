@@ -60,7 +60,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     risk: 'safe_analysis',
     prompt: [
       'Analysiere die aktuelle Repo-Architektur und schlage mir kleine, nützliche Feature-Verbesserungen vor.',
-      'Nur Analyse. Repository bleibt unverändert. Kein PR-Vorgang starten.',
+      'Nur Analyse. Repo nur lesen. Kein PR-Vorgang starten.',
       'Sortiere nach Wirkung, Risiko und nächstem Runtime-Gate.',
     ].join('\n'),
   },
@@ -76,7 +76,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     risk: 'safe_analysis',
     prompt: [
       'Suche im aktuellen Repo-Kontext nach wahrscheinlichen Fehlerquellen und erstelle einen Fixplan.',
-      'Nur Analyse. Erst Ursache, dann Fix-Reihenfolge, dann Tests nennen. Repository bleibt unverändert.',
+      'Nur Analyse. Erst Ursache, dann Fix-Reihenfolge, dann Tests nennen. Repo nur lesen.',
     ].join('\n'),
   },
   {
@@ -107,7 +107,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     risk: 'safe_analysis',
     prompt: [
       'Prüfe die Runtime-Architektur auf fehlende Gates, Validierungen und instabile State-Übergänge.',
-      'Nur Analyse. Liefere konkrete Härtungsmaßnahmen mit Tests. Repository bleibt unverändert.',
+      'Nur Analyse. Liefere konkrete Härtungsmaßnahmen mit Tests. Repo nur lesen.',
     ].join('\n'),
   },
   {
@@ -137,7 +137,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     route: 'runtime_review',
     risk: 'safe_analysis',
     prompt: [
-      'Prüfe offene Review- und Änderungsstände im aktuellen Repo.',
+      'Prüfe offene Reviewstände im aktuellen Repo.',
       'Bewerte Scope, generierte Artefakte, Mergebarkeit, Checks und Blocker.',
       'Keine PR mergen und nichts schließen ohne ausdrückliche Freigabe.',
     ].join('\n'),
@@ -213,6 +213,7 @@ export function buildSovereignPresetActionSubmission(
   if (action.risk !== 'safe_analysis') return prompt;
 
   return [
+    'Was ist die sichere Analyse für dieses Repo?',
     prompt,
     '',
     'Preset-Ausführungsmodus: safe_analysis.',
