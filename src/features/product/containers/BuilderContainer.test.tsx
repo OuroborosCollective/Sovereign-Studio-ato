@@ -541,16 +541,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText(/kein Auto-Merge/i)).toBeDefined();
   });
 
-  it("shows clear blocker message (not vague) when executor is not ready", async () => {
+  it("does not show OpenHands as mandatory blocker when executor is not ready", async () => {
     const props = { ...baseProps(), openhandsReady: false };
     render(<BuilderContainer {...props} />);
     fireEvent.change(chatField(), { target: { value: "Implementiere den Chat-Fix als Draft PR." } });
     fireEvent.click(sendButton());
-    await waitFor(() =>
-      expect(screen.getByText(/OpenHands wurde nicht gestartet/i)).toBeDefined(),
-    );
-    // Must show "Nächste Aktion" guidance
-    expect(screen.getByText(/Nächste Aktion/i)).toBeDefined();
+    // When GitHub write access is missing, OpenHands is NOT shown as mandatory
+    // Either GitHub access is required, or Sovereign Internal Operator is available
+    await waitFor(() => {
+      // The old blocker message "OpenHands.*konfigurieren" should not appear
+      expect(screen.queryByText(/OpenHands.*konfigurieren/i)).toBeNull();
+    });
   });
 
   it("answers 'arbeitet er schon?' locally from runtime state without calling Worker", async () => {

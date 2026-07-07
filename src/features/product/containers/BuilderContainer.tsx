@@ -198,8 +198,8 @@ import { buildSovereignToolCapabilityRegistry } from "../runtime/sovereignToolCa
 import { createSovereignWorkspaceScope } from "../runtime/sovereignWorkspaceScopeRuntime";
 import {
   classifySovereignExecutorIntent,
-  decideSovereignExecutorRoute,
 } from "../runtime/sovereignExecutorRuntime";
+import { decideSovereignExecutorBridgeRoute } from "../../../runtime/sovereignExecutorBridgeRuntime";
 
 // ─────────────────────────────────────────────────────────────
 // TYPES  (identical props to BuilderContainer — drop-in swap)
@@ -3914,86 +3914,45 @@ export function BuilderContainer({
         state: 'running',
       });
       if (agentDisabled) {
-        // #501: Check for Direct GitHub Patch capability when OpenHands is not ready
-        if (!openhandsReady && chatRepoSnapshot) {
-          // Only proceed if we have a validated token for content loading
-          const token = githubTokenRef.current;
-          if (token && githubWriteAllowed) {
-            // Load content and build patch plan async
-            const directPatchResult = await buildDirectPatchPlanWithContentLoad({
-              repoContext: {
-                owner: chatRepoSnapshot.owner,
-                name: chatRepoSnapshot.repo,
-                branch: chatRepoSnapshot.branch,
-                filePaths: chatRepoSnapshot.filePaths ?? [],
-              },
-              instruction: submittedText,
-              githubAccessReady: true,
-              token,
-              fetcher: globalThis.fetch,
-            });
-            
-            if ('result' in directPatchResult && directPatchResult.result.ok) {
-              appendActionEvent({
-                kind: 'route_selected',
-                route: 'direct-github-patch',
-                label: 'Direct GitHub Patch Route gewählt',
-                detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
-                state: 'running',
-              });
-              appendChatLine({
-                role: 'assistant',
-                text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
-              });
-              addLog('info', 'Direct GitHub Patch Route selected for simple README/docs task', 'router');
-              return;
-            }
-            
-            if ('capability' in directPatchResult && !directPatchResult.capability.available) {
-              appendActionEvent(buildBlockedActionEvent({
-                route: 'direct-github-patch',
-                label: 'Direct Patch nicht verfügbar',
-                detail: directPatchResult.capability.reason,
-                kind: 'patch_blocked',
-              }));
-              appendChatLine({
-                role: 'assistant',
-                text: `Direct GitHub Patch Route ist nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
-              });
-              addLog('warn', 'Direct Patch not available: ' + directPatchResult.capability.reason, 'router');
-              return;
-            }
-          }
-          
-          // Token not available - show blocking message
-          appendActionEvent(buildBlockedActionEvent({
-            route: 'direct-github-patch',
-            label: 'Direct GitHub Patch Route blockiert',
-            detail: githubWriteAllowed ? 'Token nicht im Speicher.' : 'GitHub-Zugang nicht bestätigt.',
-            kind: 'patch_blocked',
-          }));
+        // Use the Runtime Bridge to determine if Sovereign Internal Operator can handle this
+        const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
+          text: submittedText,
+          intent: classifySovereignExecutorIntent(submittedText),
+          capabilities: buildSovereignToolCapabilityRegistry({
+            repoReady: effectiveRepoReady,
+            githubAccessState: githubAccessState.state,
+            githubTokenPresent: Boolean(githubTokenRef.current),
+            directPatchSupported: Boolean(chatRepoSnapshot),
+            openhandsConfigured: openhandsReady ?? false,
+            workerAvailable: !workerBlocker,
+            workspaceConfigured: false,
+            draftPrSupported: true,
+            activeExecutorStatus: openhandsIsRunning ? "running" : "idle",
+          }),
+          candidatePath: chatRepoSnapshot
+            ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
+            : undefined,
+        });
+
+        // Always log the bridge decision
+        appendActionEvent(executorBridgeDecision.event);
+
+        if (executorBridgeDecision.bridgeRoute === 'sovereign_internal_operator' && executorBridgeDecision.state === 'allowed') {
+          // Internal operator is available - show honest message, no fake patch
           appendChatLine({
             role: 'assistant',
-            text: `Direct GitHub Patch Route erfordert validierten GitHub-Zugang mit Token.\n\nOpenHands ist nicht konfiguriert. Für diesen Auftrag wird OpenHands oder ein Workspace-Executor benötigt.`,
+            text: `GitHub-Zugang ist bereit.\nOpenHands ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
           });
-          addLog('warn', 'Direct Patch blocked: no token or GitHub not ready', 'router');
+          addLog('info', 'Write intent routed via Sovereign Internal Operator bridge', 'router');
           return;
         }
-        
-        appendActionEvent(buildBlockedActionEvent({
-          route: 'github-patch',
-          label: 'Patch/Draft-PR Route blockiert',
-          detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'OpenHands Executor ist nicht konfiguriert.',
-          kind: 'patch_blocked',
-        }));
-        // #500: Fix message to not claim GitHub access is the issue
+
+        // Bridge blocked - show clear blocker message with reason
         appendChatLine({
           role: 'assistant',
-          text: openhandsReady
-            ? 'GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
-            : 'GitHub-Zugang ist bereit, aber OpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.\nFür einfache README-/Docs-Änderungen: Direct GitHub Patch Route nutzen.\nFür große Aufträge: OpenHands konfigurieren.',
+          text: `Schreibauftrag kann nicht ausgeführt werden.\n\nGrund: ${executorBridgeDecision.reason}\n\nEs wurde noch keine Datei geändert.`,
         });
-        addLog('warn', 'Write intent blocked: patch/draft-pr executor unavailable', 'router');
+        addLog('warn', 'Write intent blocked by bridge: ' + executorBridgeDecision.reason, 'router');
         return;
       }
       appendActionEvent({
@@ -4083,33 +4042,46 @@ export function BuilderContainer({
         startAgentFromText(submittedText);
         return;
       }
-      // agentDisabled === true: show clear blocker — no emoji, no vague message
-      // #500: Fix blocker reason and next action based on actual missing capability
-      const blockerReason = state.disabledReason
-        ? `GitHub-Schreibzugang fehlt: ${state.disabledReason}`
-        : !effectiveRepoReady
-          ? "Auftrag nicht ausführbar: Kein Repo geladen."
-          : !openhandsReady
-            ? "Executor nicht bereit: OpenHands ist nicht konfiguriert."
-            : "Executor nicht bereit.";
-      
-      // #500: Fix next action based on what's actually missing
-      let nextAction: string;
-      if (state.disabledReason) {
-        nextAction = "Sicheren GitHub-Zugang öffnen.";
-      } else if (!effectiveRepoReady) {
-        nextAction = "GitHub-Repo-Link einfügen.";
-      } else if (!openhandsReady) {
-        nextAction = "OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.";
-      } else {
-        nextAction = "Executor-Konfiguration prüfen.";
+      // agentDisabled === true: Use Runtime Bridge to check Sovereign Internal Operator availability
+      const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
+        text: submittedText,
+        intent: classifySovereignExecutorIntent(submittedText),
+        capabilities: buildSovereignToolCapabilityRegistry({
+          repoReady: effectiveRepoReady,
+          githubAccessState: githubAccessState.state,
+          githubTokenPresent: Boolean(githubTokenRef.current),
+          directPatchSupported: Boolean(chatRepoSnapshot),
+          openhandsConfigured: openhandsReady ?? false,
+          workerAvailable: !workerBlocker,
+          workspaceConfigured: false,
+          draftPrSupported: true,
+          activeExecutorStatus: openhandsIsRunning ? "running" : "idle",
+        }),
+        candidatePath: chatRepoSnapshot
+          ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
+          : undefined,
+      });
+
+      // Always log the bridge decision
+      appendActionEvent(executorBridgeDecision.event);
+
+      if (executorBridgeDecision.bridgeRoute === 'sovereign_internal_operator' && executorBridgeDecision.state === 'allowed') {
+        // Internal operator is available - runtime handoff decision, no fake patch claimed
+        appendChatLine({
+          role: "assistant",
+          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nOpenHands bleibt optional und wird nicht als Pflicht-Executor behandelt.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+        });
+        addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
+        return;
       }
-      
+
+      // Bridge blocked - show clear blocker with honest reason
+      const blockerReason = executorBridgeDecision.reason;
       appendChatLine({
         role: "assistant",
-        text: `OpenHands wurde nicht gestartet.\nGrund: ${blockerReason}\nNächste Aktion: ${nextAction}`,
+        text: `Ausführungsauftrag kann nicht ausgeführt werden.\n\nGrund: ${blockerReason}`,
       });
-      addLog("warn", `Execution blocked: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
+      addLog("warn", `Execution blocked by bridge: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
       return;
     }
 
@@ -4631,23 +4603,55 @@ export function BuilderContainer({
                     canConfirm={effectiveRepoReady && canExecute}
                     confirmBlocker={!effectiveRepoReady ? confirmCheck.blocker : undefined}
                     onConfirm={() => {
-                      // Use runtime contracts for route decision
+                      // Use Runtime Bridge for route decision
                       const intent = classifySovereignExecutorIntent(draft.originalText);
-                      const decision = decideSovereignExecutorRoute({
+                      const bridgeDecision = decideSovereignExecutorBridgeRoute({
                         text: draft.originalText,
                         intent,
                         capabilities,
                         workspaceScope: workspaceScope ?? undefined,
+                        candidatePath: chatRepoSnapshot
+                          ? detectDirectPatchTarget(draft.originalText, chatRepoSnapshot.filePaths ?? []) ?? undefined
+                          : undefined,
                       });
 
                       // Log confirmed draft
                       appendActionEvent(buildDraftConfirmedEvent(draft));
                       setIntentDraftState({ status: 'confirmed', draft });
 
+                      // Always log the bridge decision event
+                      appendActionEvent(bridgeDecision.event);
+
+                      // Handle Sovereign Internal Operator route
+                      if (bridgeDecision.bridgeRoute === 'sovereign_internal_operator') {
+                        if (bridgeDecision.state === 'allowed') {
+                          // Internal operator is available - runtime handoff decision
+                          appendChatLine({
+                            role: 'assistant',
+                            text: `Integrationsauftrag bestätigt.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+                          });
+                          addLog('info', `Integration via Sovereign Internal Operator bridge: ${bridgeDecision.reason}`, 'router');
+                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                          return;
+                        } else {
+                          // Internal operator blocked
+                          appendChatLine({
+                            role: 'assistant',
+                            text: `Auftrag blockiert.\n\nGrund: ${bridgeDecision.reason}`,
+                          });
+                          addLog('warn', `Integration blocked by bridge: ${bridgeDecision.reason}`, 'router');
+                          setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                          return;
+                        }
+                      }
+
+                      // Handle executor_runtime routes via the original decision structure
+                      // Cast back to the original decision structure for route handling
+                      const decision = bridgeDecision as unknown as { route: string; reason: string; event: ReturnType<typeof appendActionEvent> };
+
                       switch (decision.route) {
                         case 'github_access':
                           // Open GitHub Access Gate, no executor starts
-                          appendActionEvent(decision.event);
                           pendingWriteIntentRef.current = draft.originalText;
                           setShowGitHubAccessOverride(true);
                           appendChatLine({
@@ -4659,7 +4663,6 @@ export function BuilderContainer({
                         case 'direct_patch':
                           // Direct Patch route via proper runtime
                           if (!chatRepoSnapshot) break;
-                          appendActionEvent(decision.event);
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
                           buildDirectPatchPlanWithContentLoad({
                             repoContext: {
@@ -4701,14 +4704,12 @@ export function BuilderContainer({
                             });
                             break;
                           }
-                          appendActionEvent(decision.event);
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
                           startAgentFromText(draft.originalText);
                           break;
 
                         case 'workspace':
                           // Workspace route detected but not yet connected — honest block
-                          appendActionEvent(decision.event);
                           appendChatLine({
                             role: 'assistant',
                             text: `Workspace-Route erkannt, aber noch nicht verbunden.\n\nGrund: ${decision.reason}`,
@@ -4717,7 +4718,6 @@ export function BuilderContainer({
 
                         case 'worker_chat':
                           // Worker Chat — advisory only, no write success
-                          appendActionEvent(decision.event);
                           appendChatLine({
                             role: 'assistant',
                             text: 'Beratungsroute erkannt. Worker Chat kann Rückfragen beantworten.',
@@ -4726,13 +4726,11 @@ export function BuilderContainer({
 
                         case 'local_status':
                           // Status query — answer from runtime state
-                          appendActionEvent(decision.event);
                           break;
 
                         case 'blocked':
                         default:
                           // Honest block with reason
-                          appendActionEvent(decision.event);
                           appendChatLine({
                             role: 'assistant',
                             text: `Auftrag blockiert.\n\nGrund: ${decision.reason}`,
