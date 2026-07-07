@@ -21,6 +21,7 @@ function baseInput(overrides: Partial<WorkbenchStatusInput> = {}): WorkbenchStat
 describe('builderWorkbenchStatus', () => {
   it('shows explicit empty states when there is no runtime data, never fake content', () => {
     const slots = deriveWorkbenchStatusSlots(baseInput());
+    expect(slots.find((slot) => slot.id === 'files')?.label).toBe('Changed');
     for (const slot of slots) {
       if (slot.id === 'draftPr') {
         expect(slot.value).toBe('fehlt');
@@ -83,6 +84,18 @@ describe('builderWorkbenchStatus', () => {
     expect(errors.some((e) => e.includes('Worker HTTP 500'))).toBe(true);
     expect(errors.some((e) => e.includes('Repo tree fetch failed'))).toBe(true);
     expect(errors.some((e) => e.includes('boom'))).toBe(true);
+  });
+
+  it('does not count resolved GitHub access blocker logs as active errors after access is ready', () => {
+    const errors = deriveErrorEntries(baseInput({
+      githubState: 'ready',
+      logs: [
+        { ts: '10:00:00', level: 'warn', msg: 'Write intent blocked: GitHub write access missing', tabId: 'router' },
+        { ts: '10:00:01', level: 'warn', msg: 'Other active blocker', tabId: 'router' },
+      ],
+    }));
+
+    expect(errors).toEqual(['10:00:01 · Other active blocker']);
   });
 
   it('reports Draft PR as bereit only when a real PR url exists', () => {

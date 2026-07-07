@@ -60,7 +60,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     risk: 'safe_analysis',
     prompt: [
       'Analysiere die aktuelle Repo-Architektur und schlage mir kleine, nützliche Feature-Verbesserungen vor.',
-      'Keine Datei ändern. Keine Draft PR erstellen.',
+      'Nur Analyse. Repository bleibt unverändert. Kein PR-Vorgang starten.',
       'Sortiere nach Wirkung, Risiko und nächstem Runtime-Gate.',
     ].join('\n'),
   },
@@ -76,7 +76,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     risk: 'safe_analysis',
     prompt: [
       'Suche im aktuellen Repo-Kontext nach wahrscheinlichen Fehlerquellen und erstelle einen Fixplan.',
-      'Keine Datei ändern. Erst Ursache, dann Fix-Reihenfolge, dann Tests nennen.',
+      'Nur Analyse. Erst Ursache, dann Fix-Reihenfolge, dann Tests nennen. Repository bleibt unverändert.',
     ].join('\n'),
   },
   {
@@ -107,7 +107,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     risk: 'safe_analysis',
     prompt: [
       'Prüfe die Runtime-Architektur auf fehlende Gates, Validierungen und instabile State-Übergänge.',
-      'Keine Datei ändern. Liefere konkrete Härtungsmaßnahmen mit Tests.',
+      'Nur Analyse. Liefere konkrete Härtungsmaßnahmen mit Tests. Repository bleibt unverändert.',
     ].join('\n'),
   },
   {
@@ -137,7 +137,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     route: 'runtime_review',
     risk: 'safe_analysis',
     prompt: [
-      'Prüfe offene Pull Requests im aktuellen Repo.',
+      'Prüfe offene Review- und Änderungsstände im aktuellen Repo.',
       'Bewerte Scope, generierte Artefakte, Mergebarkeit, Checks und Blocker.',
       'Keine PR mergen und nichts schließen ohne ausdrückliche Freigabe.',
     ].join('\n'),
@@ -186,18 +186,36 @@ export function buildSovereignPresetActionPrompt(
     ? `Repo: ${context.repoFullName}${context.branch ? ` · Branch: ${context.branch}` : ''}`
     : 'Repo: noch nicht geladen';
   const routeLine = `Preset-Route: ${action.route} · Risiko: ${action.risk}`;
-  const gateLine = [
+  const gateParts = [
     `Repo geladen: ${context.repoReady ? 'ja' : 'nein'}`,
     `GitHub Write: ${context.githubWriteReady ? 'ja' : 'nein'}`,
-    `OpenHands: ${context.openhandsReady ? 'bereit' : 'nicht bereit'}`,
-  ].join(' · ');
+  ];
+
+  if (action.risk !== 'safe_analysis') {
+    gateParts.push(`OpenHands: ${context.openhandsReady ? 'bereit' : 'nicht bereit'}`);
+  }
 
   return [
     `Sovereign Preset: ${action.label}`,
     repoLine,
     routeLine,
-    gateLine,
+    gateParts.join(' · '),
     '',
     action.prompt,
+  ].join('\n');
+}
+
+export function buildSovereignPresetActionSubmission(
+  action: SovereignPresetAction,
+  context: SovereignPresetActionContext,
+): string {
+  const prompt = buildSovereignPresetActionPrompt(action, context);
+  if (action.risk !== 'safe_analysis') return prompt;
+
+  return [
+    prompt,
+    '',
+    'Preset-Ausführungsmodus: safe_analysis.',
+    'Diese Aktion ist eine Beratungs-/Runtime-Analyse. Sie darf keinen Executor starten und keinen GitHub-Schreibzugang verlangen.',
   ].join('\n');
 }

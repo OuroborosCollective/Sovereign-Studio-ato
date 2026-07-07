@@ -102,7 +102,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     render(<BuilderContainer {...baseProps()} />);
     expect(screen.getByLabelText("Werkbank Status")).toBeDefined();
     expect(screen.getByRole("button", { name: /^Actions:/ })).toBeDefined();
-    expect(screen.getByRole("button", { name: /^Files:/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Changed:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Logs:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Errors:/ })).toBeDefined();
     expect(screen.getByRole("button", { name: /^Draft PR:/ })).toBeDefined();
@@ -126,8 +126,8 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Actions:/ }));
     expect(screen.getByText("Noch keine Actions")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Schließen"));
-    fireEvent.click(screen.getByRole("button", { name: /^Files:/ }));
-    expect(screen.getByText("Noch keine bearbeiteten Dateien")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: /^Changed:/ }));
+    expect(screen.getByText("Noch keine Änderungen")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Schließen"));
     fireEvent.click(screen.getByRole("button", { name: /^Errors:/ }));
     expect(screen.getByText("Keine Fehler")).toBeDefined();
@@ -147,7 +147,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
         }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^Files:/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Changed:/ }));
     expect(screen.getByText("src/App.tsx")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Schließen"));
     fireEvent.click(screen.getByRole("button", { name: /^Draft PR:/ }));
