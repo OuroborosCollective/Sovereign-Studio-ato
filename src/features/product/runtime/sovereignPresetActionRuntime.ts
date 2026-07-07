@@ -167,7 +167,7 @@ export function evaluateSovereignPresetActionGate(
       actionId: action.id,
       canStart: false,
       reason: 'GitHub-Schreibzugang fehlt.',
-      nextAction: 'Sicheren GitHub-Zugang öffnen und danach erneut starten.',
+      nextAction: 'Sicheren GitHub-Zugang öffnen; der vorgemerkte Auftrag läuft danach automatisch weiter.',
     };
   }
   return {
