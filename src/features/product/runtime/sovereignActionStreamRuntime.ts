@@ -256,12 +256,15 @@ export function buildRouteSelectionEvent(args: {
   readonly reason: string;
   readonly state?: SovereignActionEventState;
 }): SovereignActionEventInput {
+  const state = args.state ?? 'done';
   return {
-    kind: 'route_selected',
+    kind: state === 'blocked' || state === 'failed' ? 'blocked' : 'route_selected',
     route: args.route,
-    label: `Route gewählt: ${args.route}`,
+    label: state === 'blocked' || state === 'failed'
+      ? `Route blockiert: ${args.route}`
+      : `Route gewählt: ${args.route}`,
     detail: args.reason,
-    state: args.state ?? 'done',
+    state,
   };
 }
 
