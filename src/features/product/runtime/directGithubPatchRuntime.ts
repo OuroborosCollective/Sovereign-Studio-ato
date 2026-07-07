@@ -1,4 +1,4 @@
-/**
+/*
  * Direct GitHub Patch Runtime
  *
  * Lightweight runtime route for small README/docs changes when OpenHands is not
@@ -24,7 +24,6 @@ export interface LoadFileContentArgs {
   readonly repo: string;
   readonly branch: string;
   readonly filePath: string;
-  /** Ephemeral session value. Used only for this request, never logged or persisted. */
   readonly token: string;
   readonly fetcher?: typeof fetch;
 }
@@ -37,17 +36,14 @@ export interface LoadFileContentResult {
 }
 
 function encodeGitHubContentPath(filePath: string): string {
-  const cleanPath = filePath.trim().replace(/^\/+/, '');
-  return cleanPath.split('/').map(encodeURIComponent).join('/');
+  return filePath.trim().replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
 }
 
 function decodeBase64Content(content: string): string {
   return atob(content.replace(/\n/g, ''));
 }
 
-export async function loadGitHubFileContent(
-  args: LoadFileContentArgs,
-): Promise<LoadFileContentResult> {
+export async function loadGitHubFileContent(args: LoadFileContentArgs): Promise<LoadFileContentResult> {
   const { owner, repo, branch, filePath, token, fetcher = fetch } = args;
   const encodedPath = encodeGitHubContentPath(filePath);
   const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
@@ -59,95 +55,37 @@ export async function loadGitHubFileContent(
         Accept: 'application/vnd.github.v3+json',
       },
     });
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: `GitHub Contents API failed: HTTP ${response.status}`,
-      };
-    }
+    if (!response.ok) return { ok: false, error: `GitHub Contents API failed: HTTP ${response.status}` };
 
     const data = await response.json() as { content?: string; sha?: string; encoding?: string; type?: string };
-    if (data.type && data.type !== 'file') {
-      return { ok: false, error: 'GitHub Contents API target is not a file' };
-    }
-    if (data.encoding !== 'base64' || !data.content) {
-      return { ok: false, error: 'Unexpected content format from GitHub API' };
-    }
-
-    return {
-      ok: true,
-      content: decodeBase64Content(data.content),
-      sha: data.sha,
-    };
+    if (data.type && data.type !== 'file') return { ok: false, error: 'GitHub Contents API target is not a file' };
+    if (data.encoding !== 'base64' || !data.content) return { ok: false, error: 'Unexpected content format from GitHub API' };
+    return { ok: true, content: decodeBase64Content(data.content), sha: data.sha };
   } catch (error) {
-    return {
-      ok: false,
-      error: `Failed to load file content: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    };
+    return { ok: false, error: `Failed to load file content: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
 
 const DIRECT_PATCH_INTENT_TOKENS = [
-  'readme',
-  'dokumentation',
-  'docs',
-  'changelog',
-  'history',
-  'titel',
-  'title',
-  'überschrift',
-  'ueberschrift',
-  'heading',
-  'text',
-  'inhalt',
-  'content',
-  'füge hinzu',
-  'fuege hinzu',
-  'hinzufügen',
-  'add',
-  'ergänze',
-  'ergaenze',
-  'änder',
-  'aender',
-  'aktualisier',
-  'update',
-  'passe an',
-  'fix',
+  'readme', 'dokumentation', 'docs', 'changelog', 'history', 'titel', 'title',
+  'überschrift', 'ueberschrift', 'heading', 'text', 'inhalt', 'content',
+  'füge hinzu', 'fuege hinzu', 'hinzufügen', 'add', 'ergänze', 'ergaenze',
+  'änder', 'aender', 'aktualisier', 'update', 'passe an', 'fix',
 ] as const;
 
 const COMPLEX_TASK_TOKENS = [
-  'implementier',
-  'baue',
-  'bauen',
-  'code',
-  'komponent',
-  'function',
-  'funktio',
-  'test',
-  'teste',
-  'refaktor',
-  'api',
-  'server',
-  'backend',
-  'frontend',
-  'database',
-  'datenbank',
-  'security',
-  'sicherheit',
-  'workflow',
-  'ci/cd',
-  'docker',
-  'kubernetes',
-  'deployment',
+  'implementier', 'baue', 'bauen', 'code', 'komponent', 'function', 'funktio',
+  'test', 'teste', 'refaktor', 'api', 'server', 'backend', 'frontend',
+  'database', 'datenbank', 'security', 'sicherheit', 'workflow', 'ci/cd',
+  'docker', 'kubernetes', 'deployment',
 ] as const;
 
-const TITLE_TARGET_TOKENS = [
-  'titel',
-  'title',
-  'überschrift',
-  'ueberschrift',
-  'heading',
+const TITLE_TARGET_TOKENS = ['titel', 'title', 'überschrift', 'ueberschrift', 'heading'] as const;
+
+const TITLE_MARKER_PATTERNS = [
+  /(?:füge|fuege|add)\s+(.+?)\s+(?:in|to)\s+(?:den|die|das)?\s*(?:titel|title|überschrift|ueberschrift|heading)/i,
+  /(?:füge|fuege)\s+(?:dem|den|die|das)?\s*(?:titel|title|überschrift|ueberschrift|heading)\s+(.+?)\s+(?:hinzu|ein)/i,
+  /(?:titel|title|überschrift|ueberschrift|heading)\s+(?:mit|um)\s+(.+?)\s+(?:ergänzen|ergaenzen|ergänze|ergaenze|add|hinzufügen|hinzufuegen)/i,
 ] as const;
 
 export function isDirectPatchIntent(text: string): boolean {
@@ -171,13 +109,9 @@ function shouldUseReadmeForTitleInstruction(lowerInstruction: string): boolean {
   return TITLE_TARGET_TOKENS.some((token) => lowerInstruction.includes(token));
 }
 
-export function detectDirectPatchTarget(
-  instruction: string,
-  repoFilePaths: readonly string[],
-): string | null {
+export function detectDirectPatchTarget(instruction: string, repoFilePaths: readonly string[]): string | null {
   const lower = instruction.toLowerCase();
   const explicitPathMatch = instruction.match(/[a-zA-Z0-9_\-./]+\.(md|mdx|mdoc)/i);
-
   if (explicitPathMatch) {
     const explicitPath = explicitPathMatch[0].replace(/^\/+/, '');
     const matchedRepoPath = repoFilePaths.find((path) => path.toLowerCase() === explicitPath.toLowerCase());
@@ -185,17 +119,12 @@ export function detectDirectPatchTarget(
     if (repoFilePaths.length === 0 && isDirectPatchAllowedPath(explicitPath)) return explicitPath;
     return null;
   }
-
   if (lower.includes('readme') || shouldUseReadmeForTitleInstruction(lower)) {
     const readmePath = findReadmePath(repoFilePaths);
     if (readmePath) return readmePath;
     if (repoFilePaths.length === 0) return 'README.md';
   }
-
-  if (lower.includes('docs') || lower.includes('dokumentation')) {
-    return findDocsPath(repoFilePaths);
-  }
-
+  if (lower.includes('docs') || lower.includes('dokumentation')) return findDocsPath(repoFilePaths);
   return null;
 }
 
@@ -208,39 +137,12 @@ export interface CheckDirectPatchCapabilityArgs {
 
 export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs): DirectGitHubPatchCapability {
   const { repoContext, githubAccessReady, instruction, baseContent } = args;
-
-  if (!githubAccessReady) {
-    return {
-      available: false,
-      reason: 'GitHub-Zugang nicht bereit für Direct Patch Route.',
-      blocker: 'github_access_missing',
-    };
-  }
-
-  if (!repoContext) {
-    return {
-      available: false,
-      reason: 'Repo-Kontext fehlt für Direct Patch Route.',
-      blocker: 'repo_missing',
-    };
-  }
-
-  if (!isDirectPatchIntent(instruction)) {
-    return {
-      available: false,
-      reason: 'Auftrag ist nicht einfach genug für Direct Patch Route. OpenHands/Executor wird empfohlen.',
-      blocker: 'unsupported_intent',
-    };
-  }
+  if (!githubAccessReady) return { available: false, reason: 'GitHub-Zugang nicht bereit für Direct Patch Route.', blocker: 'github_access_missing' };
+  if (!repoContext) return { available: false, reason: 'Repo-Kontext fehlt für Direct Patch Route.', blocker: 'repo_missing' };
+  if (!isDirectPatchIntent(instruction)) return { available: false, reason: 'Auftrag ist nicht einfach genug für Direct Patch Route. OpenHands/Executor wird empfohlen.', blocker: 'unsupported_intent' };
 
   const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
-  if (!targetPath) {
-    return {
-      available: false,
-      reason: 'Zieldatei konnte nicht erkannt werden.',
-      blocker: 'target_not_in_repo',
-    };
-  }
+  if (!targetPath) return { available: false, reason: 'Zieldatei konnte nicht erkannt werden.', blocker: 'target_not_in_repo' };
 
   const pathBlocker = getDirectPatchPathBlocker(targetPath);
   if (pathBlocker) {
@@ -252,71 +154,78 @@ export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs)
       target_not_in_repo: 'Zieldatei nicht im Repo gefunden.',
       content_load_failed: 'Zieldatei konnte nicht geladen werden.',
     };
-    return {
-      available: false,
-      reason: blockerMessages[pathBlocker],
-      blocker: pathBlocker,
-    };
+    return { available: false, reason: blockerMessages[pathBlocker], blocker: pathBlocker };
   }
 
   if (baseContent !== undefined && (!baseContent.trim() || baseContent.trim() === '[loaded]')) {
-    return {
-      available: false,
-      reason: 'Zieldatei konnte nicht geladen werden.',
-      blocker: 'content_load_failed',
-    };
+    return { available: false, reason: 'Zieldatei konnte nicht geladen werden.', blocker: 'content_load_failed' };
   }
 
-  return {
-    available: true,
-    reason: `Direct Patch Route verfügbar für ${targetPath}.`,
-  };
+  return { available: true, reason: `Direct Patch Route verfügbar für ${targetPath}.` };
 }
 
-export function generateDirectPatchContent(
-  baseContent: string,
-  instruction: string,
-): { content: string; summary: string } | null {
+function extractEmojiMarker(candidate: string): string | null {
+  const matches = [...candidate.matchAll(/\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?/gu)].map((match) => match[0]).filter(Boolean);
+  return matches.length > 0 ? matches.join(' ').trim() : null;
+}
+
+function normalizeTitleMarkerCandidate(candidate: string): string | null {
+  const emojiMarker = extractEmojiMarker(candidate);
+  if (emojiMarker) return emojiMarker;
+  const marker = candidate
+    .replace(/\b(?:ein|eine|einen|dem|den|die|das|der|hinzu|einfügen|einfuegen|add|to|in)\b/gi, ' ')
+    .replace(/["'`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return marker.length > 0 ? marker : null;
+}
+
+function extractTitleMarker(instruction: string): string | null {
+  for (const pattern of TITLE_MARKER_PATTERNS) {
+    const candidate = instruction.match(pattern)?.[1]?.trim();
+    if (!candidate) continue;
+    const marker = normalizeTitleMarkerCandidate(candidate);
+    if (marker) return marker;
+  }
+  return null;
+}
+
+function appendMarkerToFirstMarkdownTitle(baseContent: string, marker: string): { content: string; summary: string } | null {
+  let changed = false;
+  const content = baseContent.split('\n').map((line) => {
+    if (changed || !/^#(?!#)\s+/.test(line.trim())) return line;
+    changed = true;
+    return line.includes(marker) ? line : `${line.trim()} ${marker}`;
+  }).join('\n');
+  if (!changed || content.trim() === baseContent.trim()) return null;
+  return { content, summary: `Added "${marker}" to first README title heading.` };
+}
+
+export function generateDirectPatchContent(baseContent: string, instruction: string): { content: string; summary: string } | null {
   const lower = instruction.toLowerCase();
 
-  const titleEmojiMatch = lower.match(/(?:füge?|add|mit)\s*(.+?)\s*(?:in|to)\s*(?:den|die|das)?\s*(?:titel|title|überschrift|heading)/);
-  if (titleEmojiMatch) {
-    const marker = titleEmojiMatch[1].trim();
-    let changed = false;
-    const content = baseContent
-      .split('\n')
-      .map((line) => {
-        if (changed || !line.trim().startsWith('#')) return line;
-        changed = true;
-        return `${line.trim()} ${marker}`;
-      })
-      .join('\n');
-    return changed ? { content, summary: `Added "${marker}" to first title heading.` } : null;
-  }
+  const titleMarker = extractTitleMarker(instruction);
+  if (titleMarker) return appendMarkerToFirstMarkdownTitle(baseContent, titleMarker);
 
   const titleUpdateMatch = instruction.match(/(?:titel|title)\s*(?:auf|zu|in|to)\s*["']?([^"'\n]+)["']?/i);
   if (titleUpdateMatch) {
     const newTitle = titleUpdateMatch[1].trim();
     let changed = false;
-    const content = baseContent
-      .split('\n')
-      .map((line) => {
-        if (changed || !line.trim().startsWith('#')) return line;
-        changed = true;
-        return `# ${newTitle}`;
-      })
-      .join('\n');
+    const content = baseContent.split('\n').map((line) => {
+      if (changed || !/^#(?!#)\s+/.test(line.trim())) return line;
+      changed = true;
+      return `# ${newTitle}`;
+    }).join('\n');
     return changed ? { content, summary: `Updated title to "${newTitle}".` } : null;
   }
+
+  if (shouldUseReadmeForTitleInstruction(lower)) return null;
 
   const addToEndMatch = instruction.match(/(?:füge?|add|hinzu|ergänze|ergaenze)\s*(.+?)\s*(?:am ende|at the end|hinzu)/i);
   if (addToEndMatch) {
     const additionalContent = addToEndMatch[1].trim();
     if (!additionalContent) return null;
-    return {
-      content: `${baseContent.trimEnd()}\n\n${additionalContent}\n`,
-      summary: 'Added content at the end.',
-    };
+    return { content: `${baseContent.trimEnd()}\n\n${additionalContent}\n`, summary: 'Added content at the end.' };
   }
 
   if (lower.includes('changelog') || lower.includes('history') || lower.includes('update history')) {
@@ -329,15 +238,11 @@ export function generateDirectPatchContent(
       return { content: lines.join('\n'), summary: `Added changelog entry for ${today}.` };
     }
   }
-
   return null;
 }
 
 function containsLikelySecret(content: string): boolean {
-  return [
-    /gh[pousr]_[A-Za-z0-9_]{20,}/,
-    /(?:token|password|secret|api[_-]?key)\s*[:=]\s*['"]?[^\s'"]{8,}/i,
-  ].some((pattern) => pattern.test(content));
+  return [/gh[pousr]_[A-Za-z0-9_]{20,}/, /(?:token|password|secret|api[_-]?key)\s*[:=]\s*['"]?[^\s'"]{8,}/i].some((pattern) => pattern.test(content));
 }
 
 export interface DirectPatchRuntimeArgs {
@@ -349,65 +254,17 @@ export interface DirectPatchRuntimeArgs {
 
 export function executeDirectPatchRuntime(args: DirectPatchRuntimeArgs): DirectGitHubPatchResult {
   const { instruction, baseContent, targetPath } = args;
-
-  if (!baseContent.trim() || baseContent.trim() === '[loaded]') {
-    return {
-      ok: false,
-      reason: 'Zieldatei konnte nicht geladen werden.',
-      blocker: 'content_load_failed',
-    };
-  }
-
-  if (isDirectPatchForbiddenPath(targetPath)) {
-    return {
-      ok: false,
-      reason: `Dateipfad "${targetPath}" nicht erlaubt für Direct Patch. Nutze OpenHands/Executor.`,
-      blocker: 'unsafe_target',
-    };
-  }
-
-  if (!isDirectPatchAllowedPath(targetPath)) {
-    return {
-      ok: false,
-      reason: `Dateipfad "${targetPath}" nicht unterstützt für Direct Patch v1.`,
-      blocker: 'unsupported_intent',
-    };
-  }
+  if (!baseContent.trim() || baseContent.trim() === '[loaded]') return { ok: false, reason: 'Zieldatei konnte nicht geladen werden.', blocker: 'content_load_failed' };
+  if (isDirectPatchForbiddenPath(targetPath)) return { ok: false, reason: `Dateipfad "${targetPath}" nicht erlaubt für Direct Patch. Nutze OpenHands/Executor.`, blocker: 'unsafe_target' };
+  if (!isDirectPatchAllowedPath(targetPath)) return { ok: false, reason: `Dateipfad "${targetPath}" nicht unterstützt für Direct Patch v1.`, blocker: 'unsupported_intent' };
 
   const patchResult = generateDirectPatchContent(baseContent, instruction);
-  if (!patchResult) {
-    return {
-      ok: false,
-      reason: 'Patch konnte nicht generiert werden. Auftrag ist möglicherweise zu komplex für Direct Patch.',
-      blocker: 'unsupported_intent',
-    };
-  }
-
-  if (patchResult.content.trim() === baseContent.trim()) {
-    return {
-      ok: false,
-      reason: 'Patch würde keine Änderung erzeugen. Bitte Auftrag präzisieren.',
-      blocker: 'unsupported_intent',
-    };
-  }
-
-  if (containsLikelySecret(patchResult.content)) {
-    return {
-      ok: false,
-      reason: 'Patch enthält möglicherweise ein Secret. Bitte Tokens/Secrets entfernen.',
-      blocker: 'unsafe_target',
-    };
-  }
+  if (!patchResult) return { ok: false, reason: 'Patch konnte nicht generiert werden. Auftrag ist möglicherweise zu komplex für Direct Patch.', blocker: 'unsupported_intent' };
+  if (patchResult.content.trim() === baseContent.trim()) return { ok: false, reason: 'Patch würde keine Änderung erzeugen. Bitte Auftrag präzisieren.', blocker: 'unsupported_intent' };
+  if (containsLikelySecret(patchResult.content)) return { ok: false, reason: 'Patch enthält möglicherweise ein Secret. Bitte Tokens/Secrets entfernen.', blocker: 'unsafe_target' };
 
   const nextAction: DirectPatchNextAction = 'preview_diff';
-  return {
-    ok: true,
-    targetPath,
-    patchSummary: patchResult.summary,
-    nextAction,
-    proposedContent: patchResult.content,
-    instruction,
-  };
+  return { ok: true, targetPath, patchSummary: patchResult.summary, nextAction, proposedContent: patchResult.content, instruction };
 }
 
 export interface BuildDirectPatchPlanArgs {
@@ -417,27 +274,13 @@ export interface BuildDirectPatchPlanArgs {
   readonly githubAccessReady: boolean;
 }
 
-export function buildDirectPatchPlan(
-  args: BuildDirectPatchPlanArgs,
-): { capability: DirectGitHubPatchCapability } | { result: DirectGitHubPatchResult } {
+export function buildDirectPatchPlan(args: BuildDirectPatchPlanArgs): { capability: DirectGitHubPatchCapability } | { result: DirectGitHubPatchResult } {
   const { repoContext, instruction, baseContent, githubAccessReady } = args;
   const capability = checkDirectPatchCapability({ repoContext, githubAccessReady, instruction, baseContent });
   if (!capability.available) return { capability };
-
   const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
-  if (!targetPath) {
-    return {
-      capability: {
-        available: false,
-        reason: 'Zieldatei konnte nicht erkannt werden.',
-        blocker: 'target_not_in_repo',
-      },
-    };
-  }
-
-  return {
-    result: executeDirectPatchRuntime({ repoContext, instruction, baseContent, targetPath }),
-  };
+  if (!targetPath) return { capability: { available: false, reason: 'Zieldatei konnte nicht erkannt werden.', blocker: 'target_not_in_repo' } };
+  return { result: executeDirectPatchRuntime({ repoContext, instruction, baseContent, targetPath }) };
 }
 
 export interface BuildDirectPatchPlanWithLoadArgs {
@@ -448,47 +291,16 @@ export interface BuildDirectPatchPlanWithLoadArgs {
   readonly fetcher?: typeof fetch;
 }
 
-export async function buildDirectPatchPlanWithContentLoad(
-  args: BuildDirectPatchPlanWithLoadArgs,
-): Promise<{ capability: DirectGitHubPatchCapability } | { result: DirectGitHubPatchResult }> {
+export async function buildDirectPatchPlanWithContentLoad(args: BuildDirectPatchPlanWithLoadArgs): Promise<{ capability: DirectGitHubPatchCapability } | { result: DirectGitHubPatchResult }> {
   const { repoContext, instruction, githubAccessReady, token, fetcher = fetch } = args;
   const capability = checkDirectPatchCapability({ repoContext, githubAccessReady, instruction });
   if (!capability.available) return { capability };
 
   const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
-  if (!targetPath) {
-    return {
-      capability: {
-        available: false,
-        reason: 'Zieldatei konnte nicht erkannt werden.',
-        blocker: 'target_not_in_repo',
-      },
-    };
-  }
+  if (!targetPath) return { capability: { available: false, reason: 'Zieldatei konnte nicht erkannt werden.', blocker: 'target_not_in_repo' } };
 
-  const loadResult = await loadGitHubFileContent({
-    owner: repoContext.owner,
-    repo: repoContext.name,
-    branch: repoContext.branch,
-    filePath: targetPath,
-    token,
-    fetcher,
-  });
+  const loadResult = await loadGitHubFileContent({ owner: repoContext.owner, repo: repoContext.name, branch: repoContext.branch, filePath: targetPath, token, fetcher });
+  if (!loadResult.ok || !loadResult.content?.trim()) return { capability: { available: false, reason: 'Zieldatei konnte nicht geladen werden.', blocker: 'content_load_failed' } };
 
-  if (!loadResult.ok || !loadResult.content?.trim()) {
-    return {
-      capability: {
-        available: false,
-        reason: 'Zieldatei konnte nicht geladen werden.',
-        blocker: 'content_load_failed',
-      },
-    };
-  }
-
-  return buildDirectPatchPlan({
-    repoContext,
-    instruction,
-    baseContent: loadResult.content,
-    githubAccessReady,
-  });
+  return buildDirectPatchPlan({ repoContext, instruction, baseContent: loadResult.content, githubAccessReady });
 }
