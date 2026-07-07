@@ -72,6 +72,7 @@ import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { SecurityBlockCard } from "../components/SecurityBlockCard";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
+import { ActionSuggestionStrip } from "../components/ActionSuggestionStrip";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
 import {
   exportChatHistory,
@@ -84,6 +85,13 @@ import {
   shouldShowSlashMenu,
   type SlashCommandDefinition,
 } from "../runtime/slashCommandRuntime";
+import {
+  SOVEREIGN_PRESET_ACTIONS,
+  buildSovereignPresetActionPrompt,
+  evaluateSovereignPresetActionGate,
+  getSovereignPresetAction,
+  type SovereignPresetActionId,
+} from "../runtime/sovereignPresetActionRuntime";
 import { createRepoFilePrompt } from "../runtime/repoTreeExplorerRuntime";
 import {
   copyAndroidBubbleText,
@@ -4273,6 +4281,43 @@ export function BuilderContainer({
     );
   };
 
+  const handlePresetActionSelect = (actionId: SovereignPresetActionId) => {
+    const action = getSovereignPresetAction(actionId);
+    const gate = evaluateSovereignPresetActionGate(action, {
+      repoReady: effectiveRepoReady,
+      githubWriteReady: githubWriteAllowed,
+      openhandsReady: openhandsReady ?? false,
+    });
+
+    if (!gate.canStart) {
+      appendActionEvent(buildBlockedActionEvent({
+        route: action.requiresRepo ? 'repo' : 'runtime',
+        label: `Preset blockiert: ${action.shortLabel}`,
+        detail: `${gate.reason} ${gate.nextAction}`,
+        kind: action.requiresGithubWrite ? 'access_required' : 'blocked',
+      }));
+      appendChatLine({
+        role: 'assistant',
+        text: [
+          `${action.icon} ${action.label}`,
+          `Status: ${gate.reason}`,
+          `Nächste Aktion: ${gate.nextAction}`,
+        ].join('\n'),
+      });
+      return;
+    }
+
+    const submitted = buildSovereignPresetActionPrompt(action, {
+      repoReady: effectiveRepoReady,
+      repoFullName: chatRepoSnapshot ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}` : null,
+      branch: chatRepoSnapshot?.branch ?? null,
+      githubWriteReady: githubWriteAllowed,
+      openhandsReady: openhandsReady ?? false,
+    });
+    setWishText('');
+    void _processSubmit(submitted);
+  };
+
   const selectedSlashCommand =
     slashMatches[selectedSlashIndex] ?? slashMatches[0];
   const submitSelectedSlashCommand = (command: SlashCommandDefinition) => {
@@ -5030,6 +5075,14 @@ export function BuilderContainer({
               }
             }}
             onOpenLauncher={useLauncherStore.getState().openMenu}
+          />
+          <ActionSuggestionStrip
+            actions={SOVEREIGN_PRESET_ACTIONS}
+            repoReady={effectiveRepoReady}
+            githubWriteReady={githubWriteAllowed}
+            openhandsReady={openhandsReady ?? false}
+            disabled={localRepoLoading || chatResponseBusy || isPublishing}
+            onSelect={handlePresetActionSelect}
           />
           <Composer
             value={wishText}
