@@ -87,7 +87,7 @@ import {
 } from "../runtime/slashCommandRuntime";
 import {
   SOVEREIGN_PRESET_ACTIONS,
-  buildSovereignPresetActionPrompt,
+  buildSovereignPresetActionSubmission,
   evaluateSovereignPresetActionGate,
   getSovereignPresetAction,
   type SovereignPresetActionId,
@@ -2933,8 +2933,21 @@ export function BuilderContainer({
         chatRepoError,
         openhandsJob,
         publishedPrUrl,
+        githubState: githubAccessState.state,
+        openhandsConfigured: openhandsReady ?? false,
+        patchRouteAvailable: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       }),
-    [statusLogs, workerBlocker, chatRepoError, openhandsJob, publishedPrUrl],
+    [
+      statusLogs,
+      workerBlocker,
+      chatRepoError,
+      openhandsJob,
+      publishedPrUrl,
+      githubAccessState.state,
+      openhandsReady,
+      githubWriteAllowed,
+      chatRepoSnapshot,
+    ],
   );
 
   const openRepoExplorer = useCallback(() => {
@@ -4307,13 +4320,23 @@ export function BuilderContainer({
       return;
     }
 
-    const submitted = buildSovereignPresetActionPrompt(action, {
+    const submitted = buildSovereignPresetActionSubmission(action, {
       repoReady: effectiveRepoReady,
       repoFullName: chatRepoSnapshot ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}` : null,
       branch: chatRepoSnapshot?.branch ?? null,
       githubWriteReady: githubWriteAllowed,
       openhandsReady: openhandsReady ?? false,
     });
+
+    if (action.risk === 'safe_analysis') {
+      appendActionEvent(buildRouteSelectionEvent({
+        route: action.route === 'runtime_review' ? 'runtime' : 'worker',
+        reason: `${action.label} ist eine sichere Analyse-Preset-Aktion; kein GitHub-Schreibzugang und kein Executor-Start.`,
+        state: 'running',
+      }));
+      addLog('info', `Safe preset analysis routed without executor: ${action.id}`, 'router');
+    }
+
     setWishText('');
     void _processSubmit(submitted);
   };

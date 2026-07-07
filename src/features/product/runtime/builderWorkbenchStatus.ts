@@ -65,6 +65,16 @@ function isNoiseLevel(level: string): boolean {
   return level === 'error' || level === 'warn';
 }
 
+function isResolvedGithubAccessLog(input: WorkbenchStatusInput, msg: string): boolean {
+  if (input.githubState !== 'ready') return false;
+  const lower = msg.toLowerCase();
+  return lower.includes('github write access missing')
+    || lower.includes('github-zugang erforderlich')
+    || lower.includes('github-schreibzugang fehlt')
+    || lower.includes('write intent blocked: github write access missing')
+    || lower.includes('github access missing');
+}
+
 /** System Actions: real started/executed actions, excluding tab navigation and raw signal noise. */
 export function deriveSystemActionEntries(input: WorkbenchStatusInput): string[] {
   return input.logs
@@ -111,7 +121,7 @@ export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
     addUniqueEntry(`OpenHands Job blockiert${input.openhandsJob.lastError ? ` · ${input.openhandsJob.lastError}` : ''}`);
   }
   for (const log of input.logs) {
-    if (isNoiseLevel(log.level)) {
+    if (isNoiseLevel(log.level) && !isResolvedGithubAccessLog(input, log.msg)) {
       addUniqueEntry(`${log.ts} · ${log.msg}`);
     }
   }
@@ -170,11 +180,11 @@ export function deriveWorkbenchStatusSlots(input: WorkbenchStatusInput): Workben
     },
     {
       id: 'files',
-      label: 'Files',
+      label: 'Changed',
       value: String(files.length),
       tone: 'neutral',
       items: files,
-      emptyLabel: 'Noch keine bearbeiteten Dateien',
+      emptyLabel: 'Noch keine Änderungen',
     },
     {
       id: 'logs',
@@ -224,11 +234,11 @@ export function deriveWorkbenchStatusSlotsLegacy(input: WorkbenchStatusInput): W
     },
     {
       id: 'files',
-      label: 'Files',
+      label: 'Changed',
       value: String(files.length),
       tone: 'neutral',
       items: files,
-      emptyLabel: 'Noch keine bearbeiteten Dateien',
+      emptyLabel: 'Noch keine Änderungen',
     },
     {
       id: 'logs',

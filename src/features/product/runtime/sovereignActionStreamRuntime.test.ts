@@ -60,6 +60,17 @@ describe('sovereignActionStreamRuntime', () => {
     expect(stream.lastEvent?.state).toBe('running');
   });
 
+  it('labels blocked route-selection events as blocked instead of chosen', () => {
+    const stream = appendSovereignActionEvent(
+      createSovereignActionStreamState(),
+      buildRouteSelectionEvent({ route: 'openhands', reason: 'Executor fehlt.', state: 'blocked' }),
+    );
+
+    expect(stream.lastEvent?.kind).toBe('blocked');
+    expect(stream.lastEvent?.label).toBe('Route blockiert: openhands');
+    expect(stream.lastEvent?.label).not.toContain('gewählt');
+  });
+
   it('turns blockers into terminal state without fabricating progress', () => {
     const stream = appendSovereignActionEvent(
       createSovereignActionStreamState(),

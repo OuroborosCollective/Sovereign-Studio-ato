@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { isWriteIntent } from './builderChatHelpers';
 import {
   SOVEREIGN_PRESET_ACTIONS,
   buildSovereignPresetActionPrompt,
+  buildSovereignPresetActionSubmission,
   evaluateSovereignPresetActionGate,
   getSovereignPresetAction,
 } from './sovereignPresetActionRuntime';
+import { isOpenHandsExecutionIntent } from './workerIntentDetector';
 
 describe('sovereignPresetActionRuntime', () => {
   it('defines stable guided actions for common repo tasks', () => {
@@ -46,5 +49,23 @@ describe('sovereignPresetActionRuntime', () => {
     expect(prompt).toContain('Repo: OuroborosCollective/Sovereign-Studio-ato · Branch: main');
     expect(prompt).toContain('Preset-Route: runtime_review');
     expect(prompt).toContain('GitHub Write: nein');
+  });
+
+  it('keeps safe-analysis preset submissions out of write and executor routing', () => {
+    for (const actionId of ['architecture_feature_suggestions', 'error_fix_plan', 'runtime_hardening', 'open_pr_review'] as const) {
+      const action = getSovereignPresetAction(actionId);
+      const submitted = buildSovereignPresetActionSubmission(action, {
+        repoReady: true,
+        repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',
+        branch: 'main',
+        githubWriteReady: false,
+        openhandsReady: false,
+      });
+
+      expect(action.risk).toBe('safe_analysis');
+      expect(submitted).not.toContain('OpenHands:');
+      expect(isWriteIntent(submitted)).toBe(false);
+      expect(isOpenHandsExecutionIntent(submitted)).toBe(false);
+    }
   });
 });
