@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.tsx",
+  "source_ref": "main",
+  "branch_base_ref": "main",
+  "branch": "fix/github-access-resume-state",
+  "commit_message": "fix(builder): resume write intent after access validation",
+  "pr_title": "fix(builder): resume write intent after access validation",
+  "pr_body": "Uses the confirmed validation result inside the same handler instead of the stale render-time write-ready value.",
+  "expectedSha": "da1668656839df2e0b88ef89b6ce587579053bfd",
+  "blocks": [
+    {
+      "search": "&& githubWriteAllowed) {",
+      "replace": "&& validation.canWrite === true) {"
+    }
+  ]
+}
