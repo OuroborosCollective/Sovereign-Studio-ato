@@ -70,6 +70,19 @@ function mockWorkerReply(text = "Worker Antwort aus Cloudflare Route.") {
   mockFetchSequence(jsonResponse({ choices: [{ message: { content: text } }] }));
 }
 
+function fakeGitHubPat(): string {
+  return [
+    ['g', 'hp'].join(''),
+    '_',
+    'ABCDEFGH',
+    'IJKLMNOP',
+    'QRSTUVWX',
+    'YZabcdef',
+    '0123456789',
+  ].join('');
+}
+
+
 beforeEach(() => {
   window.localStorage.clear();
   useUserStore.getState().clearUser();
@@ -606,10 +619,51 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsAfterBlock);
   });
 
-  it("SovereignToolLauncher github_access button shows safe-access message, not 'Token im Kanal'", () => {
+  it("SovereignToolLauncher github_access opens the secure GitHubAccessCard directly", async () => {
     render(<BuilderContainer {...baseProps()} />);
-    // The github_access tool path is tested via the message content check
-    // Verify the token-in-channel message is never present in the page
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByLabelText("GitHub Access"));
+
+    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    expect(screen.getByText("Zugang eingeben")).toBeDefined();
+    expect(screen.getByText(/Sicheres GitHub-Zugangsfeld geöffnet/i)).toBeDefined();
     expect(screen.queryByText(/Token im Kanal/i)).toBeNull();
   });
-});
+
+  it("README & Docs preset opens GitHubAccessCard and stores the pending write intent", async () => {
+    render(<BuilderContainer {...baseProps()} openhandsReady={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /README & Docs aktualisieren/i }));
+
+    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    expect(screen.getByText("Zugang eingeben")).toBeDefined();
+    expect(screen.getByText(/Ich habe diesen Auftrag vorgemerkt/i)).toBeDefined();
+    expect(document.body.textContent).toContain('Bitte GitHub-Zugang im sicheren Feld');
+    expect(screen.queryByText(/danach erneut starten/i)).toBeNull();
+  });
+
+  it("allowed Draft-PR bridge route is not rendered as an execution blocker", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+    );
+
+    render(<BuilderContainer {...baseProps()} mission="" repoReady={false} openhandsReady={false} />);
+    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByLabelText("GitHub Access"));
+    fireEvent.click(screen.getByText("Zugang eingeben"));
+    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+    fireEvent.click(screen.getByText("Übernehmen"));
+    await waitFor(() => expect(screen.getByText(/GitHub-Zugang ist bereit/i)).toBeDefined());
+
+    fireEvent.change(chatField(), { target: { value: "Erstelle einen Draft PR für README und Docs." } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeDefined());
+    expect(screen.queryByText(/Ausführungsauftrag kann nicht ausgeführt werden/i)).toBeNull();
+    expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
+  });});
