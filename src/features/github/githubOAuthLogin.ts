@@ -1,24 +1,15 @@
 /**
  * GitHub OAuth Login — Frontend Utility
  * 
- * Implementiert den OAuth 2.0 Authorization Code Flow für GitHub Login.
- * Der User klickt "Mit GitHub anmelden" → Popup öffnet sich → 
- * Nach Autorisierung wird der Code ans Backend geschickt.
+ * Security: 
+ * - PKCE (Proof Key for Code Exchange) für zusätzlichen Schutz
+ * - State-Parameter gegen CSRF
+ * - Token bleibt IMMER im Backend, nie im Frontend
  * 
- * Setup:
- * 1. GitHub OAuth App erstellen: https://github.com/settings/applications/new
- *    - Homepage URL: https://deine-app-domain.de
- *    - Authorization callback URL: https://deine-app-domain.de/api/auth/github/callback
- * 
- * 2. Client ID im Frontend (.env) setzen:
- *    VITE_GITHUB_OAUTH_CLIENT_ID=dein_client_id
- * 
- * 3. Backend Endpoint implementieren:
- *    POST /api/auth/github
- *    Body: { code: string }
- *    → Tauscht Code gegen Access Token bei GitHub
- *    → Erstellt/aktualisiert User in DB
- *    → Gibt User-Objekt mit githubAccessToken zurück
+ * Scopes (minimal als Default):
+ * - read:user: Profil lesen
+ * - user:email: Email für Account-Verknüpfung
+ * - repo: NUR bei Bedarf (wird separat angefordert)
  */
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -26,33 +17,81 @@
 const GITHUB_OAUTH_CLIENT_ID = import.meta.env['VITE_GITHUB_OAUTH_CLIENT_ID'] as string | undefined;
 const GITHUB_OAUTH_REDIRECT_URI = import.meta.env['VITE_GITHUB_OAUTH_REDIRECT_URI'] as string | undefined;
 
-// GitHub OAuth Scopes — wofür brauchen wir Zugriff?
-// - read:user: Github Profil lesen
-// - user:email: Email für Account-Verknüpfung
-// - repo: Zugriff auf private Repositories (optional, für voll Repo-Zugriff)
-const GITHUB_OAUTH_SCOPES = ['read:user', 'user:email', 'repo'].join(' ');
+// Standard-Scopes (minimal für Login)
+const GITHUB_OAUTH_SCOPES_DEFAULT = ['read:user', 'user:email'].join(' ');
+// Repo-Scope für vollen Repository-Zugriff (wird nur bei Bedarf angefordert)
+const GITHUB_OAUTH_SCOPE_REPO = 'repo';
+
+// ── State Management (CSRF-Schutz) ─────────────────────────────────────────
+
+let _oauthState: string | null = null;
+let _codeVerifier: string | null = null;
+
+function generateRandomString(length: number): string {
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// PKCE: Generate code verifier
+function generateCodeVerifier(): string {
+  return generateRandomString(64);
+}
+
+// PKCE: Generate code challenge (S256 method)
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+// Generate state for CSRF protection
+function generateState(): string {
+  return generateRandomString(32);
+}
 
 // ── OAuth URL Builder ─────────────────────────────────────────────────────────
 
-export function buildGitHubOAuthUrl(): string {
+export function buildGitHubOAuthUrl(includeRepoScope = false): string {
   const clientId = GITHUB_OAUTH_CLIENT_ID || 'Iv1.placeholder_client_id';
   const redirectUri = GITHUB_OAUTH_REDIRECT_URI || `${window.location.origin}/auth/github/callback`;
+  
+  // Generate new state and PKCE for each request
+  _oauthState = generateState();
+  _codeVerifier = generateCodeVerifier();
+  
+  // Build scopes
+  const scopes = includeRepoScope 
+    ? `${GITHUB_OAUTH_SCOPES_DEFAULT} ${GITHUB_OAUTH_SCOPE_REPO}`
+    : GITHUB_OAUTH_SCOPES_DEFAULT;
   
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: GITHUB_OAUTH_SCOPES,
-    // State für CSRF-Schutz generieren
-    state: generateState(),
+    scope: scopes,
+    state: _oauthState,
   });
+  
+  // PKCE hinzufügen (async, muss vor dem Request fertig sein)
+  // Hinweis: Für echte PKCE-Unterstützung muss der Backend-Endpoint 
+  // auch PKCE verifizieren. Hier vorbereitet für zukünftige Nutzung.
   
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
-function generateState(): string {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+// Validate state from callback (CSRF protection)
+export function validateOAuthState(state: string | null): boolean {
+  if (!state || !_oauthState) {
+    return false;
+  }
+  const isValid = state === _oauthState;
+  // State nur einmal verwendbar
+  _oauthState = null;
+  return isValid;
 }
 
 // ── OAuth Popup Handler ────────────────────────────────────────────────────────

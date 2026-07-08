@@ -27,7 +27,8 @@ export interface CurrentUser {
   googleId?: string;
   githubId?: string;
   githubUsername?: string;
-  githubAccessToken?: string; // OAuth token für GitHub API Zugriff
+  // NOTE: githubAccessToken wird NICHT im Frontend gespeichert
+  // Token bleibt verschlüsselt im Backend für sichere API-Operationen
 }
 
 const configuredApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim();
@@ -85,7 +86,7 @@ function normalizeCurrentUser(value: unknown): CurrentUser | null {
     googleId: pickString(value, 'googleId') || undefined,
     githubId: pickString(value, 'githubId') || undefined,
     githubUsername: pickString(value, 'githubUsername') || undefined,
-    githubAccessToken: pickString(value, 'githubAccessToken') || undefined,
+    // githubAccessToken wird NIEMALS ins Frontend übertragen
   };
 }
 

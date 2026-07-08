@@ -1,7 +1,10 @@
 # GitHub OAuth Setup Guide
 
-> ⚠️ **Status**: Backend ist bereits konfiguriert und läuft! (Stand: 2026-07-08)
-> Du musst nur noch die GitHub OAuth App erstellen und die Credentials eintragen.
+> ⚠️ **SICHERHEIT**: Client Secrets NIE in Chat, Docs, Issues oder Commits posten!
+> Secrets nur über sichere Kanäle teilen.
+
+> 🔴 **AKTION ERFORDERLICH**: Client Secret wurde in diesem Chat geteilt.
+> **SOFORT ROTIEREN**: https://github.com/settings/applications/4247582
 
 ## Übersicht
 
@@ -97,36 +100,47 @@ services:
 
 Der Endpoint ist bereits implementiert in `backend_app.py`!
 
-## Schritt 4: Security beachten
+## Schritt 4: Security-Regeln
 
-### Access Token sicher speichern
+### 🔐 Token bleibt IMMER im Backend
 
-```javascript
-// ❌ BAD: Token als Plain-Text speichern
-user.githubAccessToken = access_token;
+```typescript
+// ❌ VERBOTEN: Token im Frontend
+interface CurrentUser {
+  githubAccessToken?: string; // ABSOLUT VERBOTEN!
+}
 
-// ✅ GOOD: Token verschlüsseln
-user.githubAccessToken = encrypt(access_token, ENCRYPTION_KEY);
-
-// ✅✅ BEST: Token nur im Backend speichern, nie an Frontend senden
-// Frontend bekommt nur Session-Cookie
-```
-
-### Token-Refresh
-
-GitHub OAuth Tokens laufen nicht ab, ABER:
-- User können Tokens in GitHub Settings widerrufen
-- User können der App Berechtigungen entziehen
-
-**Empfehlung:** Regelmäßig den Token validieren:
-```javascript
-async function validateGitHubToken(token) {
-  const res = await fetch('https://api.github.com/user', {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  return res.ok;
+// ✅ RICHTIG: Token verschlüsselt im Backend
+interface CurrentUser {
+  githubId?: string;
+  githubUsername?: string;
+  // Token ist NUR im Backend
 }
 ```
+
+### Verschlüsselung
+
+Tokens werden mit `cryptography.fernet.Fernet` verschlüsselt:
+
+```python
+# Backend: Token verschlüsseln
+encrypted = _encrypt_token(access_token)
+
+# Backend: Token entschlüsseln für API-Zugriff
+token = _decrypt_token(row["github_access_token"])
+```
+
+### Scopes
+
+| Scope | Nutzung |
+|-------|---------|
+| `read:user` | ✅ Standard (Login) |
+| `user:email` | ✅ Standard (Login) |
+| `repo` | ⚠️ Nur bei Bedarf, separat anfordern |
+
+### Backend-Proxy
+
+Alle GitHub-API-Operationen laufen über das Backend:
 
 ## Schritt 5: Testen
 
@@ -156,13 +170,31 @@ async function validateGitHubToken(token) {
 
 Nach erfolgreichem GitHub-Login hat der User Zugriff auf:
 - Sein GitHub-Profil im UserStore
-- Automatischer GitHub API-Zugriff für Repo-Operationen
+- Repo-Operationen über Backend-Proxy
 
 ```typescript
 const user = useUserStore.getState().user;
 
-if (user?.githubAccessToken) {
-  // Kann GitHub API nutzen!
-  const octokit = new Octokit({ auth: user.githubAccessToken });
+// ✅ RICHTIG: GitHub-Verbindung prüfen
+if (user?.githubId) {
+  // GitHub ist verbunden
 }
+
+// ❌ VERBOTEN: Token niemals hier!
+if (user?.githubAccessToken) { // ABSOLUT VERBOTEN!
 ```
+
+Alle GitHub-API-Calls müssen über das Backend laufen!
+
+---
+
+## Status: 🟡 Hardening Required
+
+| Check | Status |
+|-------|--------|
+| Token nicht im Frontend | ✅ Behoben |
+| Token-Verschlüsselung | ✅ Implementiert |
+| Scopes reduziert | ✅ `read:user`, `user:email` |
+| PKCE-Validierung | ⏳ Offen |
+| E2E Test | ⏳ Offen |
+| Client Secret Rotation | 🔴 **Erforderlich!** |
