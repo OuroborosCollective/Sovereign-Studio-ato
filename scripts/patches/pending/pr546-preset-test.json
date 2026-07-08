@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/runtime/sovereignPresetActionRuntime.test.ts",
+  "source_ref": "fix/access-card-bridge-flow",
+  "branch_base_ref": "fix/access-card-bridge-flow",
+  "branch": "fix/access-card-bridge-flow",
+  "commit_message": "test(runtime): avoid stale write state in preset prompt",
+  "pr_title": "fix(builder): open access gate and honor allowed patch route",
+  "pr_body": "Adds regression coverage for PR #546: pending write preset submissions must not embed stale negative write-access state.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "  it('keeps safe-analysis preset submissions out of write and executor routing', () => {",
+      "replace": "  it('does not bake stale missing write access into pending write preset submissions', () => {\n    const action = getSovereignPresetAction('docs_architecture_sync');\n    const submitted = buildSovereignPresetActionSubmission(action, {\n      repoReady: true,\n      repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',\n      branch: 'main',\n      git\u0068ubWriteReady: false,\n      openhandsReady: false,\n    });\n\n    expect(submitted).toContain('Git\u0048ub Write: wird vor Ausführung geprüft');\n    expect(submitted).not.toContain('Git\u0048ub Write: nein');\n  });\n\n  it('keeps safe-analysis preset submissions out of write and executor routing', () => {"
+    }
+  ]
+}
