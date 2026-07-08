@@ -268,11 +268,14 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
   
   // Timeout wrapper to prevent endless loading (10 second timeout)
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => { abortController.abort(); reject({
-      provider: 'mlvoca' as ProviderType,
-      error: 'MLVOCA request timed out after 10 seconds',
-      isRetryable: true,
-    }), 10000); } });
+    setTimeout(() => {
+      abortController.abort();
+      reject({
+        provider: 'mlvoca' as ProviderType,
+        error: 'MLVOCA request timed out after 10 seconds',
+        isRetryable: true,
+      });
+    }, 10000);
   });
   
   const fetchPromise = fetchWithProviderError('https://mlvoca.com/api/generate', {
