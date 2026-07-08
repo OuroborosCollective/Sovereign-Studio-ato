@@ -15,9 +15,10 @@ from typing import Any, Callable
 from flask import jsonify, request
 
 from .contracts import normalize_agent_job_result
+from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .job_lifecycle import create_sovereign_agent_job
-from .job_store import list_agent_jobs, read_agent_job, update_agent_job_state
+from .job_store import list_agent_jobs, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
@@ -43,6 +44,10 @@ def _job_to_api(job) -> dict[str, Any]:
         "workspaceId": job.workspace_id,
         "externalRef": job.external_ref,
         "draftPrUrl": job.draft_pr_url,
+        "draftPrReady": getattr(job, "draft_pr_ready", False),
+        "draftPrHeadBranch": getattr(job, "draft_pr_head_branch", None),
+        "draftPrBaseBranch": getattr(job, "draft_pr_base_branch", None),
+        "draftPrTitle": getattr(job, "draft_pr_title", None),
         "changedFiles": list(job.changed_files),
         "diffSummary": job.diff_summary,
         "testSummary": job.test_summary,
@@ -121,6 +126,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/tools/git-status
     - POST /api/user/agent/jobs/<job_id>/tools/diff
     - POST /api/user/agent/jobs/<job_id>/tools/test
+    - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
     """
 
     def _connection():
@@ -291,3 +297,32 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_run_agent_test_tool(job_id: str):
         return _run_tool_route(job_id, "test")
+
+    @app.route("/api/user/agent/jobs/<job_id>/draft-pr/prepare", methods=["POST"])
+    @require_session
+    def user_prepare_agent_draft_pr(job_id: str):
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True) or {}
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            preparation = prepare_draft_pr(draft_pr_input_from_job(job, head_branch=body.get("headBranch")))
+            if preparation.allowed:
+                mark_draft_pr_prepared(
+                    conn,
+                    job_id=job_id,
+                    head_branch=preparation.head_branch or "",
+                    base_branch=preparation.base_branch or "main",
+                    title=preparation.title or "Draft: Sovereign agent changes",
+                    body=preparation.body or "",
+                )
+            return jsonify({
+                "ok": preparation.allowed,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "draftPrPreparation": draft_pr_preparation_signal(preparation),
+            }), 200 if preparation.allowed else 400
+        finally:
+            _close(conn)
