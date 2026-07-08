@@ -24,6 +24,17 @@ const packagePrediction: PredictiveActionDecision = {
   surfaces: ['router', 'menu', 'inspector', 'runtime'],
 };
 
+function agentPrediction(action: PredictiveActionDecision['action']): PredictiveActionDecision {
+  return {
+    action,
+    signal: 'runtime_contract',
+    confidence: 'high',
+    reason: 'Agent Runtime signalisiert nächsten erlaubten Backend-Schritt.',
+    learnedFrom: 1,
+    surfaces: ['agent_job', 'agent_workspace', 'agent_tool', 'agent_evidence'],
+  };
+}
+
 describe('sovereignPredictiveRuntimePolicy', () => {
   it('allows a package_required prediction that only suggests generate_patch_package', () => {
     const result = evaluatePredictiveRuntimePolicy({
@@ -136,6 +147,127 @@ describe('sovereignPredictiveRuntimePolicy', () => {
 
     expect(result.allowed).toBe(false);
     expect(result.violations.map((violation) => violation.code)).toContain('github_write_requires_validated_access');
+  });
+
+  it('blocks create_agent_job without repoReady', () => {
+    const result = evaluatePredictiveRuntimePolicy({
+      capabilityDecision: {
+        route: 'workspace-executor',
+        capability: 'isolated_workspace',
+        allowed: false,
+        reason: 'Repo fehlt.',
+        blocker: 'repo_missing',
+        nextAction: 'create_agent_job',
+      },
+      prediction: agentPrediction('create_agent_job'),
+      runtime: {
+        repoReady: false,
+        githubAccessState: 'ready',
+      },
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.violations.map((violation) => violation.code)).toContain('agent_job_requires_repo');
+  });
+
+  it('blocks run_agent_tool without workspaceReady and backend state', () => {
+    const result = evaluatePredictiveRuntimePolicy({
+      capabilityDecision: {
+        route: 'workspace-executor',
+        capability: 'isolated_workspace',
+        allowed: false,
+        reason: 'Workspace fehlt.',
+        blocker: 'workspace_required',
+        nextAction: 'run_agent_tool',
+      },
+      prediction: agentPrediction('run_agent_tool'),
+      runtime: {
+        repoReady: true,
+        githubAccessState: 'ready',
+        workspaceReady: false,
+        backendAgentStateReady: false,
+        agentJobStatus: 'idle',
+      },
+    });
+
+    const codes = result.violations.map((violation) => violation.code);
+    expect(result.allowed).toBe(false);
+    expect(codes).toContain('agent_tool_requires_backend_state');
+    expect(codes).toContain('agent_job_requires_workspace_policy');
+  });
+
+  it('blocks validate_agent_result without evidence', () => {
+    const result = evaluatePredictiveRuntimePolicy({
+      capabilityDecision: {
+        route: 'workspace-executor',
+        capability: 'isolated_workspace',
+        allowed: false,
+        reason: 'Evidence fehlt.',
+        blocker: 'workspace_required',
+        nextAction: 'validate_agent_result',
+      },
+      prediction: agentPrediction('validate_agent_result'),
+      runtime: {
+        repoReady: true,
+        githubAccessState: 'ready',
+        workspaceReady: true,
+        backendAgentStateReady: true,
+        agentJobStatus: 'running',
+        hasEvidence: false,
+      },
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.violations.map((violation) => violation.code)).toContain('agent_result_requires_evidence');
+  });
+
+  it('allows learn_agent_pattern only when evidence exists', () => {
+    const result = evaluatePredictiveRuntimePolicy({
+      capabilityDecision: {
+        route: 'workspace-executor',
+        capability: 'isolated_workspace',
+        allowed: false,
+        reason: 'Pattern Gateway bereit.',
+        blocker: 'workspace_required',
+        nextAction: 'learn_agent_pattern',
+      },
+      prediction: agentPrediction('learn_agent_pattern'),
+      runtime: {
+        repoReady: true,
+        githubAccessState: 'ready',
+        workspaceReady: true,
+        backendAgentStateReady: true,
+        agentJobStatus: 'validating',
+        hasEvidence: true,
+      },
+    });
+
+    expect(result.allowed).toBe(true);
+  });
+
+  it('blocks cleanup before terminal agent state', () => {
+    const result = evaluatePredictiveRuntimePolicy({
+      capabilityDecision: {
+        route: 'workspace-executor',
+        capability: 'isolated_workspace',
+        allowed: false,
+        reason: 'Cleanup zu früh.',
+        blocker: 'workspace_required',
+        nextAction: 'cleanup_agent_workspace',
+      },
+      prediction: agentPrediction('cleanup_agent_workspace'),
+      runtime: {
+        repoReady: true,
+        githubAccessState: 'ready',
+        workspaceReady: true,
+        backendAgentStateReady: true,
+        agentJobStatus: 'running',
+        hasTerminalResult: false,
+      },
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.violations.map((violation) => violation.code)).toContain('agent_cleanup_required_after_terminal_state');
   });
 
   it('assertPredictiveRuntimePolicy throws on violations', () => {
