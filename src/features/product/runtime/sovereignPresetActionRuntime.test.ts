@@ -51,6 +51,20 @@ describe('sovereignPresetActionRuntime', () => {
     expect(prompt).toContain('GitHub Write: nein');
   });
 
+  it('does not bake stale missing write access into pending write preset submissions', () => {
+    const action = getSovereignPresetAction('docs_architecture_sync');
+    const submitted = buildSovereignPresetActionSubmission(action, {
+      repoReady: true,
+      repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      githubWriteReady: false,
+      openhandsReady: false,
+    });
+
+    expect(submitted).toContain('GitHub Write: wird vor Ausführung geprüft');
+    expect(submitted).not.toContain('GitHub Write: nein');
+  });
+
   it('keeps safe-analysis preset submissions out of write and executor routing', () => {
     for (const actionId of ['architecture_feature_suggestions', 'error_fix_plan', 'runtime_hardening', 'open_pr_review'] as const) {
       const action = getSovereignPresetAction(actionId);
