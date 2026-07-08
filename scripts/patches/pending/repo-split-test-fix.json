@@ -1,0 +1,24 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.test.tsx",
+  "source_ref": "feat/repo-split-inspector",
+  "branch_base_ref": "feat/repo-split-inspector",
+  "branch": "feat/repo-split-inspector",
+  "commit_message": "test(android): stabilize repo split inspector assertions",
+  "pr_title": "feat(android): use repo tree as responsive split inspector",
+  "pr_body": "Fixes the repo split inspector regression tests: split navigation is CSS-hidden in portrait test runtime, and file clicks must be scoped to the dialog when split and dialog are both mounted.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "import { fireEvent, render, screen, waitFor } from \"@testing-library/react\";",
+      "replace": "import { fireEvent, render, screen, waitFor, within } from \"@testing-library/react\";"
+    },
+    {
+      "search": "    expect(screen.getByRole(\"navigation\", { name: \"Repo Baum Split Inspector\" })).toBeDefined();",
+      "replace": "    expect(screen.getByRole(\"navigation\", { name: \"Repo Baum Split Inspector\", hidden: true })).toBeDefined();"
+    },
+    {
+      "search": "    expect(screen.getByTestId(\"repo-tree-explorer\")).toBeDefined();\n    fireEvent.click(screen.getByText(\"App.tsx\"));",
+      "replace": "    const dialog = screen.getByTestId(\"repo-tree-explorer\");\n    expect(dialog).toBeDefined();\n    fireEvent.click(within(dialog).getByText(\"App.tsx\"));"
+    }
+  ]
+}
