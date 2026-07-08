@@ -81,8 +81,8 @@ function scanFile(filePath, content) {
         const matches = line.matchAll(new RegExp(pattern.regex.source, pattern.regex.flags));
         
         for (const match of matches) {
-          // Skip if it's already using env var
-          if (match[0] && (line.includes('process.env') || line.includes('VITE_') || line.includes('import.meta.env') || line.includes('example') || line.includes('sample') || line.includes('test'))) {
+          // Skip if it's already using env var or is a sample/example value
+          if (match[0] && (line.includes('process.env') || line.includes('VITE_') || line.includes('import.meta.env') || line.includes('example') || line.includes('sample'))) {
             continue;
           }
           
