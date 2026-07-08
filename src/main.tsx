@@ -1,9 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Provider } from 'react-redux';
 import posthog from 'posthog-js';
 import App from './SovereignAppWrapper';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { flushCanvasStateMirror, restoreCanvasStateMirror } from './store';
+import { flushCanvasStateMirror, restoreCanvasStateMirror, store } from './store';
 import {
   SOVEREIGN_WORKSPACE_COMMAND_EVENT,
   isSovereignWorkspaceTab,
@@ -341,7 +342,9 @@ function bootApp(): void {
   createRoot(container).render(
     <StrictMode>
       <ErrorBoundary>
-        <App />
+        <Provider store={store}>
+          <App />
+        </Provider>
       </ErrorBoundary>
     </StrictMode>,
   );
