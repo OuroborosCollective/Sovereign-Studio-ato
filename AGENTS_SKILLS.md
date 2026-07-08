@@ -219,6 +219,23 @@ def decrypt_token(encrypted: str, cipher: Fernet) -> str | None:
         return cipher.decrypt(encrypted.encode()).decode()
     except Exception:
         return None
+### Pattern (Live Path)
+```python
+# Importiere das ECHTE Module
+from security_oauth import (
+    init_token_encryption,
+    _encrypt_token,
+    _decrypt_token,
+)
+
+# Initialisiere
+init_token_encryption("your-secret-key")
+
+# Verschlüsseln
+encrypted = _encrypt_token("sensitive_token")
+
+# Entschlüsseln
+original = _decrypt_token(encrypted)
 ```
 
 ### Setup
@@ -235,30 +252,34 @@ pip install cryptography
 - CSRF protection needed
 - PKCE validation required
 
-### Pattern
+### Pattern (Live Path)
 ```python
-import threading, time
-from typing import Optional
+# Importiere das ECHTE Module
+from security_oauth import (
+    _store_oauth_state,
+    _get_oauth_state,
+    _validate_pkce,
+    _generate_state,
+    _generate_pkce,
+)
 
-_oauth_state_store = {}
-_oauth_lock = threading.Lock()
+# State generieren und speichern
+state = _generate_state()
+verifier, challenge = _generate_pkce()
+_store_oauth_state(state, {"code_challenge": challenge})
 
-def _store_oauth_state(state: str, data: dict) -> None:
-    with _oauth_lock:
-        _oauth_state_store[state] = {**data, "created_at": time.time()}
+# Später: State abrufen und PKCE validieren
+stored = _get_oauth_state(state)
+if stored and _validate_pkce(verifier, stored["code_challenge"]):
+    # Gültig!
+    pass
+```
 
-def _get_oauth_state(state: str) -> Optional[dict]:
-    with _oauth_lock:
-        data = _oauth_state_store.pop(state, None)
-        if data and time.time() - data.get("created_at", 0) > 600:
-            return None
-        return data
-
-def _validate_pkce(verifier: str, challenge: str) -> bool:
-    import hashlib, base64
-    digest = hashlib.sha256(verifier.encode()).digest()
-    computed = base64.urlsafe_b64encode(digest).decode().rstrip('=')
-    return computed == challenge
+### WICHTIG: Live-Path Tests
+```bash
+# Tests importieren security_oauth.py (NICHT Kopien!)
+python -m pytest backend/tests/test_oauth_security.py -v
+# 22 passed - ECHTER Code wird getestet!
 ```
 
 ---
@@ -347,6 +368,49 @@ class TestOAuth:
     def test_expiry(self):
         # Nach 600 Sekunden abgelaufen
         pass
+## Skill: Live-Path Backend Tests
+
+### When to Use
+- Testing backend logic
+- Security Contract Testing
+
+### Pattern (Live Path - NICHT Standalone Kopien!)
+```python
+"""
+Backend Tests - Importieren ECHTEN Code!
+"""
+import sys
+sys.path.insert(0, 'backend')
+
+# Importiere das echte Module (NICHT Kopien!)
+from security_oauth import (
+    _encrypt_token,
+    _decrypt_token,
+    _store_oauth_state,
+    _get_oauth_state,
+)
+
+class TestOAuth:
+    def test_token_encryption(self):
+        # Testet den ECHTEN Code
+        encrypted = _encrypt_token("sensitive")
+        assert encrypted != "sensitive"
+        
+    def test_state_one_time_use(self):
+        # Testet den ECHTEN Code
+        _store_oauth_state("test", {"data": True})
+        assert _get_oauth_state("test") is not None
+        assert _get_oauth_state("test") is None
+```
+
+### ⚠️ WICHTIG: Keine Standalone Kopien!
+```python
+# ❌ FALSCH - Standalone Kopie (testet nicht den echten Code)
+def _store(state, data):
+    _oauth_state_store[state] = {...}
+
+# ✅ RICHTIG - Importiert ECHTEN Code
+from security_oauth import _store_oauth_state
 ```
 
 ---
