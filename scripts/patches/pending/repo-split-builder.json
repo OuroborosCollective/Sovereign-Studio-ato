@@ -1,0 +1,32 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.tsx",
+  "source_ref": "feat/repo-split-inspector",
+  "branch_base_ref": "main",
+  "branch": "feat/repo-split-inspector",
+  "commit_message": "feat(android): add responsive repo split inspector",
+  "pr_title": "feat(android): use repo tree as responsive split inspector",
+  "pr_body": "Adds a responsive repo split inspector for wide Android landscape/tablet layouts while keeping portrait chat-first. The repo tree only displays the loaded runtime snapshot and does not create new truth. Also incorporates the safe RepoTreeExplorer memoization from Jules #548.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "        /* WorkbenchSidePanel: hidden on phone/tablet portrait, only visible on wide desktop/landscape */\n        .sovereign-side-panel { display: none; }\n        @media (min-width: 1024px) and (min-height: 600px) {\n          .sovereign-side-panel { display: flex; }\n        }\n        /* Responsive chat bubble */",
+      "replace": "        /* WorkbenchSidePanel: hidden on phone/tablet portrait, only visible on wide desktop/landscape */\n        .sovereign-side-panel { display: none; }\n        @media (min-width: 1024px) and (min-height: 600px) {\n          .sovereign-side-panel { display: flex; }\n        }\n        .sovereign-chat-workbench { flex: 1; min-height: 0; display: flex; background: ${C.bg}; }\n        .sovereign-chat-body { min-width: 0; }\n        .sovereign-repo-split-inspector { display: none; }\n        @media (orientation: landscape) and (min-width: 860px) and (min-height: 520px), (min-width: 1024px) and (min-height: 600px) {\n          .sovereign-builder-container--repo-ready { max-width: 100vw; }\n          .sovereign-repo-split-inspector {\n            display: flex;\n            flex: 0 0 clamp(240px, 28vw, 360px);\n            min-width: 0;\n            max-width: 38vw;\n            overflow: hidden;\n            border-right: 1px solid ${C.border};\n            background: ${C.surface};\n          }\n          .sovereign-repo-split-inspector [data-testid=\"repo-split-inspector\"] {\n            width: 100%;\n            height: 100%;\n            overflow: auto;\n            padding: 10px 12px 14px;\n          }\n          .sovereign-chat-workbench--split .sovereign-chat-body { border-left: 1px solid ${C.border}; }\n        }\n        /* Responsive chat bubble */"
+    },
+    {
+      "search": "      className={builderContainerContract.rootClass}\n      data-role={builderContainerContract.dataRole}",
+      "replace": "      className={[\n        builderContainerContract.rootClass,\n        chatRepoSnapshot ? \"sovereign-builder-container--repo-ready\" : \"\",\n      ].filter(Boolean).join(\" \")}\n      data-role={builderContainerContract.dataRole}"
+    },
+    {
+      "search": "      {/* MAIN CONTENT */}\n      {isChat ? (",
+      "replace": "      {/* MAIN CONTENT */}\n      <div className={chatRepoSnapshot && isChat ? \"sovereign-chat-workbench sovereign-chat-workbench--split\" : \"sovereign-chat-workbench\"}>\n        {chatRepoSnapshot && isChat ? (\n          <aside className=\"sovereign-repo-split-inspector\" aria-label=\"Repo-Baum Split-Bereich\">\n            <RepoTreeExplorer\n              snapshot={chatRepoSnapshot}\n              variant=\"split\"\n              onFileClick={handleRepoExplorerFileClick}\n            />\n          </aside>\n        ) : null}\n      {isChat ? ("
+    },
+    {
+      "search": "        <div\n          ref={scrollRef}\n          data-testid=\"sovereign-chat-body-window\"",
+      "replace": "        <div\n          ref={scrollRef}\n          className=\"sovereign-chat-body\"\n          data-testid=\"sovereign-chat-body-window\""
+    },
+    {
+      "search": "            onSignalClick={(prompt) => setWishText(prompt)}\n          />\n          <div style={{ height: 12 }} />\n        </div>\n      )}\n\n      {/* COMPOSER — only in chat view, v3 verbatim */}",
+      "replace": "            onSignalClick={(prompt) => setWishText(prompt)}\n          />\n          <div style={{ height: 12 }} />\n        </div>\n      )}\n      </div>\n\n      {/* COMPOSER — only in chat view, v3 verbatim */}"
+    }
+  ]
+}
