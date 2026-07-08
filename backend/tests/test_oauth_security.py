@@ -188,6 +188,13 @@ class TestPKCEValidation:
         assert wrong_verifier != correct_verifier
         assert _validate_pkce(wrong_verifier, challenge) is False
 
+    def test_pkce_validation_rejects_missing_verifier_when_challenge_exists(self):
+        """Fehlender verifier wird abgelehnt, wenn PKCE angefordert wurde."""
+        _, challenge = _generate_pkce()
+
+        assert _validate_pkce(None, challenge) is False
+        assert _validate_pkce("", challenge) is False
+
     def test_pkce_validation_is_optional(self):
         """PKCE ist optional wenn nicht angefordert."""
         # Keine PKCE verwendet

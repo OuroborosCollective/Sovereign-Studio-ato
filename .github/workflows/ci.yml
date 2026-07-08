@@ -99,7 +99,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install pytest cryptography pyjwt psycopg2-binary -q
+          pip install pytest cryptography pyjwt psycopg2-binary flask flask-cors requests -q
 
       - name: Run Live-Path OAuth Security Tests
         run: |
@@ -107,10 +107,10 @@ jobs:
           # Live-Path Tests (importieren security_oauth.py)
           python -m pytest tests/test_oauth_security.py -v
           
-      - name: Run Integration Tests with psycopg2
+      - name: Run App OAuth Contract Tests
         run: |
           cd backend
-          python -m pytest tests/test_oauth_contract.py -v || echo "Integration tests skipped (DB not available)"
+          python -m pytest tests/test_oauth_contract.py -v
 
   android-build:
     name: Android Build Verification
