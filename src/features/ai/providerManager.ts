@@ -264,14 +264,15 @@ async function callOpenAICompatible(
 // ============================================================
 export async function callMlvoCa(model: string, prompt: string, options: GeminiRequestOptions = {}): Promise<ProviderResponse> {
   const mappedModel = mapModelForProvider(model, 'mlvoca');
+  const abortController = new AbortController();
   
   // Timeout wrapper to prevent endless loading (10 second timeout)
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject({
+    setTimeout(() => { abortController.abort(); reject({
       provider: 'mlvoca' as ProviderType,
       error: 'MLVOCA request timed out after 10 seconds',
       isRetryable: true,
-    }), 10000);
+    }), 10000); } });
   });
   
   const fetchPromise = fetchWithProviderError('https://mlvoca.com/api/generate', {
@@ -287,6 +288,7 @@ export async function callMlvoCa(model: string, prompt: string, options: GeminiR
         temperature: options.temperature ?? 0.7,
       },
       keep_alive: '5m',
+      signal: abortController.signal,
     }),
   }, 'mlvoca');
   

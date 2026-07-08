@@ -17,6 +17,35 @@ export interface AwarenessSyncResult {
 }
 
 /**
+ * Retry helper for transient errors (timeouts, network issues, 5xx)
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 2,
+  delayMs: number = 1000
+): Promise<T> {
+  let lastError: Error;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      const isTransient =
+        error?.isRetryable ||
+        error?.message?.includes('timed out') ||
+        error?.message?.includes('network') ||
+        (error?.status && error.status >= 500);
+      if (!isTransient || attempt === maxRetries) {
+        throw error;
+      }
+      // Wait before retry
+      await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+    }
+  }
+  throw lastError!;
+}
+
+/**
  * Runs awareness sync with automatic provider fallback
  * Uses mlvoca (free, no key) by default, then falls back to other providers
  */
@@ -65,12 +94,12 @@ VERBESSERUNGSVORSCHLÄGE:
   let rawText: string;
   let usedProvider: ProviderType = 'mlvoca';
 
-  // Priority 1: Try mlvoca (free, no API key required!)
+  // Priority 1: Try mlvoca (free, no API key required!) with retry
   try {
-    const response = await callMlvoCa(model, prompt, {
+    const response = await withRetry(() => callMlvoCa(model, prompt, {
       temperature: 0.3,
       maxOutputTokens: 1024,
-    });
+    }));
     rawText = response.text;
     usedProvider = 'mlvoca';
   } catch (mlvocaError: any) {
@@ -93,13 +122,13 @@ VERBESSERUNGSVORSCHLÄGE:
     }
   }
 
-  // Priority 3: Try Groq
+  // Priority 3: Try Groq with retry
   if (!rawText && fallbackProviders.groqKey?.trim()) {
     try {
-      const response = await callGroq(fallbackProviders.groqKey, model, prompt, {
+      const response = await withRetry(() => callGroq(fallbackProviders.groqKey, model, prompt, {
         temperature: 0.3,
         maxOutputTokens: 1024,
-      });
+      }));
       rawText = response.text;
       usedProvider = 'groq';
     } catch (err: any) {

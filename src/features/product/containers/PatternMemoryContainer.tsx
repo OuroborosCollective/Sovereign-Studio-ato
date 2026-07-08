@@ -18,6 +18,9 @@ export function PatternMemoryContainer({ store, onClear }: PatternMemoryContaine
   const safePatterns = Array.isArray(store.patterns) ? store.patterns : [];
   const patterns = safePatterns.filter((pattern) => pattern.status === 'active').slice(0, 20);
 
+  // Track pattern IDs for stable dependency array
+  const patternIds = safePatterns.map((p) => p.id).join(',');
+
   useEffect(() => {
     const dependency = createSovereignDependencyLifecycleState(
       'pattern-memory-store',
@@ -33,7 +36,7 @@ export function PatternMemoryContainer({ store, onClear }: PatternMemoryContaine
       : recordSovereignDependencyFailure(dependency, {}, 'Pattern Memory store is not readable.').state;
 
     publishSovereignDependencyCoachSignal(next);
-  }, [patterns.length, store.patterns]);
+  }, [patterns.length, patternIds, store.patterns]);
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200" data-testid="pattern-memory-container">
