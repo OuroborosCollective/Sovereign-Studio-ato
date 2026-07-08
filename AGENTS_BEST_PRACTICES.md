@@ -252,4 +252,180 @@ Always clean up in `afterEach`.
 
 ---
 
+## 🔐 Security Best Practices
+
+### ✅ DO: Token NIEMALS im Frontend
+
+```typescript
+// ✅ RICHTIG: Backend gibt User-Objekt OHNE Token zurück
+{
+  "id": "123",
+  "email": "user@example.com",
+  "githubUsername": "user",
+  // KEIN "github_access_token" oder "githubAccessToken"
+}
+
+// ❌ FALSCH: Token im Frontend
+{
+  "githubAccessToken": "gho_xxx"  // ABSOLUT VERBOTEN!
+}
+```
+
+### ✅ DO: Token Verschlüsseln
+
+```python
+# ✅ Backend: Token verschlüsseln
+from cryptography.fernet import Fernet
+cipher = Fernet(key)
+encrypted = cipher.encrypt(token.encode())
+```
+
+### ✅ DO: Secrets in Environment Variables
+
+```bash
+# ✅ RICHTIG
+export GITHUB_CLIENT_SECRET=xxx
+
+# ❌ FALSCH: Hardcoded im Code
+GITHUB_CLIENT_SECRET = "hardcoded_secret"
+```
+
+### ❌ DON'T: Secrets in Chat/Code
+
+```
+⚠️ NIEMALS Secrets in Chat-Nachrichten oder Code-Kommentaren teilen!
+```
+
+---
+
+## 🧪 Test Best Practices
+
+### ✅ DO: Tests VOR dem Fix schreiben
+
+```python
+# 1. Test schreiben (sollte FAILEN)
+def test_token_not_in_response():
+    response = auth_endpoint()
+    assert "github_access_token" not in response  # FAIL!
+
+# 2. Fix implementieren
+def _user_row_to_dict(row):
+    return {
+        "id": row["id"],
+        # Token NICHT hier!
+    }
+
+# 3. Test läuft jetzt durch
+```
+
+### ✅ DO: Standalone Tests (keine DB deps)
+
+```python
+# ✅ Kopiere die Funktionen in die Test-Datei
+# statt psycopg2/Flask zu importieren
+
+import threading, time
+
+_oauth_state_store = {}
+_oauth_lock = threading.Lock()
+
+def _store(state, data):
+    with _oauth_lock:
+        _oauth_state_store[state] = {**data, "created_at": time.time()}
+
+class TestState:
+    def test_one_time_use(self):
+        _store("test", {"data": True})
+        assert _get("test") is not None
+        assert _get("test") is None  # Bereits verwendet!
+```
+
+### ❌ DON'T: Mock-in-Live-Code
+
+```
+⚠️ Mocks sind nur in Tests erlaubt, NIEMALS im Production Code!
+```
+
+---
+
+## 🔧 CI/CD Best Practices
+
+### ✅ DO: Paths in Workflows definieren
+
+```yaml
+# ✅ Workflow nur bei relevanten Änderungen ausführen
+on:
+  push:
+    paths:
+      - 'src/**'      # Nur bei Frontend-Änderungen
+      - 'backend/**'   # Nur bei Backend-Änderungen
+      - '.github/workflows/**'
+```
+
+### ✅ DO: Backend Tests in CI
+
+```yaml
+# ✅ CI Job für Backend Tests
+backend-tests:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/setup-python@v5
+    - run: pip install pytest cryptography
+    - run: cd backend && pytest tests/ -v
+```
+
+---
+
+## 📝 PR Best Practices
+
+### ✅ DO: Klare PR-Beschreibung
+
+```markdown
+## Was wurde geändert?
+- Fix für OAuth Token Security
+
+## Tests
+- 27/27 Backend Tests bestanden
+- TypeScript Check bestanden
+
+## Checklist
+- [x] Security Tests hinzugefügt
+- [x] CI läuft durch
+```
+
+### ✅ DO: draft:false für mergbare PRs
+
+```bash
+# ✅ RICHTIG
+curl -d '{"draft":false}' https://api.github.com/...
+
+# ❌ FALSCH: Draft PRs können nicht gemergt werden!
+```
+
+---
+
+## ⚠️ Anti-Patterns (NIEMALS tun!)
+
+1. **Token im Frontend speichern** - Security Risk!
+2. **Secrets hardcoden** - Rotieren unmöglich
+3. **Draft PRs mergen wollen** - Funktioniert nicht!
+4. **Mocks im Live-Code** - Wartbarkeits-Albtraum
+5. **Alle Workflows bei jedem Push** - Verschwendet CI-Ressourcen
+6. **Ohne Tests mergen** - Regression Risk
+
+---
+
+## 🔄 Workflow Checklist
+
+Vor jedem Merge:
+
+- [ ] Tests schreiben und bestehen
+- [ ] `pnpm run type-check` läuft durch
+- [ ] `pnpm run build` läuft durch
+- [ ] Backend Tests: `pytest backend/tests/ -v`
+- [ ] PR ist nicht als Draft markiert
+- [ ] Health Check nach Deployment
+
+---
+
 *Last Updated: 2026-07-08*
