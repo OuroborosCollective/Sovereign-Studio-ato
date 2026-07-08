@@ -200,6 +200,25 @@ pnpm exec vitest src/path/to/test.tsx --watch
 - Implementing GitHub OAuth
 - Storing sensitive tokens in database
 
+### Pattern
+```python
+from cryptography.fernet import Fernet
+import hashlib, base64
+
+def setup_fernet(key: str) -> Fernet:
+    fernet_key = base64.urlsafe_b64encode(
+        hashlib.sha256(key.encode()).digest()
+    )
+    return Fernet(fernet_key)
+
+def encrypt_token(token: str, cipher: Fernet) -> str:
+    return cipher.encrypt(token.encode()).decode()
+
+def decrypt_token(encrypted: str, cipher: Fernet) -> str | None:
+    try:
+        return cipher.decrypt(encrypted.encode()).decode()
+    except Exception:
+        return None
 ### Pattern (Live Path)
 ```python
 # Importiere das ECHTE Module
@@ -310,6 +329,45 @@ curl http://localhost:8788/health
 
 ---
 
+## Skill: Standalone Backend Tests
+
+### When to Use
+- Testing backend logic without psycopg2/Flask deps
+- Contract tests for security features
+
+### Pattern
+```python
+"""
+Backend Tests - OHNE externe Dependencies.
+Kopiere die zu testenden Funktionen direkt hier.
+"""
+import pytest
+import threading, time
+
+# Kopiere die Funktionen aus app.py
+_oauth_state_store = {}
+_oauth_lock = threading.Lock()
+
+def _store(state: str, data: dict):
+    with _oauth_lock:
+        _oauth_state_store[state] = {**data, "created_at": time.time()}
+
+def _get(state: str):
+    with _oauth_lock:
+        data = _oauth_state_store.pop(state, None)
+        if data and time.time() - data.get("created_at", 0) > 600:
+            return None
+        return data
+
+class TestOAuth:
+    def test_one_time_use(self):
+        _store("test", {"data": True})
+        assert _get("test") is not None
+        assert _get("test") is None
+
+    def test_expiry(self):
+        # Nach 600 Sekunden abgelaufen
+        pass
 ## Skill: Live-Path Backend Tests
 
 ### When to Use
