@@ -15,10 +15,11 @@ from typing import Any, Callable
 from flask import jsonify, request
 
 from .contracts import normalize_agent_job_result
+from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .job_lifecycle import create_sovereign_agent_job
-from .job_store import list_agent_jobs, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import evaluate_pattern_learning, pattern_input_from_job, pattern_learning_signal, persist_pattern_learning_candidate
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
@@ -133,6 +134,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/tools/diff
     - POST /api/user/agent/jobs/<job_id>/tools/test
     - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
+    - POST /api/user/agent/jobs/<job_id>/draft-pr/create
     - POST /api/user/agent/jobs/<job_id>/patterns/learn
     """
 
@@ -331,6 +333,27 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "jobId": job_id,
                 "draftPrPreparation": draft_pr_preparation_signal(preparation),
             }), 200 if preparation.allowed else 400
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/draft-pr/create", methods=["POST"])
+    @require_session
+    def user_create_agent_draft_pr(job_id: str):
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            result = create_draft_pr_for_job(job)
+            if result.allowed and result.pr_url:
+                mark_draft_pr_created(conn, job_id=job_id, pr_url=result.pr_url)
+            return jsonify({
+                "ok": result.allowed,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "draftPrCreate": draft_pr_create_signal(result),
+            }), 200 if result.allowed else 400
         finally:
             _close(conn)
 
