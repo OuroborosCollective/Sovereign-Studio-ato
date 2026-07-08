@@ -3,9 +3,14 @@ import type { CapabilityDecision } from './sovereignCapabilityTypes';
 import {
   buildPredictiveActionSummary,
   createPredictiveActionState,
+  derivePredictiveActionEvent,
+  derivePredictiveInspectorSignals,
+  derivePredictiveMenuSuggestions,
+  learnFromActionStream,
   predictNextRuntimeAction,
   recordPredictiveActionOutcome,
 } from './sovereignPredictiveActionRuntime';
+import { appendSovereignActionEvent, createSovereignActionStreamState } from './sovereignActionStreamRuntime';
 
 const packageRequiredDecision: CapabilityDecision = {
   route: 'draft-pr-runtime',
@@ -17,7 +22,7 @@ const packageRequiredDecision: CapabilityDecision = {
 };
 
 describe('sovereignPredictiveActionRuntime', () => {
-  it('predicts patch package generation for package_required as runtime contract', () => {
+  it('predicts patch package generation for package_required across active surfaces', () => {
     const state = createPredictiveActionState();
     const prediction = predictNextRuntimeAction(packageRequiredDecision, state);
 
@@ -25,6 +30,14 @@ describe('sovereignPredictiveActionRuntime', () => {
     expect(prediction.signal).toBe('runtime_contract');
     expect(prediction.confidence).toBe('high');
     expect(prediction.reason).toContain('Patch-Paket');
+    expect(prediction.surfaces).toEqual(expect.arrayContaining([
+      'router',
+      'action_stream',
+      'menu',
+      'inspector',
+      'draft_pr',
+      'runtime',
+    ]));
   });
 
   it('does not invent actions when no blocker exists', () => {
@@ -41,9 +54,10 @@ describe('sovereignPredictiveActionRuntime', () => {
     expect(prediction.action).toBe('run_worker');
     expect(prediction.signal).toBe('none');
     expect(prediction.confidence).toBe('none');
+    expect(prediction.surfaces).toEqual(['router']);
   });
 
-  it('learns from successful observations without storing secrets', () => {
+  it('learns from successful observations and activates the observed nerve surface without storing secrets', () => {
     const base = createPredictiveActionState();
     const learned = recordPredictiveActionOutcome(base, {
       blocker: 'github_access_missing',
@@ -52,6 +66,7 @@ describe('sovereignPredictiveActionRuntime', () => {
       succeeded: true,
       reason: 'User validated GitHub access successfully.',
       observedAt: 100,
+      surface: 'github_access',
     });
 
     const prediction = predictNextRuntimeAction({
@@ -63,8 +78,12 @@ describe('sovereignPredictiveActionRuntime', () => {
       nextAction: 'validate_github_access',
     }, learned);
 
+    const githubNerve = learned.nerve.find((node) => node.surface === 'github_access');
+
     expect(prediction.action).toBe('validate_github_access');
-    expect(prediction.learnedFrom).toBe(1);
+    expect(prediction.learnedFrom).toBeGreaterThanOrEqual(1);
+    expect(githubNerve?.active).toBe(true);
+    expect(githubNerve?.lastAction).toBe('validate_github_access');
     expect(JSON.stringify(learned)).not.toMatch(/gh[pousr]_[A-Za-z0-9_]{20,}/);
     expect(JSON.stringify(learned)).not.toMatch(/github_pat_[A-Za-z0-9_]{20,}/);
   });
@@ -78,14 +97,74 @@ describe('sovereignPredictiveActionRuntime', () => {
       succeeded: true,
       reason: 'OpenHands was connected instead of workspace.',
       observedAt: 200,
+      surface: 'executor',
     });
 
     const pattern = learned.patterns.find(
       (entry) => entry.blocker === 'executor_unavailable' && entry.action === 'start_workspace',
     );
 
-    expect(pattern?.hits).toBe(0);
+    expect(pattern?.hits).toBe(1); // one contract hit remains as baseline
     expect(pattern?.misses).toBe(1);
+    expect(pattern?.surfaces).toContain('executor');
+  });
+
+  it('derives menu suggestions for every connected surface in the prediction', () => {
+    const prediction = predictNextRuntimeAction(packageRequiredDecision, createPredictiveActionState());
+    const suggestions = derivePredictiveMenuSuggestions(prediction);
+
+    expect(suggestions.length).toBeGreaterThan(1);
+    expect(suggestions.map((item) => item.surface)).toEqual(expect.arrayContaining(['menu', 'draft_pr', 'runtime']));
+    expect(suggestions.every((item) => item.action === 'generate_patch_package')).toBe(true);
+    expect(suggestions.some((item) => item.label === 'Patch/Diff erzeugen')).toBe(true);
+  });
+
+  it('derives inspector signals from active prediction and learned nerve nodes', () => {
+    const base = createPredictiveActionState();
+    const learned = recordPredictiveActionOutcome(base, {
+      blocker: 'package_required',
+      predictedAction: 'generate_patch_package',
+      actualAction: 'generate_patch_package',
+      succeeded: true,
+      reason: 'Patch package was generated.',
+      observedAt: 300,
+      surface: 'draft_pr',
+    });
+    const prediction = predictNextRuntimeAction(packageRequiredDecision, learned);
+    const signals = derivePredictiveInspectorSignals(learned, prediction);
+
+    expect(signals.map((signal) => signal.id)).toContain('predictive-next-generate_patch_package');
+    expect(signals.some((signal) => signal.id === 'predictive-nerve-active')).toBe(true);
+    expect(signals.every((signal) => signal.prompt.length > 0)).toBe(true);
+  });
+
+  it('creates an action-stream event from a prediction instead of relying on UI-only hints', () => {
+    const prediction = predictNextRuntimeAction(packageRequiredDecision, createPredictiveActionState());
+    const event = derivePredictiveActionEvent(prediction, 'draft-pr-runtime' as never);
+
+    expect(event).not.toBeNull();
+    expect(event?.kind).toBe('blocked');
+    expect(event?.state).toBe('blocked');
+    expect(event?.detail).toContain('generate_patch_package');
+  });
+
+  it('learns from action stream blockers so the nerve can follow runtime events', () => {
+    const stream = appendSovereignActionEvent(createSovereignActionStreamState(), {
+      kind: 'patch_blocked',
+      route: 'github-patch',
+      label: 'Patch/Draft-PR Route wartet auf Ergebnis',
+      detail: 'Patch-Paket muss zuerst erzeugt werden.',
+      state: 'blocked',
+      createdAt: 400,
+    });
+
+    const learned = learnFromActionStream(createPredictiveActionState(), stream);
+    const prediction = predictNextRuntimeAction(packageRequiredDecision, learned);
+    const actionStreamNerve = learned.nerve.find((node) => node.surface === 'action_stream');
+
+    expect(prediction.action).toBe('generate_patch_package');
+    expect(actionStreamNerve?.active).toBe(true);
+    expect(actionStreamNerve?.lastBlocker).toBe('package_required');
   });
 
   it('builds user-visible summary from prediction', () => {
@@ -94,5 +173,6 @@ describe('sovereignPredictiveActionRuntime', () => {
 
     expect(summary).toContain('Nächste Aktion: generate_patch_package');
     expect(summary).toContain('Sicherheit: high');
+    expect(summary).toContain('Oberflächen:');
   });
 });
