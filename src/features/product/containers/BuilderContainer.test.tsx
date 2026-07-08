@@ -239,7 +239,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       "Umsetzung:",
       "- Erzeuge echte Änderungen im passenden Codepfad.",
     ].join("\n");
-    renderWithProviders(<BuilderContainer {...props} mission={adoptedMission} />);
+    rerender(<Provider store={store}><BuilderContainer {...props} mission={adoptedMission} /></Provider>);
     expect(chatField().value).toBe("Verbessere mobile UX und Log-Fenster.");
   });
 
