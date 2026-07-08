@@ -445,6 +445,7 @@ function ModuleLamps({
                 marginTop: isTab ? 0 : 2,
               }}
               aria-label={m.id}
+              title={m.id}
             >
               <span
                 style={{
@@ -598,6 +599,7 @@ function WorkbenchSlotDrawer({
             type="button"
             onClick={onClose}
             aria-label="Schließen"
+            title="Schließen"
             style={{ background: "transparent", border: "none", color: C.textMuted, fontSize: 16, cursor: "pointer" }}
           >
             ×
@@ -1174,6 +1176,7 @@ function StatusPanel({
           <button
             type="button"
             onClick={onClearLogs}
+            aria-label="Logs löschen"
             title="Logs löschen"
             style={{
               position: "absolute",

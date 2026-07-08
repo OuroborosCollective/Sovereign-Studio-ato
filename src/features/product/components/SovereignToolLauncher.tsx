@@ -165,7 +165,7 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
               type="button"
               role="menuitem"
               onClick={() => { onOpenLauncher(); setOpen(false); }}
-              title="Alle Tools im Launcher"
+              title="Alle Tools im Launcher öffnen"
               style={{
                 display: 'flex',
                 alignItems: 'center',
