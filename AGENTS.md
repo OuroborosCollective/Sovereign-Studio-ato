@@ -319,3 +319,200 @@ For patterns, skills, and best practices discovered during development:
 | `AGENTS_BEST_PRACTICES.md` | Guidelines and anti-patterns to avoid |
 
 **Quick Start:** Read `AGENTS_KNOWLEDGE.md` for the Redux Provider pattern (critical for tests)!
+
+---
+
+## 🔐 Security Best Practices (KRITISCH)
+
+### OAuth Security Contract
+
+Bei GitHub OAuth Implementation MUSS beachtet werden:
+
+1. **Token NIEMALS im Frontend**
+   - Access Token bleibt IM Backend
+   - Frontend bekommt nur User-Objekt ohne Token
+   - Response darf kein `github_access_token`, `githubAccessToken`, `token` enthalten
+
+2. **Token VERSCHLÜSSELT speichern**
+   ```python
+   # Backend: Fernet encryption
+   from cryptography.fernet import Fernet
+   import hashlib, base64
+   
+   key = base64.urlsafe_b64encode(
+       hashlib.sha256(ENCRYPTION_KEY.encode()).digest()
+   )
+   cipher = Fernet(key)
+   encrypted = cipher.encrypt(token.encode()).decode()
+   ```
+
+3. **State + PKCE Validierung**
+   - State für CSRF-Schutz (einmalige Verwendung)
+   - PKCE für Code-Interception-Schutz
+   ```python
+   # State Store (Thread-safe)
+   _oauth_state_store: dict = {}
+   _oauth_lock = threading.Lock()
+   
+   def _store_oauth_state(state: str, data: dict) -> None:
+       with _oauth_lock:
+           _oauth_state_store[state] = {**data, "created_at": time.time()}
+   
+   def _get_oauth_state(state: str) -> Optional[dict]:
+       with _oauth_lock:
+           data = _oauth_state_store.pop(state, None)
+           if data and time.time() - data.get("created_at", 0) > 600:
+               return None  # Ablauf nach 10 min
+           return data
+   ```
+
+4. **Secrets NIEMALS in Chat teilen**
+   - Client Secrets in GitHub Settings regenerieren
+   - Environment Variables verwenden
+   - GitHub Secrets für CI/CD
+
+### Security Tests ausführen
+
+Security-Tests MÜSSEN in CI laufen:
+```bash
+pytest backend/tests/test_github_oauth_security.py -v
+pytest backend/tests/test_oauth_state_validation.py -v
+pytest backend/tests/test_oauth_pkce_validation.py -v
+```
+
+---
+
+## 🛠️ Nutzbare Tools & Scripts
+
+### Backend Deployment
+
+```bash
+# VPS Backend aktualisieren
+ssh root@46.202.154.25
+docker cp /tmp/app.py sovereign-backend:/app/app.py
+docker restart sovereign-backend
+```
+
+### Backend Dependencies installieren
+
+```bash
+# Auf VPS
+docker exec sovereign-backend pip install cryptography -q
+```
+
+### Backend Tests lokal ausführen
+
+```bash
+cd backend
+pip install pytest cryptography pyjwt -q
+python -m pytest tests/ -v
+```
+
+### VPS Services
+
+| Service | Port | URL |
+|---------|------|-----|
+| Backend | 8788 | sovereign-backend |
+| Frontend | 3000 | sovereign-frontend |
+
+### Health Check
+
+```bash
+curl http://localhost:8788/health
+# {"ok":true}
+```
+
+---
+
+## 🔑 Wichtige Secrets & Config
+
+### VPS (46.202.154.25)
+
+```bash
+# Container anzeigen
+docker ps
+
+# Logs anzeigen
+docker logs sovereign-backend --tail 50
+```
+
+### Environment Variables (Backend)
+
+```bash
+GITHUB_CLIENT_ID=xxx
+GITHUB_CLIENT_SECRET=xxx      # ⚠️ REGELMÄSSIG ROTIEREN!
+GITHUB_TOKEN_ENCRYPTION_KEY=  # Für Token-Verschlüsselung
+JWT_SECRET=                  # Für Session Cookies
+```
+
+### GitHub Apps / OAuth
+
+- **OAuth App ID**: 4247582
+- **OAuth App URL**: https://github.com/settings/applications/4247582
+
+---
+
+## 📝 Coding Patterns
+
+### Backend Tests schreiben (Standalone)
+
+```python
+# Backend Tests - Standalone (keine DB deps)
+import pytest
+import threading, time
+
+_oauth_state_store = {}
+_oauth_lock = threading.Lock()
+
+def _store_oauth_state(state: str, data: dict) -> None:
+    with _oauth_lock:
+        _oauth_state_store[state] = {**data, "created_at": time.time()}
+
+class TestOAuth:
+    def test_state_one_time_use(self):
+        _store_oauth_state("test", {"data": True})
+        first = _get_oauth_state("test")
+        assert first is not None
+        second = _get_oauth_state("test")
+        assert second is None
+```
+
+### Frontend API Calls
+
+```typescript
+// API Calls immer über Backend
+const response = await fetch('/api/auth/me', {
+  credentials: 'include'  // Cookie mitsenden
+});
+```
+
+---
+
+## ⚠️ Häufige Fehler vermeiden
+
+1. **Draft PRs können nicht gemergt werden**
+   - Immer `draft:false` setzen oder UI verwenden
+
+2. **TypeScript - test.skip() Signatur**
+   ```typescript
+   // FALSCH:
+   test.skip('message');
+   
+   // RICHTIG:
+   test.skip(true, 'message');
+   ```
+
+3. **CI Pipeline läuft nicht**
+   - Prüfe ob Dateien in `paths` enthalten sind
+   - Workflow Dispatch für manuellen Trigger
+
+---
+
+## 🔄 Workflow für Security Fixes
+
+1. **Branch erstellen**: `git checkout -b security/fix-name`
+2. **Tests schreiben**: Tests MÜSSEN zuerst failen
+3. **Fix implementieren**: Code ändern bis Tests bestehen
+4. **CI prüfen**: Tests müssen in CI laufen
+5. **PR erstellen**: Mit detaillierter Beschreibung
+6. **Review & Merge**: Draft = false nicht vergessen!
