@@ -11,7 +11,8 @@ export default defineConfig({
       ...configDefaults.exclude, 
       'sovereign-studio-rn/e2e/detox/**',
       'sovereign-studio-rn/e2e/ki-coach/real-smoke.spec.ts',
-      'tests/e2e/**'
+      'tests/e2e/**',
+      'backend/tests/e2e/**',
     ],
   },
 });
