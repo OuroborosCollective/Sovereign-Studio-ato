@@ -95,6 +95,7 @@ import {
   getSovereignPresetAction,
   type SovereignPresetActionId,
 } from "../runtime/sovereignPresetActionRuntime";
+import { loadSessionMemory, formatSessionMemoryAge } from "../runtime/sovereignSessionMemory";
 import { createRepoFilePrompt } from "../runtime/repoTreeExplorerRuntime";
 import {
   copyAndroidBubbleText,
@@ -2662,6 +2663,19 @@ export function BuilderContainer({
     },
     [],
   );
+
+  // ── Issue #557: Show session restore age on startup
+  useEffect(() => {
+    const snapshot = loadSessionMemory(localStorage);
+    if (!snapshot) return;
+    const age = formatSessionMemoryAge(snapshot, Date.now());
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const isVeryOld = Date.now() - snapshot.savedAt > ONE_DAY_MS;
+    const message = isVeryOld
+      ? `Ältere Sitzung wiederhergestellt — bitte Repo/Status prüfen. (${age})`
+      : `Letzte Sitzung von vor ${age} wiederhergestellt.`;
+    appendChatLine({ role: 'assistant', text: message });
+  }, [appendChatLine]);
 
   // ── Issue #447: Auto-save workflow patterns after Draft PR success
   usePatternMemoryStore({
