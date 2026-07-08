@@ -412,11 +412,16 @@ export async function fetchDevChatWorkerHealth(signal?: AbortSignal): Promise<De
       payload = {};
     }
 
+    const classification = classifyWorkerFailure({
+      status: response.status,
+      bodySnippet: snippet,
+    });
+
     return {
       ok: response.ok,
       route: SOVEREIGN_WORKER_HEALTH,
       status: response.status,
-      error: response.ok ? undefined : (typeof payload.error === 'string' ? payload.error : response.statusText || `HTTP ${response.status}`),
+      error: response.ok ? undefined : (typeof payload.error === 'string' ? payload.error : response.statusText || `HTTP ${response.status} (${classification.scope})`),
       provider: typeof payload.provider === 'string' ? payload.provider : undefined,
       gateway: typeof payload.gateway === 'string' ? payload.gateway : undefined,
       model: typeof payload.model === 'string' ? payload.model : undefined,
@@ -431,18 +436,23 @@ export async function fetchDevChatWorkerHealth(signal?: AbortSignal): Promise<De
       return {
         ok: false,
         route: SOVEREIGN_WORKER_HEALTH,
-        error: 'Worker Health Timeout: keine Antwort vom Worker.',
+        status: 408,
+        error: 'Worker Health Timeout: keine Antwort vom Worker (network).',
       };
     }
     return {
       ok: false,
       route: SOVEREIGN_WORKER_HEALTH,
-      error: error instanceof Error ? error.message : 'Worker Health Anfrage fehlgeschlagen.',
+      error: `${error instanceof Error ? error.message : 'Worker Health Anfrage fehlgeschlagen'} (network)`,
     };
   }
 }
 
-export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest): Promise<DevChatWorkerReplyResult> {
+export async function fetchDevChatWorkerReply(
+  request: DevChatWorkerReplyRequest,
+  options: { maxRetries?: number; retryDelayMs?: number } = {},
+): Promise<DevChatWorkerReplyResult> {
+  const { maxRetries = 1, retryDelayMs = 1000 } = options;
   const messages = request.messages
     .map((message) => ({ role: message.role, content: message.content.trim() }))
     .filter((message) => message.content.length > 0);
@@ -460,111 +470,137 @@ export async function fetchDevChatWorkerReply(request: DevChatWorkerReplyRequest
     return { ok: false, error: 'Worker Chat blockiert: keine gültige Nachricht.', route: SOVEREIGN_WORKER_CHAT, diagnostic };
   }
 
-  const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), WORKER_REPLY_TIMEOUT_MS);
-  const combinedSignal = request.signal
-    ? AbortSignal.any([request.signal, timeoutController.signal])
-    : timeoutController.signal;
+  let lastError: any = null;
 
-  try {
-    const response = await fetch(SOVEREIGN_WORKER_CHAT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'X-Sovereign-Client': 'android-webview',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.2,
-        max_tokens: 4096,
-        reasoning_format: 'parsed',
-        stream: false,
-      }),
-      signal: combinedSignal,
-    });
-    clearTimeout(timeoutId);
-
-    const text = await response.text();
-    if (!response.ok) {
-      const payload = extractErrorPayload(text);
-      const classification = classifyWorkerFailure({
-        status: response.status,
-        errorType: payload.type,
-        errorCode: payload.code,
-        bodySnippet: payload.snippet,
-      });
-      const diagnostic: DevChatWorkerDiagnostic = {
-        route: SOVEREIGN_WORKER_CHAT,
-        model,
-        messageCount: messages.length,
-        status: response.status,
-        statusText: response.statusText,
-        errorType: payload.type,
-        errorCode: payload.code,
-        bodySnippet: payload.snippet,
-        ...classification,
-      };
-      return {
-        ok: false,
-        error: payload.message || `Worker Chat HTTP ${response.status}`,
-        route: SOVEREIGN_WORKER_CHAT,
-        diagnostic,
-      };
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
     }
 
-    let payload: unknown = {};
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), WORKER_REPLY_TIMEOUT_MS);
+    const combinedSignal = request.signal
+      ? AbortSignal.any([request.signal, timeoutController.signal])
+      : timeoutController.signal;
+
     try {
-      payload = text ? JSON.parse(text) : {};
-    } catch {
-      payload = { response: text };
-    }
+      const response = await fetch(SOVEREIGN_WORKER_CHAT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Sovereign-Client': 'android-webview',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.2,
+          max_tokens: 4096,
+          reasoning_format: 'parsed',
+          stream: false,
+        }),
+        signal: combinedSignal,
+      });
+      clearTimeout(timeoutId);
 
-    const content = readWorkerContent(payload);
-    if (!content) {
+      const text = await response.text();
+      if (!response.ok) {
+        const payload = extractErrorPayload(text);
+        const classification = classifyWorkerFailure({
+          status: response.status,
+          errorType: payload.type,
+          errorCode: payload.code,
+          bodySnippet: payload.snippet,
+        });
+
+        // Only retry on transient upstream or network issues
+        const isTransient = response.status === 429 || response.status >= 500;
+        if (isTransient && attempt < maxRetries) {
+          lastError = { status: response.status, text };
+          continue;
+        }
+
+        const diagnostic: DevChatWorkerDiagnostic = {
+          route: SOVEREIGN_WORKER_CHAT,
+          model,
+          messageCount: messages.length,
+          status: response.status,
+          statusText: response.statusText,
+          errorType: payload.type,
+          errorCode: payload.code,
+          bodySnippet: payload.snippet,
+          ...classification,
+        };
+        return {
+          ok: false,
+          error: payload.message || `Worker Chat HTTP ${response.status}`,
+          route: SOVEREIGN_WORKER_CHAT,
+          diagnostic,
+        };
+      }
+
+      let payload: unknown = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        payload = { response: text };
+      }
+
+      const content = readWorkerContent(payload);
+      if (!content) {
+        const diagnostic: DevChatWorkerDiagnostic = {
+          route: SOVEREIGN_WORKER_CHAT,
+          model,
+          messageCount: messages.length,
+          status: response.status,
+          statusText: response.statusText,
+          bodySnippet: bodySnippet(text),
+          scope: 'worker_runtime',
+          canClientFix: false,
+          nextAction: 'Worker-Antwortformat im Bridge-Adapter prüfen.',
+        };
+        return { ok: false, error: 'Worker Chat lieferte keine auswertbare Antwort.', route: SOVEREIGN_WORKER_CHAT, diagnostic };
+      }
+
+      return { ok: true, content, route: SOVEREIGN_WORKER_CHAT };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      // Retry on network/timeout errors
+      if (attempt < maxRetries) {
+        lastError = error;
+        continue;
+      }
+
+      if (isWorkerTimeoutError(error)) {
+        const diagnostic = createWorkerTimeoutDiagnostic({ model, messageCount: messages.length, error });
+        return {
+          ok: false,
+          error: 'Worker Chat Timeout: keine Antwort vom Worker.',
+          route: SOVEREIGN_WORKER_CHAT,
+          diagnostic,
+        };
+      }
       const diagnostic: DevChatWorkerDiagnostic = {
         route: SOVEREIGN_WORKER_CHAT,
         model,
         messageCount: messages.length,
-        status: response.status,
-        statusText: response.statusText,
-        bodySnippet: bodySnippet(text),
-        scope: 'worker_runtime',
+        scope: 'network',
         canClientFix: false,
-        nextAction: 'Worker-Antwortformat im Bridge-Adapter prüfen.',
+        nextAction: 'Netzwerk, CORS oder Worker-Erreichbarkeit prüfen.',
+        bodySnippet: error instanceof Error ? error.message : undefined,
       };
-      return { ok: false, error: 'Worker Chat lieferte keine auswertbare Antwort.', route: SOVEREIGN_WORKER_CHAT, diagnostic };
-    }
-
-    return { ok: true, content, route: SOVEREIGN_WORKER_CHAT };
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (isWorkerTimeoutError(error)) {
-      const diagnostic = createWorkerTimeoutDiagnostic({ model, messageCount: messages.length, error });
       return {
         ok: false,
-        error: 'Worker Chat Timeout: keine Antwort vom Worker.',
+        error: error instanceof Error ? error.message : 'Worker Chat Anfrage fehlgeschlagen.',
         route: SOVEREIGN_WORKER_CHAT,
         diagnostic,
       };
     }
-    const diagnostic: DevChatWorkerDiagnostic = {
-      route: SOVEREIGN_WORKER_CHAT,
-      model,
-      messageCount: messages.length,
-      scope: 'network',
-      canClientFix: false,
-      nextAction: 'Netzwerk, CORS oder Worker-Erreichbarkeit prüfen.',
-      bodySnippet: error instanceof Error ? error.message : undefined,
-    };
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Worker Chat Anfrage fehlgeschlagen.',
-      route: SOVEREIGN_WORKER_CHAT,
-      diagnostic,
-    };
   }
+
+  // Should not be reachable due to returns above, but for TS:
+  return { ok: false, error: 'Retry-Limit erreicht.', route: SOVEREIGN_WORKER_CHAT };
 }
 
 /**
