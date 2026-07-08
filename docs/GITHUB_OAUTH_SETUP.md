@@ -10,25 +10,27 @@
 
 Dieses Dokument beschreibt, wie du GitHub OAuth Login in Sovereign Studio einrichtest.
 
-## Bereits erledigt ✅
+## Bereits vorhanden (NICHT erledigt - Security-Checks ausstehend)
 
-- ✅ Backend Endpoint `/api/auth/github` implementiert
-- ✅ DB Migration für `github_id`, `github_username`, `github_access_token` Spalten
-- ✅ Frontend `loginWithGitHub()` Funktion
-- ✅ LoginModal mit GitHub Button
-- ✅ Environment Variable: `VITE_GITHUB_OAUTH_CLIENT_ID` (noch nicht gesetzt)
+- ⏳ Backend Endpoint `/api/auth/github` - Code vorhanden, Security-Tests ausstehend
+- ⏳ DB Migration `github_*` Spalten - vorhanden
+- ⏳ Frontend `loginWithGitHub()` - vorhanden, Security-Tests ausstehend
+- ⏳ LoginModal mit GitHub Button - vorhanden
+- ⏳ `VITE_GITHUB_OAUTH_CLIENT_ID` - gesetzt (VPS), Secret noch ausstehend
 
-## Architektur
+## Security Status: 🔴 INCOMPLETE
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Frontend       │     │   GitHub        │     │   Backend       │
-│   (LoginModal)   │────▶│   OAuth         │────▶│   (sovereign-   │
-│                  │◀────│                  │◀────│   backend)      │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-      Popup öffnen          Authorization           Token austauschen
-      & Code empfangen       & User-Login            & User erstellen
-```
+| Check | Status | Beweis erforderlich |
+|-------|--------|---------------------|
+| Token NICHT im Frontend | ⏳ | Regression Test fehlt |
+| Token-Verschlüsselung | ⏳ | Contract Test fehlt |
+| Scopes minimal | ✅ | ✓ Implementiert |
+| PKCE Frontend | ⏳ | Vorbereitet, Backend fehlt |
+| PKCE Backend | 🔴 | NICHT implementiert |
+| State Validierung | 🔴 | NICHT implementiert |
+| E2E Security Test | 🔴 | NICHT implementiert |
+
+**Siehe Issue #560 für Details und offene Tasks.**
 
 ## Schritt 1: GitHub OAuth App erstellen (NOCH OFFEN ⏳)
 
@@ -73,32 +75,27 @@ VITE_GITHUB_OAUTH_CLIENT_ID=dein_github_client_id
 
 ## Schritt 3: Backend Secrets setzen
 
-> ⚠️ **Bereits erledigt!** Der Endpoint `/api/auth/github` ist implementiert.
-> Du musst nur noch die Environment Variables im Backend setzen.
+> ⚠️ **SECRET ROTATION ERFORDERLICH** - Das Client Secret wurde in einem unsicheren Kanal geteilt.
 
 ### Auf dem Server (via SSH):
 
 ```bash
 # Auf dem VPS:
-docker exec sovereign-backend env
-# Prüfen ob GITHUB_CLIENT_ID und GITHUB_CLIENT_SECRET gesetzt sind
+docker exec sovereign-backend env | grep GITHUB
 
-# Falls nicht, in docker-compose.yml oder Container Environment setzen:
-docker exec sovereign-backend env GITHUB_CLIENT_ID=dein_client_id
-docker exec sovereign-backend env GITHUB_CLIENT_SECRET=dein_client_secret
+# Backend neu starten nach Secret-Änderung:
+docker restart sovereign-backend
 ```
 
-### Oder in Docker Compose (.env oder environment):
+### Erforderliche Environment Variables:
 
-```yaml
-services:
-  sovereign-backend:
-    environment:
-      - GITHUB_CLIENT_ID=dein_client_id
-      - GITHUB_CLIENT_SECRET=dein_client_secret
+```bash
+GITHUB_CLIENT_ID=DEINE_CLIENT_ID          # Von GitHub OAuth App
+GITHUB_CLIENT_SECRET=DEIN_CLIENT_SECRET     # ⚠️ FRISCH GENERIERT
+GITHUB_TOKEN_ENCRYPTION_KEY=zufälliger_64_byte_string  # Für Token-Verschlüsselung
 ```
 
-Der Endpoint ist bereits implementiert in `backend_app.py`!
+**Siehe `backend/tests/test_github_oauth_security.py` für Security-Requirements.**
 
 ## Schritt 4: Security-Regeln
 
@@ -188,13 +185,21 @@ Alle GitHub-API-Calls müssen über das Backend laufen!
 
 ---
 
-## Status: 🟡 Hardening Required
+## Tests
 
-| Check | Status |
-|-------|--------|
-| Token nicht im Frontend | ✅ Behoben |
-| Token-Verschlüsselung | ✅ Implementiert |
-| Scopes reduziert | ✅ `read:user`, `user:email` |
-| PKCE-Validierung | ⏳ Offen |
-| E2E Test | ⏳ Offen |
-| Client Secret Rotation | 🔴 **Erforderlich!** |
+Security-Tests in Issue #560 definiert:
+
+| Test | Datei | Status |
+|------|-------|--------|
+| Token nicht in Response | `backend/tests/test_github_oauth_security.py` | ⏳ |
+| Token-Verschlüsselung | `backend/tests/test_github_oauth_security.py` | ⏳ |
+| State Validierung | `backend/tests/test_oauth_state_validation.py` | ⏳ |
+| PKCE Validierung | `backend/tests/test_oauth_pkce_validation.py` | ⏳ |
+| Frontend Regression | `e2e/security/oauth-token-never-in-frontend.spec.ts` | ⏳ |
+
+## Status: 🔴 NICHT PRODUKTIONSREIF
+
+> **Diese Integration ist NICHT produktionsreif!**
+> Security-Tests und Contract-Tests müssen erst bestehen.
+
+Siehe: https://github.com/OuroborosCollective/Sovereign-Studio-ato/issues/560
