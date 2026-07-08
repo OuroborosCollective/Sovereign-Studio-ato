@@ -107,6 +107,10 @@ export interface DevChatWorkerReplyResult {
   readonly error?: string;
   readonly route: typeof SOVEREIGN_WORKER_CHAT;
   readonly diagnostic?: DevChatWorkerDiagnostic;
+  readonly fallbackUsed?: boolean;
+  readonly preferredModel?: string;
+  readonly actualModel?: string;
+  readonly fallbackReason?: string;
 }
 
 export interface ParsedDevChatGithubUrl {
@@ -562,7 +566,16 @@ export async function fetchDevChatWorkerReply(
         return { ok: false, error: 'Worker Chat lieferte keine auswertbare Antwort.', route: SOVEREIGN_WORKER_CHAT, diagnostic };
       }
 
-      return { ok: true, content, route: SOVEREIGN_WORKER_CHAT };
+      const actualModel = (payload as any)?.model || model;
+      return { 
+        ok: true, 
+        content, 
+        route: SOVEREIGN_WORKER_CHAT,
+        fallbackUsed: actualModel !== model,
+        preferredModel: model,
+        actualModel: actualModel,
+        fallbackReason: (payload as any)?.fallback_reason
+      };
     } catch (error) {
       clearTimeout(timeoutId);
       
@@ -659,6 +672,7 @@ export function createWorkerTimeoutDiagnostic(args: {
 
 export async function* streamDevChatWorkerReply(
   request: DevChatWorkerReplyRequest,
+  onMetadata?: (metadata: { fallbackUsed: boolean; preferredModel: string; actualModel: string; fallbackReason?: string }) => void,
 ): AsyncGenerator<string> {
   const messages = request.messages
     .map((message) => ({ role: message.role, content: message.content.trim() }))
@@ -745,6 +759,18 @@ export async function* streamDevChatWorkerReply(
 
         try {
           const payload = JSON.parse(data) as Record<string, unknown>;
+          
+          // Check for model metadata in the first chunk or specific metadata chunks
+          const actualModel = (payload as any)?.model;
+          if (actualModel && actualModel !== model && onMetadata) {
+            onMetadata({
+              fallbackUsed: true,
+              preferredModel: model,
+              actualModel: actualModel,
+              fallbackReason: (payload as any)?.fallback_reason,
+            });
+          }
+
           // OpenAI-compatible SSE format: { choices: [{ delta: { content: "..." } }] }
           const choices = payload.choices;
           if (Array.isArray(choices) && choices.length > 0) {
