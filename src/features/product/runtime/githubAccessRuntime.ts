@@ -44,8 +44,8 @@ export function maskGitHubToken(token: string): string {
 }
 
 /**
- * Validate GitHub PAT format (basic format check only).
- * Real validation requires actual GitHub API call.
+ * Validate GitHub PAT format as a cheap preflight only.
+ * Runtime truth still comes from the real GitHub API validation below.
  */
 export function validateGitHubTokenFormat(token: string): GitHubAccessValidationResult {
   const trimmed = token.trim();
@@ -53,13 +53,17 @@ export function validateGitHubTokenFormat(token: string): GitHubAccessValidation
   if (!trimmed) {
     return { isValid: false, maskedToken: '', error: 'Token ist leer.' };
   }
+
+  const isFineGrainedPat = /^github_pat_[A-Za-z0-9_]{20,}$/.test(trimmed);
+  const isPrefixedGitHubToken = /^gh[pousr]_[A-Za-z0-9_]{20,}$/.test(trimmed);
+  const isLegacyClassicPat = /^[a-zA-Z0-9]{40,}$/.test(trimmed);
   
-  // GitHub PATs are typically 40+ characters (classic) or start with ghp_, gho_, ghu_, ghs_, ghr_
-  const isClassicPat = /^[a-zA-Z0-9]{40,}$/.test(trimmed);
-  const isFineGrained = /^gh[pousr]_[a-zA-Z0-9_]{36,}$/.test(trimmed);
-  
-  if (!isClassicPat && !isFineGrained) {
-    return { isValid: false, maskedToken: maskGitHubToken(trimmed), error: 'Ungültiges Token-Format. GitHub PATs beginnen mit ghp_, gho_, ghu_, ghs_ oder ghr_.' };
+  if (!isFineGrainedPat && !isPrefixedGitHubToken && !isLegacyClassicPat) {
+    return {
+      isValid: false,
+      maskedToken: maskGitHubToken(trimmed),
+      error: 'Ungültiges Token-Format. Unterstützt werden github_pat_ Fine-Grained PATs, ghp_ Classic PATs sowie GitHub OAuth/App-Tokenformate.',
+    };
   }
   
   return { isValid: true, maskedToken: maskGitHubToken(trimmed) };
