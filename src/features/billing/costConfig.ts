@@ -134,6 +134,9 @@ export function getDefaultCostConfig(): CostEntry[] {
 // Export for direct access
 export { FALLBACK_LLM_COSTS, TOOL_COSTS };
 
+/** Legacy alias for backwards compatibility with tests */
+export const COST_CONFIG: CostEntry[] = getDefaultCostConfig();
+
 /**
  * Returns the credit cost for a given cost entry.
  *

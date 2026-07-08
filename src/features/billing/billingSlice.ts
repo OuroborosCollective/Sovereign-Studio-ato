@@ -1,4 +1,5 @@
 import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
+import type { RootState } from '../../store';
 
 const API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
@@ -32,6 +33,7 @@ export interface BillingPackage {
   interval: 'month' | 'year' | 'once';
   features: string[];
   tier: SubscriptionTier;
+  credits?: number;  // Credits included in this package (from backend)
   isPopular?: boolean;
   isRecommended?: boolean;
 }
@@ -339,17 +341,17 @@ export const {
 } = billingSlice.actions;
 
 // Selectors
-export const selectCredits = (state: { billing: BillingState }) => state.billing.credits;
-export const selectIsPaywallOpen = (state: { billing: BillingState }) => state.billing.isPaywallOpen;
-export const selectInsufficientFor = (state: { billing: BillingState }) => state.billing.insufficientFor;
-export const selectSubscription = (state: { billing: BillingState }) => state.billing.subscription;
-export const selectIsSubscribed = (state: { billing: BillingState }) => state.billing.isSubscribed;
-export const selectIsLoading = (state: { billing: BillingState }) => state.billing.loading;
-export const selectBillingError = (state: { billing: BillingState }) => state.billing.error;
-export const selectAvailablePackages = (state: { billing: BillingState }) => state.billing.availablePackages;
-export const selectInvoices = (state: { billing: BillingState }) => state.billing.invoices;
-export const selectPackages = (state: { billing: BillingState }) => state.billing.packages;
-export const selectSubscriptionTier = (state: { billing: BillingState }) => state.billing.tier;
-export const selectIsPaywallActive = (state: { billing: BillingState }) => state.billing.isPaywallActive;
+export const selectCredits = (state: RootState) => state.billing.credits;
+export const selectIsPaywallOpen = (state: RootState) => state.billing.isPaywallOpen;
+export const selectInsufficientFor = (state: RootState) => state.billing.insufficientFor;
+export const selectSubscription = (state: RootState) => state.billing.subscription;
+export const selectIsSubscribed = (state: RootState) => state.billing.isSubscribed;
+export const selectIsLoading = (state: RootState) => state.billing.loading;
+export const selectBillingError = (state: RootState) => state.billing.error;
+export const selectAvailablePackages = (state: RootState) => state.billing.availablePackages;
+export const selectInvoices = (state: RootState) => state.billing.invoices;
+export const selectPackages = (state: RootState) => state.billing.packages;
+export const selectSubscriptionTier = (state: RootState) => state.billing.tier;
+export const selectIsPaywallActive = (state: RootState) => state.billing.isPaywallActive;
 
 export default billingSlice.reducer;
