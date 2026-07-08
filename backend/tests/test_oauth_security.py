@@ -1,0 +1,324 @@
+"""
+OAuth Security Live-Path Contract Tests
+
+Diese Tests importieren den ECHTEN Backend-Code aus security_oauth.py
+und testen den Live-Path.
+
+Siehe: https://github.com/OuroborosCollective/Sovereign-Studio-ato/issues/560
+"""
+
+import pytest
+import base64
+import hashlib
+import secrets
+import time
+import threading
+import sys
+import os
+
+# Füge Backend zum Python Path hinzu
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Importiere den ECHTEN Code aus dem Backend-Modul
+from security_oauth import (
+    init_token_encryption,
+    _encrypt_token,
+    _decrypt_token,
+    _store_oauth_state,
+    _get_oauth_state,
+    _clear_all_oauth_states,
+    _validate_pkce,
+    _generate_pkce,
+    _generate_state,
+)
+
+
+# ── Fixtures ───────────────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def clean_oauth_state():
+    """Löscht OAuth State vor und nach jedem Test."""
+    _clear_all_oauth_states()
+    yield
+    _clear_all_oauth_states()
+
+
+@pytest.fixture
+def init_encryption():
+    """Initialisiert Token-Verschlüsselung für Tests."""
+    init_token_encryption("test-secret-key-for-testing")
+    yield
+    # Reset nach Test (nicht wirklich nötig aber sauber)
+
+
+# ── Token Encryption Tests ──────────────────────────────────────────────────────
+
+class TestTokenEncryption:
+    """Live-Path Tests für Token-Verschlüsselung."""
+
+    def test_encrypt_token_uses_real_cipher(self, init_encryption):
+        """Token wird mit echtem Fernet-Cipher verschlüsselt."""
+        original_token = "gho_live_token_12345"
+        encrypted = _encrypt_token(original_token)
+        
+        # Muss verschlüsselt sein
+        assert encrypted != original_token
+        assert len(encrypted) > len(original_token)
+
+    def test_decrypt_token_recovers_original(self, init_encryption):
+        """Entschlüsselter Token ist identisch mit Original."""
+        original_token = "gho_live_token_12345"
+        encrypted = _encrypt_token(original_token)
+        decrypted = _decrypt_token(encrypted)
+        
+        assert decrypted == original_token
+
+    def test_encryption_is_not_deterministic(self, init_encryption):
+        """Gleicher Token produziert unterschiedliche Ciphertexte (IV)."""
+        token = "static_token"
+        encrypted1 = _encrypt_token(token)
+        encrypted2 = _encrypt_token(token)
+        
+        assert encrypted1 != encrypted2, \
+            "Fernet verwendet random IV - gleicher Plaintext muss unterschiedlichen Ciphertext produzieren"
+
+    def test_encrypted_token_is_fernet_format(self, init_encryption):
+        """Verschlüsselter Token hat korrektes Fernet-Format."""
+        token = "test_token"
+        encrypted = _encrypt_token(token)
+        
+        # Fernet-Tokens sind URL-safe Base64 mit 43+ chars
+        assert len(encrypted) >= 43
+        decoded = base64.urlsafe_b64decode(encrypted)
+        assert len(decoded) >= 48  # Fernet-Header + MAC + IV + Payload
+
+    def test_wrong_decryption_returns_none(self, init_encryption):
+        """Ungültige ciphertext gibt None zurück."""
+        result = _decrypt_token("invalid_base64!!")
+        assert result is None
+
+
+# ── OAuth State Store Tests ────────────────────────────────────────────────────
+
+class TestOAuthStateStore:
+    """Live-Path Tests für OAuth State Store."""
+
+    def test_store_and_retrieve_state(self):
+        """State kann gespeichert und abgerufen werden."""
+        state = _generate_state()
+        data = {"user_id": "test-123", "code_challenge": "challenge_abc"}
+        
+        _store_oauth_state(state, data)
+        retrieved = _get_oauth_state(state)
+        
+        assert retrieved is not None
+        assert retrieved["user_id"] == "test-123"
+        assert retrieved["code_challenge"] == "challenge_abc"
+
+    def test_state_is_one_time_use(self):
+        """State darf nur EINMAL verwendet werden."""
+        state = _generate_state()
+        _store_oauth_state(state, {"test": True})
+        
+        # Erste Verwendung - OK
+        first = _get_oauth_state(state)
+        assert first is not None
+        
+        # Zweite Verwendung - None (bereits verwendet)
+        second = _get_oauth_state(state)
+        assert second is None
+
+    def test_invalid_state_returns_none(self):
+        """Ungültiger/nicht existenter State gibt None zurück."""
+        result = _get_oauth_state("this_state_was_never_stored")
+        assert result is None
+
+    def test_state_contains_created_at(self):
+        """State speichert Erstellungszeitpunkt."""
+        state = _generate_state()
+        _store_oauth_state(state, {"data": "test"})
+        
+        retrieved = _get_oauth_state(state)
+        assert "created_at" in retrieved
+        assert isinstance(retrieved["created_at"], float)
+
+    def test_multiple_states_independent(self):
+        """Mehrere States werden unabhängig gespeichert."""
+        state1 = _generate_state()
+        state2 = _generate_state()
+        
+        _store_oauth_state(state1, {"id": 1})
+        _store_oauth_state(state2, {"id": 2})
+        
+        result1 = _get_oauth_state(state1)
+        result2 = _get_oauth_state(state2)
+        
+        assert result1["id"] == 1
+        assert result2["id"] == 2
+
+    def test_clear_all_states(self):
+        """Alle States können gelöscht werden."""
+        _store_oauth_state(_generate_state(), {"a": 1})
+        _store_oauth_state(_generate_state(), {"b": 2})
+        
+        count = _clear_all_oauth_states()
+        assert count == 2
+        
+        # Verify alle weg
+        assert len([s for s in [_generate_state()] if _get_oauth_state(s) is None]) == 1
+
+
+# ── PKCE Validation Tests ───────────────────────────────────────────────────────
+
+class TestPKCEValidation:
+    """Live-Path Tests für PKCE-Validierung."""
+
+    def test_pkce_validation_with_matching_challenge(self, init_encryption):
+        """Korrekter PKCE Verifier wird akzeptiert."""
+        verifier, challenge = _generate_pkce()
+        
+        assert _validate_pkce(verifier, challenge) is True
+
+    def test_pkce_validation_with_wrong_verifier(self, init_encryption):
+        """Falscher PKCE Verifier wird abgelehnt."""
+        correct_verifier, challenge = _generate_pkce()
+        wrong_verifier = secrets.token_urlsafe(64)
+        
+        # Verifier ist anders, also sollte es fehlschlagen
+        assert wrong_verifier != correct_verifier
+        assert _validate_pkce(wrong_verifier, challenge) is False
+
+    def test_pkce_validation_is_optional(self):
+        """PKCE ist optional wenn nicht angefordert."""
+        # Keine PKCE verwendet
+        assert _validate_pkce(None, None) is True
+        assert _validate_pkce("", None) is True
+        assert _validate_pkce(None, "") is True
+
+    def test_pkce_verifier_length(self):
+        """PKCE Verifier hat korrekte Länge (43-128 chars)."""
+        verifier, challenge = _generate_pkce()
+        
+        assert len(verifier) >= 43, f"Verifier zu kurz: {len(verifier)}"
+        assert len(verifier) <= 128, f"Verifier zu lang: {len(verifier)}"
+        assert len(challenge) == 43, f"Challenge hat falsche Länge: {len(challenge)}"
+
+    def test_pkce_is_url_safe(self):
+        """PKCE Parameter sind URL-safe."""
+        verifier, challenge = _generate_pkce()
+        
+        # Darf keine URL-unsicheren Zeichen enthalten
+        assert '+' not in verifier
+        assert '/' not in verifier
+        assert '=' not in verifier
+        assert '+' not in challenge
+        assert '/' not in challenge
+
+    def test_pkce_is_unpredictable(self):
+        """PKCE Verifier sind kryptographisch sicher."""
+        verifiers = set()
+        for _ in range(100):
+            v, _ = _generate_pkce()
+            verifiers.add(v)
+        
+        assert len(verifiers) == 100, "PKCE Verifier nicht eindeutig genug!"
+
+
+# ── State Generation Tests ────────────────────────────────────────────────────
+
+class TestStateGeneration:
+    """Tests für State-Generierung."""
+
+    def test_state_is_cryptographically_random(self):
+        """Generierte States sind kryptographisch sicher."""
+        states = set()
+        for _ in range(100):
+            state = _generate_state()
+            assert len(state) >= 32, f"State zu kurz: {len(state)}"
+            states.add(state)
+        
+        assert len(states) == 100, "State-Kollision - Zufall nicht sicher!"
+
+    def test_state_is_url_safe(self):
+        """States sind URL-safe."""
+        for _ in range(10):
+            state = _generate_state()
+            assert '+' not in state
+            assert '/' not in state
+
+
+# ── Integration Tests ───────────────────────────────────────────────────────────
+
+class TestOAuthIntegration:
+    """Integrationstests für den kompletten OAuth Flow."""
+
+    def test_full_oauth_flow_with_pkce(self, init_encryption):
+        """
+        Simuliert den kompletten OAuth Flow:
+        1. Generate State + PKCE
+        2. Store State mit Challenge
+        3. Token verschlüsseln
+        4. PKCE validieren
+        """
+        # 1. Generate
+        state = _generate_state()
+        verifier, challenge = _generate_pkce()
+        
+        # 2. Store
+        _store_oauth_state(state, {
+            "code_challenge": challenge,
+            "redirect_uri": "https://app.example.com/callback",
+        })
+        
+        # 3. Token verschlüsseln
+        github_token = "gho_real_github_token_12345"
+        encrypted_token = _encrypt_token(github_token)
+        
+        # 4. Retrieve und validieren
+        stored = _get_oauth_state(state)
+        assert stored is not None
+        assert stored["code_challenge"] == challenge
+        
+        # PKCE validieren
+        assert _validate_pkce(verifier, stored["code_challenge"]) is True
+        
+        # Token entschlüsseln
+        decrypted = _decrypt_token(encrypted_token)
+        assert decrypted == github_token
+
+    def test_oauth_flow_with_pkce_rejects_tampered_verifier(self, init_encryption):
+        """Flow lehnt manipulierten PKCE Verifier ab."""
+        state = _generate_state()
+        correct_verifier, challenge = _generate_pkce()
+        wrong_verifier, _ = _generate_pkce()  # Anderer random Verifier
+        
+        _store_oauth_state(state, {"code_challenge": challenge})
+        stored = _get_oauth_state(state)
+        
+        # Falscher Verifier wird abgelehnt
+        assert _validate_pkce(wrong_verifier, stored["code_challenge"]) is False
+
+
+# ── Health Check ────────────────────────────────────────────────────────────────
+
+def test_module_exports_all_functions():
+    """Verifiziert dass alle Funktionen exportiert werden."""
+    from security_oauth import __all__
+    
+    required_exports = [
+        "init_token_encryption",
+        "_encrypt_token",
+        "_decrypt_token",
+        "_store_oauth_state",
+        "_get_oauth_state",
+        "_validate_pkce",
+        "_generate_pkce",
+        "_generate_state",
+    ]
+    
+    for func in required_exports:
+        assert func in __all__, f"Fehlende Export: {func}"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

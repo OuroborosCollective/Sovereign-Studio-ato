@@ -18,6 +18,18 @@ import urllib.parse
 import uuid
 from functools import wraps
 
+# Import OAuth Security Module
+from security_oauth import (
+    init_token_encryption,
+    _encrypt_token,
+    _decrypt_token,
+    _store_oauth_state,
+    _get_oauth_state,
+    _validate_pkce,
+    _generate_state,
+    _generate_pkce,
+)
+
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
@@ -3153,70 +3165,14 @@ def _decode_jwt(token: str) -> str | None:
         return None
 
 
-# ── GitHub Token Encryption ────────────────────────────────────────────────────
-try:
-    from cryptography.fernet import Fernet as _Fernet
-    import hashlib as _hashlib
-    _GITHUB_TOKEN_KEY = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", JWT_SECRET)
-    _fernet_key = base64.urlsafe_b64encode(
-        _hashlib.sha256(_GITHUB_TOKEN_KEY.encode()).digest()
-    )
-    _github_cipher = _Fernet(_fernet_key)
-    
-    def _encrypt_token(token: str) -> str:
-        """Verschlüsselt einen Token für sichere Speicherung."""
-        return _github_cipher.encrypt(token.encode()).decode()
-    
-    def _decrypt_token(encrypted: str) -> str | None:
-        """Entschlüsselt einen Token für API-Zugriff."""
-        try:
-            return _github_cipher.decrypt(encrypted.encode()).decode()
-        except Exception:
-            return None
-except ImportError:
-    # Fallback wenn cryptography nicht installiert
-    def _encrypt_token(token: str) -> str:
-        return token  # NICHT FÜR PRODUKTION!
-    def _decrypt_token(encrypted: str) -> str | None:
-        return encrypted  # NICHT FÜR PRODUKTION!
-
 # ── GitHub OAuth Config ───────────────────────────────────────────────────────
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 
-# ── OAuth State & PKCE Store ───────────────────────────────────────────────────
-# In-Process store for OAuth state and PKCE (use Redis/DB in production)
-import threading
-_oauth_state_store: dict[str, dict] = {}
-_oauth_lock = threading.Lock()
-
-def _store_oauth_state(state: str, data: dict) -> None:
-    """Speichert OAuth State mit zugehörigen Daten (PKCE, etc.)."""
-    with _oauth_lock:
-        _oauth_state_store[state] = {
-            **data,
-            "created_at": time.time(),
-        }
-
-def _get_oauth_state(state: str) -> dict | None:
-    """Holt OAuth State und löscht ihn (einmalige Verwendung)."""
-    with _oauth_lock:
-        data = _oauth_state_store.pop(state, None)
-        if data:
-            # Prüfe ob abgelaufen (10 Minuten)
-            if time.time() - data.get("created_at", 0) > 600:
-                return None
-        return data
-
-def _validate_pkce(verifier: str | None, stored_challenge: str | None) -> bool:
-    """Validiert PKCE code_verifier gegen gespeicherten challenge."""
-    if not verifier or not stored_challenge:
-        return True  # PKCE optional wenn nicht angefordert
-    import hashlib
-    import base64
-    digest = hashlib.sha256(verifier.encode()).digest()
-    challenge = base64.urlsafe_b64encode(digest).decode().rstrip('=')
-    return challenge == stored_challenge
+# Initialisiere Token Encryption mit Key aus Environment
+_token_encryption_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", JWT_SECRET)
+if _token_encryption_key:
+    init_token_encryption(_token_encryption_key)
 
 
 def _user_row_to_dict(row) -> dict:
