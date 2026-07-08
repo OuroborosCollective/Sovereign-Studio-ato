@@ -17,7 +17,13 @@ export type PredictiveRuntimePolicyCode =
   | 'unknown_action_blocks'
   | 'unknown_surface_blocks'
   | 'draft_pr_requires_patch_package'
-  | 'github_write_requires_validated_access';
+  | 'github_write_requires_validated_access'
+  | 'agent_job_requires_repo'
+  | 'agent_job_requires_validated_github_access_for_write'
+  | 'agent_job_requires_workspace_policy'
+  | 'agent_tool_requires_backend_state'
+  | 'agent_result_requires_evidence'
+  | 'agent_cleanup_required_after_terminal_state';
 
 export type PredictiveRuntimePolicyMode = 'suggestion' | 'execution';
 
@@ -28,9 +34,14 @@ export interface PredictiveRuntimePolicyViolation {
 
 export interface PredictiveRuntimeContext {
   readonly repoReady?: boolean;
-  readonly githubAccessState?: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid';
+  readonly githubAccessState?: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid' | 'failed';
   readonly githubWriteAllowed?: boolean;
   readonly hasPackage?: boolean;
+  readonly agentJobStatus?: 'idle' | 'queued' | 'provisioning' | 'running' | 'validating' | 'completed' | 'failed' | 'blocked' | 'cleaned';
+  readonly workspaceReady?: boolean;
+  readonly hasEvidence?: boolean;
+  readonly hasTerminalResult?: boolean;
+  readonly backendAgentStateReady?: boolean;
 }
 
 export interface PredictiveRuntimePolicyInput {
@@ -60,6 +71,12 @@ const CHECKED_POLICIES: readonly PredictiveRuntimePolicyCode[] = [
   'unknown_surface_blocks',
   'draft_pr_requires_patch_package',
   'github_write_requires_validated_access',
+  'agent_job_requires_repo',
+  'agent_job_requires_validated_github_access_for_write',
+  'agent_job_requires_workspace_policy',
+  'agent_tool_requires_backend_state',
+  'agent_result_requires_evidence',
+  'agent_cleanup_required_after_terminal_state',
 ];
 
 const ALLOWED_ACTIONS = new Set([
@@ -73,6 +90,13 @@ const ALLOWED_ACTIONS = new Set([
   'start_openhands',
   'create_draft_pr',
   'show_blocker',
+  'create_agent_job',
+  'provision_agent_workspace',
+  'run_agent_tool',
+  'validate_agent_result',
+  'prepare_agent_draft_pr',
+  'learn_agent_pattern',
+  'cleanup_agent_workspace',
 ]);
 
 const ALLOWED_SURFACES: ReadonlySet<PredictiveSurface> = new Set([
@@ -87,6 +111,11 @@ const ALLOWED_SURFACES: ReadonlySet<PredictiveSurface> = new Set([
   'repo',
   'toolchain',
   'runtime',
+  'agent_job',
+  'agent_workspace',
+  'agent_tool',
+  'agent_evidence',
+  'agent_pattern',
 ]);
 
 const WRITE_LIKE_ACTIONS = new Set([
@@ -94,9 +123,21 @@ const WRITE_LIKE_ACTIONS = new Set([
   'start_openhands',
   'start_workspace',
   'create_draft_pr',
+  'create_agent_job',
+  'prepare_agent_draft_pr',
 ]);
 
-const SECRET_PATTERN = /(?:github_pat_[A-Za-z0-9_]{10,}|gh[pousr]_[A-Za-z0-9_]{10,}|GITHUB_(?:TOKEN|CLIENT_SECRET|PAT)|client_secret)/i;
+const AGENT_ACTIONS = new Set([
+  'create_agent_job',
+  'provision_agent_workspace',
+  'run_agent_tool',
+  'validate_agent_result',
+  'prepare_agent_draft_pr',
+  'learn_agent_pattern',
+  'cleanup_agent_workspace',
+]);
+
+const SECRET_PATTERN = /(?:github_pat_[A-Za-z0-9_]{10,}|gh[pousr]_[A-Za-z0-9_]{10,}|GITHUB_(?:TOKEN|CLIENT_SECRET|PAT)|client_secret|Authorization:\s*Bearer\s+[^\s]+)/i;
 
 function containsSecret(value: unknown): boolean {
   try {
@@ -132,6 +173,71 @@ function validateSurfaces(
         `Predictive Runtime blockiert unbekannte Oberfläche: ${String(surface)}.`,
       );
     }
+  }
+}
+
+function validateAgentPrediction(
+  violations: PredictiveRuntimePolicyViolation[],
+  prediction: PredictiveActionDecision,
+  runtime: PredictiveRuntimeContext,
+): void {
+  if (!AGENT_ACTIONS.has(prediction.action)) return;
+
+  if (prediction.action === 'create_agent_job' && runtime.repoReady !== true) {
+    pushViolation(
+      violations,
+      'agent_job_requires_repo',
+      'Agent Job darf erst vorgeschlagen werden, wenn Repo-Kontext geladen und geprüft ist.',
+    );
+  }
+
+  if (prediction.action === 'create_agent_job' && runtime.githubAccessState && runtime.githubAccessState !== 'ready') {
+    pushViolation(
+      violations,
+      'agent_job_requires_validated_github_access_for_write',
+      'Agent Job mit Schreib-/Repo-Pfad braucht validierten GitHub-Zugang.',
+    );
+  }
+
+  if (prediction.action === 'provision_agent_workspace' && runtime.agentJobStatus !== 'queued' && runtime.agentJobStatus !== 'provisioning') {
+    pushViolation(
+      violations,
+      'agent_job_requires_workspace_policy',
+      'Agent Workspace darf nur aus einem echten queued/provisioning Agent-Job-State vorbereitet werden.',
+    );
+  }
+
+  if (prediction.action === 'run_agent_tool') {
+    if (runtime.backendAgentStateReady === false || runtime.agentJobStatus === 'idle' || !runtime.agentJobStatus) {
+      pushViolation(
+        violations,
+        'agent_tool_requires_backend_state',
+        'Agent Tool braucht einen gespeicherten Backend-Agent-Job-State.',
+      );
+    }
+    if (runtime.workspaceReady !== true) {
+      pushViolation(
+        violations,
+        'agent_job_requires_workspace_policy',
+        'Agent Tool darf ohne geprüften Workspace-State nicht laufen.',
+      );
+    }
+  }
+
+  if ((prediction.action === 'validate_agent_result' || prediction.action === 'prepare_agent_draft_pr' || prediction.action === 'learn_agent_pattern') && runtime.hasEvidence !== true) {
+    pushViolation(
+      violations,
+      'agent_result_requires_evidence',
+      'Agent Ergebnis braucht changedFiles, diffSummary, testSummary oder blockerReason als Runtime-Evidence.',
+    );
+  }
+
+  if (prediction.action === 'cleanup_agent_workspace' && runtime.hasTerminalResult !== true) {
+    pushViolation(
+      violations,
+      'agent_cleanup_required_after_terminal_state',
+      'Agent Workspace Cleanup ist erst nach terminalem Agent-State erlaubt.',
+    );
   }
 }
 
@@ -206,6 +312,8 @@ export function evaluatePredictiveRuntimePolicy(
         'Write-ähnliche Aktionen brauchen validierten GitHub-Zugang.',
       );
     }
+
+    validateAgentPrediction(violations, prediction, runtime);
   }
 
   validateSurfaces(violations, input);
