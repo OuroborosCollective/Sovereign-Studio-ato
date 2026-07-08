@@ -51,18 +51,26 @@ export type SovereignRouteBlocker =
 
 /**
  * Next actions - what the user/runtime should do next.
+ * Predictive may suggest these actions, but must never execute them directly.
  */
 export type SovereignNextAction =
-  | 'ask_user'               // Ask user for clarification
-  | 'load_repo'              // Load a repository first
-  | 'validate_github_access' // Validate GitHub access
-  | 'generate_patch_package' // Generate patch/package before Draft PR
-  | 'run_worker'             // Run chat worker
-  | 'run_direct_patch'       // Run direct GitHub patch
-  | 'start_workspace'        // Start workspace executor
-  | 'start_openhands'        // Start OpenHands executor
-  | 'create_draft_pr'        // Create draft PR
-  | 'show_blocker';          // Show blocker explanation
+  | 'ask_user'                    // Ask user for clarification
+  | 'load_repo'                   // Load a repository first
+  | 'validate_github_access'      // Validate GitHub access
+  | 'generate_patch_package'      // Generate patch/package before Draft PR
+  | 'run_worker'                  // Run chat worker
+  | 'run_direct_patch'            // Run direct GitHub patch
+  | 'start_workspace'             // Start workspace executor
+  | 'start_openhands'             // Start OpenHands executor
+  | 'create_draft_pr'             // Create draft PR
+  | 'show_blocker'                // Show blocker explanation
+  | 'create_agent_job'            // Explicitly create a backend Sovereign Agent Job
+  | 'provision_agent_workspace'   // Provision agent workspace through backend state
+  | 'run_agent_tool'              // Run a guarded backend agent tool
+  | 'validate_agent_result'       // Validate changedFiles/diff/tests evidence
+  | 'prepare_agent_draft_pr'      // Prepare draft PR readiness state only
+  | 'learn_agent_pattern'         // Persist validated local pattern candidate only
+  | 'cleanup_agent_workspace';    // Cleanup terminal agent workspace
 
 /**
  * Decision produced by the capability router.
