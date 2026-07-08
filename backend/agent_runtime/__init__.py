@@ -53,6 +53,9 @@ from .tool_policy import (  # noqa: F401
     validate_tool_path,
     validate_workspace_ready,
 )
+from .tool_runner import (  # noqa: F401
+    run_agent_job_tool,
+)
 from .tools import (  # noqa: F401
     ToolEvent,
     ToolResult,
