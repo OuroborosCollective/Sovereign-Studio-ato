@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/containers/BuilderContainer.test.tsx",
+  "source_ref": "feat/repo-split-inspector",
+  "branch_base_ref": "main",
+  "branch": "feat/repo-split-inspector",
+  "commit_message": "test(android): cover responsive repo split inspector",
+  "pr_title": "feat(android): use repo tree as responsive split inspector",
+  "pr_body": "Adds regression coverage that the repo split inspector only appears after a real repo snapshot is loaded and remains an inspection surface, not a fake dashboard.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "  it(\"opens repo tree inspector from the loaded repo label and fills composer on file tap\", async () => {",
+      "replace": "  it(\"mounts repo split inspector only after a real repo snapshot is loaded\", async () => {\n    const props = baseProps();\n    mockFetchSequence(jsonResponse({ tree: [\n      { path: \"src/App.tsx\", type: \"blob\", size: 123 },\n      { path: \"README.md\", type: \"blob\", size: 42 },\n    ], truncated: false }));\n    render(<BuilderContainer {...props} mission=\"\" repoReady={false} />);\n\n    expect(screen.queryByTestId(\"repo-split-inspector\")).toBeNull();\n    fireEvent.change(chatField(), { target: { value: \"https://github.com/OuroborosCollective/Sovereign-Studio-ato\" } });\n    fireEvent.click(sendButton());\n\n    await waitFor(() => expect(screen.getByTestId(\"repo-split-inspector\")).toBeDefined());\n    expect(screen.getByRole(\"navigation\", { name: \"Repo Baum Split Inspector\" })).toBeDefined();\n    expect(screen.queryByTestId(\"repo-tree-explorer\")).toBeNull();\n    expect(screen.getByTestId(\"builder-container\")).toHaveClass(\"sovereign-builder-container--repo-ready\");\n    expect(props.onMissionChange).not.toHaveBeenCalled();\n  });\n\n  it(\"opens repo tree inspector from the loaded repo label and fills composer on file tap\", async () => {"
+    }
+  ]
+}
