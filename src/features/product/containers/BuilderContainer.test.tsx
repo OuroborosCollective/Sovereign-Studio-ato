@@ -6,6 +6,18 @@ import { BuilderContainer } from "./BuilderContainer";
 import { useUserStore } from "../../user/useUserStore";
 import { store } from "../../../store";
 
+// Mock useBilling to avoid Redux context errors from PaywallModal
+vi.mock("../../../features/billing/hooks/useBilling", () => ({
+  useBilling: () => ({
+    credits: 100,
+    packages: [],
+    isLoading: false,
+    error: null,
+    canUseCredits: true,
+    purchaseCredits: vi.fn(),
+  }),
+}));
+
 function renderWithProviders(ui: React.ReactElement) {
   return render(<Provider store={store}>{ui}</Provider>);
 }
