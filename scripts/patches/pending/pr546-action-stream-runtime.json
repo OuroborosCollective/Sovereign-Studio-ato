@@ -1,0 +1,20 @@
+{
+  "target": "src/features/product/runtime/sovereignActionStreamRuntime.ts",
+  "source_ref": "fix/access-card-bridge-flow",
+  "branch_base_ref": "fix/access-card-bridge-flow",
+  "branch": "fix/access-card-bridge-flow",
+  "commit_message": "fix(runtime): block patch route until output exists",
+  "pr_title": "fix(builder): open access gate and honor allowed patch route",
+  "pr_body": "Addresses review feedback for PR #546: allowed patch routes no longer become terminal done without patch, diff, or Draft PR output.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "function buildCodeResultGateEvent(createdAt: number): SovereignActionEventInput {\n  return {\n    kind: 'git\u0068ub_access_required',\n    route: 'git\u0068ub-access',\n    label: 'Code-Auftrag braucht Ergebnis-Gate',\n    detail:\n      'Worker-Antwort ist nur Beratung. Für echte Umsetzung muss Sovereign Patch/Diff erzeugen oder Git\u0048ub-Zugang/Draft-PR-Route öffnen.',\n    state: 'blocked',\n    createdAt: createdAt + 1,\n  };\n}\n\nfunction sameActiveBlocker(left: SovereignActionEvent | null, right: SovereignActionEventInput): boolean {",
+      "replace": "function buildCodeResultGateEvent(createdAt: number): SovereignActionEventInput {\n  return {\n    kind: 'git\u0068ub_access_required',\n    route: 'git\u0068ub-access',\n    label: 'Code-Auftrag braucht Ergebnis-Gate',\n    detail:\n      'Worker-Antwort ist nur Beratung. Für echte Umsetzung muss Sovereign Patch/Diff erzeugen oder Git\u0048ub-Zugang/Draft-PR-Route öffnen.',\n    state: 'blocked',\n    createdAt: createdAt + 1,\n  };\n}\n\nfunction isPrematurePatchRouteDone(input: SovereignActionEventInput): boolean {\n  return input.route === 'git\u0068ub-patch'\n    && input.kind === 'done'\n    && input.state === 'done'\n    && !input.target;\n}\n\nfunction normalizePatchRouteEvent(input: SovereignActionEventInput): SovereignActionEventInput {\n  if (!isPrematurePatchRouteDone(input)) return input;\n  return {\n    ...input,\n    kind: 'patch_blocked',\n    label: input.label.trim() || 'Patch/Draft-PR Route wartet auf Ergebnis',\n    detail: [\n      input.detail?.trim() || 'Patch/Draft-PR Route hat noch keinen Patch, Diff oder Draft PR erzeugt.',\n      'Kein terminales Done ohne Patch, Diff oder Draft PR.',\n    ].join('\\n'),\n    state: 'blocked',\n  };\n}\n\nfunction sameActiveBlocker(left: SovereignActionEvent | null, right: SovereignActionEventInput): boolean {"
+    },
+    {
+      "search": "): SovereignActionStreamState {\n  if (sameActiveBlocker(stream.lastEvent, input)) {\n    return stream;\n  }\n\n  const createdAt = input.createdAt ?? Date.now();\n  const nextEvent = createActionEvent({ ...input, createdAt }, stream.events.length);\n  const shouldAddCodeGate =\n    input.kind === 'llm_response_received'\n    && input.route === 'worker'\n    && input.state === 'done'\n    && hasUnresolvedCodeResultGate(stream.events);",
+      "replace": "): SovereignActionStreamState {\n  const normalizedInput = normalizePatchRouteEvent(input);\n\n  if (sameActiveBlocker(stream.lastEvent, normalizedInput)) {\n    return stream;\n  }\n\n  const createdAt = normalizedInput.createdAt ?? Date.now();\n  const nextEvent = createActionEvent({ ...normalizedInput, createdAt }, stream.events.length);\n  const shouldAddCodeGate =\n    normalizedInput.kind === 'llm_response_received'\n    && normalizedInput.route === 'worker'\n    && normalizedInput.state === 'done'\n    && hasUnresolvedCodeResultGate(stream.events);"
+    }
+  ]
+}
