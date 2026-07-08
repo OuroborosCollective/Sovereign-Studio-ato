@@ -3960,11 +3960,18 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
       bodySnippet?: string;
     } | null = null;
     let streamDiagnostic: DevChatWorkerDiagnostic | null = null;
+    let streamFallbackMetadata: { fallbackUsed: boolean; preferredModel: string; actualModel: string; fallbackReason?: string } | null = null;
+    
     try {
-      for await (const chunk of streamDevChatWorkerReply({
-        model: d.modelId,
-        messages: workerMessages,
-      })) {
+      for await (const chunk of streamDevChatWorkerReply(
+        {
+          model: d.modelId,
+          messages: workerMessages,
+        },
+        (metadata) => {
+          streamFallbackMetadata = metadata;
+        }
+      )) {
         fullText += chunk;
         setStreamingText(fullText);
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -3990,10 +3997,15 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
       appendActionEvent(buildWorkerResponseEvent());
       // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display
       const claimCheck = checkChatClaim(fullText, agentWorkSnapshot);
-      const textToAppend =
+      let textToAppend =
         claimCheck.allowed || !claimCheck.honestFallback
           ? fullText
           : `${fullText}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
+      
+      if (streamFallbackMetadata?.fallbackUsed) {
+        textToAppend += `\n\n_Hinweis: ${streamFallbackMetadata.preferredModel} war nicht erreichbar, Antwort kam von ${streamFallbackMetadata.actualModel}._`;
+      }
+
       if (!claimCheck.allowed && claimCheck.violations.length > 0) {
         addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
       }
@@ -4011,7 +4023,13 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
     if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-      appendChatLine({ role: "assistant", text: fallback.content });
+      
+      let textToAppend = fallback.content;
+      if (fallback.fallbackUsed) {
+        textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
+      }
+      
+      appendChatLine({ role: "assistant", text: textToAppend });
       return;
     }
 
