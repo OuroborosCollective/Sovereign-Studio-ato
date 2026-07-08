@@ -35,6 +35,11 @@ class StoredSovereignAgentJob:
     test_summary: str | None = None
     blocker: str | None = None
     events: tuple[dict[str, Any], ...] = ()
+    draft_pr_head_branch: str | None = None
+    draft_pr_base_branch: str | None = None
+    draft_pr_title: str | None = None
+    draft_pr_body: str | None = None
+    draft_pr_ready: bool = False
 
 
 def _json(value: Any) -> str:
@@ -83,6 +88,11 @@ def stored_job_from_row(row: Mapping[str, Any]) -> StoredSovereignAgentJob:
         test_summary=row.get("test_summary"),
         blocker=row.get("blocker"),
         events=tuple(event for event in _coerce_json_array(row.get("events")) if isinstance(event, dict)),
+        draft_pr_head_branch=row.get("draft_pr_head_branch"),
+        draft_pr_base_branch=row.get("draft_pr_base_branch"),
+        draft_pr_title=row.get("draft_pr_title"),
+        draft_pr_body=row.get("draft_pr_body"),
+        draft_pr_ready=bool(row.get("draft_pr_ready", False)),
     )
 
 
@@ -198,6 +208,40 @@ def update_agent_job_state(
                 sanitize_agent_text(test_summary, 2000) if test_summary else None,
                 draft_pr_url if draft_pr_url and draft_pr_url.startswith("https://github.com/") else None,
                 sanitize_agent_text(blocker, 1200) if blocker else None,
+                job_id,
+            ),
+        )
+    conn.commit()
+
+
+def mark_draft_pr_prepared(
+    conn: Any,
+    *,
+    job_id: str,
+    head_branch: str,
+    base_branch: str,
+    title: str,
+    body: str,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sovereign_agent_jobs
+            SET status = 'validating',
+                draft_pr_ready = TRUE,
+                draft_pr_ready_at = NOW(),
+                draft_pr_head_branch = %s,
+                draft_pr_base_branch = %s,
+                draft_pr_title = %s,
+                draft_pr_body = %s,
+                blocker = NULL
+            WHERE job_id = %s
+            """,
+            (
+                sanitize_agent_text(head_branch, 160),
+                sanitize_agent_text(base_branch, 160),
+                sanitize_agent_text(title, 200),
+                sanitize_agent_text(body, 8000),
                 job_id,
             ),
         )
