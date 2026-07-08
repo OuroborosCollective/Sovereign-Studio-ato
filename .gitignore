@@ -35,3 +35,4 @@ android/app/sovereign-release-key.jks
 android/app/*.jks
 android/app/*.keystore
 android/app/*.p12
+backend_app.py
