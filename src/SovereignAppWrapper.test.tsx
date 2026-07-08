@@ -28,7 +28,7 @@ beforeAll(() => {
 
 describe('SovereignAppWrapper - Chat-only UI Contract', () => {
   it('forwards directly into the App without a wrapper lamp shell', async () => {
-    render(<Provider store={store}><SovereignAppWrapper />);
+    render(<Provider store={store}><SovereignAppWrapper /></Provider>);
 
     await waitFor(() => {
       expect(screen.getByTestId('builder-container')).toHaveAttribute(
@@ -43,7 +43,7 @@ describe('SovereignAppWrapper - Chat-only UI Contract', () => {
   });
 
   it('keeps the AppControl DevChat workbench as the visible product surface', async () => {
-    render(<Provider store={store}><SovereignAppWrapper />);
+    render(<Provider store={store}><SovereignAppWrapper /></Provider>);
 
     await waitFor(() => {
       expect(screen.getByText('DevChat')).toBeDefined();
