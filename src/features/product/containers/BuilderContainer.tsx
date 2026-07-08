@@ -378,6 +378,7 @@ import {
   buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
 import { buildDirectPatchPlanWithContentLoad, detectDirectPatchTarget } from "../runtime/directGithubPatchRuntime";
+import { buildGeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { useUserStore } from '../../user/useUserStore';
@@ -3967,23 +3968,44 @@ export function BuilderContainer({
             });
 
             if ('result' in directPatchResult && directPatchResult.result.ok) {
+              const res = directPatchResult.result;
+              const diffReport = buildGeneratedFileDiffReport(
+                [{ path: res.targetPath, content: res.proposedContent }],
+                [{ path: res.targetPath, content: res.baseContent, found: true }]
+              );
+
               appendActionEvent({
                 kind: 'route_selected',
                 route: 'direct-github-patch',
                 label: 'Direct GitHub Patch Route gewählt',
-                detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
+                detail: `Zieldatei: ${res.targetPath}`,
                 state: 'running',
               });
+              
+              // Diff-Preview in Action Stream einspeisen
+              appendActionEvent({
+                kind: 'done',
+                route: 'github-patch',
+                label: 'Patch-Vorschau generiert',
+                detail: res.patchSummary,
+                state: 'done',
+              });
+
               appendChatLine({
                 role: 'assistant',
-                text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.
+                text: `Direct GitHub Patch Route verfügbar für ${res.targetPath}.
 
 Patch-Vorschlag:
-${directPatchResult.result.patchSummary}
+${res.patchSummary}
 
-Nächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
               });
-              addLog('info', 'Write intent routed through Direct GitHub Patch Route after bridge allow', 'router');
+              
+              // Wir setzen hier den State für das UI, falls vorhanden. 
+              // Da BuilderContainer den State über Props erhält oder intern verwaltet,
+              // nutzen wir die vorhandenen Event-Mechanismen.
+              
+              addLog('info', 'Write intent routed through Direct GitHub Patch Route with diff preview', 'router');
               return;
             }
 

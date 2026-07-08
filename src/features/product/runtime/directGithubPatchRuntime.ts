@@ -264,7 +264,7 @@ export function executeDirectPatchRuntime(args: DirectPatchRuntimeArgs): DirectG
   if (containsLikelySecret(patchResult.content)) return { ok: false, reason: 'Patch enthält möglicherweise ein Secret. Bitte Tokens/Secrets entfernen.', blocker: 'unsafe_target' };
 
   const nextAction: DirectPatchNextAction = 'preview_diff';
-  return { ok: true, targetPath, patchSummary: patchResult.summary, nextAction, proposedContent: patchResult.content, instruction };
+  return { ok: true, targetPath, patchSummary: patchResult.summary, nextAction, proposedContent: patchResult.content, baseContent, instruction };
 }
 
 export interface BuildDirectPatchPlanArgs {

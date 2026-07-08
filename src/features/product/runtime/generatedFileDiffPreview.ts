@@ -44,7 +44,7 @@ function preview(content: string, maxChars = 1800): string {
   return content.length > maxChars ? `${content.slice(0, maxChars)}\n…` : content;
 }
 
-function buildUnifiedLikePreview(path: string, oldContent: string | null, newContent: string): string {
+export function buildUnifiedLikePreview(path: string, oldContent: string | null, newContent: string): string {
   if (oldContent === null) {
     return [`+++ ${path}`, ...newContent.split(/\r?\n/).slice(0, 80).map((line) => `+${line}`)].join('\n');
   }

@@ -42,6 +42,8 @@ export interface GitPatchResult {
   readonly error?: string;
 }
 
+import { buildUnifiedLikePreview, type GeneratedFileDiffReport } from '../product/runtime/generatedFileDiffPreview';
+
 export interface GitPatchValidationReport {
   readonly valid: boolean;
   readonly errors: readonly string[];
@@ -180,6 +182,42 @@ function parseRepoFromUrl(repoUrl: string): { owner: string; repo: string } | nu
     .match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
   if (!match) return null;
   return { owner: match[1], repo: match[2] };
+}
+
+export function convertPatchResultToDiffReport(
+  filePath: string,
+  originalContent: string,
+  patchResult: GitPatchResult,
+): GeneratedFileDiffReport {
+  const newContent = patchResult.newContent ?? originalContent;
+  const oldLines = originalContent.split(/\r?\n/);
+  const newLines = newContent.split(/\r?\n/);
+  const changed = originalContent !== newContent;
+
+  const item = {
+    path: filePath,
+    kind: (changed ? 'modified' : 'unchanged') as any,
+    oldLineCount: oldLines.length,
+    newLineCount: newLines.length,
+    addedLines: Math.max(0, newLines.length - oldLines.length),
+    removedLines: Math.max(0, oldLines.length - newLines.length),
+    changed,
+    summary: changed
+      ? `${filePath} will change from ${oldLines.length} to ${newLines.length} line(s).`
+      : `${filePath} appears unchanged.`,
+    preview: buildUnifiedLikePreview(filePath, originalContent, newContent),
+  };
+
+  return {
+    files: [item],
+    created: 0,
+    modified: changed ? 1 : 0,
+    unchanged: changed ? 0 : 1,
+    sourceMissing: 0,
+    totalAddedLines: item.addedLines,
+    totalRemovedLines: item.removedLines,
+    summary: `Patch dry-run for ${filePath}: ${changed ? '1 modified' : 'unchanged'}.`,
+  };
 }
 
 export async function applyGitPatch(req: GitPatchRequest): Promise<GitPatchResult> {

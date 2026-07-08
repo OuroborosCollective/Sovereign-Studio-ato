@@ -1,0 +1,27 @@
+[1;37m[[m
+  [1;37m{[m
+    [1;34m"createdAt"[m[1;37m:[m [32m"2026-07-08T09:41:04Z"[m[1;37m,[m
+    [1;34m"number"[m[1;37m:[m 557[1;37m,[m
+    [1;34m"title"[m[1;37m:[m [32m"ux(session): wiederhergestellte Session mit Alter sichtbar machen"[m
+  [1;37m}[m[1;37m,[m
+  [1;37m{[m
+    [1;34m"createdAt"[m[1;37m:[m [32m"2026-07-08T09:40:41Z"[m[1;37m,[m
+    [1;34m"number"[m[1;37m:[m 556[1;37m,[m
+    [1;34m"title"[m[1;37m:[m [32m"feat(runtime): Modell-Fallback im Chat als unaufdringlichen Hinweis anzeigen"[m
+  [1;37m}[m[1;37m,[m
+  [1;37m{[m
+    [1;34m"createdAt"[m[1;37m:[m [32m"2026-07-08T09:40:30Z"[m[1;37m,[m
+    [1;34m"number"[m[1;37m:[m 555[1;37m,[m
+    [1;34m"title"[m[1;37m:[m [32m"feat(chat): Code-Blöcke in ChatMarkdown mit Copy-Aktion ausstatten"[m
+  [1;37m}[m[1;37m,[m
+  [1;37m{[m
+    [1;34m"createdAt"[m[1;37m:[m [32m"2026-07-08T09:40:16Z"[m[1;37m,[m
+    [1;34m"number"[m[1;37m:[m 554[1;37m,[m
+    [1;34m"title"[m[1;37m:[m [32m"refactor(builder): Workbench-Komponenten aus BuilderContainer auslagern"[m
+  [1;37m}[m[1;37m,[m
+  [1;37m{[m
+    [1;34m"createdAt"[m[1;37m:[m [32m"2026-07-08T09:40:05Z"[m[1;37m,[m
+    [1;34m"number"[m[1;37m:[m 553[1;37m,[m
+    [1;34m"title"[m[1;37m:[m [32m"feat(github): Patch-Dry-Run in vorhandene Diff-Preview verdrahten"[m
+  [1;37m}[m
+[1;37m][m

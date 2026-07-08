@@ -66,6 +66,7 @@ export interface DirectGitHubPatchSuccess {
   readonly patchSummary: string;
   readonly nextAction: DirectPatchNextAction;
   readonly proposedContent: string;
+  readonly baseContent: string;
   readonly instruction: string;
 }
 
