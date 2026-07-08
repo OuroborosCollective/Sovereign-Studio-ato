@@ -385,6 +385,7 @@ import { buildDirectPatchPlanWithContentLoad, detectDirectPatchTarget } from "..
 import { buildGeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
+import { PaywallModal } from '../../billing/PaywallModal';
 import { useUserStore } from '../../user/useUserStore';
 import { LoginModal } from '../../user/components/LoginModal';
 import { UserProfile } from '../../user/components/UserProfile';
@@ -2450,6 +2451,7 @@ export function BuilderContainer({
   const { user: authUser, refreshUser } = useUserStore();
   const [showLogin, setShowLogin]     = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
   useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sovereign App Toolchain — auto-load after login
@@ -5212,9 +5214,12 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
       {showProfile && (
         <UserProfile
           onClose={() => setShowProfile(false)}
-          onBuyCredits={() => { setShowProfile(false); }}
+          onBuyCredits={() => { setShowProfile(false); setShowPaywall(true); }}
         />
       )}
+
+      {/* Paywall Modal — Credit Packages from Backend */}
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
 
       {/* Sovereign Skill Scanner — /scan-skills opens this */}
       {showSkillScan && (

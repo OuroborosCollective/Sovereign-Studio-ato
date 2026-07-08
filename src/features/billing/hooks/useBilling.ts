@@ -16,6 +16,7 @@ export const useBilling = () => {
   const invoices = useAppSelector(selectInvoices);
   const loading = useAppSelector(selectIsLoading);
   const error = useAppSelector(selectBillingError);
+  const packages = useAppSelector(selectPackages);
 
   useEffect(() => {
     dispatch(fetchBillingData());
@@ -46,6 +47,7 @@ export const useBilling = () => {
     error,
     isProcessing: loading,
     currentPlanId,
+    packages,
     refresh: () => dispatch(fetchBillingData()),
     purchase,
     updateSubscription,
