@@ -4492,7 +4492,10 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
   return (
     <>
     <section
-      className={builderContainerContract.rootClass}
+      className={[
+        builderContainerContract.rootClass,
+        chatRepoSnapshot ? "sovereign-builder-container--repo-ready" : "",
+      ].filter(Boolean).join(" ")}
       data-role={builderContainerContract.dataRole}
       data-testid={builderContainerContract.testId}
       data-layout="devchat-appcontrol-integrated"
@@ -4528,6 +4531,28 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
         .sovereign-side-panel { display: none; }
         @media (min-width: 1024px) and (min-height: 600px) {
           .sovereign-side-panel { display: flex; }
+        }
+        .sovereign-chat-workbench { flex: 1; min-height: 0; display: flex; background: ${C.bg}; }
+        .sovereign-chat-body { min-width: 0; }
+        .sovereign-repo-split-inspector { display: none; }
+        @media (orientation: landscape) and (min-width: 860px) and (min-height: 520px), (min-width: 1024px) and (min-height: 600px) {
+          .sovereign-builder-container--repo-ready { max-width: 100vw; }
+          .sovereign-repo-split-inspector {
+            display: flex;
+            flex: 0 0 clamp(240px, 28vw, 360px);
+            min-width: 0;
+            max-width: 38vw;
+            overflow: hidden;
+            border-right: 1px solid ${C.border};
+            background: ${C.surface};
+          }
+          .sovereign-repo-split-inspector [data-testid="repo-split-inspector"] {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            padding: 10px 12px 14px;
+          }
+          .sovereign-chat-workbench--split .sovereign-chat-body { border-left: 1px solid ${C.border}; }
         }
         /* Responsive chat bubble */
         .sovereign-chat-bubble { max-width: 92%; }
@@ -4616,10 +4641,21 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
       )}
 
       {/* MAIN CONTENT */}
+      <div className={chatRepoSnapshot && isChat ? "sovereign-chat-workbench sovereign-chat-workbench--split" : "sovereign-chat-workbench"}>
+        {chatRepoSnapshot && isChat ? (
+          <aside className="sovereign-repo-split-inspector" aria-label="Repo-Baum Split-Bereich">
+            <RepoTreeExplorer
+              snapshot={chatRepoSnapshot}
+              variant="split"
+              onFileClick={handleRepoExplorerFileClick}
+            />
+          </aside>
+        ) : null}
       {isChat ? (
         /* ── CHAT VIEW with auto-scroll lock (Issue #425) */
         <div
           ref={scrollRef}
+          className="sovereign-chat-body"
           data-testid="sovereign-chat-body-window"
           aria-label="Sovereign Chat Verlauf"
           onScroll={(e) => {
@@ -5244,6 +5280,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
           <div style={{ height: 12 }} />
         </div>
       )}
+      </div>
 
       {/* COMPOSER — only in chat view, v3 verbatim */}
       {isChat && (

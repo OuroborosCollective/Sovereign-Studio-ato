@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuilderContainer } from "./BuilderContainer";
 import { useUserStore } from "../../user/useUserStore";
@@ -433,6 +433,25 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
+  it("mounts repo split inspector only after a real repo snapshot is loaded", async () => {
+    const props = baseProps();
+    mockFetchSequence(jsonResponse({ tree: [
+      { path: "src/App.tsx", type: "blob", size: 123 },
+      { path: "README.md", type: "blob", size: 42 },
+    ], truncated: false }));
+    render(<BuilderContainer {...props} mission="" repoReady={false} />);
+
+    expect(screen.queryByTestId("repo-split-inspector")).toBeNull();
+    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByTestId("repo-split-inspector")).toBeDefined());
+    expect(screen.getByRole("navigation", { name: "Repo Baum Split Inspector", hidden: true })).toBeDefined();
+    expect(screen.queryByTestId("repo-tree-explorer")).toBeNull();
+    expect(screen.getByTestId("builder-container")).toHaveClass("sovereign-builder-container--repo-ready");
+    expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
   it("opens repo tree inspector from the loaded repo label and fills composer on file tap", async () => {
     const props = baseProps();
     mockFetchSequence(jsonResponse({ tree: [
@@ -445,8 +464,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
     fireEvent.click(screen.getByLabelText("Repo Inspector öffnen"));
-    expect(screen.getByTestId("repo-tree-explorer")).toBeDefined();
-    fireEvent.click(screen.getByText("App.tsx"));
+    const dialog = screen.getByTestId("repo-tree-explorer");
+    expect(dialog).toBeDefined();
+    fireEvent.click(within(dialog).getByText("App.tsx"));
     expect(chatField().value).toContain("Erkläre mir src/App.tsx");
     expect(props.onMissionChange).not.toHaveBeenCalled();
     expect(screen.queryByTestId("repo-tree-explorer")).toBeNull();

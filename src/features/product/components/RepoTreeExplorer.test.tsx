@@ -107,7 +107,7 @@ describe("RepoTreeExplorer", () => {
     expect(screen.getByText("generated")).toBeTruthy();
   });
 
-  it("calls close callback", () => {
+  it("calls close callback in dialog mode", () => {
     const onClose = vi.fn();
     render(
       <RepoTreeExplorer
@@ -150,5 +150,20 @@ describe("RepoTreeExplorer", () => {
     fireEvent.click(folderBtn);
     const folderBtnOpened = screen.getByRole("button", { name: "Ordner öffnen: src" });
     expect(folderBtnOpened).toHaveAttribute("title", "Ordner öffnen: src");
+  });
+
+  it("renders split mode as navigation instead of a modal dialog", () => {
+    render(
+      <RepoTreeExplorer
+        snapshot={snapshot()}
+        variant="split"
+        onFileClick={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("repo-split-inspector")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Repo Baum Split Inspector" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Repo Inspector" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Schließen" })).toBeNull();
   });
 });
