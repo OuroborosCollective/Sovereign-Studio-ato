@@ -157,6 +157,27 @@ function buildCodeResultGateEvent(createdAt: number): SovereignActionEventInput 
   };
 }
 
+function isPrematurePatchRouteDone(input: SovereignActionEventInput): boolean {
+  return input.route === 'github-patch'
+    && input.kind === 'done'
+    && input.state === 'done'
+    && !input.target;
+}
+
+function normalizePatchRouteEvent(input: SovereignActionEventInput): SovereignActionEventInput {
+  if (!isPrematurePatchRouteDone(input)) return input;
+  return {
+    ...input,
+    kind: 'patch_blocked',
+    label: input.label.trim() || 'Patch/Draft-PR Route wartet auf Ergebnis',
+    detail: [
+      input.detail?.trim() || 'Patch/Draft-PR Route hat noch keinen Patch, Diff oder Draft PR erzeugt.',
+      'Kein terminales Done ohne Patch, Diff oder Draft PR.',
+    ].join('\n'),
+    state: 'blocked',
+  };
+}
+
 function sameActiveBlocker(left: SovereignActionEvent | null, right: SovereignActionEventInput): boolean {
   if (!left) return false;
   if (left.state !== 'blocked' && left.state !== 'failed') return false;
@@ -172,16 +193,18 @@ export function appendSovereignActionEvent(
   input: SovereignActionEventInput,
   maxEvents = 80,
 ): SovereignActionStreamState {
-  if (sameActiveBlocker(stream.lastEvent, input)) {
+  const normalizedInput = normalizePatchRouteEvent(input);
+
+  if (sameActiveBlocker(stream.lastEvent, normalizedInput)) {
     return stream;
   }
 
-  const createdAt = input.createdAt ?? Date.now();
-  const nextEvent = createActionEvent({ ...input, createdAt }, stream.events.length);
+  const createdAt = normalizedInput.createdAt ?? Date.now();
+  const nextEvent = createActionEvent({ ...normalizedInput, createdAt }, stream.events.length);
   const shouldAddCodeGate =
-    input.kind === 'llm_response_received'
-    && input.route === 'worker'
-    && input.state === 'done'
+    normalizedInput.kind === 'llm_response_received'
+    && normalizedInput.route === 'worker'
+    && normalizedInput.state === 'done'
     && hasUnresolvedCodeResultGate(stream.events);
   const appendedEvents = shouldAddCodeGate
     ? [
