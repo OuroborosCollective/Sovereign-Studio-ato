@@ -18,6 +18,14 @@ from .contracts import (  # noqa: F401
     validate_agent_job_request,
     validate_agent_job_result,
 )
+from .evidence_gate import (  # noqa: F401
+    EvidenceGateInput,
+    EvidenceGateResult,
+    evaluate_agent_evidence,
+    evaluate_tool_result_evidence,
+    evidence_gate_signal,
+    evidence_input_from_tool_result,
+)
 from .git_workspace import (  # noqa: F401
     GitWorkspaceResult,
     build_git_clone_command,
@@ -41,6 +49,7 @@ from .job_store import (  # noqa: F401
 )
 from .tool_events import (  # noqa: F401
     append_tool_result_to_job,
+    evidence_gate_to_agent_event,
     predictive_tool_signal,
     tool_result_to_agent_events,
 )
