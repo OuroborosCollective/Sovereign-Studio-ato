@@ -2,13 +2,24 @@ import React, { useMemo, useState } from 'react';
 import type { DevChatRepoSnapshot } from '../runtime/devChatWorkerBridge';
 import { buildRepoTree, summarizeRepoTreeSnapshot, type RepoTreeNode } from '../runtime/repoTreeExplorerRuntime';
 
+export type RepoTreeExplorerVariant = 'dialog' | 'split';
+
 export interface RepoTreeExplorerProps {
   readonly snapshot: DevChatRepoSnapshot | null;
-  readonly onClose: () => void;
+  readonly onClose?: () => void;
   readonly onFileClick: (path: string) => void;
+  readonly variant?: RepoTreeExplorerVariant;
 }
 
-function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode; readonly level: number; readonly onFileClick: (path: string) => void }) {
+const TreeNodeRow = React.memo(function TreeNodeRow({
+  node,
+  level,
+  onFileClick,
+}: {
+  readonly node: RepoTreeNode;
+  readonly level: number;
+  readonly onFileClick: (path: string) => void;
+}) {
   const [open, setOpen] = useState(level < 1);
   const folder = node.type === 'folder';
   const ariaLabel = folder
@@ -35,28 +46,38 @@ function TreeNodeRow({ node, level, onFileClick }: { readonly node: RepoTreeNode
       ) : null}
     </li>
   );
-}
+});
 
-export function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExplorerProps) {
+export const RepoTreeExplorer = React.memo(function RepoTreeExplorer({
+  snapshot,
+  onClose,
+  onFileClick,
+  variant = 'dialog',
+}: RepoTreeExplorerProps) {
   const tree = useMemo(() => buildRepoTree(snapshot?.files ?? []), [snapshot]);
+  const isDialog = variant === 'dialog';
+  const label = isDialog ? 'Repo Inspector' : 'Repo Baum Split Inspector';
+
   return (
     <section
-      role="dialog"
-      aria-modal="true"
-      aria-label="Repo Inspector"
-      data-testid="repo-tree-explorer"
+      role={isDialog ? 'dialog' : 'navigation'}
+      aria-modal={isDialog ? true : undefined}
+      aria-label={label}
+      data-testid={isDialog ? 'repo-tree-explorer' : 'repo-split-inspector'}
     >
       <header>
-        <strong>Repo Inspector</strong>
+        <strong>{isDialog ? 'Repo Inspector' : 'Repo-Baum'}</strong>
         <p>{summarizeRepoTreeSnapshot(snapshot)}</p>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Schließen"
-          title="Schließen"
-        >
-          Schließen
-        </button>
+        {isDialog && onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Schließen"
+            title="Schließen"
+          >
+            Schließen
+          </button>
+        ) : null}
       </header>
       {!snapshot ? <p>Kein Repo-Snapshot geladen.</p> : null}
       {snapshot?.truncated ? <p>Snapshot truncated.</p> : null}
@@ -66,6 +87,6 @@ export function RepoTreeExplorer({ snapshot, onClose, onFileClick }: RepoTreeExp
       </ul>
     </section>
   );
-}
+});
 
 export default RepoTreeExplorer;
