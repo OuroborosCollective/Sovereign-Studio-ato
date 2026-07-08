@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuilderContainer } from "./BuilderContainer";
 import { useUserStore } from "../../user/useUserStore";
@@ -446,7 +446,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() => expect(screen.getByTestId("repo-split-inspector")).toBeDefined());
-    expect(screen.getByRole("navigation", { name: "Repo Baum Split Inspector" })).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "Repo Baum Split Inspector", hidden: true })).toBeDefined();
     expect(screen.queryByTestId("repo-tree-explorer")).toBeNull();
     expect(screen.getByTestId("builder-container")).toHaveClass("sovereign-builder-container--repo-ready");
     expect(props.onMissionChange).not.toHaveBeenCalled();
@@ -464,8 +464,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
     fireEvent.click(screen.getByLabelText("Repo Inspector öffnen"));
-    expect(screen.getByTestId("repo-tree-explorer")).toBeDefined();
-    fireEvent.click(screen.getByText("App.tsx"));
+    const dialog = screen.getByTestId("repo-tree-explorer");
+    expect(dialog).toBeDefined();
+    fireEvent.click(within(dialog).getByText("App.tsx"));
     expect(chatField().value).toContain("Erkläre mir src/App.tsx");
     expect(props.onMissionChange).not.toHaveBeenCalled();
     expect(screen.queryByTestId("repo-tree-explorer")).toBeNull();
