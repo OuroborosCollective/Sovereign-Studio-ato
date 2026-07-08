@@ -14,7 +14,12 @@ export type SovereignActionRoute =
   | 'direct-github-patch'
   | 'github-access'
   | 'toolchain'
-  | 'runtime';
+  | 'runtime'
+  | 'agent-job'
+  | 'agent-workspace'
+  | 'agent-tool'
+  | 'agent-evidence'
+  | 'agent-pattern';
 
 // Re-export blocker types for consumers
 export type { SovereignBlockerKind, SovereignBlockerSeverity } from './sovereignBlockerRegistry';
@@ -36,6 +41,20 @@ export type SovereignActionKind =
   | 'patch_blocked'
   | 'executor_started'
   | 'draft_pr_ready'
+  | 'agent_job_requested'
+  | 'agent_job_created'
+  | 'agent_workspace_provisioning'
+  | 'agent_workspace_ready'
+  | 'agent_tool_started'
+  | 'agent_tool_finished'
+  | 'agent_diff_ready'
+  | 'agent_tests_finished'
+  | 'agent_result_validating'
+  | 'agent_result_blocked'
+  | 'agent_result_ready'
+  | 'agent_pattern_candidate_ready'
+  | 'agent_workspace_cleanup_started'
+  | 'agent_workspace_cleaned'
   | 'blocked'
   | 'failed'
   | 'done';
@@ -94,12 +113,19 @@ const CODE_RESULT_KINDS: ReadonlySet<SovereignActionKind> = new Set([
   'done',
 ]);
 
+const SECRET_PATTERN = /(?:github_pat_[A-Za-z0-9_]{10,}|gh[pousr]_[A-Za-z0-9_]{10,}|Authorization:\s*Bearer\s+[^\s]+|(?:token|password|secret|api[_-]?key)\s*[=:]\s*[^\s]+)/gi;
+
 export function createSovereignActionStreamState(): SovereignActionStreamState {
   return {
     events: [],
     activeRoute: null,
     lastEvent: null,
   };
+}
+
+function sanitizeActionText(value: string | undefined): string | undefined {
+  if (!value) return value;
+  return value.replace(SECRET_PATTERN, '[redacted]');
 }
 
 function eventId(input: SovereignActionEventInput, index: number): string {
@@ -114,9 +140,16 @@ function eventId(input: SovereignActionEventInput, index: number): string {
 
 function createActionEvent(input: SovereignActionEventInput, index: number): SovereignActionEvent {
   const createdAt = input.createdAt ?? Date.now();
-  return {
+  const sanitizedInput: SovereignActionEventInput = {
     ...input,
-    id: eventId({ ...input, createdAt }, index),
+    label: sanitizeActionText(input.label) ?? input.label,
+    detail: sanitizeActionText(input.detail),
+    target: sanitizeActionText(input.target),
+    createdAt,
+  };
+  return {
+    ...sanitizedInput,
+    id: eventId(sanitizedInput, index),
     createdAt,
   };
 }
@@ -355,6 +388,73 @@ export function buildWorkerResponseEvent(): SovereignActionEventInput {
   };
 }
 
+export function buildAgentJobCreatedEvent(args: {
+  readonly jobId: string;
+  readonly status: string;
+  readonly detail?: string;
+}): SovereignActionEventInput {
+  return {
+    kind: 'agent_job_created',
+    route: 'agent-job',
+    label: 'Agent Job erstellt',
+    detail: args.detail ?? `Job ${args.jobId} Status: ${args.status}`,
+    sourceId: args.jobId,
+    state: args.status === 'blocked' || args.status === 'failed' ? 'blocked' : 'done',
+  };
+}
+
+export function buildAgentToolFinishedEvent(args: {
+  readonly jobId: string;
+  readonly tool: string;
+  readonly status: 'done' | 'blocked' | 'failed' | 'error';
+  readonly detail?: string;
+}): SovereignActionEventInput {
+  return {
+    kind: 'agent_tool_finished',
+    route: 'agent-tool',
+    label: `Agent Tool: ${args.tool}`,
+    detail: args.detail ?? `Tool ${args.tool} Status: ${args.status}`,
+    sourceId: args.jobId,
+    state: args.status === 'done' ? 'done' : args.status === 'blocked' ? 'blocked' : 'failed',
+  };
+}
+
+export function buildAgentEvidenceEvent(args: {
+  readonly jobId: string;
+  readonly allowed: boolean;
+  readonly canPrepareDraftPr?: boolean;
+  readonly detail?: string;
+}): SovereignActionEventInput {
+  return {
+    kind: args.allowed ? 'agent_result_ready' : 'agent_result_blocked',
+    route: 'agent-evidence',
+    label: args.allowed ? 'Agent Ergebnis geprüft' : 'Agent Ergebnis blockiert',
+    detail: args.detail ?? (args.allowed
+      ? `Evidence erlaubt. Draft-PR-Vorbereitung: ${args.canPrepareDraftPr ? 'ja' : 'nein'}.`
+      : 'Evidence Gate blockiert das Agent Ergebnis.'),
+    sourceId: args.jobId,
+    state: args.allowed ? 'done' : 'blocked',
+  };
+}
+
+export function buildAgentPatternCandidateEvent(args: {
+  readonly jobId: string;
+  readonly allowed: boolean;
+  readonly kind?: 'solution' | 'blocker' | null;
+  readonly detail?: string;
+}): SovereignActionEventInput {
+  return {
+    kind: 'agent_pattern_candidate_ready',
+    route: 'agent-pattern',
+    label: args.allowed ? 'Agent Pattern-Kandidat geprüft' : 'Agent Pattern-Kandidat blockiert',
+    detail: args.detail ?? (args.allowed
+      ? `Pattern-Kandidat akzeptiert: ${args.kind ?? 'unknown'}.`
+      : 'Pattern Gateway blockiert lokalen Pattern-Kandidaten.'),
+    sourceId: args.jobId,
+    state: args.allowed ? 'done' : 'blocked',
+  };
+}
+
 /**
  * Map action event kinds to blocker kinds for registry integration
  */
@@ -369,6 +469,7 @@ function mapEventKindToBlockerKind(kind: SovereignActionKind): SovereignBlockerK
     case 'patch_blocked':
       return 'patch_route_unavailable';
     case 'blocked':
+    case 'agent_result_blocked':
       return 'worker_blocked';
     case 'failed':
       return 'runtime_error';
@@ -398,15 +499,12 @@ function mapEventStateToSeverity(state: SovereignActionEventState): SovereignBlo
 export function deriveBlockerCountsFromEvents(
   events: readonly SovereignActionEvent[],
 ): { activeBlockers: number; warnings: number; errors: number; blockedEventCount: number } {
-  // Track unique blockers by route+kind
   const uniqueBlockers = new Map<string, { kind: SovereignBlockerKind; severity: SovereignBlockerSeverity }>();
-  
   let blockedCount = 0;
 
   for (const event of events) {
     if (event.state === 'blocked' || event.state === 'failed') {
       blockedCount++;
-      
       const blockerKind = mapEventKindToBlockerKind(event.kind);
       if (blockerKind) {
         const key = `${event.route}:${blockerKind}`;
