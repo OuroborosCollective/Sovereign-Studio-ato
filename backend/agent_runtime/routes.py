@@ -19,6 +19,7 @@ from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import list_agent_jobs, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .pattern_gateway import evaluate_pattern_learning, pattern_input_from_job, pattern_learning_signal, persist_pattern_learning_candidate
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
@@ -44,10 +45,12 @@ def _job_to_api(job) -> dict[str, Any]:
         "workspaceId": job.workspace_id,
         "externalRef": job.external_ref,
         "draftPrUrl": job.draft_pr_url,
-        "draftPrReady": getattr(job, "draft_pr_ready", False),
-        "draftPrHeadBranch": getattr(job, "draft_pr_head_branch", None),
-        "draftPrBaseBranch": getattr(job, "draft_pr_base_branch", None),
-        "draftPrTitle": getattr(job, "draft_pr_title", None),
+        "draftPrPreparation": getattr(job, "draft_pr_preparation", None),
+        "branchName": getattr(job, "branch_name", None),
+        "targetBranch": getattr(job, "target_branch", None),
+        "commitMessage": getattr(job, "commit_message", None),
+        "prUrl": getattr(job, "pr_url", None),
+        "prState": getattr(job, "pr_state", None),
         "changedFiles": list(job.changed_files),
         "diffSummary": job.diff_summary,
         "testSummary": job.test_summary,
@@ -80,6 +83,9 @@ def _merge_job_evidence(job, result: ToolResult) -> ToolResult:
         status=result.status,
         stdout=result.stdout,
         stderr=result.stderr,
+        output=result.output,
+        error=result.error,
+        metadata=result.metadata,
         changed_files=result.changed_files or job.changed_files,
         diff_summary=result.diff_summary or job.diff_summary,
         test_summary=result.test_summary or job.test_summary,
@@ -127,6 +133,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/tools/diff
     - POST /api/user/agent/jobs/<job_id>/tools/test
     - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
+    - POST /api/user/agent/jobs/<job_id>/patterns/learn
     """
 
     def _connection():
@@ -152,11 +159,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             evidence_result = _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, job_id, evidence_result)
             return jsonify({
-                "ok": result.status == "done" and gate.allowed,
+                "ok": result.status == "done" and getattr(gate, "allowed", gate.passed),
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "tool": _tool_result_to_api(evidence_result, gate),
-            }), 200 if result.status == "done" and gate.allowed else 400
+            }), 200 if result.status == "done" and getattr(gate, "allowed", gate.passed) else 400
         finally:
             _close(conn)
 
@@ -324,5 +331,25 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "jobId": job_id,
                 "draftPrPreparation": draft_pr_preparation_signal(preparation),
             }), 200 if preparation.allowed else 400
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/patterns/learn", methods=["POST"])
+    @require_session
+    def user_learn_agent_pattern(job_id: str):
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            pattern_result = evaluate_pattern_learning(pattern_input_from_job(job))
+            persist_pattern_learning_candidate(conn, user_id=user_id, result=pattern_result)
+            return jsonify({
+                "ok": pattern_result.allowed,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "patternLearning": pattern_learning_signal(pattern_result),
+            }), 200 if pattern_result.allowed else 400
         finally:
             _close(conn)
