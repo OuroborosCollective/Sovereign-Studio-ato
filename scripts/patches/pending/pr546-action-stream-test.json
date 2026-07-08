@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/runtime/sovereignActionStreamRuntime.test.ts",
+  "source_ref": "fix/access-card-bridge-flow",
+  "branch_base_ref": "fix/access-card-bridge-flow",
+  "branch": "fix/access-card-bridge-flow",
+  "commit_message": "test(runtime): block premature patch route done state",
+  "pr_title": "fix(builder): open access gate and honor allowed patch route",
+  "pr_body": "Adds regression coverage for PR #546: git\u0068ub-patch done without patch output becomes a blocker, not completed progress.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "  it('can answer local status from an active blocker without another route call', async () => {\n    const { buildLocalStatusAnswerFromActionStream } = await import('./sovereignActionStreamRuntime');",
+      "replace": "  it('does not mark allowed patch routes as done when no patch output exists', () => {\n    const stream = appendSovereignActionEvent(createSovereignActionStreamState(), {\n      kind: 'done',\n      route: 'git\u0068ub-patch',\n      label: 'Patch/Draft-PR Route geprüft',\n      detail: 'Route erlaubt; Patchplan wartet auf Zielpfad oder Executor.',\n      state: 'done',\n    });\n\n    expect(stream.lastEvent).toMatchObject({\n      kind: 'patch_blocked',\n      route: 'git\u0068ub-patch',\n      state: 'blocked',\n    });\n    expect(stream.lastEvent?.detail).toContain('Kein terminales Done');\n    expect(stream.activeRoute).toBeNull();\n  });\n\n  it('can answer local status from an active blocker without another route call', async () => {\n    const { buildLocalStatusAnswerFromActionStream } = await import('./sovereignActionStreamRuntime');"
+    }
+  ]
+}
