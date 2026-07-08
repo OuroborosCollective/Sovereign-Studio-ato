@@ -87,6 +87,11 @@ const WORKFLOW_REPAIR_TOKENS = [
   'workflowfehler beheben', 'ci fehler', 'workflowfehler', 'reparatur',
 ];
 
+function hasExplicitExecutorIntent(text: string): boolean {
+  const lower = text.toLowerCase();
+  return OPENHANDS_TOKENS.some((token) => lower.includes(token));
+}
+
 export function classifyIntent(text: string): IntentClassification {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
@@ -198,10 +203,25 @@ function buildReason(
   return `${routeNames[route]} blockiert: ${blockerReasons[blocker]}`;
 }
 
+function buildRecoverablePackageDecision(
+  route: SovereignRoute,
+  capability: SovereignCapability,
+): CapabilityDecision {
+  return {
+    route,
+    capability,
+    allowed: true,
+    reason: buildReason(route, capability, 'package_required'),
+    blocker: 'package_required',
+    nextAction: 'generate_patch_package',
+  };
+}
+
 export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): CapabilityDecision {
   const intent = classifyIntent(input.text);
   const complexity = determineTaskComplexity(intent, input.text);
   const blockers = detectBlockers(input);
+  const explicitExecutorIntent = hasExplicitExecutorIntent(input.text);
 
   if (intent === 'status_question') {
     return {
@@ -254,14 +274,7 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
 
   if (intent === 'draft_pr') {
     if (!input.hasPackage) {
-      return {
-        route: 'draft-pr-runtime',
-        capability: 'draft_pr',
-        allowed: false,
-        reason: buildReason('draft-pr-runtime', 'draft_pr', 'package_required'),
-        blocker: 'package_required',
-        nextAction: 'generate_patch_package',
-      };
+      return buildRecoverablePackageDecision('draft-pr-runtime', 'draft_pr');
     }
     if (blockers.includes('github_access_missing')) {
       return {
@@ -384,6 +397,15 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'code_generation') {
+    if (explicitExecutorIntent && input.openhandsReady) {
+      return {
+        route: 'openhands',
+        capability: 'code_patch_plan',
+        allowed: true,
+        reason: buildReason('openhands', 'code_patch_plan'),
+        nextAction: 'start_openhands',
+      };
+    }
     if (blockers.includes('github_access_validating')) {
       return {
         route: 'openhands',
@@ -459,14 +481,7 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         nextAction: 'run_direct_patch',
       };
     }
-    return {
-      route: 'code-llm',
-      capability: 'code_patch_plan',
-      allowed: false,
-      reason: buildReason('code-llm', 'code_patch_plan', 'package_required'),
-      blocker: 'package_required',
-      nextAction: 'generate_patch_package',
-    };
+    return buildRecoverablePackageDecision('code-llm', 'code_patch_plan');
   }
 
   return {
