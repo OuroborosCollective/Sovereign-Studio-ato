@@ -1,6 +1,10 @@
 import {
   appendSovereignActionEvent,
   appendSovereignActionEvents,
+  buildAgentEvidenceEvent,
+  buildAgentJobCreatedEvent,
+  buildAgentPatternCandidateEvent,
+  buildAgentToolFinishedEvent,
   buildBlockedActionEvent,
   buildInputReceivedEvent,
   buildRepoLoadedEvent,
@@ -100,7 +104,6 @@ describe('sovereignActionStreamRuntime', () => {
   });
 
   it('worker timeout produces a terminal blocked event with activeRoute null', () => {
-    // Simulates what BuilderContainer does when streamDevChatWorkerReply throws a timeout
     const stream = appendSovereignActionEvent(
       createSovereignActionStreamState(),
       buildBlockedActionEvent({
@@ -207,5 +210,35 @@ describe('sovereignActionStreamRuntime hardening', () => {
     expect(answer).toContain('Status: blockiert');
     expect(answer).toContain('HTTP 500');
     expect(answer).toContain('keinen kaputten');
+  });
+
+  it('records agent lifecycle events as checked runtime state', () => {
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+      buildAgentJobCreatedEvent({ jobId: 'agent-1', status: 'provisioning' }),
+      buildAgentToolFinishedEvent({ jobId: 'agent-1', tool: 'git-status', status: 'done', detail: 'README.md changed' }),
+      buildAgentEvidenceEvent({ jobId: 'agent-1', allowed: true, canPrepareDraftPr: true }),
+      buildAgentPatternCandidateEvent({ jobId: 'agent-1', allowed: true, kind: 'solution' }),
+    ]);
+
+    expect(stream.events.map((event) => event.route)).toEqual([
+      'agent-job',
+      'agent-tool',
+      'agent-evidence',
+      'agent-pattern',
+    ]);
+    expect(stream.lastEvent?.kind).toBe('agent_pattern_candidate_ready');
+    expect(stream.activeRoute).toBeNull();
+  });
+
+  it('sanitizes secret-like text before it reaches the action stream', () => {
+    const stream = appendSovereignActionEvent(createSovereignActionStreamState(), buildAgentToolFinishedEvent({
+      jobId: 'agent-secret',
+      tool: 'test',
+      status: 'failed',
+      detail: 'Authorization: Bearer ghp_1234567890SECRETSECRETSECRET should not survive',
+    }));
+
+    expect(stream.lastEvent?.detail).toContain('[redacted]');
+    expect(stream.lastEvent?.detail).not.toContain('ghp_1234567890SECRETSECRETSECRET');
   });
 });
