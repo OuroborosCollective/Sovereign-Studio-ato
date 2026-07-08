@@ -16,6 +16,8 @@ import {
   type GitHubAccessSnapshot,
 } from './githubAccessRuntime';
 
+const FINE_GRAINED_PAT_CANDIDATE = `github_pat_${'A'.repeat(72)}`;
+
 describe('GitHub Access Runtime', () => {
   describe('maskGitHubToken', () => {
     it('masks 40-char classic PAT correctly', () => {
@@ -24,10 +26,14 @@ describe('GitHub Access Runtime', () => {
       expect(maskGitHubToken(token)).toBe('abcd****7890');
     });
 
-    it('masks ghp_ fine-grained PAT correctly', () => {
+    it('masks ghp_ prefixed token correctly', () => {
       const token = 'ghp_abcdefghijklmnopqrstuvwxyz123456789ABC';
       // Token is 45 chars, shows first 4 + **** + last 4 = 9ABC
       expect(maskGitHubToken(token)).toBe('ghp_****9ABC');
+    });
+
+    it('masks github_pat_ fine-grained PAT candidate safely', () => {
+      expect(maskGitHubToken(FINE_GRAINED_PAT_CANDIDATE)).toBe('gith****AAAA');
     });
 
     it('masks short tokens as ****', () => {
@@ -45,17 +51,23 @@ describe('GitHub Access Runtime', () => {
       expect(result.isValid).toBe(true);
     });
 
-    it('accepts ghp_ fine-grained token', () => {
+    it('accepts GitHub fine-grained PAT candidates with github_pat_ prefix', () => {
+      const result = validateGitHubTokenFormat(FINE_GRAINED_PAT_CANDIDATE);
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('accepts ghp_ prefixed token', () => {
       const result = validateGitHubTokenFormat('ghp_abcdefghijklmnopqrstuvwxyz1234567890');
       expect(result.isValid).toBe(true);
     });
 
-    it('accepts gho_ fine-grained token', () => {
+    it('accepts gho_ prefixed token', () => {
       const result = validateGitHubTokenFormat('gho_abcdefghijklmnopqrstuvwxyz1234567890');
       expect(result.isValid).toBe(true);
     });
 
-    it('accepts ghs_ fine-grained token', () => {
+    it('accepts ghs_ prefixed token', () => {
       const result = validateGitHubTokenFormat('ghs_abcdefghijklmnopqrstuvwxyz1234567890');
       expect(result.isValid).toBe(true);
     });
@@ -202,6 +214,21 @@ describe('GitHub Access Runtime', () => {
       }) as unknown as typeof fetch;
 
       const result = await validateGitHubTokenForRepo(token, target, fetcher);
+
+      expect(result).toEqual({ ok: true, canWrite: true });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('validates github_pat_ candidates through the real GitHub API path after format preflight', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+        const value = String(url);
+        if (value.endsWith('/user')) {
+          return new Response(JSON.stringify({ login: 'tester' }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
+      }) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(FINE_GRAINED_PAT_CANDIDATE, target, fetcher);
 
       expect(result).toEqual({ ok: true, canWrite: true });
       expect(fetcher).toHaveBeenCalledTimes(2);
