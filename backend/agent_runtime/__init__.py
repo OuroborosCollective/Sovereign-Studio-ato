@@ -25,6 +25,20 @@ from .git_workspace import (  # noqa: F401
     git_diff_summary,
     git_status_changed_files,
 )
+from .job_lifecycle import (  # noqa: F401
+    SovereignAgentLifecycleResult,
+    create_sovereign_agent_job,
+    generate_agent_job_id,
+)
+from .job_store import (  # noqa: F401
+    StoredSovereignAgentJob,
+    append_agent_event,
+    create_agent_job_record,
+    list_agent_jobs,
+    read_agent_job,
+    result_from_stored_job,
+    update_agent_job_state,
+)
 from .workspace import (  # noqa: F401
     WorkspaceProvisionResult,
     cleanup_agent_workspace,
