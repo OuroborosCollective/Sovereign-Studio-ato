@@ -55,7 +55,7 @@ const DEFAULT_SCAN_PATHS = [
   'brain',
 ];
 
-const SKIP_PATHS = ['node_modules', 'dist', '.git', '.next', 'build', '.cache', 'coverage'];
+const SKIP_PATHS = ['node_modules', 'dist', '.git', '.next', 'build', '.cache', 'coverage', 'test-fixtures', 'test-fixtures-hardcode'];
 const SKIP_FILES = ['.test.', '.spec.', '.d.ts', '.min.js', '.bundle.js'];
 
 function shouldSkip(filePath) {
