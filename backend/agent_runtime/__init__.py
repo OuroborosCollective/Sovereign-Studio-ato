@@ -55,6 +55,14 @@ from .job_store import (  # noqa: F401
     result_from_stored_job,
     update_agent_job_state,
 )
+from .pattern_gateway import (  # noqa: F401
+    PatternLearningInput,
+    PatternLearningResult,
+    evaluate_pattern_learning,
+    pattern_input_from_job,
+    pattern_learning_signal,
+    persist_pattern_learning_candidate,
+)
 from .tool_events import (  # noqa: F401
     append_tool_result_to_job,
     evidence_gate_to_agent_event,
