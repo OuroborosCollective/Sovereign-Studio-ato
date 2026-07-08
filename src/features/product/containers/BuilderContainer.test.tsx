@@ -234,12 +234,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       "Verbessere mobile UX und Log-Fenster.",
       "",
       "Repository-Kontext:",
-      "Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.",
+      "Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert zu werden.",
       "",
       "Umsetzung:",
       "- Erzeuge echte Änderungen im passenden Codepfad.",
     ].join("\n");
-    rerender(<Provider store={store}><BuilderContainer {...props} mission={adoptedMission} /></Provider>);
+    // rerender already has Provider context from initial render
+    rerender(<BuilderContainer {...props} mission={adoptedMission} />);
     expect(chatField().value).toBe("Verbessere mobile UX und Log-Fenster.");
   });
 
