@@ -4,35 +4,24 @@
  * Central routing decision for Sovereign Studio.
  * Determines which execution route is appropriate based on user input and runtime state.
  *
- * Issue #502: Runtime: add Sovereign Capability Router for chat, patch, workspace and Draft PR routes
- *
  * Product rules:
  * - Never build a UI that creates truth. Build a runtime that creates truth.
  * - No fake success, no percentage progress, no mocks in live paths.
- * - OpenHands is one possible executor, not the only coding route.
- * - Simple README/docs changes can use Direct Patch.
- * - Large code work can use Workspace/OpenHands.
- * - Chat questions stay fast without starting a full workspace.
- * - UI shows decision; it does not create it.
+ * - Missing patch/package is not a dead end; it creates the next runtime action.
  */
 
 import type {
   CapabilityDecision,
   CapabilityRouterInput,
   IntentClassification,
-  SovereignRoute,
   SovereignCapability,
-  SovereignRouteBlocker,
   SovereignNextAction,
+  SovereignRoute,
+  SovereignRouteBlocker,
   TaskComplexity,
 } from './sovereignCapabilityTypes';
 
-// Re-export types for consumers
 export type { CapabilityRouterInput, CapabilityDecision } from './sovereignCapabilityTypes';
-
-// ─────────────────────────────────────────────────────────────
-// INTENT DETECTION TOKENS
-// ─────────────────────────────────────────────────────────────
 
 const FREE_CHAT_TOKENS = [
   'was ist', 'wie funktioniert', 'erklär', 'was bedeutet', 'was ist das',
@@ -98,82 +87,36 @@ const WORKFLOW_REPAIR_TOKENS = [
   'workflowfehler beheben', 'ci fehler', 'workflowfehler', 'reparatur',
 ];
 
-// ─────────────────────────────────────────────────────────────
-// INTENT CLASSIFICATION
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Classify user intent from text input.
- * Order matters: more specific intents first.
- */
 export function classifyIntent(text: string): IntentClassification {
-  const lower = text.toLowerCase();
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
 
-  // Check for GitHub URL first (most specific)
-  if (/^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i.test(text.trim())) {
+  if (/^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i.test(trimmed)) {
     return 'load_repo';
   }
+  if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
+  if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) return 'workflow_watch';
+  if (DRAFT_PR_TOKENS.some((token) => lower.includes(token))) return 'draft_pr';
+  if (STATUS_QUESTION_TOKENS.some((token) => lower.includes(token))) return 'status_question';
 
-  // Workflow-specific intents (check before free chat to avoid conflicts)
-  if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) {
-    return 'repair_workflow';
-  }
-  if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) {
-    return 'workflow_watch';
-  }
-
-  // Draft PR
-  if (DRAFT_PR_TOKENS.some((token) => lower.includes(token))) {
-    return 'draft_pr';
-  }
-
-  // Status questions - local runtime answer
-  if (STATUS_QUESTION_TOKENS.some((token) => lower.includes(token))) {
-    return 'status_question';
-  }
-
-  // Direct patch (simple README/docs changes) - check before free_chat
   const hasDirectPatchKeyword = DIRECT_PATCH_TOKENS.some((token) => lower.includes(token));
   const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
-  if (hasDirectPatchKeyword && !hasComplexKeyword) {
-    return 'direct_patch';
-  }
+  if (hasDirectPatchKeyword && !hasComplexKeyword) return 'direct_patch';
 
-  // OpenHands/Executor explicitly requested
-  if (OPENHANDS_TOKENS.some((token) => lower.includes(token))) {
-    return 'code_generation';
-  }
-
-  // Code generation
-  if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) {
-    return 'code_generation';
-  }
-
-  // Load repo signals
-  if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) {
-    return 'load_repo';
-  }
-
-  // Free chat - no code/repo actions (least specific)
-  if (FREE_CHAT_TOKENS.some((token) => lower.includes(token))) {
-    return 'free_chat';
-  }
-
+  if (OPENHANDS_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
+  if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
+  if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
+  if (FREE_CHAT_TOKENS.some((token) => lower.includes(token))) return 'free_chat';
   return 'unknown';
 }
 
-/**
- * Determine task complexity from intent and text.
- */
 export function determineTaskComplexity(
   intent: IntentClassification,
   text: string,
 ): TaskComplexity {
   const lower = text.toLowerCase();
-
   switch (intent) {
     case 'direct_patch':
-      return 'simple';
     case 'free_chat':
     case 'status_question':
     case 'load_repo':
@@ -182,74 +125,39 @@ export function determineTaskComplexity(
     case 'repair_workflow':
       return 'medium';
     case 'code_generation':
-      // Check for explicit large work keywords
-      if (COMPLEX_TASK_TOKENS.some((token) => lower.includes(token))) {
-        return 'complex';
-      }
-      return 'medium';
+      return COMPLEX_TASK_TOKENS.some((token) => lower.includes(token)) ? 'complex' : 'medium';
     default:
       return 'unknown' as TaskComplexity;
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// BLOCKER DETECTION
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Check what blockers exist based on runtime state.
- * Only "ready" allows write actions.
- * "requested" and "validating" get github_access_validating blocker.
- * "missing" and "invalid" get github_access_missing blocker.
- */
 export function detectBlockers(input: CapabilityRouterInput): SovereignRouteBlocker[] {
   const blockers: SovereignRouteBlocker[] = [];
+  if (!input.repoReady) blockers.push('repo_missing');
 
-  if (!input.repoReady) {
-    blockers.push('repo_missing');
-  }
-
-  // Only "ready" allows write actions
-  if (input.githubAccessState === 'ready') {
-    // GitHub is ready - no blocker from GitHub
-  } else if (input.githubAccessState === 'validating' || input.githubAccessState === 'requested') {
-    // Both validating and requested block write actions
+  if (input.githubAccessState === 'validating' || input.githubAccessState === 'requested') {
     blockers.push('github_access_validating');
-  } else {
-    // missing or invalid
+  } else if (input.githubAccessState !== 'ready') {
     blockers.push('github_access_missing');
   }
 
   if (!input.openhandsReady && !input.directGitHubPatchReady && !input.workspaceReady) {
     blockers.push('executor_unavailable');
   }
-
   return blockers;
 }
 
-// ─────────────────────────────────────────────────────────────
-// ROUTE DECISION
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Determine next action based on blockers and capability.
- */
-function determineNextAction(
-  blocker?: SovereignRouteBlocker,
-  capability?: SovereignCapability,
-): SovereignNextAction {
-  if (!blocker) {
-    return 'run_worker';
-  }
-
+function determineNextAction(blocker?: SovereignRouteBlocker): SovereignNextAction {
+  if (!blocker) return 'run_worker';
   switch (blocker) {
     case 'repo_missing':
       return 'load_repo';
     case 'github_access_missing':
     case 'github_access_validating':
       return 'validate_github_access';
+    case 'package_required':
+      return 'generate_patch_package';
     case 'executor_unavailable':
-      return 'start_workspace';
     case 'workspace_required':
       return 'start_workspace';
     case 'unsafe_action':
@@ -259,12 +167,9 @@ function determineNextAction(
   }
 }
 
-/**
- * Build route reason message.
- */
 function buildReason(
   route: SovereignRoute,
-  capability: SovereignCapability,
+  _capability: SovereignCapability,
   blocker?: SovereignRouteBlocker,
 ): string {
   const routeNames: Record<SovereignRoute, string> = {
@@ -272,68 +177,32 @@ function buildReason(
     'code-llm': 'Code-LLM Route',
     'direct-github-patch': 'Direct GitHub Patch Route',
     'workspace-executor': 'Workspace-Executor Route',
-    'openhands': 'OpenHands Executor Route',
+    openhands: 'OpenHands Executor Route',
     'draft-pr-runtime': 'Draft PR Runtime',
     'local-runtime-answer': 'Lokale Runtime-Antwort',
     'repo-load': 'Repo-Lade Route',
   };
 
-  if (blocker) {
-    const blockerReasons: Record<SovereignRouteBlocker, string> = {
-      repo_missing: 'Repository fehlt',
-      github_access_missing: 'GitHub-Zugang fehlt',
-      github_access_validating: 'GitHub-Zugang wird geprüft',
-      executor_unavailable: 'Kein Executor verfügbar',
-      workspace_required: 'Workspace-Executor benötigt',
-      unsupported_intent: 'Auftrag zu komplex für diese Route',
-      unsafe_action: 'Aktion würde unsichere Pfade betreffen',
-    };
-    return `${routeNames[route]} blockiert: ${blockerReasons[blocker]}`;
-  }
+  if (!blocker) return `Route gewählt: ${routeNames[route]}`;
 
-  return `Route gewählt: ${routeNames[route]}`;
+  const blockerReasons: Record<SovereignRouteBlocker, string> = {
+    repo_missing: 'Repository fehlt',
+    github_access_missing: 'GitHub-Zugang fehlt',
+    github_access_validating: 'GitHub-Zugang wird geprüft',
+    executor_unavailable: 'Kein Executor verfügbar',
+    workspace_required: 'Workspace-Executor benötigt',
+    package_required: 'Patch-Paket/Diff muss zuerst erzeugt werden',
+    unsupported_intent: 'Auftrag zu komplex für diese Route',
+    unsafe_action: 'Aktion würde unsichere Pfade betreffen',
+  };
+  return `${routeNames[route]} blockiert: ${blockerReasons[blocker]}`;
 }
 
-/**
- * Map intent to capability.
- */
-function intentToCapability(intent: IntentClassification): SovereignCapability {
-  switch (intent) {
-    case 'free_chat':
-      return 'free_chat';
-    case 'status_question':
-      return 'free_chat';
-    case 'load_repo':
-      return 'repo_read';
-    case 'direct_patch':
-      return 'direct_github_patch';
-    case 'code_generation':
-      return 'code_patch_plan';
-    case 'draft_pr':
-      return 'draft_pr';
-    case 'workflow_watch':
-      return 'workflow_watch';
-    case 'repair_workflow':
-      return 'code_patch_plan';
-    default:
-      return 'free_chat';
-  }
-}
-
-/**
- * Core routing decision based on intent and runtime state.
- *
- * This is the central function that BuilderContainer.tsx should call
- * instead of making routing decisions internally.
- */
-export function decideSovereignCapabilityRoute(
-  input: CapabilityRouterInput,
-): CapabilityDecision {
+export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): CapabilityDecision {
   const intent = classifyIntent(input.text);
   const complexity = determineTaskComplexity(intent, input.text);
   const blockers = detectBlockers(input);
 
-  // ─── STATUS QUESTION: Local runtime answer ───
   if (intent === 'status_question') {
     return {
       route: 'local-runtime-answer',
@@ -345,7 +214,6 @@ export function decideSovereignCapabilityRoute(
     };
   }
 
-  // ─── FREE CHAT: Worker chat route ───
   if (intent === 'free_chat') {
     return {
       route: 'worker-chat',
@@ -356,7 +224,6 @@ export function decideSovereignCapabilityRoute(
     };
   }
 
-  // ─── LOAD REPO: Repo load route ───
   if (intent === 'load_repo') {
     return {
       route: 'repo-load',
@@ -367,16 +234,14 @@ export function decideSovereignCapabilityRoute(
     };
   }
 
-  // ─── WORKFLOW WATCH ───
   if (intent === 'workflow_watch') {
     const blocker = blockers.includes('github_access_missing')
-      ? 'github_access_missing' as SovereignRouteBlocker
+      ? 'github_access_missing'
       : blockers.includes('github_access_validating')
-        ? 'github_access_validating' as SovereignRouteBlocker
+        ? 'github_access_validating'
         : blockers.includes('executor_unavailable')
-          ? 'executor_unavailable' as SovereignRouteBlocker
+          ? 'executor_unavailable'
           : undefined;
-
     return {
       route: 'worker-chat',
       capability: 'workflow_watch',
@@ -387,21 +252,17 @@ export function decideSovereignCapabilityRoute(
     };
   }
 
-  // ─── DRAFT PR ───
   if (intent === 'draft_pr') {
-    // Package gate: Draft PR requires a generated package - keep this blocker terminal
     if (!input.hasPackage) {
       return {
         route: 'draft-pr-runtime',
         capability: 'draft_pr',
         allowed: false,
-        reason: 'Paket muss zuerst generiert werden.',
-        blocker: 'unsupported_intent',
-        nextAction: 'ask_user',
+        reason: buildReason('draft-pr-runtime', 'draft_pr', 'package_required'),
+        blocker: 'package_required',
+        nextAction: 'generate_patch_package',
       };
     }
-
-    // Check GitHub access blockers first - these always block Draft PR
     if (blockers.includes('github_access_missing')) {
       return {
         route: 'draft-pr-runtime',
@@ -412,7 +273,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'validate_github_access',
       };
     }
-
     if (blockers.includes('github_access_validating')) {
       return {
         route: 'draft-pr-runtime',
@@ -423,8 +283,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'show_blocker',
       };
     }
-
-    // Check executor readiness - if available, allow Draft PR
     if (input.openhandsReady) {
       return {
         route: 'openhands',
@@ -434,7 +292,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'start_openhands',
       };
     }
-
     if (input.workspaceReady) {
       return {
         route: 'workspace-executor',
@@ -444,7 +301,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'start_workspace',
       };
     }
-
     return {
       route: 'draft-pr-runtime',
       capability: 'draft_pr',
@@ -455,7 +311,6 @@ export function decideSovereignCapabilityRoute(
     };
   }
 
-  // ─── REPAIR WORKFLOW ───
   if (intent === 'repair_workflow') {
     if (!input.hasWorkflowReport) {
       return {
@@ -467,26 +322,19 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'show_blocker',
       };
     }
-
+    const route: SovereignRoute = input.workspaceReady ? 'workspace-executor' : 'openhands';
+    const blocked = !input.workspaceReady && !input.openhandsReady;
     return {
-      route: 'workspace-executor',
+      route,
       capability: 'code_patch_plan',
-      allowed: input.workspaceReady || input.openhandsReady,
-      reason: buildReason(
-        input.workspaceReady ? 'workspace-executor' : 'openhands',
-        'code_patch_plan',
-        !input.workspaceReady && !input.openhandsReady ? 'executor_unavailable' : undefined,
-      ),
-      blocker: !input.workspaceReady && !input.openhandsReady ? 'executor_unavailable' : undefined,
-      nextAction: !input.workspaceReady && !input.openhandsReady
-        ? 'start_workspace'
-        : input.openhandsReady ? 'start_openhands' : 'start_workspace',
+      allowed: !blocked,
+      reason: buildReason(route, 'code_patch_plan', blocked ? 'executor_unavailable' : undefined),
+      blocker: blocked ? 'executor_unavailable' : undefined,
+      nextAction: blocked ? 'start_workspace' : input.openhandsReady ? 'start_openhands' : 'start_workspace',
     };
   }
 
-  // ─── DIRECT PATCH (simple README/docs changes) ───
   if (intent === 'direct_patch') {
-    // GitHub access is required
     if (blockers.includes('github_access_missing')) {
       return {
         route: 'direct-github-patch',
@@ -497,7 +345,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'validate_github_access',
       };
     }
-
     if (blockers.includes('github_access_validating')) {
       return {
         route: 'direct-github-patch',
@@ -508,8 +355,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'show_blocker',
       };
     }
-
-    // Direct patch available
     if (input.directGitHubPatchReady) {
       return {
         route: 'direct-github-patch',
@@ -519,8 +364,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'run_direct_patch',
       };
     }
-
-    // Fall back to OpenHands if direct patch not ready
     if (input.openhandsReady) {
       return {
         route: 'openhands',
@@ -530,7 +373,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'start_openhands',
       };
     }
-
     return {
       route: 'direct-github-patch',
       capability: 'direct_github_patch',
@@ -541,9 +383,7 @@ export function decideSovereignCapabilityRoute(
     };
   }
 
-  // ─── CODE GENERATION ───
   if (intent === 'code_generation') {
-    // Check GitHub access first - write actions require GitHub
     if (blockers.includes('github_access_validating')) {
       return {
         route: 'openhands',
@@ -554,7 +394,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'show_blocker',
       };
     }
-
     if (blockers.includes('github_access_missing')) {
       return {
         route: 'openhands',
@@ -565,8 +404,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'validate_github_access',
       };
     }
-
-    // Complex work requires workspace
     if (complexity === 'complex') {
       if (input.workspaceReady) {
         return {
@@ -577,7 +414,6 @@ export function decideSovereignCapabilityRoute(
           nextAction: 'start_workspace',
         };
       }
-
       if (input.openhandsReady) {
         return {
           route: 'openhands',
@@ -587,7 +423,6 @@ export function decideSovereignCapabilityRoute(
           nextAction: 'start_openhands',
         };
       }
-
       return {
         route: 'workspace-executor',
         capability: 'isolated_workspace',
@@ -597,8 +432,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'start_workspace',
       };
     }
-
-    // Medium complexity can use code-llm or OpenHands
     if (input.hasPackage) {
       return {
         route: 'code-llm',
@@ -608,8 +441,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'run_worker',
       };
     }
-
-    // No package yet - use OpenHands if available
     if (input.openhandsReady) {
       return {
         route: 'openhands',
@@ -619,8 +450,6 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'start_openhands',
       };
     }
-
-    // Check if Direct Patch is appropriate
     if (input.directGitHubPatchReady && complexity === 'simple') {
       return {
         route: 'direct-github-patch',
@@ -630,18 +459,16 @@ export function decideSovereignCapabilityRoute(
         nextAction: 'run_direct_patch',
       };
     }
-
     return {
-      route: 'openhands',
+      route: 'code-llm',
       capability: 'code_patch_plan',
       allowed: false,
-      reason: buildReason('openhands', 'code_patch_plan', 'executor_unavailable'),
-      blocker: 'executor_unavailable',
-      nextAction: 'start_workspace',
+      reason: buildReason('code-llm', 'code_patch_plan', 'package_required'),
+      blocker: 'package_required',
+      nextAction: 'generate_patch_package',
     };
   }
 
-  // ─── UNKNOWN INTENT ───
   return {
     route: 'worker-chat',
     capability: 'free_chat',
@@ -652,23 +479,10 @@ export function decideSovereignCapabilityRoute(
   };
 }
 
-// ─────────────────────────────────────────────────────────────
-// ACTION EVENT CREATION
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Build an action event for the Sovereign Action Stream.
- * Every decision must produce an ActionEvent.
- * Returns a plain object compatible with SovereignActionEventInput.
- * 
- * Terminal decisions (isTerminal=true, local-runtime-answer) get state "done".
- * Blocked decisions get state "blocked".
- * Running decisions get state "running".
- */
 export function buildCapabilityRouteActionEvent(
   decision: CapabilityDecision,
-  traceId: string,
-  index: number,
+  _traceId: string,
+  _index: number,
 ): { kind: 'route_selected' | 'capability_checked'; route: string; label: string; detail: string; state: 'running' | 'blocked' | 'done' } {
   if (decision.isTerminal) {
     return {
@@ -688,13 +502,6 @@ export function buildCapabilityRouteActionEvent(
   };
 }
 
-// ─────────────────────────────────────────────────────────────
-// HELPER FUNCTIONS
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Check if a decision requires GitHub access.
- */
 export function requiresGitHubAccess(decision: CapabilityDecision): boolean {
   const githubRoutes: SovereignRoute[] = [
     'direct-github-patch',
@@ -705,27 +512,17 @@ export function requiresGitHubAccess(decision: CapabilityDecision): boolean {
   return githubRoutes.includes(decision.route) && decision.allowed;
 }
 
-/**
- * Check if a decision requires an executor.
- */
 export function requiresExecutor(decision: CapabilityDecision): boolean {
-  const executorRoutes: SovereignRoute[] = [
-    'openhands',
-    'workspace-executor',
-  ];
-  return executorRoutes.includes(decision.route);
+  return decision.route === 'openhands' || decision.route === 'workspace-executor';
 }
 
-/**
- * Get user-facing label for a route.
- */
 export function getRouteLabel(route: SovereignRoute): string {
   const labels: Record<SovereignRoute, string> = {
     'worker-chat': 'Chat Worker',
     'code-llm': 'Code-LLM',
     'direct-github-patch': 'Direct GitHub Patch',
     'workspace-executor': 'Workspace Executor',
-    'openhands': 'OpenHands',
+    openhands: 'OpenHands',
     'draft-pr-runtime': 'Draft PR',
     'local-runtime-answer': 'Lokale Antwort',
     'repo-load': 'Repo laden',
@@ -733,9 +530,6 @@ export function getRouteLabel(route: SovereignRoute): string {
   return labels[route];
 }
 
-/**
- * Get blocker explanation in plain language.
- */
 export function getBlockerExplanation(blocker: SovereignRouteBlocker): string {
   const explanations: Record<SovereignRouteBlocker, string> = {
     repo_missing: 'Lade zuerst ein GitHub Repository.',
@@ -743,6 +537,7 @@ export function getBlockerExplanation(blocker: SovereignRouteBlocker): string {
     github_access_validating: 'GitHub-Zugang wird gerade geprüft. Bitte warten.',
     executor_unavailable: 'Kein Executor verfügbar. OpenHands konfigurieren oder Workspace starten.',
     workspace_required: 'Diese Aufgabe braucht einen Workspace-Executor.',
+    package_required: 'Erzeuge zuerst ein Patch-Paket oder eine Diff-Vorschau; danach kann der Draft PR erstellt werden.',
     unsupported_intent: 'Der Auftrag ist zu komplex für diese Route.',
     unsafe_action: 'Diese Aktion würde unsichere Pfade betreffen.',
   };
