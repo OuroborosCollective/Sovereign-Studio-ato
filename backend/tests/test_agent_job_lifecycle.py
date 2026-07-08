@@ -36,9 +36,9 @@ class FakeCursor:
                 "events": [],
                 "blocker": params[13],
             }
-        elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS SET EVENTS"):
-            pass
-        elif "SET EVENTS" in normalized:
+        elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_EVENTS"):
+            self.conn.events.append(params)
+        elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "SET EVENTS" in normalized:
             job_id = params[1]
             self.conn.jobs[job_id]["events"].append(params[0])
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS"):
@@ -48,9 +48,7 @@ class FakeCursor:
                 self.conn.jobs[job_id]["workspace_id"] = params[1]
             if params[7]:
                 self.conn.jobs[job_id]["blocker"] = params[7]
-        elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_EVENTS"):
-            self.conn.events.append(params)
-        elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS WHERE USER_ID"):
+        elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS") and "AND JOB_ID" in normalized:
             user_id, job_id = params
             row = self.conn.jobs.get(job_id)
             self.last_result = row if row and row["user_id"] == user_id else None
