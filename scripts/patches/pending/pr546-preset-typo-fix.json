@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/runtime/sovereignPresetActionRuntime.ts",
+  "source_ref": "fix/access-card-bridge-flow",
+  "branch_base_ref": "fix/access-card-bridge-flow",
+  "branch": "fix/access-card-bridge-flow",
+  "commit_message": "fix(runtime): correct preset write access property",
+  "pr_title": "fix(builder): open access gate and honor allowed patch route",
+  "pr_body": "Fixes the PR #546 preset runtime typo: the action property is requiresGithubWrite, not requiresGitHubWrite.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "action.requiresGitHubWrite && !context.githubWriteReady",
+      "replace": "action.requiresGithubWrite && !context.githubWriteReady"
+    }
+  ]
+}
