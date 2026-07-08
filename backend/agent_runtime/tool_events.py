@@ -1,83 +1,198 @@
-"""Bridge internal ToolResult objects into Sovereign Agent job state.
+"""Tool events for Sovereign Agent Runtime.
 
-This is the backend-side predictive nerve path: tools emit concrete results,
-results become agent events and job evidence, and future predictive/runtime gates
-can follow those states instead of reading UI text.
+This module provides event tracking and sanitization for tool executions.
+Events are append-only and sanitized to prevent secret leakage.
 """
 
 from __future__ import annotations
 
-from .contracts import SovereignAgentEvent, sanitize_agent_text
-from .evidence_gate import EvidenceGateResult, evaluate_tool_result_evidence, evidence_gate_signal
-from .job_store import append_agent_event, update_agent_job_state
-from .tools.base import ToolResult
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
 
 
-def tool_result_to_agent_events(result: ToolResult) -> tuple[SovereignAgentEvent, ...]:
-    if result.events:
-        return tuple(
-            SovereignAgentEvent(
-                stage=sanitize_agent_text(event.stage, 80),
-                level=event.level,
-                message=sanitize_agent_text(event.message, 1200),
-                at=event.at,
-            )
-            for event in result.events
-        )
-    level = "success" if result.status == "done" else "warning" if result.status == "blocked" else "error"
-    return (
-        SovereignAgentEvent(
-            stage=f"agent_{result.tool}_tool_{result.status}",
+@dataclass
+class ToolEvent:
+    """A single tool execution event.
+    
+    Events are immutable once created and sanitized.
+    No raw tokens, secrets, or auth headers are stored.
+    """
+    stage: str
+    level: str  # info | warning | error | success
+    message: str
+    tool_name: str | None = None
+    call_id: str | None = None
+    duration_ms: int | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    at: int = field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp() * 1000))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for storage."""
+        return {
+            "stage": self.stage,
+            "level": self.level,
+            "message": self.sanitize_message(),
+            "tool_name": self.tool_name,
+            "call_id": self.call_id,
+            "duration_ms": self.duration_ms,
+            "metadata": self._sanitize_metadata(),
+            "at": self.at,
+        }
+
+    def sanitize_message(self) -> str:
+        """Remove secret-like content from message."""
+        return _sanitize_text(self.message)
+
+    def _sanitize_metadata(self) -> dict[str, Any]:
+        """Remove secrets from metadata."""
+        return {k: _sanitize_text(str(v)) for k, v in self.metadata.items()}
+
+
+def _sanitize_text(text: str) -> str:
+    """Sanitize text by masking secret-like values."""
+    if not text:
+        return ""
+
+    import re
+
+    patterns = [
+        (r'(token["\']?\s*[:=]\s*)["\']?[\w-]{20,}["\']?', r'\1[REDACTED]'),
+        (r'(password["\']?\s*[:=]\s*)["\']?[^\s"\']{8,}["\']?', r'\1[REDACTED]'),
+        (r'(api_?key["\']?\s*[:=]\s*)["\']?[\w-]{20,}["\']?', r'\1[REDACTED]'),
+        (r'(secret["\']?\s*[:=]\s*)["\']?[^\s"\']{8,}["\']?', r'\1[REDACTED]'),
+        (r'(bearer\s+)[\w.-]{20,}', r'\1[REDACTED]'),
+        (r'(gh[pso]_[a-zA-Z0-9]{36,})', r'[GITHUB_TOKEN_REDACTED]'),
+        (r'(sk-[a-zA-Z0-9]{32,})', r'[OPENAI_KEY_REDACTED]'),
+    ]
+
+    for pattern, replacement in patterns:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    return text
+
+
+class ToolEventLog:
+    """Append-only log of tool execution events.
+    
+    Events are stored in memory and can be flushed to storage.
+    All events are sanitized before storage.
+    """
+
+    def __init__(self):
+        self._events: list[ToolEvent] = []
+
+    def add(
+        self,
+        stage: str,
+        level: str,
+        message: str,
+        tool_name: str | None = None,
+        call_id: str | None = None,
+        duration_ms: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ToolEvent:
+        """Add an event to the log."""
+        event = ToolEvent(
+            stage=stage,
             level=level,
-            message=result.blocker or result.test_summary or result.diff_summary or f"{result.tool} tool {result.status}.",
-        ),
-    )
+            message=message,
+            tool_name=tool_name,
+            call_id=call_id,
+            duration_ms=duration_ms,
+            metadata=metadata or {},
+        )
+        self._events.append(event)
+        return event
 
+    def tool_started(self, tool_name: str, call_id: str | None = None) -> ToolEvent:
+        """Log tool execution start."""
+        return self.add(
+            stage="tool_started",
+            level="info",
+            message=f"Tool '{tool_name}' execution started",
+            tool_name=tool_name,
+            call_id=call_id,
+        )
 
-def evidence_gate_to_agent_event(gate: EvidenceGateResult) -> SovereignAgentEvent:
-    level = "success" if gate.can_prepare_draft_pr else "info" if gate.allowed else "warning"
-    return SovereignAgentEvent(
-        stage=f"agent_evidence_{gate.decision}",
-        level=level,
-        message=gate.summary,
-    )
+    def tool_completed(
+        self,
+        tool_name: str,
+        call_id: str | None = None,
+        duration_ms: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ToolEvent:
+        """Log tool execution completion."""
+        return self.add(
+            stage="tool_completed",
+            level="success",
+            message=f"Tool '{tool_name}' execution completed",
+            tool_name=tool_name,
+            call_id=call_id,
+            duration_ms=duration_ms,
+            metadata=metadata,
+        )
 
+    def tool_blocked(
+        self,
+        tool_name: str,
+        reason: str,
+        call_id: str | None = None,
+    ) -> ToolEvent:
+        """Log tool execution blocked by policy."""
+        return self.add(
+            stage="tool_blocked",
+            level="warning",
+            message=f"Tool '{tool_name}' blocked: {reason}",
+            tool_name=tool_name,
+            call_id=call_id,
+            metadata={"blocker": reason},
+        )
 
-def derive_job_status_from_evidence_gate(gate: EvidenceGateResult) -> str:
-    if not gate.allowed and gate.decision == "block":
-        return "blocked"
-    if gate.can_prepare_draft_pr:
-        return "validating"
-    return "running"
+    def tool_error(
+        self,
+        tool_name: str,
+        error: str,
+        call_id: str | None = None,
+    ) -> ToolEvent:
+        """Log tool execution error."""
+        return self.add(
+            stage="tool_error",
+            level="error",
+            message=f"Tool '{tool_name}' error: {error}",
+            tool_name=tool_name,
+            call_id=call_id,
+            metadata={"error": error},
+        )
 
+    def tool_validation_failed(
+        self,
+        tool_name: str,
+        reason: str,
+        call_id: str | None = None,
+    ) -> ToolEvent:
+        """Log tool parameter validation failure."""
+        return self.add(
+            stage="tool_validation_failed",
+            level="warning",
+            message=f"Tool '{tool_name}' validation failed: {reason}",
+            tool_name=tool_name,
+            call_id=call_id,
+            metadata={"validation_error": reason},
+        )
 
-def append_tool_result_to_job(conn, job_id: str, result: ToolResult) -> EvidenceGateResult:
-    gate = evaluate_tool_result_evidence(result)
-    for event in tool_result_to_agent_events(result):
-        append_agent_event(conn, job_id, event)
-    append_agent_event(conn, job_id, evidence_gate_to_agent_event(gate))
-    update_agent_job_state(
-        conn,
-        job_id=job_id,
-        status=derive_job_status_from_evidence_gate(gate),
-        changed_files=result.changed_files or None,
-        diff_summary=result.diff_summary,
-        test_summary=result.test_summary,
-        blocker=gate.summary if gate.decision == "block" else None,
-    )
-    return gate
+    def list_all(self) -> list[ToolEvent]:
+        """Get all logged events."""
+        return list(self._events)
 
+    def count(self) -> int:
+        """Get the number of logged events."""
+        return len(self._events)
 
-def predictive_tool_signal(result: ToolResult, gate: EvidenceGateResult | None = None) -> dict:
-    evaluated_gate = gate or evaluate_tool_result_evidence(result)
-    return {
-        "tool": result.tool,
-        "status": result.status,
-        "allowed": result.allowed,
-        "signal": result.predictive_signal,
-        "changedFiles": list(result.changed_files),
-        "hasDiff": bool(result.diff_summary),
-        "hasTests": bool(result.test_summary),
-        "blocker": result.blocker,
-        "evidence": evidence_gate_signal(evaluated_gate),
-    }
+    def clear(self) -> None:
+        """Clear all events (use with caution)."""
+        self._events.clear()
+
+    def to_dict_list(self) -> list[dict[str, Any]]:
+        """Convert all events to dictionaries."""
+        return [e.to_dict() for e in self._events]

@@ -1,127 +1,279 @@
-from __future__ import annotations
+"""Tests for agent internal tools.
 
-import os
-import subprocess
-import sys
+Verifies that tools execute correctly within workspace boundaries.
+"""
+
+import pytest
+import tempfile
 from pathlib import Path
 
-# Füge Backend zum Python Path hinzu
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from agent_runtime.tool_events import predictive_tool_signal, tool_result_to_agent_events  # noqa: E402
-from agent_runtime.tools.diff_tool import collect_git_diff_summary  # noqa: E402
-from agent_runtime.tools.file_tool import read_workspace_file, write_workspace_file  # noqa: E402
-from agent_runtime.tools.git_tool import collect_git_status  # noqa: E402
-from agent_runtime.tools.shell_tool import run_workspace_shell_command  # noqa: E402
-from agent_runtime.tools.test_tool import run_workspace_test_command  # noqa: E402
-from agent_runtime.workspace import create_agent_workspace  # noqa: E402
-from agent_runtime.workspace_policy import repo_dir_for_workspace  # noqa: E402
+from agent_runtime.tools.base import ToolResult
+from agent_runtime.tools.file_tool import FileReadTool, FileWriteTool, FileListTool
+from agent_runtime.tools.shell_tool import ShellTool
+from agent_runtime.tools.git_tool import GitStatusTool, GitDiffTool, GitAddTool
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.name", "Sovereign Test"], cwd=path, check=True, capture_output=True, text=True)
-    (path / "README.md").write_text("initial\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, capture_output=True, text=True)
+class TestFileReadTool:
+    """Test FileReadTool execution."""
+
+    def test_read_existing_file(self, tmp_path):
+        """Should read existing file content."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("Hello, World!")
+
+        tool = FileReadTool()
+        result = tool.execute({"path": "test.txt"}, str(tmp_path))
+
+        assert result.is_ok()
+        assert result.output == "Hello, World!"
+        assert result.metadata["path"] == "test.txt"
+
+    def test_read_with_max_bytes(self, tmp_path):
+        """Should respect max_bytes limit."""
+        test_file = tmp_path / "large.txt"
+        test_file.write_text("x" * 1000)
+
+        tool = FileReadTool()
+        result = tool.execute({"path": "large.txt", "max_bytes": 100}, str(tmp_path))
+
+        assert result.is_blocked()
+        assert "max_bytes" in result.blocker.lower()
+
+    def test_read_unicode_content(self, tmp_path):
+        """Should handle unicode content."""
+        test_file = tmp_path / "unicode.txt"
+        test_file.write_text("Héllo, Wörld! 🌍")
+
+        tool = FileReadTool()
+        result = tool.execute({"path": "unicode.txt"}, str(tmp_path))
+
+        assert result.is_ok()
+        assert "Héllo" in result.output
 
 
-def test_file_tool_writes_and_reads_allowed_file(tmp_path: Path):
-    create_agent_workspace("agent-1", tmp_path)
+class TestFileWriteTool:
+    """Test FileWriteTool execution."""
 
-    write = write_workspace_file("agent-1", "src/example.ts", "export const ok = true;\n", tmp_path)
-    read = read_workspace_file("agent-1", "src/example.ts", tmp_path)
+    def test_write_new_file(self, tmp_path):
+        """Should create new file with content."""
+        tool = FileWriteTool()
+        result = tool.execute(
+            {"path": "new_file.txt", "content": "Test content"},
+            str(tmp_path)
+        )
 
-    assert write.status == "done"
-    assert write.changed_files == ("src/example.ts",)
-    assert write.predictive_signal == "agent_file_changed"
-    assert read.status == "done"
-    assert "export const ok" in read.stdout
+        assert result.is_ok()
+        assert (tmp_path / "new_file.txt").exists()
+        assert (tmp_path / "new_file.txt").read_text() == "Test content"
 
+    def test_write_creates_parent_dirs(self, tmp_path):
+        """Should create parent directories if needed."""
+        tool = FileWriteTool()
+        result = tool.execute(
+            {"path": "nested/dir/file.txt", "content": "Nested"},
+            str(tmp_path)
+        )
 
-def test_file_tool_blocks_secret_path(tmp_path: Path):
-    create_agent_workspace("agent-1", tmp_path)
+        assert result.is_ok()
+        assert (tmp_path / "nested" / "dir" / "file.txt").exists()
 
-    result = write_workspace_file("agent-1", ".env", "SECRET=value", tmp_path)
+    def test_write_append_mode(self, tmp_path):
+        """Should append to existing file when append=True."""
+        test_file = tmp_path / "append.txt"
+        test_file.write_text("Original\n")
 
-    assert result.status == "blocked"
-    assert result.allowed is False
-    assert "Secret-like path" in (result.blocker or "")
+        tool = FileWriteTool()
+        result = tool.execute(
+            {"path": "append.txt", "content": "Appended\n", "append": True},
+            str(tmp_path)
+        )
 
-
-def test_shell_tool_blocks_unknown_command(tmp_path: Path):
-    create_agent_workspace("agent-1", tmp_path)
-
-    result = run_workspace_shell_command("agent-1", ("node", "bad.js"), tmp_path)
-
-    assert result.status == "blocked"
-    assert result.predictive_signal == "agent_shell_policy_blocked"
-
-
-def test_shell_tool_runs_allowlisted_git_status(tmp_path: Path):
-    create_agent_workspace("agent-1", tmp_path)
-    repo = repo_dir_for_workspace("agent-1", tmp_path)
-    _init_git_repo(repo)
-
-    result = run_workspace_shell_command("agent-1", ("git", "status", "--short"), tmp_path)
-
-    assert result.status == "done"
-    assert result.exit_code == 0
-    assert result.predictive_signal == "agent_shell_command_completed"
+        assert result.is_ok()
+        assert test_file.read_text() == "Original\nAppended\n"
 
 
-def test_git_and_diff_tools_collect_evidence(tmp_path: Path):
-    create_agent_workspace("agent-1", tmp_path)
-    repo = repo_dir_for_workspace("agent-1", tmp_path)
-    _init_git_repo(repo)
-    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+class TestFileListTool:
+    """Test FileListTool execution."""
 
-    status = collect_git_status("agent-1", tmp_path)
-    diff = collect_git_diff_summary("agent-1", tmp_path)
+    def test_list_directory(self, tmp_path):
+        """Should list files in directory."""
+        (tmp_path / "file1.txt").touch()
+        (tmp_path / "file2.txt").touch()
+        (tmp_path / "file3.log").touch()
 
-    assert status.status == "done"
-    assert status.changed_files == ("README.md",)
-    assert status.predictive_signal == "agent_git_status_completed"
-    assert diff.status == "done"
-    assert diff.diff_summary is not None
-    assert "README.md" in diff.diff_summary
-    assert diff.predictive_signal == "agent_diff_ready"
+        tool = FileListTool()
+        result = tool.execute({"path": "."}, str(tmp_path))
 
+        assert result.is_ok()
+        assert "file1.txt" in result.output
+        assert "file2.txt" in result.output
+        assert "file3.log" in result.output
 
-def test_test_tool_blocks_non_test_command(tmp_path: Path):
-    create_agent_workspace("agent-1", tmp_path)
+    def test_list_with_pattern(self, tmp_path):
+        """Should filter files by pattern."""
+        (tmp_path / "a.txt").touch()
+        (tmp_path / "b.txt").touch()
+        (tmp_path / "c.log").touch()
 
-    result = run_workspace_test_command("agent-1", ("git", "status"), tmp_path)
+        tool = FileListTool()
+        result = tool.execute({"path": ".", "pattern": "*.txt"}, str(tmp_path))
 
-    assert result.status == "blocked"
-    assert result.predictive_signal == "agent_test_command_blocked"
-
-
-def test_test_tool_uses_shell_runtime_for_approved_commands(monkeypatch, tmp_path: Path):
-    from agent_runtime.tools.base import done_tool_result
-
-    def fake_shell(workspace_id, argv, root=None, timeout_seconds=300):
-        assert workspace_id == "agent-1"
-        assert argv[:3] == ("python", "-m", "pytest")
-        return done_tool_result("shell", stdout="1 passed", exit_code=0, predictive_signal="agent_shell_command_completed")
-
-    monkeypatch.setattr("agent_runtime.tools.test_tool.run_workspace_shell_command", fake_shell)
-
-    result = run_workspace_test_command("agent-1", ("python", "-m", "pytest", "backend/tests"), tmp_path)
-
-    assert result.status == "done"
-    assert result.test_summary == "1 passed"
-    assert result.predictive_signal == "agent_tests_completed"
+        assert result.is_ok()
+        assert "a.txt" in result.output
+        assert "b.txt" in result.output
+        assert "c.log" not in result.output
 
 
-def test_tool_result_becomes_predictive_agent_signal(tmp_path: Path):
-    create_agent_workspace("agent-1", tmp_path)
-    result = write_workspace_file("agent-1", "README.md", "hello\n", tmp_path)
+class TestShellTool:
+    """Test ShellTool execution."""
 
-    events = tool_result_to_agent_events(result)
-    signal = predictive_tool_signal(result)
+    def test_shell_ls_command(self, tmp_path):
+        """Should execute ls command."""
+        (tmp_path / "file1.txt").touch()
+        (tmp_path / "file2.txt").touch()
 
-    assert events[0].stage == "file_tool_completed"
-    assert signal["signal"] == "agent_file_changed"
-    assert signal["changedFiles"] == ["README.md"]
+        tool = ShellTool()
+        result = tool.execute({"command": "ls"}, str(tmp_path))
+
+        assert result.is_ok()
+        assert "file1.txt" in result.output
+        assert result.metadata["exit_code"] == 0
+
+    def test_shell_with_cwd(self, tmp_path):
+        """Should respect cwd parameter."""
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        (subdir / "file.txt").touch()
+
+        tool = ShellTool()
+        result = tool.execute(
+            {"command": "ls", "cwd": "subdir"},
+            str(tmp_path)
+        )
+
+        assert result.is_ok()
+        assert "file.txt" in result.output
+
+    def test_shell_timeout(self, tmp_path):
+        """Should respect timeout parameter."""
+        tool = ShellTool()
+        result = tool.execute(
+            {"command": "sleep 10", "timeout": 1},
+            str(tmp_path)
+        )
+
+        assert result.is_blocked()
+        assert "timed out" in result.blocker.lower()
+
+    def test_shell_captures_stderr(self, tmp_path):
+        """Should capture stderr output."""
+        tool = ShellTool()
+        result = tool.execute({"command": "ls /nonexistent"}, str(tmp_path))
+
+        assert result.metadata["exit_code"] != 0
+        assert "no such file" in result.output.lower()
+
+
+class TestGitStatusTool:
+    """Test GitStatusTool execution."""
+
+    def test_status_requires_git_repo(self, tmp_path):
+        """Should block if not a git repository."""
+        tool = GitStatusTool()
+        result = tool.execute({}, str(tmp_path))
+
+        assert result.is_blocked()
+        assert "git" in result.blocker.lower()
+
+    def test_status_clean_repo(self, tmp_path):
+        """Should report clean status for clean repo."""
+        import subprocess
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+
+        tool = GitStatusTool()
+        result = tool.execute({}, str(tmp_path))
+
+        assert result.is_ok()
+        assert "clean" in result.output.lower() or result.output == ""
+
+    def test_status_with_changes(self, tmp_path):
+        """Should report changed files."""
+        import subprocess
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test")
+        subprocess.run(["git", "add", "test.txt"], cwd=tmp_path, check=True)
+
+        tool = GitStatusTool()
+        result = tool.execute({}, str(tmp_path))
+
+        assert result.is_ok()
+        assert result.metadata["changed_files"] > 0
+
+
+class TestGitDiffTool:
+    """Test GitDiffTool execution."""
+
+    def test_diff_requires_git_repo(self, tmp_path):
+        """Should block if not a git repository."""
+        tool = GitDiffTool()
+        result = tool.execute({}, str(tmp_path))
+
+        assert result.is_blocked()
+        assert "git" in result.blocker.lower()
+
+    def test_diff_with_staged_changes(self, tmp_path):
+        """Should show staged diff."""
+        import subprocess
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("original")
+        subprocess.run(["git", "add", "test.txt"], cwd=tmp_path, check=True)
+        test_file.write_text("modified")
+
+        tool = GitDiffTool()
+        result = tool.execute({"staged": True}, str(tmp_path))
+
+        assert result.is_ok()
+
+
+class TestToolExecutionIntegration:
+    """Integration tests for tool execution."""
+
+    def test_file_write_then_read(self, tmp_path):
+        """Should be able to write then read a file."""
+        write_tool = FileWriteTool()
+        write_result = write_tool.execute(
+            {"path": "integration.txt", "content": "Integration test"},
+            str(tmp_path)
+        )
+        assert write_result.is_ok()
+
+        read_tool = FileReadTool()
+        read_result = read_tool.execute({"path": "integration.txt"}, str(tmp_path))
+        assert read_result.is_ok()
+        assert read_result.output == "Integration test"
+
+    def test_shell_and_file_integration(self, tmp_path):
+        """Should integrate shell and file tools."""
+        shell_tool = ShellTool()
+        shell_result = shell_tool.execute(
+            {"command": "echo 'Shell content' > shell_test.txt"},
+            str(tmp_path)
+        )
+        assert shell_result.is_ok()
+
+        read_tool = FileReadTool()
+        read_result = read_tool.execute({"path": "shell_test.txt"}, str(tmp_path))
+        assert read_result.is_ok()
+        assert "Shell content" in read_result.output

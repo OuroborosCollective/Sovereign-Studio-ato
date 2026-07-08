@@ -32,15 +32,24 @@ class FakeCursor:
                 "mission": params[5],
                 "status": params[6],
                 "workspace_id": params[7],
+                "allowed_paths": params[8],
+                "forbidden_paths": params[9],
+                "memory_hints": params[10],
                 "changed_files": [],
-                "events": [],
-                "blocker": params[13],
+                "events": params[11],
+                "blocker": params[12],
             }
         elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_EVENTS"):
             self.conn.events.append(params)
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "SET EVENTS" in normalized:
             job_id = params[1]
-            self.conn.jobs[job_id]["events"].append(params[0])
+            # events come as JSON string, need to parse and extend
+            import json
+            new_events = json.loads(params[0])
+            current = self.conn.jobs[job_id].get("events", [])
+            if isinstance(current, str):
+                current = json.loads(current)
+            self.conn.jobs[job_id]["events"] = current + new_events
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS"):
             job_id = params[-1]
             self.conn.jobs[job_id]["status"] = params[0]

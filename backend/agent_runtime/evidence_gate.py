@@ -1,272 +1,317 @@
-"""Evidence and result gate for Sovereign Agent tool results.
+"""Evidence Gate for Sovereign Agent Runtime.
 
-Tool output is not product truth by itself. This gate decides which next runtime
-state is allowed from changedFiles, diffSummary, testSummary and blockers.
+This module provides the evidence gate - a runtime check that validates
+job completion by examining real workspace evidence before allowing status
+transitions to 'completed'.
+
+The evidence gate is part of the Sovereign brain contract and ensures:
+1. Real files were generated (not just plan files)
+2. Evidence is verifiable and matches mission requirements
+3. No placeholder or fake content enters the release path
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
 import re
-from typing import Literal, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
-from .contracts import (
-    is_actionable_evidence_file,
-    is_plan_only_file,
-    normalize_agent_paths,
-    sanitize_agent_text,
-)
-from .tools.base import ToolResult
 
-EvidenceDecision = Literal[
-    "continue",
-    "block",
-    "collect_diff",
-    "run_tests",
-    "prepare_draft_pr",
-    "allow_pattern_learning",
+
+
+# Placeholder patterns that must not enter the release path
+PLACEHOLDER_PATTERNS = [
+    r"README\s*\+\s*Update\s+History",
+    r"Mach\s+weiter",
+    r"Fehler",
+    r"Ideen",
+    r"Plan",
+    r"Workflow\s+.*Analyse.*Runtime.*Check.*Test\s+Plan",
+    r"PLACEHOLDER",
+    r"TODO",
+    r"FIXME",
+    r"^\s*$",  # Empty content
 ]
 
-EvidenceGateCode = Literal[
-    "tool_blocked",
-    "tool_failed",
-    "no_runtime_evidence",
-    "secret_like_evidence",
-    "plan_only_result",
-    "non_actionable_changed_files",
-    "diff_required",
-    "tests_required",
-    "tests_failed",
-    "draft_pr_ready",
-    "pattern_learning_ready",
-]
-
-_SECRET_EVIDENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"github_pat_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"gh[pousr]_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"sk-proj-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"sk-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"Authorization:\s*(?:Bearer\s+)?[^\s\n]+", re.IGNORECASE),
-    re.compile(r"(?:token|password|secret|api[_-]?key)\s*[=:]\s*[^\s\n]+", re.IGNORECASE),
-)
-
-_FAILED_TEST_TOKENS = (
-    " failed",
-    "failed=",
-    " failures",
-    "failure",
-    "error:",
-    "errors=",
-    "exit code 1",
-    "traceback",
-    "assertionerror",
-)
-
-_PASSED_TEST_TOKENS = (
-    " passed",
-    "passed=",
-    "0 failed",
-    "success",
-    "completed",
-    "ok",
-)
+# Forbidden paths that should never contain generated content
+FORBIDDEN_PATHS = {
+    ".git",
+    ".env",
+    "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".next",
+}
 
 
-@dataclass(frozen=True)
-class EvidenceGateInput:
-    changed_files: tuple[str, ...] = ()
-    diff_summary: str | None = None
-    test_summary: str | None = None
-    blocker: str | None = None
-    tool_status: str | None = None
-    tool_name: str | None = None
-
-
-@dataclass(frozen=True)
+@dataclass
 class EvidenceGateResult:
-    allowed: bool
-    decision: EvidenceDecision
-    codes: tuple[EvidenceGateCode, ...]
-    summary: str
-    changed_files: tuple[str, ...] = ()
-    next_action: str | None = None
-    can_prepare_draft_pr: bool = False
-    can_learn_pattern: bool = False
-    predictive_signal: str = "agent_evidence_gate_blocked"
+    """Result of an evidence gate check."""
+    passed: bool
+    reason: str
+    evidence_count: int = 0
+    placeholder_count: int = 0
+    forbidden_paths_found: list[str] = None
+    details: dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.forbidden_paths_found is None:
+            self.forbidden_paths_found = []
+        if self.details is None:
+            self.details = {}
 
 
-def evidence_input_from_tool_result(result: ToolResult) -> EvidenceGateInput:
-    return EvidenceGateInput(
-        changed_files=result.changed_files,
-        diff_summary=result.diff_summary,
-        test_summary=result.test_summary,
-        blocker=result.blocker,
-        tool_status=result.status,
-        tool_name=result.tool,
-    )
+@dataclass
+class JobEvidence:
+    """Evidence collected from a job's workspace."""
+    job_id: str
+    workspace_id: str
+    repo_url: str
+    branch: str
+    mission: str
+    generated_files: list[str] = None
+    git_status: str = ""
+    git_diff_summary: str = ""
+    file_contents: dict[str, str] = None
+    created_at: int = None
+
+    def __post_init__(self):
+        if self.generated_files is None:
+            self.generated_files = []
+        if self.file_contents is None:
+            self.file_contents = {}
+        if self.created_at is None:
+            self.created_at = int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
-def _has_secret_like_text(*values: str | None) -> bool:
-    joined = "\n".join(value or "" for value in values)
-    return any(pattern.search(joined) for pattern in _SECRET_EVIDENCE_PATTERNS)
+class EvidenceGate:
+    """Validates job completion evidence.
 
+    The evidence gate checks:
+    1. Non-empty generated files exist
+    2. No placeholder content in files
+    3. No forbidden paths were modified
+    4. Git status shows real changes
+    5. Diff contains executable/implementable content
+    """
 
-def _tests_failed(summary: str | None) -> bool:
-    lower = (summary or "").lower()
-    return bool(lower and any(token in lower for token in _FAILED_TEST_TOKENS) and "0 failed" not in lower)
+    def __init__(self, workspace: Any):  # WorkspaceProvisioner | GitWorkspace
+        self.workspace = workspace
+        self._placeholder_regex = [
+            re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+            for pattern in PLACEHOLDER_PATTERNS
+        ]
 
+    def check_evidence(self, job_id: str, workspace_path: str | None = None) -> EvidenceGateResult:
+        """Check evidence for a completed job.
 
-def _tests_present(summary: str | None) -> bool:
-    lower = (summary or "").lower()
-    return bool(lower and (any(token in lower for token in _PASSED_TEST_TOKENS) or any(token in lower for token in _FAILED_TEST_TOKENS)))
+        Args:
+            job_id: The job ID to check
+            workspace_path: Optional workspace path override
 
+        Returns:
+            EvidenceGateResult with pass/fail and details
+        """
+        if not workspace_path:
+            workspace_path = self._get_workspace_path(job_id)
 
-def _unique(values: Sequence[str]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(value for value in values if value))
+        if not workspace_path:
+            return EvidenceGateResult(
+                passed=False,
+                reason="No workspace path available",
+            )
 
+        # Collect evidence
+        evidence = self._collect_evidence(job_id, workspace_path)
 
-def evaluate_agent_evidence(input_value: EvidenceGateInput) -> EvidenceGateResult:
-    changed_files = normalize_agent_paths(input_value.changed_files)
-    actionable_files = tuple(path for path in changed_files if is_actionable_evidence_file(path))
-    plan_only_files = tuple(path for path in changed_files if is_plan_only_file(path))
-    diff_summary = sanitize_agent_text(input_value.diff_summary, 4000) if input_value.diff_summary else None
-    test_summary = sanitize_agent_text(input_value.test_summary, 4000) if input_value.test_summary else None
-    blocker = sanitize_agent_text(input_value.blocker, 1200) if input_value.blocker else None
+        # Check each gate
+        empty_result = self._check_empty_snapshot(evidence)
+        if not empty_result.passed:
+            return empty_result
 
-    if _has_secret_like_text("\n".join(changed_files), input_value.diff_summary, input_value.test_summary, input_value.blocker):
+        placeholder_result = self._check_placeholders(evidence)
+        if not placeholder_result.passed:
+            return placeholder_result
+
+        forbidden_result = self._check_forbidden_paths(evidence)
+        if not forbidden_result.passed:
+            return forbidden_result
+
+        diff_result = self._check_git_diff(evidence)
+        if not diff_result.passed:
+            return diff_result
+
         return EvidenceGateResult(
-            allowed=False,
-            decision="block",
-            codes=("secret_like_evidence",),
-            summary="Evidence contains secret-like material and was blocked.",
-            changed_files=changed_files,
-            next_action="redact_and_review",
-            predictive_signal="agent_evidence_secret_blocked",
+            passed=True,
+            reason="All evidence gates passed",
+            evidence_count=len(evidence.generated_files),
+            placeholder_count=0,
+            details={
+                "files": evidence.generated_files,
+                "git_status": evidence.git_status,
+            },
         )
 
-    if input_value.tool_status == "blocked":
-        return EvidenceGateResult(
-            allowed=False,
-            decision="block",
-            codes=("tool_blocked",),
-            summary=blocker or "Tool result was blocked by runtime policy.",
-            changed_files=changed_files,
-            next_action="show_blocker",
-            can_learn_pattern=bool(blocker),
-            predictive_signal="agent_tool_blocked",
+    def _get_workspace_path(self, job_id: str) -> str | None:
+        """Get workspace path for a job."""
+        if hasattr(self.workspace, 'get_workspace_path'):
+            return self.workspace.get_workspace_path(job_id)
+        if hasattr(self.workspace, 'workspace_path'):
+            return self.workspace.workspace_path
+        return None
+
+    def _collect_evidence(self, job_id: str, workspace_path: str) -> JobEvidence:
+        """Collect evidence from the workspace."""
+        evidence = JobEvidence(
+            job_id=job_id,
+            workspace_id=job_id,
+            repo_url="",
+            branch="",
+            mission="",
         )
 
-    if input_value.tool_status == "failed":
-        return EvidenceGateResult(
-            allowed=False,
-            decision="block",
-            codes=("tool_failed",),
-            summary=blocker or "Tool result failed.",
-            changed_files=changed_files,
-            next_action="show_blocker",
-            can_learn_pattern=bool(blocker),
-            predictive_signal="agent_tool_failed",
-        )
+        # Get git status
+        if hasattr(self.workspace, 'get_git_status'):
+            status_result = self.workspace.get_git_status(workspace_path)
+            if status_result.get("ok"):
+                evidence.git_status = status_result.get("status", "")
+                # Extract changed files
+                files = status_result.get("files", [])
+                evidence.generated_files = [f.get("path", "") for f in files if f.get("path")]
 
-    if changed_files and not actionable_files:
-        return EvidenceGateResult(
-            allowed=False,
-            decision="block",
-            codes=("plan_only_result",) if plan_only_files else ("non_actionable_changed_files",),
-            summary="Changed files are not acceptable runtime evidence.",
-            changed_files=changed_files,
-            next_action="show_blocker",
-            predictive_signal="agent_evidence_non_actionable_blocked",
-        )
+        # Get git diff summary
+        if hasattr(self.workspace, 'get_git_diff'):
+            diff_result = self.workspace.get_git_diff(workspace_path)
+            if diff_result.get("ok"):
+                evidence.git_diff_summary = diff_result.get("diff", "")[:500]
 
-    has_changes = bool(actionable_files)
-    has_diff = bool(diff_summary and diff_summary.strip())
-    has_tests = _tests_present(test_summary)
+        return evidence
 
-    if _tests_failed(test_summary):
-        return EvidenceGateResult(
-            allowed=False,
-            decision="block",
-            codes=("tests_failed",),
-            summary="Tests or validation gate reported a failure.",
-            changed_files=actionable_files,
-            next_action="show_blocker",
-            can_learn_pattern=True,
-            predictive_signal="agent_tests_failed",
-        )
+    def _check_empty_snapshot(self, evidence: JobEvidence) -> EvidenceGateResult:
+        """Check that workspace has real files, not just folders."""
+        if not evidence.generated_files:
+            return EvidenceGateResult(
+                passed=False,
+                reason="No files found in workspace - snapshot may be empty or folders only",
+                evidence_count=0,
+            )
 
-    if has_changes and not has_diff:
-        return EvidenceGateResult(
-            allowed=True,
-            decision="collect_diff",
-            codes=("diff_required",),
-            summary="Changed files detected; collect a diff before Draft PR preparation.",
-            changed_files=actionable_files,
-            next_action="collect_diff",
-            predictive_signal="agent_evidence_needs_diff",
-        )
+        # Filter out directories (paths without extensions often indicate folders)
+        real_files = [
+            f for f in evidence.generated_files
+            if "." in f.split("/")[-1] or f.endswith(".md") or f.endswith(".txt")
+        ]
 
-    if has_changes and has_diff and not has_tests:
-        return EvidenceGateResult(
-            allowed=True,
-            decision="run_tests",
-            codes=("tests_required",),
-            summary="Diff is ready; run validation tests before Draft PR preparation.",
-            changed_files=actionable_files,
-            next_action="run_tests",
-            can_learn_pattern=True,
-            predictive_signal="agent_evidence_needs_tests",
-        )
+        if not real_files:
+            return EvidenceGateResult(
+                passed=False,
+                reason="Only folder structures found - no executable/implementable files",
+                evidence_count=len(evidence.generated_files),
+            )
 
-    if has_changes and has_diff and has_tests:
-        return EvidenceGateResult(
-            allowed=True,
-            decision="prepare_draft_pr",
-            codes=("draft_pr_ready", "pattern_learning_ready"),
-            summary="Changes, diff and tests are present; Draft PR preparation is allowed.",
-            changed_files=actionable_files,
-            next_action="prepare_draft_pr",
-            can_prepare_draft_pr=True,
-            can_learn_pattern=True,
-            predictive_signal="agent_evidence_draft_pr_ready",
-        )
+        return EvidenceGateResult(passed=True, reason="Non-empty snapshot", evidence_count=len(real_files))
 
-    if has_diff and has_tests:
-        return EvidenceGateResult(
-            allowed=True,
-            decision="allow_pattern_learning",
-            codes=("pattern_learning_ready",),
-            summary="Diff and tests are present; pattern learning is allowed, but Draft PR needs changed file evidence.",
-            changed_files=actionable_files,
-            next_action="collect_changed_files",
-            can_learn_pattern=True,
-            predictive_signal="agent_evidence_learning_ready",
-        )
+    def _check_placeholders(self, evidence: JobEvidence) -> EvidenceGateResult:
+        """Check for placeholder content in generated files."""
+        placeholder_count = 0
+        found_placeholders: list[str] = []
 
-    return EvidenceGateResult(
-        allowed=False,
-        decision="block",
-        codes=("no_runtime_evidence",),
-        summary="No runtime evidence was produced by the tool result.",
-        changed_files=changed_files,
-        next_action="show_blocker",
-        predictive_signal="agent_evidence_missing_blocked",
-    )
+        # Check git diff for placeholders
+        for pattern in self._placeholder_regex:
+            matches = pattern.findall(evidence.git_diff_summary)
+            if matches:
+                placeholder_count += len(matches)
+                found_placeholders.extend(matches)
 
+        # Check file contents if available
+        for path, content in evidence.file_contents.items():
+            for pattern in self._placeholder_regex:
+                if pattern.search(content):
+                    placeholder_count += 1
+                    found_placeholders.append(f"{path}: placeholder content")
 
-def evaluate_tool_result_evidence(result: ToolResult) -> EvidenceGateResult:
-    return evaluate_agent_evidence(evidence_input_from_tool_result(result))
+        if placeholder_count > 0:
+            return EvidenceGateResult(
+                passed=False,
+                reason=f"Found {placeholder_count} placeholder(s) - content must be real, not placeholder",
+                placeholder_count=placeholder_count,
+                details={"placeholders": found_placeholders[:10]},
+            )
 
+        return EvidenceGateResult(passed=True, reason="No placeholder content")
 
-def evidence_gate_signal(gate: EvidenceGateResult) -> dict:
-    return {
-        "allowed": gate.allowed,
-        "decision": gate.decision,
-        "codes": list(gate.codes),
-        "summary": gate.summary,
-        "changedFiles": list(gate.changed_files),
-        "nextAction": gate.next_action,
-        "canPrepareDraftPr": gate.can_prepare_draft_pr,
-        "canLearnPattern": gate.can_learn_pattern,
-        "signal": gate.predictive_signal,
-    }
+    def _check_forbidden_paths(self, evidence: JobEvidence) -> EvidenceGateResult:
+        """Check that no forbidden paths were modified."""
+        forbidden_found: list[str] = []
+
+        for file_path in evidence.generated_files:
+            for forbidden in FORBIDDEN_PATHS:
+                if f"/{forbidden}/" in file_path or file_path.startswith(f"{forbidden}/"):
+                    forbidden_found.append(file_path)
+
+        if forbidden_found:
+            return EvidenceGateResult(
+                passed=False,
+                reason=f"Forbidden paths modified: {forbidden_found}",
+                forbidden_paths_found=forbidden_found,
+            )
+
+        return EvidenceGateResult(passed=True, reason="No forbidden paths")
+
+    def _check_git_diff(self, evidence: JobEvidence) -> EvidenceGateResult:
+        """Check that git diff contains real, implementable content."""
+        if not evidence.git_diff_summary:
+            return EvidenceGateResult(
+                passed=False,
+                reason="No git diff found - workspace may not be a git repository",
+            )
+
+        # Check for minimum diff size (real changes are usually larger)
+        min_diff_size = 50
+        if len(evidence.git_diff_summary.strip()) < min_diff_size:
+            return EvidenceGateResult(
+                passed=False,
+                reason=f"Git diff too small ({len(evidence.git_diff_summary)} chars) - may be incomplete",
+            )
+
+        # Check for code-like patterns in diff
+        code_patterns = [
+            r"^\+",  # Addition lines
+            r"^-",    # Deletion lines
+            r"def\s+\w+",  # Function definitions
+            r"class\s+\w+",  # Class definitions
+            r"import\s+\w+",  # Imports
+            r"//.*",  # Comments
+            r"#.*",  # Python comments
+        ]
+
+        has_code = any(re.search(p, evidence.git_diff_summary, re.MULTILINE) for p in code_patterns)
+        if not has_code:
+            return EvidenceGateResult(
+                passed=False,
+                reason="Git diff does not contain recognizable code patterns",
+            )
+
+        return EvidenceGateResult(passed=True, reason="Real implementation content found")
+
+    def validate_mission_content(self, mission: str) -> EvidenceGateResult:
+        """Validate that a mission is concrete, not placeholder."""
+        if not mission or len(mission.strip()) < 10:
+            return EvidenceGateResult(
+                passed=False,
+                reason="Mission too short or empty",
+            )
+
+        # Check against placeholder patterns
+        for pattern in self._placeholder_regex:
+            if pattern.search(mission):
+                return EvidenceGateResult(
+                    passed=False,
+                    reason="Mission contains placeholder text",
+                )
+
+        return EvidenceGateResult(passed=True, reason="Mission is concrete")

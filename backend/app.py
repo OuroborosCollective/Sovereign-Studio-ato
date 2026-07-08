@@ -39,6 +39,8 @@ from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
+from agent_runtime.routes import register_sovereign_agent_routes
+
 # ── Worker AI Helper ───────────────────────────────────────────────────────────
 
 WORKER_AI_BASE = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
@@ -136,6 +138,37 @@ def query(sql: str, params=None, *, one=False, write=False):
         raise
     finally:
         pool.putconn(conn)
+
+
+class PooledAgentConnection:
+    """DB-API compatible connection wrapper for agent_runtime job store.
+
+    The neutral agent runtime owns SQL for sovereign_agent_jobs. This wrapper
+    provides a real pooled connection and returns it to the Flask pool on close.
+    """
+
+    def __init__(self):
+        self._pool = get_pool()
+        self._conn = self._pool.getconn()
+        self._closed = False
+
+    def cursor(self):
+        return self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        if not self._closed:
+            self._pool.putconn(self._conn)
+            self._closed = True
+
+
+def get_agent_runtime_connection() -> PooledAgentConnection:
+    return PooledAgentConnection()
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -1012,6 +1045,14 @@ def require_session(f):
         request.session_user_id = uid
         return f(*args, **kwargs)
     return decorated
+
+
+register_sovereign_agent_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
+)
+
 # ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
 
 @require_session

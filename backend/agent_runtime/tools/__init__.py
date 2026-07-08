@@ -1,12 +1,61 @@
-"""Internal Sovereign Agent tools.
+"""Sovereign Agent Tools.
 
-Every tool returns ToolResult. No tool result is a UI success claim by itself;
-ToolResult must be persisted/evaluated by runtime gates before the UI displays it.
+This package contains the tool implementations for the Sovereign Agent Runtime.
+All tools inherit from ToolBase and are registered in the ToolRegistry.
+
+Available tools:
+- file_read: Read files from workspace
+- file_write: Write files to workspace
+- file_list: List directory contents
+- shell: Execute shell commands
+- git_status: Get git repository status
+- git_diff: Get git diff
+- git_add: Stage files for commit
+- git_commit: Create a commit
+- git_log: Get commit history
+- diff: Compare two files or strings
+- semantic_diff: Analyze code changes semantically
+- test: Run test suites
 """
 
-from .base import ToolEvent, ToolResult, blocked_tool_result, failed_tool_result, done_tool_result  # noqa: F401
-from .file_tool import read_workspace_file, write_workspace_file  # noqa: F401
-from .shell_tool import run_workspace_shell_command  # noqa: F401
-from .git_tool import collect_git_status  # noqa: F401
-from .diff_tool import collect_git_diff_summary  # noqa: F401
-from .test_tool import run_workspace_test_command  # noqa: F401
+from .base import (
+    ToolBase,
+    ToolResult,
+    ToolCall,
+    ToolPolicyError,
+    ToolRegistry,
+    get_tool_registry,
+)
+
+from .file_tool import FileReadTool, FileWriteTool, FileListTool
+from .shell_tool import ShellTool
+from .git_tool import (
+    GitStatusTool,
+    GitDiffTool,
+    GitAddTool,
+    GitCommitTool,
+    GitLogTool,
+)
+from .diff_tool import DiffTool, SemanticDiffTool
+from .test_tool import TestTool
+
+__all__ = [
+    "ToolBase",
+    "ToolResult",
+    "ToolCall",
+    "ToolPolicyError",
+    "ToolRegistry",
+    "get_tool_registry",
+    "FileReadTool",
+    "FileWriteTool",
+    "FileListTool",
+    "ShellTool",
+    "GitStatusTool",
+    "GitDiffTool",
+    "GitAddTool",
+    "GitCommitTool",
+    "GitLogTool",
+    "DiffTool",
+    "SemanticDiffTool",
+    "TestTool",
+]

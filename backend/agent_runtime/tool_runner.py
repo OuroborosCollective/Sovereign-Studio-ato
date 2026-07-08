@@ -1,65 +1,212 @@
-"""Dispatch internal ToolResult-producing tools for a stored Sovereign Agent job."""
+"""Tool runner for Sovereign Agent Runtime.
+
+This module provides the execution engine for tool calls within
+workspace boundaries. It handles tool routing, validation, and
+event tracking.
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Literal, Sequence
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
 
-from .job_store import StoredSovereignAgentJob
-from .tools.base import ToolResult, blocked_tool_result
-from .tools.diff_tool import collect_git_diff_summary
-from .tools.file_tool import read_workspace_file, write_workspace_file
-from .tools.git_tool import collect_git_status
-from .tools.test_tool import run_workspace_test_command
-
-AgentToolAction = Literal["file", "git-status", "diff", "test"]
-
-_TERMINAL_STATUSES = {"completed", "failed", "blocked", "cleaned"}
+from .tools import get_tool_registry, ToolResult, ToolCall
+from .tool_events import ToolEventLog, ToolEvent
 
 
-def _job_workspace_id(job: StoredSovereignAgentJob) -> str | None:
-    return job.workspace_id or job.job_id
+@dataclass
+class ToolExecution:
+    """Result of a tool execution with metadata."""
+    tool_name: str
+    call_id: str
+    parameters: dict[str, Any]
+    result: ToolResult
+    duration_ms: int | None = None
+    events: list[dict[str, Any]] = field(default_factory=list)
 
 
-def _command_from_payload(payload: dict[str, Any]) -> tuple[str, ...]:
-    command = payload.get("argv") or payload.get("command") or ()
-    if isinstance(command, str):
-        return tuple(part for part in command.split(" ") if part)
-    if isinstance(command, Sequence):
-        return tuple(str(part) for part in command)
-    return ()
+@dataclass
+class ToolRunnerResult:
+    """Aggregate result of a tool run session."""
+    executions: list[ToolExecution] = field(default_factory=list)
+    success_count: int = 0
+    error_count: int = 0
+    blocked_count: int = 0
+    total_duration_ms: int = 0
+
+    def add_execution(self, execution: ToolExecution) -> None:
+        self.executions.append(execution)
+        if execution.result.is_ok():
+            self.success_count += 1
+        elif execution.result.is_blocked():
+            self.blocked_count += 1
+        else:
+            self.error_count += 1
+
+        if execution.duration_ms:
+            self.total_duration_ms += execution.duration_ms
+
+    def is_all_success(self) -> bool:
+        return (
+            self.success_count == len(self.executions)
+            and self.error_count == 0
+            and self.blocked_count == 0
+        )
+
+    def has_blocked(self) -> bool:
+        return self.blocked_count > 0
+
+    def has_errors(self) -> bool:
+        return self.error_count > 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "executions": [
+                {
+                    "tool_name": e.tool_name,
+                    "call_id": e.call_id,
+                    "result": {
+                        "status": e.result.status,
+                        "output": e.result.output,
+                        "error": e.result.error,
+                        "blocker": e.result.blocker,
+                        "metadata": e.result.metadata,
+                    },
+                    "duration_ms": e.duration_ms,
+                }
+                for e in self.executions
+            ],
+            "success_count": self.success_count,
+            "error_count": self.error_count,
+            "blocked_count": self.blocked_count,
+            "total_duration_ms": self.total_duration_ms,
+        }
 
 
-def run_agent_job_tool(
-    job: StoredSovereignAgentJob,
-    action: AgentToolAction,
-    payload: dict[str, Any] | None = None,
-    root: Path | None = None,
-) -> ToolResult:
-    body = payload or {}
-    if job.status in _TERMINAL_STATUSES:
-        return blocked_tool_result("agent", "Terminal agent jobs cannot run tools.", predictive_signal="agent_tool_terminal_blocked")
+class ToolRunner:
+    """Executes tool calls with workspace scoping and event tracking.
+    
+    The runner:
+    1. Validates tool calls against policy
+    2. Executes tools with workspace isolation
+    3. Tracks events for audit and debugging
+    4. Returns sanitized results
+    """
 
-    workspace_id = _job_workspace_id(job)
-    if not workspace_id:
-        return blocked_tool_result("agent", "Agent job has no workspace id.", predictive_signal="agent_tool_requires_workspace")
+    def __init__(self, workspace_path: str | None = None):
+        self.workspace_path = workspace_path
+        self.registry = get_tool_registry()
+        self.event_log = ToolEventLog()
 
-    if action == "file":
-        relative_path = str(body.get("path") or body.get("relativePath") or "")
-        mode = str(body.get("mode") or body.get("action") or ("write" if "content" in body else "read")).strip().lower()
-        if mode == "write":
-            return write_workspace_file(workspace_id, relative_path, str(body.get("content") or ""), root)
-        if mode == "read":
-            return read_workspace_file(workspace_id, relative_path, root)
-        return blocked_tool_result("file", "File tool mode must be read or write.", predictive_signal="agent_file_mode_blocked")
+    def execute(self, tool_calls: list[ToolCall]) -> ToolRunnerResult:
+        """Execute a list of tool calls.
+        
+        Args:
+            tool_calls: List of ToolCall objects to execute
+            
+        Returns:
+            ToolRunnerResult with aggregate results
+        """
+        result = ToolRunnerResult()
 
-    if action == "git-status":
-        return collect_git_status(workspace_id, root)
+        for call in tool_calls:
+            execution = self._execute_single(call)
+            result.add_execution(execution)
 
-    if action == "diff":
-        return collect_git_diff_summary(workspace_id, root)
+        return result
 
-    if action == "test":
-        return run_workspace_test_command(workspace_id, _command_from_payload(body), root)
+    def execute_single(self, tool_name: str, parameters: dict[str, Any]) -> ToolExecution:
+        """Execute a single tool call.
+        
+        Args:
+            tool_name: Name of the tool to execute
+            parameters: Tool-specific parameters
+            
+        Returns:
+            ToolExecution with result and metadata
+        """
+        call = ToolCall(
+            tool_name=tool_name,
+            parameters=parameters,
+            call_id=str(uuid.uuid4())[:8],
+        )
+        return self._execute_single(call)
 
-    return blocked_tool_result("agent", "Unknown agent tool action.", predictive_signal="agent_tool_unknown_blocked")
+    def _execute_single(self, call: ToolCall) -> ToolExecution:
+        """Execute a single tool call with timing and event tracking."""
+        start_time = time.time()
+        call_id = call.call_id or str(uuid.uuid4())[:8]
+
+        self.event_log.tool_started(call.tool_name, call_id)
+
+        tool_result = self.registry.execute_tool(
+            tool_name=call.tool_name,
+            params=call.parameters,
+            workspace_path=self.workspace_path,
+        )
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        if tool_result.is_blocked():
+            self.event_log.tool_blocked(
+                call.tool_name,
+                tool_result.blocker or "Unknown blocker",
+                call_id,
+            )
+        elif tool_result.is_error():
+            self.event_log.tool_error(
+                call.tool_name,
+                tool_result.error or "Unknown error",
+                call_id,
+            )
+        else:
+            self.event_log.tool_completed(
+                call.tool_name,
+                call_id,
+                duration_ms,
+                tool_result.metadata,
+            )
+
+        return ToolExecution(
+            tool_name=call.tool_name,
+            call_id=call_id,
+            parameters=call.parameters,
+            result=tool_result,
+            duration_ms=duration_ms,
+            events=self.event_log.to_dict_list(),
+        )
+
+    def list_available_tools(self) -> list[dict[str, Any]]:
+        """List all registered tools with their parameters."""
+        return self.registry.list_tools()
+
+    def get_events(self) -> list[dict[str, Any]]:
+        """Get all logged tool events."""
+        return self.event_log.to_dict_list()
+
+    def clear_events(self) -> None:
+        """Clear the event log."""
+        self.event_log.clear()
+
+
+def run_tool_sequence(
+    tools: list[tuple[str, dict[str, Any]]],
+    workspace_path: str | None = None,
+) -> ToolRunnerResult:
+    """Convenience function to run a sequence of tool calls.
+    
+    Args:
+        tools: List of (tool_name, parameters) tuples
+        workspace_path: Optional workspace path for scoping
+        
+    Returns:
+        ToolRunnerResult with aggregate results
+    """
+    runner = ToolRunner(workspace_path)
+    calls = [
+        ToolCall(tool_name=name, parameters=params, call_id=str(uuid.uuid4())[:8])
+        for name, params in tools
+    ]
+    return runner.execute(calls)

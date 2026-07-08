@@ -1,148 +1,282 @@
-from __future__ import annotations
+"""Tests for Agent Evidence Gate.
 
-import os
+Verifies that the evidence gate validates job completion properly.
+"""
+
+import pytest
+from unittest.mock import MagicMock
+
 import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Füge Backend zum Python Path hinzu
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from agent_runtime.evidence_gate import (  # noqa: E402
-    EvidenceGateInput,
-    evaluate_agent_evidence,
-    evaluate_tool_result_evidence,
-    evidence_gate_signal,
+from agent_runtime.evidence_gate import (
+    EvidenceGate,
+    EvidenceGateResult,
+    JobEvidence,
+    PLACEHOLDER_PATTERNS,
+    FORBIDDEN_PATHS,
 )
-from agent_runtime.tools.base import blocked_tool_result, done_tool_result, failed_tool_result  # noqa: E402
 
 
-def test_changed_files_require_diff_before_draft_pr():
-    gate = evaluate_agent_evidence(EvidenceGateInput(
-        changed_files=("README.md",),
-        tool_status="done",
-        tool_name="file",
-    ))
+class TestEvidenceGateResult:
+    """Test EvidenceGateResult dataclass."""
 
-    assert gate.allowed is True
-    assert gate.decision == "collect_diff"
-    assert gate.next_action == "collect_diff"
-    assert gate.can_prepare_draft_pr is False
-    assert gate.can_learn_pattern is False
-    assert gate.predictive_signal == "agent_evidence_needs_diff"
+    def test_passed_result(self):
+        """Should create a passed result."""
+        result = EvidenceGateResult(
+            passed=True,
+            reason="All checks passed",
+        )
+        assert result.passed is True
+        assert result.placeholder_count == 0
+        assert result.forbidden_paths_found == []
 
-
-def test_changed_files_and_diff_require_tests():
-    gate = evaluate_agent_evidence(EvidenceGateInput(
-        changed_files=("README.md",),
-        diff_summary="README.md | 2 +-",
-    ))
-
-    assert gate.allowed is True
-    assert gate.decision == "run_tests"
-    assert gate.next_action == "run_tests"
-    assert gate.can_prepare_draft_pr is False
-    assert gate.can_learn_pattern is True
-    assert gate.predictive_signal == "agent_evidence_needs_tests"
+    def test_failed_result(self):
+        """Should create a failed result."""
+        result = EvidenceGateResult(
+            passed=False,
+            reason="Check failed",
+            placeholder_count=3,
+        )
+        assert result.passed is False
+        assert result.placeholder_count == 3
 
 
-def test_changes_diff_and_tests_allow_draft_pr_and_pattern_learning():
-    gate = evaluate_agent_evidence(EvidenceGateInput(
-        changed_files=("src/features/product/runtime/example.ts",),
-        diff_summary="src/features/product/runtime/example.ts | 4 +++-",
-        test_summary="12 passed, 0 failed",
-    ))
+class TestJobEvidence:
+    """Test JobEvidence dataclass."""
 
-    assert gate.allowed is True
-    assert gate.decision == "prepare_draft_pr"
-    assert gate.next_action == "prepare_draft_pr"
-    assert gate.can_prepare_draft_pr is True
-    assert gate.can_learn_pattern is True
-    assert gate.codes == ("draft_pr_ready", "pattern_learning_ready")
-    assert gate.predictive_signal == "agent_evidence_draft_pr_ready"
-
-
-def test_tests_failure_blocks_draft_pr_preparation():
-    gate = evaluate_agent_evidence(EvidenceGateInput(
-        changed_files=("README.md",),
-        diff_summary="README.md | 2 +-",
-        test_summary="1 failed, 4 passed",
-    ))
-
-    assert gate.allowed is False
-    assert gate.decision == "block"
-    assert gate.next_action == "show_blocker"
-    assert gate.can_prepare_draft_pr is False
-    assert "tests_failed" in gate.codes
-    assert gate.predictive_signal == "agent_tests_failed"
+    def test_creation(self):
+        """Should create evidence with defaults."""
+        evidence = JobEvidence(
+            job_id="job-123",
+            workspace_id="ws-456",
+            repo_url="https://github.com/test/repo",
+            branch="main",
+            mission="Implement feature X",
+        )
+        assert evidence.job_id == "job-123"
+        assert evidence.generated_files == []
+        assert evidence.file_contents == {}
 
 
-def test_plan_only_changed_file_blocks_result():
-    gate = evaluate_agent_evidence(EvidenceGateInput(
-        changed_files=("docs/SOVEREIGN_PLAN.md",),
-        diff_summary="docs/SOVEREIGN_PLAN.md | 10 ++++++++++",
-        test_summary="1 passed",
-    ))
+class TestPlaceholderPatterns:
+    """Test placeholder pattern detection."""
 
-    assert gate.allowed is False
-    assert gate.decision == "block"
-    assert "plan_only_result" in gate.codes
-    assert gate.predictive_signal == "agent_evidence_non_actionable_blocked"
+    def test_placeholder_patterns_defined(self):
+        """Should have placeholder patterns defined."""
+        assert len(PLACEHOLDER_PATTERNS) > 0
+        # Check patterns exist for common placeholders
+        patterns_str = " ".join(PLACEHOLDER_PATTERNS)
+        assert "Mach" in patterns_str or "TODO" in patterns_str
 
+    def test_mission_blocks_placeholder(self):
+        """Should block placeholder missions."""
+        import re
+        patterns = [re.compile(p, re.IGNORECASE) for p in PLACEHOLDER_PATTERNS]
 
-def test_secret_like_evidence_blocks_before_learning():
-    gate = evaluate_agent_evidence(EvidenceGateInput(
-        changed_files=("README.md",),
-        diff_summary="token=ghp_1234567890SECRETSECRET",
-        test_summary="1 passed",
-    ))
+        placeholders = [
+            "README + Update History",
+            "Mach weiter",
+            "Plan",
+            "Ideen",
+        ]
 
-    assert gate.allowed is False
-    assert gate.decision == "block"
-    assert gate.codes == ("secret_like_evidence",)
-    assert gate.can_learn_pattern is False
-    assert gate.predictive_signal == "agent_evidence_secret_blocked"
-
-
-def test_blocked_tool_result_becomes_blocker_with_learning_signal():
-    result = blocked_tool_result("file", "Secret-like path is blocked: .env", predictive_signal="agent_file_write_blocked")
-    gate = evaluate_tool_result_evidence(result)
-
-    assert gate.allowed is False
-    assert gate.decision == "block"
-    assert gate.can_learn_pattern is True
-    assert "tool_blocked" in gate.codes
-    assert gate.predictive_signal == "agent_tool_blocked"
+        for ph in placeholders:
+            matched = any(p.search(ph) for p in patterns)
+            assert matched, f"Should detect placeholder: {ph}"
 
 
-def test_failed_tool_result_blocks():
-    result = failed_tool_result("shell", "Command failed.", exit_code=1)
-    gate = evaluate_tool_result_evidence(result)
+class TestForbiddenPaths:
+    """Test forbidden path detection."""
 
-    assert gate.allowed is False
-    assert gate.decision == "block"
-    assert "tool_failed" in gate.codes
-    assert gate.next_action == "show_blocker"
+    def test_forbidden_paths_defined(self):
+        """Should have forbidden paths defined."""
+        assert ".git" in FORBIDDEN_PATHS
+        assert ".env" in FORBIDDEN_PATHS
+        assert "node_modules" in FORBIDDEN_PATHS
+
+    def test_detects_forbidden_in_path(self):
+        """Should detect forbidden paths in file paths."""
+        forbidden_paths = [
+            ".git/config",
+            ".env",
+            "src/node_modules/package/index.js",
+        ]
+
+        for path in forbidden_paths:
+            found = any(fp in path.split("/") for fp in FORBIDDEN_PATHS)
+            assert found, f"Should detect forbidden: {path}"
 
 
-def test_empty_done_tool_result_blocks_fake_success():
-    result = done_tool_result("shell", stdout="nothing changed")
-    gate = evaluate_tool_result_evidence(result)
+class TestEvidenceGate:
+    """Test EvidenceGate functionality."""
 
-    assert gate.allowed is False
-    assert gate.decision == "block"
-    assert "no_runtime_evidence" in gate.codes
-    assert gate.predictive_signal == "agent_evidence_missing_blocked"
+    def test_initialization(self):
+        """Should initialize with workspace."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+        assert gate.workspace is mock_workspace
+
+    def test_validate_mission_empty(self):
+        """Should block empty missions."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        result = gate.validate_mission_content("")
+        assert result.passed is False
+
+    def test_validate_mission_short(self):
+        """Should block very short missions."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        result = gate.validate_mission_content("abc")
+        assert result.passed is False
+
+    def test_validate_mission_placeholder(self):
+        """Should block placeholder missions."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        result = gate.validate_mission_content("Mach weiter")
+        assert result.passed is False
+
+    def test_validate_mission_concrete(self):
+        """Should allow concrete missions."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        result = gate.validate_mission_content(
+            "Implement user authentication with JWT tokens for the API"
+        )
+        assert result.passed is True
 
 
-def test_evidence_gate_signal_is_serializable():
-    gate = evaluate_agent_evidence(EvidenceGateInput(
-        changed_files=("README.md",),
-        diff_summary="README.md | 1 +",
-    ))
+class TestEvidenceGateChecks:
+    """Test individual evidence gate checks."""
 
-    signal = evidence_gate_signal(gate)
+    def test_empty_snapshot_blocks(self):
+        """Empty workspace should fail."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
 
-    assert signal["allowed"] is True
-    assert signal["decision"] == "run_tests"
-    assert signal["nextAction"] == "run_tests"
-    assert signal["changedFiles"] == ["README.md"]
-    assert signal["signal"] == "agent_evidence_needs_tests"
+        evidence = JobEvidence(
+            job_id="job-1",
+            workspace_id="ws-1",
+            repo_url="",
+            branch="",
+            mission="",
+            generated_files=[],  # Empty!
+        )
+
+        result = gate._check_empty_snapshot(evidence)
+        assert result.passed is False
+        assert "no files" in result.reason.lower()
+
+    def test_folder_only_blocks(self):
+        """Folders without files should fail."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        evidence = JobEvidence(
+            job_id="job-1",
+            workspace_id="ws-1",
+            repo_url="",
+            branch="",
+            mission="",
+            generated_files=["src/", "lib/", "docs/"],  # Only folders!
+        )
+
+        result = gate._check_empty_snapshot(evidence)
+        assert result.passed is False
+
+    def test_real_files_pass(self):
+        """Real files should pass."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        evidence = JobEvidence(
+            job_id="job-1",
+            workspace_id="ws-1",
+            repo_url="",
+            branch="",
+            mission="",
+            generated_files=["src/main.py", "src/utils.py", "README.md"],
+        )
+
+        result = gate._check_empty_snapshot(evidence)
+        assert result.passed is True
+
+    def test_forbidden_paths_blocks(self):
+        """Modifying forbidden paths should fail."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        evidence = JobEvidence(
+            job_id="job-1",
+            workspace_id="ws-1",
+            repo_url="",
+            branch="",
+            mission="",
+            generated_files=[".git/config", "src/main.py"],
+        )
+
+        result = gate._check_forbidden_paths(evidence)
+        assert result.passed is False
+        assert ".git/config" in result.forbidden_paths_found
+
+    def test_no_forbidden_paths_pass(self):
+        """Normal paths should pass."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        evidence = JobEvidence(
+            job_id="job-1",
+            workspace_id="ws-1",
+            repo_url="",
+            branch="",
+            mission="",
+            generated_files=["src/main.py", "tests/test_main.py"],
+        )
+
+        result = gate._check_forbidden_paths(evidence)
+        assert result.passed is True
+
+    def test_git_diff_too_small_blocks(self):
+        """Very small diffs should fail."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        evidence = JobEvidence(
+            job_id="job-1",
+            workspace_id="ws-1",
+            repo_url="",
+            branch="",
+            mission="",
+            git_diff_summary="+a",  # Too small!
+        )
+
+        result = gate._check_git_diff(evidence)
+        assert result.passed is False
+
+    def test_git_diff_with_code_passes(self):
+        """Diff with code patterns should pass."""
+        mock_workspace = MagicMock()
+        gate = EvidenceGate(mock_workspace)
+
+        evidence = JobEvidence(
+            job_id="job-1",
+            workspace_id="ws-1",
+            repo_url="",
+            branch="",
+            mission="",
+            git_diff_summary="""
++def hello_world():
++    print("Hello")
++    return True
+""",
+        )
+
+        result = gate._check_git_diff(evidence)
+        assert result.passed is True
