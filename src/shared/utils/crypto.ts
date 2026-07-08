@@ -33,7 +33,7 @@ export function maskSecrets(text: string): string {
 
   // Label-based credentials in common logs or error strings (supports optional quotes and base64 characters)
   masked = masked.replace(
-    /(["']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
+    /(["']?)(password|passwd|pwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key|auth|authorization)\1(\s*[:=]\s*)(?!Bearer\b)["']?[a-zA-Z0-9_@#$%^&*.\-~+/=]+["']?/gi,
     '$1$2$1$3****',
   );
 

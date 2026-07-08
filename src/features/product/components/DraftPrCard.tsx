@@ -109,7 +109,12 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         </div>
         <div style={{ marginTop: 2 }}>{buildStatus.detail}</div>
         {buildStatus.runUrl ? (
-          <a href={buildStatus.runUrl} target="_blank" rel="noreferrer" style={{ color: C.sky, marginTop: 4, display: 'inline-block' }}>
+          <a
+            href={buildStatus.runUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: C.sky, marginTop: 4, display: 'inline-block' }}
+          >
             Run öffnen
           </a>
         ) : null}
