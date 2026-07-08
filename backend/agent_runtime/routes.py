@@ -15,6 +15,7 @@ from typing import Any, Callable
 from flask import jsonify, request
 
 from .contracts import normalize_agent_job_result
+from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import list_agent_jobs, read_agent_job, update_agent_job_state
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
@@ -67,7 +68,24 @@ def _result_to_api(result) -> dict[str, Any]:
     }
 
 
-def _tool_result_to_api(result: ToolResult) -> dict[str, Any]:
+def _merge_job_evidence(job, result: ToolResult) -> ToolResult:
+    return ToolResult(
+        tool=result.tool,
+        allowed=result.allowed,
+        status=result.status,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        changed_files=result.changed_files or job.changed_files,
+        diff_summary=result.diff_summary or job.diff_summary,
+        test_summary=result.test_summary or job.test_summary,
+        blocker=result.blocker,
+        exit_code=result.exit_code,
+        events=result.events,
+        predictive_signal=result.predictive_signal,
+    )
+
+
+def _tool_result_to_api(result: ToolResult, gate: EvidenceGateResult | None = None) -> dict[str, Any]:
     return {
         "tool": result.tool,
         "allowed": result.allowed,
@@ -80,7 +98,8 @@ def _tool_result_to_api(result: ToolResult) -> dict[str, Any]:
         "blocker": result.blocker,
         "exitCode": result.exit_code,
         "events": [asdict(event) for event in result.events],
-        "predictiveSignal": predictive_tool_signal(result),
+        "predictiveSignal": predictive_tool_signal(result, gate),
+        "evidenceGate": evidence_gate_signal(gate) if gate else None,
     }
 
 
@@ -124,13 +143,14 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             result = run_agent_job_tool(job, action, body, _workspace_root())
-            append_tool_result_to_job(conn, job_id, result)
+            evidence_result = _merge_job_evidence(job, result)
+            gate = append_tool_result_to_job(conn, job_id, evidence_result)
             return jsonify({
-                "ok": result.status == "done",
+                "ok": result.status == "done" and gate.allowed,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
-                "tool": _tool_result_to_api(result),
-            }), 200 if result.status == "done" else 400
+                "tool": _tool_result_to_api(evidence_result, gate),
+            }), 200 if result.status == "done" and gate.allowed else 400
         finally:
             _close(conn)
 
