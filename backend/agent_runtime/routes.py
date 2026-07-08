@@ -16,7 +16,7 @@ from flask import jsonify, request
 
 from .contracts import normalize_agent_job_result
 from .job_lifecycle import create_sovereign_agent_job
-from .job_store import list_agent_jobs, read_agent_job, result_from_stored_job, update_agent_job_state
+from .job_store import list_agent_jobs, read_agent_job, update_agent_job_state
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
