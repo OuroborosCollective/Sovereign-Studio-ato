@@ -3,8 +3,20 @@ name: Sovereign CI Pipeline
 on:
   push:
     branches: [main, master, develop]
+    paths:
+      - 'src/**'
+      - 'backend/**'
+      - 'e2e/**'
+      - 'tests/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main, master, develop]
+    paths:
+      - 'src/**'
+      - 'backend/**'
+      - 'e2e/**'
+      - 'tests/**'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 env:
@@ -70,6 +82,31 @@ jobs:
           name: www-dist
           path: dist/
           retention-days: 1
+
+  backend-tests:
+    name: Backend OAuth Security Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install pytest cryptography pyjwt -q
+
+      - name: Run OAuth Security Tests
+        run: |
+          cd backend
+          python -m pytest tests/test_github_oauth_security.py -v
+          python -m pytest tests/test_oauth_state_validation.py -v
+          python -m pytest tests/test_oauth_pkce_validation.py -v
 
   android-build:
     name: Android Build Verification
