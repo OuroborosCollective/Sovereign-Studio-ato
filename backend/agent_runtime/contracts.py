@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 import time
-from typing import Literal, Sequence
+from typing import Literal, Sequence, Any
 from urllib.parse import urlparse
 
 AgentStatus = Literal[
@@ -209,6 +209,13 @@ class SovereignAgentJobResult:
     blocker: str | None = None
     workspace_id: str | None = None
     external_ref: str | None = None
+    # Migration 004: Draft PR Preparation fields
+    draft_pr_preparation: dict[str, Any] | None = None
+    branch_name: str | None = None
+    target_branch: str | None = None
+    commit_message: str | None = None
+    pr_url: str | None = None
+    pr_state: str | None = None
 
 
 @dataclass(frozen=True)

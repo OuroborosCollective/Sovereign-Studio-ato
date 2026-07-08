@@ -428,4 +428,189 @@ Vor jedem Merge:
 
 ---
 
-*Last Updated: 2026-07-08*
+## 🏛️ Causal Runtime Chain
+
+**Immer** dieser Kette folgen:
+
+```
+1. Action starts
+2. Action produces a result  
+3. Result creates or updates state
+4. State allows, blocks, or routes the next action
+5. Next action is logically derivable from state
+```
+
+**Niemals**:
+- ❌ Springen weil Button sichtbar ist
+- ❌ UI-Text als Logik verwenden
+- ❌ DOM-Scraping für Entscheidungen
+
+---
+
+## 🧪 Python Testing Best Practices
+
+### ✅ DO: Live-Path Testing
+
+```python
+# ✅ RICHTIG: Importiere echten Code
+import sys
+sys.path.insert(0, 'backend')
+from agent_runtime.tools.file_tool import FileReadTool
+
+class TestFileTool:
+    def test_read_success(self):
+        tool = FileReadTool("/workspace")
+        result = tool.execute(path="test.txt")
+        assert result.ok is True
+
+# ❌ FALSCH: Standalone Kopie
+def test_read():  # Testet nicht den echten Code!
+    assert True  # Immer grün!
+```
+
+### ✅ DO: MagicMock defensiv
+
+```python
+# ✅ Explizite None-Prüfung
+if branch is None or (isinstance(branch, str) and len(branch) == 0):
+    branch = generate_branch()
+
+# ❌ MagicMock verhindert None-Prüfung
+mock_request.branch = None  # Wird MagicMock!
+if not branch:  # Immer False!
+    branch = generate_branch()
+```
+
+### ✅ DO: Type-Hints für Cross-Module
+
+```python
+# ✅ Any mit Kommentar
+from typing import Any
+
+class EvidenceGate:
+    def __init__(self, workspace: Any):  # WorkspaceProvisioner | GitWorkspace
+        self.workspace = workspace
+```
+
+---
+
+## 🚀 VPS Deployment Best Practices
+
+### ✅ DO: Container-Ports kennen
+
+```python
+# Backend intern: 8787
+# Backend extern: 8788 (via Proxy)
+# Frontend: 3000
+# Database: 5432
+
+curl -s http://127.0.0.1:8788/health  # Extern
+curl -s http://127.0.0.1:8787/health  # Intern
+```
+
+### ✅ DO: Migration via stdin
+
+```python
+# ✅ RICHTIG: stdin statt Datei
+channel.exec_command("docker exec -i db psql -U postgres")
+channel.send(sql.encode())
+channel.shutdown_write()
+
+# ❌ FALSCH: Datei im Container
+sftp.put("migration.sql", "/tmp/migration.sql")  # Funktioniert nicht!
+```
+
+### ✅ DO: Graceful Restart
+
+```python
+# ✅ Stop -> Copy -> Start -> Wait -> Health Check
+ssh.exec_command("docker stop backend")
+ssh.exec_command("docker cp app.py backend:/app/")
+ssh.exec_command("docker start backend")
+time.sleep(20)  # Warte auf Start
+```
+
+---
+
+## 📦 Modul-Design Best Practices
+
+### ✅ ToolResult Dataclass
+
+```python
+@dataclass
+class ToolResult:
+    ok: bool
+    output: str = ""
+    error: str = ""
+    metadata: dict = None
+
+class MyTool:
+    def execute(self, **params) -> ToolResult:
+        try:
+            return ToolResult(ok=True, output="success")
+        except Exception as e:
+            return ToolResult(ok=False, error=str(e))
+```
+
+### ✅ Workspace-Scoped
+
+```python
+class FileTool:
+    def __init__(self, workspace_path: str):
+        self.workspace_path = workspace_path
+    
+    def execute(self, **params) -> ToolResult:
+        safe_path = self._validate_inside_workspace(params.get("path"))
+        ...
+```
+
+---
+
+## ⚠️ Anti-Patterns (NIEMALS)
+
+1. **Fake Success State**
+```python
+# ❌ Hardcoded Green
+return {"ok": True, "status": "healthy"}
+
+# ✅ Real Check
+return check_real_health()
+```
+
+2. **UI als Truth Source**
+```python
+# ❌ Button-Text als Logik
+if "Weiter" in button.text: proceed()
+
+# ✅ Runtime State
+if runtime.current_step == "complete": proceed()
+```
+
+3. **Blind Retry Loops**
+```python
+# ❌ Endlos-Retry
+while True:
+    try: api_call(); break
+    except: continue
+
+# ✅ Mit Limit
+for attempt in range(3):
+    try: return api_call()
+    except RetryableError:
+        if attempt == 2: return classify_failure()
+        wait(exponential_backoff(attempt))
+```
+
+4. **Mocks in Production**
+```python
+# ❌ Mocks in Live-Code
+mock_result = {"ok": True}
+return mock_result
+
+# ✅ Real Path
+return do_real_work()
+```
+
+---
+
+*Last Updated: 2026-07-08 (Agent Runtime)*

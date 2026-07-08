@@ -226,4 +226,84 @@ gh run view <run-id> --log 2>&1 | grep -E "error|Error|failed"
 
 ---
 
-*Last Updated: 2026-07-08*
+---
+
+## 🗓️ 2026-07-08 (Update): Sovereign Agent Runtime
+
+### Backend Agent System Implementiert
+
+#### 1. Agent Tool Creator
+```python
+# Python-Funktionen als LLM-Tools mit @agent_tool Dekorator
+from agent_runtime.agent_tool_creator import agent_tool, ToolRegistry
+
+@agent_tool(name="file_read", description="Read file contents")
+def file_read(path: str) -> dict:
+    """Read file from workspace."""
+    return {"content": "..."}
+```
+
+#### 2. MCP Self-Integration
+```python
+from agent_runtime.mcp_integration import MCPSelfIntegration
+
+mcp = MCPSelfIntegration()
+mcp.register_server("filesystem", "/path/to/mcp-server")
+tools = mcp.list_tools()
+```
+
+#### 3. Tool Policy Pattern
+```python
+# Shell-Tool blockiert gefährliche Commands
+SHELL_BLOCKED = ["sudo", "curl", "docker", "ssh", "rm -rf /"]
+```
+
+### VPS Deployment Patterns
+
+#### Paramiko mit stdin
+```python
+# Problem: "No such file or directory" bei docker exec
+# Lösung: -i Flag für stdin
+channel.exec_command("docker exec -i supabase-db psql -U postgres")
+channel.send(sql_content.encode())
+channel.shutdown_write()
+```
+
+#### Backend Container Ports
+```python
+# Intern: Port 8787
+# Extern: Port 8788 (via Proxy)
+curl -s http://127.0.0.1:8788/health  # Extern
+```
+
+### Testing Patterns
+
+#### MagicMock defensiv prüfen
+```python
+# Problem: mock_request.branch = None → MagicMock wird None
+# Lösung: Explizite Prüfung
+if not branch or not isinstance(branch, str) or len(branch) == 0:
+    branch = generate_branch()
+```
+
+#### Type-Hints als Kommentare
+```python
+# Python Import-Probleme umgehen
+class EvidenceGate:
+    def __init__(self, workspace: Any):  # WorkspaceProvisioner | GitWorkspace
+        self.workspace = workspace
+```
+
+### Key Files Reference (Updated)
+
+| Path | Purpose |
+|------|---------|
+| `backend/agent_runtime/agent_tool_creator.py` | Tool Creator mit @agent_tool |
+| `backend/agent_runtime/mcp_integration.py` | MCP Server Integration |
+| `backend/agent_runtime/evidence_gate.py` | Job Completion Validierung |
+| `backend/agent_runtime/draft_pr_gate.py` | Pre-Publish Validierung |
+| `backend/agent_runtime/tools/` | Tool-Implementierungen |
+
+---
+
+*Last Updated: 2026-07-08 (Agent Runtime)*

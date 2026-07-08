@@ -446,4 +446,216 @@ curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
 
 ---
 
-*Last Updated: 2026-07-08*
+## Skill: Backend Agent Tool erstellen
+
+### When to Use
+- Neues Tool für Agent Runtime hinzufügen
+- Python-Funktionen als LLM-Tools verfügbar machen
+
+### Pattern
+```python
+# backend/agent_runtime/tools/my_tool.py
+from typing import Any
+from dataclasses import dataclass
+
+@dataclass
+class ToolResult:
+    ok: bool
+    output: str = ""
+    error: str = ""
+    metadata: dict[str, Any] = None
+
+class MyTool:
+    name: str = "my_tool"
+    description: str = "Does something useful"
+    
+    def __init__(self, workspace_path: str):
+        self.workspace_path = workspace_path
+    
+    def execute(self, **params) -> ToolResult:
+        try:
+            return ToolResult(ok=True, output="success")
+        except Exception as e:
+            return ToolResult(ok=False, error=str(e))
+
+# Registry
+TOOL_REGISTRY = {"my_tool": MyTool}
+```
+
+### Test Pattern
+```python
+# backend/tests/test_agent_my_tool.py
+import pytest
+from unittest.mock import MagicMock
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from agent_runtime.tools.my_tool import MyTool, ToolResult
+
+class TestMyTool:
+    def test_success(self):
+        tool = MyTool("/workspace")
+        result = tool.execute(param="value")
+        assert result.ok is True
+    
+    def test_failure(self):
+        tool = MyTool("/workspace")
+        result = tool.execute(param="")
+        assert result.ok is False
+```
+
+---
+
+## Skill: VPS Migration via stdin
+
+### When to Use
+- PostgreSQL Migration auf Container anwenden
+- `docker exec -f` nicht verfügbar
+
+### Pattern
+```python
+import paramiko
+
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect("HOST", username="root", password="PASS")
+
+# SQL via stdin senden
+transport = ssh.get_transport()
+channel = transport.open_session()
+channel.exec_command("docker exec -i supabase-db psql -U postgres -d postgres")
+
+channel.send(migration_sql.encode())
+channel.shutdown_write()
+
+# Output lesen
+stdout = b""
+while True:
+    if channel.recv_ready():
+        stdout += channel.recv(1024)
+    if channel.exit_status_ready():
+        break
+
+print(stdout.decode())
+```
+
+### Migration Template
+```sql
+-- scripts/sovereign-backend/migrations/XXX_name.sql
+-- Migration: XXX_name
+
+ALTER TABLE table_name ADD COLUMN IF NOT EXISTS col TYPE;
+
+CREATE TABLE IF NOT EXISTS new_table (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+);
+
+CREATE INDEX IF NOT EXISTS idx_name ON table_name(column);
+
+DO $$
+BEGIN
+    RAISE NOTICE 'Migration XXX completed';
+END $$;
+```
+
+---
+
+## Skill: MagicMock defensiv testen
+
+### When to Use
+- Python Tests mit unittest.mock
+- MagicMock gibt None oder False statt echter Werte
+
+### Problem
+```python
+# Problem: mock_request.branch = None → MagicMock
+if not branch:  # Immer False wegen MagicMock!
+    branch = generate_branch()
+```
+
+### Lösung
+```python
+# Explizite None/Empty Prüfung
+if branch is None or (isinstance(branch, str) and len(branch) == 0):
+    branch = generate_branch()
+
+# Oder für Any-Typen
+if not branch or not isinstance(branch, str) or len(str(branch)) == 0:
+    branch = generate_branch()
+```
+
+### Alternative: Real Mock Values
+```python
+mock_request.branch = ""  # Empty string statt None
+result = my_function(mock_request)
+assert result is not None
+```
+
+---
+
+## Skill: Python Type-Hints für Cross-Module
+
+### When to Use
+- Import-Fehler zwischen Modulen
+- Zirkuläre Imports
+- Fehlende Klassen
+
+### Pattern
+```python
+# Problem: ImportError von WorkspaceProvisioner
+# from .workspace import WorkspaceProvisioner  # ❌ Fail
+
+# Lösung: Any mit Kommentar
+from typing import Any
+
+class EvidenceGate:
+    def __init__(self, workspace: Any):  # WorkspaceProvisioner | GitWorkspace
+        self.workspace = workspace
+```
+
+### Vorteile
+- Kompiliert erfolgreich
+- Dokumentation bleibt erhalten
+- Flexibel für verschiedene Implementierungen
+
+---
+
+## Skill: Tool Signal Integration
+
+### When to Use
+- Frontend Tools mit Predictive Layer verbinden
+- Signal-basierte Lern-Integration
+
+### Pattern
+```typescript
+// src/features/feature/toolIntegration.ts
+import { emitToolSignal, registerToolNode } from '@/predictive/toolPredictiveBridge';
+
+export async function executeTool(config: ToolConfig) {
+    const startTime = performance.now();
+    registerToolNode(config.name, 'feature');
+
+    try {
+        const result = await doWork(config);
+        emitToolSignal({
+            toolName: config.name,
+            toolType: 'feature',
+            status: 'success',
+            durationMs: performance.now() - startTime,
+            parameters: config.params,
+        });
+        return { success: true, result };
+    } catch (error) {
+        emitToolSignal({
+            toolName: config.name,
+            toolType: 'feature',
+            status: 'error',
+            durationMs: performance.now() - startTime,
+        });
+        return { success: false, error };
+    }
+}
+```
+
+---
+
+*Last Updated: 2026-07-08 (Agent Runtime)*
