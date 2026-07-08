@@ -188,7 +188,9 @@ export function buildSovereignPresetActionPrompt(
   const routeLine = `Preset-Route: ${action.route} · Risiko: ${action.risk}`;
   const gateParts = [
     `Repo geladen: ${context.repoReady ? 'ja' : 'nein'}`,
-    `GitHub Write: ${context.githubWriteReady ? 'ja' : 'nein'}`,
+    action.requiresGitHubWrite && !context.githubWriteReady
+      ? 'GitHub Write: wird vor Ausführung geprüft'
+      : `GitHub Write: ${context.githubWriteReady ? 'ja' : 'nein'}`,
   ];
 
   if (action.risk !== 'safe_analysis') {
