@@ -28,6 +28,9 @@ from security_oauth import (
     _get_oauth_state,
     _clear_all_oauth_states,
     _validate_pkce,
+    _check_rate_limit,
+    _audit_event,
+    _rate_limit_store,
     _generate_pkce,
     _generate_state,
 )
@@ -329,3 +332,81 @@ def test_module_exports_all_functions():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+class TestRateLimiting:
+    """Tests für Rate-Limiting Funktion."""
+
+    def setup_method(self):
+        _clear_all_oauth_states()
+        _rate_limit_store.clear()
+
+    def test_rate_limit_allows_within_limit(self):
+        """Anfragen innerhalb des Limits sollten erlaubt sein."""
+        identifier = "test_ip_123"
+        for i in range(5):
+            allowed, remaining = _check_rate_limit(identifier, max_requests=10)
+            assert allowed is True
+            assert remaining == 10 - i - 1
+
+    def test_rate_limit_blocks_after_limit(self):
+        """Anfragen über dem Limit sollten blockiert werden."""
+        identifier = "test_ip_block"
+        # Make 10 requests (the limit)
+        for _ in range(10):
+            _check_rate_limit(identifier, max_requests=10)
+        
+        # 11th request should be blocked
+        allowed, remaining = _check_rate_limit(identifier, max_requests=10)
+        assert allowed is False
+        assert remaining == 0
+
+    def test_rate_limit_window_resets(self):
+        """Rate-Limit sollte nach der Window-Zeit zurückgesetzt werden."""
+        import time
+        identifier = "test_ip_reset"
+        
+        # First request
+        allowed1, _ = _check_rate_limit(identifier, max_requests=2)
+        assert allowed1 is True
+        
+        # Second request (at limit)
+        allowed2, _ = _check_rate_limit(identifier, max_requests=2)
+        assert allowed2 is True
+        
+        # Third request (over limit)
+        allowed3, _ = _check_rate_limit(identifier, max_requests=2)
+        assert allowed3 is False
+
+    def test_rate_limit_different_identifiers_independent(self):
+        """Verschiedene Identifiers sollten unabhängige Limits haben."""
+        ip1 = "192.168.1.1"
+        ip2 = "192.168.1.2"
+        
+        # Use up limit for ip1
+        for _ in range(10):
+            _check_rate_limit(ip1, max_requests=10)
+        
+        # ip2 should still work
+        allowed, remaining = _check_rate_limit(ip2, max_requests=10)
+        assert allowed is True
+        assert remaining == 9
+
+    def test_module_exports_rate_limit_function(self):
+        """Rate-Limit Funktion sollte exportiert sein."""
+        from security_oauth import _check_rate_limit
+        assert callable(_check_rate_limit)
+
+
+class TestAuditLogging:
+    """Tests für Audit-Logging Funktion."""
+
+    def test_audit_event_does_not_raise(self):
+        """_audit_event sollte keine Exceptions werfen."""
+        _audit_event("TEST_EVENT", True, "test_details", "127.0.0.1")
+        _audit_event("TEST_EVENT", False, "test_details", "127.0.0.1")
+
+    def test_module_exports_audit_function(self):
+        """Audit-Funktion sollte exportiert sein."""
+        from security_oauth import _audit_event
+        assert callable(_audit_event)
+

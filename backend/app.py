@@ -20,6 +20,8 @@ from functools import wraps
 
 # Import OAuth Security Module
 from security_oauth import (
+    _check_rate_limit,
+    _audit_event,
     init_token_encryption,
     _encrypt_token,
     _decrypt_token,
@@ -3393,6 +3395,17 @@ def auth_github():
         User-Objekt (OHNE Token!) + Session Cookie
     """
     try:
+        # Get client IP for rate-limiting and audit
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+        if "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+        
+        # Rate limiting for OAuth callback
+        allowed, remaining = _check_rate_limit(f"github_callback:{client_ip}", max_requests=20)
+        if not allowed:
+            _audit_event("RATE_LIMIT_EXCEEDED", False, "github_callback", client_ip)
+            return jsonify({"error": "Zu viele Anfragen. Bitte später erneut versuchen."}), 429
+        
         if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
             return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
         
@@ -3514,6 +3527,7 @@ def auth_github():
             )
 
         # 8. User zurückgeben (OHNE Token!)
+        _audit_event("GITHUB_LOGIN_SUCCESS", True, f"user_id={user_id}, github={github_username}", client_ip)
         row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,), one=True)
         resp = make_response(jsonify(_user_row_to_dict(row)))
         return _set_session_cookie(resp, user_id)

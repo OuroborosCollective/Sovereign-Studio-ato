@@ -11,11 +11,26 @@ import base64
 import hashlib
 import hmac
 import os
+import secrets
 import threading
 import time
 import urllib.parse
 import uuid
 from functools import wraps
+
+# Import OAuth Security Module
+from security_oauth import (
+    _check_rate_limit,
+    _audit_event,
+    init_token_encryption,
+    _encrypt_token,
+    _decrypt_token,
+    _store_oauth_state,
+    _get_oauth_state,
+    _validate_pkce,
+    _generate_state,
+    _generate_pkce,
+)
 
 import psycopg2
 import psycopg2.extras
@@ -3152,8 +3167,19 @@ def _decode_jwt(token: str) -> str | None:
         return None
 
 
+# ── GitHub OAuth Config ───────────────────────────────────────────────────────
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+
+# Initialisiere Token Encryption mit Key aus Environment
+_token_encryption_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", JWT_SECRET)
+if _token_encryption_key:
+    init_token_encryption(_token_encryption_key)
+
+
 def _user_row_to_dict(row) -> dict:
-    return {
+    """Konvertiert DB-Zeile zu User-Dict für API-Response."""
+    result = {
         "id":                 str(row["id"]),
         "email":              row["email"],
         "displayName":        row.get("display_name") or "",
@@ -3164,7 +3190,11 @@ def _user_row_to_dict(row) -> dict:
         "createdAt":          str(row.get("created_at") or ""),
         "avatarUrl":          row.get("avatar_url"),
         "googleId":           row.get("google_id"),
+        # GitHub-Felder (Token wird NIE im Response gesendet!)
+        "githubId":           row.get("github_id"),
+        "githubUsername":     row.get("github_username"),
     }
+    return result
 
 
 def _set_session_cookie(response, user_id: str):
@@ -3339,6 +3369,227 @@ def auth_google():
         row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,), one=True)
         resp = make_response(jsonify(_user_row_to_dict(row)))
         return _set_session_cookie(resp, user_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/auth/github", methods=["POST"])
+def auth_github():
+    """
+    GitHub OAuth Login Endpoint.
+    
+    Security:
+    - Token wird verschlüsselt in DB gespeichert
+    - Token wird NIE im Response zurückgegeben
+    - State-Validierung gegen CSRF
+    - PKCE-Validierung (optional)
+    
+    Request Body:
+        {
+            "code": "oauth_authorization_code",
+            "state": "csrf_state",          // Optional aber empfohlen
+            "code_verifier": "pkce_verifier" // Optional (PKCE)
+        }
+    
+    Response:
+        User-Objekt (OHNE Token!) + Session Cookie
+    """
+    try:
+        # Get client IP for rate-limiting and audit
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+        if "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+        
+        # Rate limiting for OAuth callback
+        allowed, remaining = _check_rate_limit(f"github_callback:{client_ip}", max_requests=20)
+        if not allowed:
+            _audit_event("RATE_LIMIT_EXCEEDED", False, "github_callback", client_ip)
+            return jsonify({"error": "Zu viele Anfragen. Bitte später erneut versuchen."}), 429
+        
+        if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
+            return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
+        
+        body = request.get_json(force=True) or {}
+        code = body.get("code") or ""
+        state = body.get("state")  # Optional
+        code_verifier = body.get("code_verifier")  # Optional
+        
+        if not code:
+            return jsonify({"error": "Authorization Code fehlt"}), 400
+
+        # 1. State validieren (CSRF-Schutz)
+        if state:
+            stored_state = _get_oauth_state(state)
+            if not stored_state:
+                return jsonify({"error": "Ungültiger oder abgelaufener State"}), 400
+            
+            # 2. PKCE validieren falls verwendet
+            stored_challenge = stored_state.get("code_challenge")
+            if not _validate_pkce(code_verifier, stored_challenge):
+                return jsonify({"error": "PKCE Validierung fehlgeschlagen"}), 400
+
+        # 3. Code gegen Access Token tauschen
+        token_payload = {
+            "client_id":     GITHUB_CLIENT_ID,
+            "client_secret": GITHUB_CLIENT_SECRET,
+            "code":          code,
+        }
+        if code_verifier:
+            token_payload["code_verifier"] = code_verifier
+        if state and stored_state and stored_state.get("redirect_uri"):
+            token_payload["redirect_uri"] = stored_state["redirect_uri"]
+
+        token_resp = requests.post(
+            "https://github.com/login/oauth/access_token",
+            json=token_payload,
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        if not token_resp.ok:
+            return jsonify({"error": "Konnte Access Token nicht erhalten"}), 502
+        
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return jsonify({"error": "Kein Access Token von GitHub erhalten"}), 502
+
+        # 4. GitHub User-Info abrufen
+        user_resp = requests.get(
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=15,
+        )
+        if not user_resp.ok:
+            return jsonify({"error": "Konnte GitHub User nicht abrufen"}), 502
+        
+        github_user = user_resp.json()
+        github_id = str(github_user.get("id", ""))
+        github_username = github_user.get("login", "")
+        email = (github_user.get("email") or "").lower()
+        display_name = github_user.get("name") or github_user.get("login") or "User"
+        avatar_url = github_user.get("avatar_url")
+
+        # 5. Private Email abrufen falls nötig
+        if not email:
+            email_resp = requests.get(
+                "https://api.github.com/user/emails",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+                timeout=15,
+            )
+            if email_resp.ok:
+                for e in email_resp.json():
+                    if e.get("primary") and e.get("verified"):
+                        email = e.get("email", "").lower()
+                        break
+        
+        if not email:
+            email = f"{github_username}@users.noreply.github.com"
+        if not github_id:
+            return jsonify({"error": "Unvollständige GitHub-Daten"}), 400
+
+        # 6. Token VERSCHLÜSSELT speichern (NIEMALS im Klartext!)
+        encrypted_token = _encrypt_token(access_token)
+
+        # 7. User finden oder erstellen
+        row = query(
+            "SELECT * FROM admin_users WHERE github_id = %s OR email = %s LIMIT 1",
+            (github_id, email), one=True,
+        )
+
+        if row:
+            user_id = str(row["id"])
+            query(
+                """UPDATE admin_users
+                   SET github_id = %s, github_username = %s,
+                       github_access_token = %s, avatar_url = COALESCE(%s, avatar_url),
+                       last_active_at = NOW()
+                   WHERE id = %s::uuid""",
+                (github_id, github_username, encrypted_token, avatar_url, user_id), write=True,
+            )
+        else:
+            user_id = str(uuid.uuid4())
+            query(
+                """INSERT INTO admin_users
+                   (id, email, display_name, role, credits, subscription_status,
+                    is_banned, github_id, github_username, github_access_token,
+                    avatar_url, created_at, last_active_at)
+                   VALUES (%s::uuid, %s, %s, 'user', 500, 'free', false,
+                           %s, %s, %s, %s, NOW(), NOW())""",
+                (user_id, email, display_name, github_id, github_username, encrypted_token, avatar_url),
+                write=True,
+            )
+
+        # 8. User zurückgeben (OHNE Token!)
+        _audit_event("GITHUB_LOGIN_SUCCESS", True, f"user_id={user_id}, github={github_username}", client_ip)
+        row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,), one=True)
+        resp = make_response(jsonify(_user_row_to_dict(row)))
+        return _set_session_cookie(resp, user_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/auth/github/init", methods=["POST"])
+def auth_github_init():
+    """
+    Initiiert GitHub OAuth Flow und gibt Auth-URL zurück.
+    
+    Generiert State + PKCE Challenge für sicheren OAuth Flow.
+    
+    Response:
+        {
+            "authUrl": "https://github.com/login/oauth/authorize?...",
+            "state": "csrf_state",
+            "code_challenge": "pkce_challenge"
+        }
+    """
+    try:
+        if not GITHUB_CLIENT_ID:
+            return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
+        
+        body = request.get_json(force=True) or {}
+        redirect_uri = body.get("redirect_uri", "")
+
+        # OAuth darf nicht durch Client-Input auf repo/write-Scope erweitert werden.
+        # Schreibzugang läuft separat über validierten GitHub-Zugang, nicht über den
+        # Login-Flow der APK/WebView.
+        scopes = ["read:user", "user:email"]
+
+        # Generiere State + PKCE über das zentrale Security-Modul.
+        state = _generate_state()
+        code_verifier, code_challenge = _generate_pkce()
+
+        # State + PKCE speichern. Der Verifier bleibt beim Client und wird nicht
+        # serverseitig persistiert; der Server braucht für die Callback-Prüfung nur
+        # den Challenge-Wert.
+        _store_oauth_state(state, {
+            "code_challenge": code_challenge,
+            "redirect_uri": redirect_uri,
+        })
+        
+        # GitHub Auth URL bauen
+        params = urllib.parse.urlencode({
+            "client_id": GITHUB_CLIENT_ID,
+            "redirect_uri": redirect_uri or f"https://sovereign-backend.arelorian.de/api/auth/github",
+            "scope": " ".join(scopes),
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        })
+        auth_url = f"https://github.com/login/oauth/authorize?{params}"
+        
+        return jsonify({
+            "authUrl": auth_url,
+            "state": state,
+            "codeChallenge": code_challenge,
+            "codeVerifier": code_verifier,  # Client braucht das für Token-Request
+        })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -5576,55 +5827,25 @@ def fetch_ai_gateway(path: str, method: str = "GET", json_data: dict = None, pro
     except Exception as e:
         return None, f"AI Gateway request failed: {e}"
 
-PROVIDER_MODELS = {
-    "openai": {
-        "name": "OpenAI",
-        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
-        "format": "openai/{model}",
-        "default": "gpt-4o-mini"
-    },
-    "anthropic": {
-        "name": "Anthropic",
-        "models": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
-        "format": "anthropic/{model}",
-        "default": "claude-3-5-sonnet-20240620"
-    },
-    "mistral": {
-        "name": "Mistral AI",
-        "models": ["mistral-large-latest", "mistral-small-latest", "mistral-nemo"],
-        "format": "mistral/{model}",
-        "default": "mistral-large-latest"
-    },
-    "cohere": {
-        "name": "Cohere",
-        "models": ["command-r-plus", "command-r"],
-        "format": "cohere/{model}",
-        "default": "command-r-plus"
-    },
-    "google": {
-        "name": "Google AI",
-        "models": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash-exp"],
-        "format": "google/{model}",
-        "default": "gemini-1.5-flash"
-    }
-}
-
-def test_provider_available(provider):
-    if provider not in PROVIDER_MODELS:
-        return False, f"Unknown provider: {provider}", []
-    model_info = PROVIDER_MODELS[provider]
-    test_model = model_info["models"][0]
-    resp, err = fetch_ai_gateway("/compat/v1/chat/completions", method="POST", json_data={
-        "model": test_model,
-        "messages": [{"role": "user", "content": "test"}],
-        "max_tokens": 5
-    }, provider=provider)
+def test_provider_key(provider: str) -> tuple:
+    resp, err = fetch_ai_gateway(f"/{provider}/v1/models", provider=provider)
     if err:
-        return False, f"Gateway Error: {err}", []
+        return False, err, []
     if resp.status_code == 401:
         return False, f"No {provider} key configured", []
-    if resp.status_code == 429:
-        return True, f"{provider} key configured (rate limited)", model_info["models"]
+    if resp.status_code == 403:
+        return False, f"{provider} key invalid", []
+    if resp.status_code == 404:
+        return False, f"{provider} provider not found", []
+    if not resp.ok:
+        return False, f"{provider} error: HTTP {resp.status_code}", []
+    try:
+        data = resp.json()
+        models = data.get("data", []) if isinstance(data, dict) else []
+        return True, "", models
+    except:
+        return True, "", []
+
     if resp.status_code and resp.status_code < 500:
         return True, f"{provider} available", model_info["models"]
     return False, f"{provider} error: HTTP {resp.status_code}", []

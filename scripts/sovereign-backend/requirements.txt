@@ -1,0 +1,12 @@
+# Core dependencies
+flask>=2.3.0
+flask-cors>=4.0.0
+gunicorn>=21.0.0
+requests>=2.31.0
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.0
+urllib3>=2.0.0
+
+# Security - REQUIRED for OAuth token encryption
+cryptography>=41.0.0
+PyJWT>=2.8.0
