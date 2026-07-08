@@ -167,6 +167,51 @@ describe('sovereignPredictiveActionRuntime', () => {
     expect(actionStreamNerve?.lastBlocker).toBe('package_required');
   });
 
+  it('knows agent surfaces without treating them as UI truth', () => {
+    const state = createPredictiveActionState();
+
+    expect(state.nerve.map((node) => node.surface)).toEqual(expect.arrayContaining([
+      'agent_job',
+      'agent_workspace',
+      'agent_tool',
+      'agent_evidence',
+      'agent_pattern',
+    ]));
+  });
+
+  it('activates agent evidence nerve from runtime action stream blockers', () => {
+    const stream = appendSovereignActionEvent(createSovereignActionStreamState(), {
+      kind: 'agent_result_blocked',
+      route: 'agent-evidence',
+      label: 'Agent Ergebnis blockiert',
+      detail: 'Workspace benötigt echte Evidence bevor Draft PR vorbereitet wird.',
+      state: 'blocked',
+      createdAt: 500,
+    });
+
+    const learned = learnFromActionStream(createPredictiveActionState(), stream);
+    const nerve = learned.nerve.find((node) => node.surface === 'agent_evidence');
+
+    expect(nerve?.active).toBe(true);
+    expect(nerve?.lastBlocker).toBe('workspace_required');
+  });
+
+  it('labels agent next actions for menu suggestions', () => {
+    const decision = {
+      action: 'run_agent_tool',
+      signal: 'runtime_contract',
+      confidence: 'high',
+      reason: 'Agent Workspace ist bereit; nächster geprüfter Schritt ist Tool-Lauf.',
+      learnedFrom: 1,
+      surfaces: ['agent_tool'],
+    } as const;
+
+    const suggestions = derivePredictiveMenuSuggestions(decision);
+
+    expect(suggestions[0]?.label).toBe('Agent Tool ausführen');
+    expect(suggestions[0]?.surface).toBe('agent_tool');
+  });
+
   it('builds user-visible summary from prediction', () => {
     const prediction = predictNextRuntimeAction(packageRequiredDecision, createPredictiveActionState());
     const summary = buildPredictiveActionSummary(prediction);
