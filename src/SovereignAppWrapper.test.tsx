@@ -1,7 +1,9 @@
 import React from 'react';
+import { Provider } from 'react-redux';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import SovereignAppWrapper from './SovereignAppWrapper';
+import { store } from './store';
 
 beforeAll(() => {
   const cryptoMock = {
@@ -26,7 +28,7 @@ beforeAll(() => {
 
 describe('SovereignAppWrapper - Chat-only UI Contract', () => {
   it('forwards directly into the App without a wrapper lamp shell', async () => {
-    render(<SovereignAppWrapper />);
+    render(<Provider store={store}><SovereignAppWrapper />);
 
     await waitFor(() => {
       expect(screen.getByTestId('builder-container')).toHaveAttribute(
@@ -41,7 +43,7 @@ describe('SovereignAppWrapper - Chat-only UI Contract', () => {
   });
 
   it('keeps the AppControl DevChat workbench as the visible product surface', async () => {
-    render(<SovereignAppWrapper />);
+    render(<Provider store={store}><SovereignAppWrapper />);
 
     await waitFor(() => {
       expect(screen.getByText('DevChat')).toBeDefined();

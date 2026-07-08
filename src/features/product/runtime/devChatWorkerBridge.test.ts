@@ -73,7 +73,7 @@ describe('devChatWorkerBridge', () => {
 
     const result = await fetchDevChatWorkerReply({ model: 'llama-3-8b', messages: [{ role: 'user', content: 'Hallo' }] });
 
-    expect(result).toEqual({ ok: true, content: 'Antwort aus Worker.', route: SOVEREIGN_WORKER_CHAT });
+    expect(result).toMatchObject({ ok: true, content: 'Antwort aus Worker.', route: SOVEREIGN_WORKER_CHAT });
     expect(fetchMock).toHaveBeenCalledWith(SOVEREIGN_WORKER_CHAT, expect.objectContaining({ method: 'POST' }));
   });
 

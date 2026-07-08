@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
 import React from 'react';
+import { Provider } from 'react-redux';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import App from './App';
+import { store } from './store';
 
 beforeAll(() => {
   const cryptoMock = {
@@ -33,7 +35,7 @@ beforeEach(() => {
 });
 
 async function openChatOnlyWorkspace(): Promise<void> {
-  render(<App />);
+  render(<Provider store={store}><App /></Provider>);
 
   await waitFor(() => {
     expect(screen.getByTestId('builder-container')).toHaveAttribute(
@@ -45,7 +47,7 @@ async function openChatOnlyWorkspace(): Promise<void> {
 
 describe('App setup flow smoke', () => {
   it('enters the chat-only workbench as the app surface', async () => {
-    render(<App />);
+    render(<Provider store={store}><App /></Provider>);
 
     expect(screen.getByTestId('chat-only-app')).toHaveAttribute(
       'data-layout',

@@ -1,9 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { Provider } from 'react-redux';
 import React from 'react';
 import { BuilderContainer } from '../containers/BuilderContainer';
 import { SovereignToolLauncher } from './SovereignToolLauncher';
 import { Sidebar } from './Sidebar';
+import { store } from '../../../store';
+
+function renderWithProviders(ui: React.ReactElement) {
+  return render(<Provider store={store}>{ui}</Provider>);
+}
 
 describe('Palette Accessibility Enhancements', () => {
   const baseProps = {
@@ -23,21 +29,21 @@ describe('Palette Accessibility Enhancements', () => {
 
   describe('BuilderContainer Enhancements', () => {
     it('Menu button has title and aria-label', () => {
-      render(<BuilderContainer {...baseProps} />);
+      renderWithProviders(<BuilderContainer {...baseProps} />);
       const menuButton = screen.getByRole('button', { name: /Menü/i });
       expect(menuButton).toHaveAttribute('aria-label', 'Menü');
       expect(menuButton).toHaveAttribute('title', 'Menü');
     });
 
     it('Runtime RT button keeps visible label in accessible name', () => {
-      render(<BuilderContainer {...baseProps} />);
+      renderWithProviders(<BuilderContainer {...baseProps} />);
       const rtButton = screen.getByRole('button', { name: /RT.*Runtime Quelle/i });
       expect(rtButton).toHaveAttribute('aria-label', 'RT – Runtime Quelle');
       expect(rtButton).toHaveAttribute('title', 'Runtime Quelle');
     });
 
     it('Panel toggle button has title and aria-label', () => {
-      render(<BuilderContainer {...baseProps} />);
+      renderWithProviders(<BuilderContainer {...baseProps} />);
       const toggleButton = screen.getByRole('button', { name: /Panel öffnen/i });
       expect(toggleButton).toHaveAttribute('aria-label', 'Panel öffnen');
       expect(toggleButton).toHaveAttribute('title', 'Panel öffnen');
@@ -48,14 +54,14 @@ describe('Palette Accessibility Enhancements', () => {
     });
 
     it('Send button has title and aria-label', () => {
-      render(<BuilderContainer {...baseProps} />);
+      renderWithProviders(<BuilderContainer {...baseProps} />);
       const sendButton = screen.getByRole('button', { name: /Senden/i });
       expect(sendButton).toHaveAttribute('aria-label', 'Senden');
       expect(sendButton).toHaveAttribute('title', 'Senden');
     });
 
     it('SideDrawer close button has title and aria-label', () => {
-      render(<BuilderContainer {...baseProps} />);
+      renderWithProviders(<BuilderContainer {...baseProps} />);
       fireEvent.click(screen.getByRole('button', { name: /Menü/i }));
       const closeButton = screen.getByRole('button', { name: /Menü schließen/i });
       expect(closeButton).toHaveAttribute('aria-label', 'Menü schließen');

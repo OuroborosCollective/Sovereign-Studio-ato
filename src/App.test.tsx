@@ -1,7 +1,9 @@
 import React from 'react';
+import { Provider } from 'react-redux';
 import { render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import App from './App';
+import { store } from './store';
 
 beforeAll(() => {
   const cryptoMock = {
@@ -26,7 +28,7 @@ beforeAll(() => {
 
 describe('App', () => {
   it('opens the chat-only live workbench', async () => {
-    render(<App />);
+    render(<Provider store={store}><App /></Provider>);
 
     expect(screen.getByTestId('chat-only-app')).toHaveAttribute(
       'data-layout',
