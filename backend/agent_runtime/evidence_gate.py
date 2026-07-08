@@ -302,6 +302,17 @@ class EvidenceGate:
 
         return EvidenceGateResult(passed=True, reason="Real implementation content found")
 
+    def validate_mission_content(self, mission: str) -> EvidenceGateResult:
+        """Validate that a mission is concrete, not placeholder.
+
+        Args:
+            mission: The mission text to validate
+
+        Returns:
+            EvidenceGateResult with pass/fail
+        """
+        return validate_mission_content(mission)
+
 
 @dataclass(frozen=True)
 class EvidenceGateInput:
