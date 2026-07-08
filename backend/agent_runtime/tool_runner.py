@@ -210,3 +210,32 @@ def run_tool_sequence(
         for name, params in tools
     ]
     return runner.execute(calls)
+
+
+def run_agent_job_tool(
+    job_id: str,
+    tool_name: str,
+    parameters: dict[str, Any],
+    workspace_path: str | None = None,
+) -> ToolRunnerResult:
+    """Run a single tool for an agent job.
+    
+    This is a convenience wrapper for running individual tools
+    in the context of an agent job.
+    
+    Args:
+        job_id: The job ID for tracking
+        tool_name: Name of the tool to run
+        parameters: Tool parameters
+        workspace_path: Optional workspace path
+    
+    Returns:
+        ToolRunnerResult with the tool execution result
+    """
+    runner = ToolRunner(workspace_path)
+    call = ToolCall(
+        tool_name=tool_name,
+        parameters=parameters,
+        call_id=f"{job_id[:8]}-{tool_name[:8]}",
+    )
+    return runner.execute([call])

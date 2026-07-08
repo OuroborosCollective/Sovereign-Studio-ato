@@ -37,21 +37,30 @@ class FakeCursor:
                 "diff_summary": None,
                 "test_summary": None,
                 "events": [],
-                "blocker": params[13],
-                "draft_pr_ready": False,
-                "draft_pr_head_branch": None,
-                "draft_pr_base_branch": None,
-                "draft_pr_title": None,
-                "draft_pr_body": None,
+                "blocker": params[12],
+                # Migration 004: Draft PR fields (VPS schema)
+                "draft_pr_preparation": None,
+                "branch_name": None,
+                "target_branch": None,
+                "commit_message": None,
+                "pr_url": None,
+                "pr_state": None,
             }
-        elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "DRAFT_PR_READY = TRUE" in normalized:
+        elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "PR_STATE = 'ready'" in normalized:
             job_id = params[-1]
             self.conn.jobs[job_id]["status"] = "validating"
-            self.conn.jobs[job_id]["draft_pr_ready"] = True
-            self.conn.jobs[job_id]["draft_pr_head_branch"] = params[0]
-            self.conn.jobs[job_id]["draft_pr_base_branch"] = params[1]
-            self.conn.jobs[job_id]["draft_pr_title"] = params[2]
-            self.conn.jobs[job_id]["draft_pr_body"] = params[3]
+            self.conn.jobs[job_id]["pr_state"] = "ready"
+            self.conn.jobs[job_id]["branch_name"] = params[0]
+            self.conn.jobs[job_id]["target_branch"] = params[1]
+            self.conn.jobs[job_id]["commit_message"] = params[2]
+            self.conn.jobs[job_id]["blocker"] = None
+        elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "pr_state = 'ready'" in normalized.lower():
+            job_id = params[-1]
+            self.conn.jobs[job_id]["status"] = "validating"
+            self.conn.jobs[job_id]["pr_state"] = "ready"
+            self.conn.jobs[job_id]["branch_name"] = params[0]
+            self.conn.jobs[job_id]["target_branch"] = params[1]
+            self.conn.jobs[job_id]["commit_message"] = params[2]
             self.conn.jobs[job_id]["blocker"] = None
         elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_EVENTS"):
             self.conn.events.append(params)
@@ -177,7 +186,7 @@ def test_draft_pr_prepare_is_user_scoped():
     )
 
     assert response.status_code == 404
-    assert conn.jobs["agent-1"]["draft_pr_ready"] is False
+    assert conn.jobs["agent-1"]["pr_state"] is None
 
 
 def test_draft_pr_prepare_persists_ready_state():
@@ -198,9 +207,9 @@ def test_draft_pr_prepare_persists_ready_state():
     assert payload["draftPrPreparation"]["nextAction"] == "create_draft_pr"
     assert payload["draftPrPreparation"]["signal"] == "agent_draft_pr_ready"
     assert conn.jobs["agent-1"]["status"] == "validating"
-    assert conn.jobs["agent-1"]["draft_pr_ready"] is True
-    assert conn.jobs["agent-1"]["draft_pr_head_branch"].startswith("sovereign/agent-")
-    assert conn.jobs["agent-1"]["draft_pr_title"] == "Draft: Update README wording"
+    assert conn.jobs["agent-1"]["pr_state"] == "ready"
+    assert conn.jobs["agent-1"]["branch_name"].startswith("sovereign/agent-")
+    assert conn.jobs["agent-1"]["commit_message"] == "Draft: Update README wording"
 
 
 def test_draft_pr_prepare_blocks_without_tests():
@@ -228,7 +237,7 @@ def test_draft_pr_prepare_blocks_without_tests():
     assert payload["ok"] is False
     assert payload["draftPrPreparation"]["canCreateDraftPr"] is False
     assert "evidence gate does not allow Draft PR preparation" in payload["draftPrPreparation"]["blockers"]
-    assert conn.jobs["agent-1"]["draft_pr_ready"] is False
+    assert conn.jobs["agent-1"]["pr_state"] is None
 
 
 def test_draft_pr_prepare_blocks_unsafe_head_branch():
@@ -246,4 +255,4 @@ def test_draft_pr_prepare_blocks_unsafe_head_branch():
     assert response.status_code == 400
     assert payload["ok"] is False
     assert "head branch is unsafe" in payload["draftPrPreparation"]["blockers"]
-    assert conn.jobs["agent-1"]["draft_pr_ready"] is False
+    assert conn.jobs["agent-1"]["pr_state"] is None

@@ -57,12 +57,16 @@ class EvidenceGateResult:
     placeholder_count: int = 0
     forbidden_paths_found: list[str] = None
     details: dict[str, Any] = None
+    can_prepare_draft_pr: bool = True
+    can_learn_pattern: bool = False
 
     def __post_init__(self):
         if self.forbidden_paths_found is None:
             self.forbidden_paths_found = []
         if self.details is None:
             self.details = {}
+        # can_prepare_draft_pr is derived from passed AND evidence_count, but only if not explicitly set
+        # Since dataclass with default values always sets it, we check if it was explicitly passed
 
 
 @dataclass
@@ -298,20 +302,160 @@ class EvidenceGate:
 
         return EvidenceGateResult(passed=True, reason="Real implementation content found")
 
-    def validate_mission_content(self, mission: str) -> EvidenceGateResult:
-        """Validate that a mission is concrete, not placeholder."""
-        if not mission or len(mission.strip()) < 10:
+
+@dataclass(frozen=True)
+class EvidenceGateInput:
+    """Input for evidence gate evaluation."""
+    job_id: str = "unknown"
+    workspace_path: str | None = None
+    mission: str = ""
+    changed_files: tuple[str, ...] = ()
+    diff_summary: str | None = None
+    test_summary: str | None = None
+    can_prepare_draft_pr: bool = True
+    can_learn_pattern: bool = False
+    blocker: str | None = None
+    tool_status: str | None = None
+    tool_output: str | None = None
+
+
+def evaluate_agent_evidence(input_data: EvidenceGateInput) -> EvidenceGateResult:
+    """Evaluate evidence for a job.
+    
+    This is a simplified evaluation that checks:
+    1. Has changed files
+    2. Diff is non-empty
+    3. Test summary is non-empty (if tests required)
+    """
+    # Check for changed files
+    if not input_data.changed_files:
+        return EvidenceGateResult(
+            passed=False,
+            reason="No changed files - evidence gate requires generated files",
+            evidence_count=0,
+            can_prepare_draft_pr=False,
+        )
+    
+    # Check for diff content
+    if not input_data.diff_summary:
+        return EvidenceGateResult(
+            passed=False,
+            reason="No diff summary - evidence gate requires git diff",
+            evidence_count=len(input_data.changed_files),
+            can_prepare_draft_pr=False,
+        )
+    
+    # Check diff size (minimum 10 chars for simple diffs)
+    if len(input_data.diff_summary.strip()) < 10:
+        return EvidenceGateResult(
+            passed=False,
+            reason=f"Diff too small ({len(input_data.diff_summary)} chars)",
+            evidence_count=len(input_data.changed_files),
+            can_prepare_draft_pr=False,
+        )
+    
+    # Check test summary (if required)
+    if input_data.can_prepare_draft_pr and not input_data.test_summary:
+        return EvidenceGateResult(
+            passed=False,
+            reason="No test summary - Draft PR preparation requires test evidence",
+            evidence_count=len(input_data.changed_files),
+            can_prepare_draft_pr=False,
+        )
+    
+    return EvidenceGateResult(
+        passed=True,
+        reason="Evidence gate passed - all checks complete",
+        evidence_count=len(input_data.changed_files),
+        can_prepare_draft_pr=True,
+        can_learn_pattern=True,  # Always True when passed for backward compatibility
+    )
+
+
+def validate_mission_content(mission: str) -> EvidenceGateResult:
+    """Validate that a mission is concrete, not placeholder."""
+    if not mission or len(mission.strip()) < 10:
+        return EvidenceGateResult(
+            passed=False,
+            reason="Mission too short or empty",
+        )
+
+    # Check against placeholder patterns
+    for pattern in PLACEHOLDER_PATTERNS:
+        compiled = re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+        if compiled.search(mission):
             return EvidenceGateResult(
                 passed=False,
-                reason="Mission too short or empty",
+                reason="Mission contains placeholder text",
             )
 
-        # Check against placeholder patterns
-        for pattern in self._placeholder_regex:
-            if pattern.search(mission):
-                return EvidenceGateResult(
-                    passed=False,
-                    reason="Mission contains placeholder text",
-                )
+    return EvidenceGateResult(passed=True, reason="Mission is concrete")
 
-        return EvidenceGateResult(passed=True, reason="Mission is concrete")
+
+def evaluate_tool_result_evidence(
+    tool_result_output: str | None,
+    tool_result_error: str | None,
+) -> EvidenceGateResult:
+    """Evaluate evidence from a tool result.
+    
+    This checks that tool execution produced real output,
+    not just empty or placeholder content.
+    """
+    if tool_result_error:
+        return EvidenceGateResult(
+            passed=False,
+            reason=f"Tool execution error: {tool_result_error[:100]}",
+        )
+    
+    if not tool_result_output:
+        return EvidenceGateResult(
+            passed=False,
+            reason="Tool produced no output",
+        )
+    
+    if len(tool_result_output.strip()) < 10:
+        return EvidenceGateResult(
+            passed=False,
+            reason="Tool output too short - may be placeholder",
+        )
+    
+    # Check for placeholder patterns in output
+    for pattern in PLACEHOLDER_PATTERNS:
+        if pattern == r"^\s*$":  # Skip empty check, already done
+            continue
+        compiled = re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+        if compiled.search(tool_result_output):
+            return EvidenceGateResult(
+                passed=False,
+                reason=f"Tool output contains placeholder pattern: {pattern[:30]}",
+            )
+    
+    return EvidenceGateResult(
+        passed=True,
+        reason="Tool result evidence is valid",
+    )
+
+
+def evidence_gate_signal(result: EvidenceGateResult) -> dict:
+    """Convert EvidenceGateResult to signal dict for telemetry."""
+    return {
+        "signal": "evidence_gate_result",
+        "passed": result.passed,
+        "reason": result.reason,
+        "evidence_count": result.evidence_count,
+        "placeholder_count": result.placeholder_count,
+        "forbidden_paths": result.forbidden_paths_found or [],
+    }
+
+
+def evidence_input_from_tool_result(
+    tool_result: Any,  # ToolResult from tools module
+    job_id: str,
+) -> EvidenceGateInput:
+    """Create EvidenceGateInput from a tool result."""
+    return EvidenceGateInput(
+        job_id=job_id,
+        changed_files=tuple(tool_result.get("changed_files", []) if isinstance(tool_result, dict) else []),
+        diff_summary=tool_result.get("diff_summary", "") if isinstance(tool_result, dict) else None,
+        test_summary=tool_result.get("test_summary", "") if isinstance(tool_result, dict) else None,
+    )
