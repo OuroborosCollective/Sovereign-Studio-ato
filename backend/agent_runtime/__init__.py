@@ -18,6 +18,15 @@ from .contracts import (  # noqa: F401
     validate_agent_job_request,
     validate_agent_job_result,
 )
+from .draft_pr_create_gate import (  # noqa: F401
+    DraftPrCreateRequest,
+    DraftPrCreateResult,
+    GitHubApiDraftPrCreator,
+    create_draft_pr_for_job,
+    draft_pr_create_request_from_job,
+    draft_pr_create_signal,
+    validate_draft_pr_create_request,
+)
 from .draft_pr_gate import (  # noqa: F401
     DraftPrPreparationInput,
     DraftPrPreparationResult,
@@ -50,6 +59,7 @@ from .job_store import (  # noqa: F401
     append_agent_event,
     create_agent_job_record,
     list_agent_jobs,
+    mark_draft_pr_created,
     mark_draft_pr_prepared,
     read_agent_job,
     result_from_stored_job,
