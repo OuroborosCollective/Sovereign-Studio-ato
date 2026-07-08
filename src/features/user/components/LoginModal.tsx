@@ -1,10 +1,11 @@
 /**
- * LoginModal — E-Mail/Passwort-Login + Google OAuth + Registrierung.
+ * LoginModal — E-Mail/Passwort-Login + Google OAuth + GitHub OAuth + Registrierung.
  * Issue #459
  */
 
 import React, { useState } from 'react';
 import { useUserStore } from '../useUserStore';
+import { initiateGitHubOAuth, isGitHubOAuthConfigured } from '../../github/githubOAuthLogin';
 
 const C = {
   bg:      '#0e1116',
@@ -70,8 +71,10 @@ export function LoginModal({ onClose }: Props) {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [githubLoading, setGithubLoading] = useState(false);
 
-  const { login, register, loginWithGoogle, isLoading, error, clearError } = useUserStore();
+  const { login, register, loginWithGoogle, loginWithGitHub, isLoading, error, clearError } = useUserStore();
+  const githubConfigured = isGitHubOAuthConfigured();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -98,6 +101,24 @@ export function LoginModal({ onClose }: Props) {
       useUserStore.setState({ error: 'Google-Login abgebrochen oder nicht verfügbar' });
     } finally {
       setGoogleLoading(false);
+    }
+  }
+
+  async function handleGitHub() {
+    setGithubLoading(true);
+    clearError();
+    try {
+      const result = await initiateGitHubOAuth();
+      if (result.success && result.code) {
+        await loginWithGitHub(result.code);
+        if (!useUserStore.getState().error) onClose();
+      } else {
+        useUserStore.setState({ error: result.error || 'GitHub-Login fehlgeschlagen' });
+      }
+    } catch {
+      useUserStore.setState({ error: 'GitHub-Login fehlgeschlagen' });
+    } finally {
+      setGithubLoading(false);
     }
   }
 
@@ -151,6 +172,17 @@ export function LoginModal({ onClose }: Props) {
 
         <div style={S.divider}><span style={S.line}/><span>oder</span><span style={S.line}/></div>
 
+        {/* GitHub Login Button */}
+        <button
+          style={{ ...S.btn, background: '#21262d', color: C.text, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+          onClick={handleGitHub}
+          disabled={githubLoading || isLoading}
+        >
+          <GitHubIcon />
+          {githubLoading ? 'Verbinde…' : 'Mit GitHub anmelden'}
+        </button>
+
+        {/* Google Login Button */}
         <button
           style={{ ...S.btn, background: '#21262d', color: C.text, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
           onClick={handleGoogle}
@@ -178,6 +210,14 @@ function GoogleIcon() {
       <path fill="#4285F4" d="M46.1 24.55c0-1.64-.15-3.22-.42-4.75H24v9h12.42c-.54 2.9-2.18 5.36-4.65 7.02l7.19 5.58C42.93 37.3 46.1 31.36 46.1 24.55z"/>
       <path fill="#FBBC05" d="M10.72 28.68A14.53 14.53 0 0 1 9.5 24c0-1.63.28-3.22.72-4.68L3.14 13.82A23.93 23.93 0 0 0 0 24c0 3.87.93 7.54 2.55 10.78l8.17-6.1z"/>
       <path fill="#34A853" d="M24 47c5.52 0 10.16-1.83 13.55-4.97l-7.19-5.58C28.62 37.9 26.42 38.5 24 38.5c-6.26 0-11.58-3.88-13.28-9.32l-7.08 5.5C7.07 41.52 14.82 47 24 47z"/>
+    </svg>
+  );
+}
+
+function GitHubIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
     </svg>
   );
 }

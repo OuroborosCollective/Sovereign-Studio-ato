@@ -25,6 +25,9 @@ export interface CurrentUser {
   createdAt: number;
   avatarUrl?: string;
   googleId?: string;
+  githubId?: string;
+  githubUsername?: string;
+  githubAccessToken?: string; // OAuth token für GitHub API Zugriff
 }
 
 const configuredApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim();
@@ -80,6 +83,9 @@ function normalizeCurrentUser(value: unknown): CurrentUser | null {
     createdAt,
     avatarUrl: pickString(value, 'avatarUrl') || undefined,
     googleId: pickString(value, 'googleId') || undefined,
+    githubId: pickString(value, 'githubId') || undefined,
+    githubUsername: pickString(value, 'githubUsername') || undefined,
+    githubAccessToken: pickString(value, 'githubAccessToken') || undefined,
   };
 }
 
@@ -94,6 +100,7 @@ interface UserStore {
   // Auth actions (Issue #459)
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithGitHub: (code: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -149,6 +156,29 @@ export const useUserStore = create<UserStore>()(
           if (!res.ok) {
             const d = await res.json().catch(() => ({}));
             set({ isLoading: false, error: (d as { error?: string }).error ?? 'Google-Login fehlgeschlagen' });
+            return;
+          }
+          const user = normalizeCurrentUser(await res.json());
+          if (!user) {
+            set({ isLoading: false, error: 'Ungültige User-Antwort vom Server' });
+            return;
+          }
+          set({ user, isLoading: false, error: null });
+        } catch {
+          set({ isLoading: false, error: 'Verbindungsfehler' });
+        }
+      },
+
+      loginWithGitHub: async (code) => {
+        set({ isLoading: true, error: null });
+        try {
+          const res = await authFetch('/api/auth/github', {
+            method: 'POST',
+            body: JSON.stringify({ code }),
+          });
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            set({ isLoading: false, error: (d as { error?: string }).error ?? 'GitHub-Login fehlgeschlagen' });
             return;
           }
           const user = normalizeCurrentUser(await res.json());
