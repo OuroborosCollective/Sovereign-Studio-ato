@@ -44,23 +44,25 @@ export type SovereignRouteBlocker =
   | 'github_access_missing'       // GitHub access not configured
   | 'github_access_validating'    // GitHub access in validation
   | 'executor_unavailable'        // No executor (OpenHands/workspace) available
-  | 'workspace_required'         // Workspace executor required but unavailable
+  | 'workspace_required'          // Workspace executor required but unavailable
+  | 'package_required'            // Patch/package must be generated before Draft PR
   | 'unsupported_intent'          // Intent too complex for direct patch
   | 'unsafe_action';              // Action would write to forbidden paths
 
 /**
- * Next actions - what the user should do next.
+ * Next actions - what the user/runtime should do next.
  */
 export type SovereignNextAction =
-  | 'ask_user'              // Ask user for clarification
-  | 'load_repo'             // Load a repository first
+  | 'ask_user'               // Ask user for clarification
+  | 'load_repo'              // Load a repository first
   | 'validate_github_access' // Validate GitHub access
-  | 'run_worker'            // Run chat worker
-  | 'run_direct_patch'      // Run direct GitHub patch
-  | 'start_workspace'      // Start workspace executor
-  | 'start_openhands'       // Start OpenHands executor
-  | 'create_draft_pr'       // Create draft PR
-  | 'show_blocker';         // Show blocker explanation
+  | 'generate_patch_package' // Generate patch/package before Draft PR
+  | 'run_worker'             // Run chat worker
+  | 'run_direct_patch'       // Run direct GitHub patch
+  | 'start_workspace'        // Start workspace executor
+  | 'start_openhands'        // Start OpenHands executor
+  | 'create_draft_pr'        // Create draft PR
+  | 'show_blocker';          // Show blocker explanation
 
 /**
  * Decision produced by the capability router.
