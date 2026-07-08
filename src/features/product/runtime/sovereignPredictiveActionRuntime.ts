@@ -273,7 +273,7 @@ function updateNerve(
   nerve: readonly PredictiveNerveNode[],
   observation: PredictiveActionObservation,
 ): readonly PredictiveNerveNode[] {
-  const surfaces = observation.surface ? [observation.surface] : ['runtime' as const];
+  const surfaces: readonly PredictiveSurface[] = observation.surface ? [observation.surface] : ['runtime'];
   return nerve.map((node) => {
     if (!surfaces.includes(node.surface)) return node;
     return {
