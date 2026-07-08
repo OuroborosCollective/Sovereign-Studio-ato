@@ -30,6 +30,8 @@ class FakeCursor:
         self.conn.executed.append((sql, params))
         normalized = " ".join(sql.upper().split())
         if normalized.startswith("INSERT INTO SOVEREIGN_AGENT_JOBS"):
+            # params: user_id, job_id, executor, repo_url, branch, mission, status,
+            #         workspace_id, allowed_paths, forbidden_paths, memory_hints, events, blocker
             self.conn.jobs[params[1]] = {
                 "user_id": params[0],
                 "job_id": params[1],
@@ -44,7 +46,7 @@ class FakeCursor:
                 "changed_files": [],
                 "diff_summary": None,
                 "test_summary": None,
-                "events": params[11],
+                "events": json.loads(params[11]) if params[11] else [],
                 "blocker": params[12],
                 "draft_pr_preparation": None,
                 "branch_name": None,
