@@ -33,8 +33,8 @@ def test_changed_files_require_diff_before_draft_pr():
 def test_changed_files_and_diff_require_tests():
     gate = evaluate_agent_evidence(EvidenceGateInput(
         changed_files=("README.md",),
-        diff_summary="README.md | 2 +-")
-    )
+        diff_summary="README.md | 2 +-",
+    ))
 
     assert gate.allowed is True
     assert gate.decision == "run_tests"
@@ -63,9 +63,9 @@ def test_changes_diff_and_tests_allow_draft_pr_and_pattern_learning():
 def test_tests_failure_blocks_draft_pr_preparation():
     gate = evaluate_agent_evidence(EvidenceGateInput(
         changed_files=("README.md",),
-        diff_summary="README.md | 2 +-") ,
+        diff_summary="README.md | 2 +-",
         test_summary="1 failed, 4 passed",
-    )
+    ))
 
     assert gate.allowed is False
     assert gate.decision == "block"
