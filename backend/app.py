@@ -3170,6 +3170,10 @@ def _decode_jwt(token: str) -> str | None:
 # ── GitHub OAuth Config ───────────────────────────────────────────────────────
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+GITHUB_OAUTH_REDIRECT_URI = os.getenv(
+    "GITHUB_OAUTH_REDIRECT_URI",
+    "https://sovereign-backend.arelorian.de/api/auth/github",
+)
 
 # Initialisiere Token Encryption mit Key aus Environment
 _token_encryption_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", JWT_SECRET)
@@ -3554,7 +3558,21 @@ def auth_github_init():
             return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
         
         body = request.get_json(force=True) or {}
-        redirect_uri = body.get("redirect_uri", "")
+        requested_redirect_uri = body.get("redirect_uri", "")
+        # OAuth Redirect URI wird SERVERSEITIG festgelegt.
+        # Client-Input wird ignoriert, um Redirect-URI-Mismatch zu vermeiden.
+        redirect_uri = GITHUB_OAUTH_REDIRECT_URI
+        # Client-redirect_uri ablehnen, wenn abweichend (Security-Audit)
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+        if "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+        if requested_redirect_uri and requested_redirect_uri != GITHUB_OAUTH_REDIRECT_URI:
+            _audit_event(
+                "GITHUB_OAUTH_REDIRECT_IGNORED",
+                False,
+                f"client_redirect_uri={requested_redirect_uri}",
+                client_ip,
+            )
 
         # OAuth darf nicht durch Client-Input auf repo/write-Scope erweitert werden.
         # Schreibzugang läuft separat über validierten GitHub-Zugang, nicht über den
@@ -3576,7 +3594,7 @@ def auth_github_init():
         # GitHub Auth URL bauen
         params = urllib.parse.urlencode({
             "client_id": GITHUB_CLIENT_ID,
-            "redirect_uri": redirect_uri or f"https://sovereign-backend.arelorian.de/api/auth/github",
+            "redirect_uri": redirect_uri,
             "scope": " ".join(scopes),
             "state": state,
             "code_challenge": code_challenge,

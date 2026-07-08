@@ -195,11 +195,18 @@ class TestOAuthContractWithApp:
         monkeypatch.setattr(app_module, "_generate_state", lambda: "state_test")
         monkeypatch.setattr(app_module, "_generate_pkce", lambda: ("verifier_test", "challenge_test"))
 
+        # Monkeypatch the server-side redirect URI
+        monkeypatch.setattr(
+            app_module,
+            "GITHUB_OAUTH_REDIRECT_URI",
+            "https://sovereign-backend.arelorian.de/api/auth/github",
+        )
+        
         client = app_module.app.test_client()
         response = client.post(
             "/api/auth/github/init",
             json={
-                "redirect_uri": "https://example.test/callback",
+                "redirect_uri": "https://example.test/callback",  # Client tries to override
                 "scopes": "repo delete_repo admin:org read:user user:email",
             },
         )
@@ -208,10 +215,12 @@ class TestOAuthContractWithApp:
         payload = response.get_json()
         assert "scope=read%3Auser+user%3Aemail" in payload["authUrl"]
         assert "repo" not in payload["authUrl"]
+        # Server-side redirect_uri must be used, not client redirect
+        assert "redirect_uri=https%3A%2F%2Fsovereign-backend.arelorian.de" in payload["authUrl"]
         assert captured_state["state"] == "state_test"
         assert captured_state["data"] == {
             "code_challenge": "challenge_test",
-            "redirect_uri": "https://example.test/callback",
+            "redirect_uri": "https://sovereign-backend.arelorian.de/api/auth/github",
         }
         assert "code_verifier" not in captured_state["data"]
         assert payload["codeVerifier"] == "verifier_test"
@@ -287,9 +296,12 @@ class TestOAuthContractWithApp:
                 }
             return None
 
+        # Server-side redirect URI (same as in _get_oauth_state)
+        server_redirect_uri = "https://sovereign-backend.arelorian.de/api/auth/github"
+        app_module.GITHUB_OAUTH_REDIRECT_URI = server_redirect_uri
         monkeypatch.setattr(app_module, "_get_oauth_state", lambda state: {
             "code_challenge": "challenge_test",
-            "redirect_uri": "https://example.test/callback",
+            "redirect_uri": server_redirect_uri,
         })
         monkeypatch.setattr(app_module, "_validate_pkce", lambda verifier, challenge: True)
         monkeypatch.setattr(app_module, "_encrypt_token", lambda token: f"encrypted-{token}")
@@ -310,7 +322,7 @@ class TestOAuthContractWithApp:
         assert response.status_code == 200
         token_payload = calls[0][2]
         assert token_payload["code_verifier"] == "verifier_test"
-        assert token_payload["redirect_uri"] == "https://example.test/callback"
+        assert token_payload["redirect_uri"] == server_redirect_uri
         assert stored_rows, "OAuth flow must write encrypted token to DB"
         inserted_params = stored_rows[0][1]
         assert any(value == "encrypted-gho_live_token" for value in inserted_params)
