@@ -22,7 +22,12 @@ export type PredictiveSurface =
   | 'draft_pr'
   | 'repo'
   | 'toolchain'
-  | 'runtime';
+  | 'runtime'
+  | 'agent_job'
+  | 'agent_workspace'
+  | 'agent_tool'
+  | 'agent_evidence'
+  | 'agent_pattern';
 
 export interface PredictiveActionObservation {
   readonly blocker: SovereignRouteBlocker;
@@ -98,6 +103,11 @@ const SURFACES: readonly PredictiveSurface[] = [
   'repo',
   'toolchain',
   'runtime',
+  'agent_job',
+  'agent_workspace',
+  'agent_tool',
+  'agent_evidence',
+  'agent_pattern',
 ];
 
 const CONTRACT_PATTERNS: readonly PredictiveActionPattern[] = [
@@ -148,6 +158,22 @@ const CONTRACT_PATTERNS: readonly PredictiveActionPattern[] = [
     misses: 0,
     lastObservedAt: null,
     surfaces: ['router', 'executor', 'menu', 'inspector', 'runtime'],
+  },
+  {
+    blocker: 'repo_missing',
+    action: 'create_agent_job',
+    hits: 0,
+    misses: 1,
+    lastObservedAt: null,
+    surfaces: ['agent_job', 'agent_workspace', 'agent_evidence', 'runtime'],
+  },
+  {
+    blocker: 'workspace_required',
+    action: 'run_agent_tool',
+    hits: 0,
+    misses: 1,
+    lastObservedAt: null,
+    surfaces: ['agent_workspace', 'agent_tool', 'agent_evidence', 'runtime'],
   },
 ];
 
@@ -208,9 +234,11 @@ function reasonFor(pattern: PredictiveActionPattern): string {
     case 'github_access_validating':
       return 'GitHub-Zugang wird bereits geprüft; Runtime wartet auf echte API-Validierung.';
     case 'repo_missing':
-      return 'Ohne geladenes Repository darf kein Patch-/Draft-PR-Pfad starten.';
+      if (pattern.action === 'create_agent_job') return 'Agent Job braucht zuerst geladenen Repo-Kontext. Predictive darf keinen Backend-Job ohne Repo vorschlagen.';
+      return 'Ohne geladenes Repository darf kein Patch-/Draft-PR-/Agent-Pfad starten.';
     case 'executor_unavailable':
     case 'workspace_required':
+      if (pattern.action === 'run_agent_tool') return 'Agent Tools brauchen zuerst einen geprüften Backend-Workspace-State.';
       return 'Die Aufgabe benötigt einen ausführbaren Workspace-/Executor-Pfad.';
     default:
       return `Gelernter Übergang für Blocker ${pattern.blocker}.`;
@@ -349,6 +377,7 @@ function blockerFromActionEvent(event: SovereignActionEvent): SovereignRouteBloc
   if (detail.includes('github-zugang wird geprüft')) return 'github_access_validating';
   if (detail.includes('repo fehlt') || detail.includes('kein repo')) return 'repo_missing';
   if (detail.includes('workspace') && detail.includes('benötigt')) return 'workspace_required';
+  if (detail.includes('workspace') && detail.includes('required')) return 'workspace_required';
   if (detail.includes('executor') && detail.includes('nicht')) return 'executor_unavailable';
   return null;
 }
@@ -389,7 +418,7 @@ export function learnFromActionStream(
       succeeded: event.state === 'blocked',
       reason: event.detail ?? event.label,
       observedAt: event.createdAt,
-      surface: 'action_stream',
+      surface: event.route.startsWith('agent-') ? 'agent_evidence' : 'action_stream',
     });
   }, state);
 }
@@ -425,6 +454,20 @@ function labelForAction(action: SovereignNextAction): string {
       return 'Direct Patch ausführen';
     case 'create_draft_pr':
       return 'Draft PR erstellen';
+    case 'create_agent_job':
+      return 'Agent Job anlegen';
+    case 'provision_agent_workspace':
+      return 'Agent Workspace vorbereiten';
+    case 'run_agent_tool':
+      return 'Agent Tool ausführen';
+    case 'validate_agent_result':
+      return 'Agent Ergebnis prüfen';
+    case 'prepare_agent_draft_pr':
+      return 'Agent Draft PR vorbereiten';
+    case 'learn_agent_pattern':
+      return 'Agent Pattern lernen';
+    case 'cleanup_agent_workspace':
+      return 'Agent Workspace bereinigen';
     case 'run_worker':
       return 'Worker starten';
     default:
