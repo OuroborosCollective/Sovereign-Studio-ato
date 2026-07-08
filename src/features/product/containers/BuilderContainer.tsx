@@ -3637,7 +3637,7 @@ export function BuilderContainer({
             if ('result' in directPatchResult && directPatchResult.result.ok) {
               const res = directPatchResult.result;
               const diffReport = buildGeneratedFileDiffReport(
-                [{ path: res.targetPath, content: res.proposedContent }],
+                [{ path: res.targetPath, content: res.proposedContent, reason: 'Direct GitHub Patch generiert' }],
                 [{ path: res.targetPath, content: res.baseContent, found: true }]
               );
 
