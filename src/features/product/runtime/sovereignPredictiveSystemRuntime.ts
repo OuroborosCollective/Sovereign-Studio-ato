@@ -16,20 +16,37 @@ import {
   type PredictiveInspectorSignal,
   type PredictiveMenuSuggestion,
 } from './sovereignPredictiveActionRuntime';
+import {
+  evaluatePredictiveRuntimePolicy,
+  type PredictiveRuntimeContext,
+  type PredictiveRuntimePolicyResult,
+} from './sovereignPredictiveRuntimePolicy';
 
 export interface PredictiveSystemInput {
   readonly state?: PredictiveActionState;
   readonly capabilityDecision?: CapabilityDecision | null;
   readonly actionStream?: SovereignActionStreamState | null;
   readonly eventRoute?: SovereignActionRoute;
+  readonly runtime?: PredictiveRuntimeContext;
 }
 
 export interface PredictiveSystemOutput {
   readonly state: PredictiveActionState;
   readonly prediction: PredictiveActionDecision | null;
+  readonly policy: PredictiveRuntimePolicyResult;
   readonly actionEvent: SovereignActionEventInput | null;
   readonly menuSuggestions: readonly PredictiveMenuSuggestion[];
   readonly inspectorSignals: readonly PredictiveInspectorSignal[];
+}
+
+function buildPolicyBlockedEvent(policy: PredictiveRuntimePolicyResult): SovereignActionEventInput {
+  return {
+    kind: 'blocked',
+    route: 'runtime',
+    label: 'Predictive Runtime Policy blockiert',
+    detail: policy.violations.map((violation) => `${violation.code}: ${violation.message}`).join('\n'),
+    state: 'blocked',
+  };
 }
 
 /**
@@ -49,21 +66,46 @@ export function runPredictiveSystemTick(input: PredictiveSystemInput): Predictiv
     ? predictNextRuntimeAction(input.capabilityDecision, learnedState)
     : null;
 
-  const actionEvent = prediction
+  const rawActionEvent = prediction
     ? derivePredictiveActionEvent(prediction, input.eventRoute ?? 'runtime')
     : null;
+  const rawMenuSuggestions = prediction ? derivePredictiveMenuSuggestions(prediction) : [];
+  const rawInspectorSignals = derivePredictiveInspectorSignals(learnedState, prediction);
+
+  const policy = evaluatePredictiveRuntimePolicy({
+    mode: 'suggestion',
+    capabilityDecision: input.capabilityDecision ?? null,
+    prediction,
+    actionEvent: rawActionEvent,
+    menuSuggestions: rawMenuSuggestions,
+    inspectorSignals: rawInspectorSignals,
+    runtime: input.runtime,
+  });
+
+  if (!policy.allowed) {
+    return {
+      state: learnedState,
+      prediction,
+      policy,
+      actionEvent: buildPolicyBlockedEvent(policy),
+      menuSuggestions: [],
+      inspectorSignals: rawInspectorSignals,
+    };
+  }
 
   return {
     state: learnedState,
     prediction,
-    actionEvent,
-    menuSuggestions: prediction ? derivePredictiveMenuSuggestions(prediction) : [],
-    inspectorSignals: derivePredictiveInspectorSignals(learnedState, prediction),
+    policy,
+    actionEvent: rawActionEvent,
+    menuSuggestions: rawMenuSuggestions,
+    inspectorSignals: rawInspectorSignals,
   };
 }
 
 export function hasPredictiveSystemWork(output: PredictiveSystemOutput): boolean {
   return Boolean(
+    output.policy.allowed &&
     output.prediction?.signal &&
     output.prediction.signal !== 'none' &&
     (output.actionEvent || output.menuSuggestions.length > 0 || output.inspectorSignals.length > 0),
