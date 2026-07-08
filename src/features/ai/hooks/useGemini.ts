@@ -6,10 +6,20 @@ import { maskSecrets } from '../../../shared/utils/crypto';
 /**
  * Interface für Canvas-Vektorelemente (KI-Format)
  */
+export interface CanvasVectorData {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  radius?: number;
+  points?: number[];
+  text?: string;
+}
+
 export interface CanvasVector {
   id: string;
   type: 'path' | 'rect' | 'circle' | 'text';
-  data: any;
+  data: CanvasVectorData;
   style: {
     stroke?: string;
     fill?: string;

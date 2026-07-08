@@ -24,6 +24,42 @@ export interface RefactorMemoryContext {
   patterns: string[];
 }
 
+export interface GitHubFileChangeResponse {
+  content: {
+    name: string;
+    path: string;
+    sha: string;
+    size: number;
+    url: string;
+    html_url: string;
+    git_url: string;
+    download_url: string;
+    type: string;
+  };
+  commit: {
+    sha: string;
+    node_id: string;
+    url: string;
+    html_url: string;
+    author: {
+      name: string;
+      email: string;
+      date: string;
+    };
+    committer: {
+      name: string;
+      email: string;
+      date: string;
+    };
+    message: string;
+    tree: {
+      url: string;
+      sha: string;
+    };
+    verification: unknown;
+  };
+}
+
 export interface RefactorPlan {
   id: string;
   timestamp: string;
@@ -290,7 +326,7 @@ Generiere den verbesserten Code. Antworte NUR mit dem Code, keine Erklärung.`;
     sha: string | undefined,
     branch: string,
     token: string
-  ): Promise<any> {
+  ): Promise<GitHubFileChangeResponse> {
     if (!token) throw new Error('GitHub PAT is required to apply changes.');
 
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
