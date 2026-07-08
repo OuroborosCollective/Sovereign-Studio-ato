@@ -5,9 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   const render = vi.fn();
+  const store = {
+    getState: vi.fn(() => ({})),
+    dispatch: vi.fn(),
+    subscribe: vi.fn(() => vi.fn()),
+  };
 
   return {
     render,
+    store,
     createRoot: vi.fn(() => ({ render })),
     posthogInit: vi.fn(),
     restoreCanvasStateMirror: vi.fn(async () => undefined),
@@ -35,6 +41,7 @@ vi.mock('./components/ErrorBoundary', () => ({
 }));
 
 vi.mock('./store', () => ({
+  store: mocks.store,
   restoreCanvasStateMirror: mocks.restoreCanvasStateMirror,
   flushCanvasStateMirror: mocks.flushCanvasStateMirror,
 }));
