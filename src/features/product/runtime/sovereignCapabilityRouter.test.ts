@@ -128,6 +128,23 @@ describe('Sovereign Capability Router', () => {
       expect(decision.nextAction).toBe('start_workspace');
     });
 
+    it('routes explicit Draft-PR execution to openhands when executor is ready without requiring frontend GitHub PAT first', () => {
+      const decision = decideSovereignCapabilityRoute({
+        text: 'Bitte implementiere einen Chat-State-Fix als Draft PR.',
+        repoReady: true,
+        githubAccessState: 'missing',
+        openhandsReady: true,
+        directGitHubPatchReady: false,
+        workspaceReady: false,
+        hasActiveWorkerBlocker: false,
+      });
+
+      expect(decision.route).toBe('openhands');
+      expect(decision.capability).toBe('code_patch_plan');
+      expect(decision.allowed).toBe(true);
+      expect(decision.nextAction).toBe('start_openhands');
+    });
+
     it('routes complex code work to openhands when workspace is not ready', () => {
       const decision = decideSovereignCapabilityRoute({
         text: 'Baue Feature X ein',
@@ -172,7 +189,7 @@ describe('Sovereign Capability Router', () => {
         hasPackage: false,
       });
 
-      expect(decision.allowed).toBe(false);
+      expect(decision.allowed).toBe(true);
       expect(decision.route).toBe('code-llm');
       expect(decision.blocker).toBe('package_required');
       expect(decision.nextAction).toBe('generate_patch_package');
@@ -198,7 +215,7 @@ describe('Sovereign Capability Router', () => {
   });
 
   describe('draft PR package gate', () => {
-    it('blocks draft PR without package using package_required instead of unsupported_intent', () => {
+    it('keeps draft PR without package recoverable using package_required instead of unsupported_intent', () => {
       const decision = decideSovereignCapabilityRoute({
         text: 'Erstelle einen Draft PR',
         repoReady: true,
@@ -210,7 +227,7 @@ describe('Sovereign Capability Router', () => {
         hasPackage: false,
       });
 
-      expect(decision.allowed).toBe(false);
+      expect(decision.allowed).toBe(true);
       expect(decision.route).toBe('draft-pr-runtime');
       expect(decision.blocker).toBe('package_required');
       expect(decision.nextAction).toBe('generate_patch_package');
