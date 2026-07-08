@@ -81,7 +81,7 @@ def stored_job_from_row(row: Mapping[str, Any]) -> StoredSovereignAgentJob:
             draft_pr_prep = json.loads(draft_pr_prep)
         except json.JSONDecodeError:
             draft_pr_prep = None
-    
+
     return StoredSovereignAgentJob(
         job_id=str(row.get("job_id") or ""),
         user_id=str(row.get("user_id") or ""),
@@ -235,6 +235,12 @@ def mark_draft_pr_prepared(
     title: str,
     body: str,
 ) -> None:
+    preparation = {
+        "headBranch": sanitize_agent_text(head_branch, 160),
+        "baseBranch": sanitize_agent_text(base_branch, 160),
+        "title": sanitize_agent_text(title, 200),
+        "body": sanitize_agent_text(body, 8000),
+    }
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -244,15 +250,37 @@ def mark_draft_pr_prepared(
                 branch_name = %s,
                 target_branch = %s,
                 commit_message = %s,
+                draft_pr_preparation = %s::jsonb,
                 blocker = NULL
             WHERE job_id = %s
             """,
             (
-                sanitize_agent_text(head_branch, 160),
-                sanitize_agent_text(base_branch, 160),
-                sanitize_agent_text(title, 200),
+                preparation["headBranch"],
+                preparation["baseBranch"],
+                preparation["title"],
+                _json(preparation),
                 job_id,
             ),
+        )
+    conn.commit()
+
+
+def mark_draft_pr_created(conn: Any, *, job_id: str, pr_url: str) -> None:
+    safe_pr_url = pr_url.strip() if pr_url.startswith("https://github.com/") and "/pull/" in pr_url else ""
+    if not safe_pr_url:
+        raise ValueError("valid GitHub pull request URL required")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sovereign_agent_jobs
+            SET status = 'completed',
+                pr_state = 'created',
+                pr_url = %s,
+                draft_pr_url = %s,
+                blocker = NULL
+            WHERE job_id = %s
+            """,
+            (safe_pr_url, safe_pr_url, job_id),
         )
     conn.commit()
 
