@@ -3416,13 +3416,19 @@ def auth_github():
                 return jsonify({"error": "PKCE Validierung fehlgeschlagen"}), 400
 
         # 3. Code gegen Access Token tauschen
+        token_payload = {
+            "client_id":     GITHUB_CLIENT_ID,
+            "client_secret": GITHUB_CLIENT_SECRET,
+            "code":          code,
+        }
+        if code_verifier:
+            token_payload["code_verifier"] = code_verifier
+        if state and stored_state and stored_state.get("redirect_uri"):
+            token_payload["redirect_uri"] = stored_state["redirect_uri"]
+
         token_resp = requests.post(
             "https://github.com/login/oauth/access_token",
-            json={
-                "client_id":     GITHUB_CLIENT_ID,
-                "client_secret": GITHUB_CLIENT_SECRET,
-                "code":          code,
-            },
+            json=token_payload,
             headers={"Accept": "application/json"},
             timeout=15,
         )
@@ -3535,22 +3541,21 @@ def auth_github_init():
         
         body = request.get_json(force=True) or {}
         redirect_uri = body.get("redirect_uri", "")
-        scopes = body.get("scopes", "read:user user:email").split()
-        
-        # Generiere State
-        state = secrets.token_urlsafe(32)
-        
-        # PKCE Challenge generieren (optional aber empfohlen)
-        code_verifier = secrets.token_urlsafe(64)
-        import hashlib
-        import base64
-        digest = hashlib.sha256(code_verifier.encode()).digest()
-        code_challenge = base64.urlsafe_b64encode(digest).decode().rstrip('=')
-        
-        # State + PKCE speichern
+
+        # OAuth darf nicht durch Client-Input auf repo/write-Scope erweitert werden.
+        # Schreibzugang läuft separat über validierten GitHub-Zugang, nicht über den
+        # Login-Flow der APK/WebView.
+        scopes = ["read:user", "user:email"]
+
+        # Generiere State + PKCE über das zentrale Security-Modul.
+        state = _generate_state()
+        code_verifier, code_challenge = _generate_pkce()
+
+        # State + PKCE speichern. Der Verifier bleibt beim Client und wird nicht
+        # serverseitig persistiert; der Server braucht für die Callback-Prüfung nur
+        # den Challenge-Wert.
         _store_oauth_state(state, {
             "code_challenge": code_challenge,
-            "code_verifier": code_verifier,  # Nur für Debug, im Prod entfernen
             "redirect_uri": redirect_uri,
         })
         

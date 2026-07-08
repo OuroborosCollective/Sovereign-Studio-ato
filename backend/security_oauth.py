@@ -22,44 +22,53 @@ from typing import Optional
 
 try:
     from cryptography.fernet import Fernet
-    
-    _GITHUB_TOKEN_KEY: str | None = None
-    _github_cipher: Fernet | None = None
-    
-    def init_token_encryption(key: str) -> None:
-        """Initialisiert die Token-Verschlüsselung."""
-        global _GITHUB_TOKEN_KEY, _github_cipher
-        _GITHUB_TOKEN_KEY = key
-        _fernet_key = base64.urlsafe_b64encode(
-            hashlib.sha256(key.encode()).digest()
-        )
-        _github_cipher = Fernet(_fernet_key)
-    
-    def _encrypt_token(token: str) -> str:
-        """Verschlüsselt einen Token für sichere Speicherung."""
-        if _github_cipher is None:
-            raise RuntimeError("Token encryption nicht initialisiert")
-        return _github_cipher.encrypt(token.encode()).decode()
-    
-    def _decrypt_token(encrypted: str) -> str | None:
-        """Entschlüsselt einen Token für API-Zugriff."""
-        if _github_cipher is None:
-            raise RuntimeError("Token encryption nicht initialisiert")
-        try:
-            return _github_cipher.decrypt(encrypted.encode()).decode()
-        except Exception:
-            return None
+except ImportError as exc:  # pragma: no cover - exercised only in broken deployments
+    Fernet = None  # type: ignore[assignment]
+    _CRYPTOGRAPHY_IMPORT_ERROR: Exception | None = exc
+else:
+    _CRYPTOGRAPHY_IMPORT_ERROR = None
 
-except ImportError:
-    # Fallback für Testing ohne cryptography
-    def _encrypt_token(token: str) -> str:
-        return token
-    
-    def _decrypt_token(encrypted: str) -> str | None:
-        return encrypted
-    
-    def init_token_encryption(key: str) -> None:
-        pass
+_GITHUB_TOKEN_KEY: str | None = None
+_github_cipher: Fernet | None = None if Fernet is not None else None
+
+
+def init_token_encryption(key: str) -> None:
+    """Initialisiert die Token-Verschlüsselung.
+
+    Live-Pfad-Regel: Ohne cryptography/Fernet darf der Backend-Code nicht
+    still auf Klartext-Speicherung zurückfallen. Ein fehlendes Crypto-Modul ist
+    ein Deployment-Fehler und muss fail-closed sichtbar werden.
+    """
+    if Fernet is None:
+        raise RuntimeError(
+            "Token encryption unavailable: cryptography/Fernet is required"
+        ) from _CRYPTOGRAPHY_IMPORT_ERROR
+    if not key or not key.strip():
+        raise RuntimeError("Token encryption key is required")
+
+    global _GITHUB_TOKEN_KEY, _github_cipher
+    _GITHUB_TOKEN_KEY = key
+    _fernet_key = base64.urlsafe_b64encode(
+        hashlib.sha256(key.encode()).digest()
+    )
+    _github_cipher = Fernet(_fernet_key)
+
+
+def _encrypt_token(token: str) -> str:
+    """Verschlüsselt einen Token für sichere Speicherung."""
+    if _github_cipher is None:
+        raise RuntimeError("Token encryption nicht initialisiert")
+    return _github_cipher.encrypt(token.encode()).decode()
+
+
+def _decrypt_token(encrypted: str) -> str | None:
+    """Entschlüsselt einen Token für API-Zugriff."""
+    if _github_cipher is None:
+        raise RuntimeError("Token encryption nicht initialisiert")
+    try:
+        return _github_cipher.decrypt(encrypted.encode()).decode()
+    except Exception:
+        return None
 
 
 # ── OAuth State Store ───────────────────────────────────────────────────────────
@@ -110,19 +119,25 @@ def _clear_all_oauth_states() -> int:
 def _validate_pkce(verifier: str | None, stored_challenge: str | None) -> bool:
     """
     Validiert PKCE code_verifier gegen gespeicherten challenge.
-    
+
+    PKCE bleibt nur optional, wenn serverseitig kein code_challenge
+    gespeichert wurde. Sobald ein challenge existiert, muss ein verifier
+    vorhanden sein und exakt dazu passen.
+
     Args:
         verifier: Der vom Client gesendete code_verifier
         stored_challenge: Der bei der Authorization gespeicherte code_challenge
-    
+
     Returns:
-        True wenn gültig, False wenn ungültig oder nicht verwendet
+        True wenn gültig oder nicht angefordert, sonst False
     """
-    if not verifier or not stored_challenge:
-        return True  # PKCE optional wenn nicht angefordert
+    if not stored_challenge:
+        return True  # PKCE wurde serverseitig nicht angefordert
+    if not verifier:
+        return False
     digest = hashlib.sha256(verifier.encode()).digest()
     challenge = base64.urlsafe_b64encode(digest).decode().rstrip('=')
-    return challenge == stored_challenge
+    return secrets.compare_digest(challenge, stored_challenge)
 
 
 def _generate_pkce() -> tuple[str, str]:
