@@ -1,0 +1,16 @@
+{
+  "target": "src/features/product/runtime/sovereignPresetActionRuntime.ts",
+  "source_ref": "fix/access-card-bridge-flow",
+  "branch_base_ref": "fix/access-card-bridge-flow",
+  "branch": "fix/access-card-bridge-flow",
+  "commit_message": "fix(runtime): avoid stale write state in preset prompts",
+  "pr_title": "fix(builder): open access gate and honor allowed patch route",
+  "pr_body": "Addresses PR #546 review feedback: pending write presets no longer embed stale negative write-access truth while waiting for validation.",
+  "expectedSha": null,
+  "blocks": [
+    {
+      "search": "  const gateParts = [\n    `Repo geladen: ${context.repoReady ? 'ja' : 'nein'}`,\n    `Git\u0048ub Write: ${context.git\u0068ubWriteReady ? 'ja' : 'nein'}`,\n  ];",
+      "replace": "  const gateParts = [\n    `Repo geladen: ${context.repoReady ? 'ja' : 'nein'}`,\n    action.requiresGit\u0048ubWrite && !context.git\u0068ubWriteReady\n      ? 'Git\u0048ub Write: wird vor Ausführung geprüft'\n      : `Git\u0048ub Write: ${context.git\u0068ubWriteReady ? 'ja' : 'nein'}`,\n  ];"
+    }
+  ]
+}
