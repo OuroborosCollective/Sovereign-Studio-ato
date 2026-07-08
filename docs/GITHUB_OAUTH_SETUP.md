@@ -1,8 +1,19 @@
 # GitHub OAuth Setup Guide
 
+> ⚠️ **Status**: Backend ist bereits konfiguriert und läuft! (Stand: 2026-07-08)
+> Du musst nur noch die GitHub OAuth App erstellen und die Credentials eintragen.
+
 ## Übersicht
 
 Dieses Dokument beschreibt, wie du GitHub OAuth Login in Sovereign Studio einrichtest.
+
+## Bereits erledigt ✅
+
+- ✅ Backend Endpoint `/api/auth/github` implementiert
+- ✅ DB Migration für `github_id`, `github_username`, `github_access_token` Spalten
+- ✅ Frontend `loginWithGitHub()` Funktion
+- ✅ LoginModal mit GitHub Button
+- ✅ Environment Variable: `VITE_GITHUB_OAUTH_CLIENT_ID` (noch nicht gesetzt)
 
 ## Architektur
 
@@ -16,7 +27,7 @@ Dieses Dokument beschreibt, wie du GitHub OAuth Login in Sovereign Studio einric
       & Code empfangen       & User-Login            & User erstellen
 ```
 
-## Schritt 1: GitHub OAuth App erstellen
+## Schritt 1: GitHub OAuth App erstellen (NOCH OFFEN ⏳)
 
 1. Gehe zu: https://github.com/settings/applications/new
 2. Fülle die Felder aus:
@@ -31,9 +42,13 @@ Dieses Dokument beschreibt, wie du GitHub OAuth Login in Sovereign Studio einric
 4. Kopiere die **Client ID**
 5. Generiere einen **Client Secret** (falls noch nicht vorhanden)
 
-## Schritt 2: Frontend konfigurieren
+## Schritt 2: Client ID im Frontend setzen
 
-Füge in deiner `.env` Datei hinzu:
+> **Für AI Studio / Cloud Deployment:**
+> Setze die `VITE_GITHUB_OAUTH_CLIENT_ID` in den Secrets/Environment Variables deines Deployments.
+
+> **Für lokale Entwicklung:**
+> Füge in deiner `.env` Datei hinzu:
 
 ```env
 # GitHub OAuth (für Login)
@@ -53,67 +68,34 @@ VITE_GITHUB_OAUTH_CLIENT_ID=dein_github_client_id
 
 > ⚠️ **Achtung**: Der `repo` Scope gibt LESE- und SCHREIB-Zugriff auf ALLE Repositories des Users. Das ist für ein Tool, das Code generiert, durchaus sinnvoll.
 
-## Schritt 3: Backend implementieren
+## Schritt 3: Backend Secrets setzen
 
-Im Backend (sovereign-backend) muss folgender Endpoint implementiert werden:
+> ⚠️ **Bereits erledigt!** Der Endpoint `/api/auth/github` ist implementiert.
+> Du musst nur noch die Environment Variables im Backend setzen.
 
-### POST `/api/auth/github`
+### Auf dem Server (via SSH):
 
-**Request:**
-```json
-{
-  "code": "oauth_authorization_code_hier"
-}
+```bash
+# Auf dem VPS:
+docker exec sovereign-backend env
+# Prüfen ob GITHUB_CLIENT_ID und GITHUB_CLIENT_SECRET gesetzt sind
+
+# Falls nicht, in docker-compose.yml oder Container Environment setzen:
+docker exec sovereign-backend env GITHUB_CLIENT_ID=dein_client_id
+docker exec sovereign-backend env GITHUB_CLIENT_SECRET=dein_client_secret
 ```
 
-**Ablauf:**
-```javascript
-// 1. Code gegen Access Token tauschen
-const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-  method: 'POST',
-  headers: {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    client_id: GITHUB_CLIENT_ID,
-    client_secret: GITHUB_CLIENT_SECRET,
-    code: code
-  })
-});
+### Oder in Docker Compose (.env oder environment):
 
-const { access_token } = await tokenResponse.json();
-
-// 2. User-Info von GitHub holen
-const userResponse = await fetch('https://api.github.com/user', {
-  headers: {
-    'Authorization': `Bearer ${access_token}`,
-    'Accept': 'application/vnd.github+json'
-  }
-});
-const githubUser = await userResponse.json();
-
-// 3. User in DB erstellen/aktualisieren
-const user = await upsertUser({
-  githubId: githubUser.id.toString(),
-  githubUsername: githubUser.login,
-  githubAccessToken: access_token, // ⚠️ Sicher speichern!
-  email: githubUser.email || `${githubUser.login}@users.noreply.github.com`,
-  displayName: githubUser.name || githubUser.login,
-  avatarUrl: githubUser.avatar_url
-});
-
-// 4. Session erstellen & User zurückgeben
-return res.json(user);
+```yaml
+services:
+  sovereign-backend:
+    environment:
+      - GITHUB_CLIENT_ID=dein_client_id
+      - GITHUB_CLIENT_SECRET=dein_client_secret
 ```
 
-### GET `/api/auth/github/callback`
-
-Optional: Redirect-basierter Flow (falls Popup blockiert wird):
-
-```
-https://deine-backend-domain.de/api/auth/github/callback?code=xxx&state=yyy
-```
+Der Endpoint ist bereits implementiert in `backend_app.py`!
 
 ## Schritt 4: Security beachten
 
