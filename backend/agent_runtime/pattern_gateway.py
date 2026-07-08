@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
+import uuid
 from typing import Any, Literal
 
 from .contracts import normalize_agent_paths, sanitize_agent_text
@@ -60,7 +61,7 @@ def _contains_secret(*values: str | None) -> bool:
     return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
 
 
-def _safe_payload(input_value: PatternLearningInput, kind: PatternKind) -> dict[str, Any]:
+def _safe_payload(input_value: PatternLearningInput, kind: PatternKind | None) -> dict[str, Any]:
     return {
         "jobId": sanitize_agent_text(input_value.job_id, 120),
         "source": sanitize_agent_text(input_value.source, 80),
@@ -142,7 +143,7 @@ def evaluate_pattern_learning(input_value: PatternLearningInput) -> PatternLearn
         decision="blocked",
         kind=None,
         summary="Pattern learning blocked.",
-        payload={},
+        payload=_safe_payload(input_value, None),
         blockers=tuple(dict.fromkeys(blockers)),
         predictive_signal="agent_pattern_learning_blocked",
         remote_memory_allowed=False,
@@ -163,7 +164,7 @@ def pattern_learning_signal(result: PatternLearningResult) -> dict[str, Any]:
 
 
 def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: PatternLearningResult) -> None:
-    """Persist an accepted/blocked pattern gateway decision locally.
+    """Persist a pattern gateway decision locally.
 
     This is a local runtime record only. It is not a Remote Memory write.
     """
@@ -183,7 +184,7 @@ def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: Patte
             ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
             """,
             (
-                f"pattern-{sanitize_agent_text(result.payload.get('jobId', 'unknown'), 80)}-{result.decision}",
+                f"pattern-{uuid.uuid4().hex}",
                 user_id,
                 result.payload.get("jobId"),
                 result.decision,
