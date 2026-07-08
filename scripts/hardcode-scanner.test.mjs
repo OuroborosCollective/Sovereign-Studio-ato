@@ -9,7 +9,7 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 
 // Create test fixtures in a temp directory with a unique name
-const TEST_DIR_PREFIX = 'scan-test-fixtures-';
+const TEST_DIR_PREFIX = 'audit-fixtures-';
 let TEST_DIR = '';
 
 // Create test fixtures
