@@ -108,7 +108,7 @@ test.describe('GitHub OAuth Token Security', () => {
     // NOTE: Dieser Test erfordert echten Backend-Zugriff
     // Für CI: Test in backend/tests/test_github_oauth_security.py
     
-    test.skip('Nur für Backend Contract Tests relevant - lokaler Test nicht möglich');
+    test.skip(true, 'Nur für Backend Contract Tests relevant - lokaler Test nicht möglich');
   });
 
   test('Login mit GitHub zeigt正确 User-Info ohne Token', async ({ page }) => {
