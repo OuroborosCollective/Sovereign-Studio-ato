@@ -1,0 +1,169 @@
+import { describe, expect, it, vi } from 'vitest';
+import { applyGitPatch, validateGitPatchRequest } from './gitPatchApplier';
+
+describe('gitPatchApplier - validateGitPatchRequest', () => {
+  const validRequest = {
+    repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+    branch: 'feature-branch',
+    filePath: 'src/test.ts',
+    blocks: [{ search: 'old', replace: 'new' }],
+    commitMessage: 'Update test.ts',
+    token: 'fake-token',
+  };
+
+  it('validates a correct request', () => {
+    const report = validateGitPatchRequest(validRequest);
+    expect(report.valid).toBe(true);
+    expect(report.errors).toHaveLength(0);
+  });
+
+  it('rejects repositories not in allowlist', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      repoUrl: 'https://github.com/other/repo',
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('Repo not in allowlist');
+  });
+
+  it('rejects protected branches', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      branch: 'main',
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('is protected');
+  });
+
+  it('rejects invalid file paths', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      filePath: '../outside.ts',
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('Invalid filePath');
+  });
+
+  it('rejects empty blocks', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      blocks: [],
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('At least one patch block is required');
+  });
+
+  it('detects secret-like content in blocks', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      blocks: [{ search: 'old', replace: 'Authorization: Bearer secret-token' }],
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('secret-like content detected');
+  });
+});
+
+describe('gitPatchApplier - applyGitPatch', () => {
+  const mockToken = 'ghp_mock_token';
+  const mockRepo = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
+  const mockBranch = 'feature-fix';
+  const mockFilePath = 'src/app.ts';
+  const mockContent = 'export const VERSION = "1.0.0";\nexport const APP_NAME = "Studio";';
+  
+  // Helper to create a mock fetch
+  const createMockFetch = (responses: Record<string, { status: number, body: any }>) => {
+    return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      const response = responses[url] || responses[url.split('?')[0]];
+      if (!response) return Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('Not Found') });
+      
+      return Promise.resolve({
+        ok: response.status >= 200 && response.status < 300,
+        status: response.status,
+        json: () => Promise.resolve(response.body),
+        text: () => Promise.resolve(JSON.stringify(response.body)),
+      });
+    });
+  };
+
+  it('successfully applies a patch in dryRun mode', async () => {
+    const mockFetch = createMockFetch({
+      'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/contents/src/app.ts': {
+        status: 200,
+        body: {
+          content: btoa(mockContent),
+          sha: 'old-sha',
+          encoding: 'base64',
+        },
+      },
+    });
+
+    const result = await applyGitPatch({
+      repoUrl: mockRepo,
+      branch: mockBranch,
+      filePath: mockFilePath,
+      blocks: [{ search: 'VERSION = "1.0.0"', replace: 'VERSION = "1.1.0"' }],
+      commitMessage: 'Bump version',
+      token: mockToken,
+      dryRun: true,
+      fetcher: mockFetch as any,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.appliedBlocks).toBe(1);
+    expect(result.newContent).toContain('VERSION = "1.1.0"');
+  });
+
+  it('fails when SHA mismatch occurs', async () => {
+    const mockFetch = createMockFetch({
+      'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/contents/src/app.ts': {
+        status: 200,
+        body: {
+          content: btoa(mockContent),
+          sha: 'actual-sha',
+          encoding: 'base64',
+        },
+      },
+    });
+
+    const result = await applyGitPatch({
+      repoUrl: mockRepo,
+      branch: mockBranch,
+      filePath: mockFilePath,
+      blocks: [{ search: 'VERSION', replace: 'VER' }],
+      commitMessage: 'Change',
+      token: mockToken,
+      expectedSha: 'expected-sha',
+      fetcher: mockFetch as any,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('SHA mismatch');
+  });
+
+  it('fails when search string is not found', async () => {
+    const mockFetch = createMockFetch({
+      'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/contents/src/app.ts': {
+        status: 200,
+        body: {
+          content: btoa(mockContent),
+          sha: 'sha',
+          encoding: 'base64',
+        },
+      },
+    });
+
+    const result = await applyGitPatch({
+      repoUrl: mockRepo,
+      branch: mockBranch,
+      filePath: mockFilePath,
+      blocks: [{ search: 'NON_EXISTENT', replace: 'NEW' }],
+      commitMessage: 'Change',
+      token: mockToken,
+      fetcher: mockFetch as any,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('search string found 0 times');
+  });
+});
