@@ -124,6 +124,11 @@ jobs:
       - name: Install Root Dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Create .env for GitHub OAuth
+        run: |
+          echo "VITE_GITHUB_OAUTH_CLIENT_ID=${{ secrets.VITE_GITHUB_OAUTH_CLIENT_ID }}" > .env
+          cat .env
+
       - name: Type Check
         run: pnpm run type-check
 
