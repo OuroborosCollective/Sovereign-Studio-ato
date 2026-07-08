@@ -260,12 +260,16 @@ class TestOAuthContractWithApp:
         stored_rows = []
 
         def fake_query(sql, params=(), one=False, write=False):
-            if sql.lstrip().upper().startswith("SELECT * FROM admin_users WHERE github_id"):
+            normalized_sql = " ".join(sql.upper().split())
+
+            if normalized_sql.startswith("SELECT * FROM ADMIN_USERS WHERE GITHUB_ID"):
                 return None
+
             if write:
                 stored_rows.append((sql, params))
                 return None
-            if sql.lstrip().upper().startswith("SELECT * FROM admin_users WHERE id"):
+
+            if normalized_sql.startswith("SELECT * FROM ADMIN_USERS WHERE ID"):
                 return {
                     "id": params[0],
                     "email": "octo@example.test",
@@ -309,8 +313,8 @@ class TestOAuthContractWithApp:
         assert token_payload["redirect_uri"] == "https://example.test/callback"
         assert stored_rows, "OAuth flow must write encrypted token to DB"
         inserted_params = stored_rows[0][1]
-        assert "encrypted-gho_live_token" in inserted_params
-        assert "gho_live_token" not in inserted_params
+        assert any(value == "encrypted-gho_live_token" for value in inserted_params)
+        assert all(value != "gho_live_token" for value in inserted_params)
         assert "github_access_token" not in response.get_json()
         assert "githubAccessToken" not in response.get_json()
 
