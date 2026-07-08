@@ -273,6 +273,23 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'draft_pr') {
+    // OpenHands can execute Draft PR without frontend GitHub PAT
+    // Use openhands if ready AND (has package OR github access is missing)
+    // When github access is missing, openhands backend handles the PAT via code_patch_plan
+    const githubMissing = blockers.includes('github_access_missing');
+    if (input.openhandsReady && (input.hasPackage || githubMissing)) {
+      // If GitHub access is missing, use code_patch_plan (openhands handles PAT)
+      // If GitHub access is ready, use draft_pr (standard flow)
+      const capability = githubMissing ? 'code_patch_plan' : 'draft_pr';
+      return {
+        route: 'openhands',
+        capability,
+        allowed: true,
+        reason: buildReason('openhands', capability),
+        nextAction: 'start_openhands',
+      };
+    }
+    // If no package, route to draft-pr-runtime for package generation
     if (!input.hasPackage) {
       return buildRecoverablePackageDecision('draft-pr-runtime', 'draft_pr');
     }
@@ -294,15 +311,6 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         reason: buildReason('draft-pr-runtime', 'draft_pr', 'github_access_validating'),
         blocker: 'github_access_validating',
         nextAction: 'show_blocker',
-      };
-    }
-    if (input.openhandsReady) {
-      return {
-        route: 'openhands',
-        capability: 'draft_pr',
-        allowed: true,
-        reason: buildReason('openhands', 'draft_pr'),
-        nextAction: 'start_openhands',
       };
     }
     if (input.workspaceReady) {
