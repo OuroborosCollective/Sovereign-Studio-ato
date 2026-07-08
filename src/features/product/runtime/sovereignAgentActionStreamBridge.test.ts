@@ -37,6 +37,22 @@ describe('sovereignAgentActionStreamBridge', () => {
     expect(events[1]?.state).toBe('done');
   });
 
+  it('obeys an explicit blocked evidence gate even when raw evidence exists', () => {
+    const events = mapAgentToolToActionEvents('agent-2b', {
+      tool: 'git-status',
+      status: 'done',
+      changedFiles: ['README.md'],
+      evidenceGate: {
+        allowed: false,
+        summary: 'Diff required before result can continue.',
+      },
+    });
+
+    expect(events[1]?.kind).toBe('agent_result_blocked');
+    expect(events[1]?.state).toBe('blocked');
+    expect(events[1]?.detail).toContain('Diff required');
+  });
+
   it('maps blocked pattern gateway result without pretending remote memory wrote anything', () => {
     const event = mapAgentPatternToActionEvent('agent-3', {
       allowed: false,
