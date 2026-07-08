@@ -75,11 +75,12 @@ export function mapAgentToolToActionEvents(
     }),
   ];
 
+  const hasGate = Boolean(tool.evidenceGate);
   const gateAllowed = tool.evidenceGate?.allowed ?? tool.evidenceGate?.passed ?? false;
-  if (tool.evidenceGate || hasEvidence(tool)) {
+  if (hasGate || hasEvidence(tool)) {
     events.push(buildAgentEvidenceEvent({
       jobId,
-      allowed: gateAllowed || hasEvidence(tool),
+      allowed: hasGate ? gateAllowed : hasEvidence(tool),
       canPrepareDraftPr: tool.evidenceGate?.canPrepareDraftPr,
       detail: tool.evidenceGate?.summary ?? tool.evidenceGate?.reason ?? (hasEvidence(tool)
         ? 'Agent Tool lieferte Runtime-Evidence.'
