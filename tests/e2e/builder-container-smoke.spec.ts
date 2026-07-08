@@ -12,10 +12,13 @@
  */
 import { test, expect } from '@playwright/test';
 
+// Extended timeout for CI environments where dev server needs more time to start
+const EXTENDED_TIMEOUT = { timeout: 30000 };
+
 test.describe('BuilderContainer Smoke Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('[data-testid="chat-only-app"]')).toBeVisible();
+    await expect(page.locator('[data-testid="chat-only-app"]')).toBeVisible(EXTENDED_TIMEOUT);
   });
 
   test('1. App loads with BuilderContainer shell', async ({ page }) => {
