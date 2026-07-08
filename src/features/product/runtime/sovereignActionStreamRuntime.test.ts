@@ -177,6 +177,24 @@ describe('sovereignActionStreamRuntime hardening', () => {
     expect(twice.lastEvent?.detail).toBe('HTTP 500');
   });
 
+  it('does not mark allowed patch routes as done when no patch output exists', () => {
+    const stream = appendSovereignActionEvent(createSovereignActionStreamState(), {
+      kind: 'done',
+      route: 'github-patch',
+      label: 'Patch/Draft-PR Route geprüft',
+      detail: 'Route erlaubt; Patchplan wartet auf Zielpfad oder Executor.',
+      state: 'done',
+    });
+
+    expect(stream.lastEvent).toMatchObject({
+      kind: 'patch_blocked',
+      route: 'github-patch',
+      state: 'blocked',
+    });
+    expect(stream.lastEvent?.detail).toContain('Kein terminales Done');
+    expect(stream.activeRoute).toBeNull();
+  });
+
   it('can answer local status from an active blocker without another route call', async () => {
     const { buildLocalStatusAnswerFromActionStream } = await import('./sovereignActionStreamRuntime');
     const stream = appendSovereignActionEvent(
