@@ -305,3 +305,17 @@ Must use explicit origins list, not `origins="*"`:
 ```python
 CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
 ```
+
+---
+
+## 📚 Agent Knowledge Files
+
+For patterns, skills, and best practices discovered during development:
+
+| File | Purpose |
+|------|---------|
+| `AGENTS_KNOWLEDGE.md` | Today's learnings, debugging patterns, file templates |
+| `AGENTS_SKILLS.md` | Reusable skill patterns for common tasks |
+| `AGENTS_BEST_PRACTICES.md` | Guidelines and anti-patterns to avoid |
+
+**Quick Start:** Read `AGENTS_KNOWLEDGE.md` for the Redux Provider pattern (critical for tests)!
