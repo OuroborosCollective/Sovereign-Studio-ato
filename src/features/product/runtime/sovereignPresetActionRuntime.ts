@@ -188,7 +188,7 @@ export function buildSovereignPresetActionPrompt(
   const routeLine = `Preset-Route: ${action.route} · Risiko: ${action.risk}`;
   const gateParts = [
     `Repo geladen: ${context.repoReady ? 'ja' : 'nein'}`,
-    action.requiresGitHubWrite && !context.githubWriteReady
+    action.requiresGithubWrite && !context.githubWriteReady
       ? 'GitHub Write: wird vor Ausführung geprüft'
       : `GitHub Write: ${context.githubWriteReady ? 'ja' : 'nein'}`,
   ];
