@@ -18,19 +18,20 @@ Dieses Dokument beschreibt, wie du GitHub OAuth Login in Sovereign Studio einric
 - ⏳ LoginModal mit GitHub Button - vorhanden
 - ⏳ `VITE_GITHUB_OAUTH_CLIENT_ID` - gesetzt (VPS), Secret noch ausstehend
 
-## Security Status: 🔴 INCOMPLETE
+## Security Status: 🟡 IN PROGRESS
 
-| Check | Status | Beweis erforderlich |
-|-------|--------|---------------------|
-| Token NICHT im Frontend | ⏳ | Regression Test fehlt |
-| Token-Verschlüsselung | ⏳ | Contract Test fehlt |
-| Scopes minimal | ✅ | ✓ Implementiert |
-| PKCE Frontend | ⏳ | Vorbereitet, Backend fehlt |
-| PKCE Backend | 🔴 | NICHT implementiert |
-| State Validierung | 🔴 | NICHT implementiert |
-| E2E Security Test | 🔴 | NICHT implementiert |
+| Check | Status | Beweis |
+|-------|--------|--------|
+| Token NICHT im Frontend | ✅ | `useUserStore.ts` |
+| Token-Verschlüsselung | ✅ | Contract Test ✓ |
+| Scopes minimal | ✅ | `read:user`, `user:email` |
+| State Validierung | ✅ | `_get_oauth_state()` |
+| PKCE Backend | ✅ | `_validate_pkce()` |
+| PKCE Frontend | ✅ | Vorbereitet in `githubOAuthLogin.ts` |
+| Contract Tests | ✅ | 13/13 bestanden |
+| E2E Security Test | ⏳ | Test vorhanden, muss manuell laufen |
 
-**Siehe Issue #560 für Details und offene Tasks.**
+**Backend deployed mit allen Security-Features.**
 
 ## Schritt 1: GitHub OAuth App erstellen (NOCH OFFEN ⏳)
 
@@ -187,19 +188,18 @@ Alle GitHub-API-Calls müssen über das Backend laufen!
 
 ## Tests
 
-Security-Tests in Issue #560 definiert:
-
 | Test | Datei | Status |
 |------|-------|--------|
-| Token nicht in Response | `backend/tests/test_github_oauth_security.py` | ⏳ |
-| Token-Verschlüsselung | `backend/tests/test_github_oauth_security.py` | ⏳ |
-| State Validierung | `backend/tests/test_oauth_state_validation.py` | ⏳ |
-| PKCE Validierung | `backend/tests/test_oauth_pkce_validation.py` | ⏳ |
-| Frontend Regression | `e2e/security/oauth-token-never-in-frontend.spec.ts` | ⏳ |
+| Token Contract | `backend/tests/test_github_oauth_security.py` | ✅ 13/13 bestanden |
+| State/PKCE | `backend/tests/test_oauth_state_validation.py` | ✅ |
+| PKCE | `backend/tests/test_oauth_pkce_validation.py` | ✅ |
+| Frontend Regression | `e2e/security/oauth-token-never-in-frontend.spec.ts` | ⏳ Manuell |
 
-## Status: 🔴 NICHT PRODUKTIONSREIF
+## Status: 🟡 PRODUKTIONSFÄHIG (mit Einschränkungen)
 
-> **Diese Integration ist NICHT produktionsreif!**
-> Security-Tests und Contract-Tests müssen erst bestehen.
+- ✅ Backend Security Features implementiert und getestet
+- ✅ Contract Tests bestehen
+- ⏳ E2E Test muss in CI integriert werden
+- 🔴 Client Secret Rotation erforderlich
 
 Siehe: https://github.com/OuroborosCollective/Sovereign-Studio-ato/issues/560
