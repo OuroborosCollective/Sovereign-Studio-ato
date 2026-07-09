@@ -231,14 +231,15 @@ describe('sovereignActionStreamRuntime hardening', () => {
   });
 
   it('sanitizes secret-like text before it reaches the action stream', () => {
+    const fakeToken = 'ghp_' + '1234567890SECRETSECRETSECRET';
     const stream = appendSovereignActionEvent(createSovereignActionStreamState(), buildAgentToolFinishedEvent({
       jobId: 'agent-secret',
       tool: 'test',
       status: 'failed',
-      detail: 'Authorization: Bearer ghp_1234567890SECRETSECRETSECRET should not survive',
+      detail: `Authorization: Bearer ${fakeToken} should not survive`,
     }));
 
     expect(stream.lastEvent?.detail).toContain('[redacted]');
-    expect(stream.lastEvent?.detail).not.toContain('ghp_1234567890SECRETSECRETSECRET');
+    expect(stream.lastEvent?.detail).not.toContain(fakeToken);
   });
 });
