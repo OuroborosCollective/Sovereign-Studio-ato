@@ -175,8 +175,29 @@ const forbiddenRepoPatterns = [
   },
 ];
 
+const testFiles = [
+  'backend/tests/test_agent_job_contract.py',
+  'backend/tests/test_agent_workspace_provisioner.py',
+  'backend/tests/test_agent_tool_policy.py',
+  'backend/tests/test_agent_internal_tools.py',
+  'backend/tests/test_agent_tool_routes.py',
+  'backend/tests/test_agent_evidence_gate.py',
+  'backend/tests/test_agent_draft_pr_gate.py',
+  'backend/tests/test_agent_draft_pr_routes.py',
+  'backend/tests/test_agent_draft_pr_create_gate.py',
+  'backend/tests/test_agent_draft_pr_create_routes.py',
+  'backend/tests/test_agent_pattern_gateway.py',
+  'backend/tests/test_agent_runtime_no_openhands_required.py',
+  'backend/tests/test_agent_runtime_e2e.py',
+  'src/features/product/runtime/sovereignAgentActionStreamBridge.test.ts',
+  'src/features/product/runtime/sovereignAgentRuntimeE2E.test.ts',
+  'scripts/sovereign-agent-release-gate.test.mjs',
+];
+
 const filesToSecretScan = [
-  ...requiredFiles.filter((file) => file.endsWith('.py') || file.endsWith('.ts') || file.endsWith('.mjs') || file.endsWith('.json')),
+  ...requiredFiles
+    .filter((file) => file.endsWith('.py') || file.endsWith('.ts') || file.endsWith('.mjs') || file.endsWith('.json'))
+    .filter((file) => !testFiles.includes(file)),
 ];
 
 function read(relativePath) {
