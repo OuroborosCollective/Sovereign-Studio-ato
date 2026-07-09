@@ -2416,6 +2416,7 @@ export function BuilderContainer({
     useState<WorkerRuntimeBlocker | null>(null);
   const [lastWorkerRequestMessage, setLastWorkerRequestMessage] = useState<string | null>(null);
   const [patchPreviewReady, setPatchPreviewReady] = useState(false);
+  const [patchConfirmed, setPatchConfirmed] = useState(false);
   const [lastAnswerWasLocal, setLastAnswerWasLocal] = useState(false);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
@@ -2551,6 +2552,11 @@ export function BuilderContainer({
       }
       if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready') {
         snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
+        // Patch wurde committed → Vorschau-State auf "bestätigt" wechseln
+        if (patchPreviewReady) {
+          setPatchPreviewReady(false);
+          setPatchConfirmed(true);
+        }
       }
       if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
         snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
@@ -3285,6 +3291,7 @@ export function BuilderContainer({
         draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
         hasPatch: Boolean(openhandsJob?.changedFiles?.length),
         patchPreviewReady,
+        patchConfirmed,
         hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
         workerBlocker,
         buildWorkerBlockerAnswer: workerBlocker
@@ -3505,6 +3512,7 @@ export function BuilderContainer({
           draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
           hasPatch: Boolean(openhandsJob?.changedFiles?.length),
           patchPreviewReady,
+          patchConfirmed,
           hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
           workerBlocker,
           buildWorkerBlockerAnswer: workerBlocker
@@ -3715,6 +3723,7 @@ Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' :
               });
               
               setPatchPreviewReady(true);
+              setPatchConfirmed(false);
               setLastAnswerWasLocal(true);
               addLog('info', 'Write intent routed through Direct GitHub Patch Route with diff preview', 'router');
               return;
@@ -3963,6 +3972,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
     appendActionEvent(buildWorkerRequestEvent(d.modelLabel));
 
     setLastAnswerWasLocal(false);
+    setPatchConfirmed(false);
     setLastWorkerRequestMessage(submittedText);
     setChatResponseBusy(true);
     setStreamingText("");
@@ -4615,6 +4625,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                                 text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                               });
                               setPatchPreviewReady(true);
+                              setPatchConfirmed(false);
                               setLastAnswerWasLocal(true);
                             }
                           });
@@ -4871,6 +4882,9 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                             role: 'assistant',
                             text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                           });
+                          setPatchPreviewReady(true);
+                          setPatchConfirmed(false);
+                          setLastAnswerWasLocal(true);
                           addLog('info', 'Pending write intent resumed through Direct GitHub Patch Route', 'router');
                           return;
                         }

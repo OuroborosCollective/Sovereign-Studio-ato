@@ -157,6 +157,8 @@ export interface LocalStatusAnswerArgs {
   readonly hasPatch: boolean;
   /** True when a Direct GitHub Patch preview has been generated but not yet applied/committed */
   readonly patchPreviewReady?: boolean;
+  /** True when the patch preview was applied and the draft PR was created */
+  readonly patchConfirmed?: boolean;
   readonly hasWorkerResponse: boolean;
   readonly workerBlocker?: WorkerRuntimeBlocker | null;
   readonly buildWorkerBlockerAnswer?: () => string;
@@ -187,6 +189,10 @@ export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
   }
   if (args.hasPatch) {
     return "Ja, ein Patch/Diff wurde erzeugt und angewendet. Draft PR steht noch aus.";
+  }
+  // Patch was previewed AND then confirmed/applied → draft PR was created
+  if (args.patchConfirmed) {
+    return "Ja, der Patch wurde bestätigt und angewendet. Der Draft PR wurde erstellt.";
   }
   // Fix: Direct GitHub Patch preview generated but not yet applied/committed
   if (args.patchPreviewReady) {
