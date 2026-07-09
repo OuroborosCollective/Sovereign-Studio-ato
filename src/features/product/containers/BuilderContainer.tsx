@@ -3813,6 +3813,23 @@ Es wurde noch keine Datei geändert. Nächste Aktion: Zielpfad präzisieren oder
               addLog('info', 'Write intent bridge allowed; direct patch not available: ' + directPatchResult.capability.reason, 'router');
               return;
             }
+
+            // Runtime-Truth: Handle Direct Patch failure (result.ok === false)
+            if ('result' in directPatchResult && !directPatchResult.result.ok) {
+              appendActionEvent({
+                kind: 'failed',
+                route: 'direct-github-patch',
+                label: 'Direct Patch fehlgeschlagen',
+                detail: directPatchResult.result.reason,
+                state: 'failed',
+              });
+              appendChatLine({
+                role: 'assistant',
+                text: `Direct GitHub Patch fehlgeschlagen: ${directPatchResult.result.reason}`,
+              });
+              addLog('error', 'Direct patch failed: ' + directPatchResult.result.reason, 'router');
+              return;
+            }
           }
 
           appendActionEvent({
@@ -5045,6 +5062,23 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                             text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nOpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.`,
                           });
                           addLog('warn', 'Pending write intent direct patch unavailable: ' + directPatchResult.capability.reason, 'router');
+                          return;
+                        }
+
+                        // Runtime-Truth: Handle Direct Patch failure (result.ok === false)
+                        if ('result' in directPatchResult && !directPatchResult.result.ok) {
+                          appendActionEvent({
+                            kind: 'failed',
+                            route: 'direct-github-patch',
+                            label: 'Direct Patch fehlgeschlagen',
+                            detail: directPatchResult.result.reason,
+                            state: 'failed',
+                          });
+                          appendChatLine({
+                            role: 'assistant',
+                            text: `Direct GitHub Patch fehlgeschlagen: ${directPatchResult.result.reason}`,
+                          });
+                          addLog('error', 'Pending write intent direct patch failed: ' + directPatchResult.result.reason, 'router');
                           return;
                         }
                       }
