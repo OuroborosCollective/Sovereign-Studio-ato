@@ -216,7 +216,7 @@ function checkPackageScripts(blockers) {
     'test:agent-runtime:frontend': 'vitest run',
     'test:agent-release-gate': 'node --test scripts/sovereign-agent-release-gate.test.mjs',
     'release:agent-gate': 'node scripts/sovereign-agent-release-gate.mjs',
-    'release:agent-check': 'pnpm run release:agent-gate && pnpm run test:agent-runtime && pnpm run test:agent-runtime:frontend',
+    'release:agent-check': 'pnpm run release:agent-gate && pnpm run test:agent-release-gate && pnpm run test:agent-runtime && pnpm run test:agent-runtime:frontend',
   };
   for (const [name, fragment] of Object.entries(expected)) {
     if (!scripts[name]) {
