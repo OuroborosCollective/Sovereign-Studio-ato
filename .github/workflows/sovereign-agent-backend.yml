@@ -92,7 +92,7 @@ jobs:
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.VPS_PASS }}
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
     steps:
       - name: Checkout Repository
@@ -100,7 +100,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Validate deploy secrets
+      - name: Validate deploy parameters
         run: |
           set -euo pipefail
           if [ -z "${VPS_HOST:-}" ]; then
@@ -111,8 +111,8 @@ jobs:
             echo "VPS_USER secret is not configured." >&2
             exit 1
           fi
-          if [ -z "${VPS_SSH_KEY:-}" ]; then
-            echo "VPS_SSH_KEY secret is not configured." >&2
+          if [ -z "${VPS_PASSWORD:-}" ]; then
+            echo "VPS password secret is not configured. Expected VPS_PASSWORD, VPS_PW, or VPS_PASS." >&2
             exit 1
           fi
           if ! [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]; then
@@ -131,7 +131,7 @@ jobs:
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
-          key: ${{ env.VPS_SSH_KEY }}
+          password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           source: "sovereign-backend.tar.gz"
           target: "/tmp"
@@ -142,8 +142,9 @@ jobs:
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
-          key: ${{ env.VPS_SSH_KEY }}
+          password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
+          script_stop: true
           script: |
             set -euo pipefail
             tar -xzf /tmp/sovereign-backend.tar.gz -C /tmp/
@@ -168,8 +169,9 @@ jobs:
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
-          key: ${{ env.VPS_SSH_KEY }}
+          password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
+          script_stop: true
           script: |
             docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
 
