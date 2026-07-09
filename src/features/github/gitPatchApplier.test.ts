@@ -26,10 +26,37 @@ describe('gitPatchApplier - validateGitPatchRequest', () => {
     expect(report.errors[0]).toContain('Repo not in allowlist');
   });
 
-  it('rejects protected branches', () => {
+  it('rejects protected branches: main', () => {
     const report = validateGitPatchRequest({
       ...validRequest,
       branch: 'main',
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('is protected');
+  });
+
+  it('rejects protected branches: master', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      branch: 'master',
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('is protected');
+  });
+
+  it('rejects protected branches: production', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      branch: 'production',
+    });
+    expect(report.valid).toBe(false);
+    expect(report.errors[0]).toContain('is protected');
+  });
+
+  it('rejects protected branches: release/*', () => {
+    const report = validateGitPatchRequest({
+      ...validRequest,
+      branch: 'release/v1.0.0',
     });
     expect(report.valid).toBe(false);
     expect(report.errors[0]).toContain('is protected');
@@ -165,5 +192,97 @@ describe('gitPatchApplier - applyGitPatch', () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain('search string found 0 times');
+  });
+
+  it('fails when search string matches multiple times', async () => {
+    // Content where "const shared" appears 3 times
+    const contentWithDuplicates = 'const shared = 1;\nconst shared = 2;\nconst shared = 3;';
+    const mockFetch = createMockFetch({
+      'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/contents/src/app.ts': {
+        status: 200,
+        body: {
+          content: btoa(contentWithDuplicates),
+          sha: 'sha',
+          encoding: 'base64',
+        },
+      },
+    });
+
+    const result = await applyGitPatch({
+      repoUrl: mockRepo,
+      branch: mockBranch,
+      filePath: mockFilePath,
+      blocks: [{ search: 'const shared', replace: 'const renamed' }],
+      commitMessage: 'Change',
+      token: mockToken,
+      fetcher: mockFetch as any,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('found 3 times');
+  });
+
+  it('dryRun mode does not make PUT request', async () => {
+    let putWasCalled = false;
+    const mockFetch = createMockFetch({
+      'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/contents/src/app.ts': {
+        status: 200,
+        body: {
+          content: btoa(mockContent),
+          sha: 'old-sha',
+          encoding: 'base64',
+        },
+      },
+    });
+
+    // Wrap the fetch to track PUT calls
+    const trackingFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        putWasCalled = true;
+      }
+      return mockFetch(url, init);
+    });
+
+    const result = await applyGitPatch({
+      repoUrl: mockRepo,
+      branch: mockBranch,
+      filePath: mockFilePath,
+      blocks: [{ search: 'VERSION = "1.0.0"', replace: 'VERSION = "1.1.0"' }],
+      commitMessage: 'Bump version',
+      token: mockToken,
+      dryRun: true,
+      fetcher: trackingFetch as any,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.newContent).toBeDefined();
+    expect(result.commitSha).toBeUndefined();
+    expect(putWasCalled).toBe(false);
+  });
+
+  it('masks GitHub tokens in error messages', async () => {
+    const mockFetch = createMockFetch({
+      'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/contents/src/app.ts': {
+        status: 403,
+        body: {
+          message: 'Bad credentials - ghp_secretToken123456789',
+        },
+      },
+    });
+
+    const result = await applyGitPatch({
+      repoUrl: mockRepo,
+      branch: mockBranch,
+      filePath: mockFilePath,
+      blocks: [{ search: 'old', replace: 'new' }],
+      commitMessage: 'Change',
+      token: mockToken,
+      fetcher: mockFetch as any,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).not.toContain('ghp_secretToken123456789');
+    expect(result.error).toContain('ghp_****');
   });
 });
