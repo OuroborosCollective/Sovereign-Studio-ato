@@ -64,6 +64,7 @@ export type SovereignNextAction =
   | 'start_openhands'             // Start OpenHands executor
   | 'create_draft_pr'             // Create draft PR
   | 'show_blocker'                // Show blocker explanation
+  | 'answer_locally'              // Answer from existing runtime state without external route
   | 'create_agent_job'            // Explicitly create a backend Sovereign Agent Job
   | 'provision_agent_workspace'   // Provision agent workspace through backend state
   | 'run_agent_tool'              // Run a guarded backend agent tool
