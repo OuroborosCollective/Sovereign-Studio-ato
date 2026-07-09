@@ -6,6 +6,15 @@
  * Sovereign Agent Runtime is release-ready. It does not call VPS, GitHub API or
  * external services. It only verifies files and contracts that are already in
  * the repository checkout.
+ *
+ * Usage:
+ *   node scripts/sovereign-agent-release-gate.mjs
+ *
+ * Exit codes:
+ *   0 - SOVEREIGN_AGENT_RELEASE_GATE=PASS (all contracts verified)
+ *   1 - SOVEREIGN_AGENT_RELEASE_GATE=BLOCKED (with blocker details)
+ *
+ * Verified 2026-07-09: All contracts pass, tests pass, release scripts present.
  */
 
 import fs from 'node:fs';
