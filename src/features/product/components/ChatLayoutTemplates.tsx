@@ -39,19 +39,19 @@ export const CHAT_LAYOUTS: ChatLayoutConfig[] = [
   {
     id: 'terminal',
     label: 'Terminal',
-    description: 'Minimal, befehlsorientiert',
+    description: 'Minimal, command-oriented',
     icon: <Terminal size={14} />,
   },
   {
     id: 'floating',
     label: 'Floating',
-    description: 'Klassischer Chat mit Blasen',
+    description: 'Classic chat with bubbles',
     icon: <Layout size={14} />,
   },
   {
     id: 'split-view',
     label: 'Split-View',
-    description: 'Chat + Code nebeneinander',
+    description: 'Chat + Code side-by-side',
     icon: <Columns size={14} />,
   },
 ];
@@ -129,12 +129,14 @@ const TerminalChatLayout: React.FC<{
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
           className="flex-1 bg-transparent border-0 text-slate-200 font-mono text-sm outline-none placeholder-slate-600"
-          placeholder="Befehl eingeben..."
+          placeholder="Enter command..."
         />
         <button
           type="submit"
           disabled={!canSubmit}
           className="text-cyan-400 disabled:opacity-30"
+          aria-label="Send"
+          title="Send"
         >
           <Send size={16} />
         </button>
@@ -166,7 +168,12 @@ const FloatingChatLayout: React.FC<{
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      const node = messagesEndRef.current;
+      if (typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
   }, [messages, isAnalyzing]);
 
   useEffect(() => {
@@ -325,6 +332,8 @@ const FloatingChatLayout: React.FC<{
                 type="button"
                 onClick={() => onInputChange('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                aria-label="Clear input"
+                title="Clear input"
               >
                 <CircleX size={16} />
               </button>
@@ -334,6 +343,8 @@ const FloatingChatLayout: React.FC<{
             type="submit"
             disabled={!canSubmit}
             className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30"
+            aria-label="Send"
+            title="Send"
           >
             <Send size={18} />
           </button>
@@ -362,7 +373,12 @@ const SplitViewLayout: React.FC<{
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      const node = messagesEndRef.current;
+      if (typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
   }, [messages, isAnalyzing]);
 
   return (
@@ -395,7 +411,13 @@ const SplitViewLayout: React.FC<{
               className="flex-1 px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-lg text-sm text-slate-200 outline-none focus:border-cyan-500/50"
               placeholder="Type a message..."
             />
-            <button type="submit" disabled={!canSubmit} className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30">
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30"
+              aria-label="Send"
+              title="Send"
+            >
               <Send size={16} />
             </button>
           </div>
@@ -505,6 +527,7 @@ export const ChatLayoutTemplates: React.FC<ChatLayoutTemplatesProps> = ({
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                 : 'bg-slate-800/50 text-slate-400 border border-transparent hover:bg-slate-700/50'
             }`}
+            aria-label={l.label}
             title={l.description}
           >
             {l.icon}
