@@ -31,6 +31,7 @@
     "test:integration": "vitest run src/features/product/components/ChatSidebar.test.tsx src/features/product/hooks/useProductMagic.sequential.test.ts src/features/product/runtime/sequentialRuntimeGuard.test.ts src/features/product/runtime/agentWorkRuntime.test.ts src/features/product/runtime/agentWorkspaceRuntime.test.ts",
     "test:agent-runtime": "python -m pytest backend/tests/test_agent_runtime_no_openhands_required.py backend/tests/test_agent_runtime_e2e.py -v",
     "test:agent-runtime:frontend": "vitest run src/features/product/runtime/sovereignAgentRuntimeE2E.test.ts src/features/product/runtime/sovereignAgentActionStreamBridge.test.ts src/features/product/runtime/sovereignPredictiveRuntimePolicy.test.ts src/features/product/runtime/sovereignPredictiveActionRuntime.test.ts src/features/product/runtime/sovereignActionStreamRuntime.test.ts",
+    "test:agent-release-gate": "node --test scripts/sovereign-agent-release-gate.test.mjs",
     "release:agent-gate": "node scripts/sovereign-agent-release-gate.mjs",
     "release:agent-check": "pnpm run release:agent-gate && pnpm run test:agent-runtime && pnpm run test:agent-runtime:frontend",
     "test:artifact-smoke": "node scripts/sovereign-artifact-smoke.mjs",
