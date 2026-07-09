@@ -29,6 +29,8 @@ describe('sovereignExecutorBridgeRuntime', () => {
     expect(decision.bridgeRoute).toBe('executor_runtime');
     expect(decision.state).toBe('allowed');
     expect(decision.nextAction).toBe('run_direct_patch');
+    expect(decision.executorRoute).toBe('direct_patch');
+    expect(decision.executorActionRoute).toBe('direct-github-patch');
   });
 
   it('does not bypass missing GitHub write access', () => {

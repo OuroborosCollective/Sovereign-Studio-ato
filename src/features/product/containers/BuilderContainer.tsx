@@ -4530,9 +4530,14 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                         }
                       }
 
-                      // Handle executor_runtime routes via the original decision structure
-                      // Cast back to the original decision structure for route handling
-                      const decision = bridgeDecision as unknown as { route: string; reason: string; event: ReturnType<typeof appendActionEvent> };
+                      // Handle executor_runtime routes from the bridge contract.
+                      // Do not cast the bridge decision: the bridge now exposes the original
+                      // executor route explicitly so allowed Direct Patch decisions cannot fall
+                      // through to the default blocker path.
+                      const decision = {
+                        route: bridgeDecision.executorRoute ?? 'blocked',
+                        reason: bridgeDecision.reason,
+                      };
 
                       switch (decision.route) {
                         case 'github_access':
@@ -4568,6 +4573,13 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                                 label: 'Direct GitHub Patch Route gewählt',
                                 detail: `Zieldatei: ${result.result.targetPath}`,
                                 state: 'running',
+                              });
+                              appendActionEvent({
+                                kind: 'done',
+                                route: 'direct-github-patch',
+                                label: 'Patch-Vorschau generiert',
+                                detail: result.result.patchSummary,
+                                state: 'done',
                               });
                               appendChatLine({
                                 role: 'assistant',
@@ -4816,6 +4828,13 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                             label: 'Direct GitHub Patch Route gewählt',
                             detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
                             state: 'running',
+                          });
+                          appendActionEvent({
+                            kind: 'done',
+                            route: 'direct-github-patch',
+                            label: 'Patch-Vorschau generiert',
+                            detail: directPatchResult.result.patchSummary,
+                            state: 'done',
                           });
                           appendChatLine({
                             role: 'assistant',
