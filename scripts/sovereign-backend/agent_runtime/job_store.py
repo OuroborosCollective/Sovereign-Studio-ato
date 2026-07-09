@@ -204,6 +204,14 @@ def update_agent_job_state(
     conn.commit()
 
 
+
+def _row_to_dict(row: tuple, columns: tuple) -> dict:
+    """Convert a tuple row to a dictionary using column names."""
+    if row is None:
+        return {}
+    return dict(zip(columns, row))
+
+
 def read_agent_job(conn: Any, *, user_id: str, job_id: str) -> StoredSovereignAgentJob | None:
     with conn.cursor() as cur:
         cur.execute(
@@ -215,7 +223,8 @@ def read_agent_job(conn: Any, *, user_id: str, job_id: str) -> StoredSovereignAg
             (user_id, job_id),
         )
         row = cur.fetchone()
-    return stored_job_from_row(row) if row else None
+        columns = tuple(d[0] for d in cur.description) if cur.description else ()
+    return stored_job_from_row(_row_to_dict(row, columns)) if row else None
 
 
 def list_agent_jobs(conn: Any, *, user_id: str, limit: int = 20) -> tuple[StoredSovereignAgentJob, ...]:
@@ -231,7 +240,24 @@ def list_agent_jobs(conn: Any, *, user_id: str, limit: int = 20) -> tuple[Stored
             (user_id, safe_limit),
         )
         rows = cur.fetchall()
-    return tuple(stored_job_from_row(row) for row in rows)
+        columns = tuple(d[0] for d in cur.description) if cur.description else ()
+    return tuple(stored_job_from_row(_row_to_dict(row, columns)) for row in rows)
+
+
+
+def mark_draft_pr_prepared(conn: Any, *, job_id: str, draft_pr_url: str) -> None:
+    """Mark a job as having draft PR prepared."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE sovereign_agent_jobs
+            SET draft_pr_url = %s,
+                draft_pr_only = FALSE
+            WHERE job_id = %s
+            """,
+            (draft_pr_url, job_id),
+        )
+    conn.commit()
 
 
 def result_from_stored_job(job: StoredSovereignAgentJob) -> SovereignAgentJobResult:

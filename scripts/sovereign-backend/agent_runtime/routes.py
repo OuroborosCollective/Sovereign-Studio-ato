@@ -15,8 +15,13 @@ from typing import Any, Callable
 from flask import jsonify, request
 
 from .contracts import normalize_agent_job_result
+from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
+from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .job_lifecycle import create_sovereign_agent_job
-from .job_store import list_agent_jobs, read_agent_job, result_from_stored_job, update_agent_job_state
+from .job_store import list_agent_jobs, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .tool_events import append_tool_result_to_job, predictive_tool_signal
+from .tool_runner import run_agent_job_tool
+from .tools.base import ToolResult
 from .workspace import cleanup_agent_workspace
 
 
@@ -39,6 +44,10 @@ def _job_to_api(job) -> dict[str, Any]:
         "workspaceId": job.workspace_id,
         "externalRef": job.external_ref,
         "draftPrUrl": job.draft_pr_url,
+        "draftPrReady": getattr(job, "draft_pr_ready", False),
+        "draftPrHeadBranch": getattr(job, "draft_pr_head_branch", None),
+        "draftPrBaseBranch": getattr(job, "draft_pr_base_branch", None),
+        "draftPrTitle": getattr(job, "draft_pr_title", None),
         "changedFiles": list(job.changed_files),
         "diffSummary": job.diff_summary,
         "testSummary": job.test_summary,
@@ -64,6 +73,41 @@ def _result_to_api(result) -> dict[str, Any]:
     }
 
 
+def _merge_job_evidence(job, result: ToolResult) -> ToolResult:
+    return ToolResult(
+        tool=result.tool,
+        allowed=result.allowed,
+        status=result.status,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        changed_files=result.changed_files or job.changed_files,
+        diff_summary=result.diff_summary or job.diff_summary,
+        test_summary=result.test_summary or job.test_summary,
+        blocker=result.blocker,
+        exit_code=result.exit_code,
+        events=result.events,
+        predictive_signal=result.predictive_signal,
+    )
+
+
+def _tool_result_to_api(result: ToolResult, gate: EvidenceGateResult | None = None) -> dict[str, Any]:
+    return {
+        "tool": result.tool,
+        "allowed": result.allowed,
+        "status": result.status,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "changedFiles": list(result.changed_files),
+        "diffSummary": result.diff_summary,
+        "testSummary": result.test_summary,
+        "blocker": result.blocker,
+        "exitCode": result.exit_code,
+        "events": [asdict(event) for event in result.events],
+        "predictiveSignal": predictive_tool_signal(result, gate),
+        "evidenceGate": evidence_gate_signal(gate) if gate else None,
+    }
+
+
 def _workspace_root() -> Path | None:
     configured = os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "").strip()
     return Path(configured) if configured else None
@@ -78,10 +122,43 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - GET  /api/user/agent/jobs/<job_id>
     - POST /api/user/agent/jobs/<job_id>/cancel
     - POST /api/user/agent/jobs/<job_id>/cleanup
+    - POST /api/user/agent/jobs/<job_id>/tools/file
+    - POST /api/user/agent/jobs/<job_id>/tools/git-status
+    - POST /api/user/agent/jobs/<job_id>/tools/diff
+    - POST /api/user/agent/jobs/<job_id>/tools/test
+    - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
     """
 
     def _connection():
         return get_connection()
+
+    def _close(conn) -> None:
+        close = getattr(conn, "close", None)
+        if callable(close):
+            close()
+
+    def _read_owned_job(conn, user_id: str, job_id: str):
+        return read_agent_job(conn, user_id=user_id, job_id=job_id)
+
+    def _run_tool_route(job_id: str, action: str):
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True) or {}
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            result = run_agent_job_tool(job, action, body, _workspace_root())
+            evidence_result = _merge_job_evidence(job, result)
+            gate = append_tool_result_to_job(conn, job_id, evidence_result)
+            return jsonify({
+                "ok": result.status == "done" and gate.allowed,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "tool": _tool_result_to_api(evidence_result, gate),
+            }), 200 if result.status == "done" and gate.allowed else 400
+        finally:
+            _close(conn)
 
     @app.route("/api/user/agent/jobs", methods=["GET"])
     @require_session
@@ -101,9 +178,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "runtime": "sovereign-agent",
             })
         finally:
-            close = getattr(conn, "close", None)
-            if callable(close):
-                close()
+            _close(conn)
 
     @app.route("/api/user/agent/jobs", methods=["POST"])
     @require_session
@@ -129,9 +204,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "job": _result_to_api(lifecycle.result),
             }), status_code
         finally:
-            close = getattr(conn, "close", None)
-            if callable(close):
-                close()
+            _close(conn)
 
     @app.route("/api/user/agent/jobs/<job_id>", methods=["GET"])
     @require_session
@@ -139,14 +212,12 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         user_id = _current_session_user_id()
         conn = _connection()
         try:
-            job = read_agent_job(conn, user_id=user_id, job_id=job_id)
+            job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
         finally:
-            close = getattr(conn, "close", None)
-            if callable(close):
-                close()
+            _close(conn)
 
     @app.route("/api/user/agent/jobs/<job_id>/cancel", methods=["POST"])
     @require_session
@@ -154,7 +225,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         user_id = _current_session_user_id()
         conn = _connection()
         try:
-            job = read_agent_job(conn, user_id=user_id, job_id=job_id)
+            job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             if job.status in ("completed", "failed", "blocked", "cleaned"):
@@ -173,9 +244,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "blocker": "Cancelled by user.",
             })
         finally:
-            close = getattr(conn, "close", None)
-            if callable(close):
-                close()
+            _close(conn)
 
     @app.route("/api/user/agent/jobs/<job_id>/cleanup", methods=["POST"])
     @require_session
@@ -183,7 +252,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         user_id = _current_session_user_id()
         conn = _connection()
         try:
-            job = read_agent_job(conn, user_id=user_id, job_id=job_id)
+            job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             if job.status not in ("completed", "failed", "blocked", "cleaned"):
@@ -207,6 +276,53 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "events": [asdict(event) for event in cleanup.events],
             })
         finally:
-            close = getattr(conn, "close", None)
-            if callable(close):
-                close()
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/tools/file", methods=["POST"])
+    @require_session
+    def user_run_agent_file_tool(job_id: str):
+        return _run_tool_route(job_id, "file")
+
+    @app.route("/api/user/agent/jobs/<job_id>/tools/git-status", methods=["POST"])
+    @require_session
+    def user_run_agent_git_status_tool(job_id: str):
+        return _run_tool_route(job_id, "git-status")
+
+    @app.route("/api/user/agent/jobs/<job_id>/tools/diff", methods=["POST"])
+    @require_session
+    def user_run_agent_diff_tool(job_id: str):
+        return _run_tool_route(job_id, "diff")
+
+    @app.route("/api/user/agent/jobs/<job_id>/tools/test", methods=["POST"])
+    @require_session
+    def user_run_agent_test_tool(job_id: str):
+        return _run_tool_route(job_id, "test")
+
+    @app.route("/api/user/agent/jobs/<job_id>/draft-pr/prepare", methods=["POST"])
+    @require_session
+    def user_prepare_agent_draft_pr(job_id: str):
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True) or {}
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            preparation = prepare_draft_pr(draft_pr_input_from_job(job, head_branch=body.get("headBranch")))
+            if preparation.allowed:
+                mark_draft_pr_prepared(
+                    conn,
+                    job_id=job_id,
+                    head_branch=preparation.head_branch or "",
+                    base_branch=preparation.base_branch or "main",
+                    title=preparation.title or "Draft: Sovereign agent changes",
+                    body=preparation.body or "",
+                )
+            return jsonify({
+                "ok": preparation.allowed,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "draftPrPreparation": draft_pr_preparation_signal(preparation),
+            }), 200 if preparation.allowed else 400
+        finally:
+            _close(conn)

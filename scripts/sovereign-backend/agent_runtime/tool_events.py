@@ -196,3 +196,75 @@ class ToolEventLog:
     def to_dict_list(self) -> list[dict[str, Any]]:
         """Convert all events to dictionaries."""
         return [e.to_dict() for e in self._events]
+
+
+def append_tool_result_to_job(
+    conn: Any,
+    job_id: str,
+    tool_result: dict[str, Any],
+) -> None:
+    """Append tool result as event to a job.
+    
+    Args:
+        conn: Database connection
+        job_id: Job ID
+        tool_result: Tool result dict with 'ok', 'output', 'error', etc.
+    """
+    from .job_store import append_agent_event
+    event = ToolEvent(
+        stage="tool_result",
+        level="success" if tool_result.get("ok") else "error",
+        message=tool_result.get("output", tool_result.get("error", "")),
+        tool_name=tool_result.get("tool"),
+        metadata={"result": tool_result},
+    )
+    append_agent_event(conn, job_id, event)
+
+
+def evidence_gate_to_agent_event(evidence_result: Any) -> ToolEvent:  # EvidenceGateResult
+    """Convert evidence gate result to agent event."""
+    return ToolEvent(
+        stage="evidence_gate",
+        level="success" if evidence_result.passed else "error",
+        message=evidence_result.reason,
+        metadata={
+            "evidence_count": evidence_result.evidence_count,
+            "placeholder_count": evidence_result.placeholder_count,
+        },
+    )
+
+
+def predictive_tool_signal(tool_event: ToolEvent) -> dict:
+    """Convert tool event to predictive signal for telemetry."""
+    return {
+        "signal": f"tool_{tool_event.level}",
+        "tool_name": tool_event.tool_name,
+        "stage": tool_event.stage,
+        "message": tool_event.sanitize_message(),
+    }
+
+
+def tool_result_to_agent_events(
+    tool_result: dict[str, Any],
+) -> list[ToolEvent]:
+    """Convert tool result dict to agent events."""
+    events = []
+    
+    if tool_result.get("ok"):
+        events.append(ToolEvent(
+            stage="tool_completed",
+            level="success",
+            message=f"Tool '{tool_result.get('tool', 'unknown')}' completed",
+            tool_name=tool_result.get("tool"),
+            metadata={"output_preview": tool_result.get("output", "")[:200]},
+        ))
+    else:
+        events.append(ToolEvent(
+            stage="tool_failed",
+            level="error",
+            message=f"Tool '{tool_result.get('tool', 'unknown')}' failed: {tool_result.get('error', 'Unknown error')}",
+            tool_name=tool_result.get("tool"),
+            metadata={"error": tool_result.get("error", "")},
+        ))
+    
+    return events
