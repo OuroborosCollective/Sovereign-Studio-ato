@@ -65,8 +65,8 @@ describe('buildLocalStatusAnswer', () => {
     expect(buildLocalStatusAnswer({ ...base, hasPatch: true })).toMatch(/Patch\/Diff wurde erzeugt/);
   });
 
-  it('reports OpenHands still running', () => {
-    expect(buildLocalStatusAnswer({ ...base, openhandsRunning: true })).toMatch(/arbeitet noch/);
+  it('reports Sovereign Agent still running', () => {
+    expect(buildLocalStatusAnswer({ ...base, openhandsRunning: true })).toMatch(/Sovereign Agent arbeitet noch/);
   });
 
   it('reports missing GitHub access honestly instead of claiming done', () => {

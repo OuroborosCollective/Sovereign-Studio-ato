@@ -115,6 +115,66 @@ const CODE_RESULT_KINDS: ReadonlySet<SovereignActionKind> = new Set([
 
 const SECRET_PATTERN = /(?:github_pat_[A-Za-z0-9_]{10,}|gh[pousr]_[A-Za-z0-9_]{10,}|Authorization:\s*Bearer\s+[^\s]+|(?:token|password|secret|api[_-]?key)\s*[=:]\s*[^\s]+)/gi;
 
+const AGENT_JOB_QUEUED_STATUSES: ReadonlySet<string> = new Set([
+  'idle',
+  'queued',
+  'pending',
+]);
+
+const AGENT_JOB_RUNNING_STATUSES: ReadonlySet<string> = new Set([
+  'provisioning',
+  'workspace_created',
+  'cloning',
+  'running',
+  'validating',
+  'cancelling',
+]);
+
+const AGENT_JOB_BLOCKED_STATUSES: ReadonlySet<string> = new Set([
+  'blocked',
+  'cancelled',
+  'canceled',
+]);
+
+const AGENT_JOB_FAILED_STATUSES: ReadonlySet<string> = new Set([
+  'failed',
+  'error',
+  'timeout',
+]);
+
+function normalizeAgentJobStatus(status: string): string {
+  return status.trim().toLowerCase().replace(/_/g, '-');
+}
+
+function stateForAgentJobStatus(status: string): SovereignActionEventState {
+  const normalized = normalizeAgentJobStatus(status);
+  if (AGENT_JOB_QUEUED_STATUSES.has(normalized)) return 'queued';
+  if (AGENT_JOB_RUNNING_STATUSES.has(normalized)) return 'running';
+  if (AGENT_JOB_FAILED_STATUSES.has(normalized)) return 'failed';
+  if (AGENT_JOB_BLOCKED_STATUSES.has(normalized)) return 'blocked';
+  return 'done';
+}
+
+function labelForAgentJobStatus(status: string): string {
+  const state = stateForAgentJobStatus(status);
+  if (state === 'queued') return 'Agent Job wartet';
+  if (state === 'running') return 'Agent Job läuft';
+  if (state === 'failed') return 'Agent Job fehlgeschlagen';
+  if (state === 'blocked') return 'Agent Job blockiert';
+  if (normalizeAgentJobStatus(status) === 'cleaned') return 'Agent Workspace bereinigt';
+  return 'Agent Job Status geprüft';
+}
+
+function activeRouteStatusLabel(event: SovereignActionEvent): string {
+  if (event.state === 'queued') {
+    return `Status: ${event.route} wartet auf bestätigte Runtime-Evidence. Ich melde noch keinen laufenden Job.`;
+  }
+  if (event.state === 'running') {
+    return `Status: ${event.route} läuft. Ich warte auf ein echtes Ergebnis, bevor ich Erfolg melde.`;
+  }
+  return `Status: ${event.route} ist ${event.state}.`;
+}
+
 export function createSovereignActionStreamState(): SovereignActionStreamState {
   return {
     events: [],
@@ -293,8 +353,8 @@ export function buildLocalStatusAnswerFromActionStream(stream: SovereignActionSt
     ].filter(Boolean).join('\n');
   }
 
-  if (stream.activeRoute) {
-    return `Status: ${stream.activeRoute} läuft. Ich warte auf ein echtes Ergebnis, bevor ich Erfolg melde.`;
+  if (stream.activeRoute && stream.lastEvent) {
+    return activeRouteStatusLabel(stream.lastEvent);
   }
 
   const last = stream.lastEvent;
@@ -393,13 +453,14 @@ export function buildAgentJobCreatedEvent(args: {
   readonly status: string;
   readonly detail?: string;
 }): SovereignActionEventInput {
+  const state = stateForAgentJobStatus(args.status);
   return {
     kind: 'agent_job_created',
     route: 'agent-job',
-    label: 'Agent Job erstellt',
+    label: labelForAgentJobStatus(args.status),
     detail: args.detail ?? `Job ${args.jobId} Status: ${args.status}`,
     sourceId: args.jobId,
-    state: args.status === 'blocked' || args.status === 'failed' ? 'blocked' : 'done',
+    state,
   };
 }
 

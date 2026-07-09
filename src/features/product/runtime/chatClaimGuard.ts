@@ -8,7 +8,7 @@
  * - "PR erstellt" / "Draft PR bereit"  → draftPrUrl must exist
  * - "Branch erstellt"                  → branchName must exist
  * - "Commit erstellt"                  → commitSha must exist
- * - "Executor läuft" / "OpenHands…"   → jobId and executor state must exist
+ * - "Executor läuft" / "Sovereign Agent…" → jobId and executor state must exist
  */
 
 import type { AgentWorkSnapshot } from './agentWorkRuntime';
@@ -46,7 +46,7 @@ const CLAIM_PATTERNS: Array<{
     check: (s) => typeof s.commitSha === 'string' && s.commitSha.trim().length > 0,
   },
   {
-    pattern: /\b(executor läuft|openhands arbeitet|job läuft|job started)\b/i,
+    pattern: /\b(executor läuft|openhands arbeitet|sovereign agent arbeitet|sovereign agent läuft|job läuft|job started)\b/i,
     violation: 'executor_claimed_without_job',
     check: (s) =>
       typeof s.jobId === 'string' &&

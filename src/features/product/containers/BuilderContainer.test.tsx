@@ -266,7 +266,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("opens runtime source sheet with Cloudflare Worker as the standard LLM route", () => {
-    renderWithProviders(<BuilderContainer {...baseProps()} openhandsReady />);
+    renderWithProviders(<BuilderContainer {...baseProps()} openhandsReady onStartOpenHands={vi.fn()} />);
     const rtButton = screen.getByRole("button", { name: /RT.*Runtime Quelle/i });
     expect(rtButton).toHaveAttribute("title", "Runtime Quelle");
     fireEvent.click(rtButton);
@@ -403,14 +403,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getAllByText("Retry")[0]);
 
     await waitFor(() => expect(screen.getByText("Retry beantwortet.")).toBeDefined());
-    expect(screen.queryByText(/OpenHands für Code-Auftrag/i)).toBeNull();
+    expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
   });
 
   it("keeps OpenHands output as plain hints and not result cards", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} openhandsReady openhandsJob={{ status: "running", openHandsId: "conv_123", changedFiles: ["src/App.tsx"], events: [] }} />);
-    // AgentEventStream shows "OpenHands arbeitet…" when executor is active
-    expect(screen.getByText(/OpenHands arbeitet/i)).toBeDefined();
+    // AgentEventStream shows "Sovereign Agent arbeitet…" when executor is active
+    expect(screen.getByText(/Sovereign Agent arbeitet/i)).toBeDefined();
     // Changed-file count badge
     expect(screen.getByText(/1 Datei/)).toBeDefined();
     // No "Karten" label — no card-grid UI
@@ -580,7 +580,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText(/GitHub-Zugang öffnen/i)).toBeDefined();
   });
 
-  it("shows OpenHands started message on execution intent when executor is ready", async () => {
+  it("requests Sovereign Agent job start without claiming a confirmed running job", async () => {
     const props = { ...baseProps(), openhandsReady: true, onStartOpenHands: vi.fn() };
     renderWithProviders(<BuilderContainer {...props} />);
     fireEvent.change(chatField(), { target: { value: "Implementiere den mobilen Chat-Fix als Draft PR." } });
@@ -589,8 +589,28 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.getByText(/Ausführungsauftrag erkannt/i)).toBeDefined(),
     );
     await waitFor(() => expect(props.onStartOpenHands).toHaveBeenCalledOnce());
-    // Must mention executor starting and no-auto-merge
+    expect(screen.getByText(/Job-Start wurde angefragt/i)).toBeDefined();
+    expect(screen.queryByText(/Sovereign Agent Runtime wird gestartet/i)).toBeNull();
     expect(screen.getByText(/kein Auto-Merge/i)).toBeDefined();
+  });
+
+  it("reports a failed Sovereign Agent start as terminal runtime state", async () => {
+    const props = {
+      ...baseProps(),
+      openhandsReady: true,
+      onStartOpenHands: vi.fn(async () => {
+        throw new Error("Backend session missing");
+      }),
+    };
+    renderWithProviders(<BuilderContainer {...props} />);
+    fireEvent.change(chatField(), { target: { value: "Implementiere den mobilen Chat-Fix als Draft PR." } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(props.onStartOpenHands).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(screen.getByText(/Sovereign Agent Runtime konnte nicht gestartet werden/i)).toBeDefined(),
+    );
+    expect(screen.getByText(/Backend session missing/i)).toBeDefined();
+    expect(screen.queryByText(/Job-Start wurde angefragt; bestätigter Job-State/i)).toBeNull();
   });
 
   it("does not show OpenHands as mandatory blocker when executor is not ready", async () => {
@@ -620,7 +640,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "arbeitet er schon?" } });
     fireEvent.click(sendButton());
     await waitFor(() =>
-      expect(screen.getByText(/Ja, OpenHands läuft/i)).toBeDefined(),
+      expect(screen.getByText(/Ja, Sovereign Agent läuft/i)).toBeDefined(),
     );
     // Must NOT have called Worker for this status question
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);

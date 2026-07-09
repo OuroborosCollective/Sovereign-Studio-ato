@@ -213,8 +213,20 @@ describe('sovereignActionStreamRuntime hardening', () => {
   });
 
   it('records agent lifecycle events as checked runtime state', () => {
-    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+    const started = appendSovereignActionEvent(
+      createSovereignActionStreamState(),
       buildAgentJobCreatedEvent({ jobId: 'agent-1', status: 'provisioning' }),
+    );
+
+    expect(started.lastEvent).toMatchObject({
+      kind: 'agent_job_created',
+      route: 'agent-job',
+      state: 'running',
+    });
+    expect(started.lastEvent?.label).toBe('Agent Job läuft');
+    expect(started.activeRoute).toBe('agent-job');
+
+    const stream = appendSovereignActionEvents(started, [
       buildAgentToolFinishedEvent({ jobId: 'agent-1', tool: 'git-status', status: 'done', detail: 'README.md changed' }),
       buildAgentEvidenceEvent({ jobId: 'agent-1', allowed: true, canPrepareDraftPr: true }),
       buildAgentPatternCandidateEvent({ jobId: 'agent-1', allowed: true, kind: 'solution' }),
@@ -227,6 +239,38 @@ describe('sovereignActionStreamRuntime hardening', () => {
       'agent-pattern',
     ]);
     expect(stream.lastEvent?.kind).toBe('agent_pattern_candidate_ready');
+    expect(stream.activeRoute).toBeNull();
+  });
+
+  it('keeps queued agent jobs waiting instead of reporting work as running', async () => {
+    const { buildLocalStatusAnswerFromActionStream } = await import('./sovereignActionStreamRuntime');
+    const stream = appendSovereignActionEvent(
+      createSovereignActionStreamState(),
+      buildAgentJobCreatedEvent({ jobId: 'agent-queued', status: 'queued' }),
+    );
+
+    expect(stream.lastEvent).toMatchObject({
+      kind: 'agent_job_created',
+      route: 'agent-job',
+      state: 'queued',
+    });
+    expect(stream.activeRoute).toBe('agent-job');
+    expect(buildLocalStatusAnswerFromActionStream(stream)).toContain('wartet auf bestätigte Runtime-Evidence');
+    expect(buildLocalStatusAnswerFromActionStream(stream)).not.toContain('läuft');
+  });
+
+  it('keeps failed agent jobs as failed instead of downgrading them to generic blocked', () => {
+    const stream = appendSovereignActionEvent(
+      createSovereignActionStreamState(),
+      buildAgentJobCreatedEvent({ jobId: 'agent-failed', status: 'failed', detail: 'Backend returned 500' }),
+    );
+
+    expect(stream.lastEvent).toMatchObject({
+      kind: 'agent_job_created',
+      route: 'agent-job',
+      label: 'Agent Job fehlgeschlagen',
+      state: 'failed',
+    });
     expect(stream.activeRoute).toBeNull();
   });
 

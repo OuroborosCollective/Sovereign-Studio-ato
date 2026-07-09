@@ -77,6 +77,32 @@ describe('openhandsEnterpriseRuntime', () => {
     expect(config.reason).toContain('HTTPS');
   });
 
+
+
+  it('enables the internal Sovereign Agent backend without OpenHands flag when mode is explicit', () => {
+    const config = resolveOpenHandsEnterpriseConfig({
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://sovereign-backend.example',
+    });
+
+    expect(config.enabled).toBe(true);
+    expect(config.ready).toBe(true);
+    expect(config.deploymentMode).toBe('sovereign-agent-backend');
+    expect(config.reason).toContain('Sovereign Agent Backend');
+  });
+
+  it('builds requests for the sovereign local runner by default', () => {
+    const request = buildOpenHandsJobRequest({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      mission: 'Run internal agent path.',
+    });
+
+    expect(request.executor).toBe('sovereign-local-runner');
+    expect(request.provisionWorkspace).toBe(true);
+    expect(request.cloneRepo).toBe(true);
+  });
+
   it('builds draft-pr-only job requests', () => {
     const request = buildOpenHandsJobRequest({
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',

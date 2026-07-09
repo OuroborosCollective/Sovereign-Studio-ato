@@ -227,7 +227,7 @@ export interface BuilderContainerProps {
   openhandsJob?: OpenHandsJobSnapshot;
   openhandsJobStatus?: string;
   openhandsIsRunning?: boolean;
-  onStartOpenHands?: (mission: string) => void;
+  onStartOpenHands?: (mission: string) => void | Promise<void>;
   onCancelOpenHands?: () => void;
   /**
    * Traditional publish path — set by the parent to the PR URL returned by
@@ -2607,6 +2607,7 @@ export function BuilderContainer({
   const appendActionEvent = useCallback((event: SovereignActionEventInput) => {
     setActionStream((current) => appendSovereignActionEvent(current, event));
   }, []);
+  const sovereignAgentStartAvailable = Boolean(openhandsReady && onStartOpenHands);
 
   // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
   // derived purely from runtime state, never fabricated. Fronts the technical
@@ -2620,7 +2621,7 @@ export function BuilderContainer({
         openhandsJob,
         publishedPrUrl,
         githubState: githubAccessState.state,
-        openhandsConfigured: openhandsReady ?? false,
+        openhandsConfigured: sovereignAgentStartAvailable,
         patchRouteAvailable: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       }),
     [
@@ -2630,7 +2631,7 @@ export function BuilderContainer({
       openhandsJob,
       publishedPrUrl,
       githubAccessState.state,
-      openhandsReady,
+      sovereignAgentStartAvailable,
       githubWriteAllowed,
       chatRepoSnapshot,
     ],
@@ -2807,8 +2808,7 @@ export function BuilderContainer({
     localRepoLoading ||
     runtimeBusy ||
     Boolean(openhandsIsRunning) ||
-    !openhandsReady ||
-    !onStartOpenHands;
+    !sovereignAgentStartAvailable;
   const agentStatus = workerBlocker
     ? "error"
     : chatResponseBusy
@@ -2852,8 +2852,8 @@ export function BuilderContainer({
     },
     {
       id: "sovereign-agent-runtime",
-      label: openhandsReady ? "Sovereign Agent Runtime" : "Sovereign Agent offline",
-      tier: (openhandsReady
+      label: sovereignAgentStartAvailable ? "Sovereign Agent Runtime" : "Sovereign Agent offline",
+      tier: (sovereignAgentStartAvailable
         ? openhandsIsRunning
           ? "active"
           : "ready"
@@ -3055,7 +3055,7 @@ export function BuilderContainer({
           status: workerBlocker ? "fail" : "pass",
         },
         {
-          label: "OpenHands configured",
+          label: "Sovereign Agent configured",
           status: openhandsReady ? "pass" : "wait",
         },
         {
@@ -3159,7 +3159,7 @@ export function BuilderContainer({
   ]);
 
   // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
-  const startAgentFromText = (text: string) => {
+  const startAgentFromText = async (text: string): Promise<boolean> => {
     const clean = collapseRepeatedAnalyzedMission(
       buildAnalyzedMission({
         wish: text,
@@ -3168,7 +3168,49 @@ export function BuilderContainer({
       }),
     );
     emitMissionChange(clean);
-    onStartOpenHands?.(clean);
+
+    if (!onStartOpenHands) {
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'agent-job',
+        label: 'Sovereign Agent Start blockiert',
+        detail: 'Kein Start-Callback für die Sovereign Agent Runtime verdrahtet.',
+        kind: 'blocked',
+      }));
+      appendChatLine({
+        role: 'assistant',
+        text: 'Sovereign Agent Runtime kann nicht gestartet werden: Start-Callback ist nicht verdrahtet. Es wurde kein Job gestartet und keine Datei geändert.',
+      });
+      addLog('error', 'Sovereign Agent start blocked: missing onStartOpenHands callback', 'router');
+      return false;
+    }
+
+    appendActionEvent({
+      kind: 'agent_job_requested',
+      route: 'agent-job',
+      label: 'Sovereign Agent Job angefragt',
+      detail: 'Startanforderung wurde an die Runtime übergeben. Warte auf bestätigten Job-State.',
+      state: 'queued',
+    });
+
+    try {
+      await onStartOpenHands(clean);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Sovereign Agent Start fehlgeschlagen.';
+      appendActionEvent({
+        kind: 'failed',
+        route: 'agent-job',
+        label: 'Sovereign Agent Start fehlgeschlagen',
+        detail: message,
+        state: 'failed',
+      });
+      appendChatLine({
+        role: 'assistant',
+        text: `Sovereign Agent Runtime konnte nicht gestartet werden.\nGrund: ${message}\nEs wurde kein Job gestartet und keine Datei geändert.`,
+      });
+      addLog('error', `Sovereign Agent start failed: ${message}`, 'router');
+      return false;
+    }
   };
 
   const handleSubmit = async () => {
@@ -3711,7 +3753,7 @@ export function BuilderContainer({
             githubAccessState: githubAccessState.state,
             githubTokenPresent: Boolean(githubTokenRef.current),
             directPatchSupported: Boolean(chatRepoSnapshot),
-            openhandsConfigured: openhandsReady ?? false,
+            openhandsConfigured: sovereignAgentStartAvailable,
             workerAvailable: !workerBlocker,
             workspaceConfigured: false,
             draftPrSupported: true,
@@ -3729,7 +3771,7 @@ export function BuilderContainer({
           // Internal operator is available - show honest message, no fake patch
           appendChatLine({
             role: 'assistant',
-            text: `GitHub-Zugang ist bereit.\nOpenHands ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+            text: `GitHub-Zugang ist bereit.\nSovereign Agent Fallback ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
           });
           addLog('info', 'Write intent routed via Sovereign Internal Operator bridge', 'router');
           return;
@@ -3793,13 +3835,12 @@ Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' :
             }
 
             if ('capability' in directPatchResult && !directPatchResult.capability.available) {
-              appendActionEvent({
-                kind: 'done',
+              appendActionEvent(buildBlockedActionEvent({
                 route: 'github-patch',
-                label: 'Patch/Draft-PR Route geprüft',
+                label: 'Direct Patch nicht verfügbar',
                 detail: `Route erlaubt; Direct Patch noch nicht verfügbar: ${directPatchResult.capability.reason}`,
-                state: 'done',
-              });
+                kind: 'patch_blocked',
+              }));
               appendChatLine({
                 role: 'assistant',
                 text: `Schreibauftrag erkannt.
@@ -3862,19 +3903,14 @@ Es wurde noch keine Datei geändert.`,
         addLog('warn', 'Write intent blocked by bridge: ' + executorBridgeDecision.reason, 'router');
         return;
       }
-      appendActionEvent({
-        kind: 'executor_started',
-        route: 'openhands',
-        label: 'Executor startet Schreibauftrag',
-        detail: 'Ziel bleibt Draft PR, kein Auto-Merge.',
-        state: 'running',
-      });
-      appendChatLine({
-        role: 'assistant',
-        text: 'GitHub-Zugang ist bereit. Ich starte den Schreibauftrag als Patch/Draft-PR Route. Ergebnis bleibt Draft PR, kein Auto-Merge.',
-      });
       addLog('info', 'Write intent routed to patch/draft-pr executor after GitHub access gate', 'router');
-      startAgentFromText(submittedText);
+      const agentStartRequested = await startAgentFromText(submittedText);
+      if (agentStartRequested) {
+        appendChatLine({
+          role: 'assistant',
+          text: 'GitHub-Zugang ist bereit. Schreibauftrag wurde an die Sovereign Agent Runtime übergeben. Warte auf bestätigten Job-State. Ergebnis bleibt Draft PR, kein Auto-Merge.',
+        });
+      }
       return;
     }
 
@@ -3929,24 +3965,19 @@ Es wurde noch keine Datei geändert.`,
           detail: `Repo: ${_repo}`,
           state: 'done',
         });
-        appendActionEvent({
-          kind: 'executor_started',
-          route: 'runtime',
-          label: 'Sovereign Agent Runtime wird gestartet',
-          detail: `Repo: ${_repo}`,
-          state: 'running',
-        });
-        appendChatLine({
-          role: "assistant",
-          text: "Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Agent Runtime.\nErgebnis bleibt Draft PR, kein Auto-Merge.",
-        });
         setAgentWorkSnapshot((prev) =>
           prev.state === 'idle'
             ? transitionIntentDetected(prev, _repo, chatRepoSnapshot?.branch ?? 'main')
             : prev,
         );
         addLog('info', `Execution intent · type=${isDelegatedExecution ? 'delegated' : 'explicit'} · repo=${_repo}`, 'router');
-        startAgentFromText(submittedText);
+        const agentStartRequested = await startAgentFromText(submittedText);
+        if (agentStartRequested) {
+          appendChatLine({
+            role: "assistant",
+            text: "Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Agent Runtime.\nJob-Start wurde angefragt; bestätigter Job-State kommt aus der Runtime. Ergebnis bleibt Draft PR, kein Auto-Merge.",
+          });
+        }
         return;
       }
       // agentDisabled === true: Use Runtime Bridge to check Sovereign Internal Operator availability
@@ -3958,7 +3989,7 @@ Es wurde noch keine Datei geändert.`,
           githubAccessState: githubAccessState.state,
           githubTokenPresent: Boolean(githubTokenRef.current),
           directPatchSupported: Boolean(chatRepoSnapshot),
-          openhandsConfigured: openhandsReady ?? false,
+          openhandsConfigured: sovereignAgentStartAvailable,
           workerAvailable: !workerBlocker,
           workspaceConfigured: false,
           draftPrSupported: true,
@@ -3976,7 +4007,7 @@ Es wurde noch keine Datei geändert.`,
         // Internal operator is available - runtime handoff decision, no fake patch claimed
         appendChatLine({
           role: "assistant",
-          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nOpenHands bleibt optional und wird nicht als Pflicht-Executor behandelt.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereign Agent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
         });
         addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
@@ -3997,7 +4028,7 @@ Route gewählt: Patch/Draft-PR Runtime.
 
 ${executorBridgeDecision.reason}
 
-OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
+Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag belegen kann. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
         });
         addLog('info', `Execution intent allowed by bridge without mandatory OpenHands · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
@@ -4601,7 +4632,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                   githubAccessState: githubAccessState.state,
                   githubTokenPresent: Boolean(githubTokenRef.current),
                   directPatchSupported: Boolean(chatRepoSnapshot && githubWriteAllowed && githubTokenRef.current),
-                  openhandsConfigured: openhandsReady ?? false,
+                  openhandsConfigured: sovereignAgentStartAvailable,
                   workerAvailable: true,
                   workspaceConfigured: openhandsReady ?? false,
                   draftPrSupported: githubWriteAllowed,
@@ -4804,19 +4835,19 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                           break;
 
                         case 'openhands':
-                          // OpenHands route — ONLY with validated GitHub write
+                          // Sovereign Agent route — ONLY with validated GitHub write
                           if (!githubWriteAllowed) {
                             // Defensive: block and open access gate
                             appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
                             setShowGitHubAccessOverride(true);
                             appendChatLine({
                               role: 'assistant',
-                              text: 'OpenHands benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.',
+                              text: 'Sovereign Agent Runtime benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.',
                             });
                             break;
                           }
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
-                          startAgentFromText(draft.originalText);
+                          void startAgentFromText(draft.originalText);
                           break;
 
                         case 'workspace':
@@ -4892,7 +4923,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                 );
               })()}
 
-              {/* ── Manus/Replit-style live event stream — OpenHands remains one route among several */}
+              {/* ── Manus/Replit-style live event stream — Sovereign Agent remains one route among several */}
               {agentWorkSnapshot.state !== 'idle' && (
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
@@ -5070,7 +5101,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                           }));
                           appendChatLine({
                             role: 'assistant',
-                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nOpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.`,
+                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nSovereign Agent Runtime ist nicht verbunden. Es wurde noch keine Datei geändert.`,
                           });
                           addLog('warn', 'Pending write intent direct patch unavailable: ' + directPatchResult.capability.reason, 'router');
                           return;
@@ -5111,14 +5142,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                       return;
                     }
 
-                    appendActionEvent({
-                      kind: 'executor_started',
-                      route: 'openhands',
-                      label: 'Executor startet Schreibauftrag',
-                      detail: 'Ziel bleibt Draft PR, kein Auto-Merge.',
-                      state: 'running',
-                    });
-                    startAgentFromText(pendingWriteIntent);
+                    void startAgentFromText(pendingWriteIntent);
                   }}
                   onDismiss={() => {}}
                 />
@@ -5148,7 +5172,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                     appendChatLine({ role: "assistant", text: explanation });
                   }}
                   onOpenHandsInstead={(msg) => {
-                    startAgentFromText(msg);
+                    void startAgentFromText(msg);
                   }}
                   userMessage={lastWorkerRequestMessage ?? undefined}
                 />
@@ -5270,7 +5294,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
             onSelect={(toolId: ToolId) => {
               if (toolId === 'repo') { setShowRepoExplorer(true); return; }
               if (toolId === 'executor') {
-                if (wishText.trim()) startAgentFromText(wishText.trim());
+                if (wishText.trim()) void startAgentFromText(wishText.trim());
                 return;
               }
               if (toolId === 'github_access') {

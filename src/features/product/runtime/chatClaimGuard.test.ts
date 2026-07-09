@@ -105,9 +105,9 @@ describe('chatClaimGuard', () => {
     expect(result.honestFallback).toContain('kein laufender Job');
   });
 
-  it('blocks "OpenHands arbeitet" without jobId', () => {
+  it('blocks Sovereign Agent work claims without jobId', () => {
     const snap = createIdleSnapshot(TRACE);
-    const result = checkChatClaim('OpenHands arbeitet an deinem PR.', snap);
+    const result = checkChatClaim('Sovereign Agent arbeitet an deinem PR.', snap);
     expect(result.allowed).toBe(false);
     expect(result.violations).toContain('executor_claimed_without_job');
   });
