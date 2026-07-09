@@ -15,6 +15,8 @@ import process from 'node:process';
 const root = process.cwd();
 
 const requiredFiles = [
+  'scripts/sovereign-agent-release-gate.mjs',
+  'scripts/sovereign-agent-release-gate.test.mjs',
   'backend/agent_runtime/contracts.py',
   'backend/agent_runtime/job_lifecycle.py',
   'backend/agent_runtime/job_store.py',
@@ -56,6 +58,17 @@ const requiredFiles = [
 ];
 
 const contentChecks = [
+  {
+    file: 'scripts/sovereign-agent-release-gate.mjs',
+    contains: [
+      'SOVEREIGN_AGENT_RELEASE_GATE=PASS',
+      'SOVEREIGN_AGENT_RELEASE_GATE=BLOCKED',
+      'checkRequiredFiles',
+      'checkContentContracts',
+      'checkPackageScripts',
+      'checkNoSecrets',
+    ],
+  },
   {
     file: 'backend/agent_runtime/routes.py',
     contains: [
@@ -201,6 +214,7 @@ function checkPackageScripts(blockers) {
   const expected = {
     'test:agent-runtime': 'python -m pytest',
     'test:agent-runtime:frontend': 'vitest run',
+    'test:agent-release-gate': 'node --test scripts/sovereign-agent-release-gate.test.mjs',
     'release:agent-gate': 'node scripts/sovereign-agent-release-gate.mjs',
     'release:agent-check': 'pnpm run release:agent-gate && pnpm run test:agent-runtime && pnpm run test:agent-runtime:frontend',
   };
