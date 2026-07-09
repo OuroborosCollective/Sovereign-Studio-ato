@@ -5,6 +5,7 @@ import { SovereignActionStreamPanel } from './SovereignActionStreamPanel';
 import {
   appendSovereignActionEvent,
   appendSovereignActionEvents,
+  buildAgentJobCreatedEvent,
   buildBlockedActionEvent,
   buildInputReceivedEvent,
   buildRouteSelectionEvent,
@@ -55,7 +56,7 @@ describe('SovereignActionStreamPanel', () => {
   });
 
   it('expands on toggle and shows the full event list', () => {
-    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+    const stream = appendSovereignActionEvents(createSovereignActionState(), [
       buildInputReceivedEvent('Mach was'),
       buildWorkerRequestEvent('Llama 3.1'),
     ]);
@@ -109,6 +110,18 @@ describe('SovereignActionStreamPanel', () => {
     // activeRoute is null after terminal state → "läuft" not in title
     const title = screen.getByText(/Sovereign wartet/i).textContent ?? '';
     expect(title).not.toContain('läuft');
+  });
+
+  it('shows queued agent job as waiting, not running work', () => {
+    const stream = appendSovereignActionEvent(
+      createSovereignActionStreamState(),
+      buildAgentJobCreatedEvent({ jobId: 'agent-queued', status: 'queued' }),
+    );
+
+    render(<SovereignActionStreamPanel stream={stream} />);
+
+    expect(screen.getByText(/Sovereign wartet · agent-job angefragt/i)).toBeTruthy();
+    expect(screen.queryByText(/agent-job läuft/i)).toBeNull();
   });
 
   it('does not render when there are no events', () => {
