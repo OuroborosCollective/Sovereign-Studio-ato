@@ -131,14 +131,11 @@ export async function getToolPredictions(
     };
   }
 
-  const snapshot = layer.getSnapshot();
-  void snapshot;
-  
-  // Query latent space for similar patterns
-  const patterns = layer.getLatentSpace().searchPatterns(
-    `tool.${toolType}.${toolName}`,
-    5
-  );
+  const nodeNamespace = `tool.${toolType}.${toolName}`;
+  const patterns = layer
+    .getLatentSpace()
+    .findTopK(1, nodeNamespace, 5)
+    .map((match) => match.pattern);
 
   if (patterns.length === 0) {
     return {
@@ -193,12 +190,16 @@ export function registerToolNode(
 
     layer.registerNode({
       id: `tool.${toolType}.${toolName}`,
-      type: toolType,
+      name: `${toolType}:${toolName}`,
       activation: 0.5,
+      previousActivation: 0,
       incomingSynapses: [],
       outgoingSynapses: [],
-      bias: 0,
-      timestamp: Date.now(),
+      signalHistory: [],
+      predictionHistory: [],
+      errorHistory: [],
+      nodeType: 'sensor',
+      lastActivity: Date.now(),
     });
   } catch {
     // Silently ignore - tool registration is optional
