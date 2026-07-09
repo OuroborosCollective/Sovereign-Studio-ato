@@ -13,7 +13,7 @@ function input(overrides: Partial<ReleaseGuideInput>): ReleaseGuideInput {
     lamp: 'green',
     title: 'Sovereign bereit',
     message: 'Repo laden, Auftrag analysieren und danach Auftrag starten.',
-    action: 'Repo prüfen',
+    action: 'Repo pruefen',
     thinking: false,
     source: 'runtime-shell',
     ...overrides,
@@ -24,7 +24,7 @@ describe('sovereign release guide runtime', () => {
   it('routes package-ready guidance to workflow instead of visible diff', () => {
     const state = deriveReleaseGuideState(input({
       title: 'Package bereit',
-      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
+      message: 'Sovereign Paket wurde erstellt. Diff und Files pruefen.',
       action: 'Weiter mit Diff',
     }));
 
@@ -34,24 +34,24 @@ describe('sovereign release guide runtime', () => {
     expect(state.helperMessage).toContain('sichtbaren Weiter-Button');
   });
 
-  it('lets an explicit workflow action win over stale diff/package text', () => {
+  it('lets an explicit workflow action win over stale diff package text', () => {
     const state = deriveReleaseGuideState(input({
       title: 'Package bereit',
-      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
-      action: 'Workflow prüfen',
+      message: 'Sovereign Paket wurde erstellt. Diff und Files pruefen.',
+      action: 'Workflow pruefen',
       source: 'workflow',
     }));
 
     expect(state.targetTab).toBe('workflow');
     expect(state.nextEnabled).toBe(true);
     expect(state.nextLabel).toBe('Weiter');
-    expect(state.progress).toBe(85);
+    expect(state.progress).toBe(5);
   });
 
   it('does not claim that UI guidance auto-controls user navigation', () => {
     const state = deriveReleaseGuideState(input({
       title: 'Repository laden',
-      message: 'Bitte GitHub-URL eingeben und Repository laden.',
+      message: 'Bitte Repo Adresse eingeben und Repository laden.',
       action: 'Load Repo',
     }));
 
@@ -60,26 +60,31 @@ describe('sovereign release guide runtime', () => {
     expect(state.helperMessage).not.toContain('automatisch');
   });
 
-  it('keeps progress on 5 percent steps without parking on diff', () => {
-    const progress = deriveReleaseGuideProgress(input({
+  it('uses ordinal guidance stages without percentage progress', () => {
+    const state = deriveReleaseGuideState(input({
       title: 'Package bereit',
-      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
+      message: 'Sovereign Paket wurde erstellt. Diff und Files pruefen.',
       action: 'Weiter mit Diff',
     }));
 
-    expect(progress % 5).toBe(0);
-    expect(progress).toBe(80);
+    expect(deriveReleaseGuideProgress(input({
+      title: 'Package bereit',
+      message: 'Sovereign Paket wurde erstellt. Diff und Files pruefen.',
+      action: 'Weiter mit Diff',
+    }))).toBe(4);
+    expect(state.progressLabel).toBe('Interne Pruefung abgeschlossen');
+    expect(state.progressLabel).not.toContain('%');
   });
 
   it('detects repo and builder targets without mixed default guidance', () => {
     expect(inferReleaseGuideTab(input({
       title: 'Repository laden',
-      message: 'Bitte GitHub-URL eingeben und Repository laden.',
+      message: 'Bitte Repo Adresse eingeben und Repository laden.',
       action: 'Load Repo',
     }))).toBe('repo');
 
     expect(inferReleaseGuideTab(input({
-      title: 'Bereit für Auftrag',
+      title: 'Bereit fuer Auftrag',
       message: 'Repository ist geladen. Auftrag eingeben und Package erstellen.',
       action: 'Auftrag analysieren',
     }))).toBe('builder');
@@ -88,7 +93,7 @@ describe('sovereign release guide runtime', () => {
   it('locks next while thinking', () => {
     const state = deriveReleaseGuideState(input({
       title: 'Package bereit',
-      message: 'Sovereign-Paket wurde erstellt. Diff und Files prüfen.',
+      message: 'Sovereign Paket wurde erstellt. Diff und Files pruefen.',
       action: 'Weiter mit Diff',
       thinking: true,
     }));
