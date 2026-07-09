@@ -3353,11 +3353,25 @@ export function BuilderContainer({
       // If user asks status question, answer locally first before retry
               if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
         const statusAnswer = buildLocalStatusAnswer({
-          hasPatch: Boolean(patchPreviewReady),
-          patchConfirmed: Boolean(patchConfirmed),
-          patchPreviewReady: Boolean(patchPreviewReady),
+          githubWriteAllowed,
+          githubAccessState: githubAccessState.state,
+          writeIntentBlockedByRepo: !effectiveRepoReady,
           openhandsRunning: openhandsJob?.status === 'running',
-          workerBlocker: workerBlocker,
+          draftPrUrl: openhandsJob?.draftPrUrl ?? null,
+          hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          patchPreviewReady,
+          patchConfirmed,
+          hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+          workerBlocker,
+          buildWorkerBlockerAnswer: workerBlocker
+            ? () =>
+                buildWorkerBlockerAnswer({
+                  blocker: workerBlocker,
+                  repoReady: effectiveRepoReady,
+                  chatRepoSnapshot,
+                  openhandsReady,
+                })
+            : undefined,
         });
         appendChatLine({ role: 'assistant', text: statusAnswer });
         appendActionEvent(buildBlockedActionEvent({
