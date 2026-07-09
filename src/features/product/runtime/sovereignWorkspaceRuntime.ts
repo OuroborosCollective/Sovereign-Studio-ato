@@ -361,9 +361,19 @@ export class SovereignWorkspaceRuntime {
   }
 }
 
+function isTestWorkspaceAdapterRuntime(): boolean {
+  const runtime = globalThis as {
+    process?: { env?: { NODE_ENV?: string; VITEST?: string } };
+  };
+
+  return runtime.process?.env?.NODE_ENV === 'test' || runtime.process?.env?.VITEST === 'true';
+}
+
 /**
- * Create a simple adapter that tracks workspace requests
- * This is useful for testing and as a base for real adapters
+ * Create a test-only adapter that tracks workspace requests.
+ *
+ * Live-path invariant: this adapter never reports availability or completion
+ * outside a test runtime. Runtime truth must come from real executors only.
  */
 export function createMockWorkspaceAdapter(id: string, label: string): WorkspaceAdapter {
   const jobs = new Map<string, SovereignWorkspaceRequest>();
@@ -373,9 +383,25 @@ export function createMockWorkspaceAdapter(id: string, label: string): Workspace
     label,
     supportedPurposes: ['analysis', 'patch', 'test', 'draft_pr', 'repair'],
 
-    isAvailable: async () => true,
+    isAvailable: async () => isTestWorkspaceAdapterRuntime(),
 
     execute: async (request: SovereignWorkspaceRequest): Promise<SovereignWorkspaceResult> => {
+      if (!isTestWorkspaceAdapterRuntime()) {
+        return {
+          jobId: request.jobId,
+          status: 'blocked',
+          events: [
+            createMaskedWorkspaceEvent(
+              'blocked',
+              request.jobId,
+              'Test workspace adapter is unavailable outside test runtime'
+            ),
+          ],
+          changedFiles: [],
+          blocker: 'test_workspace_adapter_not_available',
+        };
+      }
+
       jobs.set(request.jobId, request);
 
       const events: SovereignWorkspaceEvent[] = [
@@ -400,7 +426,7 @@ export function createMockWorkspaceAdapter(id: string, label: string): Workspace
         status: 'completed',
         events,
         changedFiles: [],
-        diffSummary: `Mock adapter ${id} completed workspace for job ${request.jobId}`,
+        diffSummary: `Test adapter ${id} completed workspace for job ${request.jobId}`,
       };
     },
 

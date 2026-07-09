@@ -118,9 +118,9 @@ export function deriveWorkspaceRuntimeState(input: {
       if (draftPrUrl) {
         shortMessage = 'Draft PR bereit';
       } else if (changedFilesCount > 0) {
-        shortMessage = `${changedFilesCount} Änderung(en) fertig`;
+        shortMessage = `${changedFilesCount} Änderung(en) gemeldet · Draft PR fehlt`;
       } else {
-        shortMessage = 'Workspace abgeschlossen';
+        shortMessage = 'Workspace abgeschlossen · kein Ergebnis belegt';
       }
       break;
     case 'failed':

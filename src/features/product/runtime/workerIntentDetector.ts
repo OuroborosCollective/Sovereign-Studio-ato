@@ -289,10 +289,15 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
     const reason = blockerReason || 'OpenHands Executor fehlgeschlagen.';
     return `Nein, OpenHands ist fehlgeschlagen.\nGrund: ${reason}`;
   }
-  if (agentState === 'draft_pr_ready' || openhandsStatus === 'completed') {
+  if (agentState === 'draft_pr_ready') {
     return draftPrUrl
       ? `OpenHands hat einen Draft PR erstellt: ${draftPrUrl}`
-      : 'OpenHands ist fertig. Draft PR wurde erstellt.';
+      : 'OpenHands meldet Draft-PR-Ready, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
+  }
+  if (openhandsStatus === 'completed') {
+    return draftPrUrl
+      ? `OpenHands hat einen Draft PR erstellt: ${draftPrUrl}`
+      : 'OpenHands meldet completed, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
   }
   if (agentState === 'intent_detected' || agentState === 'access_required') {
     // #500: Report GitHub access as required only when it's actually the blocker

@@ -66,6 +66,18 @@ describe('retry, diagnostics and status', () => {
     expect(buildExecutorStatusAnswer({ agentState: 'idle' })).toContain('nicht');
     expect(buildExecutorStatusAnswer({ agentState: 'executor_running', changedFiles: 2 })).toContain('2');
   });
+
+  it('does not claim a Draft PR for completed OpenHands without draftPrUrl', () => {
+    const answer = buildExecutorStatusAnswer({ agentState: 'idle', openhandsStatus: 'completed' });
+    expect(answer).toContain('keine Draft-PR-URL');
+    expect(answer).not.toContain('Draft PR wurde erstellt');
+  });
+
+  it('does not claim draft-pr-ready when agent state lacks draftPrUrl evidence', () => {
+    const answer = buildExecutorStatusAnswer({ agentState: 'draft_pr_ready' });
+    expect(answer).toContain('keine Draft-PR-URL');
+    expect(answer).not.toContain('Draft PR wurde erstellt');
+  });
 });
 
 describe('delegation and confirmation', () => {

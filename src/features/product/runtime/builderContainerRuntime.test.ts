@@ -98,9 +98,14 @@ describe('deriveWorkspaceRuntimeState', () => {
     expect(state.shortMessage).toBe('Draft PR bereit');
   });
 
-  it('shows file count for completed without draft pr', () => {
+  it('reports completed changes without draft pr as missing Draft PR evidence', () => {
     const state = deriveWorkspaceRuntimeState({ status: 'completed', changedFilesCount: 3 });
-    expect(state.shortMessage).toBe('3 Änderung(en) fertig');
+    expect(state.shortMessage).toBe('3 Änderung(en) gemeldet · Draft PR fehlt');
+  });
+
+  it('reports completed workspace without artifacts as not result-backed', () => {
+    const state = deriveWorkspaceRuntimeState({ status: 'completed' });
+    expect(state.shortMessage).toBe('Workspace abgeschlossen · kein Ergebnis belegt');
   });
 
   it('shows blocker message for failed status', () => {
@@ -162,7 +167,7 @@ describe('deriveWorkspaceRuntimeState', () => {
 
   it('never shows fake success without real result', () => {
     const state = deriveWorkspaceRuntimeState({ status: 'completed' });
-    expect(state.shortMessage).toBe('Workspace abgeschlossen');
+    expect(state.shortMessage).toBe('Workspace abgeschlossen · kein Ergebnis belegt');
     expect(state.shortMessage).not.toBe('Erfolg!');
   });
 });

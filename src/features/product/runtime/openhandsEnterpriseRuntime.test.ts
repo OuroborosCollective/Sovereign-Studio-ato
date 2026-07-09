@@ -17,6 +17,18 @@ describe('openhandsEnterpriseRuntime', () => {
     expect(config.agentApiUrl).toBe('');
   });
 
+
+  it('does not auto-enable the legacy external agent from URL alone', () => {
+    const config = resolveOpenHandsEnterpriseConfig({
+      agentApiUrl: 'https://openhands.example.com/api/',
+    });
+
+    expect(config.enabled).toBe(false);
+    expect(config.ready).toBe(false);
+    expect(config.agentApiUrl).toBe('https://openhands.example.com/api');
+    expect(config.reason).toContain('disabled');
+  });
+
   it('accepts an HTTPS agent API as external runtime backend', () => {
     const config = resolveOpenHandsEnterpriseConfig({
       enabled: true,
@@ -57,6 +69,7 @@ describe('openhandsEnterpriseRuntime', () => {
     expect(summarizeOpenHandsJob(createOpenHandsIdleSnapshot())).toContain('wartet');
     expect(summarizeOpenHandsJob({ status: 'blocked', changedFiles: [], events: [], lastError: 'Guard red' })).toBe('Guard red');
     expect(summarizeOpenHandsJob({ status: 'completed', changedFiles: ['README.md'], events: [], draftPrUrl: 'https://github.test/pr/1' })).toContain('Draft PR');
+    expect(summarizeOpenHandsJob({ status: 'completed', changedFiles: [], events: [] })).toContain('kein Draft PR ist belegt');
   });
 
   it('detects terminal states', () => {

@@ -214,6 +214,26 @@ describe('openhandsWorkspaceAdapter', () => {
       expect(summarizeWorkspaceStatus(result)).toBe('Draft PR bereit');
     });
 
+    it('does not report completed workspace without draft PR as Draft PR ready', () => {
+      const result: AgentWorkspaceResult = {
+        workspaceId: 'test-1',
+        status: 'completed',
+        events: [],
+        changedFiles: ['README.md'],
+      };
+      expect(summarizeWorkspaceStatus(result)).toBe('1 Änderung(en) gemeldet · Draft PR fehlt');
+    });
+
+    it('does not report empty completed workspace as result-backed', () => {
+      const result: AgentWorkspaceResult = {
+        workspaceId: 'test-1',
+        status: 'completed',
+        events: [],
+        changedFiles: [],
+      };
+      expect(summarizeWorkspaceStatus(result)).toBe('Workspace abgeschlossen · kein Ergebnis belegt');
+    });
+
     it('shows blocker message for failed status', () => {
       const result: AgentWorkspaceResult = {
         workspaceId: 'test-1',

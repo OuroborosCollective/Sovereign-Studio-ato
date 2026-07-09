@@ -229,7 +229,10 @@ export function summarizeWorkspaceStatus(result: AgentWorkspaceResult): string {
   switch (result.status) {
     case 'queued': return 'Workspace gestartet';
     case 'running': return 'Repo geklont · Tests laufen';
-    case 'completed': return result.draftPrUrl ? 'Draft PR bereit' : 'Workspace abgeschlossen';
+    case 'completed':
+      if (result.draftPrUrl) return 'Draft PR bereit';
+      if (result.changedFiles.length > 0) return `${result.changedFiles.length} Änderung(en) gemeldet · Draft PR fehlt`;
+      return 'Workspace abgeschlossen · kein Ergebnis belegt';
     case 'failed': return result.blocker ? `Blocker: ${result.blocker.slice(0, 60)}` : 'Workspace fehlgeschlagen';
     case 'blocked': return result.blocker ? `Blocker: ${result.blocker.slice(0, 60)}` : 'Workspace blockiert';
     case 'cleaned': return 'Workspace bereinigt';

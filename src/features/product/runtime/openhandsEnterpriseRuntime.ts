@@ -118,7 +118,7 @@ export function resolveOpenHandsEnterpriseConfig(input: OpenHandsEnterpriseConfi
   const enabledEnv = readWindowOverride('__SOVEREIGN_OPENHANDS_ENABLED__') || readBuildEnv('VITE_OPENHANDS_ENABLED');
   const enabled = typeof input.enabled === 'boolean'
     ? input.enabled
-    : enabledEnv === 'true' || Boolean(agentApiUrl);
+    : enabledEnv === 'true';
   const deploymentMode: OpenHandsDeploymentMode = input.deploymentMode || (enabled ? 'external-agent-runtime' : 'disabled');
   const urlSafe = !agentApiUrl || isHttpsUrl(agentApiUrl) || isLocalUrl(agentApiUrl);
   const ready = enabled && deploymentMode === 'external-agent-runtime' && Boolean(agentApiUrl) && urlSafe;
@@ -171,7 +171,9 @@ export function summarizeOpenHandsJob(snapshot: OpenHandsJobSnapshot): string {
   if (snapshot.status === 'waiting-for-user') return 'OpenHands wartet auf eine Nutzerentscheidung.';
   if (snapshot.status === 'blocked') return snapshot.lastError || 'OpenHands ist durch ein Gate blockiert.';
   if (snapshot.status === 'failed') return snapshot.lastError || 'OpenHands Auftrag ist fehlgeschlagen.';
-  return snapshot.draftPrUrl ? `OpenHands hat einen Draft PR erstellt: ${snapshot.draftPrUrl}` : 'OpenHands Auftrag ist abgeschlossen.';
+  return snapshot.draftPrUrl
+    ? `OpenHands hat einen Draft PR erstellt: ${snapshot.draftPrUrl}`
+    : 'OpenHands meldet abgeschlossen, aber kein Draft PR ist belegt.';
 }
 
 export function isOpenHandsTerminalStatus(status: OpenHandsJobStatus): boolean {
