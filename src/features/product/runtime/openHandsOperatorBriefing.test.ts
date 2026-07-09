@@ -256,4 +256,36 @@ describe('openHandsOperatorBriefing', () => {
       expect(branchItem?.value).toBe('Ja');
     });
   });
+
+  describe('sovereign-agent-backend mode', () => {
+    it('shows sovereign-agent-backend as ready mode', () => {
+      const briefing = buildOpenHandsOperatorBriefing({
+        enabled: true,
+        deploymentMode: 'sovereign-agent-backend',
+        agentApiUrl: 'https://sovereign-backend.example/api/agent',
+        adminConsoleUrl: '',
+        ready: true,
+        reason: 'Sovereign Agent Backend is configured as the primary internal runtime.',
+      });
+
+      expect(briefing.sections).toHaveLength(5);
+      expect(briefing.blockedCount).toBe(0);
+      expect(briefing.isBlocked).toBe(false);
+    });
+
+    it('flags missing sovereign backend URL as blocked', () => {
+      const briefing = buildOpenHandsOperatorBriefing({
+        enabled: true,
+        deploymentMode: 'sovereign-agent-backend',
+        agentApiUrl: '',
+        adminConsoleUrl: '',
+        ready: false,
+        reason: 'Agent API URL missing.',
+      });
+
+      const configSection = briefing.sections.find(s => s.id === 'configuration');
+      const agentApiItem = configSection?.items.find(i => i.id === 'agent-api-url');
+      expect(agentApiItem?.status).toBe('blocked');
+    });
+  });
 });
