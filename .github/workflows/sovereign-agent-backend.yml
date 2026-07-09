@@ -92,13 +92,33 @@ jobs:
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      - name: Validate deploy secrets
+        run: |
+          set -euo pipefail
+          if [ -z "${VPS_HOST:-}" ]; then
+            echo "VPS_HOST secret is not configured." >&2
+            exit 1
+          fi
+          if [ -z "${VPS_USER:-}" ]; then
+            echo "VPS_USER secret is not configured." >&2
+            exit 1
+          fi
+          if [ -z "${VPS_SSH_KEY:-}" ]; then
+            echo "VPS_SSH_KEY secret is not configured." >&2
+            exit 1
+          fi
+          if ! [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]; then
+            echo "VPS_SSH_PORT must be numeric." >&2
+            exit 1
+          fi
 
       - name: Create tar archive
         run: |
@@ -111,7 +131,7 @@ jobs:
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
+          key: ${{ env.VPS_SSH_KEY }}
           port: ${{ env.VPS_SSH_PORT }}
           source: "sovereign-backend.tar.gz"
           target: "/tmp"
@@ -122,9 +142,10 @@ jobs:
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
+          key: ${{ env.VPS_SSH_KEY }}
           port: ${{ env.VPS_SSH_PORT }}
           script: |
+            set -euo pipefail
             tar -xzf /tmp/sovereign-backend.tar.gz -C /tmp/
             docker stop sovereign-backend 2>/dev/null || true
             sleep 5
@@ -147,7 +168,7 @@ jobs:
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
+          key: ${{ env.VPS_SSH_KEY }}
           port: ${{ env.VPS_SSH_PORT }}
           script: |
             docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
@@ -164,10 +185,10 @@ jobs:
         run: |
           HEALTH=$(curl -s https://sovereign-backend.arelorian.de/health)
           echo "Health: $HEALTH"
-          
+
           if ! echo "$HEALTH" | grep -q '"ok":true'; then
             echo "❌ Health check failed"
             exit 1
           fi
-          
+
           echo "✅ All smoke tests passed"
