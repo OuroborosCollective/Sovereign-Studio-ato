@@ -3351,14 +3351,13 @@ export function BuilderContainer({
     // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
     if (isWorkerRetryIntent(submittedText) && workerBlocker) {
       // If user asks status question, answer locally first before retry
-      if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
+              if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
         const statusAnswer = buildLocalStatusAnswer({
           hasPatch: Boolean(patchPreviewReady),
           patchConfirmed: Boolean(patchConfirmed),
           patchPreviewReady: Boolean(patchPreviewReady),
           openhandsRunning: openhandsJob?.status === 'running',
           workerBlocker: workerBlocker,
-          buildWorkerBlockerAnswer: () => workerBlocker,
         });
         appendChatLine({ role: 'assistant', text: statusAnswer });
         appendActionEvent(buildBlockedActionEvent({
@@ -4727,18 +4726,20 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                               return;
                             }
 
-                            // Terminal failure: error state
-                            if ('error' in result) {
+                            // Terminal failure: error state (result.ok === false)
+                            if ('result' in result && !result.result.ok) {
+                              const failureResult = result.result;
+                              const errorMessage = 'reason' in failureResult ? failureResult.reason : 'Unknown error';
                               appendActionEvent({
                                 kind: 'failed',
                                 route: 'direct-github-patch',
                                 label: 'Direct Patch fehlgeschlagen',
-                                detail: result.error,
+                                detail: errorMessage,
                                 state: 'failed',
                               });
                               appendChatLine({
                                 role: 'assistant',
-                                text: `Direct GitHub Patch fehlgeschlagen: ${result.error}`,
+                                text: `Direct GitHub Patch fehlgeschlagen: ${errorMessage}`,
                               });
                               return;
                             }
