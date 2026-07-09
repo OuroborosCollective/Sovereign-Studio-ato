@@ -187,12 +187,13 @@ export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
   if (args.draftPrUrl) {
     return `Ja, Draft PR ist bereit: ${args.draftPrUrl}`;
   }
-  if (args.hasPatch) {
-    return "Ja, ein Patch/Diff wurde erzeugt und angewendet. Draft PR steht noch aus.";
-  }
   // Patch was previewed AND then confirmed/applied → draft PR was created
+  // Priority: patchConfirmed is terminal state, must be checked before hasPatch
   if (args.patchConfirmed) {
     return "Ja, der Patch wurde bestätigt und angewendet. Der Draft PR wurde erstellt.";
+  }
+  if (args.hasPatch) {
+    return "Ja, ein Patch/Diff wurde erzeugt und angewendet. Draft PR steht noch aus.";
   }
   // Fix: Direct GitHub Patch preview generated but not yet applied/committed
   if (args.patchPreviewReady) {
