@@ -2550,19 +2550,22 @@ export function BuilderContainer({
           snap = transitionExecutorRunning(snap, openhandsJob.jobId);
         }
       }
-      if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready') {
+      // Priority: failed/blocked are terminal states, must be checked BEFORE draftPrUrl
+      // Otherwise a failed job with a stale draftPrUrl would show as 'draft_pr_ready'
+      if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
+        snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
+      }
+      if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
+        snap = transitionBlocked(snap, 'OpenHands Executor blockiert.');
+      }
+      // draftPrUrl only transitions to ready if no terminal failure state exists
+      if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
         snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
         // Patch wurde committed → Vorschau-State auf "bestätigt" wechseln
         if (patchPreviewReady) {
           setPatchPreviewReady(false);
           setPatchConfirmed(true);
         }
-      }
-      if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
-        snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
-      }
-      if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
-        snap = transitionBlocked(snap, 'OpenHands Executor blockiert.');
       }
       if (openhandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
         snap = createIdleSnapshot(`sovereign-${Date.now()}`);
@@ -3347,6 +3350,25 @@ export function BuilderContainer({
     // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
     // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
     if (isWorkerRetryIntent(submittedText) && workerBlocker) {
+      // If user asks status question, answer locally first before retry
+      if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
+        const statusAnswer = buildLocalStatusAnswer({
+          hasPatch: Boolean(patchPreviewReady),
+          patchConfirmed: Boolean(patchConfirmed),
+          patchPreviewReady: Boolean(patchPreviewReady),
+          openhandsRunning: openhandsJob?.status === 'running',
+          workerBlocker: workerBlocker,
+          buildWorkerBlockerAnswer: () => workerBlocker,
+        });
+        appendChatLine({ role: 'assistant', text: statusAnswer });
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'runtime',
+          label: 'Status-Frage beantwortet',
+          detail: 'Lokale Antwort aus Runtime-State',
+        }));
+        addLog('info', 'Retry + status question → local answer first', 'router');
+        return;
+      }
       if (lastWorkerRequestMessage) {
         // Real retry: re-submit the last request through the full pipeline
         setWorkerBlocker(null);
@@ -3375,6 +3397,7 @@ export function BuilderContainer({
         }));
         addLog('info', 'Issue #522 P2 Fix 2: Retry intent clears blocker - no prior request to retry', 'router');
         setWorkerBlocker(null);
+        setChatResponseBusy(false);
         return;
       }
     }
@@ -4711,7 +4734,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                                 route: 'direct-github-patch',
                                 label: 'Direct Patch fehlgeschlagen',
                                 detail: result.error,
-                                state: 'error',
+                                state: 'failed',
                               });
                               appendChatLine({
                                 role: 'assistant',
@@ -4728,7 +4751,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                               route: 'direct-github-patch',
                               label: 'Direct Patch Ausnahme',
                               detail: errMsg,
-                              state: 'error',
+                              state: 'failed',
                             });
                             appendChatLine({
                               role: 'assistant',
