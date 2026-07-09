@@ -247,7 +247,7 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
       capability: 'free_chat',
       allowed: true,
       reason: buildReason('local-runtime-answer', 'free_chat'),
-      nextAction: 'show_blocker',
+      nextAction: 'answer_locally',
       isTerminal: true,
     };
   }
@@ -526,10 +526,11 @@ export function buildCapabilityRouteActionEvent(
   _index: number,
 ): { kind: 'route_selected' | 'capability_checked'; route: string; label: string; detail: string; state: 'running' | 'blocked' | 'done' } {
   if (decision.isTerminal) {
+    const isLocalAnswer = decision.route === 'local-runtime-answer' && decision.nextAction === 'answer_locally';
     return {
-      kind: 'route_selected',
+      kind: isLocalAnswer ? 'capability_checked' : 'route_selected',
       route: decision.route,
-      label: 'Route gewählt',
+      label: isLocalAnswer ? 'Lokale Runtime-Antwort vorbereitet' : 'Route gewählt',
       detail: decision.reason,
       state: 'done',
     };
