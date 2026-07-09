@@ -102,7 +102,7 @@ jobs:
 
       - name: Install SSH Client
         run: |
-          apt-get update && apt-get install -y openssh-client sshpass
+          sudo apt-get update && sudo apt-get install -y openssh-client sshpass
 
       - name: Upload Backend to VPS
         run: |
