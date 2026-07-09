@@ -182,7 +182,7 @@ export function createOpenHandsWorkspaceAdapter(config: OpenHandsWorkspaceAdapte
         workspaceId,
         status: 'blocked',
         events: [sanitizeWorkspaceEvent({
-          level: 'warn',
+          level: 'warning',
           message: 'Workspace-Status-Polling noch nicht verbunden. Backend ist konfiguriert, aber live-State-Abruf fehlt.',
           at: Date.now(),
         })],

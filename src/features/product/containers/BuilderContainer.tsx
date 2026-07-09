@@ -2550,19 +2550,22 @@ export function BuilderContainer({
           snap = transitionExecutorRunning(snap, openhandsJob.jobId);
         }
       }
-      if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready') {
+      // Priority: failed/blocked are terminal states, must be checked BEFORE draftPrUrl
+      // Otherwise a failed job with a stale draftPrUrl would show as 'draft_pr_ready'
+      if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
+        snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
+      }
+      if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
+        snap = transitionBlocked(snap, 'OpenHands Executor blockiert.');
+      }
+      // draftPrUrl only transitions to ready if no terminal failure state exists
+      if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
         snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
         // Patch wurde committed → Vorschau-State auf "bestätigt" wechseln
         if (patchPreviewReady) {
           setPatchPreviewReady(false);
           setPatchConfirmed(true);
         }
-      }
-      if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
-        snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
-      }
-      if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
-        snap = transitionBlocked(snap, 'OpenHands Executor blockiert.');
       }
       if (openhandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
         snap = createIdleSnapshot(`sovereign-${Date.now()}`);
@@ -3344,20 +3347,59 @@ export function BuilderContainer({
       return;
     }
 
-    // P2 Fix 2: Worker retry intents - clear blocker and retry, NOT a new draft
+    // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
+    // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
     if (isWorkerRetryIntent(submittedText) && workerBlocker) {
-      setWorkerBlocker(null);
-      appendChatLine({
-        role: 'assistant',
-        text: 'Worker-Blocker zurückgesetzt. Bitte Auftrag erneut senden.',
-      });
-      appendActionEvent(buildBlockedActionEvent({
-        route: 'runtime',
-        label: 'Retry',
-        detail: 'Worker-Blocker zurückgesetzt',
-      }));
-      addLog('info', 'Issue #522 P2 Fix 2: Retry intent clears blocker - no draft created', 'router');
-      return;
+      // If user asks status question, answer locally first before retry
+      if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
+        const statusAnswer = buildLocalStatusAnswer({
+          hasPatch: Boolean(patchPreviewReady),
+          patchConfirmed: Boolean(patchConfirmed),
+          patchPreviewReady: Boolean(patchPreviewReady),
+          openhandsRunning: openhandsJob?.status === 'running',
+          workerBlocker: workerBlocker,
+          buildWorkerBlockerAnswer: () => workerBlocker,
+        });
+        appendChatLine({ role: 'assistant', text: statusAnswer });
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'runtime',
+          label: 'Status-Frage beantwortet',
+          detail: 'Lokale Antwort aus Runtime-State',
+        }));
+        addLog('info', 'Retry + status question → local answer first', 'router');
+        return;
+      }
+      if (lastWorkerRequestMessage) {
+        // Real retry: re-submit the last request through the full pipeline
+        setWorkerBlocker(null);
+        appendChatLine({
+          role: 'assistant',
+          text: 'Worker-Blocker zurückgesetzt. Retry wird ausgeführt...',
+        });
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'runtime',
+          label: 'Retry gestartet',
+          detail: 'Worker-Blocker zurückgesetzt; letzter Request wird erneut ausgeführt',
+        }));
+        addLog('info', 'Issue #522 P2 Fix 2: Retry intent triggers real retry via retrySubmit', 'router');
+        retrySubmit(lastWorkerRequestMessage);
+        return;
+      } else {
+        // Honest state: no prior request to retry
+        appendChatLine({
+          role: 'assistant',
+          text: 'Worker-Blocker zurückgesetzt. Es gibt keinen vorherigen Request zum Wiederholen.',
+        });
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'runtime',
+          label: 'Retry',
+          detail: 'Worker-Blocker zurückgesetzt; kein vorheriger Request vorhanden',
+        }));
+        addLog('info', 'Issue #522 P2 Fix 2: Retry intent clears blocker - no prior request to retry', 'router');
+        setWorkerBlocker(null);
+        setChatResponseBusy(false);
+        return;
+      }
     }
 
     // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
@@ -3761,11 +3803,11 @@ Es wurde noch keine Datei geändert. Nächste Aktion: Zielpfad präzisieren oder
           }
 
           appendActionEvent({
-            kind: 'done',
+            kind: 'patch_blocked',
             route: 'github-patch',
-            label: 'Patch/Draft-PR Route geprüft',
-            detail: 'Route erlaubt; Patchplan wartet auf Zielpfad oder Executor.',
-            state: 'done',
+            label: 'Patch/Draft-PR Route geprüft — wartet auf Zielpfad',
+            detail: 'Route erlaubt; kein Patch/Diff erzeugt — Zielpfad oder Executor erforderlich.',
+            state: 'blocked',
           });
           appendChatLine({
             role: 'assistant',
@@ -3910,11 +3952,11 @@ Es wurde noch keine Datei geändert.`,
 
       if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
         appendActionEvent({
-          kind: 'done',
+          kind: 'patch_blocked',
           route: 'github-patch',
-          label: 'Patch/Draft-PR Route geprüft',
+          label: 'Patch/Draft-PR Route geprüft — wartet auf Zielpfad',
           detail: executorBridgeDecision.reason,
-          state: 'done',
+          state: 'blocked',
         });
         appendChatLine({
           role: "assistant",
@@ -4625,6 +4667,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
 
                         case 'direct_patch':
                           // Direct Patch route via proper runtime
+                          // Runtime-Truth: All result types must be terminal-handled
                           if (!chatRepoSnapshot) break;
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
                           buildDirectPatchPlanWithContentLoad({
@@ -4639,7 +4682,11 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                             token: githubTokenRef.current!,
                             fetcher: globalThis.fetch,
                           }).then((result) => {
+                            // Terminal state: clear draft only after result
+                            setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+
                             if ('result' in result && result.result.ok) {
+                              // Success: Patch preview generated
                               appendActionEvent({
                                 kind: 'route_selected',
                                 route: 'direct-github-patch',
@@ -4661,7 +4708,55 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                               setPatchPreviewReady(true);
                               setPatchConfirmed(false);
                               setLastAnswerWasLocal(true);
+                              return;
                             }
+
+                            // Terminal failure: capability unavailable
+                            if ('capability' in result && !result.capability.available) {
+                              appendActionEvent({
+                                kind: 'patch_blocked',
+                                route: 'direct-github-patch',
+                                label: 'Direct Patch nicht verfügbar',
+                                detail: result.capability.reason,
+                                state: 'blocked',
+                              });
+                              appendChatLine({
+                                role: 'assistant',
+                                text: `Direct GitHub Patch nicht möglich: ${result.capability.reason}`,
+                              });
+                              return;
+                            }
+
+                            // Terminal failure: error state
+                            if ('error' in result) {
+                              appendActionEvent({
+                                kind: 'failed',
+                                route: 'direct-github-patch',
+                                label: 'Direct Patch fehlgeschlagen',
+                                detail: result.error,
+                                state: 'failed',
+                              });
+                              appendChatLine({
+                                role: 'assistant',
+                                text: `Direct GitHub Patch fehlgeschlagen: ${result.error}`,
+                              });
+                              return;
+                            }
+                          }).catch((err) => {
+                            // Terminal failure: promise rejection
+                            setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
+                            const errMsg = err instanceof Error ? err.message : String(err);
+                            appendActionEvent({
+                              kind: 'failed',
+                              route: 'direct-github-patch',
+                              label: 'Direct Patch Ausnahme',
+                              detail: errMsg,
+                              state: 'failed',
+                            });
+                            appendChatLine({
+                              role: 'assistant',
+                              text: `Direct GitHub Patch fehlgeschlagen: ${errMsg}`,
+                            });
                           });
                           break;
 
