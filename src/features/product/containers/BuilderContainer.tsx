@@ -2759,6 +2759,14 @@ export function BuilderContainer({
   const effectiveRepoReason = chatRepoSnapshot
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
     : repoReason;
+
+  // Fix 5: Partial-Snapshot Guard — detects a snapshot that is loaded but missing
+  // critical fields. Showing such state as "truth" would fabricate reality.
+  // UI renders a visible warning instead of silently proceeding with bad state.
+  const isPartialRepoSnapshot = Boolean(
+    chatRepoSnapshot &&
+    (!chatRepoSnapshot.owner || !chatRepoSnapshot.repo || !chatRepoSnapshot.branch || !chatRepoSnapshot.repoUrl)
+  );
   const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(
     chatResponseBusy ||
@@ -4435,6 +4443,32 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
             flexDirection: "column",
           }}
         >
+          {/* Fix 5: Partial-Snapshot Guard — never show fabricated repo truth */}
+          {isPartialRepoSnapshot && (
+            <div
+              role="alert"
+              data-testid="partial-repo-snapshot-warning"
+              style={{
+                margin: '8px 0',
+                padding: '10px 14px',
+                borderRadius: 10,
+                background: '#fbbf2412',
+                border: '1px solid #fbbf2440',
+                fontSize: 12,
+                color: '#fbbf24',
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-start',
+              }}
+            >
+              <span style={{ flexShrink: 0 }}>⚠️</span>
+              <span>
+                <strong>Unvollständiger Repo-Snapshot.</strong> Owner, Repo, Branch oder URL fehlt.
+                Der angezeigte Zustand wäre unvollständig. Bitte Repo neu laden.
+              </span>
+            </div>
+          )}
+
           {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0 && !securityCardPending ? (
             <WelcomeScreen
               onIdea={(opt) => setWishText((c) => appendOption(c, opt))}
