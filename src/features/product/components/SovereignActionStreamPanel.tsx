@@ -54,16 +54,24 @@ function formatTime(value: number): string {
 }
 
 function workerTitle(stream: SovereignActionStreamState): string {
-  if (stream.activeRoute) return `Sovereign arbeitet · ${stream.activeRoute} läuft`;
   const state = stream.lastEvent?.state;
+  if (stream.activeRoute && state === 'queued') {
+    return `Sovereign wartet · ${stream.activeRoute} angefragt`;
+  }
+  if (stream.activeRoute && state === 'running') {
+    return `Sovereign arbeitet · ${stream.activeRoute} läuft`;
+  }
+  if (stream.activeRoute) return `Sovereign beobachtet · ${stream.activeRoute}`;
   if (state === 'blocked') return 'Sovereign wartet auf nächsten echten Schritt';
   if (state === 'failed')  return 'Sovereign hat einen Blocker gefunden';
   return 'Sovereign hat den Arbeitsschritt protokolliert';
 }
 
 function dotStyle(stream: SovereignActionStreamState): { color: string; glow: boolean } {
-  if (stream.activeRoute) return { color: C.sky, glow: true };
   const state = stream.lastEvent?.state;
+  if (stream.activeRoute && state === 'queued') return { color: C.amber, glow: false };
+  if (stream.activeRoute && state === 'running') return { color: C.sky, glow: true };
+  if (stream.activeRoute) return { color: C.textSub, glow: false };
   if (state === 'blocked' || state === 'failed') return { color: C.rose, glow: false };
   if (state === 'done')                          return { color: C.green, glow: false };
   return { color: C.textSub, glow: false };
