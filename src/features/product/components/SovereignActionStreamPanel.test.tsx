@@ -56,7 +56,7 @@ describe('SovereignActionStreamPanel', () => {
   });
 
   it('expands on toggle and shows the full event list', () => {
-    const stream = appendSovereignActionEvents(createSovereignActionState(), [
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
       buildInputReceivedEvent('Mach was'),
       buildWorkerRequestEvent('Llama 3.1'),
     ]);
