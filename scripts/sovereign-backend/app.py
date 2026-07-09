@@ -767,9 +767,14 @@ def admin_worker_ai_status():
 @app.route("/api/admin/llm/fallback-routes", methods=["GET"])
 @require_admin
 def admin_fallback_routes():
-    """List all fallback LLM routes (non-Cloudflare routes)."""
+    """List all fallback LLM routes (non-Cloudflare routes).
+    
+    SECURITY: api_key is masked, only has_api_key flag is shown.
+    """
     routes = query("""
-        SELECT id, model_id, model_name, provider, base_url, api_key, 
+        SELECT id, model_id, model_name, provider, base_url, 
+               CASE WHEN api_key IS NOT NULL AND api_key <> '' THEN true ELSE false END AS has_api_key,
+               CASE WHEN api_key IS NOT NULL AND api_key <> '' THEN '****' || RIGHT(api_key, 4) ELSE NULL END AS masked_api_key,
                credits_per_unit, priority, disabled, fallback_group, created_at
         FROM llm_routes 
         WHERE is_fallback = true 
@@ -970,22 +975,37 @@ def admin_fallback_status():
     })
 
 
+def _get_session_user_id():
+    """Extract user_id from JWT cookie - same pattern as other endpoints."""
+    token = request.cookies.get("session_token", "")
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 @app.route("/api/llm/resolve", methods=["POST"])
 def public_llm_resolve():
     """Resolve the best LLM route for a request.
     
+    SECURITY: Requires valid session. Never exposes provider API keys.
+    Client must use server-side proxy for fallback routes.
+    
     Checks:
-    1. User credits available
-    2. Cloudflare health
-    3. Fallback routes available
+    1. Valid session
+    2. User credits available
+    3. Cloudflare health
+    4. Fallback routes available
     
-    Returns the route to use or error.
+    Returns route info WITHOUT sensitive API keys.
     """
-    body = request.get_json(force=True) or {}
-    user_id = body.get("user_id")
-    
+    # Require session authentication
+    user_id = _get_session_user_id()
     if not user_id:
-        return jsonify({"error": "user_id required"}), 400
+        return jsonify({"error": "Authentication required"}), 401
     
     # Check user credits
     user = query(
@@ -1019,7 +1039,7 @@ def public_llm_resolve():
     
     # Get fallback routes
     fallback_routes = query("""
-        SELECT id, model_id, model_name, provider, base_url, api_key,
+        SELECT id, model_id, model_name, provider, base_url,
                credits_per_unit, priority, fallback_group
         FROM llm_routes 
         WHERE is_fallback = true AND disabled = false
@@ -1058,7 +1078,7 @@ def public_llm_resolve():
             }), 503  # Service Unavailable
     
     if use_fallback and fallback_routes:
-        # Return first fallback route
+        # Return first fallback route - NEVER expose api_key
         route = fallback_routes[0]
         return jsonify({
             "ok": True,
@@ -1069,19 +1089,22 @@ def public_llm_resolve():
                 "model_name": route["model_name"],
                 "provider": route["provider"],
                 "base_url": route["base_url"],
-                "api_key": route.get("api_key", ""),
+                "requires_server_proxy": True,  # Client must route through backend
+                "api_key": None,  # NEVER exposed
                 "credits_per_unit": float(route["credits_per_unit"]),
             },
             "user_credits": user_credits,
         })
     
-    # Use Cloudflare Worker AI
+    # Use Cloudflare Worker AI (no api_key needed)
     return jsonify({
         "ok": True,
         "route_type": "cloudflare",
         "route": {
             "base_url": WORKER_AI_BASE,
             "provider": "cloudflare",
+            "api_key": None,
+            "requires_server_proxy": False,
         },
         "user_credits": user_credits,
     })
