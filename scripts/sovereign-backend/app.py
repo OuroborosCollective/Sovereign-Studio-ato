@@ -760,6 +760,333 @@ def admin_worker_ai_status():
     })
 
 
+# ============================================================
+# FALLBACK LLM ROUTES - Manual fallback routes when Cloudflare fails
+# ============================================================
+
+@app.route("/api/admin/llm/fallback-routes", methods=["GET"])
+@require_admin
+def admin_fallback_routes():
+    """List all fallback LLM routes (non-Cloudflare routes)."""
+    routes = query("""
+        SELECT id, model_id, model_name, provider, base_url, api_key, 
+               credits_per_unit, priority, disabled, fallback_group, created_at
+        FROM llm_routes 
+        WHERE is_fallback = true 
+        ORDER BY priority ASC, credits_per_unit ASC
+    """)
+    return jsonify({
+        "ok": True,
+        "routes": routes or [],
+        "count": len(routes) if routes else 0,
+    })
+
+
+@app.route("/api/admin/llm/fallback-routes", methods=["POST"])
+@require_admin
+def admin_create_fallback_route():
+    """Create a new fallback LLM route.
+    
+    Required fields: model_id, model_name, provider, base_url
+    Optional: api_key, credits_per_unit, priority, fallback_group
+    """
+    body = request.get_json(force=True) or {}
+    
+    # Validate required fields
+    required = ["model_id", "model_name", "provider", "base_url"]
+    missing = [f for f in required if not body.get(f)]
+    if missing:
+        return jsonify({"error": f"Missing required fields: {missing}"}), 400
+    
+    model_id = body["model_id"]
+    
+    # Check for duplicate
+    existing = query(
+        "SELECT id FROM llm_routes WHERE model_id = %s", (model_id,), one=True
+    )
+    if existing:
+        return jsonify({"error": f"Route with model_id '{model_id}' already exists"}), 409
+    
+    route_id = str(uuid.uuid4())
+    model_name = body["model_name"]
+    provider = body["provider"]
+    base_url = body["base_url"]
+    api_key = body.get("api_key", "")
+    credits_per_unit = float(body.get("credits_per_unit", 1.0))
+    priority = int(body.get("priority", 50))
+    fallback_group = body.get("fallback_group", "default")
+    
+    query("""
+        INSERT INTO llm_routes 
+        (id, model_id, model_name, provider, base_url, api_key, 
+         credits_per_unit, priority, disabled, is_fallback, fallback_group)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false, true, %s)
+    """, (route_id, model_id, model_name, provider, base_url, api_key,
+          credits_per_unit, priority, fallback_group), write=True)
+    
+    audit("admin_create_fallback_route", route_id, body)
+    
+    return jsonify({
+        "ok": True,
+        "id": route_id,
+        "message": f"Fallback route '{model_id}' created"
+    }), 201
+
+
+@app.route("/api/admin/llm/fallback-routes/<route_id>", methods=["DELETE"])
+@require_admin
+def admin_delete_fallback_route(route_id):
+    """Delete a fallback LLM route by ID."""
+    route = query(
+        "SELECT id, model_id, is_fallback FROM llm_routes WHERE id = %s", (route_id,), one=True
+    )
+    if not route:
+        return jsonify({"error": "Route not found"}), 404
+    
+    if not route.get("is_fallback"):
+        return jsonify({"error": "Can only delete fallback routes"}), 400
+    
+    query("DELETE FROM llm_routes WHERE id = %s", (route_id,), write=True)
+    audit("admin_delete_fallback_route", route_id, {"model_id": route.get("model_id")})
+    
+    return jsonify({
+        "ok": True,
+        "message": f"Route '{route.get('model_id')}' deleted"
+    })
+
+
+@app.route("/api/admin/llm/fallback-routes/<route_id>", methods=["PATCH"])
+@require_admin
+def admin_update_fallback_route(route_id):
+    """Update a fallback LLM route."""
+    route = query(
+        "SELECT id, is_fallback FROM llm_routes WHERE id = %s", (route_id,), one=True
+    )
+    if not route:
+        return jsonify({"error": "Route not found"}), 404
+    
+    if not route.get("is_fallback"):
+        return jsonify({"error": "Can only update fallback routes"}), 400
+    
+    body = request.get_json(force=True) or {}
+    allowed = ["model_name", "provider", "base_url", "api_key", 
+               "credits_per_unit", "priority", "disabled", "fallback_group"]
+    
+    sets, vals = [], []
+    for k, v in body.items():
+        if k in allowed:
+            sets.append(f"{k} = %s")
+            vals.append(v)
+    
+    if not sets:
+        return jsonify({"error": "No valid fields to update"}), 400
+    
+    vals.append(route_id)
+    query(f"UPDATE llm_routes SET {', '.join(sets)}, updated_at = NOW() WHERE id = %s", 
+          vals, write=True)
+    audit("admin_update_fallback_route", route_id, body)
+    
+    return jsonify({"ok": True, "message": "Route updated"})
+
+
+@app.route("/api/admin/llm/fallback-status", methods=["GET"])
+@require_admin
+def admin_fallback_status():
+    """Get current LLM routing status - shows if Cloudflare is up or fallback is active.
+    
+    Fallback modes:
+    1. cloudflare_down - Cloudflare Worker AI is not reachable
+    2. no_credits - User has no credits remaining
+    3. rate_limited - Cloudflare is rate-limiting requests
+    4. cloudflare - Normal operation
+    """
+    
+    # Check Cloudflare Worker AI health
+    cloudflare_status = "unknown"
+    cloudflare_response_time = None
+    cloudflare_error = None
+    
+    try:
+        start = time.time()
+        resp, err = fetch_worker_ai("health")
+        cloudflare_response_time = int((time.time() - start) * 1000)
+        
+        if err or not resp:
+            cloudflare_status = "down"
+            cloudflare_error = err
+        elif resp.ok:
+            data = resp.json()
+            status = data.get("status", "unknown")
+            if status == "healthy":
+                cloudflare_status = "healthy"
+            elif status == "rate_limited":
+                cloudflare_status = "rate_limited"
+            else:
+                cloudflare_status = "degraded"
+        else:
+            cloudflare_status = "down"
+            cloudflare_error = f"HTTP {resp.status_code}"
+    except Exception as e:
+        cloudflare_status = "down"
+        cloudflare_error = str(e)
+    
+    # Get fallback routes count
+    fallback_result = query(
+        "SELECT COUNT(*) as cnt FROM llm_routes WHERE is_fallback = true AND disabled = false", one=True
+    )
+    fallback_count = fallback_result["cnt"] if fallback_result else 0
+    
+    # Determine active mode
+    if cloudflare_status in ("healthy", "degraded"):
+        active_mode = "cloudflare"
+        reason = "Cloudflare healthy"
+    elif cloudflare_status == "rate_limited":
+        active_mode = "fallback"
+        reason = "FALLBACK: Cloudflare rate-limited"
+    else:
+        active_mode = "fallback"
+        reason = f"FALLBACK: Cloudflare down ({cloudflare_error})"
+    
+    return jsonify({
+        "ok": True,
+        "cloudflare": {
+            "status": cloudflare_status,
+            "responseTimeMs": cloudflare_response_time,
+            "error": cloudflare_error,
+            "url": WORKER_AI_BASE,
+        },
+        "fallback": {
+            "available": fallback_count > 0,
+            "routeCount": fallback_count,
+        },
+        "activeMode": active_mode,
+        "reason": reason,
+        "fallbackTriggers": {
+            "cloudflare_down": cloudflare_status == "down",
+            "rate_limited": cloudflare_status == "rate_limited",
+            "no_credits": False,  # Checked per-request in /api/llm/resolve
+            "fallback_available": fallback_count > 0,
+        },
+    })
+
+
+@app.route("/api/llm/resolve", methods=["POST"])
+def public_llm_resolve():
+    """Resolve the best LLM route for a request.
+    
+    Checks:
+    1. User credits available
+    2. Cloudflare health
+    3. Fallback routes available
+    
+    Returns the route to use or error.
+    """
+    body = request.get_json(force=True) or {}
+    user_id = body.get("user_id")
+    
+    if not user_id:
+        return jsonify({"error": "user_id required"}), 400
+    
+    # Check user credits
+    user = query(
+        "SELECT id, credits FROM admin_users WHERE id = %s", (user_id,), one=True
+    )
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    user_credits = float(user.get("credits", 0))
+    
+    # Check Cloudflare health
+    cloudflare_ok = True
+    cloudflare_status = "healthy"
+    cloudflare_error = None
+    
+    try:
+        resp, err = fetch_worker_ai("health")
+        if err or not resp or not resp.ok:
+            cloudflare_ok = False
+            cloudflare_status = "down"
+            cloudflare_error = err or "HTTP error"
+        else:
+            data = resp.json()
+            if data.get("status") == "rate_limited":
+                cloudflare_ok = False
+                cloudflare_status = "rate_limited"
+    except Exception as e:
+        cloudflare_ok = False
+        cloudflare_status = "down"
+        cloudflare_error = str(e)
+    
+    # Get fallback routes
+    fallback_routes = query("""
+        SELECT id, model_id, model_name, provider, base_url, api_key,
+               credits_per_unit, priority, fallback_group
+        FROM llm_routes 
+        WHERE is_fallback = true AND disabled = false
+        ORDER BY priority ASC, credits_per_unit ASC
+    """)
+    
+    fallback_available = len(fallback_routes) > 0 if fallback_routes else False
+    
+    # Determine route to use
+    use_fallback = False
+    fallback_reason = None
+    
+    if user_credits <= 0:
+        # No credits - must use fallback if available
+        if fallback_available:
+            use_fallback = True
+            fallback_reason = "no_credits"
+        else:
+            return jsonify({
+                "error": "No credits remaining",
+                "credits": user_credits,
+                "has_fallback": False,
+            }), 402  # Payment Required
+    
+    elif not cloudflare_ok:
+        # Cloudflare down - use fallback
+        if fallback_available:
+            use_fallback = True
+            fallback_reason = "cloudflare_down"
+        else:
+            return jsonify({
+                "error": "Cloudflare unavailable and no fallback routes configured",
+                "cloudflare_status": cloudflare_status,
+                "cloudflare_error": cloudflare_error,
+                "has_fallback": False,
+            }), 503  # Service Unavailable
+    
+    if use_fallback and fallback_routes:
+        # Return first fallback route
+        route = fallback_routes[0]
+        return jsonify({
+            "ok": True,
+            "route_type": "fallback",
+            "fallback_reason": fallback_reason,
+            "route": {
+                "model_id": route["model_id"],
+                "model_name": route["model_name"],
+                "provider": route["provider"],
+                "base_url": route["base_url"],
+                "api_key": route.get("api_key", ""),
+                "credits_per_unit": float(route["credits_per_unit"]),
+            },
+            "user_credits": user_credits,
+        })
+    
+    # Use Cloudflare Worker AI
+    return jsonify({
+        "ok": True,
+        "route_type": "cloudflare",
+        "route": {
+            "base_url": WORKER_AI_BASE,
+            "provider": "cloudflare",
+        },
+        "user_credits": user_credits,
+    })
+
+
 @app.route("/api/admin/system/health", methods=["GET"])
 @require_admin
 def admin_system_health():
