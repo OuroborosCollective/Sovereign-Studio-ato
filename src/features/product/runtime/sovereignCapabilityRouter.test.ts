@@ -246,21 +246,37 @@ describe('Sovereign Capability Router', () => {
       expect(decision.blocker).toBe('github_access_missing');
     });
 
-    it('routes draft PR to draft-pr-runtime when package is ready', () => {
+    it('routes draft PR to workspace-executor when workspace is ready', () => {
       const decision = decideSovereignCapabilityRoute({
         text: 'Erstelle einen Draft PR',
         repoReady: true,
         githubAccessState: 'ready',
         openhandsReady: true,
         directGitHubPatchReady: false,
-        workspaceReady: false,
+        workspaceReady: true,
         hasActiveWorkerBlocker: false,
         hasPackage: true,
       });
 
       expect(decision.allowed).toBe(true);
-      expect(decision.route).toBe('draft-pr-runtime');
+      expect(decision.route).toBe('workspace-executor');
       expect(decision.capability).toBe('draft_pr');
+    });
+
+    it('blocks draft PR when no executor is available', () => {
+      const decision = decideSovereignCapabilityRoute({
+        text: 'Erstelle einen Draft PR',
+        repoReady: true,
+        githubAccessState: 'ready',
+        openhandsReady: false,
+        directGitHubPatchReady: false,
+        workspaceReady: false,
+        hasActiveWorkerBlocker: false,
+        hasPackage: true,
+      });
+
+      expect(decision.allowed).toBe(false);
+      expect(decision.blocker).toBe('executor_unavailable');
     });
   });
 
