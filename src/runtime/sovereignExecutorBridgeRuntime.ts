@@ -1,5 +1,8 @@
 import type { SovereignActionEventInput } from '../features/product/runtime/sovereignActionStreamRuntime';
-import type { SovereignExecutorRouteInput } from '../features/product/runtime/sovereignExecutorRuntime';
+import type {
+  SovereignExecutorDecision,
+  SovereignExecutorRouteInput,
+} from '../features/product/runtime/sovereignExecutorRuntime';
 import { decideSovereignExecutorRoute } from '../features/product/runtime/sovereignExecutorRuntime';
 import { decideSovereignInternalOperator } from './sovereignInternalOperatorRuntime';
 
@@ -13,6 +16,8 @@ export interface SovereignExecutorBridgeDecision {
   readonly reason: string;
   readonly nextAction: string;
   readonly event: SovereignActionEventInput;
+  readonly executorRoute?: SovereignExecutorDecision['route'];
+  readonly executorActionRoute?: SovereignExecutorDecision['actionRoute'];
   readonly internalOperatorRoute?: string;
   readonly internalOperatorConfidence?: number;
   readonly internalOperatorStages?: readonly string[];
@@ -47,6 +52,8 @@ export function decideSovereignExecutorBridgeRoute(
       reason: executorDecision.reason,
       nextAction: executorDecision.nextAllowedAction,
       event: executorDecision.event,
+      executorRoute: executorDecision.route,
+      executorActionRoute: executorDecision.actionRoute,
     };
   }
 
@@ -57,6 +64,8 @@ export function decideSovereignExecutorBridgeRoute(
       reason: executorDecision.reason,
       nextAction: executorDecision.nextAllowedAction,
       event: executorDecision.event,
+      executorRoute: executorDecision.route,
+      executorActionRoute: executorDecision.actionRoute,
     };
   }
 

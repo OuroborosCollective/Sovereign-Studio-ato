@@ -148,6 +148,12 @@ export interface DevChatRepoLoadResult {
   readonly error?: string;
 }
 
+/**
+ * Hard timeout for GitHub repo tree loading. The UI must never stay in
+ * "repo läuft" forever when GitHub, DNS, CORS, or the browser network stalls.
+ */
+export const REPO_TREE_TIMEOUT_MS = 15_000;
+
 const GITHUB_URL_PATTERN = /https?:\/\/github\.com\/([^/\s]+)\/([^/\s#?]+)(?:\/tree\/([^/\s#?]+))?(?:\/([^\s#?]*))?/i;
 
 export function parseDevChatGithubUrl(text: string): ParsedDevChatGithubUrl | null {
@@ -187,11 +193,18 @@ function lastPreferredSourcePath(paths: string[]): string | undefined {
 }
 
 export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Promise<DevChatRepoLoadResult> {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), REPO_TREE_TIMEOUT_MS);
+
   try {
     const response = await fetch(
       `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(parsed.branch)}?recursive=1`,
-      { headers: { Accept: 'application/vnd.github+json' } },
+      {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: timeoutController.signal,
+      },
     );
+    clearTimeout(timeoutId);
 
     if (!response.ok) return { ok: false, error: `GitHub API ${response.status}` };
 
@@ -229,6 +242,10 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
       },
     };
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (isWorkerTimeoutError(error)) {
+      return { ok: false, error: 'GitHub Repo Timeout: keine Antwort von der GitHub Tree API.' };
+    }
     return { ok: false, error: error instanceof Error ? error.message : 'GitHub repo load failed' };
   }
 }

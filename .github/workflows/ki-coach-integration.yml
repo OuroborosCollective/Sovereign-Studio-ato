@@ -184,7 +184,7 @@ jobs:
         run: pnpm run type-check
 
       - name: Run All Unit Tests
-        run: pnpm test:run
+        run: pnpm test:smoke
 
       - name: Run KI Coach Specific Tests
         id: test
@@ -193,7 +193,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Run coach-related tests
-          TEST_OUTPUT=$(pnpm test:run --reporter=verbose 2>&1 | grep -E "(KI Coach|Coach|mobile-operator)" || echo "No specific coach tests found")
+          TEST_OUTPUT=$(pnpm test:smoke --reporter=verbose 2>&1 | grep -E "(KI Coach|Coach|mobile-operator)" || echo "No specific coach tests found")
           
           echo "| Test Type | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY

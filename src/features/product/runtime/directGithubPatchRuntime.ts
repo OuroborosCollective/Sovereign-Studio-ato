@@ -83,9 +83,9 @@ const COMPLEX_TASK_TOKENS = [
 const TITLE_TARGET_TOKENS = ['titel', 'title', 'überschrift', 'ueberschrift', 'heading'] as const;
 
 const TITLE_MARKER_PATTERNS = [
-  /(?:füge|fuege|add)\s+(.+?)\s+(?:in|to)\s+(?:den|die|das)?\s*(?:titel|title|überschrift|ueberschrift|heading)/i,
-  /(?:füge|fuege)\s+(?:dem|den|die|das)?\s*(?:titel|title|überschrift|ueberschrift|heading)\s+(.+?)\s+(?:hinzu|ein)/i,
-  /(?:titel|title|überschrift|ueberschrift|heading)\s+(?:mit|um)\s+(.+?)\s+(?:ergänzen|ergaenzen|ergänze|ergaenze|add|hinzufügen|hinzufuegen)/i,
+  /(?:füge|fuege|add)\s+(.+?)\s+(?:in|to)\s+(?:den|die|das)?\s*(?:(?:readme|dokument|document)\s+)?(?:titel|title|überschrift|ueberschrift|heading)/i,
+  /(?:füge|fuege)\s+(?:dem|den|die|das)?\s*(?:(?:readme|dokument|document)\s+)?(?:titel|title|überschrift|ueberschrift|heading)\s+(.+?)\s+(?:hinzu|ein)/i,
+  /(?:(?:readme|dokument|document)\s+)?(?:titel|title|überschrift|ueberschrift|heading)\s+(?:mit|um)\s+(.+?)\s+(?:ergänzen|ergaenzen|ergänze|ergaenze|add|hinzufügen|hinzufuegen)/i,
 ] as const;
 
 export function isDirectPatchIntent(text: string): boolean {
