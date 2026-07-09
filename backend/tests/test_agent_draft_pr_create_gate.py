@@ -26,6 +26,10 @@ class FakeDraftPrCreator:
         return self.url
 
 
+def fake_github_token() -> str:
+    return "ghp_" + "1234567890SECRETSECRETSECRET"
+
+
 def ready_job(**overrides):
     values = dict(
         job_id="agent-1",
@@ -94,7 +98,7 @@ def test_validate_blocks_unsafe_branch():
 
 
 def test_validate_blocks_secret_like_payload():
-    request = draft_pr_create_request_from_job(ready_job(diff_summary="token=ghp_1234567890SECRETSECRETSECRET"))
+    request = draft_pr_create_request_from_job(ready_job(diff_summary="token=" + fake_github_token()))
 
     blockers = validate_draft_pr_create_request(request)
 
