@@ -100,46 +100,29 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install SSH Client
+      - name: Create tar archive
         run: |
-          sudo apt-get update && sudo apt-get install -y openssh-client sshpass
+          tar -czf /tmp/sovereign-backend.tar.gz \
+            scripts/sovereign-backend/agent_runtime \
+            scripts/sovereign-backend/app.py
 
-      - name: Upload Backend to VPS
-        run: |
-          export SSHPASS="${{ secrets.VPS_PASSWORD }}"
-          sshpass -e scp -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
-            -P "${{ env.VPS_SSH_PORT }}" \
-            -r scripts/sovereign-backend/agent_runtime \
-            scripts/sovereign-backend/app.py \
-            ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/tmp/
-
-      - name: Deploy to Container
-        run: |
-          export SSHPASS="${{ secrets.VPS_PASSWORD }}"
-          sshpass -e ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 \
-            -p "${{ env.VPS_SSH_PORT }}" \
-            ${{ env.VPS_USER }}@${{ env.VPS_HOST }} << 'SSHEOF'
-            set -e
-            echo "Stopping container..."
+      - name: Deploy to VPS
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command: |
+            tar -xzf /tmp/sovereign-backend.tar.gz -C /tmp/
             docker stop sovereign-backend 2>/dev/null || true
             sleep 5
-            
-            echo "Copying agent_runtime..."
-            docker cp /tmp/agent_runtime sovereign-backend:/app/
-            
-            echo "Copying app.py..."
-            docker cp /tmp/app.py sovereign-backend:/app/
-            
-            echo "Starting container..."
+            docker cp /tmp/scripts/sovereign-backend/agent_runtime sovereign-backend:/app/
+            docker cp /tmp/scripts/sovereign-backend/app.py sovereign-backend:/app/
             docker start sovereign-backend
-            
-            echo "Waiting for startup..."
             sleep 25
-            
-            echo "Checking health..."
             HEALTH=$(curl -s http://127.0.0.1:8788/health)
             echo "Health: $HEALTH"
-            
             if echo "$HEALTH" | grep -q '"ok":true'; then
               echo "✅ Deployment successful!"
             else
@@ -147,45 +130,31 @@ jobs:
               docker logs sovereign-backend --tail 20
               exit 1
             fi
-          SSHEOF
+          source: .
+          target: /tmp
+          strip_components: 0
+          overwrite: true
 
       - name: Verify Routes
-        run: |
-          export SSHPASS="${{ secrets.VPS_PASSWORD }}"
-          sshpass -e ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 \
-            -p "${{ env.VPS_SSH_PORT }}" \
-            ${{ env.VPS_USER }}@${{ env.VPS_HOST }} \
-            "docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if \"agent\" in r.rule]; print(f\"Agent routes: {len(routes)}\"); [print(f\"  - {r}\") for r in sorted(routes)]'"
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command: |
+            docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
 
   smoke-test:
     name: VPS Smoke Tests
     needs: deploy-vps
     runs-on: ubuntu-latest
     env:
-      VPS_HOST: ${{ secrets.VPS_HOST }}
       ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Run Smoke Tests
+      - name: Test Health Endpoint
         run: |
-          # Get test user ID from VPS
-          VPS_USER="root"
-          VPS_PASSWORD="${{ secrets.VPS_PASSWORD }}"
-          VPS_SSH_PORT="${{ secrets.VPS_SSH_PORT || '22' }}"
-          
-          USER_ID=$(sshpass -e ssh -o StrictHostKeyChecking=no -o BatchMode=yes \
-            -p "$VPS_SSH_PORT" \
-            "$VPS_USER@$VPS_HOST" \
-            "docker exec supabase-db psql -U postgres -d postgres -t -c 'SELECT id FROM admin_users LIMIT 1;'" 2>/dev/null | tr -d '[:space:]')
-          
-          echo "Test user ID: $USER_ID"
-          
-          # Test health
           HEALTH=$(curl -s https://sovereign-backend.arelorian.de/health)
           echo "Health: $HEALTH"
           
