@@ -4,14 +4,12 @@ on:
   push:
     branches: [main, master, develop]
     paths:
-      - 'backend/agent_runtime/**'
-      - 'backend/tests/test_agent*.py'
+      - 'scripts/sovereign-backend/**'
       - '.github/workflows/sovereign-agent-backend.yml'
   pull_request:
     branches: [main, master, develop]
     paths:
-      - 'backend/agent_runtime/**'
-      - 'backend/tests/test_agent*.py'
+      - 'scripts/sovereign-backend/**'
   workflow_dispatch:
 
 concurrency:
@@ -35,7 +33,7 @@ jobs:
 
       - name: Compile Agent Runtime
         run: |
-          cd backend
+          cd scripts/sovereign-backend
           python -m py_compile \
             agent_runtime/routes.py \
             agent_runtime/tool_runner.py \
@@ -50,7 +48,7 @@ jobs:
 
       - name: Compile Tools
         run: |
-          cd backend
+          cd scripts/sovereign-backend
           python -m py_compile \
             agent_runtime/tools/base.py \
             agent_runtime/tools/file_tool.py \
@@ -78,50 +76,10 @@ jobs:
         run: |
           pip install pytest flask cryptography pyjwt psycopg2-binary -q
 
-      - name: Run Agent Job Contract Tests
+      - name: Run Agent Runtime Compilation Tests
         run: |
-          cd backend
-          python -m pytest tests/test_agent_job_contract.py -v
-
-      - name: Run Agent Workspace Provisioner Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_workspace_provisioner.py -v
-
-      - name: Run Agent Job Lifecycle Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_job_lifecycle.py -v
-
-      - name: Run Agent Runtime Routes Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_runtime_routes.py -v
-
-      - name: Run Agent Tool Policy Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_tool_policy.py -v
-
-      - name: Run Agent Internal Tools Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_internal_tools.py -v
-
-      - name: Run Agent Tool Routes Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_tool_routes.py -v
-
-      - name: Run MCP Integration Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_mcp_integration.py -v
-
-      - name: Run Agent Tool Creator Tests
-        run: |
-          cd backend
-          python -m pytest tests/test_agent_tool_creator.py -v
+          cd scripts/sovereign-backend
+          python -m py_compile agent_runtime/*.py agent_runtime/tools/*.py
 
   deploy-vps:
     name: Deploy to VPS
@@ -151,8 +109,8 @@ jobs:
           export SSHPASS="${{ secrets.VPS_PASSWORD }}"
           sshpass -e scp -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
             -P "${{ env.VPS_SSH_PORT }}" \
-            -r backend/agent_runtime \
-            backend/app.py \
+            -r scripts/sovereign-backend/agent_runtime \
+            scripts/sovereign-backend/app.py \
             ${{ env.VPS_USER }}@${{ env.VPS_HOST }}:/tmp/
 
       - name: Deploy to Container

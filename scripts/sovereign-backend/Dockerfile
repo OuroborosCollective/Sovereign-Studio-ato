@@ -2,9 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies and psql client for migrations
+# Install system dependencies
+# - postgresql-client: for database migrations
+# - git: for workspace repository cloning (sovereign-local-runner)
+# Note: OpenHands is NOT installed - sovereign-local-runner is the primary executor
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

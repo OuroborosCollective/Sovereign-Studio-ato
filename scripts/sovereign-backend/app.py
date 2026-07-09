@@ -119,6 +119,14 @@ def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     return _pool
 
 
+
+def get_connection():
+    """Get a database connection from the pool."""
+    pool = get_pool()
+    return pool.getconn()
+
+
+
 def query(sql: str, params=None, *, one=False, write=False):
     pool = get_pool()
     conn = pool.getconn()
@@ -1015,7 +1023,7 @@ def require_session(f):
 # ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
 
 @require_session
-@app.route("/api/user/openhands/jobs")
+# DISABLED_OPENTHANDS: @app.route("/api/user/openhands/jobs")
 @require_session
 def user_list_openhands_jobs():
     """List user's OpenHands jobs."""
@@ -1050,7 +1058,7 @@ def user_list_openhands_jobs():
 
 
 @require_session
-@app.route("/api/user/openhands/jobs", methods=["POST"])
+# DISABLED_OPENTHANDS: @app.route("/api/user/openhands/jobs", methods=["POST"])
 @require_session
 def user_create_openhands_job():
     """Create a new OpenHands job for the user."""
@@ -1095,7 +1103,7 @@ def user_create_openhands_job():
 
 
 @require_session
-@app.route("/api/user/openhands/jobs/<job_id>")
+# DISABLED_OPENTHANDS: @app.route("/api/user/openhands/jobs/<job_id>")
 @require_session
 def user_get_openhands_job(job_id):
     """Get a specific OpenHands job. Polls OpenHands for status on read."""
@@ -1192,7 +1200,7 @@ def _update_job_status_from_openhands(job_id, oh_conv_id):
 
 
 @require_session
-@app.route("/api/user/openhands/jobs/<job_id>/cancel", methods=["POST"])
+# DISABLED_OPENTHANDS: @app.route("/api/user/openhands/jobs/<job_id>/cancel", methods=["POST"])
 @require_session
 def user_cancel_openhands_job(job_id):
     """Cancel a running OpenHands job by stopping the conversation."""
@@ -1323,7 +1331,7 @@ Task: {mission}"""
 
 # ── Admin: List all user OpenHands jobs ──────────────────────────────────────
 
-@app.route("/api/admin/openhands/jobs")
+# DISABLED_OPENTHANDS: @app.route("/api/admin/openhands/jobs")
 @require_admin
 def admin_list_all_openhands_jobs():
     """Admin: List all OpenHands jobs across users."""
@@ -2089,7 +2097,7 @@ def health():
     return jsonify({"ok": True})
 
 
-@app.route("/openhands/jobs", methods=["POST"])
+# DISABLED_OPENTHANDS: @app.route("/openhands/jobs", methods=["POST"])
 def create_job():
     body = request.get_json(force=True) or {}
     # Accept both legacy contract (mission/repoUrl) and simple task field
@@ -2161,7 +2169,7 @@ def create_job():
     return jsonify(job), 201
 
 
-@app.route("/openhands/jobs/<job_id>")
+# DISABLED_OPENTHANDS: @app.route("/openhands/jobs/<job_id>")
 def get_job(job_id):
     with events_lock:
         if job_id not in jobs:
@@ -2185,7 +2193,7 @@ def get_job(job_id):
         return jsonify(job)
 
 
-@app.route("/openhands/jobs/<job_id>/cancel", methods=["POST"])
+# DISABLED_OPENTHANDS: @app.route("/openhands/jobs/<job_id>/cancel", methods=["POST"])
 def cancel_job(job_id):
     with events_lock:
         if job_id not in jobs:
@@ -5998,6 +6006,43 @@ def public_llm_chat():
         return jsonify({"error": f"Unbekanntes Model: {model}"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+# Register Sovereign Agent routes at module load time
+# These routes use sovereign-local-runner as the primary executor (not OpenHands)
+if True:  # Always execute during module load
+    try:
+        from functools import wraps as _wraps
+        from flask import request as _request
+        from agent_runtime.routes import register_sovereign_agent_routes as _register_routes
+
+        # Use the REAL require_session decorator from this module
+        def _require_session(fn):
+            @_wraps(fn)
+            def wrapper(*args, **kwargs):
+                uid = _get_session_user_id()
+                if not uid:
+                    from flask import jsonify
+                    return jsonify({"error": "Nicht eingeloggt"}), 401
+                _request.session_user_id = uid
+                return fn(*args, **kwargs)
+            return wrapper
+
+        def _get_db_connection():
+            pool = get_pool()
+            return pool.getconn()
+
+        _register_routes(
+            app,
+            require_session=_require_session,
+            get_connection=_get_db_connection
+        )
+        print("[INFO] Sovereign Agent routes registered (sovereign-local-runner)")
+    except Exception as e:
+        import traceback
+        print(f"[WARN] Failed to register Sovereign Agent routes: {e}")
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
