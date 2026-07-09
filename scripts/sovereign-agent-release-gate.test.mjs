@@ -12,6 +12,10 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const gateScript = path.join(repoRoot, 'scripts/sovereign-agent-release-gate.mjs');
 
+function fakeGithubToken() {
+  return 'ghp_' + '1234567890SECRETSECRETSECRET';
+}
+
 function runGate(cwd) {
   try {
     const stdout = execFileSync(process.execPath, [gateScript], {
@@ -117,7 +121,7 @@ test('release gate blocks secret-like literals in checked runtime files', () => 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sovereign-agent-release-gate-'));
   copyFixtureFromRepo(tempDir);
   const target = path.join(tempDir, 'backend/agent_runtime/routes.py');
-  fs.appendFileSync(target, '\nLEAK = "ghp_1234567890SECRETSECRETSECRET"\n');
+  fs.appendFileSync(target, `\nLEAK = "${fakeGithubToken()}"\n`);
 
   const result = runGate(tempDir);
 
