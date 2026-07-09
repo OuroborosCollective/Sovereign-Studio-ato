@@ -13,27 +13,27 @@ jobs:
   deploy-backend:
     name: Deploy Backend → VPS
     runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://sovereign-backend.arelorian.de
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.VPS_PASS }}
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+      POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+      POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      LLM_PROXY_KEY: ${{ secrets.LLM_PROXY_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Write SSH key
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          if [ -z "${VPS_SSH_KEY:-}" ]; then
-            echo "VPS_SSH_KEY secret is not configured." >&2
-            exit 1
-          fi
-          printf '%s\n' "${VPS_SSH_KEY}" | tr -d '\r' > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-
-      - name: Validate VPS SSH access
+      - name: Validate deploy parameters
         run: |
           set -euo pipefail
           if [ -z "${VPS_HOST:-}" ]; then
@@ -44,8 +44,8 @@ jobs:
             echo "VPS_USER secret is not configured." >&2
             exit 1
           fi
-          if [ ! -s ~/.ssh/deploy_key ]; then
-            echo "VPS_SSH_KEY secret is not configured or produced an empty deploy key." >&2
+          if [ -z "${VPS_PASSWORD:-}" ]; then
+            echo "VPS password secret is not configured. Expected VPS_PASSWORD, VPS_PW, or VPS_PASS." >&2
             exit 1
           fi
           if ! [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]; then
@@ -53,91 +53,92 @@ jobs:
             exit 1
           fi
 
-          echo "Checking TCP reachability for the configured VPS SSH endpoint."
-          if command -v nc >/dev/null 2>&1; then
-            if ! nc -vz -w 10 "${VPS_HOST}" "${VPS_SSH_PORT}"; then
-              echo "VPS SSH endpoint is not reachable from GitHub Actions on the configured port." >&2
-              echo "Check VPS_HOST, VPS_SSH_PORT, provider firewall, OS firewall, and sshd status." >&2
-              exit 1
-            fi
-          else
-            if ! timeout 10 bash -c 'cat < /dev/null > /dev/tcp/"$0"/"$1"' "${VPS_HOST}" "${VPS_SSH_PORT}"; then
-              echo "VPS SSH endpoint is not reachable from GitHub Actions on the configured port." >&2
-              echo "Check VPS_HOST, VPS_SSH_PORT, provider firewall, OS firewall, and sshd status." >&2
-              exit 1
-            fi
-          fi
-
-          if ! ssh-keyscan -T 10 -p "${VPS_SSH_PORT}" -H "${VPS_HOST}" >> ~/.ssh/known_hosts 2>/dev/null; then
-            echo "ssh-keyscan could not prefetch the VPS host key after TCP reachability passed." >&2
-            exit 1
-          fi
-
-          timeout 30s ssh \
-            -i ~/.ssh/deploy_key \
-            -p "${VPS_SSH_PORT}" \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile=~/.ssh/known_hosts \
-            -o IdentitiesOnly=yes \
-            -o BatchMode=yes \
-            -o ConnectTimeout=15 \
-            "${VPS_USER}@${VPS_HOST}" \
-            "echo 'VPS SSH preflight ok'"
+      - name: Upload app.py to VPS
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          source: "scripts/sovereign-backend/app.py"
+          target: "/tmp/sovereign-backend-deploy"
+          overwrite: true
 
       - name: Write .env to VPS
-        run: |
-          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 \
-            "${VPS_USER}@${VPS_HOST}" bash -s << 'SSHEOF'
-          set -euo pipefail
-          EXISTING_ENV=/opt/sovereign-backend/.env
-          EXISTING_TOOLCHAIN_BASE_URL=""
-          EXISTING_TOOLCHAIN_API_KEY=""
-          EXISTING_POSTGRES_HOST=""
-          # Preserve existing values that should be maintained
-          if [ -f "$EXISTING_ENV" ]; then
-            EXISTING_TOOLCHAIN_BASE_URL="$(grep -E '^TOOLCHAIN_BASE_URL=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
-            EXISTING_TOOLCHAIN_API_KEY="$(grep -E '^TOOLCHAIN_API_KEY=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
-            # Preserve existing POSTGRES_HOST to avoid host.docker.internal issue
-            EXISTING_POSTGRES_HOST="$(grep -E '^POSTGRES_HOST=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
-          fi
-          # Use existing POSTGRES_HOST if valid, otherwise use secret or default to supabase-db
-          if [ -n "$EXISTING_POSTGRES_HOST" ] && [ "$EXISTING_POSTGRES_HOST" != "host.docker.internal" ]; then
-            FINAL_POSTGRES_HOST="$EXISTING_POSTGRES_HOST"
-          else
-            FINAL_POSTGRES_HOST="${POSTGRES_HOST_SECRET:-supabase-db}"
-          fi
-          cat > /opt/sovereign-backend/.env << ENVEOF
-          POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
-          POSTGRES_PORT=${{ secrets.POSTGRES_PORT }}
-          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          LLM_PROXY_KEY=${{ secrets.LLM_PROXY_KEY }}
-          FLASK_ENV=production
-          OPENHANDS_API_URL=http://openhands-enterprise-openhands-1:8000
-          ENVEOF
-          # Override POSTGRES_HOST with the correct value
-          sed -i "s|POSTGRES_HOST=.*|POSTGRES_HOST=${FINAL_POSTGRES_HOST}|" /opt/sovereign-backend/.env
-          if [ -n "$EXISTING_TOOLCHAIN_BASE_URL" ]; then
-            printf 'TOOLCHAIN_BASE_URL=%s\n' "$EXISTING_TOOLCHAIN_BASE_URL" >> /opt/sovereign-backend/.env
-          fi
-          if [ -n "$EXISTING_TOOLCHAIN_API_KEY" ]; then
-            printf 'TOOLCHAIN_API_KEY=%s\n' "$EXISTING_TOOLCHAIN_API_KEY" >> /opt/sovereign-backend/.env
-          fi
-          echo "POSTGRES_HOST set to: $(grep POSTGRES_HOST /opt/sovereign-backend/.env | cut -d= -f2)"
-          SSHEOF
+        uses: appleboy/ssh-action@master
+        env:
+          POSTGRES_HOST: ${{ env.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ env.POSTGRES_PORT }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          ADMIN_API_KEY: ${{ env.ADMIN_API_KEY }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          LLM_PROXY_KEY: ${{ env.LLM_PROXY_KEY }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          envs: POSTGRES_HOST,POSTGRES_PORT,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,ADMIN_API_KEY,JWT_SECRET,LLM_PROXY_KEY
+          script_stop: true
+          script: |
+            set -euo pipefail
+            EXISTING_ENV=/opt/sovereign-backend/.env
+            EXISTING_TOOLCHAIN_BASE_URL=""
+            EXISTING_TOOLCHAIN_API_KEY=""
+            EXISTING_POSTGRES_HOST=""
+            if [ -f "$EXISTING_ENV" ]; then
+              EXISTING_TOOLCHAIN_BASE_URL="$(grep -E '^TOOLCHAIN_BASE_URL=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
+              EXISTING_TOOLCHAIN_API_KEY="$(grep -E '^TOOLCHAIN_API_KEY=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
+              EXISTING_POSTGRES_HOST="$(grep -E '^POSTGRES_HOST=' "$EXISTING_ENV" | tail -n 1 | cut -d= -f2- || true)"
+            fi
+            if [ -n "$EXISTING_POSTGRES_HOST" ] && [ "$EXISTING_POSTGRES_HOST" != "host.docker.internal" ]; then
+              FINAL_POSTGRES_HOST="$EXISTING_POSTGRES_HOST"
+            elif [ -n "${POSTGRES_HOST:-}" ]; then
+              FINAL_POSTGRES_HOST="$POSTGRES_HOST"
+            else
+              FINAL_POSTGRES_HOST="supabase-db"
+            fi
+            cat > /opt/sovereign-backend/.env << ENVEOF
+            POSTGRES_HOST=${FINAL_POSTGRES_HOST}
+            POSTGRES_PORT=${POSTGRES_PORT}
+            POSTGRES_DB=${POSTGRES_DB}
+            POSTGRES_USER=${POSTGRES_USER}
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            ADMIN_API_KEY=${ADMIN_API_KEY}
+            JWT_SECRET=${JWT_SECRET}
+            LLM_PROXY_KEY=${LLM_PROXY_KEY}
+            FLASK_ENV=production
+            OPENHANDS_API_URL=http://openhands-enterprise-openhands-1:8000
+            ENVEOF
+            if [ -n "$EXISTING_TOOLCHAIN_BASE_URL" ]; then
+              printf 'TOOLCHAIN_BASE_URL=%s\n' "$EXISTING_TOOLCHAIN_BASE_URL" >> /opt/sovereign-backend/.env
+            fi
+            if [ -n "$EXISTING_TOOLCHAIN_API_KEY" ]; then
+              printf 'TOOLCHAIN_API_KEY=%s\n' "$EXISTING_TOOLCHAIN_API_KEY" >> /opt/sovereign-backend/.env
+            fi
+            echo "POSTGRES_HOST set to: $(grep POSTGRES_HOST /opt/sovereign-backend/.env | cut -d= -f2)"
 
       - name: Copy app.py to VPS and rebuild
-        run: |
-          # Copy latest backend source if it exists in the repo.
-          scp -i ~/.ssh/deploy_key -P "${VPS_SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 \
-            scripts/sovereign-backend/app.py \
-            "${VPS_USER}@${VPS_HOST}:/opt/sovereign-backend/app.py" 2>/dev/null || true
-          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 \
-            "${VPS_USER}@${VPS_HOST}" \
-            "cd /opt/sovereign-backend && docker compose build --no-cache && docker compose up -d"
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            if [ -f /tmp/sovereign-backend-deploy/scripts/sovereign-backend/app.py ]; then
+              cp /tmp/sovereign-backend-deploy/scripts/sovereign-backend/app.py /opt/sovereign-backend/app.py
+            else
+              echo "Uploaded app.py not found in expected path." >&2
+              exit 1
+            fi
+            cd /opt/sovereign-backend
+            docker compose build --no-cache
+            docker compose up -d
 
       - name: Health check
         run: |
