@@ -128,9 +128,9 @@ describe('Sovereign Capability Router', () => {
       expect(decision.nextAction).toBe('start_workspace');
     });
 
-    it('routes explicit Draft-PR execution to openhands when executor is ready without requiring frontend GitHub PAT first', () => {
+    it('routes explicit Draft-PR execution to openhands when explicitly requested', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Bitte implementiere einen Chat-State-Fix als Draft PR.',
+        text: 'Bitte mit OpenHands einen Draft PR erstellen.',
         repoReady: true,
         githubAccessState: 'missing',
         openhandsReady: true,
@@ -140,24 +140,24 @@ describe('Sovereign Capability Router', () => {
       });
 
       expect(decision.route).toBe('openhands');
-      expect(decision.capability).toBe('code_patch_plan');
+      expect(decision.capability).toBe('draft_pr');
       expect(decision.allowed).toBe(true);
       expect(decision.nextAction).toBe('start_openhands');
     });
 
-    it('routes complex code work to openhands when workspace is not ready', () => {
+    it('routes complex code work to workspace-executor when available', () => {
       const decision = decideSovereignCapabilityRoute({
         text: 'Baue Feature X ein',
         repoReady: true,
         githubAccessState: 'ready',
         openhandsReady: true,
         directGitHubPatchReady: false,
-        workspaceReady: false,
+        workspaceReady: true,
         hasActiveWorkerBlocker: false,
       });
 
-      expect(decision.route).toBe('openhands');
-      expect(decision.capability).toBe('code_patch_plan');
+      expect(decision.route).toBe('workspace-executor');
+      expect(decision.capability).toBe('isolated_workspace');
       expect(decision.allowed).toBe(true);
     });
 
@@ -246,7 +246,7 @@ describe('Sovereign Capability Router', () => {
       expect(decision.blocker).toBe('github_access_missing');
     });
 
-    it('routes draft PR to openhands when package and GitHub are ready', () => {
+    it('routes draft PR to draft-pr-runtime when package is ready', () => {
       const decision = decideSovereignCapabilityRoute({
         text: 'Erstelle einen Draft PR',
         repoReady: true,
@@ -259,7 +259,7 @@ describe('Sovereign Capability Router', () => {
       });
 
       expect(decision.allowed).toBe(true);
-      expect(decision.route).toBe('openhands');
+      expect(decision.route).toBe('draft-pr-runtime');
       expect(decision.capability).toBe('draft_pr');
     });
   });
