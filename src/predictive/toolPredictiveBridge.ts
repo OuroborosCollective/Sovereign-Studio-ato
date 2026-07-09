@@ -133,11 +133,10 @@ export async function getToolPredictions(
 
   const snapshot = layer.getSnapshot();
   
-  // Query latent space for similar patterns
-  const patterns = layer.getLatentSpace().searchPatterns(
-    `tool.${toolType}.${toolName}`,
-    5
-  );
+  // Query latent space for patterns associated with this tool
+  const patterns = layer.getLatentSpace().getPatternsForNode(
+    `tool.${toolType}.${toolName}`
+  ).slice(0, 5);
 
   if (patterns.length === 0) {
     return {
@@ -192,12 +191,16 @@ export function registerToolNode(
 
     layer.registerNode({
       id: `tool.${toolType}.${toolName}`,
-      type: toolType,
+      name: toolName,
+      nodeType: 'motor',
       activation: 0.5,
-      incomingSynapses: [],
+      previousActivation: 0.5,
       outgoingSynapses: [],
-      bias: 0,
-      timestamp: Date.now(),
+      incomingSynapses: [],
+      signalHistory: [],
+      predictionHistory: [],
+      errorHistory: [],
+      lastActivity: Date.now(),
     });
   } catch {
     // Silently ignore - tool registration is optional
@@ -221,9 +224,9 @@ export function withToolSignals<T extends unknown[], R>(
     try {
       result = fn(...args);
       return result;
-    } catch {
+    } catch (error) {
       status = 'error';
-      throw;
+      throw error;
     } finally {
       const durationMs = performance.now() - startTime;
       
@@ -253,9 +256,9 @@ export function withToolSignalsAsync<T extends unknown[], R>(
     try {
       const result = await fn(...args);
       return result;
-    } catch {
+    } catch (error) {
       status = 'error';
-      throw;
+      throw error;
     } finally {
       const durationMs = performance.now() - startTime;
       
