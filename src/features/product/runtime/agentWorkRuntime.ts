@@ -34,7 +34,7 @@ export interface AgentWorkSnapshot {
   readonly state: AgentWorkState;
   readonly repoFullName: string | null;
   readonly baseBranch: string | null;
-  readonly executorType: 'openhands' | 'cloudflare-worker' | 'github-app' | 'local' | null;
+  readonly executorType: 'sovereign-agent' | 'openhands' | 'cloudflare-worker' | 'github-app' | 'local' | null;
   readonly jobId: string | null;
   readonly branchName: string | null;
   readonly commitSha: string | null;

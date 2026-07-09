@@ -41,11 +41,14 @@ function mapJobToStage(job: OpenHandsJobSnapshot): TruthCardStage {
   switch (job.status) {
     case 'idle': return 'erkannt';
     case 'queued': return 'startet';
+    case 'provisioning': return 'startet';
     case 'running': return 'läuft';
     case 'waiting-for-user': return 'läuft';
+    case 'validating': return 'läuft';
     case 'blocked': return 'blockiert';
     case 'failed': return 'blockiert';
     case 'completed': return job.draftPrUrl ? 'draft-pr-bereit' : 'blockiert';
+    case 'cleaned': return 'blockiert';
   }
 }
 
@@ -226,7 +229,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
         )}
         {completedWithoutDraftPr && (
           <div style={{ color: C.amber, marginTop: 4 }}>
-            OpenHands meldet abgeschlossen, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.
+            Sovereign Agent meldet abgeschlossen, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.
           </div>
         )}
       </div>

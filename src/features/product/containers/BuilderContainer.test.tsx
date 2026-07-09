@@ -272,7 +272,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(rtButton);
     expect(screen.getByText("Runtime Quelle")).toBeDefined();
     expect(screen.getByText("Cloudflare Worker")).toBeDefined();
-    expect(screen.getByText("Echte Agent-Runtime für Code/Draft-PR-Aufträge")).toBeDefined();
+    expect(screen.getByText("Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge")).toBeDefined();
   });
 
   it("starts the external agent only for explicit code or Draft-PR execution intent", async () => {

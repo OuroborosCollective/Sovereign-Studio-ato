@@ -1,5 +1,5 @@
-export type OpenHandsDeploymentMode = 'disabled' | 'external-agent-runtime';
-export type OpenHandsJobStatus = 'idle' | 'queued' | 'running' | 'waiting-for-user' | 'blocked' | 'failed' | 'completed';
+export type OpenHandsDeploymentMode = 'disabled' | 'sovereign-agent-backend' | 'external-agent-runtime';
+export type OpenHandsJobStatus = 'idle' | 'queued' | 'provisioning' | 'running' | 'waiting-for-user' | 'validating' | 'blocked' | 'failed' | 'completed' | 'cleaned';
 export type OpenHandsEventLevel = 'info' | 'warning' | 'error' | 'success';
 
 /** OpenHands health status */
@@ -52,6 +52,9 @@ export interface OpenHandsJobRequest {
   allowAutoMerge: false;
   runtimeTruthRequired: true;
   source: 'sovereign-studio';
+  executor?: 'sovereign-local-runner';
+  provisionWorkspace?: boolean;
+  cloneRepo?: boolean;
 }
 
 export interface OpenHandsRuntimeEvent {
@@ -103,10 +106,21 @@ function isHttpsUrl(value: string): boolean {
 }
 
 export function resolveOpenHandsEnterpriseConfig(input: OpenHandsEnterpriseConfigInput = {}): OpenHandsEnterpriseConfig {
+  const sovereignAgentApiUrl = normalizeUrl(
+    readWindowOverride('__SOVEREIGN_AGENT_API_URL__')
+      || readBuildEnv('VITE_SOVEREIGN_AGENT_API_URL')
+      || readBuildEnv('VITE_SOVEREIGN_BACKEND_URL')
+      || '',
+  );
+  const legacyOpenHandsApiUrl = normalizeUrl(
+    readWindowOverride('__SOVEREIGN_OPENHANDS_AGENT_API_URL__')
+      || readBuildEnv('VITE_OPENHANDS_AGENT_API_URL')
+      || '',
+  );
   const agentApiUrl = normalizeUrl(
     input.agentApiUrl
-      || readWindowOverride('__SOVEREIGN_OPENHANDS_AGENT_API_URL__')
-      || readBuildEnv('VITE_OPENHANDS_AGENT_API_URL')
+      || sovereignAgentApiUrl
+      || legacyOpenHandsApiUrl
       || '',
   );
   const adminConsoleUrl = normalizeUrl(
@@ -116,12 +130,14 @@ export function resolveOpenHandsEnterpriseConfig(input: OpenHandsEnterpriseConfi
       || '',
   );
   const enabledEnv = readWindowOverride('__SOVEREIGN_OPENHANDS_ENABLED__') || readBuildEnv('VITE_OPENHANDS_ENABLED');
-  const enabled = typeof input.enabled === 'boolean'
+  const legacyEnabled = typeof input.enabled === 'boolean'
     ? input.enabled
     : enabledEnv === 'true';
-  const deploymentMode: OpenHandsDeploymentMode = input.deploymentMode || (enabled ? 'external-agent-runtime' : 'disabled');
+  const deploymentMode: OpenHandsDeploymentMode = input.deploymentMode
+    || (sovereignAgentApiUrl ? 'sovereign-agent-backend' : legacyEnabled ? 'external-agent-runtime' : 'disabled');
+  const enabled = deploymentMode === 'sovereign-agent-backend' || legacyEnabled;
   const urlSafe = !agentApiUrl || isHttpsUrl(agentApiUrl) || isLocalUrl(agentApiUrl);
-  const ready = enabled && deploymentMode === 'external-agent-runtime' && Boolean(agentApiUrl) && urlSafe;
+  const ready = enabled && deploymentMode !== 'disabled' && Boolean(agentApiUrl) && urlSafe;
 
   return {
     enabled,
@@ -130,22 +146,25 @@ export function resolveOpenHandsEnterpriseConfig(input: OpenHandsEnterpriseConfi
     adminConsoleUrl,
     ready,
     reason: ready
-      ? 'OpenHands Enterprise agent runtime is configured as an external worker backend.'
+      ? deploymentMode === 'sovereign-agent-backend'
+        ? 'Sovereign Agent Backend is configured as the primary internal runtime.'
+        : 'OpenHands Enterprise agent runtime is configured as an external worker backend.'
       : enabled
         ? 'OpenHands Enterprise is enabled but the agent API URL is missing or unsafe. Use HTTPS outside localhost.'
         : 'OpenHands Enterprise is disabled. Sovereign will not call an agent backend.',
   };
 }
 
-export function buildOpenHandsJobRequest(input: { repoUrl: string; branch?: string; mission: string }): OpenHandsJobRequest {
+export function buildOpenHandsJobRequest(input: { repoUrl: string; branch?: string; mission: string; deploymentMode?: OpenHandsDeploymentMode }): OpenHandsJobRequest {
   const repoUrl = input.repoUrl.trim();
   const mission = input.mission.trim();
   const branch = input.branch?.trim() || 'main';
+  const deploymentMode = input.deploymentMode || resolveOpenHandsEnterpriseConfig().deploymentMode;
 
   if (!repoUrl) throw new Error('OpenHands job requires a repository URL.');
   if (!mission) throw new Error('OpenHands job requires a mission.');
 
-  return {
+  const base: OpenHandsJobRequest = {
     repoUrl,
     branch,
     mission,
@@ -154,6 +173,17 @@ export function buildOpenHandsJobRequest(input: { repoUrl: string; branch?: stri
     runtimeTruthRequired: true,
     source: 'sovereign-studio',
   };
+
+  if (deploymentMode === 'sovereign-agent-backend') {
+    return {
+      ...base,
+      executor: 'sovereign-local-runner',
+      provisionWorkspace: true,
+      cloneRepo: true,
+    };
+  }
+
+  return base;
 }
 
 export function createOpenHandsIdleSnapshot(): OpenHandsJobSnapshot {
@@ -177,7 +207,7 @@ export function summarizeOpenHandsJob(snapshot: OpenHandsJobSnapshot): string {
 }
 
 export function isOpenHandsTerminalStatus(status: OpenHandsJobStatus): boolean {
-  return status === 'blocked' || status === 'failed' || status === 'completed';
+  return status === 'blocked' || status === 'failed' || status === 'completed' || status === 'cleaned';
 }
 
 export function maskOpenHandsSensitiveText(value: string): string {

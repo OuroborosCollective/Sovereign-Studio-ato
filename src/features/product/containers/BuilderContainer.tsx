@@ -2544,7 +2544,7 @@ export function BuilderContainer({
           );
         }
         if (snap.state === 'intent_detected') {
-          snap = transitionExecutorStarting(snap, 'openhands');
+          snap = transitionExecutorStarting(snap, 'sovereign-agent');
         }
         if (snap.state === 'executor_starting' && openhandsJob.jobId) {
           snap = transitionExecutorRunning(snap, openhandsJob.jobId);
@@ -2553,10 +2553,10 @@ export function BuilderContainer({
       // Priority: failed/blocked are terminal states, must be checked BEFORE draftPrUrl
       // Otherwise a failed job with a stale draftPrUrl would show as 'draft_pr_ready'
       if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
-        snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
+        snap = transitionFailed(snap, 'Sovereign Agent Runtime fehlgeschlagen.');
       }
       if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
-        snap = transitionBlocked(snap, 'OpenHands Executor blockiert.');
+        snap = transitionBlocked(snap, 'Sovereign Agent Runtime blockiert.');
       }
       // draftPrUrl only transitions to ready if no terminal failure state exists
       if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
@@ -2851,16 +2851,16 @@ export function BuilderContainer({
       available: true,
     },
     {
-      id: "openhands-runtime",
-      label: openhandsReady ? "OpenHands Executor" : "OpenHands offline",
+      id: "sovereign-agent-runtime",
+      label: openhandsReady ? "Sovereign Agent Runtime" : "Sovereign Agent offline",
       tier: (openhandsReady
         ? openhandsIsRunning
           ? "active"
           : "ready"
         : "blocked") as RuntimeTier,
       description: openhandsReady
-        ? "Echte Agent-Runtime für Code/Draft-PR-Aufträge"
-        : "Agent-Runtime nicht verbunden",
+        ? "Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge"
+        : "Sovereign Agent Runtime nicht verbunden",
       available: Boolean(openhandsReady),
     },
     {
@@ -3911,7 +3911,7 @@ Es wurde noch keine Datei geändert.`,
     }
 
     // ── #458 + Delegation: Execution intent routing — BEFORE credit guard.
-    // OpenHands execution does not go through the Worker Chat (gemini-2.0-flash) path;
+    // Sovereign Agent execution does not go through the Worker Chat (gemini-2.0-flash) path;
     // charging LLM credits for an executor handoff is incorrect.
     const isExecutionIntent = isOpenHandsExecutionIntent(submittedText);
     const isDelegatedExecution = isDelegatedOpenHandsExecutionIntent(submittedText, chatHistory);
@@ -3931,14 +3931,14 @@ Es wurde noch keine Datei geändert.`,
         });
         appendActionEvent({
           kind: 'executor_started',
-          route: 'openhands',
-          label: 'OpenHands Executor wird gestartet',
+          route: 'runtime',
+          label: 'Sovereign Agent Runtime wird gestartet',
           detail: `Repo: ${_repo}`,
           state: 'running',
         });
         appendChatLine({
           role: "assistant",
-          text: "Ausführungsauftrag erkannt.\nRoute gewählt: OpenHands Executor.\nErgebnis bleibt Draft PR, kein Auto-Merge.",
+          text: "Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Agent Runtime.\nErgebnis bleibt Draft PR, kein Auto-Merge.",
         });
         setAgentWorkSnapshot((prev) =>
           prev.state === 'idle'
@@ -4160,7 +4160,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
     if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-
+      
       const claimCheck = checkChatClaim(fallback.content, agentWorkSnapshot);
       let textToAppend =
         claimCheck.allowed || !claimCheck.honestFallback
@@ -4174,7 +4174,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
       if (fallback.fallbackUsed) {
         textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
       }
-
+      
       appendChatLine({ role: "assistant", text: textToAppend });
       return;
     }
@@ -5099,14 +5099,14 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-patch',
                         label: 'Patch/Draft-PR Route blockiert',
-                        detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'OpenHands Executor ist nicht konfiguriert.',
+                        detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'Sovereign Agent Runtime ist nicht verbunden.',
                         kind: 'patch_blocked',
                       }));
                       appendChatLine({
                         role: 'assistant',
                         text: openhandsReady
                           ? 'Der GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
-                          : 'Der GitHub-Zugang ist bereit, aber weder Direct GitHub Patch noch OpenHands ist für diesen Auftrag verfügbar. Es wurde noch keine Datei geändert.',
+                          : 'Der GitHub-Zugang ist bereit, aber weder Direct GitHub Patch noch Sovereign Agent Runtime ist für diesen Auftrag verfügbar. Es wurde noch keine Datei geändert.',
                       });
                       return;
                     }
