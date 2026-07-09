@@ -202,13 +202,13 @@ function headerLabelFor(snapshot: AgentWorkSnapshot, job: OpenHandsJobSnapshot |
   if (snapshot.state === 'draft_pr_ready') return 'Status: Draft PR bereit';
   if (snapshot.state === 'blocked') return 'Status: Executor blockiert';
   if (snapshot.state === 'failed') return 'Status: Executor fehlgeschlagen';
-  if (job?.status === 'running') return 'OpenHands arbeitet…';
-  if (snapshot.state === 'executor_starting' || job?.status === 'queued') return 'OpenHands startet…';
+  if (job?.status === 'running') return 'Sovereign Agent arbeitet…';
+  if (snapshot.state === 'executor_starting' || job?.status === 'queued') return 'Sovereign Agent startet…';
   if (snapshot.state === 'access_required') return 'GitHub-Zugang erforderlich';
   if (snapshot.state === 'access_validating') return 'GitHub-Zugang wird geprüft…';
   if (snapshot.state === 'access_ready') return 'GitHub-Zugang bereit';
   if (snapshot.state === 'intent_detected') return 'Status: Auftrag erkannt';
-  if (isExecutorActive(snapshot.state)) return 'OpenHands arbeitet…';
+  if (isExecutorActive(snapshot.state)) return 'Sovereign Agent arbeitet…';
   return 'Status: Auftrag erkannt';
 }
 

@@ -49,14 +49,14 @@ describe('AgentEventStream', () => {
     render(<AgentEventStream snapshot={intentSnapshot()} />);
 
     expect(screen.getAllByText(/Auftrag erkannt/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText(/OpenHands arbeitet/i)).toBeNull();
+    expect(screen.queryByText(/Sovereign Agent arbeitet/i)).toBeNull();
   });
 
   it('shows executor_starting as starting, not as running work', () => {
     render(<AgentEventStream snapshot={transitionExecutorStarting(intentSnapshot(), 'openhands')} />);
 
-    expect(screen.getByText('OpenHands startet…')).toBeTruthy();
-    expect(screen.queryByText(/OpenHands arbeitet/i)).toBeNull();
+    expect(screen.getByText('Sovereign Agent startet…')).toBeTruthy();
+    expect(screen.queryByText(/Sovereign Agent arbeitet/i)).toBeNull();
   });
 
   it('lets verified backend running status override a local starting snapshot', () => {
@@ -67,14 +67,14 @@ describe('AgentEventStream', () => {
       />,
     );
 
-    expect(screen.getByText('OpenHands arbeitet…')).toBeTruthy();
-    expect(screen.queryByText('OpenHands startet…')).toBeNull();
+    expect(screen.getByText('Sovereign Agent arbeitet…')).toBeTruthy();
+    expect(screen.queryByText('Sovereign Agent startet…')).toBeNull();
   });
 
-  it('shows OpenHands arbeitet only when runtime state or job status is running', () => {
+  it('shows Sovereign Agent arbeitet only when runtime state or job status is running', () => {
     render(<AgentEventStream snapshot={runningSnapshot()} job={runningJob()} />);
 
-    expect(screen.getByText('OpenHands arbeitet…')).toBeTruthy();
+    expect(screen.getByText('Sovereign Agent arbeitet…')).toBeTruthy();
   });
 
   it('keeps access states visible as access truth, not generic intent truth', () => {

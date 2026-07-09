@@ -236,7 +236,7 @@ describe('openhandsPatternGatewayBridge', () => {
     });
 
     it('shows blocker status', () => {
-      expect(summarizeOpenHandsChatStatus(blockerSnapshot())).toBe('OpenHands blockiert.');
+      expect(summarizeOpenHandsChatStatus(blockerSnapshot())).toBe('Sovereign Agent blockiert.');
     });
 
     it('shows empty result status', () => {

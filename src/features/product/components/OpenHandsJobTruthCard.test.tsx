@@ -10,6 +10,8 @@ describe('OpenHandsJobTruthCard', () => {
     expect(screen.getAllByText('Blockiert').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/keine Draft-PR-URL liegt vor/i)).toBeDefined();
     expect(screen.queryByRole('button', { name: /Draft PR öffnen/i })).toBeNull();
+    expect(screen.getByText('Sovereign Agent Job')).toBeDefined();
+    expect(screen.queryByText('OpenHands Job')).toBeNull();
   });
 
   it('shows Draft PR ready only when completed job includes draftPrUrl evidence', () => {

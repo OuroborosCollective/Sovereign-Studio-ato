@@ -84,7 +84,7 @@ describe('WorkerBlockerCard', () => {
     expect(onRetryWithMessage).toHaveBeenCalledWith('retry this');
   });
 
-  it('falls back to onRetry and hides OpenHands when the supplied message is a diagnostic', () => {
+  it('falls back to onRetry and hides Sovereign Agent handoff when the supplied message is a diagnostic', () => {
     const onRetry = vi.fn();
     const onRetryWithMessage = vi.fn();
     const onOpenHandsInstead = vi.fn();
@@ -98,14 +98,14 @@ describe('WorkerBlockerCard', () => {
         userMessage={diagnosticText}
       />
     );
-    expect(screen.queryByText(/OpenHands/i)).toBeNull();
+    expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
     fireEvent.click(screen.getByText('Retry'));
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(onRetryWithMessage).not.toHaveBeenCalled();
     expect(onOpenHandsInstead).not.toHaveBeenCalled();
   });
 
-  it('shows OpenHands action when user has code intent', () => {
+  it('shows Sovereign Agent action when user has code intent', () => {
     render(
       <WorkerBlockerCard
         blocker={mockBlocker}
@@ -115,10 +115,10 @@ describe('WorkerBlockerCard', () => {
         userMessage="fix this bug in the code"
       />
     );
-    expect(screen.getByText(/OpenHands/i)).toBeTruthy();
+    expect(screen.getByText(/Sovereign Agent für Code-Auftrag/i)).toBeTruthy();
   });
 
-  it('hides OpenHands action when user has no code intent', () => {
+  it('hides Sovereign Agent action when user has no code intent', () => {
     render(
       <WorkerBlockerCard
         blocker={mockBlocker}
@@ -128,7 +128,7 @@ describe('WorkerBlockerCard', () => {
         userMessage="hello world"
       />
     );
-    expect(screen.queryByText(/OpenHands/i)).toBeNull();
+    expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
   });
 });
 

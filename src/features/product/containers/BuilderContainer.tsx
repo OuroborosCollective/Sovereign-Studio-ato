@@ -3055,7 +3055,7 @@ export function BuilderContainer({
           status: workerBlocker ? "fail" : "pass",
         },
         {
-          label: "OpenHands configured",
+          label: "Sovereign Agent configured",
           status: openhandsReady ? "pass" : "wait",
         },
         {
@@ -3729,7 +3729,7 @@ export function BuilderContainer({
           // Internal operator is available - show honest message, no fake patch
           appendChatLine({
             role: 'assistant',
-            text: `GitHub-Zugang ist bereit.\nOpenHands ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+            text: `GitHub-Zugang ist bereit.\nSovereign Agent Fallback ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
           });
           addLog('info', 'Write intent routed via Sovereign Internal Operator bridge', 'router');
           return;
@@ -3793,13 +3793,12 @@ Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' :
             }
 
             if ('capability' in directPatchResult && !directPatchResult.capability.available) {
-              appendActionEvent({
-                kind: 'done',
+              appendActionEvent(buildBlockedActionEvent({
                 route: 'github-patch',
-                label: 'Patch/Draft-PR Route geprüft',
+                label: 'Direct Patch nicht verfügbar',
                 detail: `Route erlaubt; Direct Patch noch nicht verfügbar: ${directPatchResult.capability.reason}`,
-                state: 'done',
-              });
+                kind: 'patch_blocked',
+              }));
               appendChatLine({
                 role: 'assistant',
                 text: `Schreibauftrag erkannt.
@@ -3976,7 +3975,7 @@ Es wurde noch keine Datei geändert.`,
         // Internal operator is available - runtime handoff decision, no fake patch claimed
         appendChatLine({
           role: "assistant",
-          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nOpenHands bleibt optional und wird nicht als Pflicht-Executor behandelt.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereign Agent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
         });
         addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
@@ -3997,7 +3996,7 @@ Route gewählt: Patch/Draft-PR Runtime.
 
 ${executorBridgeDecision.reason}
 
-OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
+Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag belegen kann. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
         });
         addLog('info', `Execution intent allowed by bridge without mandatory OpenHands · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
@@ -4160,7 +4159,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
     if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-      
+
       const claimCheck = checkChatClaim(fallback.content, agentWorkSnapshot);
       let textToAppend =
         claimCheck.allowed || !claimCheck.honestFallback
@@ -4174,7 +4173,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
       if (fallback.fallbackUsed) {
         textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
       }
-      
+
       appendChatLine({ role: "assistant", text: textToAppend });
       return;
     }
@@ -4804,14 +4803,14 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                           break;
 
                         case 'openhands':
-                          // OpenHands route — ONLY with validated GitHub write
+                          // Sovereign Agent route — ONLY with validated GitHub write
                           if (!githubWriteAllowed) {
                             // Defensive: block and open access gate
                             appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
                             setShowGitHubAccessOverride(true);
                             appendChatLine({
                               role: 'assistant',
-                              text: 'OpenHands benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.',
+                              text: 'Sovereign Agent Runtime benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.',
                             });
                             break;
                           }
@@ -4892,7 +4891,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                 );
               })()}
 
-              {/* ── Manus/Replit-style live event stream — OpenHands remains one route among several */}
+              {/* ── Manus/Replit-style live event stream — Sovereign Agent remains one route among several */}
               {agentWorkSnapshot.state !== 'idle' && (
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
@@ -5070,7 +5069,7 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                           }));
                           appendChatLine({
                             role: 'assistant',
-                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nOpenHands ist nicht konfiguriert. Es wurde noch keine Datei geändert.`,
+                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nSovereign Agent Runtime ist nicht verbunden. Es wurde noch keine Datei geändert.`,
                           });
                           addLog('warn', 'Pending write intent direct patch unavailable: ' + directPatchResult.capability.reason, 'router');
                           return;

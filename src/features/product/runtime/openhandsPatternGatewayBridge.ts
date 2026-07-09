@@ -237,7 +237,7 @@ export function shouldLearnFromOpenHands(snapshot: OpenHandsJobSnapshot): boolea
 }
 
 /**
- * Summarize OpenHands status for Chat display.
+ * Summarize agent status for Chat display.
  * Returns short status hints, not raw logs.
  */
 export function summarizeOpenHandsChatStatus(snapshot: OpenHandsJobSnapshot): string {
@@ -246,12 +246,12 @@ export function summarizeOpenHandsChatStatus(snapshot: OpenHandsJobSnapshot): st
   switch (gate.type) {
     case 'running':
       return snapshot.status === 'running'
-        ? `OpenHands arbeitet: ${snapshot.changedFiles?.length ?? 0} Datei(en) bisher.`
-        : 'OpenHands wartet...';
+        ? `Sovereign Agent arbeitet: ${snapshot.changedFiles?.length ?? 0} Datei(en) bisher.`
+        : 'Sovereign Agent wartet...';
     case 'success':
-      return `OpenHands fertig: ${gate.changedFiles.length} Datei(en)${gate.draftPrUrl ? ', Draft PR erstellt' : ''}.`;
+      return `Sovereign Agent fertig: ${gate.changedFiles.length} Datei(en)${gate.draftPrUrl ? ', Draft PR erstellt' : ''}.`;
     case 'blocker':
-      return 'OpenHands blockiert.';
+      return 'Sovereign Agent blockiert.';
     case 'empty':
       return 'OpenHands: Kein greifbares Ergebnis.';
     case 'plan-only':

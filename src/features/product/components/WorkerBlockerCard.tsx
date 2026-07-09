@@ -213,9 +213,9 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
               fontWeight: 500,
               cursor: 'pointer',
             }}
-            aria-label="Use OpenHands for code task instead"
+            aria-label="Use Sovereign Agent for code task instead"
           >
-            OpenHands für Code-Auftrag
+            Sovereign Agent für Code-Auftrag
           </button>
         )}
       </div>
