@@ -132,6 +132,7 @@ export async function getToolPredictions(
   }
 
   const snapshot = layer.getSnapshot();
+  void snapshot;
   
   // Query latent space for similar patterns
   const patterns = layer.getLatentSpace().searchPatterns(
@@ -221,9 +222,9 @@ export function withToolSignals<T extends unknown[], R>(
     try {
       result = fn(...args);
       return result;
-    } catch {
+    } catch (error) {
       status = 'error';
-      throw;
+      throw error;
     } finally {
       const durationMs = performance.now() - startTime;
       
@@ -253,9 +254,9 @@ export function withToolSignalsAsync<T extends unknown[], R>(
     try {
       const result = await fn(...args);
       return result;
-    } catch {
+    } catch (error) {
       status = 'error';
-      throw;
+      throw error;
     } finally {
       const durationMs = performance.now() - startTime;
       
