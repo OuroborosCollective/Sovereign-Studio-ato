@@ -16,6 +16,7 @@ jobs:
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
     steps:
       - name: Checkout
@@ -25,7 +26,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          if [ -z "${VPS_SSH_KEY:-}" ]; then
+            echo "VPS_SSH_KEY secret is not configured." >&2
+            exit 1
+          fi
+          printf '%s\n' "${VPS_SSH_KEY}" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
       - name: Validate VPS SSH access
@@ -71,7 +76,9 @@ jobs:
           timeout 30s ssh \
             -i ~/.ssh/deploy_key \
             -p "${VPS_SSH_PORT}" \
-            -o StrictHostKeyChecking=no \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o IdentitiesOnly=yes \
             -o BatchMode=yes \
             -o ConnectTimeout=15 \
             "${VPS_USER}@${VPS_HOST}" \
@@ -79,7 +86,7 @@ jobs:
 
       - name: Write .env to VPS
         run: |
-          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 \
             "${VPS_USER}@${VPS_HOST}" bash -s << 'SSHEOF'
           set -euo pipefail
           EXISTING_ENV=/opt/sovereign-backend/.env
@@ -125,10 +132,10 @@ jobs:
       - name: Copy app.py to VPS and rebuild
         run: |
           # Copy latest backend source if it exists in the repo.
-          scp -i ~/.ssh/deploy_key -P "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+          scp -i ~/.ssh/deploy_key -P "${VPS_SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 \
             scripts/sovereign-backend/app.py \
             "${VPS_USER}@${VPS_HOST}:/opt/sovereign-backend/app.py" 2>/dev/null || true
-          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15 \
+          ssh -i ~/.ssh/deploy_key -p "${VPS_SSH_PORT}" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 \
             "${VPS_USER}@${VPS_HOST}" \
             "cd /opt/sovereign-backend && docker compose build --no-cache && docker compose up -d"
 
