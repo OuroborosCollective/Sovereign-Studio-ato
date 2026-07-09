@@ -265,47 +265,47 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
   const { agentState, openhandsStatus, changedFiles = 0, draftPrUrl, blockerReason } = args;
 
   if (agentState === 'idle' && (!openhandsStatus || openhandsStatus === 'idle')) {
-    return 'Nein, OpenHands läuft noch nicht.\nKein Auftrag wurde gestartet.';
+    return 'Nein, Sovereign Agent läuft noch nicht.\nKein Auftrag wurde gestartet.';
   }
   if (agentState === 'executor_running' || openhandsStatus === 'running') {
     const fileInfo = changedFiles > 0
       ? `Geänderte Dateien bisher: ${changedFiles}.`
       : 'Geänderte Dateien bisher: 0.';
     const prInfo = draftPrUrl ? 'Draft PR: wird vorbereitet.' : 'Draft PR: noch nicht bereit.';
-    return `Ja, OpenHands läuft.\n${fileInfo}\n${prInfo}`;
+    return `Ja, Sovereign Agent läuft.\n${fileInfo}\n${prInfo}`;
   }
   if (agentState === 'executor_starting' || openhandsStatus === 'queued') {
-    return 'OpenHands wird gestartet. Warte auf erste Rückmeldung.';
+    return 'Sovereign Agent wird gestartet. Warte auf erste Rückmeldung.';
   }
   if (agentState === 'blocked' || openhandsStatus === 'blocked') {
     const reason = blockerReason || 'Kein Grund angegeben.';
     // #500: Fix next action based on actual blocker type
     const nextAction = reason.includes('GitHub')
       ? 'Sicheren GitHub-Zugang öffnen.'
-      : 'OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.';
-    return `Nein, OpenHands läuft nicht.\nStatus: blockiert.\nGrund: ${reason}\nNächste Aktion: ${nextAction}`;
+      : 'Sovereign Agent Backend verbinden oder Direct GitHub Patch Route nutzen.';
+    return `Nein, Sovereign Agent läuft nicht.\nStatus: blockiert.\nGrund: ${reason}\nNächste Aktion: ${nextAction}`;
   }
   if (agentState === 'failed' || openhandsStatus === 'failed') {
-    const reason = blockerReason || 'OpenHands Executor fehlgeschlagen.';
-    return `Nein, OpenHands ist fehlgeschlagen.\nGrund: ${reason}`;
+    const reason = blockerReason || 'Sovereign Agent Runtime fehlgeschlagen.';
+    return `Nein, Sovereign Agent ist fehlgeschlagen.\nGrund: ${reason}`;
   }
   if (agentState === 'draft_pr_ready') {
     return draftPrUrl
-      ? `OpenHands hat einen Draft PR erstellt: ${draftPrUrl}`
-      : 'OpenHands meldet Draft-PR-Ready, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
+      ? `Sovereign Agent hat einen Draft PR erstellt: ${draftPrUrl}`
+      : 'Sovereign Agent meldet Draft-PR-Ready, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
   }
   if (openhandsStatus === 'completed') {
     return draftPrUrl
-      ? `OpenHands hat einen Draft PR erstellt: ${draftPrUrl}`
-      : 'OpenHands meldet completed, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
+      ? `Sovereign Agent hat einen Draft PR erstellt: ${draftPrUrl}`
+      : 'Sovereign Agent meldet completed, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
   }
   if (agentState === 'intent_detected' || agentState === 'access_required') {
     // #500: Report GitHub access as required only when it's actually the blocker
     const isGithubBlocker = blockerReason && blockerReason.includes('GitHub');
     if (isGithubBlocker) {
-      return 'Auftrag erkannt. OpenHands wurde noch nicht gestartet.\nGrund: GitHub-Schreibzugang erforderlich.\nNächste Aktion: Sicheren GitHub-Zugang öffnen.';
+      return 'Auftrag erkannt. Sovereign Agent wurde noch nicht gestartet.\nGrund: GitHub-Schreibzugang erforderlich.\nNächste Aktion: Sicheren GitHub-Zugang öffnen.';
     }
-    return 'Auftrag erkannt. OpenHands wurde noch nicht gestartet.\nGrund: Executor nicht bereit.\nNächste Aktion: OpenHands konfigurieren oder Direct GitHub Patch Route nutzen.';
+    return 'Auftrag erkannt. Sovereign Agent wurde noch nicht gestartet.\nGrund: Executor nicht bereit.\nNächste Aktion: Sovereign Agent Backend verbinden oder Direct GitHub Patch Route nutzen.';
   }
   return 'Executor-Status wird ermittelt. Bitte kurz warten.';
 }
@@ -343,21 +343,21 @@ export function buildAlternativeRouteStatusAnswer(args: {
     return 'GitHub-Zugang fehlt. Bitte zuerst sicheren GitHub-Zugang einrichten.';
   }
 
-  // GitHub is ready, but OpenHands is not configured
+  // GitHub is ready, but the Sovereign Agent backend is not configured
   if (!openhandsReady && !directPatchAvailable) {
     return [
       'GitHub-Zugang ist bereit.',
-      'OpenHands ist nicht konfiguriert.',
+      'Sovereign Agent Backend ist nicht verbunden.',
       'Für einfache README-/Docs-Änderungen könnte eine Direct GitHub Patch Route genutzt werden, wenn verfügbar.',
       'Für große Multi-Datei-/Test-Aufträge braucht es einen Workspace-Executor.',
-      'Nächste Aktion: OpenHands konfigurieren oder Direct GitHub Patch Runtime aktivieren.',
+      'Nächste Aktion: Sovereign Agent Backend verbinden oder Direct GitHub Patch Runtime aktivieren.',
     ].join('\n');
   }
 
   if (!openhandsReady && directPatchAvailable) {
     return [
       'GitHub-Zugang ist bereit.',
-      'OpenHands ist nicht konfiguriert.',
+      'Sovereign Agent Backend ist nicht verbunden.',
       'Direct GitHub Patch Route ist verfügbar für einfache Änderungen.',
       'Für große Multi-Datei-/Test-Aufträge braucht es einen Workspace-Executor.',
     ].join('\n');

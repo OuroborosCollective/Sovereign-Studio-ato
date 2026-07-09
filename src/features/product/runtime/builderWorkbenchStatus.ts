@@ -115,10 +115,10 @@ export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
     addUniqueEntry(`Repo Ladefehler · ${input.chatRepoError}`);
   }
   if (input.openhandsJob?.status === 'failed') {
-    addUniqueEntry(`OpenHands Job fehlgeschlagen${input.openhandsJob.lastError ? ` · ${input.openhandsJob.lastError}` : ''}`);
+    addUniqueEntry(`Sovereign Agent Job fehlgeschlagen${input.openhandsJob.lastError ? ` · ${input.openhandsJob.lastError}` : ''}`);
   }
   if (input.openhandsJob?.status === 'blocked') {
-    addUniqueEntry(`OpenHands Job blockiert${input.openhandsJob.lastError ? ` · ${input.openhandsJob.lastError}` : ''}`);
+    addUniqueEntry(`Sovereign Agent Job blockiert${input.openhandsJob.lastError ? ` · ${input.openhandsJob.lastError}` : ''}`);
   }
   for (const log of input.logs) {
     if (isNoiseLevel(log.level) && !isResolvedGithubAccessLog(input, log.msg)) {

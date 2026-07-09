@@ -52,9 +52,9 @@ export interface OpenHandsJobRequest {
   allowAutoMerge: false;
   runtimeTruthRequired: true;
   source: 'sovereign-studio';
-  executor?: 'sovereign-local-runner';
-  provisionWorkspace?: boolean;
-  cloneRepo?: boolean;
+  executor: 'sovereign-local-runner';
+  provisionWorkspace: true;
+  cloneRepo: true;
 }
 
 export interface OpenHandsRuntimeEvent {
@@ -134,7 +134,11 @@ export function resolveOpenHandsEnterpriseConfig(input: OpenHandsEnterpriseConfi
     ? input.enabled
     : enabledEnv === 'true';
   const deploymentMode: OpenHandsDeploymentMode = input.deploymentMode
-    || (sovereignAgentApiUrl ? 'sovereign-agent-backend' : legacyEnabled ? 'external-agent-runtime' : 'disabled');
+    || (sovereignAgentApiUrl
+      ? 'sovereign-agent-backend'
+      : legacyEnabled
+        ? 'external-agent-runtime'
+        : 'disabled');
   const enabled = deploymentMode === 'sovereign-agent-backend' || legacyEnabled;
   const urlSafe = !agentApiUrl || isHttpsUrl(agentApiUrl) || isLocalUrl(agentApiUrl);
   const ready = enabled && deploymentMode !== 'disabled' && Boolean(agentApiUrl) && urlSafe;
@@ -148,23 +152,22 @@ export function resolveOpenHandsEnterpriseConfig(input: OpenHandsEnterpriseConfi
     reason: ready
       ? deploymentMode === 'sovereign-agent-backend'
         ? 'Sovereign Agent Backend is configured as the primary internal runtime.'
-        : 'OpenHands Enterprise agent runtime is configured as an external worker backend.'
+        : 'OpenHands Enterprise is configured only as an explicit legacy fallback runtime.'
       : enabled
-        ? 'OpenHands Enterprise is enabled but the agent API URL is missing or unsafe. Use HTTPS outside localhost.'
-        : 'OpenHands Enterprise is disabled. Sovereign will not call an agent backend.',
+        ? 'Agent backend is enabled but the API URL is missing or unsafe. Use HTTPS outside localhost.'
+        : 'Agent backend is disabled. Sovereign will not call an external executor.',
   };
 }
 
-export function buildOpenHandsJobRequest(input: { repoUrl: string; branch?: string; mission: string; deploymentMode?: OpenHandsDeploymentMode }): OpenHandsJobRequest {
+export function buildOpenHandsJobRequest(input: { repoUrl: string; branch?: string; mission: string }): OpenHandsJobRequest {
   const repoUrl = input.repoUrl.trim();
   const mission = input.mission.trim();
   const branch = input.branch?.trim() || 'main';
-  const deploymentMode = input.deploymentMode || resolveOpenHandsEnterpriseConfig().deploymentMode;
 
   if (!repoUrl) throw new Error('OpenHands job requires a repository URL.');
   if (!mission) throw new Error('OpenHands job requires a mission.');
 
-  const base: OpenHandsJobRequest = {
+  return {
     repoUrl,
     branch,
     mission,
@@ -172,18 +175,10 @@ export function buildOpenHandsJobRequest(input: { repoUrl: string; branch?: stri
     allowAutoMerge: false,
     runtimeTruthRequired: true,
     source: 'sovereign-studio',
+    executor: 'sovereign-local-runner',
+    provisionWorkspace: true,
+    cloneRepo: true,
   };
-
-  if (deploymentMode === 'sovereign-agent-backend') {
-    return {
-      ...base,
-      executor: 'sovereign-local-runner',
-      provisionWorkspace: true,
-      cloneRepo: true,
-    };
-  }
-
-  return base;
 }
 
 export function createOpenHandsIdleSnapshot(): OpenHandsJobSnapshot {
@@ -195,15 +190,18 @@ export function createOpenHandsIdleSnapshot(): OpenHandsJobSnapshot {
 }
 
 export function summarizeOpenHandsJob(snapshot: OpenHandsJobSnapshot): string {
-  if (snapshot.status === 'idle') return 'OpenHands wartet auf einen echten Agentenauftrag.';
-  if (snapshot.status === 'queued') return 'OpenHands Auftrag ist in der Warteschlange.';
-  if (snapshot.status === 'running') return `OpenHands arbeitet${snapshot.openHandsId ? ` mit echter Runtime-ID ${snapshot.openHandsId}` : ''}: ${snapshot.changedFiles.length} Datei(en) gemeldet.`;
-  if (snapshot.status === 'waiting-for-user') return 'OpenHands wartet auf eine Nutzerentscheidung.';
-  if (snapshot.status === 'blocked') return snapshot.lastError || 'OpenHands ist durch ein Gate blockiert.';
-  if (snapshot.status === 'failed') return snapshot.lastError || 'OpenHands Auftrag ist fehlgeschlagen.';
+  if (snapshot.status === 'idle') return 'Sovereign Agent wartet auf einen echten Agentenauftrag.';
+  if (snapshot.status === 'queued') return 'Sovereign Agent Auftrag ist in der Warteschlange.';
+  if (snapshot.status === 'provisioning') return 'Sovereign Agent provisioniert den Workspace.';
+  if (snapshot.status === 'running') return `Sovereign Agent arbeitet${snapshot.openHandsId ? ` mit echter Runtime-ID ${snapshot.openHandsId}` : ''}: ${snapshot.changedFiles.length} Datei(en) gemeldet.`;
+  if (snapshot.status === 'waiting-for-user') return 'Sovereign Agent wartet auf eine Nutzerentscheidung.';
+  if (snapshot.status === 'validating') return 'Sovereign Agent validiert Ergebnis-Evidence.';
+  if (snapshot.status === 'blocked') return snapshot.lastError || 'Sovereign Agent ist durch ein Gate blockiert.';
+  if (snapshot.status === 'failed') return snapshot.lastError || 'Sovereign Agent Auftrag ist fehlgeschlagen.';
+  if (snapshot.status === 'cleaned') return 'Sovereign Agent Workspace wurde bereinigt.';
   return snapshot.draftPrUrl
-    ? `OpenHands hat einen Draft PR erstellt: ${snapshot.draftPrUrl}`
-    : 'OpenHands meldet abgeschlossen, aber kein Draft PR ist belegt.';
+    ? `Sovereign Agent hat einen Draft PR erstellt: ${snapshot.draftPrUrl}`
+    : 'Sovereign Agent meldet abgeschlossen, aber kein Draft PR ist belegt.';
 }
 
 export function isOpenHandsTerminalStatus(status: OpenHandsJobStatus): boolean {

@@ -149,7 +149,7 @@ export function buildOutcomeHints(
     .map((f) => f.trim());
   const draftPrUrl = safeHttpsUrl(job.draftPrUrl);
   if (job.openHandsId?.trim())
-    hints.push({ kind: 'runtime', text: `🐤 OpenHands ID: ${job.openHandsId.trim()}` });
+    hints.push({ kind: 'runtime', text: `🐤 Sovereign Agent ID: ${job.openHandsId.trim()}` });
   if (files.length > 0)
     hints.push({ kind: 'files', text: `${files.length} Datei(en) geändert · Details im Files-Menü` });
   if (draftPrUrl)
@@ -157,7 +157,7 @@ export function buildOutcomeHints(
   if ((job.status === 'blocked' || job.status === 'failed') && job.lastError?.trim())
     hints.push({ kind: 'stopper', text: job.lastError.trim() });
   if (job.status === 'completed' && files.length === 0 && !draftPrUrl)
-    hints.push({ kind: 'stopper', text: 'OpenHands meldet abgeschlossen, aber keine Dateiänderung und kein Draft PR sind belegt' });
+    hints.push({ kind: 'stopper', text: 'Sovereign Agent meldet abgeschlossen, aber keine Dateiänderung und kein Draft PR sind belegt' });
   return hints;
 }
 

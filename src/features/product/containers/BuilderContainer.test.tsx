@@ -403,14 +403,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getAllByText("Retry")[0]);
 
     await waitFor(() => expect(screen.getByText("Retry beantwortet.")).toBeDefined());
-    expect(screen.queryByText(/OpenHands für Code-Auftrag/i)).toBeNull();
+    expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
   });
 
   it("keeps OpenHands output as plain hints and not result cards", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} openhandsReady openhandsJob={{ status: "running", openHandsId: "conv_123", changedFiles: ["src/App.tsx"], events: [] }} />);
-    // AgentEventStream shows "OpenHands arbeitet…" when executor is active
-    expect(screen.getByText(/OpenHands arbeitet/i)).toBeDefined();
+    // AgentEventStream shows "Sovereign Agent arbeitet…" when executor is active
+    expect(screen.getByText(/Sovereign Agent arbeitet/i)).toBeDefined();
     // Changed-file count badge
     expect(screen.getByText(/1 Datei/)).toBeDefined();
     // No "Karten" label — no card-grid UI
@@ -580,7 +580,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText(/GitHub-Zugang öffnen/i)).toBeDefined();
   });
 
-  it("shows OpenHands started message on execution intent when executor is ready", async () => {
+  it("shows Sovereign Agent started message on execution intent when executor is ready", async () => {
     const props = { ...baseProps(), openhandsReady: true, onStartOpenHands: vi.fn() };
     renderWithProviders(<BuilderContainer {...props} />);
     fireEvent.change(chatField(), { target: { value: "Implementiere den mobilen Chat-Fix als Draft PR." } });
@@ -620,7 +620,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "arbeitet er schon?" } });
     fireEvent.click(sendButton());
     await waitFor(() =>
-      expect(screen.getByText(/Ja, OpenHands läuft/i)).toBeDefined(),
+      expect(screen.getByText(/Ja, Sovereign Agent läuft/i)).toBeDefined(),
     );
     // Must NOT have called Worker for this status question
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);

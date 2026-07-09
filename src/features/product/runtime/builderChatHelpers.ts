@@ -114,8 +114,8 @@ const LOCAL_STATUS_QUESTION_TOKENS = [
 ];
 
 /**
- * Tokens that ask if OpenHands has STARTED (not if it's done).
- * For these questions, "Ja, OpenHands läuft" is the expected answer.
+ * Tokens that ask if the Sovereign Agent has STARTED (not if it's done).
+ * For these questions, "Ja, Sovereign Agent läuft" is the expected answer.
  */
 const STARTUP_QUESTION_TOKENS = [
   "arbeitet er schon",
@@ -141,7 +141,7 @@ export function isLocalCompletionStatusQuestion(text: string): boolean {
 }
 
 /**
- * Detects if the question is asking if OpenHands has STARTED (not if it's done).
+ * Detects if the question is asking if the Sovereign Agent has STARTED (not if it's done).
  */
 export function isStartupQuestion(text: string): boolean {
   const lower = text.toLowerCase();
@@ -169,19 +169,19 @@ export interface LocalStatusAnswerArgs {
 /**
  * Builds a truthful, German, local answer for a completion-status question
  * from real runtime state. Never fabricates success. Priority order:
- * - For startup questions ("arbeitet er schon?", ...): OpenHands running status first
- * - For completion questions: draft PR ready > patch generated > OpenHands running
+ * - For startup questions ("arbeitet er schon?", ...): Sovereign Agent running status first
+ * - For completion questions: draft PR ready > patch generated > Sovereign Agent running
  * - Then: worker blocked > GitHub access missing > worker-answer-only > nothing happened yet
  *
  * For startup questions ("arbeitet er schon?", "läuft er?", ...), returns
- * "Ja, OpenHands läuft" when OpenHands is running. For completion questions
+ * "Ja, Sovereign Agent läuft" when the Sovereign Agent is running. For completion questions
  * ("ist er fertig?", "bist du fertig?", ...), returns "Noch nicht..." when
- * OpenHands is still running.
+ * the Sovereign Agent is still running.
  */
 export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
-  // Startup questions get priority: "Is OpenHands running?" must answer that directly
+  // Startup questions get priority: "Is the Sovereign Agent running?" must answer that directly
   if (args.questionText && isStartupQuestion(args.questionText) && args.openhandsRunning) {
-    return "Ja, OpenHands läuft.";
+    return "Ja, Sovereign Agent läuft.";
   }
 
   if (args.draftPrUrl) {
@@ -200,7 +200,7 @@ export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
     return "Patch-Vorschau wurde erzeugt. Noch nicht angewendet. Noch kein geprüfter Diff, kein Commit, kein Draft PR.\nNächster Schritt: Diff prüfen oder Patch bestätigen.";
   }
   if (args.openhandsRunning) {
-    return "Noch nicht. OpenHands arbeitet noch.";
+    return "Noch nicht. Sovereign Agent arbeitet noch.";
   }
   if (args.workerBlocker) {
     return args.buildWorkerBlockerAnswer
@@ -335,7 +335,7 @@ export function buildWorkerSystemPrompt(args: {
     "Wenn nach UI/UX gefragt wird: konkrete Beobachtungen und nächste Schritte — keine Figma-Floskeln.",
     "Sage nicht 'I don’t have the ability', wenn du sinnvoll beraten kannst.",
     "Wenn der User eine Datei-, Repo-, README-, Code-, Patch-, Commit- oder Draft-PR-Änderung will:",
-    "  1. Sage klar, dass OpenHands/Draft-PR der Executor ist.",
+    "  1. Sage klar, dass Sovereign Agent/Draft-PR Runtime der Executor ist.",
     "  2. Bereite einen kompakten Ausführungsbrief vor (Mission, Ziel, Scope).",
     "  3. Biete NICHT an, das direkt selbst zu machen — das ist nicht dein Job.",
     repoContext,
@@ -391,8 +391,8 @@ export function buildWorkerBlockerAnswer(args: {
     healthLine,
     repoLine,
     args.openhandsReady
-      ? "OpenHands Executor ist nur für echte Code-/Draft-PR-Aufträge zuständig und wurde für diese Chatfrage nicht gestartet."
-      : "OpenHands Executor ist nicht bereit; normale Chatfragen bleiben Worker-Route.",
+      ? "Sovereign Agent Runtime ist nur für echte Code-/Draft-PR-Aufträge zuständig und wurde für diese Chatfrage nicht gestartet."
+      : "Sovereign Agent Runtime ist nicht bereit; normale Chatfragen bleiben Worker-Route.",
     codeLine,
   ].join("\n");
 }
@@ -405,7 +405,7 @@ export function buildWorkerBlockerAnswer(args: {
  * Detects a short follow-up "why" question after a local runtime status answer or blocker.
  * These must be answered locally from runtime state — no worker call.
  * Matches: "warum?", "wieso?", "weshalb?", "why?", "warum nicht?", "warum passiert nichts?"
- * Max 6 words to avoid catching complex questions like "warum macht OpenHands das so?"
+ * Max 6 words to avoid catching complex questions like "warum macht der Agent das so?"
  */
 export function isFollowUpWhyQuestion(text: string): boolean {
   const clean = text.trim().toLowerCase();
@@ -433,14 +433,14 @@ export function composerRouteHint(args: {
 }): string {
   const clean = args.draft.trim();
   if (!clean)
-    return "Worker Chat · Repo laden · interne Runtime zuerst · OpenHands nur explizit";
+    return "Worker Chat · Repo laden · interne Runtime zuerst · Sovereign Agent nur explizit";
   const quickRepo = detectAndroidQuickRepoUrl(clean);
   if (quickRepo.recognized) return quickRepo.hint;
   if (parseDevChatGithubUrl(clean)) return "Repo laden · Runtime Snapshot";
   if (isOpenHandsExecutionIntent(clean))
     return args.agentDisabled
-      ? "OpenHands blockiert · Worker erklärt zuerst"
-      : "OpenHands Executor starten";
+      ? "Sovereign Agent blockiert · Worker erklärt zuerst"
+      : "Sovereign Agent starten";
   if (args.workerBlocked && !isWorkerRetryIntent(clean))
     return "Worker blockiert · lokale Diagnose statt blindem Retry";
   if (args.workerBlocked && isWorkerRetryIntent(clean))

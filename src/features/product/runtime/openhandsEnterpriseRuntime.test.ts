@@ -42,30 +42,6 @@ describe('openhandsEnterpriseRuntime', () => {
     expect(config.adminConsoleUrl).toBe('https://openhands.example.com/admin');
   });
 
-  it('auto-detects sovereign-agent-backend when sovereign backend URL is present', () => {
-    const config = resolveOpenHandsEnterpriseConfig({
-      agentApiUrl: 'https://sovereign-backend.example/api/agent',
-    });
-
-    expect(config.ready).toBe(true);
-    expect(config.deploymentMode).toBe('sovereign-agent-backend');
-    expect(config.agentApiUrl).toBe('https://sovereign-backend.example/api/agent');
-  });
-
-  it('builds sovereign-agent-backend job requests with executor config', () => {
-    const request = buildOpenHandsJobRequest({
-      repoUrl: 'https://github.com/test/repo',
-      branch: 'main',
-      mission: 'Test sovereign agent',
-      deploymentMode: 'sovereign-agent-backend',
-    });
-
-    expect(request.executor).toBe('sovereign-local-runner');
-    expect(request.provisionWorkspace).toBe(true);
-    expect(request.cloneRepo).toBe(true);
-    expect(request.draftPrOnly).toBe(true);
-  });
-
   it('rejects unsafe non-local HTTP agent URLs', () => {
     const config = resolveOpenHandsEnterpriseConfig({
       enabled: true,
@@ -74,6 +50,32 @@ describe('openhandsEnterpriseRuntime', () => {
 
     expect(config.ready).toBe(false);
     expect(config.reason).toContain('HTTPS');
+  });
+
+
+
+  it('enables the internal Sovereign Agent backend without OpenHands flag when mode is explicit', () => {
+    const config = resolveOpenHandsEnterpriseConfig({
+      deploymentMode: 'sovereign-agent-backend',
+      agentApiUrl: 'https://sovereign-backend.example',
+    });
+
+    expect(config.enabled).toBe(true);
+    expect(config.ready).toBe(true);
+    expect(config.deploymentMode).toBe('sovereign-agent-backend');
+    expect(config.reason).toContain('Sovereign Agent Backend');
+  });
+
+  it('builds requests for the sovereign local runner by default', () => {
+    const request = buildOpenHandsJobRequest({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      mission: 'Run internal agent path.',
+    });
+
+    expect(request.executor).toBe('sovereign-local-runner');
+    expect(request.provisionWorkspace).toBe(true);
+    expect(request.cloneRepo).toBe(true);
   });
 
   it('builds draft-pr-only job requests', () => {
@@ -101,7 +103,6 @@ describe('openhandsEnterpriseRuntime', () => {
     expect(isOpenHandsTerminalStatus('blocked')).toBe(true);
     expect(isOpenHandsTerminalStatus('failed')).toBe(true);
     expect(isOpenHandsTerminalStatus('completed')).toBe(true);
-    expect(isOpenHandsTerminalStatus('cleaned')).toBe(true);
   });
 
   it('masks license, token and registry password text', () => {

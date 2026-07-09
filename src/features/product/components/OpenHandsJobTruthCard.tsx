@@ -1,5 +1,5 @@
 /**
- * OpenHands Job Truth Card - Shows real OpenHands job status from runtime state
+ * Sovereign Agent Job Truth Card - Shows real agent job status from runtime state
  * 
  * This is NOT a progress indicator. It shows the CURRENT runtime state as a
  * status chain. The stages are not sequential steps but possible states.
@@ -35,7 +35,7 @@ export interface OpenHandsJobTruthCardProps {
   onOpenDraftPr?: () => void;
 }
 
-// Map OpenHands status to TruthCard stage.
+// Map agent status to TruthCard stage.
 // Runtime truth: completed alone is not Draft-PR-ready. The URL is the evidence.
 function mapJobToStage(job: OpenHandsJobSnapshot): TruthCardStage {
   switch (job.status) {
@@ -84,7 +84,7 @@ function StatusChain({ currentStage }: { currentStage: TruthCardStage }) {
         marginBottom: 12,
       }}
       role="list"
-      aria-label="OpenHands Job Statuskette"
+      aria-label="Sovereign Agent Job Statuskette"
     >
       {stages.map((stage, idx) => {
         const config = STAGE_CONFIG[stage];
@@ -157,7 +157,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
   return (
     <div
       role="region"
-      aria-label="OpenHands Job Status"
+      aria-label="Sovereign Agent Job Status"
       data-testid="openhands-truth-card"
       style={{
         margin: '8px 0',
@@ -179,7 +179,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 18 }}>🤖</span>
           <span style={{ fontWeight: 600, color: C.text, fontSize: 14 }}>
-            OpenHands Job
+            Sovereign Agent Job
           </span>
         </div>
         <div
@@ -252,7 +252,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
               cursor: 'pointer',
             }}
           >
-            🤖 OpenHands starten
+            🤖 Sovereign Agent starten
           </button>
         )}
 

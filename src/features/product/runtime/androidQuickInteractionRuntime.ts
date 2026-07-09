@@ -26,7 +26,7 @@ function cleanGithubRepoUrl(value: string): string {
 export function detectAndroidQuickRepoUrl(draft: string): AndroidQuickRepoDetection {
   const clean = draft.trim();
   if (!clean || clean.includes('\n')) {
-    return { recognized: false, hint: 'Worker Chat senden · Repo-URL laden · OpenHands nur bei Code-Auftrag' };
+    return { recognized: false, hint: 'Worker Chat senden · Repo-URL laden · Sovereign Agent nur bei Code-Auftrag' };
   }
 
   const matches = Array.from(clean.matchAll(GITHUB_REPO_URL_PATTERN));
