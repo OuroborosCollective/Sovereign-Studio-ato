@@ -28,6 +28,7 @@ export interface ReleaseGuideInput {
 }
 
 export interface ReleaseGuideState {
+  /** Internal ordering index only. Do not render as percentage progress. */
   progress: number;
   progressLabel: string;
   helperTitle: string;
@@ -93,9 +94,8 @@ function hasAny(source: string, tokens: string[]): boolean {
   return tokens.some((token) => source.includes(token));
 }
 
-function step5(value: number): number {
-  const safe = Math.max(0, Math.min(100, value));
-  return Math.round(safe / 5) * 5;
+function stage(value: number): number {
+  return Math.max(0, Math.min(7, value));
 }
 
 function inferTabFromText(source: string): ReleaseGuideTab | null {
@@ -113,38 +113,38 @@ export function deriveReleaseGuideProgress(input: ReleaseGuideInput): number {
   const source = textOf(input);
   const action = actionTextOf(input);
 
-  if (input.lamp === 'red') return step5(10);
-  if (hasAny(action, ['workflow', 'ci', 'checks', 'draft pr', 'pull request'])) return step5(85);
-  if (hasAny(action, ['repair', 'reparieren', 'fehlerlog'])) return step5(90);
-  if (hasAny(source, ['repo fehlt', 'repository laden', 'load repo'])) return step5(10);
-  if (hasAny(source, ['repo geladen', 'repository snapshot', 'repo snapshot ready'])) return step5(25);
-  if (hasAny(source, ['auftrag analysieren', 'ideenfabrik', 'builder'])) return step5(35);
-  if (hasAny(source, ['auftrag starten', 'package-build', 'building'])) return step5(55);
-  if (hasAny(source, ['package bereit', 'package wurde erstellt'])) return step5(80);
-  if (hasAny(source, ['diff', 'files prüfen', 'generated file', 'load source snapshots'])) return step5(80);
-  if (hasAny(source, ['workflow', 'ci'])) return step5(85);
-  if (hasAny(source, ['draft pr', 'pull request'])) return step5(95);
-  if (hasAny(source, ['release', 'completed', 'success', 'fertig'])) return step5(100);
-  if (input.thinking) return step5(45);
-  return input.lamp === 'green' ? step5(60) : step5(20);
+  if (input.lamp === 'red') return stage(0);
+  if (hasAny(action, ['workflow', 'ci', 'checks', 'draft pr', 'pull request'])) return stage(5);
+  if (hasAny(action, ['repair', 'reparieren', 'fehlerlog'])) return stage(5);
+  if (hasAny(source, ['repo fehlt', 'repository laden', 'load repo'])) return stage(0);
+  if (hasAny(source, ['repo geladen', 'repository snapshot', 'repo snapshot ready'])) return stage(1);
+  if (hasAny(source, ['auftrag analysieren', 'ideenfabrik', 'builder'])) return stage(2);
+  if (hasAny(source, ['auftrag starten', 'package-build', 'building'])) return stage(3);
+  if (hasAny(source, ['package bereit', 'package wurde erstellt'])) return stage(4);
+  if (hasAny(source, ['diff', 'files prüfen', 'generated file', 'load source snapshots'])) return stage(4);
+  if (hasAny(source, ['workflow', 'ci'])) return stage(5);
+  if (hasAny(source, ['draft pr', 'pull request'])) return stage(6);
+  if (hasAny(source, ['release', 'completed', 'success', 'fertig'])) return stage(7);
+  if (input.thinking) return stage(3);
+  return input.lamp === 'green' ? stage(3) : stage(1);
 }
 
 function progressLabel(progress: number): string {
-  if (progress >= 100) return '100% · abgeschlossen';
-  if (progress >= 95) return `${progress}% · Draft/Release prüfen`;
-  if (progress >= 85) return `${progress}% · Workflow prüfen`;
-  if (progress >= 80) return `${progress}% · interne Prüfung abgeschlossen`;
-  if (progress >= 55) return `${progress}% · Paket wird vorbereitet`;
-  if (progress >= 35) return `${progress}% · Auftrag wird analysiert`;
-  if (progress >= 25) return `${progress}% · Repository bereit`;
-  return `${progress}% · Startphase`;
+  if (progress >= 7) return 'Abgeschlossen · Ergebnis liegt vor';
+  if (progress >= 6) return 'Draft/Release prüfen';
+  if (progress >= 5) return 'Workflow prüfen';
+  if (progress >= 4) return 'Interne Prüfung abgeschlossen';
+  if (progress >= 3) return 'Paket wird vorbereitet';
+  if (progress >= 2) return 'Auftrag wird analysiert';
+  if (progress >= 1) return 'Repository bereit';
+  return 'Startphase';
 }
 
 function helperMessage(input: ReleaseGuideInput, targetTab: ReleaseGuideTab | null, progress: number): string {
   if (input.thinking) return 'Ich arbeite gerade und halte dich sichtbar auf dem Laufenden.';
   if (targetTab === 'workflow') return 'Der Workflow-Bereich ist der nächste sichere Ort. Nutze den sichtbaren Weiter-Button, wenn du wechseln willst.';
   if (targetTab) return `Nächster sicherer Bereich: ${targetTab}. Der sichtbare Button wechselt dorthin, wenn du ihn nutzt.`;
-  if (progress >= 100) return 'Fertig. Ergebnis liegt vor.';
+  if (progress >= 7) return 'Fertig. Ergebnis liegt vor.';
   return 'Ich warte auf den nächsten klaren Systemschritt, damit du nicht raten musst.';
 }
 
@@ -163,7 +163,7 @@ export function deriveReleaseGuideState(input: ReleaseGuideInput): ReleaseGuideS
     previousTab: targetTab ? PREVIOUS_TAB[targetTab] ?? 'repo' : 'repo',
     nextLabel: targetTab ? 'Weiter' : 'Weiter noch gesperrt',
     nextEnabled,
-    confirmLabel: progress >= 100 ? 'Abschluss bestätigen' : 'Schritt bestätigen',
+    confirmLabel: progress >= 7 ? 'Abschluss bestätigen' : 'Schritt bestätigen',
     waitingReason: nextEnabled ? '' : 'Noch kein sicherer nächster Schritt verfügbar.',
   };
 }
