@@ -90,10 +90,10 @@ jobs:
       name: production
       url: https://sovereign-backend.arelorian.de
     env:
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.VPS_PASS }}
-      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -104,19 +104,19 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${VPS_HOST:-}" ]; then
-            echo "VPS_HOST secret is not configured." >&2
+            echo "VPS_HOST/SSH_HOST secret is not configured." >&2
             exit 1
           fi
           if [ -z "${VPS_USER:-}" ]; then
-            echo "VPS_USER secret is not configured." >&2
+            echo "VPS_USER/SSH_USER secret is not configured." >&2
             exit 1
           fi
           if [ -z "${VPS_PASSWORD:-}" ]; then
-            echo "VPS password secret is not configured. Expected VPS_PASSWORD, VPS_PW, or VPS_PASS." >&2
+            echo "VPS password secret is not configured. Expected VPS_PASSWORD, VPS_PW, SSH_PW, or SSH_PASSWORD." >&2
             exit 1
           fi
           if ! [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]; then
-            echo "VPS_SSH_PORT must be numeric." >&2
+            echo "VPS_SSH_PORT/SSH_PORT must be numeric." >&2
             exit 1
           fi
 
