@@ -2398,17 +2398,19 @@ def admin_get_credit_packages():
 @app.route("/api/admin/credit-packages/init", methods=["POST"])
 @require_admin
 def admin_init_credit_packages():
-    """Seed default credit packages (idempotent)."""
+    """Seed default credit packages (idempotent - uses name+credits as unique key)."""
     defaults = [
-        ("Starter",   500,    1.99, "500 Credits – ideal zum Ausprobieren",    0),
-        ("Pro",      2500,    7.99, "2.500 Credits – für regelmäßige Nutzung", 1),
-        ("Power",   10000,   24.99, "10.000 Credits – für Power-User",         2),
-        ("Studio",  50000,   89.99, "50.000 Credits – für Studios und Teams",  3),
+        ("Starter",   500,    2.00, "500 Credits – ideal zum Ausprobieren",    1),
+        ("Pro",      2500,   14.00, "2.500 Credits – für regelmäßige Nutzung", 2),
+        ("Power",   10000,   26.00, "10.000 Credits – für Power-User",         3),
+        ("Studio",  50000,   99.00, "50.000 Credits – für Studios und Teams",  4),
     ]
     inserted = 0
     for name, creds, price, desc, order in defaults:
+        # Check for existing with same name AND credits (true idempotency)
         existing = query(
-            "SELECT id FROM credit_packages WHERE name = %s LIMIT 1", (name,), one=True,
+            "SELECT id FROM credit_packages WHERE name = %s AND credits = %s LIMIT 1", 
+            (name, creds), one=True,
         )
         if not existing:
             query(
