@@ -172,15 +172,17 @@ export function LoginModal({ onClose }: Props) {
 
         <div style={S.divider}><span style={S.line}/><span>oder</span><span style={S.line}/></div>
 
-        {/* GitHub Login Button */}
-        <button
-          style={{ ...S.btn, background: '#21262d', color: C.text, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-          onClick={handleGitHub}
-          disabled={githubLoading || isLoading}
-        >
-          <GitHubIcon />
-          {githubLoading ? 'Verbinde…' : 'Mit GitHub anmelden'}
-        </button>
+        {/* GitHub Login Button — only shown when OAuth is properly configured */}
+        {githubConfigured && (
+          <button
+            style={{ ...S.btn, background: '#21262d', color: C.text, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            onClick={handleGitHub}
+            disabled={githubLoading || isLoading}
+          >
+            <GitHubIcon />
+            {githubLoading ? 'Verbinde…' : 'Mit GitHub anmelden'}
+          </button>
+        )}
 
         {/* Google Login Button */}
         <button

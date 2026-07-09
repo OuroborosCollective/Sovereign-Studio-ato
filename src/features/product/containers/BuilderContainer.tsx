@@ -266,6 +266,7 @@ import {
   composerRouteHint,
   confidenceLabel,
   createChatLineId,
+  isFollowUpWhyQuestion,
   isLocalCompletionStatusQuestion,
   isWriteIntent,
   phaseFromSignalAndConditions,
@@ -2414,6 +2415,9 @@ export function BuilderContainer({
   const [workerBlocker, setWorkerBlocker] =
     useState<WorkerRuntimeBlocker | null>(null);
   const [lastWorkerRequestMessage, setLastWorkerRequestMessage] = useState<string | null>(null);
+  const [patchPreviewReady, setPatchPreviewReady] = useState(false);
+  const [patchConfirmed, setPatchConfirmed] = useState(false);
+  const [lastAnswerWasLocal, setLastAnswerWasLocal] = useState(false);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
   const ignoreNextMissionSyncRef = useRef(false);
@@ -2548,6 +2552,11 @@ export function BuilderContainer({
       }
       if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready') {
         snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
+        // Patch wurde committed → Vorschau-State auf "bestätigt" wechseln
+        if (patchPreviewReady) {
+          setPatchPreviewReady(false);
+          setPatchConfirmed(true);
+        }
       }
       if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
         snap = transitionFailed(snap, 'OpenHands Executor fehlgeschlagen.');
@@ -2750,6 +2759,14 @@ export function BuilderContainer({
   const effectiveRepoReason = chatRepoSnapshot
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
     : repoReason;
+
+  // Fix 5: Partial-Snapshot Guard — detects a snapshot that is loaded but missing
+  // critical fields. Showing such state as "truth" would fabricate reality.
+  // UI renders a visible warning instead of silently proceeding with bad state.
+  const isPartialRepoSnapshot = Boolean(
+    chatRepoSnapshot &&
+    (!chatRepoSnapshot.owner || !chatRepoSnapshot.repo || !chatRepoSnapshot.branch || !chatRepoSnapshot.repoUrl)
+  );
   const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(
     chatResponseBusy ||
@@ -3281,6 +3298,8 @@ export function BuilderContainer({
         openhandsRunning: openhandsJob?.status === 'running',
         draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
         hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+        patchPreviewReady,
+        patchConfirmed,
         hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
         workerBlocker,
         buildWorkerBlockerAnswer: workerBlocker
@@ -3295,12 +3314,33 @@ export function BuilderContainer({
         questionText: submittedText,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
+      setLastAnswerWasLocal(true);
       appendActionEvent(buildBlockedActionEvent({
         route: 'runtime',
         label: 'Status-Frage',
         detail: 'Lokale Antwort aus Runtime-State',
       }));
       addLog('info', 'Issue #522 P2 Fix 2: Status question handled locally - no draft created', 'router');
+      return;
+    }
+
+    // Fix: "Warum?" follow-up after local status answer → answer locally, no worker call
+    if (lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
+      const whyAnswer = patchPreviewReady
+        ? "Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss."
+        : !githubWriteAllowed
+        ? "Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, läuft der Auftrag automatisch weiter."
+        : workerBlocker
+        ? "Weil der Worker blockiert ist. Bitte den Fehler prüfen oder den Auftrag präzisieren."
+        : "Weil noch kein Auftrag gestartet wurde oder der Auftrag blockiert ist. Bitte Auftrag neu starten.";
+      appendChatLine({ role: 'assistant', text: whyAnswer });
+      setLastAnswerWasLocal(true);
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Warum-Folgefrage',
+        detail: 'Lokale Erklärung aus Runtime-State — kein Worker-Call',
+      }));
+      addLog('info', 'Fix: Follow-up why question answered locally - no worker call', 'router');
       return;
     }
 
@@ -3370,7 +3410,10 @@ export function BuilderContainer({
     // integration/implementation requests. Show a draft card for confirmation.
     // BUT: Explicit executor commands and delegation intents bypass the draft card
     // to maintain backward compatibility with existing test expectations.
+    // Fix: Safe-analysis presets are read-only and must never create an integration draft.
+    const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     if (effectiveRepoReady &&
+        !isSafeAnalysisPreset &&
         !isOpenHandsExecutionIntent(submittedText) &&
         !isDelegationIntent(submittedText) &&
         !isDelegatedOpenHandsExecutionIntent(submittedText, chatHistory)) {
@@ -3476,6 +3519,8 @@ export function BuilderContainer({
           openhandsRunning: openhandsJob?.status === 'running',
           draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
           hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          patchPreviewReady,
+          patchConfirmed,
           hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
           workerBlocker,
           buildWorkerBlockerAnswer: workerBlocker
@@ -3490,6 +3535,7 @@ export function BuilderContainer({
           questionText: submittedText,
         });
         appendChatLine({ role: 'assistant', text: statusAnswer });
+        setLastAnswerWasLocal(true);
         addLog('info', 'Capability Router: local-runtime-answer terminal decision completed', 'router');
         return;
       }
@@ -3684,10 +3730,9 @@ ${res.patchSummary}
 Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
               });
               
-              // Wir setzen hier den State für das UI, falls vorhanden. 
-              // Da BuilderContainer den State über Props erhält oder intern verwaltet,
-              // nutzen wir die vorhandenen Event-Mechanismen.
-              
+              setPatchPreviewReady(true);
+              setPatchConfirmed(false);
+              setLastAnswerWasLocal(true);
               addLog('info', 'Write intent routed through Direct GitHub Patch Route with diff preview', 'router');
               return;
             }
@@ -3934,6 +3979,8 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
     addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
     appendActionEvent(buildWorkerRequestEvent(d.modelLabel));
 
+    setLastAnswerWasLocal(false);
+    setPatchConfirmed(false);
     setLastWorkerRequestMessage(submittedText);
     setChatResponseBusy(true);
     setStreamingText("");
@@ -4396,6 +4443,32 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
             flexDirection: "column",
           }}
         >
+          {/* Fix 5: Partial-Snapshot Guard — never show fabricated repo truth */}
+          {isPartialRepoSnapshot && (
+            <div
+              role="alert"
+              data-testid="partial-repo-snapshot-warning"
+              style={{
+                margin: '8px 0',
+                padding: '10px 14px',
+                borderRadius: 10,
+                background: '#fbbf2412',
+                border: '1px solid #fbbf2440',
+                fontSize: 12,
+                color: '#fbbf24',
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-start',
+              }}
+            >
+              <span style={{ flexShrink: 0 }}>⚠️</span>
+              <span>
+                <strong>Unvollständiger Repo-Snapshot.</strong> Owner, Repo, Branch oder URL fehlt.
+                Der angezeigte Zustand wäre unvollständig. Bitte Repo neu laden.
+              </span>
+            </div>
+          )}
+
           {!wishText.trim() && !chatRepoSnapshot && chatHistory.length === 0 && !securityCardPending ? (
             <WelcomeScreen
               onIdea={(opt) => setWishText((c) => appendOption(c, opt))}
@@ -4585,6 +4658,9 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                                 role: 'assistant',
                                 text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                               });
+                              setPatchPreviewReady(true);
+                              setPatchConfirmed(false);
+                              setLastAnswerWasLocal(true);
                             }
                           });
                           break;
@@ -4840,6 +4916,9 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
                             role: 'assistant',
                             text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                           });
+                          setPatchPreviewReady(true);
+                          setPatchConfirmed(false);
+                          setLastAnswerWasLocal(true);
                           addLog('info', 'Pending write intent resumed through Direct GitHub Patch Route', 'router');
                           return;
                         }

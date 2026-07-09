@@ -155,6 +155,10 @@ export interface LocalStatusAnswerArgs {
   readonly openhandsRunning: boolean;
   readonly draftPrUrl?: string | null;
   readonly hasPatch: boolean;
+  /** True when a Direct GitHub Patch preview has been generated but not yet applied/committed */
+  readonly patchPreviewReady?: boolean;
+  /** True when the patch preview was applied and the draft PR was created */
+  readonly patchConfirmed?: boolean;
   readonly hasWorkerResponse: boolean;
   readonly workerBlocker?: WorkerRuntimeBlocker | null;
   readonly buildWorkerBlockerAnswer?: () => string;
@@ -184,7 +188,15 @@ export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
     return `Ja, Draft PR ist bereit: ${args.draftPrUrl}`;
   }
   if (args.hasPatch) {
-    return "Ja, ein Patch/Diff wurde erzeugt. Draft PR steht noch aus.";
+    return "Ja, ein Patch/Diff wurde erzeugt und angewendet. Draft PR steht noch aus.";
+  }
+  // Patch was previewed AND then confirmed/applied → draft PR was created
+  if (args.patchConfirmed) {
+    return "Ja, der Patch wurde bestätigt und angewendet. Der Draft PR wurde erstellt.";
+  }
+  // Fix: Direct GitHub Patch preview generated but not yet applied/committed
+  if (args.patchPreviewReady) {
+    return "Patch-Vorschau wurde erzeugt. Noch nicht angewendet. Noch kein geprüfter Diff, kein Commit, kein Draft PR.\nNächster Schritt: Diff prüfen oder Patch bestätigen.";
   }
   if (args.openhandsRunning) {
     return "Noch nicht. OpenHands arbeitet noch.";
@@ -388,6 +400,31 @@ export function buildWorkerBlockerAnswer(args: {
 // UI hint helpers
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Detects a short follow-up "why" question after a local runtime status answer or blocker.
+ * These must be answered locally from runtime state — no worker call.
+ * Matches: "warum?", "wieso?", "weshalb?", "why?", "warum nicht?", "warum passiert nichts?"
+ * Max 6 words to avoid catching complex questions like "warum macht OpenHands das so?"
+ */
+export function isFollowUpWhyQuestion(text: string): boolean {
+  const clean = text.trim().toLowerCase();
+  const wordCount = clean.split(/\s+/).length;
+  if (wordCount > 6) return false;
+  return (
+    clean === 'warum' ||
+    clean === 'warum?' ||
+    clean === 'wieso' ||
+    clean === 'wieso?' ||
+    clean === 'weshalb' ||
+    clean === 'weshalb?' ||
+    clean === 'why' ||
+    clean === 'why?' ||
+    /^warum\b/.test(clean) ||
+    /^wieso\b/.test(clean) ||
+    /^weshalb\b/.test(clean)
+  );
+}
+
 export function composerRouteHint(args: {
   readonly draft: string;
   readonly workerBlocked: boolean;
@@ -395,7 +432,7 @@ export function composerRouteHint(args: {
 }): string {
   const clean = args.draft.trim();
   if (!clean)
-    return "Worker Chat senden · Repo-URL laden · OpenHands nur bei Code-Auftrag";
+    return "Worker Chat · Repo laden · interne Runtime zuerst · OpenHands nur explizit";
   const quickRepo = detectAndroidQuickRepoUrl(clean);
   if (quickRepo.recognized) return quickRepo.hint;
   if (parseDevChatGithubUrl(clean)) return "Repo laden · Runtime Snapshot";

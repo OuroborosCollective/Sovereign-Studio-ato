@@ -161,14 +161,33 @@ export function createOpenHandsWorkspaceAdapter(config: OpenHandsWorkspaceAdapte
         });
       }
 
-      // Real implementation would fetch current state from OpenHands backend
-      // For now, return a placeholder that indicates backend integration is needed
+      // Check backend readiness before attempting state fetch.
+      // This mirrors the start() guard so users get the same honest reason.
+      if (!ohConfig.ready) {
+        return normalizeAgentWorkspaceResult({
+          workspaceId,
+          status: 'blocked',
+          events: [],
+          changedFiles: [],
+          blocker: ohConfig.reason
+            || 'OpenHands-Backend nicht konfiguriert. Workspace-Status kann nicht abgerufen werden.',
+        });
+      }
+
+      // Backend is configured but live state polling is not yet connected.
+      // Honest block: distinguishes "not configured" from "configured but no poll".
+      // Next step for backend integration: replace this block with a real API call
+      // to GET /api/workspaces/{workspaceId} and map the response via mapSnapshot().
       return normalizeAgentWorkspaceResult({
         workspaceId,
         status: 'blocked',
-        events: [],
+        events: [sanitizeWorkspaceEvent({
+          level: 'warn',
+          message: 'Workspace-Status-Polling noch nicht verbunden. Backend ist konfiguriert, aber live-State-Abruf fehlt.',
+          at: Date.now(),
+        })],
         changedFiles: [],
-        blocker: 'OpenHands workspace state requires backend integration. Workspace adapter read() is not yet connected to a real OpenHands API.',
+        blocker: 'Workspace-Status-Polling nicht verbunden. Backend ist bereit, aber der live-State-Abruf ist noch nicht implementiert.',
       });
     },
 

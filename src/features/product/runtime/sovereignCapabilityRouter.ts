@@ -70,6 +70,19 @@ const CODE_GENERATION_TOKENS = [
   'schreibe code', 'code schreiben',
 ];
 
+/**
+ * Simple-override tokens: when present they signal the user expects a lightweight
+ * change even if the text also contains complex-task keywords.
+ * Example: "einfachen Test fürs Backend" → complex tokens present ("test", "backend")
+ * but "einfachen" overrides → medium instead of complex.
+ */
+const SIMPLE_MODIFIER_TOKENS = [
+  'einfach', 'einfachen', 'einfache', 'einfaches', 'einfacher',
+  'klein', 'kleine', 'kleinen', 'kleines', 'kleiner',
+  'schnell', 'kurz', 'kurze', 'nur', 'just', 'quick', 'simple', 'small', 'minor',
+  'nur ein', 'nur eine', 'only', 'single', 'one',
+];
+
 const OPENHANDS_TOKENS = [
   'openhands',
 ];
@@ -128,8 +141,14 @@ export function determineTaskComplexity(
     case 'workflow_watch':
     case 'repair_workflow':
       return 'medium';
-    case 'code_generation':
-      return COMPLEX_TASK_TOKENS.some((token) => lower.includes(token)) ? 'complex' : 'medium';
+    case 'code_generation': {
+      const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
+      if (!hasComplexKeyword) return 'medium';
+      // Mixed-signal resolution: if user signals "simple/quick/small" alongside
+      // complex-task keywords, honour the intent modifier and route as medium.
+      const hasSimpleModifier = SIMPLE_MODIFIER_TOKENS.some((token) => lower.includes(token));
+      return hasSimpleModifier ? 'medium' : 'complex';
+    }
     default:
       return 'unknown' as TaskComplexity;
   }
@@ -234,6 +253,18 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'free_chat') {
+    // Worker-health check: active blocker means the worker cannot process requests.
+    // Returning allowed:false here surfaces the blocker card instead of silently spinning.
+    if (input.hasActiveWorkerBlocker) {
+      return {
+        route: 'worker-chat',
+        capability: 'free_chat',
+        allowed: false,
+        reason: 'Worker ist blockiert. Eingabe kann nicht verarbeitet werden. Bitte Blocker beheben.',
+        blocker: 'executor_unavailable',
+        nextAction: 'show_blocker',
+      };
+    }
     return {
       route: 'worker-chat',
       capability: 'free_chat',
@@ -476,13 +507,16 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
     return buildRecoverablePackageDecision('code-llm', 'code_patch_plan');
   }
 
+  // Unknown intent: if worker is already blocked, surface that — not a silent "ask_user".
   return {
     route: 'worker-chat',
     capability: 'free_chat',
     allowed: false,
-    reason: 'Auftrag konnte nicht erkannt werden. Bitte konkretisieren.',
-    blocker: 'unsupported_intent',
-    nextAction: 'ask_user',
+    reason: input.hasActiveWorkerBlocker
+      ? 'Worker ist blockiert. Auftrag kann nicht verarbeitet werden. Bitte Blocker beheben.'
+      : 'Auftrag konnte nicht erkannt werden. Bitte konkretisieren.',
+    blocker: input.hasActiveWorkerBlocker ? 'executor_unavailable' : 'unsupported_intent',
+    nextAction: input.hasActiveWorkerBlocker ? 'show_blocker' : 'ask_user',
   };
 }
 
