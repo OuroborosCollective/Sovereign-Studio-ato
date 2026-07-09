@@ -64,7 +64,21 @@ describe('Sovereign Capability Router', () => {
 
       expect(decision.route).toBe('local-runtime-answer');
       expect(decision.isTerminal).toBe(true);
-      expect(decision.nextAction).toBe('show_blocker');
+      expect(decision.nextAction).toBe('answer_locally');
+    });
+
+    it('records local runtime answers as checked capability, not blocker handling', () => {
+      const decision = decideSovereignCapabilityRoute({
+        ...FULL_READY_STATE,
+        text: 'Was ist der Status?',
+      });
+      const event = buildCapabilityRouteActionEvent(decision, 'trace-local', 0);
+
+      expect(event.kind).toBe('capability_checked');
+      expect(event.route).toBe('local-runtime-answer');
+      expect(event.label).toBe('Lokale Runtime-Antwort vorbereitet');
+      expect(event.state).toBe('done');
+      expect(decision.nextAction).toBe('answer_locally');
     });
 
     it('classifies common intents', () => {
