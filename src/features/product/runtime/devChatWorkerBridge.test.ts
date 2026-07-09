@@ -16,6 +16,8 @@ import {
   isWorkerTimeoutError,
   createWorkerTimeoutDiagnostic,
   WORKER_REPLY_TIMEOUT_MS,
+  REPO_TREE_TIMEOUT_MS,
+  fetchDevChatRepoTree,
 } from './devChatWorkerBridge';
 
 afterEach(() => {
@@ -66,6 +68,42 @@ describe('devChatWorkerBridge', () => {
       owner: 'acme', repo: 'tool', branch: 'main', name: 'tool', repoUrl: 'repo', fileCount: 3, files: [], dirs: ['src'], truncated: false,
     })).toBe('acme/tool geladen · main · 3 files');
   });
+
+  it('fetchDevChatRepoTree loads a bounded GitHub tree snapshot', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      truncated: false,
+      tree: [
+        { path: 'README.md', type: 'blob', size: 42 },
+        { path: 'src/App.tsx', type: 'blob', size: 120 },
+        { path: 'src', type: 'tree' },
+      ],
+    })));
+
+    const parsed = parseDevChatGithubUrl('https://github.com/acme/tool')!;
+    const result = await fetchDevChatRepoTree(parsed);
+
+    expect(result.ok).toBe(true);
+    expect(result.snapshot?.fileCount).toBe(3);
+    expect(result.snapshot?.dirs).toContain('src');
+    expect(result.snapshot?.lastFile).toBe('App.tsx');
+  });
+
+  it('fetchDevChatRepoTree returns a timeout blocker instead of hanging forever', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    }));
+
+    const parsed = parseDevChatGithubUrl('https://github.com/acme/tool')!;
+    const result = await fetchDevChatRepoTree(parsed);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('GitHub Repo Timeout');
+  });
+
+  it('REPO_TREE_TIMEOUT_MS is bounded for the user-facing repo load gate', () => {
+    expect(REPO_TREE_TIMEOUT_MS).toBe(15_000);
+  });
+
 
   it('calls the worker chat route and validates response content', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'Antwort aus Worker.' } }] }));
