@@ -234,6 +234,18 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'free_chat') {
+    // Worker-health check: active blocker means the worker cannot process requests.
+    // Returning allowed:false here surfaces the blocker card instead of silently spinning.
+    if (input.hasActiveWorkerBlocker) {
+      return {
+        route: 'worker-chat',
+        capability: 'free_chat',
+        allowed: false,
+        reason: 'Worker ist blockiert. Eingabe kann nicht verarbeitet werden. Bitte Blocker beheben.',
+        blocker: 'executor_unavailable',
+        nextAction: 'show_blocker',
+      };
+    }
     return {
       route: 'worker-chat',
       capability: 'free_chat',
@@ -476,13 +488,16 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
     return buildRecoverablePackageDecision('code-llm', 'code_patch_plan');
   }
 
+  // Unknown intent: if worker is already blocked, surface that — not a silent "ask_user".
   return {
     route: 'worker-chat',
     capability: 'free_chat',
     allowed: false,
-    reason: 'Auftrag konnte nicht erkannt werden. Bitte konkretisieren.',
-    blocker: 'unsupported_intent',
-    nextAction: 'ask_user',
+    reason: input.hasActiveWorkerBlocker
+      ? 'Worker ist blockiert. Auftrag kann nicht verarbeitet werden. Bitte Blocker beheben.'
+      : 'Auftrag konnte nicht erkannt werden. Bitte konkretisieren.',
+    blocker: input.hasActiveWorkerBlocker ? 'executor_unavailable' : 'unsupported_intent',
+    nextAction: input.hasActiveWorkerBlocker ? 'show_blocker' : 'ask_user',
   };
 }
 
