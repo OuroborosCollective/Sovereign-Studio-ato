@@ -470,6 +470,8 @@ function labelForAction(action: SovereignNextAction): string {
       return 'Agent Workspace bereinigen';
     case 'run_worker':
       return 'Worker starten';
+    case 'answer_locally':
+      return 'Lokal antworten';
     default:
       return 'Blocker anzeigen';
   }
