@@ -53,7 +53,8 @@ const ALLOWED_REPOS: readonly string[] = [
   'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
 ];
 
-const PROTECTED_BRANCHES: readonly string[] = ['main', 'master', 'production', 'release'];
+const PROTECTED_BRANCHES: readonly string[] = ['main', 'master', 'production'];
+const PROTECTED_BRANCH_PREFIXES: readonly string[] = ['release/'];
 
 const MAX_FILE_BYTES = 500_000;
 const MAX_BLOCKS = 20;
@@ -88,6 +89,11 @@ export function validateGitPatchRequest(req: GitPatchRequest): GitPatchValidatio
   }
 
   if (PROTECTED_BRANCHES.includes(req.branch.trim())) {
+    errors.push(
+      `Branch '${req.branch}' is protected. Use a feature branch and open a Draft PR.`,
+    );
+  }
+  if (PROTECTED_BRANCH_PREFIXES.some((prefix) => req.branch.trim().startsWith(prefix))) {
     errors.push(
       `Branch '${req.branch}' is protected. Use a feature branch and open a Draft PR.`,
     );
