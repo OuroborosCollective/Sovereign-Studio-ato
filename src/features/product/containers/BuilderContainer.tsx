@@ -4160,12 +4160,21 @@ OpenHands ist nicht Pflicht. Es wurde noch keine Datei geändert; nächster Schr
     if (fallback?.ok && fallback.content) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-      
-      let textToAppend = fallback.content;
+
+      const claimCheck = checkChatClaim(fallback.content, agentWorkSnapshot);
+      let textToAppend =
+        claimCheck.allowed || !claimCheck.honestFallback
+          ? fallback.content
+          : `${fallback.content}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
+
+      if (!claimCheck.allowed && claimCheck.violations.length > 0) {
+        addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
+      }
+
       if (fallback.fallbackUsed) {
         textToAppend += `\n\n_Hinweis: ${fallback.preferredModel} war nicht erreichbar, Antwort kam von ${fallback.actualModel}._`;
       }
-      
+
       appendChatLine({ role: "assistant", text: textToAppend });
       return;
     }

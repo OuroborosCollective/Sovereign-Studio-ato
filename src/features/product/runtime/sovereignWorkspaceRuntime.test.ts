@@ -5,7 +5,7 @@
  * Covers acceptance criteria from Issue #503.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   SovereignWorkspaceRuntime,
   createMockWorkspaceAdapter,
@@ -20,12 +20,17 @@ import type {
   WorkspacePurpose,
 } from './sovereignWorkspaceTypes';
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('SovereignWorkspaceRuntime', () => {
   let runtime: SovereignWorkspaceRuntime;
 
   beforeEach(() => {
     runtime = new SovereignWorkspaceRuntime();
   });
+
 
   describe('initialization', () => {
     it('should create runtime with no adapters', () => {
@@ -360,6 +365,33 @@ describe('createMockWorkspaceAdapter', () => {
 
     expect(result.events.some((e) => e.kind === 'draft_pr_ready')).toBe(true);
   });
+
+  it('does not report availability or fake completion outside test runtime', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VITEST', 'false');
+
+    const adapter = createMockWorkspaceAdapter('mock', 'Mock Adapter');
+    expect(await adapter.isAvailable()).toBe(false);
+
+    const result = await adapter.execute({
+      jobId: 'prod-guard-job',
+      purpose: 'patch',
+      repoUrl: 'https://github.com/test/repo',
+      baseBranch: 'main',
+      mission: 'Patch something',
+      allowedPaths: ['src/'],
+      forbiddenPaths: [],
+      requireTests: false,
+      allowCommit: true,
+      allowDraftPr: true,
+    });
+
+    expect(result.status).toBe('blocked');
+    expect(result.blocker).toBe('test_workspace_adapter_not_available');
+    expect(result.diffSummary).toBeUndefined();
+    expect(result.draftPrUrl).toBeUndefined();
+  });
+
 });
 
 describe('determineWorkspacePurpose', () => {

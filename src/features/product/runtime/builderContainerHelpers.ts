@@ -157,7 +157,7 @@ export function buildOutcomeHints(
   if ((job.status === 'blocked' || job.status === 'failed') && job.lastError?.trim())
     hints.push({ kind: 'stopper', text: job.lastError.trim() });
   if (job.status === 'completed' && files.length === 0 && !draftPrUrl)
-    hints.push({ kind: 'done', text: 'Küken hat fertig gepiepst · Keine Dateiänderung gemeldet' });
+    hints.push({ kind: 'stopper', text: 'OpenHands meldet abgeschlossen, aber keine Dateiänderung und kein Draft PR sind belegt' });
   return hints;
 }
 

@@ -3,7 +3,7 @@ import type { ModelHealthStatus } from '../hooks/useModelHealth';
 
 /**
  * Props for ModelHealthPanel
- * If no models are provided, shows placeholder UI explaining the feature
+ * If no models are provided, the panel shows an explicit empty state.
  */
 export interface ModelHealthPanelProps {
   /** List of model health statuses */
@@ -18,31 +18,6 @@ export interface ModelHealthPanelProps {
   showRefresh?: boolean;
 }
 
-/**
- * Fallback mock data for when no adapters are configured
- */
-const MOCK_MODEL_STATUS: ModelHealthStatus[] = [
-  {
-    id: 'mock-bridge',
-    name: 'Primary Bridge',
-    status: 'unknown',
-    latencyMs: null,
-    lastCheck: null,
-    errorCount: 0,
-    successCount: 0,
-    isEnabled: true,
-  },
-  {
-    id: 'mock-mlvoca',
-    name: 'MLVoca (No-Key)',
-    status: 'unknown',
-    latencyMs: null,
-    lastCheck: null,
-    errorCount: 0,
-    successCount: 0,
-    isEnabled: true,
-  },
-];
 
 function statusIcon(status: ModelHealthStatus['status']): string {
   if (status === 'healthy') return '🟢';
@@ -70,7 +45,7 @@ function formatTime(timestamp: number | null): string {
 }
 
 export function ModelHealthPanel({
-  models = MOCK_MODEL_STATUS,
+  models = [],
   isChecking = false,
   lastCheck = null,
   onRefresh,
@@ -79,7 +54,6 @@ export function ModelHealthPanel({
   const healthyCount = models.filter((m) => m.status === 'healthy').length;
   const degradedCount = models.filter((m) => m.status === 'degraded').length;
   const unknownCount = models.filter((m) => m.status === 'unknown').length;
-  const hasMockData = models === MOCK_MODEL_STATUS;
 
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
@@ -106,16 +80,8 @@ export function ModelHealthPanel({
         </div>
       </div>
 
-      {hasMockData && (
-        <div className="mt-3 rounded border border-amber-500/20 bg-amber-500/10 p-3">
-          <p className="text-xs text-amber-300">
-            💡 Connect a repository to enable real-time LLM health monitoring. The model health panel automatically tracks latency, success rates, and availability for all configured LLM adapters.
-          </p>
-        </div>
-      )}
-
       {models.length === 0 ? (
-        <p className="mt-4 text-xs text-slate-500">No models configured.</p>
+        <p className="mt-4 text-xs text-slate-500">Keine LLM-Health-Daten vorhanden. Adapter werden erst angezeigt, wenn echte Runtime-Daten geliefert werden.</p>
       ) : (
         <div className="mt-4 space-y-2">
           {models.map((model) => (

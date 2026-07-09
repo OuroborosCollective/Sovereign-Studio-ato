@@ -35,16 +35,17 @@ export interface OpenHandsJobTruthCardProps {
   onOpenDraftPr?: () => void;
 }
 
-// Map OpenHands status to TruthCard stage
-function mapJobStatusToStage(status: OpenHandsJobStatus): TruthCardStage {
-  switch (status) {
+// Map OpenHands status to TruthCard stage.
+// Runtime truth: completed alone is not Draft-PR-ready. The URL is the evidence.
+function mapJobToStage(job: OpenHandsJobSnapshot): TruthCardStage {
+  switch (job.status) {
     case 'idle': return 'erkannt';
     case 'queued': return 'startet';
     case 'running': return 'läuft';
     case 'waiting-for-user': return 'läuft';
     case 'blocked': return 'blockiert';
     case 'failed': return 'blockiert';
-    case 'completed': return 'draft-pr-bereit';
+    case 'completed': return job.draftPrUrl ? 'draft-pr-bereit' : 'blockiert';
   }
 }
 
@@ -141,8 +142,9 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
   // Don't render if no job
   if (!job) return null;
 
-  const stage: TruthCardStage = mapJobStatusToStage(job.status);
+  const stage: TruthCardStage = mapJobToStage(job);
   const config = STAGE_CONFIG[stage];
+  const completedWithoutDraftPr = job.status === 'completed' && !job.draftPrUrl;
 
   // Determine action buttons based on current state
   const isTerminalBlocked = stage === 'blockiert';
@@ -220,6 +222,11 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
         {job.lastError && (
           <div style={{ color: C.rose, marginTop: 4 }}>
             {job.lastError}
+          </div>
+        )}
+        {completedWithoutDraftPr && (
+          <div style={{ color: C.amber, marginTop: 4 }}>
+            OpenHands meldet abgeschlossen, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.
           </div>
         )}
       </div>
