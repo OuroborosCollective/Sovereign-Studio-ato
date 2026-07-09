@@ -1,5 +1,5 @@
 name: Sovereign CI Pipeline
-true:
+on:
   push:
     branches:
     - main
