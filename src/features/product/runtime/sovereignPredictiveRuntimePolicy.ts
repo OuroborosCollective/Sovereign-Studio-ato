@@ -90,6 +90,7 @@ const ALLOWED_ACTIONS = new Set([
   'start_openhands',
   'create_draft_pr',
   'show_blocker',
+  'answer_locally',
   'create_agent_job',
   'provision_agent_workspace',
   'run_agent_tool',
