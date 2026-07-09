@@ -44,6 +44,7 @@ describe('openhandsEnterpriseRuntime', () => {
 
   it('auto-detects sovereign-agent-backend when sovereign backend URL is present', () => {
     const config = resolveOpenHandsEnterpriseConfig({
+      deploymentMode: 'sovereign-agent-backend',
       agentApiUrl: 'https://sovereign-backend.example/api/agent',
     });
 

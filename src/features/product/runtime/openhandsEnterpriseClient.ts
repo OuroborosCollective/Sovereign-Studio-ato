@@ -196,7 +196,10 @@ export class OpenHandsEnterpriseClient {
   }
 
   buildJobRequest(input: OpenHandsStartJobInput): OpenHandsJobRequest {
-    return buildOpenHandsJobRequest(input);
+    return buildOpenHandsJobRequest({
+      ...input,
+      deploymentMode: this.config.deploymentMode,
+    });
   }
 
   async startJob(input: OpenHandsStartJobInput): Promise<OpenHandsJobSnapshot> {
