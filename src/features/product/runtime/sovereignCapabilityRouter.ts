@@ -71,8 +71,7 @@ const CODE_GENERATION_TOKENS = [
 ];
 
 const OPENHANDS_TOKENS = [
-  'openhands', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
-  'push', 'commit', 'repo schreiben', 'github schreiben', 'branch erstellen',
+  'openhands',
 ];
 
 const WORKFLOW_WATCH_TOKENS = [
@@ -87,7 +86,7 @@ const WORKFLOW_REPAIR_TOKENS = [
   'workflowfehler beheben', 'ci fehler', 'workflowfehler', 'reparatur',
 ];
 
-function hasExplicitExecutorIntent(text: string): boolean {
+function hasExplicitOpenHandsIntent(text: string): boolean {
   const lower = text.toLowerCase();
   return OPENHANDS_TOKENS.some((token) => lower.includes(token));
 }
@@ -146,7 +145,7 @@ export function detectBlockers(input: CapabilityRouterInput): SovereignRouteBloc
     blockers.push('github_access_missing');
   }
 
-  if (!input.openhandsReady && !input.directGitHubPatchReady && !input.workspaceReady) {
+  if (!input.directGitHubPatchReady && !input.workspaceReady) {
     blockers.push('executor_unavailable');
   }
   return blockers;
@@ -221,7 +220,7 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   const intent = classifyIntent(input.text);
   const complexity = determineTaskComplexity(intent, input.text);
   const blockers = detectBlockers(input);
-  const explicitExecutorIntent = hasExplicitExecutorIntent(input.text);
+  const explicitOpenHandsIntent = hasExplicitOpenHandsIntent(input.text);
 
   if (intent === 'status_question') {
     return {
@@ -273,23 +272,17 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'draft_pr') {
-    // OpenHands can execute Draft PR without frontend GitHub PAT
-    // Use openhands if ready AND (has package OR github access is missing)
-    // When github access is missing, openhands backend handles the PAT via code_patch_plan
-    const githubMissing = blockers.includes('github_access_missing');
-    if (input.openhandsReady && (input.hasPackage || githubMissing)) {
-      // If GitHub access is missing, use code_patch_plan (openhands handles PAT)
-      // If GitHub access is ready, use draft_pr (standard flow)
-      const capability = githubMissing ? 'code_patch_plan' : 'draft_pr';
+    // OpenHands is only used when explicitly requested by the user
+    if (explicitOpenHandsIntent && input.openhandsReady) {
       return {
         route: 'openhands',
-        capability,
+        capability: 'draft_pr',
         allowed: true,
-        reason: buildReason('openhands', capability),
+        reason: 'OpenHands wurde ausdrücklich angefordert und ist als externer Adapter verfügbar.',
         nextAction: 'start_openhands',
       };
     }
-    // If no package, route to draft-pr-runtime for package generation
+    // Default: route through Sovereign draft-pr-runtime
     if (!input.hasPackage) {
       return buildRecoverablePackageDecision('draft-pr-runtime', 'draft_pr');
     }
@@ -343,15 +336,33 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         nextAction: 'show_blocker',
       };
     }
-    const route: SovereignRoute = input.workspaceReady ? 'workspace-executor' : 'openhands';
-    const blocked = !input.workspaceReady && !input.openhandsReady;
+    // OpenHands only when explicitly requested
+    if (explicitOpenHandsIntent && input.openhandsReady) {
+      return {
+        route: 'openhands',
+        capability: 'code_patch_plan',
+        allowed: true,
+        reason: buildReason('openhands', 'code_patch_plan'),
+        nextAction: 'start_openhands',
+      };
+    }
+    // Default: Sovereign workspace-executor
+    if (input.workspaceReady) {
+      return {
+        route: 'workspace-executor',
+        capability: 'code_patch_plan',
+        allowed: true,
+        reason: buildReason('workspace-executor', 'code_patch_plan'),
+        nextAction: 'start_workspace',
+      };
+    }
     return {
-      route,
-      capability: 'code_patch_plan',
-      allowed: !blocked,
-      reason: buildReason(route, 'code_patch_plan', blocked ? 'executor_unavailable' : undefined),
-      blocker: blocked ? 'executor_unavailable' : undefined,
-      nextAction: blocked ? 'start_workspace' : input.openhandsReady ? 'start_openhands' : 'start_workspace',
+      route: 'workspace-executor',
+      capability: 'isolated_workspace',
+      allowed: false,
+      reason: buildReason('workspace-executor', 'code_patch_plan', 'workspace_required'),
+      blocker: 'workspace_required',
+      nextAction: 'start_workspace',
     };
   }
 
@@ -385,15 +396,6 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         nextAction: 'run_direct_patch',
       };
     }
-    if (input.openhandsReady) {
-      return {
-        route: 'openhands',
-        capability: 'direct_github_patch',
-        allowed: true,
-        reason: 'Direct Patch nicht bereit. OpenHands für kleine Änderungen.',
-        nextAction: 'start_openhands',
-      };
-    }
     return {
       route: 'direct-github-patch',
       capability: 'direct_github_patch',
@@ -405,7 +407,7 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'code_generation') {
-    if (explicitExecutorIntent && input.openhandsReady) {
+    if (explicitOpenHandsIntent && input.openhandsReady) {
       return {
         route: 'openhands',
         capability: 'code_patch_plan',
@@ -416,20 +418,20 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
     }
     if (blockers.includes('github_access_validating')) {
       return {
-        route: 'openhands',
+        route: 'workspace-executor',
         capability: 'code_patch_plan',
         allowed: false,
-        reason: buildReason('openhands', 'code_patch_plan', 'github_access_validating'),
+        reason: buildReason('workspace-executor', 'code_patch_plan', 'github_access_validating'),
         blocker: 'github_access_validating',
         nextAction: 'show_blocker',
       };
     }
     if (blockers.includes('github_access_missing')) {
       return {
-        route: 'openhands',
+        route: 'workspace-executor',
         capability: 'code_patch_plan',
         allowed: false,
-        reason: buildReason('openhands', 'code_patch_plan', 'github_access_missing'),
+        reason: buildReason('workspace-executor', 'code_patch_plan', 'github_access_missing'),
         blocker: 'github_access_missing',
         nextAction: 'validate_github_access',
       };
@@ -444,15 +446,6 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
           nextAction: 'start_workspace',
         };
       }
-      if (input.openhandsReady) {
-        return {
-          route: 'openhands',
-          capability: 'code_patch_plan',
-          allowed: true,
-          reason: buildReason('openhands', 'code_patch_plan'),
-          nextAction: 'start_openhands',
-        };
-      }
       return {
         route: 'workspace-executor',
         capability: 'isolated_workspace',
@@ -462,6 +455,15 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         nextAction: 'start_workspace',
       };
     }
+    if (input.directGitHubPatchReady && complexity === 'simple') {
+      return {
+        route: 'direct-github-patch',
+        capability: 'code_patch_plan',
+        allowed: true,
+        reason: buildReason('direct-github-patch', 'code_patch_plan'),
+        nextAction: 'run_direct_patch',
+      };
+    }
     if (input.hasPackage) {
       return {
         route: 'code-llm',
@@ -469,24 +471,6 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         allowed: true,
         reason: buildReason('code-llm', 'code_patch_plan'),
         nextAction: 'run_worker',
-      };
-    }
-    if (input.openhandsReady) {
-      return {
-        route: 'openhands',
-        capability: 'code_patch_plan',
-        allowed: true,
-        reason: buildReason('openhands', 'code_patch_plan'),
-        nextAction: 'start_openhands',
-      };
-    }
-    if (input.directGitHubPatchReady && complexity === 'simple') {
-      return {
-        route: 'direct-github-patch',
-        capability: 'direct_github_patch',
-        allowed: true,
-        reason: buildReason('direct-github-patch', 'direct_github_patch'),
-        nextAction: 'run_direct_patch',
       };
     }
     return buildRecoverablePackageDecision('code-llm', 'code_patch_plan');
