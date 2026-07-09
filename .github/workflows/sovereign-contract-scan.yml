@@ -128,7 +128,7 @@ jobs:
             exit 1
           }
 
-          run_first_present test:ci test:run test
+          run_first_present test:smoke test:unit test:run
 
       - name: Run web build
         shell: bash
