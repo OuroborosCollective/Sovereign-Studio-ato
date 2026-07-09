@@ -17,6 +17,8 @@ describe('sovereignAgentActionStreamBridge', () => {
     expect(event.kind).toBe('agent_job_created');
     expect(event.route).toBe('agent-job');
     expect(event.sourceId).toBe('agent-1');
+    expect(event.state).toBe('running');
+    expect(event.label).toBe('Agent Job läuft');
     expect(event.detail).toContain('Workspace');
   });
 
@@ -82,6 +84,7 @@ describe('sovereignAgentActionStreamBridge', () => {
     const stream = appendSovereignActionEvents(createSovereignActionStreamState(), events);
 
     expect(stream.events).toHaveLength(4);
+    expect(stream.events[0]).toMatchObject({ route: 'agent-job', state: 'running' });
     expect(stream.lastEvent?.route).toBe('agent-pattern');
     expect(stream.activeRoute).toBeNull();
   });
