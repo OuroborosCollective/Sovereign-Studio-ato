@@ -12,6 +12,15 @@ const readyConfig: OpenHandsEnterpriseConfig = {
   reason: 'ready',
 };
 
+const sovereignConfig: OpenHandsEnterpriseConfig = {
+  enabled: true,
+  deploymentMode: 'sovereign-agent-backend',
+  agentApiUrl: 'https://sovereign-backend.example',
+  adminConsoleUrl: '',
+  ready: true,
+  reason: 'ready',
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -70,5 +79,64 @@ describe('OpenHandsEnterpriseClient', () => {
     const client = createOpenHandsEnterpriseClient({ config: readyConfig, fetcher, now: () => 999 });
 
     await expect(client.getJob('job_blocked')).rejects.toThrow('OpenHands API authentication failed');
+  });
+
+  it('uses the internal Sovereign Agent endpoint with session credentials and unwraps job responses', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcherMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init });
+      return jsonResponse({
+        ok: true,
+        runtime: 'sovereign-agent',
+        job: {
+          jobId: 'agent-123',
+          status: 'provisioning',
+          executor: 'sovereign-local-runner',
+          workspaceId: 'agent-123',
+          events: [
+            { at: 123, level: 'success', stage: 'workspace_created', message: 'Workspace created.' },
+          ],
+        },
+      }, 201);
+    });
+
+    const client = createOpenHandsEnterpriseClient({ config: sovereignConfig, fetcher: fetcherMock as unknown as typeof fetch, now: () => 999 });
+    const snapshot = await client.startJob({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      mission: 'Use internal runtime.',
+    });
+
+    expect(calls[0]?.url).toBe('https://sovereign-backend.example/api/user/agent/jobs');
+    expect(calls[0]?.init).toEqual(expect.objectContaining({ method: 'POST', credentials: 'include' }));
+    const init = calls[0]?.init as RequestInit;
+    const body = JSON.parse(String(init.body));
+    expect(body.executor).toBe('sovereign-local-runner');
+    expect(body.provisionWorkspace).toBe(true);
+    expect(body.cloneRepo).toBe(true);
+    expect(snapshot.jobId).toBe('agent-123');
+    expect(snapshot.status).toBe('provisioning');
+    expect(snapshot.openHandsId).toBe('agent-123');
+    expect(snapshot.events[0]?.stage).toBe('workspace_created');
+  });
+
+  it('reads and cancels internal Sovereign Agent jobs through the backend route', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcherMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init });
+      return jsonResponse({
+        runtime: 'sovereign-agent',
+        job: { jobId: 'agent-abc', status: 'blocked', blocker: 'Stopped by user.', changedFiles: [], events: [] },
+      });
+    });
+
+    const client = createOpenHandsEnterpriseClient({ config: sovereignConfig, fetcher: fetcherMock as unknown as typeof fetch, now: () => 999 });
+    await client.getJob('agent-abc');
+    await client.cancelJob('agent-abc');
+
+    expect(calls[0]?.url).toBe('https://sovereign-backend.example/api/user/agent/jobs/agent-abc');
+    expect(calls[0]?.init?.credentials).toBe('include');
+    expect(calls[1]?.url).toBe('https://sovereign-backend.example/api/user/agent/jobs/agent-abc/cancel');
+    expect(calls[1]?.init?.credentials).toBe('include');
   });
 });

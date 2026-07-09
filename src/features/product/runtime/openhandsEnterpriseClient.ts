@@ -31,12 +31,20 @@ interface RawOpenHandsJobResponse {
   repoUrl?: unknown;
   branch?: unknown;
   draftPrUrl?: unknown;
+  prUrl?: unknown;
+  pr_url?: unknown;
   changedFiles?: unknown;
+  changed_files?: unknown;
   events?: unknown;
   lastError?: unknown;
   error?: unknown;
   message?: unknown;
   details?: unknown;
+  blocker?: unknown;
+  workspaceId?: unknown;
+  workspace_id?: unknown;
+  externalRef?: unknown;
+  external_ref?: unknown;
 }
 
 function endpoint(baseUrl: string, path: string): string {
@@ -70,7 +78,17 @@ function eventArray(value: unknown, now: () => number): OpenHandsRuntimeEvent[] 
 }
 
 function normalizeStatus(value: unknown): OpenHandsJobSnapshot['status'] {
-  if (value === 'queued' || value === 'running' || value === 'waiting-for-user' || value === 'blocked' || value === 'failed' || value === 'completed') return value;
+  if (
+    value === 'queued'
+    || value === 'provisioning'
+    || value === 'running'
+    || value === 'waiting-for-user'
+    || value === 'validating'
+    || value === 'blocked'
+    || value === 'failed'
+    || value === 'completed'
+    || value === 'cleaned'
+  ) return value;
   return 'idle';
 }
 
@@ -79,25 +97,36 @@ function openHandsRuntimeId(raw: RawOpenHandsJobResponse): string | undefined {
     || stringValue(raw.openhandsId)
     || stringValue(raw.ohConvId)
     || stringValue(raw.conversationId)
-    || stringValue(raw.sessionId);
+    || stringValue(raw.sessionId)
+    || stringValue(raw.workspaceId)
+    || stringValue(raw.workspace_id)
+    || stringValue(raw.externalRef)
+    || stringValue(raw.external_ref);
 }
 
 function backendErrorMessage(raw: RawOpenHandsJobResponse): string | undefined {
   return stringValue(raw.error)
     || stringValue(raw.message)
     || stringValue(raw.details)
+    || stringValue(raw.blocker)
     || stringValue(raw.lastError);
 }
 
-function sanitizeSnapshot(raw: RawOpenHandsJobResponse, now: () => number): OpenHandsJobSnapshot {
+function unwrapJobPayload(raw: Record<string, unknown>): RawOpenHandsJobResponse {
+  const nested = raw.job;
+  return isObject(nested) ? nested as RawOpenHandsJobResponse : raw as RawOpenHandsJobResponse;
+}
+
+function sanitizeSnapshot(rawInput: RawOpenHandsJobResponse, now: () => number): OpenHandsJobSnapshot {
+  const raw = unwrapJobPayload(rawInput as Record<string, unknown>);
   return {
     jobId: stringValue(raw.jobId) || stringValue(raw.id),
     openHandsId: openHandsRuntimeId(raw),
     status: normalizeStatus(raw.status),
     repoUrl: stringValue(raw.repoUrl),
     branch: stringValue(raw.branch),
-    draftPrUrl: stringValue(raw.draftPrUrl),
-    changedFiles: stringArray(raw.changedFiles),
+    draftPrUrl: stringValue(raw.draftPrUrl) || stringValue(raw.prUrl) || stringValue(raw.pr_url),
+    changedFiles: stringArray(raw.changedFiles).concat(stringArray(raw.changed_files)),
     events: eventArray(raw.events, now),
     lastError: stringValue(raw.lastError) || backendErrorMessage(raw),
   };
@@ -111,6 +140,21 @@ async function readJson(response: Response): Promise<unknown> {
 
 function assertReady(config: OpenHandsEnterpriseConfig): void {
   if (!config.ready) throw new Error(config.reason);
+}
+
+function jobPath(config: OpenHandsEnterpriseConfig, jobId?: string, suffix = ''): string {
+  if (config.deploymentMode === 'sovereign-agent-backend') {
+    const base = jobId
+      ? `/api/user/agent/jobs/${encodeURIComponent(jobId.trim())}`
+      : '/api/user/agent/jobs';
+    return `${base}${suffix}`;
+  }
+  const base = jobId ? `/jobs/${encodeURIComponent(jobId.trim())}` : '/jobs';
+  return `${base}${suffix}`;
+}
+
+function requestCredentials(config: OpenHandsEnterpriseConfig): RequestCredentials | undefined {
+  return config.deploymentMode === 'sovereign-agent-backend' ? 'include' : undefined;
 }
 
 function headers(): HeadersInit {
@@ -159,10 +203,11 @@ export class OpenHandsEnterpriseClient {
     assertReady(this.config);
     const job = this.buildJobRequest(input);
     return requestSnapshot({
-      url: endpoint(this.config.agentApiUrl, '/jobs'),
+      url: endpoint(this.config.agentApiUrl, jobPath(this.config)),
       init: {
         method: 'POST',
         headers: headers(),
+        credentials: requestCredentials(this.config),
         body: JSON.stringify(job),
       },
       fetcher: this.fetcher,
@@ -174,10 +219,11 @@ export class OpenHandsEnterpriseClient {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('OpenHands job id is required.');
     return requestSnapshot({
-      url: endpoint(this.config.agentApiUrl, `/jobs/${encodeURIComponent(jobId.trim())}`),
+      url: endpoint(this.config.agentApiUrl, jobPath(this.config, jobId)),
       init: {
         method: 'GET',
         headers: headers(),
+        credentials: requestCredentials(this.config),
       },
       fetcher: this.fetcher,
       now: this.now,
@@ -188,10 +234,11 @@ export class OpenHandsEnterpriseClient {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('OpenHands job id is required.');
     return requestSnapshot({
-      url: endpoint(this.config.agentApiUrl, `/jobs/${encodeURIComponent(jobId.trim())}/cancel`),
+      url: endpoint(this.config.agentApiUrl, jobPath(this.config, jobId, '/cancel')),
       init: {
         method: 'POST',
         headers: headers(),
+        credentials: requestCredentials(this.config),
       },
       fetcher: this.fetcher,
       now: this.now,

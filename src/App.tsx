@@ -35,7 +35,7 @@ export default function App() {
       setOpenHandsJob({
         status: 'blocked',
         changedFiles: [],
-        events: [{ at: Date.now(), level: 'error', stage: 'openhands-config', message: openhandsConfig.reason }],
+        events: [{ at: Date.now(), level: 'error', stage: 'agent-config', message: openhandsConfig.reason }],
         lastError: openhandsConfig.reason,
       });
       return;
@@ -44,7 +44,7 @@ export default function App() {
       setOpenHandsJob({
         status: 'blocked',
         changedFiles: [],
-        events: [{ at: Date.now(), level: 'error', stage: 'openhands-request', message: 'Repository URL fehlt.' }],
+        events: [{ at: Date.now(), level: 'error', stage: 'agent-request', message: 'Repository URL fehlt.' }],
         lastError: 'Repository URL fehlt.',
       });
       return;
@@ -54,7 +54,7 @@ export default function App() {
       repoUrl: input.repoUrl,
       branch: input.branch || 'main',
       changedFiles: [],
-      events: [{ at: Date.now(), level: 'info', stage: 'openhands-request', message: 'Auftrag an die konfigurierte Agent Runtime übergeben.' }],
+      events: [{ at: Date.now(), level: 'info', stage: 'agent-request', message: 'Auftrag an die Sovereign Agent Runtime übergeben.' }],
     });
     try {
       const snapshot = await openhandsClient.startJob({
@@ -70,7 +70,7 @@ export default function App() {
         repoUrl: input.repoUrl,
         branch: input.branch || 'main',
         changedFiles: [],
-        events: [{ at: Date.now(), level: 'error', stage: 'openhands-start', message }],
+        events: [{ at: Date.now(), level: 'error', stage: 'agent-start', message }],
         lastError: message,
       });
     }
@@ -88,12 +88,12 @@ export default function App() {
         ...current,
         status: 'failed',
         lastError: message,
-        events: [...current.events, { at: Date.now(), level: 'error', stage: 'openhands-cancel', message }],
+        events: [...current.events, { at: Date.now(), level: 'error', stage: 'agent-cancel', message }],
       }));
     }
   };
 
-  const openhandsIsRunning = openhandsJob.status === 'queued' || openhandsJob.status === 'running';
+  const openhandsIsRunning = openhandsJob.status === 'queued' || openhandsJob.status === 'provisioning' || openhandsJob.status === 'running' || openhandsJob.status === 'validating';
 
   return (
     <LlmAdapterProvider>
@@ -114,7 +114,7 @@ export default function App() {
           openhandsReady={openhandsConfig.ready}
           openhandsConfig={openhandsConfig}
           openhandsJob={openhandsJob}
-          openhandsJobStatus={openhandsIsRunning ? 'OpenHands Auftrag läuft' : openhandsJob.lastError}
+          openhandsJobStatus={openhandsIsRunning ? 'Sovereign Agent Auftrag läuft' : openhandsJob.lastError}
           openhandsIsRunning={openhandsIsRunning}
           onStartOpenHands={startChatOnlyTask}
           onCancelOpenHands={cancelChatOnlyTask}
