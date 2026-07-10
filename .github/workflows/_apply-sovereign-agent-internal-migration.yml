@@ -1,13 +1,6 @@
 name: Apply Sovereign Agent Internal Runtime Migration
 
 on:
-  push:
-    branches:
-      - refactor/sovereign-agent-internal-runtime-v2
-    paths:
-      - 'scripts/patches/apply_sovereign_agent_internal_migration.py'
-      - 'scripts/patches/finalize_sovereign_agent_internal_contract.py'
-      - '.github/workflows/_apply-sovereign-agent-internal-migration.yml'
   pull_request:
     branches:
       - main
@@ -33,6 +26,7 @@ jobs:
       - name: Checkout migration branch
         uses: actions/checkout@v4
         with:
+          ref: refactor/sovereign-agent-internal-runtime-v2
           fetch-depth: 0
 
       - name: Verify exact main base
@@ -135,24 +129,31 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const data = JSON.parse(fs.readFileSync('/tmp/builder-gate.json', 'utf8'));
-          const failed = [];
+          const lines = [
+            'Builder migration gate failed',
+            `total=${data.numTotalTests ?? 'unknown'}`,
+            `failed=${data.numFailedTests ?? 'unknown'}`,
+            '',
+          ];
           for (const suite of data.testResults || []) {
+            if (suite.message) lines.push(suite.message, '');
             for (const result of suite.assertionResults || []) {
-              if (result.status === 'failed') {
-                failed.push({
-                  name: [...(result.ancestorTitles || []), result.title].filter(Boolean).join(' > '),
-                  messages: result.failureMessages || [],
-                });
-              }
+              if (result.status !== 'failed') continue;
+              lines.push(`TEST: ${[...(result.ancestorTitles || []), result.title].filter(Boolean).join(' > ')}`);
+              for (const message of result.failureMessages || []) lines.push(message);
+              lines.push('');
             }
           }
-          console.log(`BUILDER_TESTS_TOTAL=${data.numTotalTests ?? 'unknown'}`);
-          console.log(`BUILDER_TESTS_FAILED=${failed.length}`);
-          for (const item of failed) {
-            console.log(`TEST: ${item.name}`);
-            for (const message of item.messages) console.log(message);
-          }
+          fs.writeFileSync('migration-diagnostic.txt', `${lines.join('\n')}\n`);
+          console.log(lines.join('\n'));
           NODE
+          git add migration-diagnostic.txt
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'chore(ci): capture builder migration failure'
+            git push origin HEAD:refactor/sovereign-agent-internal-runtime-v2
+          fi
           exit 1
 
       - name: Build web product
@@ -193,7 +194,40 @@ jobs:
 
       - name: Enforce deployed backend gate
         if: steps.deployed_backend_tests.outcome == 'failure'
-        run: exit 1
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          report = Path('/tmp/deployed-backend-junit.xml')
+          root = ET.parse(report).getroot()
+          lines = [
+              'Deployed backend migration gate failed',
+              f"tests={root.attrib.get('tests', 'unknown')}",
+              f"failures={root.attrib.get('failures', 'unknown')}",
+              f"errors={root.attrib.get('errors', 'unknown')}",
+              '',
+          ]
+          for case in root.iter('testcase'):
+              problems = list(case.findall('failure')) + list(case.findall('error'))
+              for problem in problems:
+                  lines.append(f"TEST: {case.attrib.get('classname', '')}::{case.attrib.get('name', '')}")
+                  lines.append(problem.attrib.get('message', ''))
+                  if problem.text:
+                      lines.append(problem.text)
+                  lines.append('')
+          Path('migration-diagnostic.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          PY
+          git add migration-diagnostic.txt
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'chore(ci): capture deployed backend migration failure'
+            git push origin HEAD:refactor/sovereign-agent-internal-runtime-v2
+          fi
+          exit 1
 
       - name: Runtime mirror contract
         run: diff -qr backend/agent_runtime scripts/sovereign-backend/agent_runtime --exclude='__pycache__' --exclude='*.pyc'
