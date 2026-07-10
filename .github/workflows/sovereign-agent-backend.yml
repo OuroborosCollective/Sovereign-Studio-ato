@@ -122,9 +122,7 @@ jobs:
 
       - name: Create tar archive
         run: |
-          tar -czf sovereign-backend.tar.gz \
-            scripts/sovereign-backend/agent_runtime \
-            scripts/sovereign-backend/app.py
+          tar -czf sovereign-backend.tar.gz scripts/sovereign-backend
 
       - name: Upload to VPS
         uses: appleboy/scp-action@master
@@ -150,9 +148,10 @@ jobs:
             tar -xzf /tmp/sovereign-backend.tar.gz -C /tmp/
             docker stop sovereign-backend 2>/dev/null || true
             sleep 5
-            docker cp /tmp/scripts/sovereign-backend/agent_runtime sovereign-backend:/app/
-            docker cp /tmp/scripts/sovereign-backend/app.py sovereign-backend:/app/
-            docker start sovereign-backend
+            cd /tmp/scripts/sovereign-backend
+            docker build -t sovereign-backend:latest .
+            docker rm sovereign-backend 2>/dev/null || true
+            docker run -d --name sovereign-backend --restart unless-stopped --env-file /opt/sovereign-backend/.env -p 127.0.0.1:8788:8788 sovereign-backend:latest
             sleep 25
             HEALTH=$(curl -s http://127.0.0.1:8788/health)
             echo "Health: $HEALTH"
