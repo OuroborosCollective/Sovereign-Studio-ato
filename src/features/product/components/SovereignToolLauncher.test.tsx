@@ -53,7 +53,7 @@ describe('SovereignToolLauncher', () => {
     render(
       <SovereignToolLauncher
         onSelect={onSelect}
-        runtimeContext={{ ...createEmptySovereignToolShortcutContext(), repoReady: true, repoFileCount: 4, executorAvailable: true }}
+        runtimeContext={{ ...createEmptySovereignToolShortcutContext(), repoReady: true, repoFileCount: 4, githubAccessState: 'ready', executorAvailable: true }}
       />,
     );
 
@@ -61,7 +61,31 @@ describe('SovereignToolLauncher', () => {
     expect(screen.getByRole('menuitem', { name: 'Diff' })).toBeDisabled();
     expect(screen.getByRole('menuitem', { name: 'Executor' })).toBeDisabled();
     expect(screen.getByText('Kein Diff')).toBeInTheDocument();
-    expect(screen.getByText('Auftrag fehlt')).toBeInTheDocument();
+    expect(screen.getByText('Ausführungsauftrag fehlt')).toBeInTheDocument();
+  });
+
+  it('allows Executor only for a classified code or Draft-PR execution intent', () => {
+    const onSelect = vi.fn();
+    render(
+      <SovereignToolLauncher
+        onSelect={onSelect}
+        runtimeContext={{
+          ...createEmptySovereignToolShortcutContext(),
+          repoReady: true,
+          repoFileCount: 4,
+          githubAccessState: 'ready',
+          executorAvailable: true,
+          hasExecutorMission: true,
+          executorIntent: 'code_execution',
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+    const executor = screen.getByRole('menuitem', { name: 'Executor' });
+    expect(executor).toBeEnabled();
+    fireEvent.click(executor);
+    expect(onSelect).toHaveBeenCalledWith('executor');
   });
 
   it('opens core utility windows only after their inspection gate allows it', () => {
