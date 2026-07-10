@@ -613,4 +613,220 @@ return do_real_work()
 
 ---
 
-*Last Updated: 2026-07-08 (Agent Runtime)*
+## 🚀 VPS Production Deployment Best Practices
+
+### ✅ DO: Verify Before Restart
+
+Always check the current state before making changes:
+```python
+# Check running version first
+docker exec sovereign-backend cat /app/.commit_sha 2>/dev/null || echo "N/A"
+
+# Check logs for errors
+docker logs sovereign-backend --tail 20
+
+# Verify Python syntax
+docker exec sovereign-backend python3 -m py_compile /app/new_file.py
+```
+
+### ✅ DO: Copy Files Not Rebuild (Python-only fixes)
+
+```python
+# Fast hotfix: copy to running container
+sftp.put('/tmp/fixed.py', '/app/fixed.py')
+ssh.exec_command('docker restart sovereign-backend')
+
+# Verify fix
+ssh.exec_command('docker exec sovereign-backend python3 -c "from module import func; print(\"OK\")"')
+```
+
+### ✅ DO: Fetch Fixes from Container to Repo
+
+When container has fixes not in repo:
+```python
+# Get fixed file from container
+stdin, stdout, stderr = client.exec_command(f'docker exec container cat /app/file.py')
+content = stdout.read().decode()
+
+# Write to local repo
+with open('/repo/scripts/sovereign-backend/agent_runtime/file.py', 'w') as f:
+    f.write(content)
+```
+
+### ❌ DON'T: Assume Column Types
+
+Always verify DB column types before casting:
+```python
+# ❌ WRONG - assuming uuid type
+WHERE id = %s::uuid
+
+# ✅ CORRECT - no cast if TEXT
+WHERE id = %s
+```
+
+### ✅ DO: Single Lock for Gunicorn Workers
+
+When starting background threads in Flask with multiple workers:
+```python
+_runner_lock = threading.Lock()
+
+def register_daemon():
+    global _runner_daemon
+    with _runner_lock:
+        if _runner_daemon is not None:
+            return _runner_daemon  # Already started by another worker
+        # ... create daemon ...
+        _runner_daemon = daemon
+        return daemon
+```
+
+### ✅ DO: Use Repo Path for Tool Execution
+
+When tools need to access cloned repositories:
+```python
+# ❌ WRONG - tools get workspace root
+execute_tool(name, params, workspace_path)
+
+# ✅ CORRECT - tools get repo directory
+repo_path = str(Path(workspace_path) / "repo")
+execute_tool(name, params, repo_path)
+```
+
+### ✅ DO: Handle Both dict and Object Types
+
+When processing mixed-type data:
+```python
+# ✅ Handle both dict and object
+if isinstance(ev, dict):
+    stage = str(ev.get("stage", ""))
+else:
+    stage = str(getattr(ev, "stage", ""))
+```
+
+### ❌ DON'T: Use X-User-Id for Auth
+
+Backend uses JWT session cookies, NOT X-User-Id headers:
+```python
+# ❌ WRONG - X-User-Id doesn't work
+headers = {"X-User-Id": "user-id"}
+
+# ✅ CORRECT - Session cookie (handled by _get_session_user_id())
+# No extra headers needed, session cookie sent automatically
+```
+
+### ✅ DO: Check Tool Registry Registration
+
+When a tool isn't being found:
+```python
+# Check registry
+from agent_runtime.tools.base import get_tool_registry
+r = get_tool_registry()
+tools = r.list_tools()
+print("Tools:", [t['name'] for t in tools])
+
+# Check if registered
+for t in tools:
+    if 'git' in t['name']:
+        print(f"Found: {t}")
+```
+
+### ✅ DO: Test with Canary Jobs
+
+Always verify fixes with a test job:
+```python
+# Create minimal canary job
+INSERT INTO sovereign_agent_jobs 
+  (job_id, executor, status, repo_url, branch, mission, workspace_id, 
+   draft_pr_only, allow_auto_merge, created_at, updated_at)
+VALUES 
+  ('canary-' || uuid, 'sovereign-local-runner', 'provisioning',
+   'https://github.com/repo', 'main', 'Call done', 'canary-' || uuid,
+   TRUE, FALSE, NOW(), NOW());
+
+# Wait 60s then check events
+SELECT COUNT(*) FROM sovereign_agent_events WHERE job_id = 'canary-xxx';
+# Should be 3+ events (started + clone + tool/completed)
+```
+
+### ❌ DON'T: Commit .bak Files
+
+Always clean up backup files:
+```bash
+# Remove backup files
+rm scripts/sovereign-backend/agent_runtime/sovereign_local_runner.py.bak
+
+# Verify no .bak files
+find . -name "*.bak" -delete
+```
+
+### ✅ DO: Write Audit Entries for DB Changes
+
+When updating job statuses:
+```python
+audit_entries = [{
+    "job_id": jid,
+    "old_status": old,
+    "new_status": new,
+    "reason": "provisioning_timeout_before_runtime_start",
+    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "script": "repair_jobs_20260710.py"
+}]
+
+with open("/tmp/audit.json", "w") as f:
+    json.dump(audit_entries, f, indent=2)
+```
+
+### ✅ DO: Know Service Port Mappings
+
+| Internal Service | Port | Bind | Don't Use For |
+|-----------------|------|-------|---------------|
+| sovereign-backend | 8788 | 127.0.0.1:8788 | Frontend |
+| memory-gateway | 8088 | 127.0.0.1:8088 | Toolchain |
+| arelorian-engine | 3001 | 127.0.0.1:3001 | Toolchain (it's an MMORPG!) |
+| OpenHands | 8000 | 0.0.0.0:8000 | Backend |
+
+### ✅ DO: Dry Run Before Live DB Changes
+
+```python
+dry_run = True  # Change to False to execute
+if dry_run:
+    print("Preview - no changes made")
+else:
+    for jid, new_status in updates:
+        cur.execute("UPDATE ... SET status=%s ...", (new_status, jid))
+    conn.commit()
+```
+
+---
+
+## 🧪 Job Lifecycle Best Practices
+
+### ✅ Expected Event Sequence
+```
+provisioning → running → validating → completed
+                ↓
+           (tool calls)
+                ↓
+           failed/blocked
+```
+
+### ✅ Minimum Viable Events (3+)
+A healthy job should have at least:
+1. `job_started_by_runner`
+2. `repo_clone_completed`  
+3. `tool_completed` OR `tool_failed`
+
+Fewer than 3 events = something is broken.
+
+### ❌ DON'T: Ignore AttributeError in Logs
+```
+AttributeError: 'ToolEvent' object has no attribute 'get'
+```
+This means `_job_events()` received a ToolEvent object but called `.get()` as if it were a dict.
+
+### ✅ Think Carefully About Threading
+Gunicorn `sync` workers run each request in a separate thread. Background daemons started at import time may run in multiple copies if workers aren't coordinated.
+
+---
+
+*Last Updated: 2026-07-10 (VPS Production Fix)*

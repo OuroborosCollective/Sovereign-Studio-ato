@@ -38,6 +38,7 @@ from .git_tool import (
     GitAddTool,
     GitCommitTool,
     GitLogTool,
+    GitUniversalTool,
 )
 from .diff_tool import DiffTool, SemanticDiffTool
 from .test_tool import TestTool
@@ -58,6 +59,7 @@ __all__ = [
     "GitAddTool",
     "GitCommitTool",
     "GitLogTool",
+    "GitUniversalTool",
     "DiffTool",
     "SemanticDiffTool",
     "TestTool",

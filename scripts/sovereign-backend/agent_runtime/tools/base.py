@@ -228,7 +228,7 @@ def _register_default_tools(registry: ToolRegistry) -> None:
     """Register all default Sovereign tools."""
     from .file_tool import FileReadTool, FileWriteTool
     from .shell_tool import ShellTool
-    from .git_tool import GitStatusTool, GitDiffTool, GitAddTool
+    from .git_tool import GitStatusTool, GitDiffTool, GitAddTool, GitUniversalTool
     from .diff_tool import DiffTool
     from .test_tool import TestTool
 
@@ -238,5 +238,6 @@ def _register_default_tools(registry: ToolRegistry) -> None:
     registry.register(GitStatusTool())
     registry.register(GitDiffTool())
     registry.register(GitAddTool())
+    registry.register(GitUniversalTool())
     registry.register(DiffTool())
     registry.register(TestTool())

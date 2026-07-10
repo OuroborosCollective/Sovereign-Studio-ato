@@ -6054,6 +6054,28 @@ if True:  # Always execute during module load
             get_connection=_get_db_connection
         )
         print("[INFO] Sovereign Agent routes registered (sovereign-local-runner)")
+
+        # ── Register sovereign-local-runner daemon ──────────────────────────
+        try:
+            workspace_root = os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "/opt/sovereign-workspaces")
+            from agent_runtime.sovereign_local_runner import register_sovereign_runner
+            _runner_daemon = register_sovereign_runner(
+                workspace_root=workspace_root,
+            )
+            if _runner_daemon:
+                # Graceful shutdown via Flask 3.x record()
+                import atexit
+                def _stop_runner():
+                    from agent_runtime.sovereign_local_runner import stop_sovereign_runner
+                    stop_sovereign_runner()
+                atexit.register(_stop_runner)
+                print(f"[INFO] sovereign-local-runner daemon started")
+        except Exception as runner_err:
+            import traceback
+            print(f"[WARN] Failed to start sovereign-local-runner: {runner_err}")
+            traceback.print_exc()
+        # ───────────────────────────────────────────────────────────────────
+
     except Exception as e:
         import traceback
         print(f"[WARN] Failed to register Sovereign Agent routes: {e}")

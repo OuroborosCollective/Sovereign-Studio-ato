@@ -306,4 +306,208 @@ class EvidenceGate:
 
 ---
 
-*Last Updated: 2026-07-08 (Agent Runtime)*
+## 🗓️ 2026-07-10 (Update): VPS Production Fix - Sovereign Agent Runtime
+
+### 5 Critical Bugs Fixed in Production
+
+These bugs caused 12 jobs to hang permanently in "provisioning" status with no tool execution.
+
+| # | File | Bug | Symptom | Fix |
+|---|------|-----|---------|-----|
+| 1 | `tools/git_tool.py` | `GitUniversalTool` class missing | LLM calls `{"tool":"git"}` → "Unknown tool" | Added class that parses all LLM git output formats |
+| 2 | `tools/base.py` | `GitUniversalTool` not registered | Tool not in registry despite class existing | Added `registry.register(GitUniversalTool(...))` |
+| 3 | `sovereign_local_runner.py` | `_job_events()` assumes dict | `ev.get("stage")` on ToolEvent object → `AttributeError` | Added `isinstance(ev, dict)` check with `getattr()` fallback |
+| 4 | `sovereign_local_runner.py` | 2 gunicorn workers = 2 daemon threads | Race condition → duplicate job dispatch | Added `_runner_lock = threading.Lock()` singleton guard |
+| 5 | `sovereign_local_runner.py` | Tools got workspace root path | `file_read("README.md")` → "File not found" | Changed to `repo_path = Path(workspace_path) / "repo"` |
+
+### Debugging VPS Production Issues
+
+#### VPS Connection Pattern (SSH via paramiko)
+```python
+import paramiko
+
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect('46.202.154.25', username='root', password='2N00py123+++', timeout=30)
+
+# Execute commands inside container
+stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend python3 -c "..."')
+
+# Copy file to container
+sftp = client.open_sftp()
+with sftp.open('/path/in/container', 'wb') as f:
+    f.write(file_content)
+sftp.close()
+client.exec_command('docker cp local_file sovereign-backend:/path/')
+
+# Fetch file from container
+stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend cat /path/to/file')
+content = stdout.read().decode()
+```
+
+#### Fetching Python Files from Container
+```python
+# Use Python heredoc approach - avoid complex shell escaping
+files = {
+    '/app/agent_runtime/sovereign_local_runner.py': '/tmp/local_copy.py',
+}
+for src, dst in files.items():
+    stdin, stdout, stderr = client.exec_command(f'docker exec sovereign-backend cat {src}')
+    with open(dst, 'w') as f:
+        f.write(stdout.read().decode())
+```
+
+#### VPS Services on 46.202.154.25
+| Service | Port | Internal | Public | Purpose |
+|---------|------|----------|--------|---------|
+| sovereign-backend | 8788 | 127.0.0.1:8788→8787 | via Nginx | Flask API |
+| sovereign-memory-gateway | 8088 | 127.0.0.1:8088 | blocked | Pattern/Memory |
+| arelorian-engine | 3001 | 127.0.0.1:3001 | blocked | MMORPG (NOT toolchain!) |
+| openhands-enterprise | 8000 | 0.0.0.0:8000 | via proxy | OpenHands |
+| supabase-db | 5432 | via Docker network | blocked | PostgreSQL |
+| milvus-standalone | 19530 | via Docker network | 32776 | Vector DB |
+| milvus-attu | 3000 | via Docker network | 32777 | Milvus UI |
+
+### Fixing Containerized Python Applications
+
+#### When to Rebuild vs. Copy
+- **Bug in Python code**: Copy fixed files into running container (fast, no rebuild)
+- **Dockerfile/dependency change**: Rebuild image (slower, but reproducible)
+- **Code only fix**: `docker cp fixed.py container:/app/fixed.py`
+
+#### Container File Copy Pattern
+```bash
+# Copy multiple files at once
+docker cp file1.py container:/app/
+docker cp file2.py container:/app/
+docker restart container
+
+# Verify fix in running container
+docker exec container python3 -c "import sys; sys.path.insert(0,'/app'); from module import func; print('OK')"
+```
+
+#### Syntax Check Before Restart
+```bash
+docker exec container python3 -m py_compile /app/filename.py
+# No output = syntax OK
+```
+
+### Job Lifecycle Debugging
+
+#### Key Tables
+```sql
+-- All jobs
+SELECT job_id, status, blocker, created_at, started_at 
+FROM sovereign_agent_jobs 
+ORDER BY created_at DESC LIMIT 20;
+
+-- Events for specific job
+SELECT stage, level, message, created_at 
+FROM sovereign_agent_events 
+WHERE job_id = 'job-id-here' 
+ORDER BY created_at;
+
+-- Job status counts
+SELECT status, COUNT(*) FROM sovereign_agent_jobs GROUP BY status;
+```
+
+#### Expected Job Flow
+```
+provisioning → running → validating → completed
+                ↓
+           (tool calls)
+                ↓
+           failed/blocked
+```
+
+#### Canary Test Pattern
+```python
+# Create test job
+INSERT INTO sovereign_agent_jobs 
+  (job_id, user_id, executor, status, repo_url, branch, mission, workspace_id, 
+   draft_pr_only, allow_auto_merge, created_at, updated_at)
+VALUES 
+  ('agent-canary-test', user_id, 'sovereign-local-runner', 'provisioning',
+   'https://github.com/repo', 'main', 'Call done with summary: test',
+   'agent-canary-test', TRUE, FALSE, NOW(), NOW());
+
+# Monitor events (every 15s for 5 minutes)
+SELECT status, COUNT(*) FROM sovereign_agent_events WHERE job_id = 'agent-canary-test';
+```
+
+### Singleton Thread Pattern for Gunicorn Workers
+```python
+import threading
+
+_runner_daemon = None
+_runner_lock = threading.Lock()
+
+def register_runner():
+    global _runner_daemon
+    with _runner_lock:
+        if _runner_daemon is not None:
+            return _runner_daemon  # Already started by another worker
+        # ... create and start daemon ...
+        _runner_daemon = daemon
+        return daemon
+```
+
+### Commit Pattern for Hotfixes
+```bash
+git add <files>
+git commit -m "fix(agent-runtime): description of fix
+
+- Detail 1
+- Detail 2
+
+Co-authored-by: openhands <openhands@all-hands.dev>"
+git push origin main
+```
+
+---
+
+## 🗓️ 2026-07-10 (Update): Toolchain & Pattern System
+
+### Toolchain Status (BLOCKED)
+- `TOOLCHAIN_BASE_URL` defaults to `http://127.0.0.1:8001` (arelorian-engine MMORPG, NOT toolchain!)
+- External service `sovereign-universal-toolchain` NOT deployed
+- `/api/toolchain/universal/manifest` returns 200 (DB fallback works)
+- `/api/toolchain/universal/status` returns 502 (external service unavailable)
+- `/api/toolchain/universal/briefing` returns 502 (external service unavailable)
+- `/api/toolchain/universal/invoke` returns 401 (requires session cookie, not X-User-Id)
+
+### Pattern Learning System
+- Table `sovereign_agent_pattern_candidates` exists (0 rows)
+- `/api/user/agent/jobs/<job_id>/patterns/learn` route registered
+- Endpoint requires JWT session cookie (not X-User-Id header)
+- `pattern_gateway.py` functions: `evaluate_pattern_learning()`, `persist_pattern_learning_candidate()`
+- Milvus running on port 32776
+
+### DB Constraints for Sovereign Agent Jobs
+```sql
+-- All these constraints must be verified after migration:
+CHECK (executor = 'sovereign-local-runner')        -- Only internal runner
+CHECK (draft_pr_only IS TRUE)                      -- Always Draft PR
+CHECK (allow_auto_merge IS FALSE)                  -- Never Auto-merge
+CHECK (status IN ('queued', 'provisioning', 'running', ...))
+```
+
+### Stuck Job Repair Pattern
+```python
+# Dry run first, then execute
+dry_run = True
+if dry_run:
+    print("No changes made. Set dry_run=False to execute.")
+else:
+    for jid, new_status in updates:
+        cur.execute("UPDATE ... SET status=%s, blocker=%s WHERE job_id=%s", 
+                   (new_status, reason, jid))
+    conn.commit()
+    # Write audit log
+    with open("/tmp/audit.json", "w") as f:
+        json.dump(audit_entries, f, indent=2)
+```
+
+---
+
+*Last Updated: 2026-07-10 (VPS Production Fix + Toolchain/Pattern)*
