@@ -43,6 +43,15 @@ const riskClass: Record<string, string> = {
   hoch: 'text-rose-400 bg-rose-500/20 border border-rose-500/30',
 };
 
+type RepoInsightSuggestionGate = {
+  readonly state: 'allowed' | 'blocked';
+  readonly reason: string;
+};
+
+function suggestionGate(suggestion: RepoInsightSuggestion): RepoInsightSuggestionGate | null {
+  return (suggestion as RepoInsightSuggestion & { readonly gate?: RepoInsightSuggestionGate }).gate ?? null;
+}
+
 function SuggestionCard({
   suggestion,
   onClick,
@@ -50,11 +59,20 @@ function SuggestionCard({
   suggestion: RepoInsightSuggestion;
   onClick: () => void;
 }) {
+  const gate = suggestionGate(suggestion);
+  const gateBlocked = gate?.state === 'blocked';
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="w-full rounded-xl border border-slate-700/50 bg-slate-800/50 p-3 text-left transition-all hover:border-cyan-500/50 hover:bg-slate-800/80 focus:border-cyan-500/70 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+      onClick={gateBlocked ? undefined : onClick}
+      disabled={gateBlocked}
+      aria-disabled={gateBlocked}
+      data-gate-state={gate?.state ?? 'unknown'}
+      className={`w-full rounded-xl border p-3 text-left transition-all focus:outline-none focus:ring-2 ${
+        gateBlocked
+          ? 'cursor-not-allowed border-amber-500/40 bg-amber-500/10 opacity-80 focus:border-amber-500/70 focus:ring-amber-500/30'
+          : 'border-slate-700/50 bg-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-800/80 focus:border-cyan-500/70 focus:ring-cyan-500/30'
+      }`}
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-bold text-white">{suggestion.title}</span>
@@ -67,6 +85,17 @@ function SuggestionCard({
       <p className="mt-1.5 text-xs leading-relaxed text-slate-300">
         {suggestion.whyUseful}
       </p>
+      {gate && (
+        <p
+          className={`mt-1.5 rounded-lg border px-2 py-1 text-[11px] leading-relaxed ${
+            gate.state === 'blocked'
+              ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+              : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
+          }`}
+        >
+          Gate: {gate.state === 'blocked' ? 'blockiert' : 'erlaubt'} · {gate.reason}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-slate-500">
           {suggestion.affectedFiles.slice(0, 2).join(', ')}
@@ -134,6 +163,18 @@ function compactMissionPreview(mission: string): string {
   return oneLine.length > 260 ? `${oneLine.slice(0, 257)}...` : oneLine;
 }
 
+function confidenceLabel(confidence: number): string {
+  if (confidence >= 0.8) return 'hohes Vertrauen';
+  if (confidence >= 0.6) return 'mittleres Vertrauen';
+  return 'niedriges Vertrauen';
+}
+
+function confidenceColor(confidence: number): string {
+  if (confidence >= 0.8) return 'text-emerald-400';
+  if (confidence >= 0.6) return 'text-amber-400';
+  return 'text-slate-400';
+}
+
 function RecommendedMission({
   mission,
   confidence,
@@ -143,19 +184,12 @@ function RecommendedMission({
   confidence: number;
   onClick: () => void;
 }) {
-  const confidenceColor =
-    confidence >= 0.8
-      ? 'text-emerald-400'
-      : confidence >= 0.6
-        ? 'text-amber-400'
-        : 'text-slate-400';
-
   return (
     <div className="space-y-2">
       <h3 className="flex items-center gap-2 border-b border-slate-700/50 pb-2 text-sm font-black uppercase tracking-wider text-violet-300">
         Empfohlene nächste Aufgabe
-        <span className={`text-xs font-bold ${confidenceColor}`}>
-          {Math.round(confidence * 100)}% sicher
+        <span className={`text-xs font-bold ${confidenceColor(confidence)}`}>
+          {confidenceLabel(confidence)}
         </span>
       </h3>
       <button
@@ -333,7 +367,7 @@ export function RepoInsightPanel({
       {/* Confidence Indicator */}
       <div className="flex items-center justify-between border-t border-slate-700/30 pt-3 text-xs text-slate-500">
         <span>
-          Analyse-Vertrauen: {Math.round(output.confidence * 100)}%
+          Analyse-Vertrauen: {confidenceLabel(output.confidence)}
         </span>
         <span>
           {output.fixSuggestions.length +
