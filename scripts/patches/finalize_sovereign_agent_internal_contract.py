@@ -90,15 +90,26 @@ def main() -> None:
         raise RuntimeError(f'launcherRegistry.ts: expected one orphan agentToolEntry, found {len(agent_entry_lines)}')
     registry.write_text('\n'.join(line for line in registry_lines if 'agentToolEntry' not in line) + '\n', encoding='utf-8')
 
+    router = 'src/features/product/runtime/sovereignCapabilityRouter.ts'
     replace_exact(
-        'src/features/product/runtime/sovereignCapabilityRouter.ts',
+        router,
+        "const SOVEREIGN_AGENT_TOKENS = [\n  'sovereign-agent',\n];",
+        "const SOVEREIGN_AGENT_TOKENS = [\n  'sovereign agent',\n  'sovereign-agent',\n];",
+    )
+    replace_exact(
+        router,
         "    agent: 'Sovereign Agent Executor Route',",
         "    'sovereign-agent': 'Sovereign Agent Executor Route',",
     )
     replace_exact(
-        'src/features/product/runtime/sovereignCapabilityRouter.ts',
+        router,
         "    agent: 'Sovereign Agent',",
         "    'sovereign-agent': 'Sovereign Agent',",
+    )
+    replace_exact(
+        router,
+        "reason: 'Sovereign Agent wurde ausdrücklich angefordert und ist als externer Adapter verfügbar.',",
+        "reason: 'Sovereign Agent wurde ausdrücklich angefordert und ist als interne Runtime verfügbar.',",
     )
 
     client_test = ROOT / 'src/features/product/runtime/sovereignAgentClient.test.ts'
