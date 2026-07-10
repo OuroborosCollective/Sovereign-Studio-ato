@@ -838,17 +838,130 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe(before);
   });
 
-  it("Runtime Logs shortcut is idempotent and opens only runtime evidence", () => {
+  it("Runtime Logs shortcut is idempotent and never creates its own evidence", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Runtime Logs" }));
+    const emptyLogsItem = screen.getByRole("menuitem", { name: "Runtime Logs" });
+    expect(emptyLogsItem.getAttribute("title")).toContain("Noch leer");
+    fireEvent.click(emptyLogsItem);
+
     expect(screen.getByRole("dialog", { name: "Runtime Evidence Logs" })).toBeDefined();
     expect(screen.getByText(/Keine Tabwechsel- oder UI-Signallogs/i)).toBeDefined();
+    expect(screen.getByText("Noch keine Runtime-Ereignisse.")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Runtime Logs schließen"));
 
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Runtime Logs" }));
-    expect(screen.getByRole("dialog", { name: "Runtime Evidence Logs" })).toBeDefined();
+    const logsItemAfterOpen = screen.getByRole("menuitem", { name: "Runtime Logs" });
+    expect(logsItemAfterOpen.getAttribute("title")).toContain("Noch leer");
+    fireEvent.click(logsItemAfterOpen);
+    expect(screen.getByText("Noch keine Runtime-Ereignisse.")).toBeDefined();
+  });
+
+  it("rejects foreign OpenHands evidence for the loaded repository", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        openhandsReady
+        openhandsJob={repoScopedJob({
+          repoUrl: SECOND_REPO_URL,
+          changedFiles: ["src/Foreign.tsx"],
+          draftPrUrl: "https://github.com/OuroborosCollective/Other-Studio/pull/1",
+        })}
+      />,
+    );
+    await loadRepoFromChat();
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    const diffItem = screen.getByRole("menuitem", { name: "Diff" });
+    expect(diffItem).toBeDisabled();
+    expect(diffItem.getAttribute("title")).toContain("Kein Diff");
+    expect(screen.queryByText("src/Foreign.tsx")).toBeNull();
+    expect(screen.queryByText(/Draft PR öffnen/i)).toBeNull();
+  });
+
+  it("rejects a published Draft PR URL from another repository", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        publishedPrUrl="https://github.com/OuroborosCollective/Other-Studio/pull/99"
+      />,
+    );
+    await loadRepoFromChat();
+
+    expect(screen.queryByRole("button", { name: "Draft PR öffnen" })).toBeNull();
+    const draftStatus = screen.getByRole("button", { name: /Draft PR:/i });
+    expect(draftStatus).toHaveTextContent("fehlt");
+  });
+
+  it("invalidates validated GitHub access when another repository is loaded", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+      jsonResponse({ tree: [{ path: "src/Other.tsx", type: "blob", size: 21 }], truncated: false }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    expect(screen.getByRole("menuitem", { name: "GitHub Access" }).getAttribute("title")).toContain("Validiert");
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+
+    await loadRepoUrlFromChat(SECOND_REPO_URL);
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    expect(actionStream).not.toHaveTextContent("GitHub-Zugang bereit");
+    expect(actionStream).toHaveTextContent("Repo-Kontext geladen");
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    const accessItem = screen.getByRole("menuitem", { name: "GitHub Access" });
+    expect(accessItem.getAttribute("title")).toContain("Zugang fehlt");
+    expect(accessItem.getAttribute("title")).not.toContain("Validiert");
+  });
+
+  it("discards a GitHub validation result that finishes after the repo scope changed", async () => {
+    let resolveUser: ((response: Response) => void) | null = null;
+    const pendingUser = new Promise<Response>((resolve) => { resolveUser = resolve; });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
+      const url = requestUrl(input);
+      if (url.endsWith('/user')) return pendingUser;
+      if (url.includes('/git/trees/')) {
+        return jsonResponse({ tree: [{ path: url.includes('Other-Studio') ? 'src/Other.tsx' : 'README.md', type: 'blob', size: 12 }], truncated: false });
+      }
+      if (url.includes('/repos/') && url.includes('/collaborators/')) return jsonResponse({ permissions: { push: true } });
+      return jsonResponse({ choices: [{ message: { content: 'unused' } }] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+    fireEvent.click(screen.getByLabelText('GitHub Access'));
+    fireEvent.click(screen.getByText('Zugang eingeben'));
+    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+    fireEvent.click(screen.getByText('Übernehmen'));
+    await waitFor(() =>
+      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' })).toHaveTextContent('GitHub-Zugang wird geprüft'),
+    );
+
+    await loadRepoUrlFromChat(SECOND_REPO_URL);
+    resolveUser?.(jsonResponse({ login: 'octo' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('log', { name: 'Sovereign Action Stream' })).toHaveTextContent('GitHub-Zugangsprüfung verworfen'),
+    );
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+    expect(screen.getByRole('menuitem', { name: 'GitHub Access' }).getAttribute('title')).toContain('Zugang fehlt');
   });
 
   it("README & Docs preset opens real repo setup before GitHub access when repo evidence is missing", async () => {
