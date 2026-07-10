@@ -1,0 +1,133 @@
+diff --git a/src/features/product/containers/BuilderContainer.test.tsx b/src/features/product/containers/BuilderContainer.test.tsx
+index 0858334..d847f9d 100644
+--- a/src/features/product/containers/BuilderContainer.test.tsx
++++ b/src/features/product/containers/BuilderContainer.test.tsx
+@@ -758,6 +758,30 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
+     expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Repo-Setup geöffnet");
+   });
+ 
++  it("resets repo-scoped GitHub access when a different repo snapshot is loaded", async () => {
++    mockFetchSequence(
++      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
++      jsonResponse({ login: "octo" }),
++      jsonResponse({ permissions: { push: true } }),
++      jsonResponse({ tree: [{ path: "src/Other.tsx", type: "blob", size: 21 }], truncated: false }),
++    );
++    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
++    await loadRepoFromChat();
++    await validateGitHubAccessFromLauncher();
++
++    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
++    expect(screen.getByText("Validiert")).toBeDefined();
++    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
++
++    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/SecondRepo" } });
++    fireEvent.click(sendButton());
++    await waitFor(() => expect(screen.getByText(/SecondRepo:main/)).toBeDefined());
++
++    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
++    expect(screen.getByText("Zugang fehlt")).toBeDefined();
++    expect(screen.queryByText("Validiert")).toBeNull();
++  });
++
+   it("Files shortcut preserves its own intent and opens the confirmed file explorer", async () => {
+     mockFetchSequence(
+       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+diff --git a/src/features/product/containers/BuilderContainer.tsx b/src/features/product/containers/BuilderContainer.tsx
+index 06dda73..ef416ae 100644
+--- a/src/features/product/containers/BuilderContainer.tsx
++++ b/src/features/product/containers/BuilderContainer.tsx
+@@ -2626,6 +2626,12 @@ export function BuilderContainer({
+     () => buildSovereignRuntimeEvidenceLog(actionStream.events, openhandsJob?.events ?? []),
+     [actionStream.events, openhandsJob?.events],
+   );
++  const clearPatchEvidence = useCallback(() => {
++    setPatchDiffReport(null);
++    setPatchPreviewReady(false);
++    setPatchConfirmed(false);
++    setShowPatchDiffEvidence(false);
++  }, []);
+ 
+   // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
+   // derived purely from runtime state, never fabricated. Fronts the technical
+@@ -3226,6 +3232,7 @@ export function BuilderContainer({
+       return false;
+     }
+ 
++    clearPatchEvidence();
+     appendActionEvent({
+       kind: 'agent_job_requested',
+       route: 'agent-job',
+@@ -3699,6 +3706,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
+       const result = await fetchDevChatRepoTree(parsedRepo);
+       setRepoLoading(false);
+       if (result.ok && result.snapshot) {
++        githubTokenRef.current = null;
++        setGitHubAccessState(createGitHubAccessSnapshot());
++        pendingWriteIntentRef.current = null;
++        clearPatchEvidence();
+         setChatRepo(result.snapshot);
+         triggerHaptic("medium");
+         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
+@@ -3824,6 +3835,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
+         if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
+           const tokenForDirectPatch = githubTokenRef.current;
+           if (chatRepoSnapshot && tokenForDirectPatch) {
++            clearPatchEvidence();
+             const directPatchResult = await buildDirectPatchPlanWithContentLoad({
+               repoContext: {
+                 owner: chatRepoSnapshot.owner,
+@@ -4820,6 +4832,7 @@ Das echte Repo-Setup wurde geöffnet.`,
+                           // Runtime-Truth: All result types must be terminal-handled
+                           if (!chatRepoSnapshot) break;
+                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
++                          clearPatchEvidence();
+                           buildDirectPatchPlanWithContentLoad({
+                             repoContext: {
+                               owner: chatRepoSnapshot.owner,
+@@ -5135,6 +5148,7 @@ Das echte Repo-Setup wurde geöffnet.`,
+                     if (agentDisabled) {
+                       const tokenForDirectPatch = githubTokenRef.current;
+                       if (!openhandsReady && tokenForDirectPatch && validation.canWrite === true) {
++                        clearPatchEvidence();
+                         const directPatchResult = await buildDirectPatchPlanWithContentLoad({
+                           repoContext: {
+                             owner: chatRepoSnapshot.owner,
+diff --git a/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts b/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts
+index ad0c22f..2386314 100644
+--- a/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts
++++ b/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts
+@@ -57,9 +57,11 @@ describe('sovereignCompactShortcutExecutionRuntime', () => {
+       kind: 'done', route: 'repo', label: 'Repo geprüft', state: 'done', createdAt: 10,
+     });
+     const log = buildSovereignRuntimeEvidenceLog(stream.events, [
+-      { at: 20, level: 'info', stage: 'agent-request', message: 'Job angefragt' },
++      { at: 20, level: 'info', stage: 'agent-request', message: 'Job angefragt · token=super-secret-value' },
+     ]);
+     expect(log).toHaveLength(2);
+     expect(log.map((entry) => entry.source)).toEqual(['action-stream', 'agent-runtime']);
++    expect(log[1]?.message).not.toContain('super-secret-value');
++    expect(log[1]?.message).toContain('****');
+   });
+ });
+diff --git a/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.ts b/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.ts
+index 199751f..e10e089 100644
+--- a/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.ts
++++ b/src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.ts
+@@ -10,6 +10,7 @@ import type {
+   SovereignExecutorIntentKind,
+ } from './sovereignExecutorRuntime';
+ import type { GitHubAccessState } from './githubAccessRuntime';
++import { maskSecrets } from '../../../shared/utils/crypto';
+ 
+ export type SovereignCompactShortcutSurface =
+   | 'repo-setup'
+@@ -238,7 +239,7 @@ export function buildSovereignRuntimeEvidenceLog(
+     source: 'agent-runtime' as const,
+     level: entry.level,
+     scope: entry.stage,
+-    message: entry.message,
++    message: maskSecrets(entry.message),
+   }));
+   return [...fromActions, ...fromAgent].sort((left, right) => left.at - right.at);
+ }
