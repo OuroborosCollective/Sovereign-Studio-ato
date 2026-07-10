@@ -5278,6 +5278,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     if (agentDisabled) {
                       const tokenForDirectPatch = githubTokenRef.current;
                       if (!openhandsReady && tokenForDirectPatch && validation.canWrite === true) {
+                        const patchScopeKey = validationRepoScopeKey;
                         clearPatchEvidence();
                         const directPatchResult = await buildDirectPatchPlanWithContentLoad({
                           repoContext: {
@@ -5291,6 +5292,16 @@ Das echte Repo-Setup wurde geöffnet.`,
                           token: tokenForDirectPatch,
                           fetcher: globalThis.fetch,
                         });
+
+                        if (!isCurrentRepoScope(patchScopeKey)) {
+                          appendActionEvent(buildBlockedActionEvent({
+                            route: 'direct-github-patch',
+                            label: 'Patch-Ergebnis verworfen',
+                            detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
+                            kind: 'blocked',
+                          }));
+                          return;
+                        }
 
                         if ('result' in directPatchResult && directPatchResult.result.ok) {
                           appendActionEvent({
@@ -5409,12 +5420,12 @@ Das echte Repo-Setup wurde geöffnet.`,
               )}
 
               {/* ── Issue #431: Draft PR Card */}
-              {openhandsJob?.draftPrUrl && (
+              {scopedOpenHandsJob?.draftPrUrl && (
                 <DraftPrCard
-                  url={openhandsJob.draftPrUrl}
-                  changedFiles={openhandsJob.changedFiles || []}
+                  url={scopedOpenHandsJob.draftPrUrl}
+                  changedFiles={scopedOpenHandsJob.changedFiles || []}
                   onOpenBrowser={() =>
-                    window.open(openhandsJob.draftPrUrl, "_blank")
+                    window.open(scopedOpenHandsJob.draftPrUrl, "_blank")
                   }
                   onDiscussInChat={() =>
                     setWishText(`Erkläre mir die Änderungen im Draft PR.`)
@@ -5528,9 +5539,9 @@ Das echte Repo-Setup wurde geöffnet.`,
                 : 0,
               hasDiffEvidence: Boolean(
                 patchDiffReport ||
-                (openhandsJob?.changedFiles?.length ?? 0) > 0,
+                (scopedOpenHandsJob?.changedFiles?.length ?? 0) > 0,
               ),
-              githubAccessState: githubAccessState.state,
+              githubAccessState: effectiveGitHubAccessState,
               executorAvailable: sovereignAgentStartAvailable,
               hasExecutorMission: Boolean(wishText.trim()),
               executorIntent,
@@ -5543,9 +5554,9 @@ Das echte Repo-Setup wurde geöffnet.`,
                 repoFileCount: effectiveRepoReady && chatRepoSnapshot
                   ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
                   : 0,
-                changedFiles: openhandsJob?.changedFiles ?? [],
+                changedFiles: scopedOpenHandsJob?.changedFiles ?? [],
                 patchDiffAvailable: Boolean(patchDiffReport),
-                githubAccessState: githubAccessState.state,
+                githubAccessState: effectiveGitHubAccessState,
                 executorAvailable: sovereignAgentStartAvailable,
                 executorIntent,
                 runtimeEventCount: runtimeEvidenceLog.length,
@@ -5577,7 +5588,7 @@ Das echte Repo-Setup wurde geöffnet.`,
               if (decision.surface === 'github-status') {
                 appendChatLine({
                   role: 'assistant',
-                  text: githubAccessState.state === 'ready'
+                  text: effectiveGitHubAccessState === 'ready'
                     ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
                     : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
                 });
@@ -5664,7 +5675,11 @@ Das echte Repo-Setup wurde geöffnet.`,
           value={repoSetupUrl}
           busy={localRepoLoading}
           error={repoSetupError ?? chatRepoError}
-          onChange={setRepoSetupUrl}
+          onChange={(value) => {
+            setRepoSetupUrl(value);
+            setRepoSetupError(null);
+            setChatRepoError(null);
+          }}
           onLoad={handleRepoSetupLoad}
           onClose={() => setShowRepoSetup(false)}
         />
@@ -5724,7 +5739,7 @@ Das echte Repo-Setup wurde geöffnet.`,
           isPublishing={isPublishing}
           chatRepoSnapshot={chatRepoSnapshot}
           onCancelOpenHands={onCancelOpenHands}
-          openhandsIsRunning={openhandsIsRunning}
+          openhandsIsRunning={scopedOpenHandsIsRunning}
           palStats={palStats}
           chatHistory={chatHistory}
           onExportChat={async () => {
