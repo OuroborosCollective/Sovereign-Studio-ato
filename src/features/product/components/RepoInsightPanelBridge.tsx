@@ -61,6 +61,95 @@ function firstSuggestion(output: RepoInsightEngineOutput): RepoInsightSuggestion
   return output.fixSuggestions[0] ?? output.hardeningSuggestions[0] ?? output.featureSuggestions[0] ?? null;
 }
 
+type RepoInsightGateState = 'allowed' | 'blocked';
+
+type RepoInsightGateNextAction =
+  | 'use_suggestion'
+  | 'fix_blocker_first'
+  | 'inspect_repo_evidence';
+
+interface RepoInsightGateSnapshot {
+  state: RepoInsightGateState;
+  reason: string;
+  nextAction: RepoInsightGateNextAction;
+  evidenceFiles: string[];
+}
+
+type GatedRepoInsightSuggestion = RepoInsightSuggestion & {
+  readonly gate?: RepoInsightGateSnapshot;
+};
+
+function hasRepoEvidence(target: string, repoFiles: RepoFile[]): boolean {
+  const normalized = target.trim().replace(/^\/+/, '');
+  if (!normalized) return false;
+  if (normalized.endsWith('/')) return repoFiles.some((file) => file.path.startsWith(normalized));
+  return repoFiles.some((file) => file.path === normalized || file.path.startsWith(`${normalized}/`));
+}
+
+function evidenceForSuggestion(suggestion: RepoInsightSuggestion, repoFiles: RepoFile[]): string[] {
+  return suggestion.affectedFiles.filter((target) => hasRepoEvidence(target, repoFiles)).slice(0, 5);
+}
+
+function gateSuggestion(
+  suggestion: RepoInsightSuggestion,
+  output: RepoInsightEngineOutput,
+  repoFiles: RepoFile[],
+): GatedRepoInsightSuggestion {
+  const evidenceFiles = evidenceForSuggestion(suggestion, repoFiles);
+  const hasHardBlocker = output.blockers.some((blocker) =>
+    blocker.type === 'critical-finding' || blocker.type === 'ci-failure' || blocker.type === 'auth',
+  );
+
+  if (suggestion.category === 'feature' && hasHardBlocker) {
+    return {
+      ...suggestion,
+      actionLabel: 'Gate prüfen',
+      gate: {
+        state: 'blocked',
+        reason: 'Feature-Vorschlag wartet, bis kritische Repo-/CI-/Auth-Blocker zuerst behoben sind.',
+        nextAction: 'fix_blocker_first',
+        evidenceFiles,
+      },
+    };
+  }
+
+  if (suggestion.category === 'feature' && evidenceFiles.length === 0) {
+    return {
+      ...suggestion,
+      actionLabel: 'Evidence prüfen',
+      gate: {
+        state: 'blocked',
+        reason: 'Feature-Vorschlag hat keine belegte Datei im geladenen Repo-Snapshot.',
+        nextAction: 'inspect_repo_evidence',
+        evidenceFiles: [],
+      },
+    };
+  }
+
+  return {
+    ...suggestion,
+    gate: {
+      state: 'allowed',
+      reason: 'Vorschlag ist durch Repo-Struktur oder Runtime-Finding belegt.',
+      nextAction: 'use_suggestion',
+      evidenceFiles,
+    },
+  };
+}
+
+function gateOutput(output: RepoInsightEngineOutput, repoFiles: RepoFile[]): RepoInsightEngineOutput {
+  return {
+    ...output,
+    fixSuggestions: output.fixSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
+    hardeningSuggestions: output.hardeningSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
+    featureSuggestions: output.featureSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
+  };
+}
+
+function isGateBlocked(suggestion: RepoInsightSuggestion): boolean {
+  return (suggestion as GatedRepoInsightSuggestion).gate?.state === 'blocked';
+}
+
 function displayOutput(output: RepoInsightEngineOutput | null): RepoInsightEngineOutput | null {
   if (!output || !isPlaceholderMission(output.recommendedMission)) return output;
 
@@ -126,9 +215,10 @@ export function RepoInsightPanelBridge({
   void analyze;
   void coachState;
 
-  const effectiveOutput = displayOutput(output);
+  const effectiveOutput = displayOutput(output ? gateOutput(output, repoFiles) : null);
 
   const handleSuggestionClick = (suggestion: RepoInsightSuggestion) => {
+    if (isGateBlocked(suggestion)) return;
     onSuggestionClick({ ...suggestion, whyUseful: suggestionToMission(suggestion) });
   };
 
@@ -140,6 +230,7 @@ export function RepoInsightPanelBridge({
     }
 
     const suggestion = firstSuggestion(effectiveOutput);
+    if (suggestion && isGateBlocked(suggestion)) return;
     onSuggestionClick({
       id: 'insight-recommended-mission',
       category: suggestion?.category ?? 'stabilitaet',
