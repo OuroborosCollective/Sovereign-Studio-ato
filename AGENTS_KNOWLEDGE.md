@@ -324,10 +324,10 @@ These bugs caused 12 jobs to hang permanently in "provisioning" status with no t
 
 #### VPS Connection Pattern (SSH via paramiko)
 ```python
+import os
 import paramiko
 
 client = paramiko.SSHClient()
-client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.load_system_host_keys()
 client.set_missing_host_key_policy(paramiko.RejectPolicy())
 client.connect(
