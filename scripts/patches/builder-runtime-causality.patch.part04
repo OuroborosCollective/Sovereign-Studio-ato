@@ -1,8 +1,0 @@
-eut starten/i)).toBeNull();
-+    expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined();
-+    expect(screen.getByLabelText("GitHub Repository URL")).toBeDefined();
-+    expect(screen.getByText(/Das echte Repo-Setup wurde geöffnet/i)).toBeDefined();
-+    expect(screen.queryByText("Zugang eingeben")).toBeNull();
-   });
- 
-   it("allowed Draft-PR bridge route is not rendered as an execution blocker", async () => {
