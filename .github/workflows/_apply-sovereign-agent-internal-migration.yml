@@ -16,8 +16,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
-  issues: write
+  pull-requests: read
 
 concurrency:
   group: sovereign-agent-internal-runtime-migration
@@ -63,14 +62,11 @@ jobs:
           status=$?
           cat /tmp/sovereign-agent-migration.log
           if [ "$status" -ne 0 ]; then
-            {
-              echo '### Fail-closed migration diagnostic'
-              echo
-              echo '```text'
-              tail -n 80 /tmp/sovereign-agent-migration.log
-              echo '```'
-            } > /tmp/migration-comment.md
-            gh pr comment 604 --body-file /tmp/migration-comment.md
+            encoded="$(base64 -w0 /tmp/sovereign-agent-migration.log)"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/migration-diagnostic.txt" \
+              -f message='chore(migration): persist fail-closed diagnostic' \
+              -f content="$encoded" \
+              -f branch='refactor/sovereign-agent-internal-runtime-v2'
           fi
           exit $status
 
