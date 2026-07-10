@@ -103,8 +103,6 @@ jobs:
         run: pnpm exec tsc --noEmit
 
       - name: Runtime contract tests
-        id: runtime-tests
-        continue-on-error: true
         run: |
           pnpm exec vitest run \
             src/features/product/runtime/sovereignAgentRuntime.test.ts \
@@ -115,8 +113,6 @@ jobs:
             src/features/product/runtime/workerIntentDetector.test.ts
 
       - name: Routing contract tests
-        id: routing-tests
-        continue-on-error: true
         run: |
           pnpm exec vitest run \
             src/features/product/runtime/sovereignCapabilityRouter.test.ts \
@@ -125,24 +121,10 @@ jobs:
             src/runtime/sovereignInternalOperatorRuntime.test.ts
 
       - name: Truth card tests
-        id: truth-card-tests
-        continue-on-error: true
         run: pnpm exec vitest run src/features/product/components/SovereignAgentJobTruthCard.test.tsx
 
       - name: Builder integration tests
-        id: builder-tests
-        continue-on-error: true
         run: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx
-
-      - name: Enforce frontend regression gates
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          test '${{ steps.runtime-tests.outcome }}' = 'success'
-          test '${{ steps.routing-tests.outcome }}' = 'success'
-          test '${{ steps.truth-card-tests.outcome }}' = 'success'
-          test '${{ steps.builder-tests.outcome }}' = 'success'
 
       - name: Build web product
         run: pnpm exec vite build
