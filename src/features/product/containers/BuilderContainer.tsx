@@ -75,6 +75,9 @@ import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { SecurityBlockCard } from "../components/SecurityBlockCard";
 import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
+import { CompactRepoSetupSheet } from "../components/CompactRepoSetupSheet";
+import { PatchDiffEvidenceSheet } from "../components/PatchDiffEvidenceSheet";
+import { RuntimeEvidenceLogSheet } from "../components/RuntimeEvidenceLogSheet";
 import { ActionSuggestionStrip } from "../components/ActionSuggestionStrip";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
 import {
@@ -227,7 +230,7 @@ export interface BuilderContainerProps {
   openhandsJob?: OpenHandsJobSnapshot;
   openhandsJobStatus?: string;
   openhandsIsRunning?: boolean;
-  onStartOpenHands?: (mission: string) => void | Promise<void>;
+  onStartOpenHands?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string }) => void | Promise<void>;
   onCancelOpenHands?: () => void;
   /**
    * Traditional publish path — set by the parent to the PR URL returned by
@@ -383,7 +386,11 @@ import {
   buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
 import { buildDirectPatchPlanWithContentLoad, detectDirectPatchTarget } from "../runtime/directGithubPatchRuntime";
-import { buildGeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
+import { buildGeneratedFileDiffReport, type GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
+import {
+  buildSovereignRuntimeEvidenceLog,
+  decideSovereignCompactShortcutExecution,
+} from "../runtime/sovereignCompactShortcutExecutionRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { PaywallModal } from '../../billing/PaywallModal';
@@ -2404,6 +2411,12 @@ export function BuilderContainer({
   const [showRuntimeSheet, setShowRuntime] = useState(false);
   const [showSideMenu, setShowSide] = useState(false);
   const [showRepoExplorer, setShowRepoExplorer] = useState(false);
+  const [showRepoSetup, setShowRepoSetup] = useState(false);
+  const [repoSetupUrl, setRepoSetupUrl] = useState('');
+  const [repoSetupError, setRepoSetupError] = useState<string | null>(null);
+  const [showRuntimeEvidenceLogs, setShowRuntimeEvidenceLogs] = useState(false);
+  const [showPatchDiffEvidence, setShowPatchDiffEvidence] = useState(false);
+  const [patchDiffReport, setPatchDiffReport] = useState<GeneratedFileDiffReport | null>(null);
   const [showOpenHandsBriefing, setOHB] = useState(false);
   const [chatRepoSnapshot, setChatRepo] = useState<DevChatRepoSnapshot | null>(
     null,
@@ -2608,6 +2621,11 @@ export function BuilderContainer({
     setActionStream((current) => appendSovereignActionEvent(current, event));
   }, []);
   const sovereignAgentStartAvailable = Boolean(openhandsReady && onStartOpenHands);
+  const executorIntent = useMemo(() => classifySovereignExecutorIntent(wishText), [wishText]);
+  const runtimeEvidenceLog = useMemo(
+    () => buildSovereignRuntimeEvidenceLog(actionStream.events, openhandsJob?.events ?? []),
+    [actionStream.events, openhandsJob?.events],
+  );
 
   // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
   // derived purely from runtime state, never fabricated. Fronts the technical
@@ -2750,8 +2768,18 @@ export function BuilderContainer({
   );
 
   // ── Original v3 derived values (verbatim)
+  // A complete local runtime snapshot is the sole Builder repo truth. The legacy
+  // repoReady prop may describe another surface, but cannot authorize Builder work.
+  const isPartialRepoSnapshot = Boolean(
+    chatRepoSnapshot &&
+    (!chatRepoSnapshot.owner || !chatRepoSnapshot.repo || !chatRepoSnapshot.branch || !chatRepoSnapshot.repoUrl)
+  );
+  const effectiveRepoReady = Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot;
+  const effectiveRepoReason = effectiveRepoReady && chatRepoSnapshot
+    ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
+    : repoReason.trim() || 'Kein vollständiger Builder-Repo-Snapshot vorhanden.';
   const state = deriveBuilderContainerState({
-    repoReady: repoReady || Boolean(chatRepoSnapshot),
+    repoReady: effectiveRepoReady,
     repoBusy: repoBusy || localRepoLoading,
     runtimeBusy,
     isPublishing,
@@ -2759,18 +2787,11 @@ export function BuilderContainer({
     sovereignSummary,
     sovereignPreview,
   });
-  const effectiveRepoReady = repoReady || Boolean(chatRepoSnapshot);
-  const effectiveRepoReason = chatRepoSnapshot
-    ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
-    : repoReason;
-
-  // Fix 5: Partial-Snapshot Guard — detects a snapshot that is loaded but missing
-  // critical fields. Showing such state as "truth" would fabricate reality.
-  // UI renders a visible warning instead of silently proceeding with bad state.
-  const isPartialRepoSnapshot = Boolean(
-    chatRepoSnapshot &&
-    (!chatRepoSnapshot.owner || !chatRepoSnapshot.repo || !chatRepoSnapshot.branch || !chatRepoSnapshot.repoUrl)
-  );
+  useEffect(() => {
+    if (!effectiveRepoReady) return;
+    setShowRepoSetup(false);
+    setRepoSetupError(null);
+  }, [effectiveRepoReady]);
   const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(
     chatResponseBusy ||
@@ -3066,7 +3087,7 @@ export function BuilderContainer({
         },
         {
           label: "Repo snapshot synced",
-          status: chatRepoSnapshot || repoReady ? "pass" : "wait",
+          status: effectiveRepoReady ? "pass" : "wait",
         },
       ],
       orchestr: [
@@ -3082,7 +3103,7 @@ export function BuilderContainer({
         { label: "Logger active", status: "pass" },
         {
           label: "Runtime events recorded",
-          status: statusLogs.length > 0 ? "pass" : "wait",
+          status: runtimeEvidenceLog.length > 0 ? "pass" : "wait",
         },
       ],
       budget: [
@@ -3151,7 +3172,7 @@ export function BuilderContainer({
     palDecisions.length,
     budgetLedger,
     repoBusy,
-    repoReady,
+    runtimeEvidenceLog.length,
     runtimeThinkingActive,
     signals,
     state.disabledReason,
@@ -3162,10 +3183,29 @@ export function BuilderContainer({
 
   // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
   const startAgentFromText = async (text: string): Promise<boolean> => {
+    const intent = classifySovereignExecutorIntent(text);
+    if (!effectiveRepoReady || !chatRepoSnapshot) {
+      appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden.', kind: 'blocked' }));
+      setShowRepoSetup(true);
+      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden.' });
+      return false;
+    }
+    if (intent !== 'code_execution' && intent !== 'draft_pr') {
+      appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein bestätigter Code- oder Draft-PR-Ausführungsauftrag.', kind: 'blocked' }));
+      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Der aktuelle Text ist kein klarer Code- oder Draft-PR-Ausführungsauftrag.' });
+      return false;
+    }
+    if (!githubWriteAllowed) {
+      appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
+      setShowGitHubAccessOverride(true);
+      appendChatLine({ role: 'assistant', text: 'Executor-Auftrag erkannt. Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.' });
+      return false;
+    }
+
     const clean = collapseRepeatedAnalyzedMission(
       buildAnalyzedMission({
         wish: text,
-        repoReady: effectiveRepoReady,
+        repoReady: true,
         repoReason: effectiveRepoReason,
       }),
     );
@@ -3190,12 +3230,12 @@ export function BuilderContainer({
       kind: 'agent_job_requested',
       route: 'agent-job',
       label: 'Sovereign Agent Job angefragt',
-      detail: 'Startanforderung wurde an die Runtime übergeben. Warte auf bestätigten Job-State.',
+      detail: `Startanforderung für ${chatRepoSnapshot.repoUrl}#${chatRepoSnapshot.branch} wurde an die Runtime übergeben. Warte auf bestätigten Job-State.`,
       state: 'queued',
     });
 
     try {
-      await onStartOpenHands(clean);
+      await onStartOpenHands(clean, { repoUrl: chatRepoSnapshot.repoUrl, branch: chatRepoSnapshot.branch });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sovereign Agent Start fehlgeschlagen.';
@@ -3208,7 +3248,9 @@ export function BuilderContainer({
       });
       appendChatLine({
         role: 'assistant',
-        text: `Sovereign Agent Runtime konnte nicht gestartet werden.\nGrund: ${message}\nEs wurde kein Job gestartet und keine Datei geändert.`,
+        text: `Sovereign Agent Runtime konnte nicht gestartet werden.
+Grund: ${message}
+Es wurde kein Job gestartet und keine Datei geändert.`,
       });
       addLog('error', `Sovereign Agent start failed: ${message}`, 'router');
       return false;
@@ -3829,6 +3871,7 @@ ${res.patchSummary}
 Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
               });
               
+              setPatchDiffReport(diffReport);
               setPatchPreviewReady(true);
               setPatchConfirmed(false);
               setLastAnswerWasLocal(true);
@@ -4256,6 +4299,22 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     );
   };
 
+  const handleRepoSetupLoad = () => {
+    const clean = repoSetupUrl.trim();
+    if (!clean) {
+      setRepoSetupError('GitHub Repository URL fehlt.');
+      return;
+    }
+    if (!parseDevChatGithubUrl(clean)) {
+      const reason = 'Ungültige GitHub Repository URL. Erwartet wird https://github.com/owner/repository.';
+      setRepoSetupError(reason);
+      appendActionEvent(buildBlockedActionEvent({ route: 'repo', label: 'Repo-Setup blockiert', detail: reason, kind: 'blocked' }));
+      return;
+    }
+    setRepoSetupError(null);
+    void _processSubmit(clean);
+  };
+
   const handlePresetActionSelect = (actionId: SovereignPresetActionId) => {
     const action = getSovereignPresetAction(actionId);
     const submitted = buildSovereignPresetActionSubmission(action, {
@@ -4272,6 +4331,23 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     });
 
     if (!gate.canStart) {
+      if (action.requiresRepo && !effectiveRepoReady) {
+        setRepoSetupError(null);
+        setShowRepoSetup(true);
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'repo',
+          label: `Preset wartet auf Repo: ${action.shortLabel}`,
+          detail: `${gate.reason} ${gate.nextAction}`,
+          kind: 'blocked',
+        }));
+        appendChatLine({
+          role: 'assistant',
+          text: `${action.icon} ${action.label}
+Status: ${gate.reason}
+Das echte Repo-Setup wurde geöffnet.`,
+        });
+        return;
+      }
       if (action.requiresGithubWrite && effectiveRepoReady && !githubWriteAllowed) {
         pendingWriteIntentRef.current = submitted;
         setShowGitHubAccessOverride(true);
@@ -4779,6 +4855,10 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                                 role: 'assistant',
                                 text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                               });
+                              setPatchDiffReport(buildGeneratedFileDiffReport(
+                                [{ path: result.result.targetPath, content: result.result.proposedContent, reason: 'Direct GitHub Patch generiert' }],
+                                [{ path: result.result.targetPath, content: result.result.baseContent, found: true }],
+                              ));
                               setPatchPreviewReady(true);
                               setPatchConfirmed(false);
                               setLastAnswerWasLocal(true);
@@ -5087,6 +5167,10 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                             role: 'assistant',
                             text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                           });
+                          setPatchDiffReport(buildGeneratedFileDiffReport(
+                            [{ path: directPatchResult.result.targetPath, content: directPatchResult.result.proposedContent, reason: 'Direct GitHub Patch generiert' }],
+                            [{ path: directPatchResult.result.targetPath, content: directPatchResult.result.baseContent, found: true }],
+                          ));
                           setPatchPreviewReady(true);
                           setPatchConfirmed(false);
                           setLastAnswerWasLocal(true);
@@ -5294,112 +5378,77 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
           <SovereignToolLauncher
             runtimeContext={{
-              repoReady: Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot,
-              repoFileCount: chatRepoSnapshot && !isPartialRepoSnapshot
+              repoReady: effectiveRepoReady,
+              repoFileCount: effectiveRepoReady && chatRepoSnapshot
                 ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
                 : 0,
               hasDiffEvidence: Boolean(
-                patchPreviewReady ||
-                patchConfirmed ||
+                patchDiffReport ||
                 (openhandsJob?.changedFiles?.length ?? 0) > 0,
               ),
               githubAccessState: githubAccessState.state,
               executorAvailable: sovereignAgentStartAvailable,
               hasExecutorMission: Boolean(wishText.trim()),
-              runtimeLogCount: statusLogs.length,
+              executorIntent,
+              runtimeLogCount: runtimeEvidenceLog.length,
             }}
             onSelect={(toolId: ToolId) => {
-              if (toolId === 'repo' || toolId === 'files') {
-                const snapshotReady = Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot;
+              const decision = decideSovereignCompactShortcutExecution({
+                id: toolId,
+                repoSnapshotReady: effectiveRepoReady,
+                repoFileCount: effectiveRepoReady && chatRepoSnapshot
+                  ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
+                  : 0,
+                changedFiles: openhandsJob?.changedFiles ?? [],
+                patchDiffAvailable: Boolean(patchDiffReport),
+                githubAccessState: githubAccessState.state,
+                executorAvailable: sovereignAgentStartAvailable,
+                executorIntent,
+                runtimeEventCount: runtimeEvidenceLog.length,
+              });
+              if (decision.event) appendActionEvent(decision.event);
+
+              if (decision.surface === 'repo-setup') {
+                setRepoSetupError(null);
+                setShowRepoSetup(true);
+                return;
+              }
+              if (decision.surface === 'repo-explorer' || decision.surface === 'files-explorer') {
                 setShowRepoExplorer(true);
-                appendActionEvent({
-                  kind: snapshotReady ? 'done' : 'blocked',
-                  route: toolId === 'files' ? 'files' : 'repo',
-                  label: snapshotReady
-                    ? toolId === 'files' ? 'Datei-Explorer geöffnet' : 'Repo-Explorer geöffnet'
-                    : 'Repo-Setup erforderlich',
-                  detail: snapshotReady
-                    ? `${chatRepoSnapshot?.files.filter((entry) => entry.type === 'blob').length ?? 0} bestätigte Dateien im Snapshot.`
-                    : 'Noch kein vollständiger Repo-Snapshot vorhanden.',
-                  state: snapshotReady ? 'done' : 'blocked',
-                });
                 return;
               }
-              if (toolId === 'executor') {
-                if (wishText.trim()) void startAgentFromText(wishText.trim());
+              if (decision.surface === 'changed-files') {
+                setOpenWorkbenchSlot('files');
                 return;
               }
-              if (toolId === 'github_access') {
-                if (githubAccessState.state === 'requested' || githubAccessState.state === 'validating') {
-                  appendActionEvent({
-                    kind: 'route_selected',
-                    route: 'github-access',
-                    label: 'GitHub-Zugangsprüfung angezeigt',
-                    detail: 'Die laufende Validierung bleibt Runtime-Wahrheit; es wurde kein neuer Zugang angefordert.',
-                    state: 'running',
-                  });
-                  appendChatLine({
-                    role: 'assistant',
-                    text: 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet und kein Secret angezeigt.',
-                  });
-                  return;
-                }
-                if (!githubWriteAllowed) {
-                  setShowGitHubAccessOverride(true);
-                  appendActionEvent({
-                    kind: 'access_required',
-                    route: 'github-access',
-                    label: 'GitHub-Zugang geöffnet',
-                    detail: 'Sicheres Zugangsfeld wurde über das Tool-Menü geöffnet.',
-                    state: 'blocked',
-                  });
-                  appendChatLine({
-                    role: 'assistant',
-                    text: 'Sicheres GitHub-Zugangsfeld geöffnet. Bitte Token nur dort eingeben, niemals im Chat.',
-                  });
-                  return;
-                }
-                appendActionEvent({
-                  kind: 'done',
-                  route: 'github-access',
-                  label: 'GitHub-Zugangsstatus angezeigt',
-                  detail: 'Die Runtime meldet validierten Schreibzugang; Secret-Werte bleiben verborgen.',
-                  state: 'done',
-                });
+              if (decision.surface === 'patch-diff' && patchDiffReport) {
+                setShowPatchDiffEvidence(true);
+                return;
+              }
+              if (decision.surface === 'github-access') {
+                setShowGitHubAccessOverride(true);
+                appendChatLine({ role: 'assistant', text: `${decision.reason} ${decision.nextAction}` });
+                return;
+              }
+              if (decision.surface === 'github-status') {
                 appendChatLine({
                   role: 'assistant',
-                  text: 'GitHub-Zugang ist bereits bereit. Der Zugangswert wird nicht im Chat angezeigt oder gespeichert.',
+                  text: githubAccessState.state === 'ready'
+                    ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
+                    : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
                 });
                 return;
               }
-              if (toolId === 'runtime_logs') {
-                setPanelOpen(true);
-                appendActionEvent({
-                  kind: 'done',
-                  route: 'runtime-logs',
-                  label: 'Runtime-Logs geöffnet',
-                  detail: statusLogs.length > 0
-                    ? `${statusLogs.length} gespeicherte Runtime-Events sind vorhanden.`
-                    : 'Die Log-Fläche ist geöffnet; noch keine Events vorhanden.',
-                  state: 'done',
-                });
+              if (decision.surface === 'executor-request') {
+                void startAgentFromText(wishText.trim());
                 return;
               }
-              if (toolId === 'diff') {
-                const changedFiles = openhandsJob?.changedFiles ?? [];
-                setOpenWorkbenchSlot('files');
-                appendActionEvent({
-                  kind: 'done',
-                  route: 'diff',
-                  label: 'Diff-Prüfung geöffnet',
-                  detail: changedFiles.length > 0
-                    ? `${changedFiles.length} bestätigte Changed Files: ${changedFiles.join(' · ')}`
-                    : patchConfirmed
-                      ? 'Bestätigte Patch-Evidence ist vorhanden.'
-                      : 'Patch-Vorschau-Evidence ist vorhanden.',
-                  state: 'done',
-                });
+              if (decision.surface === 'runtime-logs') {
+                setShowRuntimeEvidenceLogs(true);
                 return;
+              }
+              if (decision.surface === 'blocked') {
+                appendChatLine({ role: 'assistant', text: `${decision.reason} Nächste Aktion: ${decision.nextAction}` });
               }
             }}
             onOpenLauncher={useLauncherStore.getState().openMenu}
@@ -5466,7 +5515,29 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           onClose={() => setShowRuntime(false)}
         />
       )}
-      {showRepoExplorer && (
+      {showRepoSetup && (
+        <CompactRepoSetupSheet
+          value={repoSetupUrl}
+          busy={localRepoLoading}
+          error={repoSetupError ?? chatRepoError}
+          onChange={setRepoSetupUrl}
+          onLoad={handleRepoSetupLoad}
+          onClose={() => setShowRepoSetup(false)}
+        />
+      )}
+      {showRuntimeEvidenceLogs && (
+        <RuntimeEvidenceLogSheet
+          entries={runtimeEvidenceLog}
+          onClose={() => setShowRuntimeEvidenceLogs(false)}
+        />
+      )}
+      {showPatchDiffEvidence && patchDiffReport && (
+        <PatchDiffEvidenceSheet
+          report={patchDiffReport}
+          onClose={() => setShowPatchDiffEvidence(false)}
+        />
+      )}
+      {showRepoExplorer && chatRepoSnapshot && effectiveRepoReady && (
         <div
           onClick={() => setShowRepoExplorer(false)}
           style={{

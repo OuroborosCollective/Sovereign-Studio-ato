@@ -48,10 +48,12 @@ describe('sovereignToolShortcutRuntime', () => {
     expect(gate('github_access', { githubAccessState: 'ready' })).toMatchObject({ canOpen: true, state: 'ready', statusLabel: 'Validiert' });
   });
 
-  it('blocks Executor until runtime and mission evidence both exist', () => {
-    expect(gate('executor')).toMatchObject({ canOpen: false, statusLabel: 'Nicht verbunden' });
-    expect(gate('executor', { executorAvailable: true })).toMatchObject({ canOpen: false, statusLabel: 'Auftrag fehlt' });
-    expect(gate('executor', { executorAvailable: true, hasExecutorMission: true })).toMatchObject({ canOpen: true, statusLabel: 'Start möglich' });
+  it('blocks Executor until repo, GitHub, runtime and execution-intent evidence exist', () => {
+    expect(gate('executor')).toMatchObject({ canOpen: false, statusLabel: 'Repo fehlt' });
+    expect(gate('executor', { repoReady: true })).toMatchObject({ canOpen: false, statusLabel: 'GitHub-Zugang fehlt' });
+    expect(gate('executor', { repoReady: true, githubAccessState: 'ready' })).toMatchObject({ canOpen: false, statusLabel: 'Nicht verbunden' });
+    expect(gate('executor', { repoReady: true, githubAccessState: 'ready', executorAvailable: true, hasExecutorMission: true, executorIntent: 'question' })).toMatchObject({ canOpen: false, statusLabel: 'Ausführungsauftrag fehlt' });
+    expect(gate('executor', { repoReady: true, githubAccessState: 'ready', executorAvailable: true, hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: true, statusLabel: 'Start möglich' });
   });
 
   it('opens Runtime Logs without fabricating events', () => {
