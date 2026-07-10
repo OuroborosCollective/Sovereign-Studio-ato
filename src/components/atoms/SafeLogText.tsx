@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from 'react';
+import { maskSecrets } from '../../shared/utils/crypto';
 
 interface SafeLogTextProps {
   text: string;
@@ -22,16 +23,24 @@ declare global {
   }
 }
 
-export const SafeLogText: React.FC<SafeLogTextProps> = ({ 
-  text, 
-  isSensitive = false, 
+export const SafeLogText: React.FC<SafeLogTextProps> = ({
+  text,
+  isSensitive = false,
   className = '',
-  enableHardening = true
+  enableHardening = true,
 }) => {
-  const maskSensitiveData = useCallback((val: string): string => {
-    if (!isSensitive) return val;
-    return '********';
-  }, [isSensitive]);
+  const maskSensitiveData = useCallback(
+    (val: string): string => {
+      if (isSensitive) {
+        // Full masking for explicitly sensitive content
+        return '********';
+      }
+
+      // Defense-in-depth: Apply pattern-based masking if not fully sensitive
+      return maskSecrets(val);
+    },
+    [isSensitive],
+  );
 
   const transmitToSovereignEngine = useCallback(() => {
     if (typeof window === 'undefined' || !window.SovereignBridge) return;
@@ -39,19 +48,21 @@ export const SafeLogText: React.FC<SafeLogTextProps> = ({
     try {
       // Capture device-specific traces (Pixel/Samsung OEM signatures)
       const deviceTrace = window.SovereignBridge.captureDeviceTraces();
-      
+
       const payload = JSON.stringify({
         origin: 'SafeLogText',
         timestamp: Date.now(),
         trace: deviceTrace,
         integrity: 'harden_v1',
-        // Encrypted via bridge-internal RSA/AES-GCM before transport
-        data: text
+        // Always mask secrets in the payload before transmission
+        data: maskSecrets(text),
       });
 
       window.SovereignBridge.reportHardenedError(payload);
     } catch (e) {
-      console.error('Sovereign Bridge Transmission Failed', e);
+      // Mask the error message to prevent leaking secrets in logs
+      const errorMsg = e instanceof Error ? maskSecrets(e.message) : 'Unknown error';
+      console.error(`Sovereign Bridge Transmission Failed: ${errorMsg}`);
     }
   }, [text]);
 
