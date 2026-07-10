@@ -37,7 +37,6 @@ def main() -> None:
     )
     replace_exact(runtime, "    executor: input.executor || 'sovereign-agent',", "    executor: input.executor || 'sovereign-local-runner',")
     replace_exact(runtime, "    workspaceHost: input.workspaceHost || 'external-agent-runtime',", "    workspaceHost: input.workspaceHost || 'managed-ephemeral',")
-    replace_exact(runtime, "    executor: input.executor || 'sovereign-agent',", "    executor: input.executor || 'sovereign-local-runner',")
 
     test_file = 'src/features/product/runtime/agentWorkspaceRuntime.test.ts'
     test_target = ROOT / test_file
@@ -51,11 +50,13 @@ def main() -> None:
     for relative in ['backend/agent_runtime/routes.py', 'scripts/sovereign-backend/agent_runtime/routes.py']:
         target = ROOT / relative
         content = target.read_text(encoding='utf-8')
-        content = content.replace(
-            'thin and prevents OpenHands-specific routes from becoming the truth source.',
-            'thin and keeps the internal Sovereign Agent routes as the only job truth source.',
+        old = 'thin and prevents OpenHands-specific routes from becoming the truth source.'
+        if content.count(old) != 1:
+            raise RuntimeError(f'{relative}: expected one retired route comment, found {content.count(old)}')
+        target.write_text(
+            content.replace(old, 'thin and keeps the internal Sovereign Agent routes as the only job truth source.', 1),
+            encoding='utf-8',
         )
-        target.write_text(content, encoding='utf-8')
 
     print('SOVEREIGN_AGENT_INTERNAL_CONTRACT=FINALIZED')
 
