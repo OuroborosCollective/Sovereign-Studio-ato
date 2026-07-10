@@ -1,0 +1,82 @@
+name: Apply Builder Runtime Causality Follow-up
+
+on:
+  push:
+    branches:
+      - sovereign/builder-runtime-causality-followup
+    paths:
+      - .github/workflows/apply-builder-runtime-causality-followup.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: builder-runtime-causality-followup
+  cancel-in-progress: false
+
+jobs:
+  apply-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/builder-runtime-causality-followup
+          fetch-depth: 0
+
+      - name: Apply exact four-file patch
+        shell: bash
+        run: |
+          git apply --check scripts/patches/builder-runtime-causality-followup.patch
+          git apply scripts/patches/builder-runtime-causality-followup.patch
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -eq 4
+          git diff --name-only | grep -Fx 'src/features/product/containers/BuilderContainer.tsx'
+          git diff --name-only | grep -Fx 'src/features/product/containers/BuilderContainer.test.tsx'
+          git diff --name-only | grep -Fx 'src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.ts'
+          git diff --name-only | grep -Fx 'src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript
+        run: pnpm run type-check
+
+      - name: Runtime contracts
+        run: >-
+          pnpm exec vitest run --maxWorkers=1
+          src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts
+          src/features/product/runtime/sovereignToolShortcutRuntime.test.ts
+          src/features/product/components/SovereignToolLauncher.test.tsx
+
+      - name: Builder contract
+        run: pnpm exec vitest run --maxWorkers=1 src/features/product/containers/BuilderContainer.test.tsx
+
+      - name: Production web build
+        run: pnpm run build:web
+
+      - name: Commit verified follow-up
+        shell: bash
+        run: |
+          rm -f scripts/patches/builder-runtime-causality-followup.patch
+          rm -f .github/workflows/apply-builder-runtime-causality-followup.yml
+          git diff --check
+          git config user.name 'Sovereign Runtime Guard'
+          git config user.email 'actions@users.noreply.github.com'
+          git add src/features/product/containers/BuilderContainer.tsx \
+                  src/features/product/containers/BuilderContainer.test.tsx \
+                  src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.ts \
+                  src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts \
+                  scripts/patches/builder-runtime-causality-followup.patch \
+                  .github/workflows/apply-builder-runtime-causality-followup.yml
+          git commit -m 'fix(builder): reset repo-scoped shortcut evidence'
+          git push origin HEAD:sovereign/builder-runtime-causality-followup
