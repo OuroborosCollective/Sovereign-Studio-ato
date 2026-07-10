@@ -12,7 +12,7 @@ function capabilities(overrides: Partial<Parameters<typeof buildSovereignToolCap
     githubAccessState: 'ready',
     githubTokenPresent: true,
     directPatchSupported: true,
-    openhandsConfigured: true,
+    agentConfigured: true,
     workerAvailable: true,
     workspaceConfigured: true,
     draftPrSupported: true,
@@ -68,14 +68,14 @@ describe('sovereignExecutorRuntime', () => {
     expect(decision.nextAllowedAction).toBe('load_repo');
   });
 
-  it('opens GitHub access route before OpenHands when write access is missing', () => {
+  it('opens GitHub access route before Sovereign Agent when write access is missing', () => {
     const decision = decideSovereignExecutorRoute({
       text: 'Implementiere einen Fix und erstelle einen Draft PR',
       intent: 'code_execution',
       capabilities: capabilities({
         githubAccessState: 'missing',
         githubTokenPresent: false,
-        openhandsConfigured: true,
+        agentConfigured: true,
       }),
       workspaceScope: workspaceScope({ githubWriteValidated: false }),
     });
@@ -102,7 +102,7 @@ describe('sovereignExecutorRuntime', () => {
     expect(decision.event.route).toBe('direct-github-patch');
   });
 
-  it('selects OpenHands for complex code work only when GitHub write is ready', () => {
+  it('selects Sovereign Agent for complex code work only when GitHub write is ready', () => {
     const decision = decideSovereignExecutorRoute({
       text: 'Implementiere eine Runtime und Tests in src/features/product/runtime/foo.ts',
       intent: 'code_execution',
@@ -111,10 +111,10 @@ describe('sovereignExecutorRuntime', () => {
       candidatePath: 'src/features/product/runtime/foo.ts',
     });
 
-    expect(decision.route).toBe('openhands');
+    expect(decision.route).toBe('sovereign-agent');
     expect(decision.state).toBe('allowed');
-    expect(decision.requiredCapability).toBe('openhands');
-    expect(decision.nextAllowedAction).toBe('start_openhands');
+    expect(decision.requiredCapability).toBe('sovereign-agent');
+    expect(decision.nextAllowedAction).toBe('start_agent');
   });
 
   it('blocks code work outside workspace scope', () => {

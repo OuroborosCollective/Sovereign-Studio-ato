@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildOutcomeHints } from './builderContainerHelpers';
 
 describe('buildOutcomeHints', () => {
-  it('does not render completed OpenHands with no files and no draft PR as done', () => {
+  it('does not render completed Sovereign Agent with no files and no draft PR as done', () => {
     const hints = buildOutcomeHints({
       status: 'completed',
       changedFiles: [],

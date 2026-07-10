@@ -2,7 +2,7 @@
  * AgentEventStream — Manus/Replit-style live action feed shown inline in the chat.
  *
  * Combines two real runtime sources:
- *  1. openhandsJob.events  — rich backend events (file edits, commands, test runs…)
+ *  1. agentJob.events  — rich backend events (file edits, commands, test runs…)
  *  2. agentWorkSnapshot.events — state-machine transitions (intent → starting → running…)
  *
  * Rules:
@@ -15,7 +15,7 @@
 import React, { useEffect, useRef } from "react";
 import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
-import type { OpenHandsJobSnapshot, OpenHandsRuntimeEvent } from "../runtime/openhandsEnterpriseRuntime";
+import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent } from "../runtime/sovereignAgentRuntime";
 
 interface StreamEvent {
   readonly id: string;
@@ -29,7 +29,7 @@ interface StreamEvent {
 
 export interface AgentEventStreamProps {
   readonly snapshot: AgentWorkSnapshot;
-  readonly job?: OpenHandsJobSnapshot | null;
+  readonly job?: SovereignAgentJobSnapshot | null;
   readonly onCancel?: () => void;
   readonly onOpenDraftPr?: () => void;
   readonly onOpenFile?: (path: string) => void;
@@ -61,7 +61,7 @@ function stateIcon(state: AgentWorkState): { icon: string; color: string } {
   return { icon: '·', color: C.textSub };
 }
 
-function levelIcon(level: OpenHandsRuntimeEvent['level']): { icon: string; color: string } {
+function levelIcon(level: SovereignAgentRuntimeEvent['level']): { icon: string; color: string } {
   if (level === 'success') return { icon: '✓', color: C.green };
   if (level === 'error') return { icon: '✗', color: C.rose };
   if (level === 'warning') return { icon: '⚠', color: C.amber };
@@ -75,7 +75,7 @@ function visibleDetail(detail: string | undefined): string | undefined {
 
 function buildStream(
   snapshot: AgentWorkSnapshot,
-  job: OpenHandsJobSnapshot | null | undefined,
+  job: SovereignAgentJobSnapshot | null | undefined,
   isActive: boolean,
 ): StreamEvent[] {
   const events: StreamEvent[] = [];
@@ -102,7 +102,7 @@ function buildStream(
         icon,
         iconColor: color,
         label: e.message,
-        detail: e.stage !== 'openhands' ? e.stage : undefined,
+        detail: e.stage !== 'sovereign-agent' ? e.stage : undefined,
         isActive: false,
       });
     }
@@ -198,7 +198,7 @@ function FileBadge({ path, onClick }: { path: string; onClick?: () => void }) {
   );
 }
 
-function headerLabelFor(snapshot: AgentWorkSnapshot, job: OpenHandsJobSnapshot | null | undefined): string {
+function headerLabelFor(snapshot: AgentWorkSnapshot, job: SovereignAgentJobSnapshot | null | undefined): string {
   if (snapshot.state === 'draft_pr_ready') return 'Status: Draft PR bereit';
   if (snapshot.state === 'blocked') return 'Status: Executor blockiert';
   if (snapshot.state === 'failed') return 'Status: Executor fehlgeschlagen';

@@ -130,7 +130,7 @@ describe('SovereignActionStreamPanel', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('all LLM routes appear equally — not just the OpenHands path', () => {
+  it('all LLM routes appear equally — not just the Sovereign Agent path', () => {
     const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
       buildInputReceivedEvent('Was ist der Status?'),
       buildRouteSelectionEvent({ route: 'free-chat', reason: 'Chat-Frage erkannt.', state: 'running' }),
@@ -143,7 +143,7 @@ describe('SovereignActionStreamPanel', () => {
     // Worker route appears in last-event summary
     expect(screen.getByText(/Worker-Antwort erhalten/i)).toBeTruthy();
 
-    // No "openhands" text — this was a free-chat route, not OpenHands
+    // No "sovereign-agent" text — this was a free-chat route, not Sovereign Agent
     fireEvent.click(screen.getByRole('button', { name: 'Details' }));
     // "free-chat" route is visible in at least one event badge
     expect(screen.getAllByText(/free-chat/i).length).toBeGreaterThanOrEqual(1);

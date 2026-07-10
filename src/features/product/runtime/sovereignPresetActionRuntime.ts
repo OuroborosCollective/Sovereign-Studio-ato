@@ -13,8 +13,8 @@ export type SovereignPresetActionId =
 
 export type SovereignPresetRoute =
   | 'worker_analysis'
-  | 'direct_patch_or_openhands'
-  | 'openhands_or_plan'
+  | 'direct_patch_or_agent'
+  | 'agent_or_plan'
   | 'runtime_review';
 
 export type SovereignPresetRisk = 'safe_analysis' | 'reviewable_patch' | 'executor_required';
@@ -37,7 +37,7 @@ export interface SovereignPresetActionContext {
   readonly repoFullName?: string | null;
   readonly branch?: string | null;
   readonly githubWriteReady?: boolean;
-  readonly openhandsReady?: boolean;
+  readonly agentReady?: boolean;
 }
 
 export interface SovereignPresetActionGate {
@@ -87,7 +87,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     description: 'README/docs mit der echten aktuellen Architektur abgleichen und Patch vorbereiten.',
     requiresRepo: true,
     requiresGithubWrite: true,
-    route: 'direct_patch_or_openhands',
+    route: 'direct_patch_or_agent',
     risk: 'reviewable_patch',
     prompt: [
       'Aktualisiere README und docs anhand der aktuellen echten Architektur.',
@@ -118,7 +118,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     description: 'Typecheck, Tests, E2E und Contract-Scans als Reparaturpfad behandeln.',
     requiresRepo: true,
     requiresGithubWrite: true,
-    route: 'openhands_or_plan',
+    route: 'agent_or_plan',
     risk: 'executor_required',
     prompt: [
       'Repariere rote Tests, Typecheck, E2E oder Contract-Scans im Repo.',
@@ -194,7 +194,7 @@ export function buildSovereignPresetActionPrompt(
   ];
 
   if (action.risk !== 'safe_analysis') {
-    gateParts.push(`OpenHands: ${context.openhandsReady ? 'bereit' : 'nicht bereit'}`);
+    gateParts.push(`Sovereign Agent: ${context.agentReady ? 'bereit' : 'nicht bereit'}`);
   }
 
   return [

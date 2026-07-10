@@ -1,5 +1,5 @@
 import type { DevChatRepoSnapshot } from './devChatWorkerBridge';
-import type { OpenHandsJobSnapshot } from './openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 
 function normalizeRepoUrl(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -29,26 +29,26 @@ export function buildRepoEvidenceScopeKey(snapshot: DevChatRepoSnapshot | null):
   return `${repoUrl}#${normalizeBranch(snapshot.branch)}`;
 }
 
-export function buildOpenHandsJobScopeKey(job: OpenHandsJobSnapshot | undefined): string | null {
+export function buildSovereignAgentJobScopeKey(job: SovereignAgentJobSnapshot | undefined): string | null {
   const repoUrl = normalizeRepoUrl(job?.repoUrl);
   if (!job || !repoUrl) return null;
   return `${repoUrl}#${normalizeBranch(job.branch)}`;
 }
 
-export function isOpenHandsJobScopedToRepo(
-  job: OpenHandsJobSnapshot | undefined,
+export function isSovereignAgentJobScopedToRepo(
+  job: SovereignAgentJobSnapshot | undefined,
   snapshot: DevChatRepoSnapshot | null,
 ): boolean {
   const repoScope = buildRepoEvidenceScopeKey(snapshot);
-  const jobScope = buildOpenHandsJobScopeKey(job);
+  const jobScope = buildSovereignAgentJobScopeKey(job);
   return Boolean(repoScope && jobScope && repoScope === jobScope);
 }
 
-export function selectRepoScopedOpenHandsJob(
-  job: OpenHandsJobSnapshot | undefined,
+export function selectRepoScopedAgentJob(
+  job: SovereignAgentJobSnapshot | undefined,
   snapshot: DevChatRepoSnapshot | null,
-): OpenHandsJobSnapshot | undefined {
-  return isOpenHandsJobScopedToRepo(job, snapshot) ? job : undefined;
+): SovereignAgentJobSnapshot | undefined {
+  return isSovereignAgentJobScopedToRepo(job, snapshot) ? job : undefined;
 }
 
 export function selectRepositoryScopedPullRequestUrl(

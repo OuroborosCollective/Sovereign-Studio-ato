@@ -8,7 +8,7 @@ import type { ScanFindingRegistry } from './scanFindingRegistry';
 import type { SequentialRuntimeState } from './sequentialRuntimeGuard';
 import type { SolutionPatternStore } from './solutionPatternMemory';
 import type { WorkflowWatchReport } from './workflowWatch';
-import type { OpenHandsJobSnapshot } from './openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 
 export interface SovereignControlCondition {
   readonly label: string;
@@ -42,7 +42,7 @@ export interface SovereignControlFrameStateInput {
   readonly sequentialRuntime: SequentialRuntimeState;
   readonly solutionPatternStore: SolutionPatternStore;
   readonly scanRegistry: ScanFindingRegistry;
-  readonly openhandsJob?: OpenHandsJobSnapshot;
+  readonly agentJob?: SovereignAgentJobSnapshot;
   readonly remoteMemoryBusy?: boolean;
   readonly remoteMemoryReady?: boolean;
   readonly restoredSessionReady?: boolean;
@@ -94,7 +94,7 @@ function activeStepId(runtime: SequentialRuntimeState): string {
   return runtime.activeStep ?? 'idle';
 }
 
-function openHandsError(job: OpenHandsJobSnapshot | undefined): boolean {
+function agentError(job: SovereignAgentJobSnapshot | undefined): boolean {
   return job?.status === 'failed' || job?.status === 'blocked';
 }
 
@@ -160,18 +160,18 @@ function syncModule(input: SovereignControlFrameStateInput): SovereignControlMod
 }
 
 function orchestrModule(input: SovereignControlFrameStateInput): SovereignControlModuleState {
-  const error = openHandsError(input.openhandsJob);
-  const busy = input.runtimeBusy || input.isPublishing || input.openhandsJob?.status === 'running';
-  const ok = input.hasPackage || input.openhandsJob?.status === 'completed';
+  const error = agentError(input.agentJob);
+  const busy = input.runtimeBusy || input.isPublishing || input.agentJob?.status === 'running';
+  const ok = input.hasPackage || input.agentJob?.status === 'completed';
   const signal = signalFromBusy(Boolean(ok), busy, error);
   return {
     id: 'orchestr',
     signal,
     phase: phaseFromSignal(signal),
-    detail: `Step: ${activeStepId(input.sequentialRuntime)} · OpenHands: ${input.openhandsJob?.status ?? 'idle'}`,
+    detail: `Step: ${activeStepId(input.sequentialRuntime)} · Sovereign Agent: ${input.agentJob?.status ?? 'idle'}`,
     conditions: [
       condition('Sequential runtime present', input.sequentialRuntime ? 'pass' : 'fail'),
-      condition('OpenHands not blocked', error ? 'fail' : 'pass'),
+      condition('Sovereign Agent not blocked', error ? 'fail' : 'pass'),
       condition('Package or job result available', ok ? 'pass' : busy ? 'wait' : 'wait'),
     ],
   };

@@ -4,11 +4,11 @@ import {
   getWorkerActionHint,
   hasCodeContextInHistory,
   isCodeGenerationIntent,
-  isDelegatedOpenHandsExecutionIntent,
+  isDelegatedSovereignAgentExecutionIntent,
   isDelegationIntent,
   isExecutorStatusQuestion,
   isLikelyIntegrationImplementationIntent,
-  isOpenHandsExecutionIntent,
+  isSovereignAgentExecutionIntent,
   isWorkerDiagnosticQuestion,
   isWorkerRetryIntent,
 } from './workerIntentDetector';
@@ -17,14 +17,14 @@ describe('integration intent default', () => {
   it('treats normal non-question text as implementation intent without forcing executor-only routing', () => {
     const text = 'Die Oberflaeche soll ruhiger und eindeutiger werden';
     expect(isLikelyIntegrationImplementationIntent(text)).toBe(true);
-    expect(isOpenHandsExecutionIntent(text)).toBe(false);
+    expect(isSovereignAgentExecutionIntent(text)).toBe(false);
     expect(isCodeGenerationIntent(text)).toBe(true);
   });
 
   it('keeps questions advisory instead of auto-executing', () => {
     const text = 'Wie sollte die Oberflaeche besser werden?';
     expect(isLikelyIntegrationImplementationIntent(text)).toBe(false);
-    expect(isOpenHandsExecutionIntent(text)).toBe(false);
+    expect(isSovereignAgentExecutionIntent(text)).toBe(false);
     expect(isCodeGenerationIntent(text)).toBe(false);
   });
 
@@ -32,22 +32,22 @@ describe('integration intent default', () => {
     expect(isLikelyIntegrationImplementationIntent('/repo owner/name')).toBe(false);
     expect(isLikelyIntegrationImplementationIntent('Hallo')).toBe(false);
     expect(isLikelyIntegrationImplementationIntent('retry')).toBe(false);
-    expect(isLikelyIntegrationImplementationIntent('ohne OpenHands bitte')).toBe(false);
+    expect(isLikelyIntegrationImplementationIntent('ohne Sovereign Agent bitte')).toBe(false);
   });
 });
 
 describe('explicit executor intent', () => {
   it('detects explicit executor and PR wording only', () => {
-    expect(isOpenHandsExecutionIntent('Use OpenHands to fix this')).toBe(true);
-    expect(isOpenHandsExecutionIntent('Create a draft PR')).toBe(true);
-    expect(isOpenHandsExecutionIntent('push to main')).toBe(true);
-    expect(isOpenHandsExecutionIntent('commit the changes')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('Use Sovereign Agent to fix this')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('Create a draft PR')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('push to main')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('commit the changes')).toBe(true);
   });
 
   it('keeps generic build and fix text in code route', () => {
-    expect(isOpenHandsExecutionIntent('baue die app')).toBe(false);
-    expect(isOpenHandsExecutionIntent('implementiere feature')).toBe(false);
-    expect(isOpenHandsExecutionIntent('fixe den bug')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('baue die app')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('implementiere feature')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('fixe den bug')).toBe(false);
     expect(isCodeGenerationIntent('baue die app')).toBe(true);
   });
 });
@@ -67,8 +67,8 @@ describe('retry, diagnostics and status', () => {
     expect(buildExecutorStatusAnswer({ agentState: 'executor_running', changedFiles: 2 })).toContain('2');
   });
 
-  it('does not claim a Draft PR for completed OpenHands without draftPrUrl', () => {
-    const answer = buildExecutorStatusAnswer({ agentState: 'idle', openhandsStatus: 'completed' });
+  it('does not claim a Draft PR for completed Sovereign Agent without draftPrUrl', () => {
+    const answer = buildExecutorStatusAnswer({ agentState: 'idle', agentStatus: 'completed' });
     expect(answer).toContain('keine Draft-PR-URL');
     expect(answer).not.toContain('Draft PR wurde erstellt');
   });
@@ -96,8 +96,8 @@ describe('delegation and confirmation', () => {
       { role: 'assistant', text: 'Es ist ein Tool.' },
     ];
     expect(hasCodeContextInHistory(withContext)).toBe(true);
-    expect(isDelegatedOpenHandsExecutionIntent('Einbauen', withContext)).toBe(true);
-    expect(isDelegatedOpenHandsExecutionIntent('Mach das fuer mich', withoutContext)).toBe(false);
+    expect(isDelegatedSovereignAgentExecutionIntent('Einbauen', withContext)).toBe(true);
+    expect(isDelegatedSovereignAgentExecutionIntent('Mach das fuer mich', withoutContext)).toBe(false);
   });
 });
 

@@ -14,7 +14,7 @@ import {
   transitionIntentDetected,
   type AgentWorkSnapshot,
 } from '../runtime/agentWorkRuntime';
-import type { OpenHandsJobSnapshot } from '../runtime/openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot } from '../runtime/sovereignAgentRuntime';
 
 function intentSnapshot(repo = 'OuroborosCollective/Sovereign-Studio-ato'): AgentWorkSnapshot {
   return transitionIntentDetected(createIdleSnapshot('trace-aes'), repo, 'main');
@@ -22,12 +22,12 @@ function intentSnapshot(repo = 'OuroborosCollective/Sovereign-Studio-ato'): Agen
 
 function runningSnapshot(): AgentWorkSnapshot {
   return transitionExecutorRunning(
-    transitionExecutorStarting(intentSnapshot(), 'openhands'),
+    transitionExecutorStarting(intentSnapshot(), 'sovereign-agent'),
     'job-1',
   );
 }
 
-function runningJob(overrides: Partial<OpenHandsJobSnapshot> = {}): OpenHandsJobSnapshot {
+function runningJob(overrides: Partial<SovereignAgentJobSnapshot> = {}): SovereignAgentJobSnapshot {
   return {
     status: 'running',
     changedFiles: [],
@@ -45,7 +45,7 @@ function visibleTextWithoutStyle(container: HTMLElement): string {
 }
 
 describe('AgentEventStream', () => {
-  it('shows intent_detected as Auftrag erkannt, not as active OpenHands work', () => {
+  it('shows intent_detected as Auftrag erkannt, not as active Sovereign Agent work', () => {
     render(<AgentEventStream snapshot={intentSnapshot()} />);
 
     expect(screen.getAllByText(/Auftrag erkannt/).length).toBeGreaterThanOrEqual(1);
@@ -53,7 +53,7 @@ describe('AgentEventStream', () => {
   });
 
   it('shows executor_starting as starting, not as running work', () => {
-    render(<AgentEventStream snapshot={transitionExecutorStarting(intentSnapshot(), 'openhands')} />);
+    render(<AgentEventStream snapshot={transitionExecutorStarting(intentSnapshot(), 'sovereign-agent')} />);
 
     expect(screen.getByText('Sovereign Agent startet…')).toBeTruthy();
     expect(screen.queryByText(/Sovereign Agent arbeitet/i)).toBeNull();
@@ -62,7 +62,7 @@ describe('AgentEventStream', () => {
   it('lets verified backend running status override a local starting snapshot', () => {
     render(
       <AgentEventStream
-        snapshot={transitionExecutorStarting(intentSnapshot(), 'openhands')}
+        snapshot={transitionExecutorStarting(intentSnapshot(), 'sovereign-agent')}
         job={runningJob()}
       />,
     );
@@ -116,7 +116,7 @@ describe('AgentEventStream', () => {
     expect(visibleTextWithoutStyle(container)).not.toContain('%');
   });
 
-  it('renders changed files only from supplied OpenHands job snapshot', () => {
+  it('renders changed files only from supplied Sovereign Agent job snapshot', () => {
     render(
       <AgentEventStream
         snapshot={runningSnapshot()}

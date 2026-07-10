@@ -2,7 +2,7 @@
 
 The route module is intentionally injectable: app.py provides the Flask app,
 require_session decorator and DB connection factory. This keeps the huge app file
-thin and prevents OpenHands-specific routes from becoming the truth source.
+thin and keeps the internal Sovereign Agent routes as the only job truth source.
 """
 
 from __future__ import annotations

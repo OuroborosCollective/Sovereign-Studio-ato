@@ -5,11 +5,13 @@ on:
     branches: [main, master, develop]
     paths:
       - 'scripts/sovereign-backend/**'
+      - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
       - '.github/workflows/sovereign-agent-backend.yml'
   pull_request:
     branches: [main, master, develop]
     paths:
       - 'scripts/sovereign-backend/**'
+      - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
   workflow_dispatch:
 
 concurrency:
@@ -30,6 +32,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Compile Agent Runtime
         run: |
@@ -57,6 +64,11 @@ jobs:
             agent_runtime/tools/diff_tool.py \
             agent_runtime/tools/test_tool.py \
             agent_runtime/tools/__init__.py
+
+      - name: Validate migrations and internal live-path contract
+        run: |
+          bash -n scripts/sovereign-backend/auto-migrate.sh
+          node --test scripts/sovereign-agent-internal-live-path.contract.mjs
 
   agent-tests:
     name: Agent Runtime Tests
@@ -122,9 +134,7 @@ jobs:
 
       - name: Create tar archive
         run: |
-          tar -czf sovereign-backend.tar.gz \
-            scripts/sovereign-backend/agent_runtime \
-            scripts/sovereign-backend/app.py
+          tar -czf sovereign-backend.tar.gz scripts/sovereign-backend
 
       - name: Upload to VPS
         uses: appleboy/scp-action@master
@@ -150,9 +160,10 @@ jobs:
             tar -xzf /tmp/sovereign-backend.tar.gz -C /tmp/
             docker stop sovereign-backend 2>/dev/null || true
             sleep 5
-            docker cp /tmp/scripts/sovereign-backend/agent_runtime sovereign-backend:/app/
-            docker cp /tmp/scripts/sovereign-backend/app.py sovereign-backend:/app/
-            docker start sovereign-backend
+            cd /tmp/scripts/sovereign-backend
+            docker build -t sovereign-backend:latest .
+            docker rm sovereign-backend 2>/dev/null || true
+            docker run -d --name sovereign-backend --restart unless-stopped --env-file /opt/sovereign-backend/.env -p 127.0.0.1:8788:8788 sovereign-backend:latest
             sleep 25
             HEALTH=$(curl -s http://127.0.0.1:8788/health)
             echo "Health: $HEALTH"

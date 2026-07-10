@@ -8,7 +8,7 @@ function capabilities(overrides: Partial<Parameters<typeof buildSovereignToolCap
     githubAccessState: 'ready',
     githubTokenPresent: true,
     directPatchSupported: true,
-    openhandsConfigured: true,
+    agentConfigured: true,
     workerAvailable: true,
     workspaceConfigured: true,
     draftPrSupported: true,
@@ -41,7 +41,7 @@ describe('sovereignExecutorBridgeRuntime', () => {
         githubAccessState: 'missing',
         githubTokenPresent: false,
         directPatchSupported: false,
-        openhandsConfigured: false,
+        agentConfigured: false,
         workspaceConfigured: false,
       }),
     });
@@ -57,7 +57,7 @@ describe('sovereignExecutorBridgeRuntime', () => {
       intent: 'code_execution',
       capabilities: capabilities({
         directPatchSupported: false,
-        openhandsConfigured: false,
+        agentConfigured: false,
         workspaceConfigured: false,
       }),
     });

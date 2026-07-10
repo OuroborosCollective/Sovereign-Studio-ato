@@ -57,7 +57,7 @@ describe('sovereignControlFrameRuntime', () => {
       ...common,
       runtimeBusy: true,
       sequentialRuntime,
-      openhandsJob: { status: 'running', changedFiles: [], events: [] },
+      agentJob: { status: 'running', changedFiles: [], events: [] },
     });
 
     expect(state.activeModuleId).toBe('orchestr');

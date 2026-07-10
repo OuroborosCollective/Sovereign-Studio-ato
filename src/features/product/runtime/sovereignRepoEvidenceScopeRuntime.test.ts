@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRepoEvidenceScopeKey,
   buildRepositoryTargetKey,
-  isOpenHandsJobScopedToRepo,
-  selectRepoScopedOpenHandsJob,
+  isSovereignAgentJobScopedToRepo,
+  selectRepoScopedAgentJob,
   selectRepositoryScopedPullRequestUrl,
 } from './sovereignRepoEvidenceScopeRuntime';
 import type { DevChatRepoSnapshot } from './devChatWorkerBridge';
-import type { OpenHandsJobSnapshot } from './openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 
 function snapshot(overrides: Partial<DevChatRepoSnapshot> = {}): DevChatRepoSnapshot {
   return {
@@ -26,7 +26,7 @@ function snapshot(overrides: Partial<DevChatRepoSnapshot> = {}): DevChatRepoSnap
   };
 }
 
-function job(overrides: Partial<OpenHandsJobSnapshot> = {}): OpenHandsJobSnapshot {
+function job(overrides: Partial<SovereignAgentJobSnapshot> = {}): SovereignAgentJobSnapshot {
   return {
     status: 'completed',
     repoUrl: 'https://github.com/ouroboroscollective/sovereign-studio-ato.git',
@@ -44,13 +44,13 @@ describe('sovereignRepoEvidenceScopeRuntime', () => {
   });
 
   it('accepts equivalent GitHub URL spellings only for the same branch', () => {
-    expect(isOpenHandsJobScopedToRepo(job(), snapshot())).toBe(true);
-    expect(isOpenHandsJobScopedToRepo(job({ branch: 'feature/runtime' }), snapshot())).toBe(false);
+    expect(isSovereignAgentJobScopedToRepo(job(), snapshot())).toBe(true);
+    expect(isSovereignAgentJobScopedToRepo(job({ branch: 'feature/runtime' }), snapshot())).toBe(false);
   });
 
   it('rejects missing or foreign job scope instead of assuming ownership', () => {
-    expect(selectRepoScopedOpenHandsJob(job({ repoUrl: undefined }), snapshot())).toBeUndefined();
-    expect(selectRepoScopedOpenHandsJob(job({ repoUrl: 'https://github.com/OuroborosCollective/Other' }), snapshot())).toBeUndefined();
+    expect(selectRepoScopedAgentJob(job({ repoUrl: undefined }), snapshot())).toBeUndefined();
+    expect(selectRepoScopedAgentJob(job({ repoUrl: 'https://github.com/OuroborosCollective/Other' }), snapshot())).toBeUndefined();
   });
 
   it('accepts only pull-request URLs belonging to the current repository target', () => {

@@ -448,8 +448,8 @@ function labelForAction(action: SovereignNextAction): string {
       return 'Repo laden';
     case 'start_workspace':
       return 'Workspace starten';
-    case 'start_openhands':
-      return 'OpenHands starten';
+    case 'start_agent':
+      return 'Sovereign Agent starten';
     case 'run_direct_patch':
       return 'Direct Patch ausführen';
     case 'create_draft_pr':

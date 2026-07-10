@@ -8,7 +8,7 @@ export type SovereignTelemetryStage =
   | 'github'
   | 'workflow'
   | 'memory'
-  | 'openhands'
+  | 'sovereign-agent'
   | 'ui';
 
 export interface SovereignTelemetryEvent {
@@ -40,7 +40,7 @@ type TelemetryWindow = Window & typeof globalThis & {
 const MAX_EVENTS = 120;
 const MAX_TEXT = 1200;
 const TELEMETRY_LEVELS: SovereignTelemetryLevel[] = ['info', 'success', 'warning', 'error'];
-const TELEMETRY_STAGES: SovereignTelemetryStage[] = ['repo', 'readiness', 'package', 'guards', 'github', 'workflow', 'memory', 'openhands', 'ui'];
+const TELEMETRY_STAGES: SovereignTelemetryStage[] = ['repo', 'readiness', 'package', 'guards', 'github', 'workflow', 'memory', 'sovereign-agent', 'ui'];
 
 const SECRET_PATTERNS = [
   /ghp_[A-Za-z0-9_]{8,}/g,

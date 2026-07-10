@@ -24,8 +24,8 @@ describe('sovereignToolObservationRuntime', () => {
     expect(selected.event.detail).toContain('README.md');
 
     const started = createSovereignToolObservation({
-      toolName: 'openhands',
-      route: 'openhands',
+      toolName: 'sovereign-agent',
+      route: 'sovereign-agent',
       phase: 'started',
       createdAt: 1700000000001,
     });
@@ -88,8 +88,8 @@ describe('sovereignToolObservationRuntime', () => {
 
   it('detects repeated identical observations', () => {
     const observations = [1, 2, 3].map((n) => createSovereignToolObservation({
-      toolName: 'openhands',
-      route: 'openhands',
+      toolName: 'sovereign-agent',
+      route: 'sovereign-agent',
       phase: 'blocked',
       blocker: 'github_access_missing',
       createdAt: n,

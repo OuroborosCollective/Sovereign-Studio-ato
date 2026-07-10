@@ -5,7 +5,7 @@
  * PatternMemoryEntries, appending an informational chat line each time.
  *
  * Two completion signals are handled:
- *  1. OpenHands path  — agentWorkSnapshot.state === 'draft_pr_ready'
+ *  1. Sovereign Agent path  — agentWorkSnapshot.state === 'draft_pr_ready'
  *  2. Traditional path — publishedPrUrl prop (set by parent after mergeWhenGreen)
  *
  * The store is persisted to localStorage and rehydrated on mount so patterns
@@ -108,7 +108,7 @@ export interface UsePatternMemoryStoreOptions {
 
 /**
  * Automatically saves a learned pattern and appends a chat notification when
- * a Draft PR workflow completes via either the OpenHands path or the
+ * a Draft PR workflow completes via either the Sovereign Agent path or the
  * traditional publish path.
  *
  * Also persists the entire store to localStorage whenever it changes, and
@@ -161,7 +161,7 @@ export function usePatternMemoryStore(opts: UsePatternMemoryStoreOptions): void 
     });
   };
 
-  // ── Signal 1: OpenHands path ─────────────────────────────────────────────
+  // ── Signal 1: Sovereign Agent path ─────────────────────────────────────────────
   useEffect(() => {
     if (agentWorkSnapshot.state !== 'draft_pr_ready') return;
     maybeSave(agentWorkSnapshot.draftPrUrl);

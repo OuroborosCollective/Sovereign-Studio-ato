@@ -1,15 +1,15 @@
 /**
  * Sovereign Agent Workspace Runtime
  *
- * Neutral contract for code-capable agents such as OpenHands.
+ * Neutral contract for code-capable agents such as Sovereign Agent.
  * The workspace produces runtime evidence; the UI only displays the resulting state.
  *
- * This module intentionally does not start OpenHands, clone repositories, run shell commands,
+ * This module intentionally does not start Sovereign Agent, clone repositories, run shell commands,
  * or create folders. It defines and validates the contract that an external executor must obey.
  */
 
-export type AgentWorkspaceExecutor = 'openhands' | 'external-code-agent' | 'local-runner';
-export type AgentWorkspaceHost = 'managed-ephemeral' | 'self-hosted-runner' | 'external-agent-runtime';
+export type AgentWorkspaceExecutor = 'sovereign-local-runner';
+export type AgentWorkspaceHost = 'managed-ephemeral' | 'self-hosted-runner';
 export type AgentWorkspaceStatus = 'queued' | 'running' | 'completed' | 'failed' | 'blocked' | 'cleaned';
 export type AgentWorkspaceEventLevel = 'info' | 'warning' | 'error';
 export type AgentWorkspaceIntentKind = 'none' | 'read-only' | 'code-execution';
@@ -106,11 +106,11 @@ export function sanitizeWorkspaceEvent(event: AgentWorkspaceEvent): AgentWorkspa
 }
 
 export function isSupportedWorkspaceExecutor(value: unknown): value is AgentWorkspaceExecutor {
-  return value === 'openhands' || value === 'external-code-agent' || value === 'local-runner';
+  return value === 'sovereign-local-runner';
 }
 
 export function isSupportedWorkspaceHost(value: unknown): value is AgentWorkspaceHost {
-  return value === 'managed-ephemeral' || value === 'self-hosted-runner' || value === 'external-agent-runtime';
+  return value === 'managed-ephemeral' || value === 'self-hosted-runner';
 }
 
 export function isTerminalWorkspaceStatus(status: AgentWorkspaceStatus): boolean {
@@ -180,7 +180,7 @@ export function decideAgentWorkspaceIntent(input: {
     kind,
     allowed: true,
     reason: 'Code-execution intent may start an isolated workspace job.',
-    executor: input.executor || 'openhands',
+    executor: input.executor || 'sovereign-local-runner',
   };
 }
 
@@ -241,12 +241,12 @@ export function buildAgentWorkspaceRequest(input: {
     repoUrl: input.repoUrl.trim(),
     branch: input.branch?.trim() || 'main',
     task: input.task.trim(),
-    executor: input.executor || 'openhands',
+    executor: input.executor || 'sovereign-local-runner',
     allowedPaths: input.allowedPaths?.map((path) => path.trim()).filter(Boolean),
     forbiddenPaths: input.forbiddenPaths?.map((path) => path.trim()).filter(Boolean),
     memoryHints: input.memoryHints?.map((hint) => trimTo(sanitizeWorkspaceText(hint.trim()), 1000)).filter(Boolean),
     draftPrOnly: true,
-    workspaceHost: input.workspaceHost || 'external-agent-runtime',
+    workspaceHost: input.workspaceHost || 'managed-ephemeral',
   };
 }
 

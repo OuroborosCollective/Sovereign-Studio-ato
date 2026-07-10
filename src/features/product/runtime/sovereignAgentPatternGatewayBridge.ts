@@ -1,33 +1,33 @@
-import type { OpenHandsJobSnapshot } from './openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 import type { SolutionPatternLearningInput } from './solutionPatternMemory';
 
 /**
- * OpenHands Pattern Gateway Bridge
+ * Sovereign Agent Pattern Gateway Bridge
  *
- * Guards the learning flow from OpenHands job results to Pattern Memory.
+ * Guards the learning flow from Sovereign Agent job results to Pattern Memory.
  *
  * Architecture rules enforced:
- * - OpenHands is executor, not truth source
+ * - Sovereign Agent is executor, not truth source
  * - Sovereign Runtime decides preconditions, context, memory intake, result display
  * - Pattern Gateway validates every new learning pattern
  * - No direct unvalidated write access to Remote Memory
  * - No Auto-Merge, no Plan-only Draft PR, no Secrets in logs/preview/memory
  */
 
-export type OpenHandsResultType = 'idle' | 'running' | 'success' | 'blocker' | 'empty' | 'plan-only';
+export type SovereignAgentResultType = 'idle' | 'running' | 'success' | 'blocker' | 'empty' | 'plan-only';
 
-export interface OpenHandsPatternIntakeInput {
+export interface SovereignAgentPatternIntakeInput {
   mission: string;
-  snapshot: OpenHandsJobSnapshot;
+  snapshot: SovereignAgentJobSnapshot;
   providerId?: string;
   now?: number;
 }
 
 /**
- * Validates that an OpenHands result represents a real outcome.
+ * Validates that an Sovereign Agent result represents a real outcome.
  * Only actual changed files, diff, or draft PR counts as a valid result.
  */
-export function classifyOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsResultType {
+export function classifySovereignAgentResult(snapshot: SovereignAgentJobSnapshot): SovereignAgentResultType {
   if (snapshot.status === 'idle' || snapshot.status === 'queued' || snapshot.status === 'running' || snapshot.status === 'waiting-for-user') {
     return 'running';
   }
@@ -70,24 +70,24 @@ export function classifyOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHan
  * Result gate: Only real changedFiles/Diff/Draft PR or clear blocker counts as result.
  * Plan-only results are rejected from intake.
  */
-export interface OpenHandsResultGate {
+export interface SovereignAgentResultGate {
   allowed: boolean;
-  type: OpenHandsResultType;
+  type: SovereignAgentResultType;
   summary: string;
   changedFiles: string[];
   draftPrUrl?: string;
   blockerReason?: string;
 }
 
-export function gateOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsResultGate {
-  const type = classifyOpenHandsResult(snapshot);
+export function gateSovereignAgentResult(snapshot: SovereignAgentJobSnapshot): SovereignAgentResultGate {
+  const type = classifySovereignAgentResult(snapshot);
 
   switch (type) {
     case 'running':
       return {
         allowed: false,
         type,
-        summary: 'OpenHands job is still running or waiting.',
+        summary: 'Sovereign Agent job is still running or waiting.',
         changedFiles: snapshot.changedFiles ?? [],
         draftPrUrl: snapshot.draftPrUrl,
       };
@@ -96,7 +96,7 @@ export function gateOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsRe
       return {
         allowed: true,
         type,
-        summary: snapshot.lastError || 'OpenHands job blocked by a gate.',
+        summary: snapshot.lastError || 'Sovereign Agent job blocked by a gate.',
         changedFiles: snapshot.changedFiles ?? [],
         blockerReason: snapshot.lastError,
       };
@@ -105,7 +105,7 @@ export function gateOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsRe
       return {
         allowed: false,
         type,
-        summary: 'OpenHands job completed but produced no changed files or draft PR.',
+        summary: 'Sovereign Agent job completed but produced no changed files or draft PR.',
         changedFiles: [],
       };
 
@@ -113,7 +113,7 @@ export function gateOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsRe
       return {
         allowed: false,
         type,
-        summary: 'OpenHands result contains only documentation/config changes. Plan-only Draft PRs are prohibited.',
+        summary: 'Sovereign Agent result contains only documentation/config changes. Plan-only Draft PRs are prohibited.',
         changedFiles: snapshot.changedFiles ?? [],
       };
 
@@ -122,8 +122,8 @@ export function gateOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsRe
         allowed: true,
         type,
         summary: snapshot.draftPrUrl
-          ? `OpenHands produced real changes: ${snapshot.changedFiles.length} file(s), Draft PR created.`
-          : `OpenHands produced real changes: ${snapshot.changedFiles.length} file(s).`,
+          ? `Sovereign Agent produced real changes: ${snapshot.changedFiles.length} file(s), Draft PR created.`
+          : `Sovereign Agent produced real changes: ${snapshot.changedFiles.length} file(s).`,
         changedFiles: snapshot.changedFiles ?? [],
         draftPrUrl: snapshot.draftPrUrl,
       };
@@ -132,7 +132,7 @@ export function gateOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsRe
       return {
         allowed: false,
         type: 'idle',
-        summary: 'Unknown OpenHands job status.',
+        summary: 'Unknown Sovereign Agent job status.',
         changedFiles: [],
       };
   }
@@ -140,9 +140,9 @@ export function gateOpenHandsResult(snapshot: OpenHandsJobSnapshot): OpenHandsRe
 
 /**
  * Filter events for UI display.
- * Removes raw OpenHands logs that may contain sensitive data.
+ * Removes raw Sovereign Agent logs that may contain sensitive data.
  */
-export interface FilteredOpenHandsEvent {
+export interface FilteredSovereignAgentEvent {
   at: number;
   level: 'info' | 'warning' | 'error' | 'success';
   stage: string;
@@ -150,10 +150,10 @@ export interface FilteredOpenHandsEvent {
   safe: boolean;
 }
 
-export function filterOpenHandsEventsForUI(events: OpenHandsJobSnapshot['events']): FilteredOpenHandsEvent[] {
+export function filterSovereignAgentEventsForUI(events: SovereignAgentJobSnapshot['events']): FilteredSovereignAgentEvent[] {
   if (!Array.isArray(events)) return [];
 
-  return events.map((event): FilteredOpenHandsEvent => {
+  return events.map((event): FilteredSovereignAgentEvent => {
     // Mark all events as potentially unsafe until filtered
     let safeMessage = event.message;
     let safe = true;
@@ -187,11 +187,11 @@ export function filterOpenHandsEventsForUI(events: OpenHandsJobSnapshot['events'
 }
 
 /**
- * Build Pattern Learning Input from validated OpenHands result.
- * Only called when gateOpenHandsResult returns allowed: true.
+ * Build Pattern Learning Input from validated Sovereign Agent result.
+ * Only called when gateSovereignAgentResult returns allowed: true.
  */
-export function buildPatternIntakeFromOpenHands(input: OpenHandsPatternIntakeInput): SolutionPatternLearningInput | null {
-  const gate = gateOpenHandsResult(input.snapshot);
+export function buildPatternIntakeFromSovereignAgent(input: SovereignAgentPatternIntakeInput): SolutionPatternLearningInput | null {
+  const gate = gateSovereignAgentResult(input.snapshot);
 
   if (!gate.allowed) {
     return null;
@@ -200,17 +200,17 @@ export function buildPatternIntakeFromOpenHands(input: OpenHandsPatternIntakeInp
   const firstFile = gate.changedFiles[0] ?? 'unknown';
 
   return {
-    intakeNode: 'openhands-runtime',
+    intakeNode: 'sovereign-agent-runtime',
     processingNode: 'learning-memory',
     outputNodes: ['action-builder', 'generated-file-review', 'learning-memory'],
     problem: {
       category: 'learning-memory',
       severity: gate.type === 'blocker' ? 'high' : 'medium',
       filePath: firstFile,
-      description: `OpenHands mission: ${input.mission}`,
+      description: `Sovereign Agent mission: ${input.mission}`,
       contextPaths: gate.changedFiles,
       contextSignals: [
-        `openhands-result:${gate.type}`,
+        `sovereign-agent-result:${gate.type}`,
         `changed-files:${gate.changedFiles.length}`,
         gate.draftPrUrl ? 'has-draft-pr' : 'no-draft-pr',
       ],
@@ -218,21 +218,21 @@ export function buildPatternIntakeFromOpenHands(input: OpenHandsPatternIntakeInp
     fix: {
       summary: gate.summary,
       changedFiles: gate.changedFiles,
-      steps: [`OpenHands result type: ${gate.type}`],
+      steps: [`Sovereign Agent result type: ${gate.type}`],
       completed: gate.type === 'success',
       proof: gate.draftPrUrl,
     },
     confidence: gate.type === 'success' ? 'completed' : 'inferred',
-    tags: ['openhands', 'agent-result', gate.type],
+    tags: ['sovereign-agent', 'agent-result', gate.type],
     now: input.now,
   };
 }
 
 /**
- * Check if an OpenHands job should trigger pattern learning.
+ * Check if an Sovereign Agent job should trigger pattern learning.
  */
-export function shouldLearnFromOpenHands(snapshot: OpenHandsJobSnapshot): boolean {
-  const gate = gateOpenHandsResult(snapshot);
+export function shouldLearnFromSovereignAgent(snapshot: SovereignAgentJobSnapshot): boolean {
+  const gate = gateSovereignAgentResult(snapshot);
   return gate.allowed;
 }
 
@@ -240,8 +240,8 @@ export function shouldLearnFromOpenHands(snapshot: OpenHandsJobSnapshot): boolea
  * Summarize agent status for Chat display.
  * Returns short status hints, not raw logs.
  */
-export function summarizeOpenHandsChatStatus(snapshot: OpenHandsJobSnapshot): string {
-  const gate = gateOpenHandsResult(snapshot);
+export function summarizeSovereignAgentChatStatus(snapshot: SovereignAgentJobSnapshot): string {
+  const gate = gateSovereignAgentResult(snapshot);
 
   switch (gate.type) {
     case 'running':
@@ -253,10 +253,10 @@ export function summarizeOpenHandsChatStatus(snapshot: OpenHandsJobSnapshot): st
     case 'blocker':
       return 'Sovereign Agent blockiert.';
     case 'empty':
-      return 'OpenHands: Kein greifbares Ergebnis.';
+      return 'Sovereign Agent: Kein greifbares Ergebnis.';
     case 'plan-only':
-      return 'OpenHands: Nur Dokumentation. Nicht als Ergebnis akzeptiert.';
+      return 'Sovereign Agent: Nur Dokumentation. Nicht als Ergebnis akzeptiert.';
     default:
-      return 'OpenHands Status unbekannt.';
+      return 'Sovereign Agent Status unbekannt.';
   }
 }

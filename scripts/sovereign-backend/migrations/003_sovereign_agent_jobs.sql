@@ -65,11 +65,7 @@ CREATE TABLE IF NOT EXISTS sovereign_agent_jobs (
         )
     ),
     CONSTRAINT sovereign_agent_jobs_executor_check CHECK (
-        executor IN (
-            'sovereign-local-runner',
-            'openhands-compat-adapter',
-            'external-code-agent'
-        )
+        executor = 'sovereign-local-runner'
     ),
     CONSTRAINT sovereign_agent_jobs_draft_only_check CHECK (draft_pr_only IS TRUE),
     CONSTRAINT sovereign_agent_jobs_no_auto_merge_check CHECK (allow_auto_merge IS FALSE),

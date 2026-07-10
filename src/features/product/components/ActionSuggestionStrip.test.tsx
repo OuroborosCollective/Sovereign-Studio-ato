@@ -11,7 +11,7 @@ describe('ActionSuggestionStrip', () => {
         actions={SOVEREIGN_PRESET_ACTIONS}
         repoReady={false}
         githubWriteReady={false}
-        openhandsReady={false}
+        agentReady={false}
         onSelect={vi.fn()}
       />,
     );
@@ -29,7 +29,7 @@ describe('ActionSuggestionStrip', () => {
         actions={SOVEREIGN_PRESET_ACTIONS}
         repoReady
         githubWriteReady
-        openhandsReady={false}
+        agentReady={false}
         onSelect={onSelect}
       />,
     );

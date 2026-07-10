@@ -2,7 +2,7 @@
  * WorkerBlockerCard - Visible worker recovery state with explicit Retry and Diagnose actions
  * 
  * Shows degraded/blocked state when WorkerRuntimeBlocker is present.
- * OpenHands action is gated behind real code/Draft-PR intent.
+ * Sovereign Agent action is gated behind real code/Draft-PR intent.
  */
 
 import React, { useCallback } from 'react';
@@ -19,8 +19,8 @@ export interface WorkerBlockerCardProps {
   /** Retry with a specific message - cleaner runtime action path */
   onRetryWithMessage?: (message: string) => void;
   onExplain: () => void;
-  onOpenHandsInstead?: (message: string) => void;
-  /** Used to gate OpenHands action behind real code intent */
+  onAgentInstead?: (message: string) => void;
+  /** Used to gate Sovereign Agent action behind real code intent */
   userMessage?: string;
 }
 
@@ -103,12 +103,12 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   onRetry,
   onRetryWithMessage,
   onExplain,
-  onOpenHandsInstead,
+  onAgentInstead,
   userMessage,
 }) => {
   const { diagnostic, health } = blocker;
   const actionMessage = normalizeActionMessage(userMessage);
-  const canOpenHands = Boolean(actionMessage && hasCodeIntent(actionMessage));
+  const canAgent = Boolean(actionMessage && hasCodeIntent(actionMessage));
   
   // Prefer retry with message when available (cleaner runtime path)
   const handleRetry = useCallback(() => {
@@ -119,11 +119,11 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
     }
   }, [onRetryWithMessage, onRetry, actionMessage]);
   
-  const handleOpenHands = useCallback(() => {
-    if (canOpenHands && actionMessage && onOpenHandsInstead) {
-      onOpenHandsInstead(actionMessage);
+  const handleAgent = useCallback(() => {
+    if (canAgent && actionMessage && onAgentInstead) {
+      onAgentInstead(actionMessage);
     }
-  }, [canOpenHands, onOpenHandsInstead, actionMessage]);
+  }, [canAgent, onAgentInstead, actionMessage]);
 
   return (
     <div
@@ -199,10 +199,10 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
           Diagnose erklären
         </button>
         
-        {canOpenHands && onOpenHandsInstead && (
+        {canAgent && onAgentInstead && (
           <button
             type="button"
-            onClick={handleOpenHands}
+            onClick={handleAgent}
             style={{
               padding: '8px 16px',
               borderRadius: 8,

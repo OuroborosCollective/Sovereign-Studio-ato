@@ -16,7 +16,7 @@ export type SovereignActionRoute =
   | 'free-chat'
   | 'code-llm'
   | 'worker'
-  | 'openhands'
+  | 'sovereign-agent'
   | 'github-patch'
   | 'direct-github-patch'
   | 'github-access'
@@ -241,7 +241,7 @@ function hasUnresolvedCodeResultGate(events: readonly SovereignActionEvent[]): b
     return event.route === 'code-llm'
       || event.route === 'github-patch'
       || event.route === 'github-access'
-      || event.route === 'openhands';
+      || event.route === 'sovereign-agent';
   });
 }
 

@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import type { OpenHandsJobSnapshot, OpenHandsJobStatus } from '../runtime/openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot, SovereignAgentJobStatus } from '../runtime/sovereignAgentRuntime';
 
 // Design tokens from BuilderContainer
 const C = {
@@ -27,8 +27,8 @@ const C = {
 
 export type TruthCardStage = 'erkannt' | 'startet' | 'läuft' | 'blockiert' | 'draft-pr-bereit';
 
-export interface OpenHandsJobTruthCardProps {
-  job: OpenHandsJobSnapshot | null | undefined;
+export interface SovereignAgentJobTruthCardProps {
+  job: SovereignAgentJobSnapshot | null | undefined;
   onStart?: () => void;
   onPreview?: () => void;
   onCancel?: () => void;
@@ -37,7 +37,7 @@ export interface OpenHandsJobTruthCardProps {
 
 // Map agent status to TruthCard stage.
 // Runtime truth: completed alone is not Draft-PR-ready. The URL is the evidence.
-function mapJobToStage(job: OpenHandsJobSnapshot): TruthCardStage {
+function mapJobToStage(job: SovereignAgentJobSnapshot): TruthCardStage {
   switch (job.status) {
     case 'idle': return 'erkannt';
     case 'queued': return 'startet';
@@ -135,7 +135,7 @@ function StatusChain({ currentStage }: { currentStage: TruthCardStage }) {
   );
 }
 
-export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
+export const SovereignAgentJobTruthCard: React.FC<SovereignAgentJobTruthCardProps> = ({
   job,
   onStart,
   onPreview,
@@ -158,7 +158,7 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
     <div
       role="region"
       aria-label="Sovereign Agent Job Status"
-      data-testid="openhands-truth-card"
+      data-testid="sovereign-agent-truth-card"
       style={{
         margin: '8px 0',
         padding: '14px 16px',
@@ -210,10 +210,10 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
           borderRadius: 6,
         }}
       >
-        {job.openHandsId && (
+        {job.runtimeId && (
           <div style={{ marginBottom: 4 }}>
             <span style={{ color: C.textMuted }}>ID:</span>{' '}
-            <code style={{ color: C.text }}>{job.openHandsId}</code>
+            <code style={{ color: C.text }}>{job.runtimeId}</code>
           </div>
         )}
         {job.events.length > 0 && (
@@ -337,4 +337,4 @@ export const OpenHandsJobTruthCard: React.FC<OpenHandsJobTruthCardProps> = ({
   );
 };
 
-export default OpenHandsJobTruthCard;
+export default SovereignAgentJobTruthCard;

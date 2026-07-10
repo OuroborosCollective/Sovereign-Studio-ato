@@ -79,9 +79,9 @@ describe('agentWorkRuntime', () => {
     snap = transitionAccessRequired(snap);
     snap = transitionAccessValidating(snap);
     snap = transitionAccessReady(snap);
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     expect(snap.state).toBe('executor_starting');
-    expect(snap.executorType).toBe('openhands');
+    expect(snap.executorType).toBe('sovereign-agent');
   });
 
   it('transitions executor_starting → executor_running requires non-empty jobId', () => {
@@ -90,7 +90,7 @@ describe('agentWorkRuntime', () => {
     snap = transitionAccessRequired(snap);
     snap = transitionAccessValidating(snap);
     snap = transitionAccessReady(snap);
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
 
     const blank = transitionExecutorRunning(snap, '');
     expect(blank.state).toBe('executor_starting');
@@ -107,7 +107,7 @@ describe('agentWorkRuntime', () => {
     snap = transitionAccessRequired(snap);
     snap = transitionAccessValidating(snap);
     snap = transitionAccessReady(snap);
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     snap = transitionExecutorRunning(snap, 'job-abc');
 
     const bad = transitionBranchCreated(snap, '');
@@ -124,7 +124,7 @@ describe('agentWorkRuntime', () => {
     snap = transitionAccessRequired(snap);
     snap = transitionAccessValidating(snap);
     snap = transitionAccessReady(snap);
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     snap = transitionExecutorRunning(snap, 'job-abc');
     snap = transitionBranchCreated(snap, 'feature/test');
 
@@ -142,7 +142,7 @@ describe('agentWorkRuntime', () => {
     snap = transitionAccessRequired(snap);
     snap = transitionAccessValidating(snap);
     snap = transitionAccessReady(snap);
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     snap = transitionExecutorRunning(snap, 'job-abc');
     snap = transitionBranchCreated(snap, 'feature/test');
     snap = transitionCommitCreated(snap, 'abc1234');
@@ -160,7 +160,7 @@ describe('agentWorkRuntime', () => {
   it('allows a verified executor result to become draft_pr_ready without inventing branch or commit truth', () => {
     let snap = createIdleSnapshot(TRACE);
     snap = transitionIntentDetected(snap, 'o/r', 'main');
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     snap = transitionExecutorRunning(snap, 'job-verified');
 
     snap = transitionDraftPrReady(snap, 'https://github.com/o/r/pull/7');
@@ -178,7 +178,7 @@ describe('agentWorkRuntime', () => {
     expect(transitionDraftPrReady(idle, 'https://github.com/o/r/pull/8').state).toBe('idle');
 
     let snap = transitionIntentDetected(idle, 'o/r', 'main');
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     expect(transitionDraftPrReady(snap, 'https://github.com/o/r/pull/8').state).toBe('executor_starting');
     snap = transitionExecutorRunning(snap, 'job-verified');
     expect(transitionDraftPrReady(snap, 'not-a-url').state).toBe('executor_running');
@@ -190,7 +190,7 @@ describe('agentWorkRuntime', () => {
     snap = transitionAccessRequired(snap);
     snap = transitionAccessValidating(snap);
     snap = transitionAccessReady(snap);
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     snap = transitionExecutorRunning(snap, 'job-x');
     snap = transitionBranchCreated(snap, 'feature/x');
     snap = transitionCommitCreated(snap, 'deadbeef');

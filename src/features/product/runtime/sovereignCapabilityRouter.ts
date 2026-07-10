@@ -83,8 +83,9 @@ const SIMPLE_MODIFIER_TOKENS = [
   'nur ein', 'nur eine', 'only', 'single', 'one',
 ];
 
-const OPENHANDS_TOKENS = [
-  'openhands',
+const SOVEREIGN_AGENT_TOKENS = [
+  'sovereign agent',
+  'sovereign-agent',
 ];
 
 const WORKFLOW_WATCH_TOKENS = [
@@ -99,9 +100,9 @@ const WORKFLOW_REPAIR_TOKENS = [
   'workflowfehler beheben', 'ci fehler', 'workflowfehler', 'reparatur',
 ];
 
-function hasExplicitOpenHandsIntent(text: string): boolean {
+function hasExplicitAgentIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  return OPENHANDS_TOKENS.some((token) => lower.includes(token));
+  return SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token));
 }
 
 export function classifyIntent(text: string): IntentClassification {
@@ -120,7 +121,7 @@ export function classifyIntent(text: string): IntentClassification {
   const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
   if (hasDirectPatchKeyword && !hasComplexKeyword) return 'direct_patch';
 
-  if (OPENHANDS_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
+  if (SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
   if (FREE_CHAT_TOKENS.some((token) => lower.includes(token))) return 'free_chat';
@@ -200,7 +201,7 @@ function buildReason(
     'code-llm': 'Code-LLM Route',
     'direct-github-patch': 'Direct GitHub Patch Route',
     'workspace-executor': 'Workspace-Executor Route',
-    openhands: 'OpenHands Executor Route',
+    'sovereign-agent': 'Sovereign Agent Executor Route',
     'draft-pr-runtime': 'Draft PR Runtime',
     'local-runtime-answer': 'Lokale Runtime-Antwort',
     'repo-load': 'Repo-Lade Route',
@@ -239,7 +240,7 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   const intent = classifyIntent(input.text);
   const complexity = determineTaskComplexity(intent, input.text);
   const blockers = detectBlockers(input);
-  const explicitOpenHandsIntent = hasExplicitOpenHandsIntent(input.text);
+  const explicitSovereignAgentIntent = hasExplicitAgentIntent(input.text);
 
   if (intent === 'status_question') {
     return {
@@ -303,14 +304,14 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'draft_pr') {
-    // OpenHands is only used when explicitly requested by the user
-    if (explicitOpenHandsIntent && input.openhandsReady) {
+    // Sovereign Agent is only used when explicitly requested by the user
+    if (explicitSovereignAgentIntent && input.agentReady) {
       return {
-        route: 'openhands',
+        route: 'sovereign-agent',
         capability: 'draft_pr',
         allowed: true,
-        reason: 'OpenHands wurde ausdrücklich angefordert und ist als externer Adapter verfügbar.',
-        nextAction: 'start_openhands',
+        reason: 'Sovereign Agent wurde ausdrücklich angefordert und ist als interne Runtime verfügbar.',
+        nextAction: 'start_agent',
       };
     }
     // Default: route through Sovereign draft-pr-runtime
@@ -367,14 +368,14 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         nextAction: 'show_blocker',
       };
     }
-    // OpenHands only when explicitly requested
-    if (explicitOpenHandsIntent && input.openhandsReady) {
+    // Sovereign Agent only when explicitly requested
+    if (explicitSovereignAgentIntent && input.agentReady) {
       return {
-        route: 'openhands',
+        route: 'sovereign-agent',
         capability: 'code_patch_plan',
         allowed: true,
-        reason: buildReason('openhands', 'code_patch_plan'),
-        nextAction: 'start_openhands',
+        reason: buildReason('sovereign-agent', 'code_patch_plan'),
+        nextAction: 'start_agent',
       };
     }
     // Default: Sovereign workspace-executor
@@ -438,13 +439,13 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   }
 
   if (intent === 'code_generation') {
-    if (explicitOpenHandsIntent && input.openhandsReady) {
+    if (explicitSovereignAgentIntent && input.agentReady) {
       return {
-        route: 'openhands',
+        route: 'sovereign-agent',
         capability: 'code_patch_plan',
         allowed: true,
-        reason: buildReason('openhands', 'code_patch_plan'),
-        nextAction: 'start_openhands',
+        reason: buildReason('sovereign-agent', 'code_patch_plan'),
+        nextAction: 'start_agent',
       };
     }
     if (blockers.includes('github_access_validating')) {
@@ -548,14 +549,14 @@ export function requiresGitHubAccess(decision: CapabilityDecision): boolean {
   const githubRoutes: SovereignRoute[] = [
     'direct-github-patch',
     'draft-pr-runtime',
-    'openhands',
+    'sovereign-agent',
     'workspace-executor',
   ];
   return githubRoutes.includes(decision.route) && decision.allowed;
 }
 
 export function requiresExecutor(decision: CapabilityDecision): boolean {
-  return decision.route === 'openhands' || decision.route === 'workspace-executor';
+  return decision.route === 'sovereign-agent' || decision.route === 'workspace-executor';
 }
 
 export function getRouteLabel(route: SovereignRoute): string {
@@ -564,7 +565,7 @@ export function getRouteLabel(route: SovereignRoute): string {
     'code-llm': 'Code-LLM',
     'direct-github-patch': 'Direct GitHub Patch',
     'workspace-executor': 'Workspace Executor',
-    openhands: 'OpenHands',
+    'sovereign-agent': 'Sovereign Agent',
     'draft-pr-runtime': 'Draft PR',
     'local-runtime-answer': 'Lokale Antwort',
     'repo-load': 'Repo laden',
@@ -577,7 +578,7 @@ export function getBlockerExplanation(blocker: SovereignRouteBlocker): string {
     repo_missing: 'Lade zuerst ein GitHub Repository.',
     github_access_missing: 'Gib einen GitHub-Zugang ein.',
     github_access_validating: 'GitHub-Zugang wird gerade geprüft. Bitte warten.',
-    executor_unavailable: 'Kein Executor verfügbar. OpenHands konfigurieren oder Workspace starten.',
+    executor_unavailable: 'Kein Executor verfügbar. Sovereign Agent konfigurieren oder Workspace starten.',
     workspace_required: 'Diese Aufgabe braucht einen Workspace-Executor.',
     package_required: 'Erzeuge zuerst ein Patch-Paket oder eine Diff-Vorschau; danach kann der Draft PR erstellt werden.',
     unsupported_intent: 'Der Auftrag ist zu komplex für diese Route.',

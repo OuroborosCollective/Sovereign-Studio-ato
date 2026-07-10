@@ -16,7 +16,7 @@ import {
 } from './sovereignActionStreamRuntime';
 
 describe('sovereignActionStreamRuntime', () => {
-  it('records every route as runtime events instead of binding the stream to OpenHands only', () => {
+  it('records every route as runtime events instead of binding the stream to Sovereign Agent only', () => {
     const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
       buildInputReceivedEvent('Baue die UX-Verbesserung ein'),
       buildRepoLoadedEvent('Sovereign-Studio-ato · main · 500 files'),
@@ -67,11 +67,11 @@ describe('sovereignActionStreamRuntime', () => {
   it('labels blocked route-selection events as blocked instead of chosen', () => {
     const stream = appendSovereignActionEvent(
       createSovereignActionStreamState(),
-      buildRouteSelectionEvent({ route: 'openhands', reason: 'Executor fehlt.', state: 'blocked' }),
+      buildRouteSelectionEvent({ route: 'sovereign-agent', reason: 'Executor fehlt.', state: 'blocked' }),
     );
 
     expect(stream.lastEvent?.kind).toBe('blocked');
-    expect(stream.lastEvent?.label).toBe('Route blockiert: openhands');
+    expect(stream.lastEvent?.label).toBe('Route blockiert: sovereign-agent');
     expect(stream.lastEvent?.label).not.toContain('gewählt');
   });
 
@@ -142,7 +142,7 @@ describe('sovereignActionStreamRuntime', () => {
   });
 
   it('activeRoute is null after any terminal event — all routes behave equally', () => {
-    const routes = ['worker', 'code-llm', 'openhands', 'free-chat', 'github-patch'] as const;
+    const routes = ['worker', 'code-llm', 'sovereign-agent', 'free-chat', 'github-patch'] as const;
     for (const route of routes) {
       const stream = appendSovereignActionEvent(
         createSovereignActionStreamState(),

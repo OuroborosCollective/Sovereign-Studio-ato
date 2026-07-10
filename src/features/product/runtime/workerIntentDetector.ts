@@ -11,8 +11,8 @@
 // default, unless it is clearly repo loading, status, retry, diagnostic, or a
 // small-talk/greeting phrase. Questions still stay advisory, but the Worker
 // prompt must answer them as repo-specific integration guidance.
-const OPENHANDS_EXECUTION_TOKENS = [
-  'openhands', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
+const SOVEREIGN_AGENT_EXECUTION_TOKENS = [
+  'sovereign agent', 'sovereign-agent', 'sovereign_agent', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
   'push', 'commit', 'repo schreiben', 'github schreiben', 'branch erstellen',
 ];
 
@@ -55,10 +55,12 @@ const DELEGATION_TOKENS = [
   'freigeben',
 ];
 
-// Alternative write route tokens: user explicitly asks NOT to use OpenHands
+// Alternative write route tokens: user explicitly asks NOT to use Sovereign Agent
 const ALTERNATIVE_WRITE_ROUTE_TOKENS = [
-  'nicht openhands',
-  'ohne openhands',
+  'nicht sovereign agent',
+  'nicht sovereign-agent',
+  'ohne sovereign agent',
+  'ohne sovereign-agent',
   'andere route',
   'alternative route',
   'direkt über github',
@@ -98,7 +100,7 @@ const CODE_CONTEXT_TOKENS = [
   'lösche', 'entfern', 'ergänz', 'füge hinzu', 'ersetze', 'schreibe',
   'test', 'tests', 'hinzufüg', 'ergänz', 'integrationsauftrag',
   'integration', 'runtime', 'route', 'router', 'workflow', 'executor',
-  'openhands', 'draft pr', 'einbauen', 'umsetzen', 'umsetzung',
+  'sovereign agent', 'sovereign-agent', 'draft pr', 'einbauen', 'umsetzen', 'umsetzung',
 ];
 
 const GREETING_OR_SMALLTALK_TOKENS = [
@@ -139,12 +141,13 @@ export function isLikelyIntegrationImplementationIntent(text: string): boolean {
 }
 
 /**
- * Detects if a message is an explicit OpenHands execution intent.
+ * Detects if a message is an explicit Sovereign Agent execution intent.
  * Generic implementation text stays code-route until a confirmed executor handoff.
  */
-export function isOpenHandsExecutionIntent(text: string): boolean {
+export function isSovereignAgentExecutionIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  return OPENHANDS_EXECUTION_TOKENS.some((token) => lower.includes(token));
+  if (ALTERNATIVE_WRITE_ROUTE_TOKENS.some((token) => lower.includes(token))) return false;
+  return SOVEREIGN_AGENT_EXECUTION_TOKENS.some((token) => lower.includes(token));
 }
 
 /**
@@ -176,7 +179,7 @@ export function isWorkerDiagnosticQuestion(text: string): boolean {
 }
 
 /**
- * Detects delegation/confirmation intent without blindly starting OpenHands.
+ * Detects delegation/confirmation intent without blindly starting Sovereign Agent.
  * Only qualifies as execution intent if there's prior code/repo context.
  */
 export function isDelegationIntent(text: string): boolean {
@@ -207,14 +210,14 @@ export function hasExecutorContextInHistory(recentMessages: readonly { role: str
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .slice(-6);
   const allText = relevant.map((m) => m.text.toLowerCase()).join(' ');
-  return OPENHANDS_EXECUTION_TOKENS.some((token) => allText.includes(token)) ||
+  return SOVEREIGN_AGENT_EXECUTION_TOKENS.some((token) => allText.includes(token)) ||
     allText.includes('integrationsauftrag') ||
     allText.includes('integration') ||
     allText.includes('einbauen') ||
     allText.includes('umsetzung');
 }
 
-export function isDelegatedOpenHandsExecutionIntent(
+export function isDelegatedSovereignAgentExecutionIntent(
   text: string,
   recentMessages: readonly { role: string; text: string }[],
 ): boolean {
@@ -224,11 +227,11 @@ export function isDelegatedOpenHandsExecutionIntent(
 
 /**
  * Detects if a message is explicitly asking for an alternative write route
- * instead of OpenHands. These must be answered locally from runtime state,
- * not forwarded to OpenHands or Worker.
+ * instead of Sovereign Agent. These must be answered locally from runtime state,
+ * not forwarded to Sovereign Agent or Worker.
  * 
  * Examples:
- * - "Nutzen wir eine andere Route und nicht OpenHands"
+ * - "Nutzen wir eine andere Route und nicht Sovereign Agent"
  * - "Kannst du direkt über GitHub patchen ohne Executor?"
  * - "Alternative Route für diesen einfachen Patch?"
  */
@@ -238,7 +241,7 @@ export function isAlternativeWriteRouteIntent(text: string): boolean {
 }
 
 /**
- * Detects if a message is asking about the current executor/OpenHands status.
+ * Detects if a message is asking about the current executor/Sovereign Agent status.
  * These messages should be answered locally from agentWorkSnapshot, not sent to Worker.
  */
 export function isExecutorStatusQuestion(text: string): boolean {
@@ -248,7 +251,7 @@ export function isExecutorStatusQuestion(text: string): boolean {
 
 export type ExecutorStatusArgs = {
   readonly agentState: string;
-  readonly openhandsStatus?: string;
+  readonly agentStatus?: string;
   readonly changedFiles?: number;
   readonly draftPrUrl?: string | null;
   readonly blockerReason?: string | null;
@@ -262,22 +265,22 @@ export type ExecutorStatusArgs = {
  * #500: Fix next action based on actual missing capability, not GitHub access.
  */
 export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
-  const { agentState, openhandsStatus, changedFiles = 0, draftPrUrl, blockerReason } = args;
+  const { agentState, agentStatus, changedFiles = 0, draftPrUrl, blockerReason } = args;
 
-  if (agentState === 'idle' && (!openhandsStatus || openhandsStatus === 'idle')) {
+  if (agentState === 'idle' && (!agentStatus || agentStatus === 'idle')) {
     return 'Nein, Sovereign Agent läuft noch nicht.\nKein Auftrag wurde gestartet.';
   }
-  if (agentState === 'executor_running' || openhandsStatus === 'running') {
+  if (agentState === 'executor_running' || agentStatus === 'running') {
     const fileInfo = changedFiles > 0
       ? `Geänderte Dateien bisher: ${changedFiles}.`
       : 'Geänderte Dateien bisher: 0.';
     const prInfo = draftPrUrl ? 'Draft PR: wird vorbereitet.' : 'Draft PR: noch nicht bereit.';
     return `Ja, Sovereign Agent läuft.\n${fileInfo}\n${prInfo}`;
   }
-  if (agentState === 'executor_starting' || openhandsStatus === 'queued') {
+  if (agentState === 'executor_starting' || agentStatus === 'queued') {
     return 'Sovereign Agent wird gestartet. Warte auf erste Rückmeldung.';
   }
-  if (agentState === 'blocked' || openhandsStatus === 'blocked') {
+  if (agentState === 'blocked' || agentStatus === 'blocked') {
     const reason = blockerReason || 'Kein Grund angegeben.';
     // #500: Fix next action based on actual blocker type
     const nextAction = reason.includes('GitHub')
@@ -285,7 +288,7 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
       : 'Sovereign Agent Backend verbinden oder Direct GitHub Patch Route nutzen.';
     return `Nein, Sovereign Agent läuft nicht.\nStatus: blockiert.\nGrund: ${reason}\nNächste Aktion: ${nextAction}`;
   }
-  if (agentState === 'failed' || openhandsStatus === 'failed') {
+  if (agentState === 'failed' || agentStatus === 'failed') {
     const reason = blockerReason || 'Sovereign Agent Runtime fehlgeschlagen.';
     return `Nein, Sovereign Agent ist fehlgeschlagen.\nGrund: ${reason}`;
   }
@@ -294,7 +297,7 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
       ? `Sovereign Agent hat einen Draft PR erstellt: ${draftPrUrl}`
       : 'Sovereign Agent meldet Draft-PR-Ready, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
   }
-  if (openhandsStatus === 'completed') {
+  if (agentStatus === 'completed') {
     return draftPrUrl
       ? `Sovereign Agent hat einen Draft PR erstellt: ${draftPrUrl}`
       : 'Sovereign Agent meldet completed, aber keine Draft-PR-URL liegt vor. Ergebnis noch nicht belegbar.';
@@ -316,7 +319,7 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
  */
 export type WriteRouteBlockerType = 
   | 'github_access_required'   // GitHub access not yet ready
-  | 'executor_unavailable'      // OpenHands not configured
+  | 'executor_unavailable'      // Sovereign Agent not configured
   | 'patch_route_unavailable';  // Alternative patch route not available
 
 /**
@@ -327,10 +330,10 @@ export type WriteRouteBlockerType =
 export function buildAlternativeRouteStatusAnswer(args: {
   readonly githubAccessReady: boolean;
   readonly githubAccessState?: string;
-  readonly openhandsReady: boolean;
+  readonly agentReady: boolean;
   readonly directPatchAvailable: boolean;
 }): string {
-  const { githubAccessReady, githubAccessState, openhandsReady, directPatchAvailable } = args;
+  const { githubAccessReady, githubAccessState, agentReady, directPatchAvailable } = args;
 
   // GitHub access not ready — report this truthfully
   if (!githubAccessReady) {
@@ -344,7 +347,7 @@ export function buildAlternativeRouteStatusAnswer(args: {
   }
 
   // GitHub is ready, but the Sovereign Agent backend is not configured
-  if (!openhandsReady && !directPatchAvailable) {
+  if (!agentReady && !directPatchAvailable) {
     return [
       'GitHub-Zugang ist bereit.',
       'Sovereign Agent Backend ist nicht verbunden.',
@@ -354,7 +357,7 @@ export function buildAlternativeRouteStatusAnswer(args: {
     ].join('\n');
   }
 
-  if (!openhandsReady && directPatchAvailable) {
+  if (!agentReady && directPatchAvailable) {
     return [
       'GitHub-Zugang ist bereit.',
       'Sovereign Agent Backend ist nicht verbunden.',
@@ -375,7 +378,7 @@ export function getWorkerActionHint(args: {
   readonly agentDisabled?: boolean;
 }): string {
   const clean = args.submittedText.trim();
-  if (isOpenHandsExecutionIntent(clean)) {
+  if (isSovereignAgentExecutionIntent(clean)) {
     return args.agentDisabled
       ? 'Executor blockiert · Code-Route prüft zuerst'
       : 'Executor-Schreibroute starten';

@@ -9,7 +9,7 @@
 
 /**
  * Sovereign capabilities - what the runtime can do.
- * OpenHands is one possible executor, not the only coding route.
+ * Sovereign Agent is one possible executor, not the only coding route.
  */
 export type SovereignCapability =
   | 'free_chat'         // Pure chat questions, no code/repo actions
@@ -30,7 +30,7 @@ export type SovereignRoute =
   | 'code-llm'            // Code-capable LLM for patches
   | 'direct-github-patch' // Direct GitHub API for simple changes
   | 'workspace-executor'   // Isolated workspace (Replit/CodeSandbox)
-  | 'openhands'           // OpenHands executor
+  | 'sovereign-agent'           // Sovereign Agent executor
   | 'draft-pr-runtime'     // Draft PR creation
   | 'local-runtime-answer' // Local runtime answer, no external call
   | 'repo-load';          // Repository loading
@@ -43,7 +43,7 @@ export type SovereignRouteBlocker =
   | 'repo_missing'               // No repository loaded
   | 'github_access_missing'       // GitHub access not configured
   | 'github_access_validating'    // GitHub access in validation
-  | 'executor_unavailable'        // No executor (OpenHands/workspace) available
+  | 'executor_unavailable'        // No executor (Sovereign Agent/workspace) available
   | 'workspace_required'          // Workspace executor required but unavailable
   | 'package_required'            // Patch/package must be generated before Draft PR
   | 'unsupported_intent'          // Intent too complex for direct patch
@@ -61,7 +61,7 @@ export type SovereignNextAction =
   | 'run_worker'                  // Run chat worker
   | 'run_direct_patch'            // Run direct GitHub patch
   | 'start_workspace'             // Start workspace executor
-  | 'start_openhands'             // Start OpenHands executor
+  | 'start_agent'             // Start Sovereign Agent executor
   | 'create_draft_pr'             // Create draft PR
   | 'show_blocker'                // Show blocker explanation
   | 'answer_locally'              // Answer from existing runtime state without external route
@@ -95,7 +95,7 @@ export interface CapabilityRouterInput {
   readonly text: string;
   readonly repoReady: boolean;
   readonly githubAccessState: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid';
-  readonly openhandsReady: boolean;
+  readonly agentReady: boolean;
   readonly directGitHubPatchReady: boolean;
   readonly workspaceReady: boolean;
   readonly hasActiveWorkerBlocker: boolean;

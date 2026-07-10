@@ -7,7 +7,7 @@ export interface ActionSuggestionStripProps {
   readonly actions: readonly SovereignPresetAction[];
   readonly repoReady: boolean;
   readonly githubWriteReady: boolean;
-  readonly openhandsReady: boolean;
+  readonly agentReady: boolean;
   readonly disabled?: boolean;
   readonly onSelect: (actionId: SovereignPresetActionId) => void;
 }
@@ -16,7 +16,7 @@ export function ActionSuggestionStrip({
   actions,
   repoReady,
   githubWriteReady,
-  openhandsReady,
+  agentReady,
   disabled = false,
   onSelect,
 }: ActionSuggestionStripProps): React.ReactElement {
@@ -60,7 +60,7 @@ export function ActionSuggestionStrip({
           const gate = evaluateSovereignPresetActionGate(action, {
             repoReady,
             githubWriteReady,
-            openhandsReady,
+            agentReady,
           });
           const tone = gate.canStart ? C.accent : C.amber;
           return (

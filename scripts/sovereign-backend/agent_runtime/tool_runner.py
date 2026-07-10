@@ -1,19 +1,20 @@
 """Tool runner for Sovereign Agent Runtime.
 
-This module provides the execution engine for tool calls within
-workspace boundaries. It handles tool routing, validation, and
-event tracking.
+This module provides the execution engine for tool calls within workspace
+boundaries. It handles tool routing, validation, and event tracking.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 from .tools import get_tool_registry, ToolResult, ToolCall
-from .tool_events import ToolEventLog, ToolEvent
+from .tool_events import ToolEventLog
+from .workspace_policy import repo_dir_for_workspace
 
 
 @dataclass
@@ -67,13 +68,7 @@ class ToolRunnerResult:
                 {
                     "tool_name": e.tool_name,
                     "call_id": e.call_id,
-                    "result": {
-                        "status": e.result.status,
-                        "output": e.result.output,
-                        "error": e.result.error,
-                        "blocker": e.result.blocker,
-                        "metadata": e.result.metadata,
-                    },
+                    "result": e.result.to_dict(),
                     "duration_ms": e.duration_ms,
                 }
                 for e in self.executions
@@ -86,14 +81,7 @@ class ToolRunnerResult:
 
 
 class ToolRunner:
-    """Executes tool calls with workspace scoping and event tracking.
-    
-    The runner:
-    1. Validates tool calls against policy
-    2. Executes tools with workspace isolation
-    3. Tracks events for audit and debugging
-    4. Returns sanitized results
-    """
+    """Executes tool calls with workspace scoping and event tracking."""
 
     def __init__(self, workspace_path: str | None = None):
         self.workspace_path = workspace_path
@@ -101,14 +89,7 @@ class ToolRunner:
         self.event_log = ToolEventLog()
 
     def execute(self, tool_calls: list[ToolCall]) -> ToolRunnerResult:
-        """Execute a list of tool calls.
-        
-        Args:
-            tool_calls: List of ToolCall objects to execute
-            
-        Returns:
-            ToolRunnerResult with aggregate results
-        """
+        """Execute a list of tool calls."""
         result = ToolRunnerResult()
 
         for call in tool_calls:
@@ -118,15 +99,7 @@ class ToolRunner:
         return result
 
     def execute_single(self, tool_name: str, parameters: dict[str, Any]) -> ToolExecution:
-        """Execute a single tool call.
-        
-        Args:
-            tool_name: Name of the tool to execute
-            parameters: Tool-specific parameters
-            
-        Returns:
-            ToolExecution with result and metadata
-        """
+        """Execute a single tool call."""
         call = ToolCall(
             tool_name=tool_name,
             parameters=parameters,
@@ -195,15 +168,7 @@ def run_tool_sequence(
     tools: list[tuple[str, dict[str, Any]]],
     workspace_path: str | None = None,
 ) -> ToolRunnerResult:
-    """Convenience function to run a sequence of tool calls.
-    
-    Args:
-        tools: List of (tool_name, parameters) tuples
-        workspace_path: Optional workspace path for scoping
-        
-    Returns:
-        ToolRunnerResult with aggregate results
-    """
+    """Convenience function to run a sequence of tool calls."""
     runner = ToolRunner(workspace_path)
     calls = [
         ToolCall(tool_name=name, parameters=params, call_id=str(uuid.uuid4())[:8])
@@ -212,30 +177,139 @@ def run_tool_sequence(
     return runner.execute(calls)
 
 
-def run_agent_job_tool(
-    job_id: str,
-    tool_name: str,
-    parameters: dict[str, Any],
-    workspace_path: str | None = None,
-) -> ToolRunnerResult:
-    """Run a single tool for an agent job.
-    
-    This is a convenience wrapper for running individual tools
-    in the context of an agent job.
-    
-    Args:
-        job_id: The job ID for tracking
-        tool_name: Name of the tool to run
-        parameters: Tool parameters
-        workspace_path: Optional workspace path
-    
-    Returns:
-        ToolRunnerResult with the tool execution result
-    """
-    runner = ToolRunner(workspace_path)
-    call = ToolCall(
-        tool_name=tool_name,
-        parameters=parameters,
-        call_id=f"{job_id[:8]}-{tool_name[:8]}",
+def _resolve_job_id(job_or_id: Any) -> str:
+    return str(getattr(job_or_id, "job_id", job_or_id))
+
+
+def _resolve_workspace_id(job_or_id: Any) -> str:
+    return str(getattr(job_or_id, "workspace_id", None) or getattr(job_or_id, "job_id", job_or_id))
+
+
+def _resolve_workspace_path(job_or_id: Any, root_or_path: str | Path | None) -> str | None:
+    if root_or_path is None:
+        return None
+    root = Path(root_or_path)
+    if hasattr(job_or_id, "job_id"):
+        return str(repo_dir_for_workspace(_resolve_workspace_id(job_or_id), root))
+    return str(root)
+
+
+def _normalize_route_tool(action: str, parameters: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    if action == "file":
+        mode = str(parameters.get("mode") or parameters.get("action") or ("write" if "content" in parameters else "read")).lower()
+        path = parameters.get("path") or parameters.get("relativePath") or ""
+        if mode == "write":
+            return "file_write", {
+                "path": path,
+                "content": str(parameters.get("content") or ""),
+                "append": bool(parameters.get("append", False)),
+            }
+        return "file_read", {"path": path, "max_bytes": parameters.get("maxBytes", parameters.get("max_bytes", 1_000_000))}
+    if action == "git-status":
+        return "git_status", {}
+    if action == "diff":
+        return "git_diff", {
+            "file": parameters.get("file"),
+            "staged": bool(parameters.get("staged", False)),
+            "stat": bool(parameters.get("stat", False)),
+        }
+    if action == "test":
+        command = parameters.get("command")
+        argv = parameters.get("argv")
+        if not command and isinstance(argv, list):
+            command = " ".join(str(part) for part in argv)
+        return "test", {
+            "command": command,
+            "path": parameters.get("path"),
+            "framework": parameters.get("framework"),
+            "timeout": parameters.get("timeout", 300),
+            "verbose": parameters.get("verbose", True),
+        }
+    return action, parameters
+
+
+def _changed_files_from_status(output: str | None, metadata: dict[str, Any]) -> tuple[str, ...]:
+    files = metadata.get("files") if isinstance(metadata, dict) else None
+    if isinstance(files, list):
+        parsed = []
+        for entry in files:
+            text = str(entry).strip()
+            if not text:
+                continue
+            parsed.append(text[3:] if len(text) > 3 and text[2] == " " else text.split()[-1])
+        return tuple(dict.fromkeys(parsed))
+    parsed = []
+    for line in (output or "").splitlines():
+        text = line.strip()
+        if text and text != "Repository is clean":
+            parsed.append(text[3:] if len(text) > 3 and text[2] == " " else text.split()[-1])
+    return tuple(dict.fromkeys(parsed))
+
+
+def _route_result(action: str, tool_name: str, execution: ToolExecution) -> ToolResult:
+    result = execution.result
+    output = result.output or ""
+    error = result.error or ""
+    changed_files: tuple[str, ...] = ()
+    diff_summary = None
+    test_summary = None
+
+    if action == "file" and tool_name == "file_write" and result.status == "done":
+        path = str(execution.parameters.get("path") or "")
+        changed_files = (path,) if path else ()
+    elif action == "git-status":
+        changed_files = _changed_files_from_status(output, result.metadata)
+    elif action == "diff":
+        diff_summary = output[:4000]
+    elif action == "test":
+        test_summary = output[:4000]
+
+    predictive_signal = {
+        "file": "agent_file_tool_completed",
+        "git-status": "agent_git_status_completed",
+        "diff": "agent_diff_ready",
+        "test": "agent_tests_completed",
+    }.get(action, "agent_tool_result")
+    if result.status == "blocked":
+        predictive_signal = "agent_tool_blocked"
+    elif result.status == "error":
+        predictive_signal = "agent_tool_failed"
+
+    return ToolResult(
+        status="error" if result.status == "error" else result.status,
+        output=output,
+        error=error or None,
+        blocker=result.blocker,
+        metadata=result.metadata,
+        tool=action,
+        allowed=result.status != "blocked",
+        stdout=output,
+        stderr=error or None,
+        changed_files=changed_files,
+        diff_summary=diff_summary,
+        test_summary=test_summary,
+        exit_code=0 if result.status == "done" else 1,
+        events=(),
+        predictive_signal=predictive_signal,
     )
-    return runner.execute([call])
+
+
+def run_agent_job_tool(
+    job_or_id: Any,
+    tool_name: str,
+    parameters: dict[str, Any] | None = None,
+    workspace_path: str | Path | None = None,
+) -> ToolResult:
+    """Run a single route tool for an agent job and return route-compatible ToolResult.
+
+    Supports both the user route call shape `(job, action, payload, workspace_root)`
+    and the direct runner call shape `(job_id, tool_name, params, workspace_path)`.
+    """
+    params = parameters or {}
+    normalized_tool, normalized_params = _normalize_route_tool(tool_name, params)
+    resolved_workspace = _resolve_workspace_path(job_or_id, workspace_path)
+    call_id = f"{_resolve_job_id(job_or_id)[:8]}-{normalized_tool[:8]}"
+
+    runner = ToolRunner(resolved_workspace)
+    execution = runner._execute_single(ToolCall(tool_name=normalized_tool, parameters=normalized_params, call_id=call_id))
+    return _route_result(tool_name, normalized_tool, execution)

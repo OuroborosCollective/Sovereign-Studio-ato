@@ -4,7 +4,7 @@ import type { SovereignToolCapabilityRegistry } from '../features/product/runtim
 export type SovereignInternalOperatorRoute =
   | 'direct_patch'
   | 'internal_workspace'
-  | 'openhands_bridge'
+  | 'agent_runtime'
   | 'internal_runtime_patch';
 
 export type SovereignInternalOperatorStage =
@@ -41,7 +41,7 @@ export interface SovereignInternalOperatorDecision {
   readonly state: 'allowed' | 'blocked';
   readonly route: SovereignInternalOperatorRoute | 'blocked';
   readonly reason: string;
-  readonly nextAction: 'run_direct_patch' | 'start_workspace' | 'start_openhands' | 'run_internal_operator' | 'show_blocker';
+  readonly nextAction: 'run_direct_patch' | 'start_workspace' | 'start_agent' | 'run_internal_operator' | 'show_blocker';
   readonly confidence: number;
   readonly stages: readonly SovereignInternalOperatorStage[];
   readonly traceId: string;
@@ -85,15 +85,15 @@ function stages(route: SovereignInternalOperatorRoute, complex: boolean): readon
 function nextAction(route: SovereignInternalOperatorRoute): SovereignInternalOperatorDecision['nextAction'] {
   if (route === 'direct_patch') return 'run_direct_patch';
   if (route === 'internal_workspace') return 'start_workspace';
-  if (route === 'openhands_bridge') return 'start_openhands';
+  if (route === 'agent_runtime') return 'start_agent';
   return 'run_internal_operator';
 }
 
 function reason(route: SovereignInternalOperatorRoute): string {
   if (route === 'direct_patch') return 'Interner Operator nutzt Direct Patch für kleine prüfbare Dateiänderungen.';
   if (route === 'internal_workspace') return 'Interner Operator nutzt den eigenen Workspace vor externen Brücken.';
-  if (route === 'openhands_bridge') return 'OpenHands wird nur als optionale Brücke genutzt.';
-  return 'Interner Sovereign Operator übernimmt Plan, Patch, Diff-Guard und Draft-PR-Gate ohne OpenHands-Pflicht.';
+  if (route === 'agent_runtime') return 'Sovereign Agent wird nur als optionale Brücke genutzt.';
+  return 'Interner Sovereign Operator übernimmt Plan, Patch, Diff-Guard und Draft-PR-Gate ohne Sovereign Agent-Pflicht.';
 }
 
 export function decideSovereignInternalOperator(input: SovereignInternalOperatorInput): SovereignInternalOperatorDecision {
@@ -117,10 +117,10 @@ export function decideSovereignInternalOperator(input: SovereignInternalOperator
       signals: complex ? ['complex-work', 'own-workspace'] : ['own-workspace'],
     },
     {
-      route: 'openhands_bridge',
+      route: 'agent_runtime',
       score: complex ? 0.74 : 0.48,
-      available: input.capabilities.openhands.canStart,
-      signals: input.capabilities.openhands.canStart ? ['optional-bridge'] : [],
+      available: input.capabilities.agent.canStart,
+      signals: input.capabilities.agent.canStart ? ['optional-bridge'] : [],
     },
     {
       route: 'internal_runtime_patch',

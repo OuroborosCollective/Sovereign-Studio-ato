@@ -1,4 +1,4 @@
-import type { OpenHandsRuntimeEvent } from './openhandsEnterpriseRuntime';
+import type { SovereignAgentRuntimeEvent } from './sovereignAgentRuntime';
 import type {
   SovereignActionEvent,
   SovereignActionEventInput,
@@ -231,7 +231,7 @@ export function isRuntimeEvidenceActionEvent(event: SovereignActionEvent): boole
 
 export function buildSovereignRuntimeEvidenceLog(
   actionEvents: readonly SovereignActionEvent[],
-  agentEvents: readonly OpenHandsRuntimeEvent[],
+  agentEvents: readonly SovereignAgentRuntimeEvent[],
 ): readonly SovereignRuntimeEvidenceLogEntry[] {
   const fromActions = actionEvents.filter(isRuntimeEvidenceActionEvent).map((entry) => ({
     id: `action:${entry.id}`,

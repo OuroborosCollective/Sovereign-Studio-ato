@@ -5,6 +5,9 @@ import process from 'node:process';
 
 const REPORT_DIR = '.security-reports';
 const REPORT_PATH = path.join(REPORT_DIR, 'sovereign-runtime-contract.json');
+const retiredAgentName = ['Open', 'Hands'].join('');
+const retiredAppAgentPattern = new RegExp(`create${retiredAgentName}EnterpriseClient|onStart${retiredAgentName}`);
+const retiredBuilderAgentPattern = new RegExp(`onStart${retiredAgentName}`);
 
 const report = {
   name: 'Sovereign Runtime Contract Scan',
@@ -156,18 +159,19 @@ function run() {
   warnScriptGroup(scripts, 'script:lint', ['lint'], 'Lint script is available.');
 
   requireImport('src/main.tsx', /\.\/SovereignAppWrapper$/, 'main:imports-wrapper', 'main.tsx imports the Sovereign runtime wrapper.');
-  requireText('src/main.tsx', /<App\s*\/\>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App through the wrapper import.');
+  requireText('src/main.tsx', /<App\s*\/>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App through the wrapper import.');
   requireText('src/main.tsx', /installViewportRuntime/, 'main:viewport-runtime', 'main.tsx installs viewport runtime.');
   requireText('src/main.tsx', /installCodeWorkspacePersistenceRuntime/, 'main:workspace-persistence', 'main.tsx installs workspace persistence runtime.');
   forbidText('src/main.tsx', /installMobileAgentMonitor|installMobileMoreMenu|installMobileSetupDrawer|installMobileWorkspaceOrder|installMobileRuntimeModules/, 'main:no-old-dom-installers', 'main.tsx must not install old DOM/mobile mutation helpers.');
 
-  requireText('src/SovereignAppWrapper.tsx', /<App\s*\/\>|<App[\s>]/, 'wrapper:renders-inner-app', 'Sovereign wrapper renders the inner App without owning product truth.');
-  requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/\>/, 'wrapper:passthrough-only', 'Sovereign wrapper is a passthrough and does not create product truth.');
+  requireText('src/SovereignAppWrapper.tsx', /<App\s*\/>|<App[\s>]/, 'wrapper:renders-inner-app', 'Sovereign wrapper renders the inner App without owning product truth.');
+  requireText('src/SovereignAppWrapper.tsx', /return <App \/>|<App\s*\/>/, 'wrapper:passthrough-only', 'Sovereign wrapper is a passthrough and does not create product truth.');
   forbidText('src/SovereignAppWrapper.tsx', /useState|useEffect|localStorage|sessionStorage|querySelector/, 'wrapper:no-own-runtime-state', 'Sovereign wrapper must not own runtime state or inspect DOM.');
   requireText('src/App.tsx', /BuilderContainer/, 'app:builder-live-path', 'App routes the live surface to BuilderContainer.');
   requireText('src/App.tsx', /LlmAdapterProvider/, 'app:llm-provider', 'App keeps the LLM adapter provider wired.');
-  requireText('src/App.tsx', /createOpenHandsEnterpriseClient/, 'app:openhands-client', 'App keeps the OpenHands enterprise client wired.');
-  requireText('src/App.tsx', /onStartOpenHands/, 'app:openhands-start-handler', 'App passes the OpenHands start handler into the chat workbench.');
+  requireText('src/App.tsx', /createSovereignAgentClient/, 'app:sovereign-agent-client', 'App keeps the internal Sovereign Agent client wired.');
+  requireText('src/App.tsx', /onStartAgent/, 'app:agent-start-handler', 'App passes the internal Agent start handler into the chat workbench.');
+  forbidText('src/App.tsx', retiredAppAgentPattern, 'app:no-retired-agent-wiring', 'App must not restore retired external-agent client or start symbols.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /parseDevChatGithubUrl/, 'builder:repo-url-chat-detection', 'Builder detects GitHub repo URLs in chat.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /fetchDevChatRepoTree/, 'builder:repo-tree-runtime-load', 'Builder loads repo snapshots through the runtime bridge.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /validateGitHubTokenForRepo/, 'builder:github-access-validation', 'Builder validates GitHub access before write execution.');
@@ -179,7 +183,8 @@ function run() {
   requireText('src/features/product/containers/RepoSnapshotContainer.tsx', /data-mobile-role="github-token-input"|data-role=\{SOVEREIGN_FORM_PRIVATE_ACCESS\.dataRole\}/, 'repo:mobile-access-input', 'Access input keeps Android/mobile or contract role.');
 
   requireText('src/features/product/containers/BuilderContainer.tsx', /Sovereign Chat Eingabe|GitHub URL oder Auftrag/, 'builder:chat-input-visible', 'Builder exposes the chat-first input.');
-  requireText('src/features/product/containers/BuilderContainer.tsx', /onStartOpenHands/, 'builder:executor-start-prop', 'Builder keeps executor start path wired as one route.');
+  requireText('src/features/product/containers/BuilderContainer.tsx', /onStartAgent/, 'builder:executor-start-prop', 'Builder keeps the internal Agent start path wired as one route.');
+  forbidText('src/features/product/containers/BuilderContainer.tsx', retiredBuilderAgentPattern, 'builder:no-retired-agent-start-prop', 'Builder must not restore the retired external-agent start prop.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateIdeas/, 'builder:generation-handler', 'Builder keeps generation handler wired.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onGenerateErrorWorkflow/, 'builder:repair-handler', 'Builder keeps repair handler wired.');
   requireText('src/features/product/containers/BuilderContainer.tsx', /onPublishDraftPr/, 'builder:publish-handler', 'Builder keeps Draft PR handler wired.');

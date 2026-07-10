@@ -22,7 +22,7 @@ function buildFullSnapshot() {
   snap = transitionAccessRequired(snap);
   snap = transitionAccessValidating(snap);
   snap = transitionAccessReady(snap);
-  snap = transitionExecutorStarting(snap, 'openhands');
+  snap = transitionExecutorStarting(snap, 'sovereign-agent');
   snap = transitionExecutorRunning(snap, 'job-abc');
   snap = transitionBranchCreated(snap, 'feature/test');
   snap = transitionCommitCreated(snap, 'abc1234');
@@ -76,7 +76,7 @@ describe('chatClaimGuard', () => {
     snap = transitionAccessRequired(snap);
     snap = transitionAccessValidating(snap);
     snap = transitionAccessReady(snap);
-    snap = transitionExecutorStarting(snap, 'openhands');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
     snap = transitionExecutorRunning(snap, 'job-abc');
     snap = transitionBranchCreated(snap, 'feature/my-branch');
     const result = checkChatClaim('Branch erstellt: feature/my-branch', snap);

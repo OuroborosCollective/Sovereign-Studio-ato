@@ -22,12 +22,12 @@ function validRequest() {
 }
 
 describe('agentWorkspaceRuntime', () => {
-  it('builds a Draft-PR-only OpenHands workspace request by default', () => {
+  it('builds a Draft-PR-only internal Sovereign Agent workspace request by default', () => {
     const request = validRequest();
 
-    expect(request.executor).toBe('openhands');
+    expect(request.executor).toBe('sovereign-local-runner');
     expect(request.draftPrOnly).toBe(true);
-    expect(request.workspaceHost).toBe('external-agent-runtime');
+    expect(request.workspaceHost).toBe('managed-ephemeral');
     expect(validateAgentWorkspaceRequest(request).allowed).toBe(true);
   });
 
@@ -94,7 +94,7 @@ describe('agentWorkspaceRuntime', () => {
 
     expect(decision.kind).toBe('code-execution');
     expect(decision.allowed).toBe(true);
-    expect(decision.executor).toBe('openhands');
+    expect(decision.executor).toBe('sovereign-local-runner');
   });
 
   it('blocks code work without repo or while another workspace is running', () => {
@@ -120,7 +120,7 @@ describe('agentWorkspaceRuntime', () => {
       diffSummary: 'Updated code with password=super-secret',
       blocker: 'No blocker. Authorization: Bearer abcdefghijklmnopqrstuvwxyz',
       draftPrUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/123',
-      workspaceInspectorUrl: 'https://openhands.example/workspaces/job-123',
+      workspaceInspectorUrl: 'https://sovereign-agent.example/workspaces/job-123',
       events: [{ level: 'info', message: 'token=sk-proj-abcdefghijklmnopqrstuvwxyz', at: 1 }],
     });
 

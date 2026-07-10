@@ -2,7 +2,7 @@
  * Hook-level tests for usePatternMemoryStore — Issue #4
  *
  * Covers:
- *  - OpenHands path: first draft_pr_ready saves pattern + appends chat line
+ *  - Sovereign Agent path: first draft_pr_ready saves pattern + appends chat line
  *  - Duplicate-guard: same PR URL never fires twice (within a session)
  *  - Second distinct PR URL fires again
  *  - Non-draft_pr_ready states are ignored
@@ -73,7 +73,7 @@ function readySnap(prUrl: string): AgentWorkSnapshot {
   // idle → intent_detected → executor_starting → executor_running → draft_pr_ready
   const base = createIdleSnapshot('test-trace');
   const withIntent = transitionIntentDetected(base, 'owner/repo', 'main');
-  const starting = transitionExecutorStarting(withIntent, 'openhands');
+  const starting = transitionExecutorStarting(withIntent, 'sovereign-agent');
   const running = transitionExecutorRunning(starting, 'job-test-123');
   return transitionDraftPrReady(running, prUrl);
 }
@@ -111,9 +111,9 @@ function makeOpts(overrides: Partial<UsePatternMemoryStoreOptions> = {}): {
   return { opts, chatLines, stores, setPatternMemoryStore };
 }
 
-// ── OpenHands path ───────────────────────────────────────────────────────────
+// ── Sovereign Agent path ───────────────────────────────────────────────────────────
 
-describe('OpenHands path (agentWorkSnapshot)', () => {
+describe('Sovereign Agent path (agentWorkSnapshot)', () => {
   const PR_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/1';
 
   it('saves a pattern when state transitions to draft_pr_ready', () => {

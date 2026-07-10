@@ -33,7 +33,7 @@ Chat input
 → worker/model route OR direct patch OR workspace executor OR Draft PR runtime
 ```
 
-OpenHands is an optional workspace/code executor. It is not the same thing as an LLM/provider route. It may use an LLM, but it works by operating in a repo workspace. It must not become the only path for small file changes.
+Sovereign Agent is an optional workspace/code executor. It is not the same thing as an LLM/provider route. It may use an LLM, but it works by operating in a repo workspace. It must not become the only path for small file changes.
 
 ## GitHub access truth
 
@@ -48,7 +48,7 @@ ready → GitHub write access is confirmed
 invalid/failed → block with reason
 ```
 
-GitHub-ready must stay ready even if OpenHands is missing. Missing executor capability is a separate blocker.
+GitHub-ready must stay ready even if Sovereign Agent is missing. Missing executor capability is a separate blocker.
 
 ## Capability truth
 
@@ -59,7 +59,7 @@ Future implementation should follow this split:
 | `free_chat` | explanation, advice, summaries | model route only |
 | `local-runtime-answer` | “bist du fertig?”, “warum?”, “andere Route?” | existing runtime state |
 | `direct_github_patch` | small README/docs edits | repo + validated GitHub access |
-| `workspace-executor` / `openhands` | multi-file code work, tests, build repair | isolated workspace capability |
+| `workspace-executor` / `sovereign-agent` | multi-file code work, tests, build repair | isolated workspace capability |
 | `draft-pr-runtime` | publish reviewable changes | validated GitHub access + reviewed diff |
 
 ## Drift prevention
@@ -68,7 +68,7 @@ Future agents must not:
 
 - create another main shell;
 - move truth into UI widgets;
-- treat OpenHands as the only write path;
+- treat Sovereign Agent as the only write path;
 - treat a worker answer as a completed code change;
 - use telemetry as proof of release readiness;
 - claim CI green when workflow runs or combined statuses are empty;

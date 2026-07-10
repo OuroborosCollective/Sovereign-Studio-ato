@@ -93,7 +93,7 @@ describe('sovereignSessionIntelligenceBridge', () => {
     });
 
     it('creates node for blocked tool', () => {
-      const node = createSovereignToolNode('openhands', 'openhands', 'blocked');
+      const node = createSovereignToolNode('sovereign-agent', 'sovereign-agent', 'blocked');
 
       expect(node.activation).toBe(-1);
     });
@@ -199,8 +199,8 @@ describe('sovereignSessionIntelligenceBridge', () => {
       const session = createMockSession({ status: 'running' });
       const observation = {
         id: 'obs-3',
-        toolName: 'openhands',
-        route: 'openhands' as const,
+        toolName: 'sovereign-agent',
+        route: 'sovereign-agent' as const,
         phase: 'started' as const,
         createdAt: Date.now(),
         event: {} as any,
@@ -247,7 +247,7 @@ describe('sovereignSessionIntelligenceBridge', () => {
     it('creates rewrite signal for strategy change', () => {
       const session = createMockSession({ status: 'running' });
 
-      const signal = createStrategyChangeLearningSignal(session, 'openhands', 'direct-patch');
+      const signal = createStrategyChangeLearningSignal(session, 'sovereign-agent', 'direct-patch');
 
       expect(signal.outcome).toBe('rewrite');
       expect(signal.score).toBe(1.0);

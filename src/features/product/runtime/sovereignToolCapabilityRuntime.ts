@@ -19,7 +19,7 @@ export type SovereignToolCapabilityId =
   | 'repo'
   | 'github_write'
   | 'direct_patch'
-  | 'openhands'
+  | 'sovereign-agent'
   | 'worker_chat'
   | 'workspace'
   | 'draft_pr';
@@ -37,7 +37,7 @@ export type SovereignCapabilityNextAction =
   | 'wait_for_validation'
   | 'repair_configuration'
   | 'run_direct_patch'
-  | 'start_openhands'
+  | 'start_agent'
   | 'start_worker_chat'
   | 'start_workspace'
   | 'create_draft_pr'
@@ -60,7 +60,7 @@ export interface SovereignToolCapabilityRegistry {
   readonly repo: SovereignToolCapabilityRecord;
   readonly githubWrite: SovereignToolCapabilityRecord;
   readonly directPatch: SovereignToolCapabilityRecord;
-  readonly openhands: SovereignToolCapabilityRecord;
+  readonly agent: SovereignToolCapabilityRecord;
   readonly workerChat: SovereignToolCapabilityRecord;
   readonly workspace: SovereignToolCapabilityRecord;
   readonly draftPr: SovereignToolCapabilityRecord;
@@ -72,7 +72,7 @@ export interface SovereignToolCapabilityInput {
   /** True when a raw token exists only in the caller's ephemeral ref/session. Never pass the token itself. */
   readonly githubTokenPresent: boolean;
   readonly directPatchSupported: boolean;
-  readonly openhandsConfigured: boolean;
+  readonly agentConfigured: boolean;
   readonly workerAvailable: boolean;
   readonly workspaceConfigured: boolean;
   readonly draftPrSupported: boolean;
@@ -194,29 +194,29 @@ export function buildSovereignToolCapabilityRegistry(
         requiredCapabilities: ['repo', 'github_write'],
       });
 
-  const openhands = input.repoReady && githubWriteReady && input.openhandsConfigured && !activeExecutor
+  const agent = input.repoReady && githubWriteReady && input.agentConfigured && !activeExecutor
     ? record({
-        id: 'openhands',
+        id: 'sovereign-agent',
         status: 'ready',
-        route: 'openhands',
-        label: 'OpenHands bereit',
-        reason: 'OpenHands darf nur mit geladenem Repo und validiertem GitHub-Schreibzugang starten.',
+        route: 'sovereign-agent',
+        label: 'Sovereign Agent bereit',
+        reason: 'Sovereign Agent darf nur mit geladenem Repo und validiertem GitHub-Schreibzugang starten.',
         canStart: true,
-        nextAction: 'start_openhands',
+        nextAction: 'start_agent',
         requiredCapabilities: ['repo', 'github_write'],
       })
     : record({
-        id: 'openhands',
-        status: activeExecutor ? 'blocked' : input.openhandsConfigured ? 'blocked' : 'unavailable',
-        route: 'openhands',
-        label: 'OpenHands nicht bereit',
+        id: 'sovereign-agent',
+        status: activeExecutor ? 'blocked' : input.agentConfigured ? 'blocked' : 'unavailable',
+        route: 'sovereign-agent',
+        label: 'Sovereign Agent nicht bereit',
         reason: activeExecutor
-          ? 'Ein Executor läuft bereits; OpenHands darf nicht parallel starten.'
+          ? 'Ein Executor läuft bereits; Sovereign Agent darf nicht parallel starten.'
           : !input.repoReady
-            ? 'OpenHands braucht einen geladenen Repo-Snapshot.'
+            ? 'Sovereign Agent braucht einen geladenen Repo-Snapshot.'
             : !githubWriteReady
-              ? 'OpenHands-Ausführung mit Schreibabsicht braucht GitHub-Schreibzugang.'
-              : 'OpenHands ist nicht konfiguriert.',
+              ? 'Sovereign Agent-Ausführung mit Schreibabsicht braucht GitHub-Schreibzugang.'
+              : 'Sovereign Agent ist nicht konfiguriert.',
         canStart: false,
         blocker: activeExecutor
           ? 'executor_active'
@@ -224,7 +224,7 @@ export function buildSovereignToolCapabilityRegistry(
             ? 'repo_missing'
             : !githubWriteReady
               ? 'github_access_missing'
-              : 'openhands_unavailable',
+              : 'agent_unavailable',
         nextAction: !input.repoReady
           ? 'load_repo'
           : !githubWriteReady
@@ -334,7 +334,7 @@ export function buildSovereignToolCapabilityRegistry(
     repo,
     githubWrite,
     directPatch,
-    openhands,
+    agent,
     workerChat,
     workspace,
     draftPr,
@@ -352,8 +352,8 @@ export function getSovereignToolCapability(
       return registry.githubWrite;
     case 'direct_patch':
       return registry.directPatch;
-    case 'openhands':
-      return registry.openhands;
+    case 'sovereign-agent':
+      return registry.agent;
     case 'worker_chat':
       return registry.workerChat;
     case 'workspace':
@@ -370,7 +370,7 @@ export function summarizeBlockedCapabilities(
     registry.repo,
     registry.githubWrite,
     registry.directPatch,
-    registry.openhands,
+    registry.agent,
     registry.workerChat,
     registry.workspace,
     registry.draftPr,

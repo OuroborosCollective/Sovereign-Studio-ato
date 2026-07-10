@@ -1,7 +1,7 @@
 """Sovereign Agent Runtime package.
 
 This package owns the neutral backend contract for Sovereign agent jobs.
-OpenHands may be one executor adapter, but the runtime truth is produced here.
+The internal sovereign-local-runner produces runtime truth here.
 """
 
 from .contracts import (  # noqa: F401

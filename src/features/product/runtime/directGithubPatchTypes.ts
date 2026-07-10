@@ -2,7 +2,7 @@
  * Direct GitHub Patch Runtime Types
  * 
  * Defines types for the Direct GitHub Patch route - a lightweight alternative
- * to OpenHands for small README/docs changes.
+ * to Sovereign Agent for small README/docs changes.
  * 
  * Security rules:
  * - Token is ephemeral in memory only (component ref), never persisted.

@@ -10,11 +10,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from .evidence_gate import EvidenceGateInput, EvidenceGateResult, evaluate_agent_evidence, evaluate_tool_result_evidence, evidence_gate_signal
+
 
 @dataclass
 class ToolEvent:
     """A single tool execution event.
-    
+
     Events are immutable once created and sanitized.
     No raw tokens, secrets, or auth headers are stored.
     """
@@ -73,11 +75,7 @@ def _sanitize_text(text: str) -> str:
 
 
 class ToolEventLog:
-    """Append-only log of tool execution events.
-    
-    Events are stored in memory and can be flushed to storage.
-    All events are sanitized before storage.
-    """
+    """Append-only log of tool execution events."""
 
     def __init__(self):
         self._events: list[ToolEvent] = []
@@ -106,14 +104,7 @@ class ToolEventLog:
         return event
 
     def tool_started(self, tool_name: str, call_id: str | None = None) -> ToolEvent:
-        """Log tool execution start."""
-        return self.add(
-            stage="tool_started",
-            level="info",
-            message=f"Tool '{tool_name}' execution started",
-            tool_name=tool_name,
-            call_id=call_id,
-        )
+        return self.add("tool_started", "info", f"Tool '{tool_name}' execution started", tool_name, call_id)
 
     def tool_completed(
         self,
@@ -122,107 +113,140 @@ class ToolEventLog:
         duration_ms: int | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> ToolEvent:
-        """Log tool execution completion."""
         return self.add(
-            stage="tool_completed",
-            level="success",
-            message=f"Tool '{tool_name}' execution completed",
-            tool_name=tool_name,
-            call_id=call_id,
-            duration_ms=duration_ms,
-            metadata=metadata,
+            "tool_completed",
+            "success",
+            f"Tool '{tool_name}' execution completed",
+            tool_name,
+            call_id,
+            duration_ms,
+            metadata,
         )
 
-    def tool_blocked(
-        self,
-        tool_name: str,
-        reason: str,
-        call_id: str | None = None,
-    ) -> ToolEvent:
-        """Log tool execution blocked by policy."""
+    def tool_blocked(self, tool_name: str, reason: str, call_id: str | None = None) -> ToolEvent:
         return self.add(
-            stage="tool_blocked",
-            level="warning",
-            message=f"Tool '{tool_name}' blocked: {reason}",
-            tool_name=tool_name,
-            call_id=call_id,
+            "tool_blocked",
+            "warning",
+            f"Tool '{tool_name}' blocked: {reason}",
+            tool_name,
+            call_id,
             metadata={"blocker": reason},
         )
 
-    def tool_error(
-        self,
-        tool_name: str,
-        error: str,
-        call_id: str | None = None,
-    ) -> ToolEvent:
-        """Log tool execution error."""
+    def tool_error(self, tool_name: str, error: str, call_id: str | None = None) -> ToolEvent:
         return self.add(
-            stage="tool_error",
-            level="error",
-            message=f"Tool '{tool_name}' error: {error}",
-            tool_name=tool_name,
-            call_id=call_id,
+            "tool_error",
+            "error",
+            f"Tool '{tool_name}' error: {error}",
+            tool_name,
+            call_id,
             metadata={"error": error},
         )
 
-    def tool_validation_failed(
-        self,
-        tool_name: str,
-        reason: str,
-        call_id: str | None = None,
-    ) -> ToolEvent:
-        """Log tool parameter validation failure."""
+    def tool_validation_failed(self, tool_name: str, reason: str, call_id: str | None = None) -> ToolEvent:
         return self.add(
-            stage="tool_validation_failed",
-            level="warning",
-            message=f"Tool '{tool_name}' validation failed: {reason}",
-            tool_name=tool_name,
-            call_id=call_id,
+            "tool_validation_failed",
+            "warning",
+            f"Tool '{tool_name}' validation failed: {reason}",
+            tool_name,
+            call_id,
             metadata={"validation_error": reason},
         )
 
     def list_all(self) -> list[ToolEvent]:
-        """Get all logged events."""
         return list(self._events)
 
     def count(self) -> int:
-        """Get the number of logged events."""
         return len(self._events)
 
     def clear(self) -> None:
-        """Clear all events (use with caution)."""
         self._events.clear()
 
     def to_dict_list(self) -> list[dict[str, Any]]:
-        """Convert all events to dictionaries."""
         return [e.to_dict() for e in self._events]
 
 
-def append_tool_result_to_job(
-    conn: Any,
-    job_id: str,
-    tool_result: dict[str, Any],
-) -> None:
-    """Append tool result as event to a job.
-    
-    Args:
-        conn: Database connection
-        job_id: Job ID
-        tool_result: Tool result dict with 'ok', 'output', 'error', etc.
-    """
-    from .job_store import append_agent_event
-    event = ToolEvent(
-        stage="tool_result",
-        level="success" if tool_result.get("ok") else "error",
-        message=tool_result.get("output", tool_result.get("error", "")),
-        tool_name=tool_result.get("tool"),
-        metadata={"result": tool_result},
+def _as_tool_dict(tool_result: Any) -> dict[str, Any]:
+    if hasattr(tool_result, "to_dict"):
+        return tool_result.to_dict()
+    if isinstance(tool_result, dict):
+        return tool_result
+    return {"ok": False, "tool": "unknown", "error": "Unsupported tool result shape"}
+
+
+def _tool_output(tool_result: Any) -> str | None:
+    if isinstance(tool_result, dict):
+        return tool_result.get("output") or tool_result.get("stdout")
+    return getattr(tool_result, "output", None) or getattr(tool_result, "stdout", None)
+
+
+def _tool_error(tool_result: Any) -> str | None:
+    if isinstance(tool_result, dict):
+        return tool_result.get("error") or tool_result.get("stderr") or tool_result.get("blocker")
+    return getattr(tool_result, "error", None) or getattr(tool_result, "stderr", None) or getattr(tool_result, "blocker", None)
+
+
+def _tool_status(tool_result: Any) -> str:
+    if isinstance(tool_result, dict):
+        if tool_result.get("blocked"):
+            return "blocked"
+        return "done" if tool_result.get("ok") else "error"
+    return str(getattr(tool_result, "status", "error"))
+
+
+def _evidence_from_tool_result(tool_result: Any) -> EvidenceGateResult:
+    status = _tool_status(tool_result)
+    changed_files = tuple(getattr(tool_result, "changed_files", ()) or _as_tool_dict(tool_result).get("changed_files", ()) or ())
+    diff_summary = getattr(tool_result, "diff_summary", None) or _as_tool_dict(tool_result).get("diff_summary")
+    test_summary = getattr(tool_result, "test_summary", None) or _as_tool_dict(tool_result).get("test_summary")
+    if status in ("blocked", "error"):
+        gate = evaluate_tool_result_evidence(_tool_output(tool_result), _tool_error(tool_result))
+    else:
+        gate = evaluate_agent_evidence(EvidenceGateInput(
+            changed_files=changed_files,
+            diff_summary=diff_summary,
+            test_summary=test_summary,
+            tool_status=status,
+        ))
+    setattr(gate, "allowed", gate.passed)
+    return gate
+
+
+def append_tool_result_to_job(conn: Any, job_id: str, tool_result: Any) -> EvidenceGateResult:
+    """Append tool result as event to a job and return its EvidenceGateResult."""
+    from .contracts import SovereignAgentEvent
+    from .job_store import append_agent_event, update_agent_job_state
+
+    payload = _as_tool_dict(tool_result)
+    status = _tool_status(tool_result)
+    level = "success" if status == "done" else "warning" if status == "blocked" else "error"
+    message = payload.get("output") or payload.get("error") or payload.get("blocker") or f"Tool {payload.get('tool', 'unknown')} {status}"
+    append_agent_event(conn, job_id, SovereignAgentEvent(
+        stage=f"agent_tool_{status}",
+        level=level,  # type: ignore[arg-type]
+        message=_sanitize_text(str(message))[:1200],
+    ))
+
+    gate = _evidence_from_tool_result(tool_result)
+    append_agent_event(conn, job_id, SovereignAgentEvent(
+        stage="agent_evidence_gate",
+        level="success" if gate.passed else "warning",
+        message=_sanitize_text(gate.reason)[:1200],
+    ))
+
+    update_agent_job_state(
+        conn,
+        job_id=job_id,
+        status="validating" if gate.passed and gate.can_prepare_draft_pr else "running" if status == "done" else "blocked",
+        changed_files=getattr(tool_result, "changed_files", None) or None,
+        diff_summary=getattr(tool_result, "diff_summary", None),
+        test_summary=getattr(tool_result, "test_summary", None),
+        blocker=None if status == "done" else gate.reason,
     )
-    append_agent_event(conn, job_id, event)
+    return gate
 
 
-def evidence_gate_to_agent_event(evidence_result: Any) -> ToolEvent:  # EvidenceGateResult
-    """Convert evidence gate result to agent event."""
+def evidence_gate_to_agent_event(evidence_result: Any) -> ToolEvent:
     return ToolEvent(
         stage="evidence_gate",
         level="success" if evidence_result.passed else "error",
@@ -234,37 +258,38 @@ def evidence_gate_to_agent_event(evidence_result: Any) -> ToolEvent:  # Evidence
     )
 
 
-def predictive_tool_signal(tool_event: ToolEvent) -> dict:
-    """Convert tool event to predictive signal for telemetry."""
-    return {
-        "signal": f"tool_{tool_event.level}",
-        "tool_name": tool_event.tool_name,
-        "stage": tool_event.stage,
-        "message": tool_event.sanitize_message(),
+def predictive_tool_signal(tool_result: Any, evidence_result: Any | None = None) -> dict:
+    payload = _as_tool_dict(tool_result)
+    signal = payload.get("predictive_signal") or f"tool_{payload.get('status', 'result')}"
+    result = {
+        "signal": signal,
+        "tool": payload.get("tool"),
+        "status": payload.get("status"),
+        "changedFiles": payload.get("changed_files", []),
+        "hasDiff": bool(payload.get("diff_summary")),
+        "hasTests": bool(payload.get("test_summary")),
+        "blocker": payload.get("blocker"),
     }
+    if evidence_result is not None:
+        result["evidence"] = evidence_gate_signal(evidence_result)
+    return result
 
 
-def tool_result_to_agent_events(
-    tool_result: dict[str, Any],
-) -> list[ToolEvent]:
-    """Convert tool result dict to agent events."""
-    events = []
-    
-    if tool_result.get("ok"):
-        events.append(ToolEvent(
+def tool_result_to_agent_events(tool_result: Any) -> list[ToolEvent]:
+    payload = _as_tool_dict(tool_result)
+    ok = bool(payload.get("ok"))
+    if ok:
+        return [ToolEvent(
             stage="tool_completed",
             level="success",
-            message=f"Tool '{tool_result.get('tool', 'unknown')}' completed",
-            tool_name=tool_result.get("tool"),
-            metadata={"output_preview": tool_result.get("output", "")[:200]},
-        ))
-    else:
-        events.append(ToolEvent(
-            stage="tool_failed",
-            level="error",
-            message=f"Tool '{tool_result.get('tool', 'unknown')}' failed: {tool_result.get('error', 'Unknown error')}",
-            tool_name=tool_result.get("tool"),
-            metadata={"error": tool_result.get("error", "")},
-        ))
-    
-    return events
+            message=f"Tool '{payload.get('tool', 'unknown')}' completed",
+            tool_name=payload.get("tool"),
+            metadata={"output_preview": str(payload.get("output", ""))[:200]},
+        )]
+    return [ToolEvent(
+        stage="tool_failed",
+        level="error",
+        message=f"Tool '{payload.get('tool', 'unknown')}' failed: {payload.get('error', 'Unknown error')}",
+        tool_name=payload.get("tool"),
+        metadata={"error": payload.get("error", "")},
+    )]

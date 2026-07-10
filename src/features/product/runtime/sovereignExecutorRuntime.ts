@@ -2,7 +2,7 @@
  * Sovereign Executor Runtime
  *
  * Step-1 contract for routing execution under the chat surface. This file does
- * not call OpenHands, Direct Patch, Worker, GitHub or shell commands. It only
+ * not call Sovereign Agent, Direct Patch, Worker, GitHub or shell commands. It only
  * decides which route is allowed from runtime truth.
  */
 
@@ -26,7 +26,7 @@ export type SovereignExecutorRoute =
   | 'local_status'
   | 'github_access'
   | 'direct_patch'
-  | 'openhands'
+  | 'sovereign-agent'
   | 'worker_chat'
   | 'workspace'
   | 'blocked';
@@ -204,8 +204,8 @@ function blockFromCapability(capabilityId: SovereignToolCapabilityId, capabiliti
     ? 'github_access'
     : capabilityId === 'direct_patch'
       ? 'direct_patch'
-      : capabilityId === 'openhands'
-        ? 'openhands'
+      : capabilityId === 'sovereign-agent'
+        ? 'sovereign-agent'
         : capabilityId === 'workspace'
           ? 'workspace'
           : 'blocked';
@@ -242,7 +242,7 @@ export function decideSovereignExecutorRoute(input: SovereignExecutorRouteInput)
   const repo = input.capabilities.repo;
   const githubWrite = input.capabilities.githubWrite;
   const directPatch = input.capabilities.directPatch;
-  const openhands = input.capabilities.openhands;
+  const agent = input.capabilities.agent;
   const workerChat = input.capabilities.workerChat;
   const workspace = input.capabilities.workspace;
 
@@ -335,14 +335,14 @@ export function decideSovereignExecutorRoute(input: SovereignExecutorRouteInput)
       });
     }
 
-    if (openhands.canStart) {
+    if (agent.canStart) {
       return allowedDecision({
-        route: 'openhands',
-        actionRoute: 'openhands',
-        reason: 'Komplexer Codeauftrag darf OpenHands starten, weil Repo und GitHub Write bereit sind.',
-        nextAllowedAction: 'start_openhands',
-        requiredCapability: 'openhands',
-        eventLabel: 'OpenHands Route gewählt',
+        route: 'sovereign-agent',
+        actionRoute: 'sovereign-agent',
+        reason: 'Komplexer Codeauftrag darf Sovereign Agent starten, weil Repo und GitHub Write bereit sind.',
+        nextAllowedAction: 'start_agent',
+        requiredCapability: 'sovereign-agent',
+        eventLabel: 'Sovereign Agent Route gewählt',
         workspaceValidation: workspaceValidation ?? undefined,
       });
     }
@@ -359,7 +359,7 @@ export function decideSovereignExecutorRoute(input: SovereignExecutorRouteInput)
       });
     }
 
-    return blockFromCapability('openhands', input.capabilities);
+    return blockFromCapability('sovereign-agent', input.capabilities);
   }
 
   if (workerChat.canStart) {

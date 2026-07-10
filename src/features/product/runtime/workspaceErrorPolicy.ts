@@ -68,7 +68,7 @@ export function classifyWorkspaceError(result: AgentWorkspaceResult): WorkspaceE
       kind: 'executor-not-ready',
       severity: 'blocked',
       retryable: true,
-      repairHint: 'OpenHands Executor ist nicht bereit. Prüfe die OpenHands Konfiguration.',
+      repairHint: 'Sovereign Agent Executor ist nicht bereit. Prüfe die Sovereign Agent Konfiguration.',
     };
   }
 
@@ -77,7 +77,7 @@ export function classifyWorkspaceError(result: AgentWorkspaceResult): WorkspaceE
       kind: 'backend-unavailable',
       severity: 'blocked',
       retryable: true,
-      repairHint: 'OpenHands Backend ist nicht verfügbar. Prüfe die Netzwerkverbindung.',
+      repairHint: 'Sovereign Agent Backend ist nicht verfügbar. Prüfe die Netzwerkverbindung.',
     };
   }
 

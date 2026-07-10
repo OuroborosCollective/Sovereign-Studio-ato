@@ -488,17 +488,17 @@ describe('Acceptance Criteria from Issue #503', () => {
 
   beforeEach(() => {
     runtime = new SovereignWorkspaceRuntime();
-    const adapter = createMockWorkspaceAdapter('openhands-mock', 'OpenHands Mock');
+    const adapter = createMockWorkspaceAdapter('sovereign-agent-mock', 'Sovereign Agent Mock');
     runtime.registerAdapter(adapter);
   });
 
-  it('AC1: Workspace Runtime is agent-neutral, not OpenHands-hardcoded', async () => {
+  it('AC1: Workspace Runtime is agent-neutral, not Sovereign Agent-hardcoded', async () => {
     // Runtime works without any specific adapter
     const emptyRuntime = new SovereignWorkspaceRuntime();
     expect(emptyRuntime.hasExecutorSync()).toBe(false);
     expect(await emptyRuntime.hasAvailableExecutor()).toBe(false);
 
-    // Adapter can be any ID, not hardcoded to 'openhands'
+    // Adapter can be any ID, not hardcoded to 'sovereign-agent'
     const customAdapter = createMockWorkspaceAdapter('custom-agent', 'Custom Agent');
     emptyRuntime.registerAdapter(customAdapter);
     expect(emptyRuntime.hasExecutorSync()).toBe(true);
@@ -634,10 +634,10 @@ describe('Acceptance Criteria from Issue #503', () => {
     expect(eventJson).not.toContain('sk-1234567890abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnop');
   });
 
-  it('AC8: OpenHands can be connected as first adapter', async () => {
+  it('AC8: Sovereign Agent can be connected as first adapter', async () => {
     // The mock adapter demonstrates that any adapter can be connected
-    const openhandsAdapter = createMockWorkspaceAdapter('openhands', 'OpenHands Executor');
-    runtime.registerAdapter(openhandsAdapter);
+    const agentAdapter = createMockWorkspaceAdapter('sovereign-agent', 'Sovereign Agent Executor');
+    runtime.registerAdapter(agentAdapter);
 
     expect(runtime.hasExecutorSync()).toBe(true);
     expect(await runtime.hasAvailableExecutor()).toBe(true);

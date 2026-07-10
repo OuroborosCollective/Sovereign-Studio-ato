@@ -19,7 +19,7 @@ are still valuable for debugging but must not compete with chat as primary UI.
   `src/features/product/runtime/builderWorkbenchStatus.ts`
   (`deriveWorkbenchStatusSlots` and friends) which computes the 5 slots purely
   from runtime state (`statusLogs`, `workerBlocker`, `chatRepoError`,
-  `openhandsJob`, `publishedPrUrl`). Empty states use explicit German labels
+  `sovereign-agentJob`, `publishedPrUrl`). Empty states use explicit German labels
   ("Noch keine Actions", "Noch keine bearbeiteten Dateien", "Keine Fehler",
   "Draft PR fehlt") — never mock/sample data.
 - The technical module lamps (`ModuleLamps`) still exist and render, but only

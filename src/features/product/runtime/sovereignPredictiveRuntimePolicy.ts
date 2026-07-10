@@ -87,7 +87,7 @@ const ALLOWED_ACTIONS = new Set([
   'run_worker',
   'run_direct_patch',
   'start_workspace',
-  'start_openhands',
+  'start_agent',
   'create_draft_pr',
   'show_blocker',
   'answer_locally',
@@ -121,7 +121,7 @@ const ALLOWED_SURFACES: ReadonlySet<PredictiveSurface> = new Set([
 
 const WRITE_LIKE_ACTIONS = new Set([
   'run_direct_patch',
-  'start_openhands',
+  'start_agent',
   'start_workspace',
   'create_draft_pr',
   'create_agent_job',

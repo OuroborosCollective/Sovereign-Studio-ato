@@ -49,7 +49,7 @@ describe('buildLocalStatusAnswer', () => {
   const base = {
     githubWriteAllowed: true,
     writeIntentBlockedByRepo: false,
-    openhandsRunning: false,
+    agentRunning: false,
     draftPrUrl: null,
     hasPatch: false,
     hasWorkerResponse: false,
@@ -66,7 +66,7 @@ describe('buildLocalStatusAnswer', () => {
   });
 
   it('reports Sovereign Agent still running', () => {
-    expect(buildLocalStatusAnswer({ ...base, openhandsRunning: true })).toMatch(/Sovereign Agent arbeitet noch/);
+    expect(buildLocalStatusAnswer({ ...base, agentRunning: true })).toMatch(/Sovereign Agent arbeitet noch/);
   });
 
   it('reports missing GitHub access honestly instead of claiming done', () => {

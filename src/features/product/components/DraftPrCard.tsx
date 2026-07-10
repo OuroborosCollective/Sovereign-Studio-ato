@@ -1,7 +1,7 @@
 /**
  * DraftPrCard - Compact inline card for Draft PR and build status
  *
- * Shows only real Draft PR state supplied by the OpenHands/GitHub runtime path.
+ * Shows only real Draft PR state supplied by the Sovereign Agent/GitHub runtime path.
  * The build badge defaults to unknown so the UI never invents a green run.
  */
 

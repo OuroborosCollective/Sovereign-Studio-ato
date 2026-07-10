@@ -87,14 +87,14 @@ describe('WorkerBlockerCard', () => {
   it('falls back to onRetry and hides Sovereign Agent handoff when the supplied message is a diagnostic', () => {
     const onRetry = vi.fn();
     const onRetryWithMessage = vi.fn();
-    const onOpenHandsInstead = vi.fn();
+    const onAgentInstead = vi.fn();
     render(
       <WorkerBlockerCard
         blocker={mockBlocker}
         onRetry={onRetry}
         onRetryWithMessage={onRetryWithMessage}
         onExplain={() => {}}
-        onOpenHandsInstead={onOpenHandsInstead}
+        onAgentInstead={onAgentInstead}
         userMessage={diagnosticText}
       />
     );
@@ -102,7 +102,7 @@ describe('WorkerBlockerCard', () => {
     fireEvent.click(screen.getByText('Retry'));
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(onRetryWithMessage).not.toHaveBeenCalled();
-    expect(onOpenHandsInstead).not.toHaveBeenCalled();
+    expect(onAgentInstead).not.toHaveBeenCalled();
   });
 
   it('shows Sovereign Agent action when user has code intent', () => {
@@ -111,7 +111,7 @@ describe('WorkerBlockerCard', () => {
         blocker={mockBlocker}
         onRetry={() => {}}
         onExplain={() => {}}
-        onOpenHandsInstead={(msg) => {}}
+        onAgentInstead={(msg) => {}}
         userMessage="fix this bug in the code"
       />
     );
@@ -124,7 +124,7 @@ describe('WorkerBlockerCard', () => {
         blocker={mockBlocker}
         onRetry={() => {}}
         onExplain={() => {}}
-        onOpenHandsInstead={(msg) => {}}
+        onAgentInstead={(msg) => {}}
         userMessage="hello world"
       />
     );

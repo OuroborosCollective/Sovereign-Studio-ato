@@ -70,10 +70,10 @@ describe('sovereignPredictiveActionRuntime', () => {
     });
 
     const prediction = predictNextRuntimeAction({
-      route: 'openhands',
+      route: 'sovereign-agent',
       capability: 'code_patch_plan',
       allowed: false,
-      reason: 'OpenHands Executor Route blockiert: GitHub-Zugang fehlt',
+      reason: 'Sovereign Agent Executor Route blockiert: GitHub-Zugang fehlt',
       blocker: 'github_access_missing',
       nextAction: 'validate_github_access',
     }, learned);
@@ -93,9 +93,9 @@ describe('sovereignPredictiveActionRuntime', () => {
     const learned = recordPredictiveActionOutcome(base, {
       blocker: 'executor_unavailable',
       predictedAction: 'start_workspace',
-      actualAction: 'start_openhands',
+      actualAction: 'start_agent',
       succeeded: true,
-      reason: 'OpenHands was connected instead of workspace.',
+      reason: 'Sovereign Agent was connected instead of workspace.',
       observedAt: 200,
       surface: 'executor',
     });

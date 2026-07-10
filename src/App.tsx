@@ -3,14 +3,14 @@ import React, { useMemo, useState } from 'react';
 import { BuilderContainer } from './features/product/containers/BuilderContainer';
 import { LlmAdapterProvider } from './features/product/contexts/LlmAdapterContext';
 import {
-  createOpenHandsEnterpriseClient,
-  type OpenHandsStartJobInput,
-} from './features/product/runtime/openhandsEnterpriseClient';
+  createSovereignAgentClient,
+  type SovereignAgentStartJobInput,
+} from './features/product/runtime/sovereignAgentClient';
 import {
-  createOpenHandsIdleSnapshot,
-  resolveOpenHandsEnterpriseConfig,
-  type OpenHandsJobSnapshot,
-} from './features/product/runtime/openhandsEnterpriseRuntime';
+  createSovereignAgentIdleSnapshot,
+  resolveSovereignAgentConfig,
+  type SovereignAgentJobSnapshot,
+} from './features/product/runtime/sovereignAgentRuntime';
 
 const CHAT_ONLY_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -20,28 +20,28 @@ const CHAT_ONLY_STYLE: React.CSSProperties = {
 
 export default function App() {
   const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag schreiben.');
-  const openhandsConfig = useMemo(() => resolveOpenHandsEnterpriseConfig(), []);
-  const openhandsClient = useMemo(
-    () => createOpenHandsEnterpriseClient({ config: openhandsConfig }),
-    [openhandsConfig],
+  const agentConfig = useMemo(() => resolveSovereignAgentConfig(), []);
+  const agentClient = useMemo(
+    () => createSovereignAgentClient({ config: agentConfig }),
+    [agentConfig],
   );
-  const [openhandsJob, setOpenHandsJob] = useState<OpenHandsJobSnapshot>(
-    () => createOpenHandsIdleSnapshot(),
+  const [agentJob, setAgentJob] = useState<SovereignAgentJobSnapshot>(
+    () => createSovereignAgentIdleSnapshot(),
   );
 
-  const startChatOnlyTask = async (nextMission: string, input?: Partial<OpenHandsStartJobInput>) => {
+  const startChatOnlyTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
     setMission(nextMission);
-    if (!openhandsConfig.ready) {
-      setOpenHandsJob({
+    if (!agentConfig.ready) {
+      setAgentJob({
         status: 'blocked',
         changedFiles: [],
-        events: [{ at: Date.now(), level: 'error', stage: 'agent-config', message: openhandsConfig.reason }],
-        lastError: openhandsConfig.reason,
+        events: [{ at: Date.now(), level: 'error', stage: 'agent-config', message: agentConfig.reason }],
+        lastError: agentConfig.reason,
       });
       return;
     }
     if (!input?.repoUrl) {
-      setOpenHandsJob({
+      setAgentJob({
         status: 'blocked',
         changedFiles: [],
         events: [{ at: Date.now(), level: 'error', stage: 'agent-request', message: 'Repository URL fehlt.' }],
@@ -49,7 +49,7 @@ export default function App() {
       });
       return;
     }
-    setOpenHandsJob({
+    setAgentJob({
       status: 'queued',
       repoUrl: input.repoUrl,
       branch: input.branch || 'main',
@@ -57,15 +57,15 @@ export default function App() {
       events: [{ at: Date.now(), level: 'info', stage: 'agent-request', message: 'Auftrag an die Sovereign Agent Runtime übergeben.' }],
     });
     try {
-      const snapshot = await openhandsClient.startJob({
+      const snapshot = await agentClient.startJob({
         repoUrl: input.repoUrl,
         branch: input.branch,
         mission: nextMission,
       });
-      setOpenHandsJob(snapshot);
+      setAgentJob(snapshot);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent Runtime Start fehlgeschlagen.';
-      setOpenHandsJob({
+      setAgentJob({
         status: 'failed',
         repoUrl: input.repoUrl,
         branch: input.branch || 'main',
@@ -77,14 +77,14 @@ export default function App() {
   };
 
   const cancelChatOnlyTask = async () => {
-    const jobId = openhandsJob.jobId;
-    if (!openhandsConfig.ready || !jobId) return;
+    const jobId = agentJob.jobId;
+    if (!agentConfig.ready || !jobId) return;
     try {
-      const snapshot = await openhandsClient.cancelJob(jobId);
-      setOpenHandsJob(snapshot);
+      const snapshot = await agentClient.cancelJob(jobId);
+      setAgentJob(snapshot);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent Runtime Stop fehlgeschlagen.';
-      setOpenHandsJob((current) => ({
+      setAgentJob((current) => ({
         ...current,
         status: 'failed',
         lastError: message,
@@ -93,7 +93,7 @@ export default function App() {
     }
   };
 
-  const openhandsIsRunning = openhandsJob.status === 'queued' || openhandsJob.status === 'provisioning' || openhandsJob.status === 'running' || openhandsJob.status === 'validating';
+  const agentIsRunning = agentJob.status === 'queued' || agentJob.status === 'provisioning' || agentJob.status === 'running' || agentJob.status === 'validating';
 
   return (
     <LlmAdapterProvider>
@@ -111,13 +111,13 @@ export default function App() {
           onGenerateIdeas={() => setMission('Ideen/Build')}
           onGenerateErrorWorkflow={() => setMission('Fehleranalyse')}
           onPublishDraftPr={() => setMission('Draft PR')}
-          openhandsReady={openhandsConfig.ready}
-          openhandsConfig={openhandsConfig}
-          openhandsJob={openhandsJob}
-          openhandsJobStatus={openhandsIsRunning ? 'Sovereign Agent Auftrag läuft' : openhandsJob.lastError}
-          openhandsIsRunning={openhandsIsRunning}
-          onStartOpenHands={startChatOnlyTask}
-          onCancelOpenHands={cancelChatOnlyTask}
+          agentReady={agentConfig.ready}
+          agentConfig={agentConfig}
+          agentJob={agentJob}
+          agentJobStatus={agentIsRunning ? 'Sovereign Agent Auftrag läuft' : agentJob.lastError}
+          agentIsRunning={agentIsRunning}
+          onStartAgent={startChatOnlyTask}
+          onCancelAgent={cancelChatOnlyTask}
         />
       </main>
     </LlmAdapterProvider>

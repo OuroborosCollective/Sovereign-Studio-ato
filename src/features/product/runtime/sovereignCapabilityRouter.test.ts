@@ -16,7 +16,7 @@ const FULL_READY_STATE: CapabilityRouterInput = {
   text: '',
   repoReady: true,
   githubAccessState: 'ready',
-  openhandsReady: true,
+  agentReady: true,
   directGitHubPatchReady: true,
   workspaceReady: true,
   hasActiveWorkerBlocker: false,
@@ -26,7 +26,7 @@ const GITHUB_MISSING_STATE: CapabilityRouterInput = {
   text: '',
   repoReady: true,
   githubAccessState: 'missing',
-  openhandsReady: false,
+  agentReady: false,
   directGitHubPatchReady: false,
   workspaceReady: false,
   hasActiveWorkerBlocker: false,
@@ -36,7 +36,7 @@ const GITHUB_VALIDATING_STATE: CapabilityRouterInput = {
   text: '',
   repoReady: true,
   githubAccessState: 'validating',
-  openhandsReady: true,
+  agentReady: true,
   directGitHubPatchReady: true,
   workspaceReady: true,
   hasActiveWorkerBlocker: false,
@@ -116,7 +116,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Passe README an',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: false,
+        agentReady: false,
         directGitHubPatchReady: false,
         workspaceReady: false,
         hasActiveWorkerBlocker: false,
@@ -142,21 +142,21 @@ describe('Sovereign Capability Router', () => {
       expect(decision.nextAction).toBe('start_workspace');
     });
 
-    it('routes explicit Draft-PR execution to openhands when explicitly requested', () => {
+    it('routes explicit Draft-PR execution to sovereign-agent when explicitly requested', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Bitte mit OpenHands einen Draft PR erstellen.',
+        text: 'Bitte mit Sovereign Agent einen Draft PR erstellen.',
         repoReady: true,
         githubAccessState: 'missing',
-        openhandsReady: true,
+        agentReady: true,
         directGitHubPatchReady: false,
         workspaceReady: false,
         hasActiveWorkerBlocker: false,
       });
 
-      expect(decision.route).toBe('openhands');
+      expect(decision.route).toBe('sovereign-agent');
       expect(decision.capability).toBe('draft_pr');
       expect(decision.allowed).toBe(true);
-      expect(decision.nextAction).toBe('start_openhands');
+      expect(decision.nextAction).toBe('start_agent');
     });
 
     it('routes complex code work to workspace-executor when available', () => {
@@ -164,7 +164,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Baue Feature X ein',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: true,
+        agentReady: true,
         directGitHubPatchReady: false,
         workspaceReady: true,
         hasActiveWorkerBlocker: false,
@@ -180,7 +180,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Baue Feature X ein und teste es',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: false,
+        agentReady: false,
         directGitHubPatchReady: false,
         workspaceReady: false,
         hasActiveWorkerBlocker: false,
@@ -196,7 +196,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Fixe den kleinen Button Bug',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: false,
+        agentReady: false,
         directGitHubPatchReady: false,
         workspaceReady: false,
         hasActiveWorkerBlocker: false,
@@ -215,7 +215,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Fixe den kleinen Button Bug',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: false,
+        agentReady: false,
         directGitHubPatchReady: false,
         workspaceReady: false,
         hasActiveWorkerBlocker: false,
@@ -234,7 +234,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Erstelle einen Draft PR',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: true,
+        agentReady: true,
         directGitHubPatchReady: false,
         workspaceReady: true,
         hasActiveWorkerBlocker: false,
@@ -265,7 +265,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Erstelle einen Draft PR',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: true,
+        agentReady: true,
         directGitHubPatchReady: false,
         workspaceReady: true,
         hasActiveWorkerBlocker: false,
@@ -282,7 +282,7 @@ describe('Sovereign Capability Router', () => {
         text: 'Erstelle einen Draft PR',
         repoReady: true,
         githubAccessState: 'ready',
-        openhandsReady: false,
+        agentReady: false,
         directGitHubPatchReady: false,
         workspaceReady: false,
         hasActiveWorkerBlocker: false,

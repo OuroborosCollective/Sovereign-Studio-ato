@@ -1,6 +1,6 @@
 # Sovereign Capability Routing
 
-This document prevents a recurring drift: treating one executor, especially OpenHands, as the only way Sovereign can do code work.
+This document prevents a recurring drift: treating one executor, especially Sovereign Agent, as the only way Sovereign can do code work.
 
 Sovereign should feel like one assistant to the user. Internally it must choose the smallest safe capability that can produce the next real result.
 
@@ -12,21 +12,21 @@ Action → Result → State → Next action allowed or blocked
 
 The UI does not create the route truth. Runtime does.
 
-## OpenHands is not an LLM route
+## Sovereign Agent is not an LLM route
 
 OpenAI, Cerebras and the Cloudflare Worker path are model or model-proxy routes. They can answer, analyze and propose text/code.
 
-OpenHands is different. It is a workspace/code executor. It may use an LLM, but its value is that it can work with files, a sandbox, command execution, tests, diffs and PR-oriented results.
+Sovereign Agent is different. It is a workspace/code executor. It may use an LLM, but its value is that it can work with files, a sandbox, command execution, tests, diffs and PR-oriented results.
 
 Therefore:
 
 ```text
 Worker/model route = thinks and answers.
-OpenHands/workspace route = works in a repo workspace.
+Sovereign Agent/workspace route = works in a repo workspace.
 Direct GitHub Patch route = applies small, validated file changes without a full workspace.
 ```
 
-OpenHands must remain optional. It must not be the only path after GitHub write access becomes ready.
+Sovereign Agent must remain optional. It must not be the only path after GitHub write access becomes ready.
 
 ## Capability types
 
@@ -53,7 +53,7 @@ export type SovereignRoute =
   | 'code-llm'
   | 'direct-github-patch'
   | 'workspace-executor'
-  | 'openhands'
+  | 'sovereign-agent'
   | 'draft-pr-runtime'
   | 'local-runtime-answer';
 ```
@@ -81,7 +81,7 @@ export interface CapabilityDecision {
     | 'run_worker'
     | 'run_direct_patch'
     | 'start_workspace'
-    | 'start_openhands'
+    | 'start_sovereign-agent'
     | 'create_draft_pr'
     | 'show_blocker';
 }
@@ -93,8 +93,8 @@ export interface CapabilityDecision {
 | --- | --- | --- | --- |
 | Normal question | none or repo snapshot | `worker-chat` | Start a write workspace. |
 | Status question after blocker | existing runtime state | `local-runtime-answer` | Re-call the broken worker blindly. |
-| README/docs mini-patch | repo + validated GitHub write | `direct-github-patch` | Require OpenHands by default. |
-| Multi-file source change | repo + workspace executor | `workspace-executor` or `openhands` | Pretend a chat answer changed files. |
+| README/docs mini-patch | repo + validated GitHub write | `direct-github-patch` | Require Sovereign Agent by default. |
+| Multi-file source change | repo + workspace executor | `workspace-executor` or `sovereign-agent` | Pretend a chat answer changed files. |
 | Draft PR | validated GitHub write + reviewed changes | `draft-pr-runtime` | Auto-merge. |
 | Workflow failure | workflow report | `workflow_watch` / repair route | Claim green when runs are empty. |
 
@@ -104,7 +104,7 @@ After commit `6146e75`, real GitHub access validation works. The next blocker is
 
 ```text
 GitHub access ready.
-OpenHands not configured.
+Sovereign Agent not configured.
 No file changed.
 ```
 
@@ -112,7 +112,7 @@ Correct runtime handling:
 
 ```text
 GitHub ready stays ready.
-OpenHands missing becomes executor_unavailable.
+Sovereign Agent missing becomes executor_unavailable.
 Direct GitHub Patch should be checked for small docs/README tasks.
 Next action must not be “open GitHub access” when access is already ready.
 ```
@@ -169,7 +169,7 @@ Workspace Runtime must be agent-neutral:
 
 ```text
 Sovereign Agent Workspace Runtime
-  ├─ OpenHands adapter
+  ├─ Sovereign Agent adapter
   ├─ future code-agent adapter
   ├─ test runner adapter
   └─ analysis-only snapshot adapter
@@ -184,7 +184,7 @@ Questions like these should be answered from runtime state:
 ```text
 Bist du fertig?
 Warum passiert nichts?
-Nutzen wir eine andere Route und nicht OpenHands?
+Nutzen wir eine andere Route und nicht Sovereign Agent?
 Wo ist der Patch?
 ```
 
@@ -224,7 +224,7 @@ Ergebnis oder nächster Blocker
 
 ## Implementation order
 
-1. Fix write-intent routing after GitHub-ready without OpenHands lock-in.
+1. Fix write-intent routing after GitHub-ready without Sovereign Agent lock-in.
 2. Add Direct GitHub Patch for README/docs.
 3. Add Sovereign Capability Router as the central decision function.
 4. Add active blocker registry and dedupe repeated route errors.
@@ -233,7 +233,7 @@ Ergebnis oder nächster Blocker
 Related issues:
 
 ```text
-#500 Runtime: route write intents after GitHub ready without OpenHands lock-in
+#500 Runtime: route write intents after GitHub ready without Sovereign Agent lock-in
 #501 Runtime: add Direct GitHub Patch route for small README/docs changes
 #502 Runtime: add Sovereign Capability Router for chat, patch, workspace and Draft PR routes
 #503 Runtime: design Sovereign Agent Workspace Runtime as agent-neutral isolated executor
@@ -256,7 +256,7 @@ BuilderContainer.test.tsx routing cases
 The most important assertions:
 
 - Chat questions do not start a write workspace.
-- README/docs mini-patches do not require OpenHands when Direct Patch is available.
-- GitHub-ready + OpenHands-missing is not a GitHub access blocker.
+- README/docs mini-patches do not require Sovereign Agent when Direct Patch is available.
+- GitHub-ready + Sovereign Agent-missing is not a GitHub access blocker.
 - Status questions use local runtime state.
 - No route decision contains secrets.
