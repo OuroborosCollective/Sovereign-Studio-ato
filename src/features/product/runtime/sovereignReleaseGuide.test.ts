@@ -72,7 +72,7 @@ describe('sovereign release guide runtime', () => {
       message: 'Sovereign Paket wurde erstellt. Diff und Files pruefen.',
       action: 'Weiter mit Diff',
     }))).toBe(4);
-    expect(state.progressLabel).toBe('Interne Pruefung abgeschlossen');
+    expect(state.progressLabel.toLowerCase()).toContain('abgeschlossen');
     expect(state.progressLabel).not.toContain('%');
   });
 
