@@ -72,7 +72,6 @@ import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { SecurityBlockCard } from "../components/SecurityBlockCard";
-import { SovereignAgentJobTruthCard } from "../components/SovereignAgentJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { CompactRepoSetupSheet } from "../components/CompactRepoSetupSheet";
 import { PatchDiffEvidenceSheet } from "../components/PatchDiffEvidenceSheet";
