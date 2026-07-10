@@ -48,12 +48,27 @@ jobs:
       - name: Validate and apply deterministic migration
         shell: bash
         run: |
-          set -euo pipefail
-          python -m py_compile scripts/patches/apply_sovereign_agent_internal_migration.py
-          python scripts/patches/apply_sovereign_agent_internal_migration.py
-          git diff --check
-          node --test scripts/sovereign-agent-internal-live-path.test.mjs
-          bash -n scripts/sovereign-backend/auto-migrate.sh
+          set +e
+          {
+            set -euo pipefail
+            python -m py_compile scripts/patches/apply_sovereign_agent_internal_migration.py
+            python scripts/patches/apply_sovereign_agent_internal_migration.py
+            git diff --check
+            node --test scripts/sovereign-agent-internal-live-path.test.mjs
+            bash -n scripts/sovereign-backend/auto-migrate.sh
+          } > /tmp/sovereign-agent-migration.log 2>&1
+          status=$?
+          cat /tmp/sovereign-agent-migration.log
+          exit $status
+
+      - name: Upload migration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-agent-migration-diagnostics
+          path: /tmp/sovereign-agent-migration.log
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Setup Node and pnpm
         uses: actions/setup-node@v4
