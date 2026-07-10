@@ -658,4 +658,200 @@ export async function executeTool(config: ToolConfig) {
 
 ---
 
-*Last Updated: 2026-07-08 (Agent Runtime)*
+## Skill: VPS Production Debugging
+
+### When to Use
+- Debugging running backend services on VPS
+- Investigating stuck jobs or failed deployments
+- Verifying fixes in production containers
+
+### Pattern: VPS SSH + Paramiko
+```python
+import paramiko
+
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect('46.202.154.25', username='root', password='2N00py123+++', timeout=30)
+
+# Execute commands in container
+stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend python3 -c "..."')
+
+# Copy file to container (use SFTP for binary files)
+sftp = client.open_sftp()
+with sftp.open('/app/fixed.py', 'wb') as f:
+    f.write(file_content.encode())
+sftp.close()
+client.exec_command('docker restart sovereign-backend')
+
+# Fetch file from container
+stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend cat /app/file.py')
+content = stdout.read().decode()
+
+client.close()
+```
+
+### Pattern: Multi-File Transfer
+```python
+files = {
+    '/app/agent_runtime/sovereign_local_runner.py': '/tmp/copy.py',
+    '/app/agent_runtime/tools/git_tool.py': '/tmp/git.py',
+}
+for src, dst in files.items():
+    stdin, stdout, stderr = client.exec_command(f'docker exec sovereign-backend cat {src}')
+    with open(dst, 'w') as f:
+        f.write(stdout.read().decode())
+```
+
+### Pattern: DB Query from Container
+```python
+script = '''#!/usr/bin/env python3
+import os, psycopg2
+conn = psycopg2.connect(
+    host=os.getenv("POSTGRES_HOST","supabase-db"),
+    port=int(os.getenv("POSTGRES_PORT","5432")),
+    database=os.getenv("POSTGRES_DB","postgres"),
+    user=os.getenv("POSTGRES_USER","postgres"),
+    password=os.getenv("POSTGRES_PASSWORD","")
+)
+cur = conn.cursor()
+cur.execute("SELECT job_id, status FROM sovereign_agent_jobs LIMIT 5")
+for r in cur.fetchall():
+    print(r)
+conn.close()'''
+
+with open('/tmp/query.py', 'w') as f:
+    f.write(script)
+with open('/tmp/query.py', 'rb') as f:
+    content = f.read()
+sftp = client.open_sftp()
+with sftp.open('/tmp/sovereign_backend/query.py', 'wb') as f:
+    f.write(content)
+sftp.close()
+client.exec_command('docker cp /tmp/sovereign_backend/query.py sovereign-backend:/tmp/query.py')
+stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend python3 /tmp/query.py')
+print(stdout.read().decode())
+```
+
+### Pattern: Container Verification
+```python
+# Check runner alive
+cmd = "docker exec sovereign-backend python3 -c \"import sys; sys.path.insert(0,'/app'); import app; rd=app._runner_daemon; print('OK' if rd and rd.is_alive() else 'DOWN')\""
+stdin, stdout, stderr = client.exec_command(cmd)
+print(stdout.read().decode())
+
+# Check health
+stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend python3 -c "import urllib.request; print(urllib.request.urlopen(\'http://127.0.0.1:8787/health\').read().decode())"')
+
+# Syntax check
+stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend python3 -m py_compile /app/filename.py')
+```
+
+### VPS Service Ports (46.202.154.25)
+| Service | Port | Access |
+|---------|------|--------|
+| sovereign-backend | 8788 | 127.0.0.1 only |
+| memory-gateway | 8088 | 127.0.0.1 only |
+| arelorian-engine | 3001 | 127.0.0.1 (MMORPG, NOT toolchain!) |
+| supabase-db | 5432 | Docker network |
+| milvus | 19530 | Docker network |
+| milvus-attu | 3000 | 32777 public |
+
+### Docker Commands Reference
+```bash
+# Container management
+docker restart sovereign-backend
+docker logs sovereign-backend --tail 50
+docker inspect sovereign-backend --format "{{.State.Status}}"
+docker exec sovereign-backend python3 -m py_compile /app/file.py
+
+# Port binding
+docker inspect sovereign-backend | grep -A2 "PortBindings"
+# Should show 127.0.0.1:8788->8787/tcp
+
+# Health check
+curl http://localhost:8788/health
+
+# File hash verification
+sha256sum /app/agent_runtime/sovereign_local_runner.py
+```
+
+### Fix Deployment Pattern
+1. Apply fix to local repo files
+2. Fetch fixed file from running container (already has fix)
+3. Write to local repo at correct path
+4. `python3 -m py_compile` to verify syntax
+5. `git add && git commit && git push`
+6. No rebuild needed for Python-only fixes (container already has fix)
+
+---
+
+## Skill: Job Lifecycle Debugging
+
+### When to Use
+- Jobs stuck in provisioning/running
+- No tool events appearing
+- Runtime not dispatching jobs
+
+### Debug Command Chain
+```python
+# 1. Check job status
+docker exec sovereign-backend python3 -c "
+import os, psycopg2
+conn = psycopg2.connect(host=os.getenv('POSTGRES_HOST','supabase-db'),port=int(os.getenv('POSTGRES_PORT','5432')),database=os.getenv('POSTGRES_DB','postgres'),user=os.getenv('POSTGRES_USER','postgres'),password=os.getenv('POSTGRES_PASSWORD',''))
+cur=conn.cursor()
+cur.execute('SELECT job_id, status, blocker FROM sovereign_agent_jobs WHERE status IN (\"provisioning\",\"running\") ORDER BY created_at')
+for r in cur.fetchall():
+    print(r)
+conn.close()"
+
+# 2. Check events
+docker exec supabase-db psql -U postgres -d postgres -c "
+SELECT stage, message FROM sovereign_agent_events 
+WHERE job_id = 'job-id' ORDER BY created_at"
+
+# 3. Check runner daemon
+docker exec sovereign-backend python3 -c "
+import sys; sys.path.insert(0,'/app')
+import app; rd=app._runner_daemon
+print('Daemon:', rd)
+print('Alive:', rd.is_alive() if rd else False)
+print('Jobs:', list(rd._job_threads.keys()) if rd else [])"
+```
+
+### Expected Event Sequence
+```
+1. job_started_by_runner (info)
+2. repo_clone_completed (success)
+3. repo_snapshot_ready (success) [if applicable]
+4. tool_completed OR tool_failed (for each LLM tool call)
+...
+N. job_completed_by_runner OR job_failed_*
+```
+
+### Common Failure Patterns
+| Pattern | Cause | Fix |
+|---------|-------|-----|
+| Only 1-2 events, no tool calls | `_job_events()` crash, git tool missing | Check AttributeError in logs, add GitUniversalTool |
+| No job_started event | Runner daemon not started | Check `_runner_daemon.is_alive()` |
+| All jobs stuck at provisioning | cloneRepo=false default | Set cloneRepo=true or dispatch manually |
+| file_read fails "not found" | Tools got workspace root, not repo path | Change to `repo_path = Path(ws)/job_id/repo` |
+
+### Canary Test Pattern
+```python
+# Create test job
+INSERT INTO sovereign_agent_jobs 
+  (job_id, user_id, executor, status, repo_url, branch, mission, workspace_id, 
+   draft_pr_only, allow_auto_merge, created_at, updated_at)
+VALUES 
+  ('canary-' || gen_random_uuid()::text, user_id, 'sovereign-local-runner', 
+   'provisioning', 'https://github.com/OWNER/REPO', 'main', 
+   'Call done with summary: test', 'canary-' || gen_random_uuid()::text,
+   TRUE, FALSE, NOW(), NOW());
+
+# Watch events grow (expect 3+ events within 60s)
+SELECT COUNT(*) FROM sovereign_agent_events WHERE job_id = 'canary-...';
+```
+
+---
+
+*Last Updated: 2026-07-10 (VPS Production Fix)*
