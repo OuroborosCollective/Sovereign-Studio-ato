@@ -391,6 +391,12 @@ import {
   buildSovereignRuntimeEvidenceLog,
   decideSovereignCompactShortcutExecution,
 } from "../runtime/sovereignCompactShortcutExecutionRuntime";
+import {
+  buildRepoEvidenceScopeKey,
+  buildRepositoryTargetKey,
+  selectRepoScopedOpenHandsJob,
+  selectRepositoryScopedPullRequestUrl,
+} from "../runtime/sovereignRepoEvidenceScopeRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { PaywallModal } from '../../billing/PaywallModal';
@@ -2437,6 +2443,12 @@ export function BuilderContainer({
   const chatLineIndexRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nowRef = useRef(Date.now());
+  const clearPatchEvidence = useCallback(() => {
+    setPatchDiffReport(null);
+    setPatchPreviewReady(false);
+    setPatchConfirmed(false);
+    setShowPatchDiffEvidence(false);
+  }, []);
 
   // ── AppControl state (additions)
   const [activeTab, setActiveTab] = useState<string>("chat");
@@ -2511,22 +2523,94 @@ export function BuilderContainer({
   const [userScrolledAway, setUserScrolledAway] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
 
+  const currentRepoScopeKey = useMemo(
+    () => buildRepoEvidenceScopeKey(chatRepoSnapshot),
+    [chatRepoSnapshot],
+  );
+  const currentRepositoryTargetKey = useMemo(
+    () => buildRepositoryTargetKey(chatRepoSnapshot),
+    [chatRepoSnapshot],
+  );
+  const scopedPublishedPrUrl = useMemo(
+    () => selectRepositoryScopedPullRequestUrl(publishedPrUrl, currentRepositoryTargetKey),
+    [currentRepositoryTargetKey, publishedPrUrl],
+  );
+  const scopedOpenHandsJob = useMemo(
+    () => selectRepoScopedOpenHandsJob(openhandsJob, chatRepoSnapshot),
+    [chatRepoSnapshot, openhandsJob],
+  );
+  const scopedOpenHandsIsRunning = Boolean(
+    scopedOpenHandsJob
+    && ['queued', 'provisioning', 'running', 'validating'].includes(scopedOpenHandsJob.status),
+  );
+
   // ── Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
     createGitHubAccessSnapshot(),
   );
+  const [validatedGitHubTargetKey, setValidatedGitHubTargetKey] = useState<string | null>(null);
   const pendingWriteIntentRef = useRef<string | null>(null);
-  const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
+  const currentRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
+  currentRepoScopeKeyRef.current = currentRepoScopeKey;
+  const isCurrentRepoScope = useCallback(
+    (scopeKey: string | null) => Boolean(scopeKey && currentRepoScopeKeyRef.current === scopeKey),
+    [],
+  );
+  const currentRepositoryTargetKeyRef = useRef<string | null>(currentRepositoryTargetKey);
+  currentRepositoryTargetKeyRef.current = currentRepositoryTargetKey;
+  const githubWriteAllowed = Boolean(
+    currentRepositoryTargetKey
+    && validatedGitHubTargetKey === currentRepositoryTargetKey
+    && canPerformGitHubWrite(githubAccessState),
+  );
+  const effectiveGitHubAccessState = githubAccessState.state === 'ready' && !githubWriteAllowed
+    ? 'missing'
+    : githubAccessState.state;
+  const effectiveGitHubAccessSnapshot = useMemo(
+    () => effectiveGitHubAccessState === githubAccessState.state
+      ? githubAccessState
+      : createGitHubAccessSnapshot(),
+    [effectiveGitHubAccessState, githubAccessState],
+  );
   
   // #501: Store validated token in memory for Direct Patch content loading
   // Token is kept only for the current session (component lifetime)
   // SECURITY: Never persisted to sessionStorage/localStorage
   const githubTokenRef = useRef<string | null>(null);
+  const previousRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
     () => createIdleSnapshot(`sovereign-${Date.now()}`),
   );
+
+  useEffect(() => {
+    const previousScopeKey = previousRepoScopeKeyRef.current;
+    if (previousScopeKey === currentRepoScopeKey) return;
+    previousRepoScopeKeyRef.current = currentRepoScopeKey;
+
+    clearPatchEvidence();
+    setOpenWorkbenchSlot(null);
+    setShowRepoExplorer(false);
+    setAgentWorkSnapshot(createIdleSnapshot(`sovereign-${Date.now()}`));
+
+    const accessMatchesCurrentRepo = Boolean(
+      currentRepositoryTargetKey
+      && validatedGitHubTargetKey === currentRepositoryTargetKey,
+    );
+    if (!accessMatchesCurrentRepo) {
+      githubTokenRef.current = null;
+      pendingWriteIntentRef.current = null;
+      setValidatedGitHubTargetKey(null);
+      setGitHubAccessState(createGitHubAccessSnapshot());
+      setShowGitHubAccessOverride(false);
+    }
+  }, [
+    clearPatchEvidence,
+    currentRepoScopeKey,
+    currentRepositoryTargetKey,
+    validatedGitHubTargetKey,
+  ]);
 
   // ── Issue #520: Integration Intent Draft State
   // Shows draft card for recognized integration tasks before execution
@@ -2534,21 +2618,21 @@ export function BuilderContainer({
     createInitialDraftState,
   );
 
-  // ── Issue #445: Sync AgentWorkSnapshot from openhandsJob transitions
+  // ── Issue #445: Sync AgentWorkSnapshot only from the current repo/branch job.
   useEffect(() => {
-    if (!openhandsJob) return;
-    
-    // #501: Clear token when repo changes or is unloaded
-    // Token is only valid for the loaded repo
-    if (!chatRepoSnapshot) {
-      githubTokenRef.current = null;
+    if (!scopedOpenHandsJob) {
+      if (openhandsJob && openhandsJob.status !== 'idle') {
+        setAgentWorkSnapshot(createIdleSnapshot(`sovereign-${Date.now()}`));
+      }
+      return;
     }
+
     const repo = chatRepoSnapshot
       ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
       : null;
     setAgentWorkSnapshot((prev) => {
       let snap = prev;
-      if (openhandsJob.status === 'queued' || openhandsJob.status === 'running') {
+      if (scopedOpenHandsJob.status === 'queued' || scopedOpenHandsJob.status === 'running') {
         if (snap.state === 'idle') {
           snap = transitionIntentDetected(
             snap,
@@ -2559,33 +2643,29 @@ export function BuilderContainer({
         if (snap.state === 'intent_detected') {
           snap = transitionExecutorStarting(snap, 'sovereign-agent');
         }
-        if (snap.state === 'executor_starting' && openhandsJob.jobId) {
-          snap = transitionExecutorRunning(snap, openhandsJob.jobId);
+        if (snap.state === 'executor_starting' && scopedOpenHandsJob.jobId) {
+          snap = transitionExecutorRunning(snap, scopedOpenHandsJob.jobId);
         }
       }
-      // Priority: failed/blocked are terminal states, must be checked BEFORE draftPrUrl
-      // Otherwise a failed job with a stale draftPrUrl would show as 'draft_pr_ready'
-      if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
+      if (scopedOpenHandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
         snap = transitionFailed(snap, 'Sovereign Agent Runtime fehlgeschlagen.');
       }
-      if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
+      if (scopedOpenHandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
         snap = transitionBlocked(snap, 'Sovereign Agent Runtime blockiert.');
       }
-      // draftPrUrl only transitions to ready if no terminal failure state exists
-      if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
-        snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
-        // Patch wurde committed → Vorschau-State auf "bestätigt" wechseln
+      if (scopedOpenHandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
+        snap = transitionDraftPrReady(snap, scopedOpenHandsJob.draftPrUrl);
         if (patchPreviewReady) {
           setPatchPreviewReady(false);
           setPatchConfirmed(true);
         }
       }
-      if (openhandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
+      if (scopedOpenHandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
         snap = createIdleSnapshot(`sovereign-${Date.now()}`);
       }
       return snap;
     });
-  }, [openhandsJob, chatRepoSnapshot]);
+  }, [chatRepoSnapshot, openhandsJob, patchPreviewReady, scopedOpenHandsJob]);
 
   // ── Slash command menu state (Issue #428)
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
@@ -2623,15 +2703,17 @@ export function BuilderContainer({
   const sovereignAgentStartAvailable = Boolean(openhandsReady && onStartOpenHands);
   const executorIntent = useMemo(() => classifySovereignExecutorIntent(wishText), [wishText]);
   const runtimeEvidenceLog = useMemo(
-    () => buildSovereignRuntimeEvidenceLog(actionStream.events, openhandsJob?.events ?? []),
-    [actionStream.events, openhandsJob?.events],
+    () => buildSovereignRuntimeEvidenceLog(actionStream.events, scopedOpenHandsJob?.events ?? []),
+    [actionStream.events, scopedOpenHandsJob?.events],
   );
-  const clearPatchEvidence = useCallback(() => {
-    setPatchDiffReport(null);
-    setPatchPreviewReady(false);
-    setPatchConfirmed(false);
-    setShowPatchDiffEvidence(false);
-  }, []);
+  const hasScopedWorkerResponse = useMemo(
+    () => actionStream.events.some((event) =>
+      event.route === 'worker'
+      && event.kind === 'llm_response_received'
+      && event.state === 'done'
+    ),
+    [actionStream.events],
+  );
 
   // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
   // derived purely from runtime state, never fabricated. Fronts the technical
