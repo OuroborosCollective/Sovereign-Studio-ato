@@ -4,13 +4,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def replace_exact(relative: str, old: str, new: str) -> None:
+def replace_exact(relative: str, old: str, new: str, expected: int = 1) -> None:
     target = ROOT / relative
     content = target.read_text(encoding='utf-8')
     count = content.count(old)
-    if count != 1:
-        raise RuntimeError(f'{relative}: expected one occurrence, found {count}: {old!r}')
-    target.write_text(content.replace(old, new, 1), encoding='utf-8')
+    if count != expected:
+        raise RuntimeError(f'{relative}: expected {expected} occurrence(s), found {count}: {old!r}')
+    target.write_text(content.replace(old, new), encoding='utf-8')
 
 
 def main() -> None:
@@ -35,7 +35,12 @@ def main() -> None:
         "  return value === 'managed-ephemeral' || value === 'self-hosted-runner' || value === 'external-agent-runtime';",
         "  return value === 'managed-ephemeral' || value === 'self-hosted-runner';",
     )
-    replace_exact(runtime, "    executor: input.executor || 'sovereign-agent',", "    executor: input.executor || 'sovereign-local-runner',")
+    replace_exact(
+        runtime,
+        "    executor: input.executor || 'sovereign-agent',",
+        "    executor: input.executor || 'sovereign-local-runner',",
+        expected=2,
+    )
     replace_exact(runtime, "    workspaceHost: input.workspaceHost || 'external-agent-runtime',", "    workspaceHost: input.workspaceHost || 'managed-ephemeral',")
 
     test_file = 'src/features/product/runtime/agentWorkspaceRuntime.test.ts'
