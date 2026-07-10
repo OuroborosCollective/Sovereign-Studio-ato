@@ -71,6 +71,7 @@ def main() -> None:
     for relative in [
         'src/features/product/components/WorkerBlockerCard.tsx',
         'src/features/product/components/WorkerBlockerCard.test.tsx',
+        'src/features/product/containers/BuilderContainer.tsx',
     ]:
         target = ROOT / relative
         content = target.read_text(encoding='utf-8')
@@ -81,6 +82,33 @@ def main() -> None:
         ]:
             content = content.replace(old, new)
         target.write_text(content, encoding='utf-8')
+
+    registry = ROOT / 'src/features/launcher/launcherRegistry.ts'
+    registry_lines = registry.read_text(encoding='utf-8').splitlines()
+    agent_entry_lines = [line for line in registry_lines if 'agentToolEntry' in line]
+    if len(agent_entry_lines) != 1:
+        raise RuntimeError(f'launcherRegistry.ts: expected one orphan agentToolEntry, found {len(agent_entry_lines)}')
+    registry.write_text('\n'.join(line for line in registry_lines if 'agentToolEntry' not in line) + '\n', encoding='utf-8')
+
+    replace_exact(
+        'src/features/product/runtime/sovereignCapabilityRouter.ts',
+        "    agent: 'Sovereign Agent Executor Route',",
+        "    'sovereign-agent': 'Sovereign Agent Executor Route',",
+        expected=2,
+    )
+
+    client_test = ROOT / 'src/features/product/runtime/sovereignAgentClient.test.ts'
+    client_test_content = client_test.read_text(encoding='utf-8')
+    old_fetcher = 'const fetcher = vi.fn(async () =>'
+    if client_test_content.count(old_fetcher) != 3:
+        raise RuntimeError(f'sovereignAgentClient.test.ts: expected three fetcher mocks, found {client_test_content.count(old_fetcher)}')
+    client_test.write_text(
+        client_test_content.replace(
+            old_fetcher,
+            'const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>',
+        ),
+        encoding='utf-8',
+    )
 
     for relative in ['backend/agent_runtime/routes.py', 'scripts/sovereign-backend/agent_runtime/routes.py']:
         target = ROOT / relative
