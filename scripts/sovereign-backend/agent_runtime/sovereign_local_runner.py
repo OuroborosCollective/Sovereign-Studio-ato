@@ -419,7 +419,7 @@ def run_job_to_completion(
 
 
 POLL_INTERVAL = int(os.getenv("SOVEREIGN_RUNNER_POLL_SECS", "5"))
-ENABLED = os.getenv("SOVEREIGN_RUNNER_ENABLED", "true").lower() == "true"
+ENABLED = os.getenv("SOVEREIGN_RUNNER_ENABLED", "false").lower() == "true"
 
 
 class SovereignRunnerDaemon(threading.Thread):

@@ -90,6 +90,7 @@ def clone_repo_into_workspace(
                 events=(_event("repo_clone_blocked", "warning", "Workspace does not exist."),),
                 blocker="Workspace does not exist.",
             )
+        repo_path.mkdir(parents=True, exist_ok=True)
         if any(repo_path.iterdir()):
             return GitWorkspaceResult(
                 status="blocked",
