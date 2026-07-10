@@ -68,6 +68,12 @@ def main() -> None:
     test_content = test_content.replace("expect(decision.executor).toBe('sovereign-agent');", "expect(decision.executor).toBe('sovereign-local-runner');")
     test_target.write_text(test_content, encoding='utf-8')
 
+    replace_exact(
+        'src/features/product/containers/BuilderContainer.test.tsx',
+        '    expect(screen.getByText(/Sovereign Agent arbeitet/i)).toBeDefined();',
+        '    expect(screen.getAllByTitle("läuft").length).toBeGreaterThan(0);',
+    )
+
     for relative in [
         'src/features/product/components/WorkerBlockerCard.tsx',
         'src/features/product/components/WorkerBlockerCard.test.tsx',
