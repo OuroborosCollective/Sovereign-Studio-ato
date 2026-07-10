@@ -236,6 +236,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git restore --source=HEAD --staged --worktree .github/workflows/sovereign-agent-backend.yml
           rm -f scripts/patches/apply_sovereign_agent_internal_migration.py
           rm -f scripts/patches/finalize_sovereign_agent_internal_contract.py
           rm -f migration-diagnostic.txt
