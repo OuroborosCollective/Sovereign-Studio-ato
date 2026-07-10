@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, Brain, Gauge, Settings } from 'lucide-react';
 import type { LauncherEntry, LauncherToolProps } from '../../launcherRegistry';
+import {
+  createCoverageCheckingEvidence,
+  deriveCoverageInspectionEvidence,
+  deriveHealthInspectionEvidence,
+  deriveMemoryInspectionEvidence,
+  deriveSettingsInspectionEvidence,
+  useSovereignToolInspectionStore,
+  type SovereignToolInspectionEvidence,
+} from '../../../product/runtime/sovereignToolInspectionRuntime';
 
 const C = {
   bg: '#0e1116',
@@ -11,7 +20,6 @@ const C = {
   green: '#34d399',
   amber: '#fbbf24',
   rose: '#fb7185',
-  sky: '#22d3ee',
 } as const;
 
 function Shell({
@@ -69,7 +77,14 @@ function Row({
   );
 }
 
+function toneForEvidence(evidence: SovereignToolInspectionEvidence): 'ok' | 'warn' | 'bad' {
+  if (evidence.outcome === 'ready') return 'ok';
+  if (evidence.outcome === 'failed') return 'bad';
+  return 'warn';
+}
+
 function canUseLocalStorage(): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     const key = '__sovereign_storage_check__';
     window.localStorage.setItem(key, '1');
@@ -80,46 +95,69 @@ function canUseLocalStorage(): boolean {
   }
 }
 
+function countRelevantMemoryKeys(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    return Object.keys(window.localStorage)
+      .filter((key) => /memory|pattern|sovereign/i.test(key))
+      .length;
+  } catch {
+    return 0;
+  }
+}
+
 export function SovereignSettingsTool(_props: LauncherToolProps) {
   const storageReady = canUseLocalStorage();
   const language = typeof navigator === 'undefined' ? 'unknown' : navigator.language || 'unknown';
   const online = typeof navigator === 'undefined' ? false : navigator.onLine;
+  const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
+  const evidence = useMemo(
+    () => deriveSettingsInspectionEvidence({ storageReady, online, language }),
+    [language, online, storageReady],
+  );
+
+  useEffect(() => {
+    recordEvidence('settings', evidence);
+  }, [evidence, recordEvidence]);
 
   return (
     <Shell
       title="Settings"
       subtitle="Sichtbare App-Regeln und sichere Session-Fähigkeiten. Keine Secrets werden angezeigt."
     >
+      <Row label="Prüfergebnis" value={`${evidence.statusLabel} · ${evidence.reason}`} tone={toneForEvidence(evidence)} />
       <Row label="Surface" value="Chat-first · Inspector nur Nebenfläche" tone="ok" />
       <Row label="Merge Policy" value="Draft PR erlaubt · Auto-Merge nicht erlaubt" tone="ok" />
       <Row label="Storage" value={storageReady ? 'localStorage verfügbar' : 'localStorage blockiert'} tone={storageReady ? 'ok' : 'warn'} />
       <Row label="Client" value={`Sprache: ${language} · Netzwerk: ${online ? 'online' : 'offline'}`} tone={online ? 'ok' : 'warn'} />
-      <Row label="Nächste Aktion" value="Für Account, Credits oder Zugang das Profil bzw. GitHub-Access-Tool öffnen." />
+      <Row label="Nächste Aktion" value={evidence.nextAction} />
     </Shell>
   );
 }
 
 export function SovereignMemoryTool(_props: LauncherToolProps) {
-  const memoryKeys = useMemo(() => {
-    try {
-      return Object.keys(window.localStorage).filter((key) => /memory|pattern|sovereign/i.test(key));
-    } catch {
-      return [];
-    }
-  }, []);
+  const storageReady = canUseLocalStorage();
+  const relevantKeyCount = useMemo(() => countRelevantMemoryKeys(), []);
+  const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
+  const evidence = useMemo(
+    () => deriveMemoryInspectionEvidence({ storageReady, relevantKeyCount }),
+    [relevantKeyCount, storageReady],
+  );
+
+  useEffect(() => {
+    recordEvidence('memory', evidence);
+  }, [evidence, recordEvidence]);
 
   return (
     <Shell
       title="Memory"
-      subtitle="Zeigt nur echte lokale Speicher-Hinweise. Inhalte und Secrets werden nicht ausgegeben."
+      subtitle="Zeigt nur echte lokale Speicher-Hinweise. Schlüsselnamen, Inhalte und Secrets werden nicht ausgegeben."
     >
-      <Row label="Lokale Memory Keys" value={`${memoryKeys.length} relevante Schlüssel gefunden`} tone={memoryKeys.length ? 'ok' : 'warn'} />
-      <Row
-        label="Sichtbarkeit"
-        value={memoryKeys.length ? memoryKeys.slice(0, 6).join(' · ') : 'Keine lokalen Memory-/Pattern-Schlüssel im Browser gefunden'}
-      />
+      <Row label="Prüfergebnis" value={`${evidence.statusLabel} · ${evidence.reason}`} tone={toneForEvidence(evidence)} />
+      <Row label="Lokale Memory Hinweise" value={`${relevantKeyCount} relevante Schlüssel gezählt`} tone={relevantKeyCount ? 'ok' : 'warn'} />
+      <Row label="Sichtbarkeit" value="Schlüsselnamen und Inhalte bleiben verborgen." tone="ok" />
       <Row label="Regel" value="Memory ist Diagnose-/Kontextfläche. Die Produktwahrheit bleibt Runtime-State." tone="ok" />
-      <Row label="Nächste Aktion" value="Für Pattern-Details den Inspector öffnen oder eine konkrete Memory-Frage in den Chat stellen." />
+      <Row label="Nächste Aktion" value={evidence.nextAction} />
     </Shell>
   );
 }
@@ -127,51 +165,79 @@ export function SovereignMemoryTool(_props: LauncherToolProps) {
 export function SovereignHealthTool(_props: LauncherToolProps) {
   const storageReady = canUseLocalStorage();
   const online = typeof navigator === 'undefined' ? false : navigator.onLine;
-  const serviceWorkerState = typeof navigator !== 'undefined' && 'serviceWorker' in navigator ? 'verfügbar' : 'nicht verfügbar';
+  const serviceWorkerAvailable = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
+  const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
+  const evidence = useMemo(
+    () => deriveHealthInspectionEvidence({ online, storageReady, serviceWorkerAvailable }),
+    [online, serviceWorkerAvailable, storageReady],
+  );
+
+  useEffect(() => {
+    recordEvidence('health', evidence);
+  }, [evidence, recordEvidence]);
 
   return (
     <Shell
       title="Health"
       subtitle="Kleine echte Client-Checks statt grüner Behauptungen. Server-/CI-Status muss separat geprüft werden."
     >
+      <Row label="Prüfergebnis" value={`${evidence.statusLabel} · ${evidence.reason}`} tone={toneForEvidence(evidence)} />
       <Row label="Netzwerk" value={online ? 'Browser meldet online' : 'Browser meldet offline'} tone={online ? 'ok' : 'warn'} />
       <Row label="Storage" value={storageReady ? 'Browser-Speicher schreibbar' : 'Browser-Speicher blockiert'} tone={storageReady ? 'ok' : 'bad'} />
-      <Row label="Service Worker" value={serviceWorkerState} tone={serviceWorkerState === 'verfügbar' ? 'ok' : 'warn'} />
+      <Row label="Service Worker" value={serviceWorkerAvailable ? 'verfügbar' : 'nicht verfügbar'} tone={serviceWorkerAvailable ? 'ok' : 'warn'} />
       <Row label="Wahrheitsgrenze" value="Dieser Check ersetzt keine CI-, Worker- oder VPS-Prüfung." />
+      <Row label="Nächste Aktion" value={evidence.nextAction} />
     </Shell>
   );
 }
 
 export function SovereignCoverageTool(_props: LauncherToolProps) {
-  const [state, setState] = useState<'loading' | 'ready' | 'missing'>('loading');
-  const [detail, setDetail] = useState('Coverage Map wird geprüft…');
+  const [evidence, setEvidence] = useState<SovereignToolInspectionEvidence>(() => createCoverageCheckingEvidence());
+  const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
 
   useEffect(() => {
     let alive = true;
+    const checking = createCoverageCheckingEvidence();
+    setEvidence(checking);
+    recordEvidence('coverage', checking);
+
     async function loadCoverage() {
       try {
         const response = await fetch('/generated/test-coverage-map.json', { cache: 'no-store' });
         if (!alive) return;
         if (!response.ok) {
-          setState('missing');
-          setDetail(`Coverage Map nicht erreichbar · HTTP ${response.status}`);
+          const failed = deriveCoverageInspectionEvidence({
+            ok: false,
+            detail: `Coverage Map nicht erreichbar · HTTP ${response.status}`,
+          });
+          setEvidence(failed);
+          recordEvidence('coverage', failed);
           return;
         }
-        const payload = await response.json();
-        const fileCount = Array.isArray(payload?.files)
+        const payload: unknown = await response.json();
+        if (!alive) return;
+        const fileCount = typeof payload === 'object' && payload !== null && 'files' in payload && Array.isArray(payload.files)
           ? payload.files.length
-          : Object.keys(payload ?? {}).length;
-        setState('ready');
-        setDetail(`Coverage Map geladen · ${fileCount} Einträge erkannt`);
+          : typeof payload === 'object' && payload !== null
+            ? Object.keys(payload).length
+            : 0;
+        const ready = deriveCoverageInspectionEvidence({ ok: true, fileCount });
+        setEvidence(ready);
+        recordEvidence('coverage', ready);
       } catch (error) {
         if (!alive) return;
-        setState('missing');
-        setDetail(error instanceof Error ? error.message : 'Coverage Map konnte nicht gelesen werden.');
+        const failed = deriveCoverageInspectionEvidence({
+          ok: false,
+          detail: error instanceof Error ? error.message : 'Coverage Map konnte nicht gelesen werden.',
+        });
+        setEvidence(failed);
+        recordEvidence('coverage', failed);
       }
     }
+
     void loadCoverage();
     return () => { alive = false; };
-  }, []);
+  }, [recordEvidence]);
 
   return (
     <Shell
@@ -180,11 +246,11 @@ export function SovereignCoverageTool(_props: LauncherToolProps) {
     >
       <Row
         label="Coverage Map"
-        value={detail}
-        tone={state === 'ready' ? 'ok' : state === 'loading' ? 'warn' : 'bad'}
+        value={`${evidence.statusLabel} · ${evidence.reason}`}
+        tone={toneForEvidence(evidence)}
       />
       <Row label="Regel" value="Keine harten Prozentwerte anzeigen, solange sie nicht aus echter Coverage berechnet sind." tone="ok" />
-      <Row label="Nächste Aktion" value="Wenn die Map fehlt: Release-/Coverage-Job prüfen und nicht grün behaupten." />
+      <Row label="Nächste Aktion" value={evidence.nextAction} />
     </Shell>
   );
 }
