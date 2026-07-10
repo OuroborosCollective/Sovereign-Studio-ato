@@ -1,0 +1,81 @@
+name: Apply Builder Runtime Causality
+
+on:
+  push:
+    branches:
+      - sovereign/builder-runtime-causality-complete
+    paths:
+      - .github/workflows/apply-builder-runtime-causality.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: builder-runtime-causality
+  cancel-in-progress: false
+
+jobs:
+  apply-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sovereign/builder-runtime-causality-complete
+          fetch-depth: 0
+
+      - name: Reconstruct and verify exact patch
+        shell: bash
+        run: |
+          cat scripts/patches/builder-runtime-causality.patch.part{00..04} > /tmp/builder-runtime-causality.patch
+          git apply --check /tmp/builder-runtime-causality.patch
+          git apply /tmp/builder-runtime-causality.patch
+          git diff --check
+          test "$(git diff --name-only | wc -l)" -eq 2
+          git diff --name-only | grep -Fx 'src/features/product/containers/BuilderContainer.tsx'
+          git diff --name-only | grep -Fx 'src/features/product/containers/BuilderContainer.test.tsx'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript
+        run: pnpm run type-check
+
+      - name: Targeted runtime and Builder tests
+        run: >-
+          pnpm exec vitest run
+          src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts
+          src/features/product/runtime/sovereignToolShortcutRuntime.test.ts
+          src/features/product/components/SovereignToolLauncher.test.tsx
+          src/features/product/containers/BuilderContainer.test.tsx
+
+      - name: Production web build and static audit
+        run: pnpm run build:web
+
+      - name: Commit exact patched result
+        shell: bash
+        run: |
+          rm -f scripts/patches/builder-runtime-causality.patch.part{00..04}
+          rm -f .github/workflows/apply-builder-runtime-causality.yml
+          git diff --check
+          git config user.name 'Sovereign Runtime Guard'
+          git config user.email 'actions@users.noreply.github.com'
+          git add src/features/product/containers/BuilderContainer.tsx \
+                  src/features/product/containers/BuilderContainer.test.tsx \
+                  scripts/patches/builder-runtime-causality.patch.part00 \
+                  scripts/patches/builder-runtime-causality.patch.part01 \
+                  scripts/patches/builder-runtime-causality.patch.part02 \
+                  scripts/patches/builder-runtime-causality.patch.part03 \
+                  scripts/patches/builder-runtime-causality.patch.part04 \
+                  .github/workflows/apply-builder-runtime-causality.yml
+          git commit -m 'fix(builder): close compact shortcut causality gaps'
+          git push origin HEAD:sovereign/builder-runtime-causality-complete
