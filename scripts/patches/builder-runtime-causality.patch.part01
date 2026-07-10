@@ -1,0 +1,158 @@
+0,12 @@
+       kind: 'agent_job_requested',
+       route: 'agent-job',
+       label: 'Sovereign Agent Job angefragt',
+-      detail: 'Startanforderung wurde an die Runtime übergeben. Warte auf bestätigten Job-State.',
++      detail: `Startanforderung für ${chatRepoSnapshot.repoUrl}#${chatRepoSnapshot.branch} wurde an die Runtime übergeben. Warte auf bestätigten Job-State.`,
+       state: 'queued',
+     });
+ 
+     try {
+-      await onStartOpenHands(clean);
++      await onStartOpenHands(clean, { repoUrl: chatRepoSnapshot.repoUrl, branch: chatRepoSnapshot.branch });
+       return true;
+     } catch (error) {
+       const message = error instanceof Error ? error.message : 'Sovereign Agent Start fehlgeschlagen.';
+@@ -3208,7 +3248,9 @@
+       });
+       appendChatLine({
+         role: 'assistant',
+-        text: `Sovereign Agent Runtime konnte nicht gestartet werden.\nGrund: ${message}\nEs wurde kein Job gestartet und keine Datei geändert.`,
++        text: `Sovereign Agent Runtime konnte nicht gestartet werden.
++Grund: ${message}
++Es wurde kein Job gestartet und keine Datei geändert.`,
+       });
+       addLog('error', `Sovereign Agent start failed: ${message}`, 'router');
+       return false;
+@@ -3829,6 +3871,7 @@
+ Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+               });
+               
++              setPatchDiffReport(diffReport);
+               setPatchPreviewReady(true);
+               setPatchConfirmed(false);
+               setLastAnswerWasLocal(true);
+@@ -4256,6 +4299,22 @@
+     );
+   };
+ 
++  const handleRepoSetupLoad = () => {
++    const clean = repoSetupUrl.trim();
++    if (!clean) {
++      setRepoSetupError('GitHub Repository URL fehlt.');
++      return;
++    }
++    if (!parseDevChatGithubUrl(clean)) {
++      const reason = 'Ungültige GitHub Repository URL. Erwartet wird https://github.com/owner/repository.';
++      setRepoSetupError(reason);
++      appendActionEvent(buildBlockedActionEvent({ route: 'repo', label: 'Repo-Setup blockiert', detail: reason, kind: 'blocked' }));
++      return;
++    }
++    setRepoSetupError(null);
++    void _processSubmit(clean);
++  };
++
+   const handlePresetActionSelect = (actionId: SovereignPresetActionId) => {
+     const action = getSovereignPresetAction(actionId);
+     const submitted = buildSovereignPresetActionSubmission(action, {
+@@ -4272,6 +4331,23 @@
+     });
+ 
+     if (!gate.canStart) {
++      if (action.requiresRepo && !effectiveRepoReady) {
++        setRepoSetupError(null);
++        setShowRepoSetup(true);
++        appendActionEvent(buildBlockedActionEvent({
++          route: 'repo',
++          label: `Preset wartet auf Repo: ${action.shortLabel}`,
++          detail: `${gate.reason} ${gate.nextAction}`,
++          kind: 'blocked',
++        }));
++        appendChatLine({
++          role: 'assistant',
++          text: `${action.icon} ${action.label}
++Status: ${gate.reason}
++Das echte Repo-Setup wurde geöffnet.`,
++        });
++        return;
++      }
+       if (action.requiresGithubWrite && effectiveRepoReady && !githubWriteAllowed) {
+         pendingWriteIntentRef.current = submitted;
+         setShowGitHubAccessOverride(true);
+@@ -4779,6 +4855,10 @@
+                                 role: 'assistant',
+                                 text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+                               });
++                              setPatchDiffReport(buildGeneratedFileDiffReport(
++                                [{ path: result.result.targetPath, content: result.result.proposedContent, reason: 'Direct GitHub Patch generiert' }],
++                                [{ path: result.result.targetPath, content: result.result.baseContent, found: true }],
++                              ));
+                               setPatchPreviewReady(true);
+                               setPatchConfirmed(false);
+                               setLastAnswerWasLocal(true);
+@@ -5087,6 +5167,10 @@
+                             role: 'assistant',
+                             text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+                           });
++                          setPatchDiffReport(buildGeneratedFileDiffReport(
++                            [{ path: directPatchResult.result.targetPath, content: directPatchResult.result.proposedContent, reason: 'Direct GitHub Patch generiert' }],
++                            [{ path: directPatchResult.result.targetPath, content: directPatchResult.result.baseContent, found: true }],
++                          ));
+                           setPatchPreviewReady(true);
+                           setPatchConfirmed(false);
+                           setLastAnswerWasLocal(true);
+@@ -5294,113 +5378,78 @@
+           {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
+           <SovereignToolLauncher
+             runtimeContext={{
+-              repoReady: Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot,
+-              repoFileCount: chatRepoSnapshot && !isPartialRepoSnapshot
++              repoReady: effectiveRepoReady,
++              repoFileCount: effectiveRepoReady && chatRepoSnapshot
+                 ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
+                 : 0,
+               hasDiffEvidence: Boolean(
+-                patchPreviewReady ||
+-                patchConfirmed ||
++                patchDiffReport ||
+                 (openhandsJob?.changedFiles?.length ?? 0) > 0,
+               ),
+               githubAccessState: githubAccessState.state,
+               executorAvailable: sovereignAgentStartAvailable,
+               hasExecutorMission: Boolean(wishText.trim()),
+-              runtimeLogCount: statusLogs.length,
++              executorIntent,
++              runtimeLogCount: runtimeEvidenceLog.length,
+             }}
+             onSelect={(toolId: ToolId) => {
+-              if (toolId === 'repo' || toolId === 'files') {
+-                const snapshotReady = Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot;
++              const decision = decideSovereignCompactShortcutExecution({
++                id: toolId,
++                repoSnapshotReady: effectiveRepoReady,
++                repoFileCount: effectiveRepoReady && chatRepoSnapshot
++                  ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
++                  : 0,
++                changedFiles: openhandsJob?.changedFiles ?? [],
++                patchDiffAvailable: Boolean(patchDiffReport),
++                githubAccessState: githubAccessState.state,
++                executorAvailable: sovereignAgentStartAvailable,
++                executorIntent,
++                runtimeEventCount: runtimeEvidenceLog.length,
++              });
++              if (decision.event) appendActionEvent(decision.event);
++
++              if (decision.surface === 'repo-setup') {
++                setRepoSetupError(null);
++                setShowRepoSetup(true);
++                return;
++              }
++              if (decision.surface === 'repo-explorer' || decision.surface === 'files-explorer') {
+                 setShowRepoExplorer(true);
+-                appendActionEvent({
+-                  kind: snapshotReady ? 'done' : 'blocked',
+-                  route: toolId === 'files' ? 'files' : 'repo',
+-                  label: snapshotReady
+-                    ? toolId === 'files' ? 'Datei-Explorer geöffnet' : 'Repo-Explorer geöffnet'
+-                    : 'Repo-Setup erforderlich',
+-                  detail: s
