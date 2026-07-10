@@ -45,7 +45,7 @@ describe('SovereignToolLauncher', () => {
       />,
     );
     fireEvent.click(screen.getByRole('menuitem', { name: 'Files' }));
-    expect(onSelect).toHaveBeenCalledWith('repo');
+    expect(onSelect).toHaveBeenCalledWith('files');
   });
 
   it('blocks Diff and Executor without their required evidence', () => {
