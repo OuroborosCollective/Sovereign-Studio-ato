@@ -1,0 +1,341 @@
+:
+-    """Collect git status from workspace."""
+-    return run_workspace_shell_command(workspace_path, "git status --porcelain")
++    """Collect git status with the dedicated git tool."""
++    return GitStatusTool().execute({}, workspace_path).to_dict()
+ 
+ 
+ def collect_git_diff_summary(workspace_path: str) -> dict:
+-    """Collect git diff summary from workspace."""
+-    return run_workspace_shell_command(workspace_path, "git diff --stat")
++    """Collect git diff with the dedicated git tool."""
++    return GitDiffTool().execute({}, workspace_path).to_dict()
+diff --git a/backend/agent_runtime/tools/base.py b/backend/agent_runtime/tools/base.py
+index ccfed00eeada16a3d0949a7d68ac6228c29ba58a..7a23ffe2d89f4efa4da577cbc621b0c9c46ccca1 100644
+--- a/backend/agent_runtime/tools/base.py
++++ b/backend/agent_runtime/tools/base.py
+@@ -228,7 +228,7 @@ def _register_default_tools(registry: ToolRegistry) -> None:
+     """Register all default Sovereign tools."""
+     from .file_tool import FileReadTool, FileWriteTool
+     from .shell_tool import ShellTool
+-    from .git_tool import GitStatusTool, GitDiffTool, GitAddTool, GitUniversalTool
++    from .git_tool import GitStatusTool, GitDiffTool, GitAddTool
+     from .diff_tool import DiffTool
+     from .test_tool import TestTool
+ 
+@@ -238,6 +238,5 @@ def _register_default_tools(registry: ToolRegistry) -> None:
+     registry.register(GitStatusTool())
+     registry.register(GitDiffTool())
+     registry.register(GitAddTool())
+-    registry.register(GitUniversalTool())
+     registry.register(DiffTool())
+     registry.register(TestTool())
+diff --git a/backend/agent_runtime/tools/file_tool.py b/backend/agent_runtime/tools/file_tool.py
+index 30f00a832874c36f3f7ed49caa274ad121ed227b..218ff0672018982315cb4d5740928b50215fca03 100644
+--- a/backend/agent_runtime/tools/file_tool.py
++++ b/backend/agent_runtime/tools/file_tool.py
+@@ -11,6 +11,7 @@ from pathlib import Path
+ from typing import Any
+ 
+ from .base import ToolBase, ToolResult, ToolPolicyError
++from ..tool_policy import validate_tool_path
+ 
+ 
+ class FileReadTool(ToolBase):
+@@ -40,15 +41,15 @@ class FileReadTool(ToolBase):
+         rel_path = params.get("path", "")
+         max_bytes = params.get("max_bytes", 1_000_000)
+ 
+-        if not rel_path or rel_path.startswith("/"):
+-            return ToolResult(
+-                status="blocked",
+-                blocker="File path must be relative and non-empty",
+-            )
++        policy = validate_tool_path(str(rel_path), write=False)
++        if not policy.allowed:
++            return ToolResult(status="blocked", blocker="; ".join(policy.messages))
+ 
+         try:
+-            target = Path(workspace_path) / rel_path
+-            target = target.resolve()
++            base = Path(workspace_path).resolve()
++            target = (base / str(rel_path)).resolve()
++            if target != base and base not in target.parents:
++                return ToolResult(status="blocked", blocker="Path escape attempt detected")
+ 
+             if not target.exists():
+                 return ToolResult(status="error", error=f"File not found: {rel_path}")
+@@ -109,24 +110,15 @@ class FileWriteTool(ToolBase):
+         content = params.get("content", "")
+         append = params.get("append", False)
+ 
+-        if not rel_path or rel_path.startswith("/"):
+-            return ToolResult(
+-                status="blocked",
+-                blocker="File path must be relative and non-empty",
+-            )
+-
+-        forbidden_paths = {".git", ".env", "node_modules", "__pycache__", ".pytest_cache"}
+-        if any(fp in rel_path.split("/") for fp in forbidden_paths):
+-            return ToolResult(
+-                status="blocked",
+-                blocker=f"Writing to '{rel_path}' is forbidden by policy",
+-            )
++        policy = validate_tool_path(str(rel_path), write=True)
++        if not policy.allowed:
++            return ToolResult(status="blocked", blocker="; ".join(policy.messages))
+ 
+         try:
+-            target = Path(workspace_path) / rel_path
+-            target = target.resolve()
++            base = Path(workspace_path).resolve()
++            target = (base / str(rel_path)).resolve()
+ 
+-            if not str(target).startswith(str(Path(workspace_path).resolve())):
++            if target != base and base not in target.parents:
+                 return ToolResult(
+                     status="blocked",
+                     blocker="Path escape attempt detected",
+@@ -187,17 +179,15 @@ class FileListTool(ToolBase):
+         recursive = params.get("recursive", False)
+         pattern = params.get("pattern", "*")
+ 
+-        if rel_path.startswith("/"):
+-            return ToolResult(
+-                status="blocked",
+-                blocker="Path must be relative",
+-            )
++        policy = validate_tool_path(str(rel_path), write=False)
++        if not policy.allowed:
++            return ToolResult(status="blocked", blocker="; ".join(policy.messages))
+ 
+         try:
+-            target = Path(workspace_path) / rel_path
+-            target = target.resolve()
++            base = Path(workspace_path).resolve()
++            target = (base / str(rel_path)).resolve()
+ 
+-            if not str(target).startswith(str(Path(workspace_path).resolve())):
++            if target != base and base not in target.parents:
+                 return ToolResult(
+                     status="blocked",
+                     blocker="Path escape attempt detected",
+diff --git a/backend/agent_runtime/tools/shell_tool.py b/backend/agent_runtime/tools/shell_tool.py
+index 8e8d2cb32f98801dfdeef1668e3351084411f5b0..ef58878b53a772698ac3ade95329d2a1bb066fb2 100644
+--- a/backend/agent_runtime/tools/shell_tool.py
++++ b/backend/agent_runtime/tools/shell_tool.py
+@@ -1,183 +1,118 @@
+-"""Shell tool for Sovereign Agent Runtime.
+-
+-Provides safe shell command execution within workspace boundaries.
+-All commands are validated against workspace policy and blocked
+-if they attempt to access forbidden paths or commands.
+-"""
++"""Allowlisted command execution for the Sovereign Agent Runtime."""
+ 
+ from __future__ import annotations
+ 
+ import os
++import shlex
+ import subprocess
+ from pathlib import Path
+-import re
+ from typing import Any
+ 
+-from .base import ToolBase, ToolResult, ToolPolicyError
+-
+-
+-# Forbidden commands that could compromise the runtime
+-_FORBIDDEN_COMMANDS = frozenset({
+-    "sudo", "su", "passwd", "chpasswd", "adduser", "useradd", "userdel",
+-    "curl", "wget", "nc", "netcat", "ncat", "socat",
+-    "ssh", "scp", "sftp", "rsync",
+-    "mount", "umount", "fdisk", "mkfs", "dd",
+-    "shutdown", "reboot", "halt", "poweroff", "init",
+-    "kill", "killall", "pkill", "killall5",
+-    "chmod", "chown", "chgrp", "setfacl",
+-    "iptables", "ip", "ifconfig", "route", "netstat",
+-    "docker", "podman", "containerd",
+-    "python", "python3", "node", "ruby", "perl", "php",
+-})
+-
+-# Forbidden patterns in command arguments
+-_FORBIDDEN_PATTERNS = [
+-    (r"/etc/passwd", "Access to /etc/passwd blocked"),
+-    (r"/etc/shadow", "Access to /etc/shadow blocked"),
+-    (r"\.env(?:\s|$)", "Direct .env access blocked"),
+-    (r">\s*/dev/", "Device file write blocked"),
+-    (r"2>&1\s*&\s*$", "Background redirect to /dev blocked"),
+-    (r"\$\([^)]*\)", "Command substitution blocked"),
+-    (r"`[^`]+`", "Backtick command substitution blocked"),
+-]
++from ..contracts import sanitize_agent_text
++from ..tool_policy import validate_shell_command
++from .base import ToolBase, ToolPolicyError, ToolResult
++
++_SAFE_EXTRA_ENV = frozenset({"CI", "FORCE_COLOR", "NODE_ENV", "PYTHONUNBUFFERED"})
++
++
++def _minimal_environment(work_dir: Path, extra_env: dict[str, Any]) -> dict[str, str]:
++    env = {
++        "PATH": os.getenv("PATH", "/usr/local/bin:/usr/bin:/bin"),
++        "HOME": str(work_dir),
++        "USER": "agent",
++        "PWD": str(work_dir),
++        "LANG": "C.UTF-8",
++        "LC_ALL": "C.UTF-8",
++    }
++    for key, value in extra_env.items():
++        if key in _SAFE_EXTRA_ENV and isinstance(value, (str, int, bool)):
++            env[key] = str(value)
++    return env
+ 
+ 
+ class ShellTool(ToolBase):
+-    """Execute shell commands within workspace boundaries."""
++    """Execute one allowlisted argv command without a shell."""
+ 
+     name = "shell"
+-    description = "Execute a shell command in the workspace"
++    description = "Execute one allowlisted command in the workspace"
+     parameters = {
+-        "command": {
+-            "type": "string",
+-            "required": True,
+-            "description": "Shell command to execute",
+-        },
+-        "cwd": {
+-            "type": "string",
+-            "required": False,
+-            "description": "Working directory (relative to workspace)",
+-        },
+-        "timeout": {
+-            "type": "integer",
+-            "required": False,
+-            "default": 60,
+-            "description": "Command timeout in seconds (default: 60)",
+-        },
+-        "env": {
+-            "type": "object",
+-            "required": False,
+-            "description": "Additional environment variables",
+-        },
++        "command": {"type": "string", "required": True},
++        "cwd": {"type": "string", "required": False},
++        "timeout": {"type": "integer", "required": False, "default": 60},
++        "env": {"type": "object", "required": False},
+     }
+     requires_workspace = True
+ 
++    @staticmethod
++    def _parse_command(command: str) -> list[str]:
++        try:
++            argv = shlex.split(command, posix=True)
++        except ValueError as exc:
++            raise ToolPolicyError(f"Invalid command syntax: {exc}") from exc
++        policy = validate_shell_command(argv)
++        if not policy.allowed:
++            raise ToolPolicyError("; ".join(policy.messages) or "Command blocked by policy")
++        return argv
++
+     def validate(self, params: dict[str, Any]) -> None:
+         super().validate(params)
+-        command = params.get("command", "")
+-        self._validate_command(command)
+-
+-    def _validate_command(self, command: str) -> None:
+-        """Validate command against security policy."""
+-        if not command or not command.strip():
+-            raise ToolPolicyError("Empty command not allowed")
+-
+-        tokens = command.strip().split()
+-        if not tokens:
+-            raise ToolPolicyError("Empty command not allowed")
+-
+-        first_cmd = tokens[0]
+-        if first_cmd in _FORBIDDEN_COMMANDS:
+-            raise ToolPolicyError(f"Forbidden command: {first_cmd}")
+-
+-        for pattern, message in _FORBIDDEN_PATTERNS:
+-            if re.search(pattern, command, re.IGNORECASE):
+-                raise ToolPolicyError(message)
+-
+-        if re.search(r"\|", command):
+-            pipe_cmds = command.split("|")
+-            for cmd in pipe_cmds:
+-                cmd = cmd.strip().split()[0] if cmd.strip() else ""
+-                if cmd in _FORBIDDEN_COMMANDS:
+-                    raise ToolPolicyError(f"Forbidden command in pipeline: {cmd}")
+-
+-        if re.search(r"&\s*$", command.strip()):
+-            raise ToolPolicyError("Background commands (&) not allowed")
++        command = params.get("command")
++        if not isinstance(command, str):
++            raise ToolPolicyError("Command must be a string")
++        self._parse_command(command)
+ 
+     def execute(self, params: dict[str, Any], workspace_path: str | None = None) -> ToolResult:
+         if not workspace_path:
+             return ToolResult(status="blocked", blocker="No workspace path provided")
+ 
+-        command = params.get("command", "")
+-        cwd = params.get("cwd", ".")
+-        timeout = min(params.get("timeout", 60), 300)
+-        extra_env = params.get("env", {})
++        base = Path(workspace_path).resolve()
++        cwd = str(params.get("cwd") or ".")
++        work_dir = (base / cwd).resolve()
++        if work_dir != base and base not in work_dir.parents:
++            return ToolResult(status="blocked", blocker="Working directory outside workspace")
++        if not work_dir.is_dir():
++            return ToolResult(status="blocked", blocker="Working directory does not exist")
+ 
+-        if not workspace_path:
+-            return ToolResult(status="blocked", blocker="No workspace provided")
+-
+-        work_dir = Path(workspace_path)
+-        if cwd and cwd != ".":
+-            work_dir = work_dir / cwd
+-            work_dir = work_dir.resolve()
+-            if not str(work_dir).startswith(str(Path(workspace_path).resolve())):
+-                return ToolResult(
+-                    status="blocked",
+-                    blocker="Working directory outside workspace",
+-                )
+-            if not work_dir.exists():
+-                return ToolResult(
+-                    status="error",
+-                    error=f"Working directory does not exist: {cwd}",
+-                )
+-
+-        env = os.environ.copy()
+-        env["HOME"] = str(work_dir)
+-        env["USER"] = "agent"
+-        env["PWD"] = str(work_dir)
+-        for key, value in extra_env.items():
+-            if not _contains_secret(key, value):
+-                env[key] = value
++        try:
++            argv = self._parse_command(str(params["command"]))
++        except ToolPolicyError as exc:
++            return ToolResult(status="blocked", blocker=str(exc))
++        timeout = max(1, min(int(params.get("timeout", 60)), 300))
++        extra_env = params.get("env") if isinstance(params.get("env"), dict) else {}
+ 
+         try:
+-            result = subprocess.run(
+-                command,
+-                shell=True,
++            completed = subprocess.run(
++                argv,
++                shell=False,
+                 cwd=str(work_dir),
+                 capture_output=True,
+                 text=True,
+                 timeout=timeout,
+-                env=env,
+-            )
+-
+-            output = result.stdout
+-            if result.stderr:
+-                output = output + "\n" + result.stderr if output else resul
