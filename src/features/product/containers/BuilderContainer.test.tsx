@@ -715,7 +715,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(filesItem);
 
     expect(screen.getByRole("dialog", { name: "Repo Inspector" })).toBeDefined();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Datei-Explorer geöffnet");
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    expect(actionStream).toHaveTextContent("Datei-Explorer geöffnet");
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(actionStream.querySelector('[data-route="files"]')).not.toBeNull();
   });
 
   it("Diff shortcut opens real changed-file evidence instead of writing a prompt into the composer", () => {
@@ -732,7 +735,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     expect(screen.getAllByText("Changed").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("src/App.tsx")).toBeDefined();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Diff-Prüfung geöffnet");
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    expect(actionStream).toHaveTextContent("Diff-Prüfung geöffnet");
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(actionStream.querySelector('[data-route="diff"]')).not.toBeNull();
     expect(chatField().value).toBe(before);
   });
 
@@ -740,7 +746,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Runtime Logs" }));
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Runtime-Logs geöffnet");
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    expect(actionStream).toHaveTextContent("Runtime-Logs geöffnet");
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(actionStream.querySelector('[data-route="runtime-logs"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Details ausblenden" }));
 
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Runtime Logs" }));
