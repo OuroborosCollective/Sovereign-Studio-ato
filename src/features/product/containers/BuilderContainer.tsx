@@ -5293,13 +5293,57 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           <LauncherTaskbar />
           {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
           <SovereignToolLauncher
+            runtimeContext={{
+              repoReady: Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot,
+              repoFileCount: chatRepoSnapshot && !isPartialRepoSnapshot
+                ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
+                : 0,
+              hasDiffEvidence: Boolean(
+                patchPreviewReady ||
+                patchConfirmed ||
+                (openhandsJob?.changedFiles?.length ?? 0) > 0,
+              ),
+              githubAccessState: githubAccessState.state,
+              executorAvailable: sovereignAgentStartAvailable,
+              hasExecutorMission: Boolean(wishText.trim()),
+              runtimeLogCount: statusLogs.length,
+            }}
             onSelect={(toolId: ToolId) => {
-              if (toolId === 'repo') { setShowRepoExplorer(true); return; }
+              if (toolId === 'repo' || toolId === 'files') {
+                const snapshotReady = Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot;
+                setShowRepoExplorer(true);
+                appendActionEvent({
+                  kind: snapshotReady ? 'done' : 'blocked',
+                  route: 'repo',
+                  label: snapshotReady
+                    ? toolId === 'files' ? 'Datei-Explorer geöffnet' : 'Repo-Explorer geöffnet'
+                    : 'Repo-Setup erforderlich',
+                  detail: snapshotReady
+                    ? `${chatRepoSnapshot?.files.filter((entry) => entry.type === 'blob').length ?? 0} bestätigte Dateien im Snapshot.`
+                    : 'Noch kein vollständiger Repo-Snapshot vorhanden.',
+                  state: snapshotReady ? 'done' : 'blocked',
+                });
+                return;
+              }
               if (toolId === 'executor') {
                 if (wishText.trim()) void startAgentFromText(wishText.trim());
                 return;
               }
               if (toolId === 'github_access') {
+                if (githubAccessState.state === 'requested' || githubAccessState.state === 'validating') {
+                  appendActionEvent({
+                    kind: 'route_selected',
+                    route: 'github-access',
+                    label: 'GitHub-Zugangsprüfung angezeigt',
+                    detail: 'Die laufende Validierung bleibt Runtime-Wahrheit; es wurde kein neuer Zugang angefordert.',
+                    state: 'running',
+                  });
+                  appendChatLine({
+                    role: 'assistant',
+                    text: 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet und kein Secret angezeigt.',
+                  });
+                  return;
+                }
                 if (!githubWriteAllowed) {
                   setShowGitHubAccessOverride(true);
                   appendActionEvent({
@@ -5315,15 +5359,46 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                   });
                   return;
                 }
+                appendActionEvent({
+                  kind: 'done',
+                  route: 'github-access',
+                  label: 'GitHub-Zugangsstatus angezeigt',
+                  detail: 'Die Runtime meldet validierten Schreibzugang; Secret-Werte bleiben verborgen.',
+                  state: 'done',
+                });
                 appendChatLine({
                   role: 'assistant',
                   text: 'GitHub-Zugang ist bereits bereit. Der Zugangswert wird nicht im Chat angezeigt oder gespeichert.',
                 });
                 return;
               }
-              if (toolId === 'runtime_logs') { setPanelOpen((v) => !v); return; }
+              if (toolId === 'runtime_logs') {
+                setPanelOpen(true);
+                appendActionEvent({
+                  kind: 'done',
+                  route: 'runtime',
+                  label: 'Runtime-Logs geöffnet',
+                  detail: statusLogs.length > 0
+                    ? `${statusLogs.length} gespeicherte Runtime-Events sind vorhanden.`
+                    : 'Die Log-Fläche ist geöffnet; noch keine Events vorhanden.',
+                  state: 'done',
+                });
+                return;
+              }
               if (toolId === 'diff') {
-                setWishText('Zeige mir die aktuellen Änderungen im Repo.');
+                const changedFiles = openhandsJob?.changedFiles ?? [];
+                setOpenWorkbenchSlot('files');
+                appendActionEvent({
+                  kind: 'done',
+                  route: 'runtime',
+                  label: 'Diff-Prüfung geöffnet',
+                  detail: changedFiles.length > 0
+                    ? `${changedFiles.length} bestätigte Changed Files: ${changedFiles.join(' · ')}`
+                    : patchConfirmed
+                      ? 'Bestätigte Patch-Evidence ist vorhanden.'
+                      : 'Patch-Vorschau-Evidence ist vorhanden.',
+                  state: 'done',
+                });
                 return;
               }
             }}
