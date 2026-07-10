@@ -12,7 +12,7 @@
 // small-talk/greeting phrase. Questions still stay advisory, but the Worker
 // prompt must answer them as repo-specific integration guidance.
 const SOVEREIGN_AGENT_EXECUTION_TOKENS = [
-  'sovereign agent', 'sovereign-agent', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
+  'sovereign agent', 'sovereign-agent', 'sovereign_agent', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
   'push', 'commit', 'repo schreiben', 'github schreiben', 'branch erstellen',
 ];
 
