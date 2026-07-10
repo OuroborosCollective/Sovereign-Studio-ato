@@ -114,19 +114,10 @@ jobs:
 
       - name: Run Builder integration tests
         id: builder_tests
-        shell: bash
+        continue-on-error: true
         run: |
-          set +e
           pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx \
             --reporter=json --outputFile=/tmp/builder-gate.json
-          status=$?
-          if [ "$status" -eq 0 ]; then
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          exit 0
 
       - name: Upload Builder test report
         if: always()
@@ -138,7 +129,7 @@ jobs:
           retention-days: 3
 
       - name: Enforce Builder integration gate
-        if: steps.builder_tests.outputs.passed != 'true'
+        if: steps.builder_tests.outcome == 'failure'
         shell: bash
         run: |
           node - <<'NODE'
@@ -186,22 +177,13 @@ jobs:
 
       - name: Run deployed backend tests
         id: deployed_backend_tests
-        shell: bash
+        continue-on-error: true
         run: |
-          set +e
           pytest scripts/sovereign-backend/tests -q \
             --junitxml=/tmp/deployed-backend-junit.xml
-          status=$?
-          if [ "$status" -eq 0 ]; then
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          exit 0
 
       - name: Upload deployed backend test report
-        if: always()
+        if: always() && steps.deployed_backend_tests.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: deployed-backend-junit
@@ -210,7 +192,7 @@ jobs:
           retention-days: 3
 
       - name: Enforce deployed backend gate
-        if: steps.deployed_backend_tests.outputs.passed != 'true'
+        if: steps.deployed_backend_tests.outcome == 'failure'
         run: exit 1
 
       - name: Runtime mirror contract
