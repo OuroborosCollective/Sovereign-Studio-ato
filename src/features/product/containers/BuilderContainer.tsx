@@ -63,7 +63,6 @@ import { C, STATUS_COLOR, STATUS_LABEL } from "../components/builderConstants";
 import { WorkbenchStatusChips } from "../components/WorkbenchStatusChips";
 import { WorkbenchSlotDrawer } from "../components/WorkbenchSlotDrawer";
 import { WorkbenchSidePanel } from "../components/WorkbenchSidePanel";
-import { OpenHandsOperatorBriefingPanel } from "../components/OpenHandsOperatorBriefingPanel";
 import {
   WorkerBlockerCard,
   WorkerDegradedBanner,
@@ -73,7 +72,7 @@ import { ChatMarkdown } from "../components/ChatMarkdown";
 import { PacedChatText } from "../components/PacedChatText";
 import { GitHubAccessCard } from "../components/GitHubAccessCard";
 import { SecurityBlockCard } from "../components/SecurityBlockCard";
-import { OpenHandsJobTruthCard } from "../components/OpenHandsJobTruthCard";
+import { SovereignAgentJobTruthCard } from "../components/SovereignAgentJobTruthCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { CompactRepoSetupSheet } from "../components/CompactRepoSetupSheet";
 import { PatchDiffEvidenceSheet } from "../components/PatchDiffEvidenceSheet";
@@ -132,9 +131,9 @@ import {
 } from "../runtime/sovereignCapabilityRouter";
 import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
 import type {
-  OpenHandsEnterpriseConfig,
-  OpenHandsJobSnapshot,
-} from "../runtime/openhandsEnterpriseRuntime";
+  SovereignAgentConfig,
+  SovereignAgentJobSnapshot,
+} from "../runtime/sovereignAgentRuntime";
 import {
   createGitHubAccessSnapshot,
   requestGitHubAccess,
@@ -225,13 +224,13 @@ export interface BuilderContainerProps {
   onGenerateIdeas: () => void;
   onGenerateErrorWorkflow: () => void;
   onPublishDraftPr: () => void;
-  openhandsReady?: boolean;
-  openhandsConfig?: OpenHandsEnterpriseConfig;
-  openhandsJob?: OpenHandsJobSnapshot;
-  openhandsJobStatus?: string;
-  openhandsIsRunning?: boolean;
-  onStartOpenHands?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string }) => void | Promise<void>;
-  onCancelOpenHands?: () => void;
+  agentReady?: boolean;
+  agentConfig?: SovereignAgentConfig;
+  agentJob?: SovereignAgentJobSnapshot;
+  agentJobStatus?: string;
+  agentIsRunning?: boolean;
+  onStartAgent?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string }) => void | Promise<void>;
+  onCancelAgent?: () => void;
   /**
    * Traditional publish path — set by the parent to the PR URL returned by
    * mergeWhenGreen once approvalConfirmed === true. Omit when not available.
@@ -374,12 +373,12 @@ const IDEA_OPTIONS: IdeaOption[] = [
 
 // Intent detection from workerIntentDetector module
 import {
-  isOpenHandsExecutionIntent,
+  isSovereignAgentExecutionIntent,
   isCodeGenerationIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   isDelegationIntent,
-  isDelegatedOpenHandsExecutionIntent,
+  isDelegatedSovereignAgentExecutionIntent,
   isExecutorStatusQuestion,
   buildExecutorStatusAnswer,
   isAlternativeWriteRouteIntent,
@@ -394,7 +393,7 @@ import {
 import {
   buildRepoEvidenceScopeKey,
   buildRepositoryTargetKey,
-  selectRepoScopedOpenHandsJob,
+  selectRepoScopedAgentJob,
   selectRepositoryScopedPullRequestUrl,
 } from "../runtime/sovereignRepoEvidenceScopeRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
@@ -1790,8 +1789,8 @@ function SideDrawer({
   onPublishDraftPr,
   isPublishing,
   chatRepoSnapshot,
-  onCancelOpenHands,
-  openhandsIsRunning,
+  onCancelAgent,
+  agentIsRunning,
   palStats,
   chatHistory,
   onExportChat,
@@ -1802,8 +1801,8 @@ function SideDrawer({
   onPublishDraftPr: () => void;
   isPublishing: boolean;
   chatRepoSnapshot: DevChatRepoSnapshot | null;
-  onCancelOpenHands?: () => void;
-  openhandsIsRunning?: boolean;
+  onCancelAgent?: () => void;
+  agentIsRunning?: boolean;
   palStats: { total: number; savings: number } | null;
   chatHistory: ChatLine[];
   onExportChat?: () => void;
@@ -2100,11 +2099,11 @@ function SideDrawer({
           >
             ⚠ Fehleranalyse
           </button>
-          {openhandsIsRunning && onCancelOpenHands && (
+          {agentIsRunning && onCancelAgent && (
             <button
               type="button"
               onClick={() => {
-                onCancelOpenHands();
+                onCancelAgent();
                 onClose();
               }}
               style={{
@@ -2401,13 +2400,13 @@ export function BuilderContainer({
   onGenerateIdeas,
   onGenerateErrorWorkflow,
   onPublishDraftPr,
-  openhandsReady,
-  openhandsConfig,
-  openhandsJob,
-  openhandsJobStatus,
-  openhandsIsRunning,
-  onStartOpenHands,
-  onCancelOpenHands,
+  agentReady,
+  agentConfig,
+  agentJob,
+  agentJobStatus,
+  agentIsRunning,
+  onStartAgent,
+  onCancelAgent,
   publishedPrUrl,
 }: BuilderContainerProps) {
   // ── Original v3 state (verbatim)
@@ -2423,7 +2422,7 @@ export function BuilderContainer({
   const [showRuntimeEvidenceLogs, setShowRuntimeEvidenceLogs] = useState(false);
   const [showPatchDiffEvidence, setShowPatchDiffEvidence] = useState(false);
   const [patchDiffReport, setPatchDiffReport] = useState<GeneratedFileDiffReport | null>(null);
-  const [showOpenHandsBriefing, setOHB] = useState(false);
+  const [showAgentBriefing, setOHB] = useState(false);
   const [chatRepoSnapshot, setChatRepo] = useState<DevChatRepoSnapshot | null>(
     null,
   );
@@ -2535,13 +2534,13 @@ export function BuilderContainer({
     () => selectRepositoryScopedPullRequestUrl(publishedPrUrl, currentRepositoryTargetKey),
     [currentRepositoryTargetKey, publishedPrUrl],
   );
-  const scopedOpenHandsJob = useMemo(
-    () => selectRepoScopedOpenHandsJob(openhandsJob, chatRepoSnapshot),
-    [chatRepoSnapshot, openhandsJob],
+  const scopedAgentJob = useMemo(
+    () => selectRepoScopedAgentJob(agentJob, chatRepoSnapshot),
+    [chatRepoSnapshot, agentJob],
   );
-  const scopedOpenHandsIsRunning = Boolean(
-    scopedOpenHandsJob
-    && ['queued', 'provisioning', 'running', 'validating'].includes(scopedOpenHandsJob.status),
+  const scopedAgentIsRunning = Boolean(
+    scopedAgentJob
+    && ['queued', 'provisioning', 'running', 'validating'].includes(scopedAgentJob.status),
   );
 
   // ── Issue #443: GitHub Access State
@@ -2620,8 +2619,8 @@ export function BuilderContainer({
 
   // ── Issue #445: Sync AgentWorkSnapshot only from the current repo/branch job.
   useEffect(() => {
-    if (!scopedOpenHandsJob) {
-      if (openhandsJob && openhandsJob.status !== 'idle') {
+    if (!scopedAgentJob) {
+      if (agentJob && agentJob.status !== 'idle') {
         setAgentWorkSnapshot(createIdleSnapshot(`sovereign-${Date.now()}`));
       }
       return;
@@ -2632,7 +2631,7 @@ export function BuilderContainer({
       : null;
     setAgentWorkSnapshot((prev) => {
       let snap = prev;
-      if (scopedOpenHandsJob.status === 'queued' || scopedOpenHandsJob.status === 'running') {
+      if (scopedAgentJob.status === 'queued' || scopedAgentJob.status === 'running') {
         if (snap.state === 'idle') {
           snap = transitionIntentDetected(
             snap,
@@ -2643,29 +2642,29 @@ export function BuilderContainer({
         if (snap.state === 'intent_detected') {
           snap = transitionExecutorStarting(snap, 'sovereign-agent');
         }
-        if (snap.state === 'executor_starting' && scopedOpenHandsJob.jobId) {
-          snap = transitionExecutorRunning(snap, scopedOpenHandsJob.jobId);
+        if (snap.state === 'executor_starting' && scopedAgentJob.jobId) {
+          snap = transitionExecutorRunning(snap, scopedAgentJob.jobId);
         }
       }
-      if (scopedOpenHandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
+      if (scopedAgentJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
         snap = transitionFailed(snap, 'Sovereign Agent Runtime fehlgeschlagen.');
       }
-      if (scopedOpenHandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
+      if (scopedAgentJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
         snap = transitionBlocked(snap, 'Sovereign Agent Runtime blockiert.');
       }
-      if (scopedOpenHandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
-        snap = transitionDraftPrReady(snap, scopedOpenHandsJob.draftPrUrl);
+      if (scopedAgentJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
+        snap = transitionDraftPrReady(snap, scopedAgentJob.draftPrUrl);
         if (patchPreviewReady) {
           setPatchPreviewReady(false);
           setPatchConfirmed(true);
         }
       }
-      if (scopedOpenHandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
+      if (scopedAgentJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
         snap = createIdleSnapshot(`sovereign-${Date.now()}`);
       }
       return snap;
     });
-  }, [chatRepoSnapshot, openhandsJob, patchPreviewReady, scopedOpenHandsJob]);
+  }, [chatRepoSnapshot, agentJob, patchPreviewReady, scopedAgentJob]);
 
   // ── Slash command menu state (Issue #428)
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
@@ -2700,11 +2699,11 @@ export function BuilderContainer({
   const appendActionEvent = useCallback((event: SovereignActionEventInput) => {
     setActionStream((current) => appendSovereignActionEvent(current, event));
   }, []);
-  const sovereignAgentStartAvailable = Boolean(openhandsReady && onStartOpenHands);
+  const sovereignAgentStartAvailable = Boolean(agentReady && onStartAgent);
   const executorIntent = useMemo(() => classifySovereignExecutorIntent(wishText), [wishText]);
   const runtimeEvidenceLog = useMemo(
-    () => buildSovereignRuntimeEvidenceLog(actionStream.events, scopedOpenHandsJob?.events ?? []),
-    [actionStream.events, scopedOpenHandsJob?.events],
+    () => buildSovereignRuntimeEvidenceLog(actionStream.events, scopedAgentJob?.events ?? []),
+    [actionStream.events, scopedAgentJob?.events],
   );
   const hasScopedWorkerResponse = useMemo(
     () => actionStream.events.some((event) =>
@@ -2724,17 +2723,17 @@ export function BuilderContainer({
         logs: statusLogs,
         workerBlocker,
         chatRepoError,
-        openhandsJob: scopedOpenHandsJob,
+        agentJob: scopedAgentJob,
         publishedPrUrl: scopedPublishedPrUrl,
         githubState: effectiveGitHubAccessState,
-        openhandsConfigured: sovereignAgentStartAvailable,
+        agentConfigured: sovereignAgentStartAvailable,
         patchRouteAvailable: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       }),
     [
       statusLogs,
       workerBlocker,
       chatRepoError,
-      scopedOpenHandsJob,
+      scopedAgentJob,
       scopedPublishedPrUrl,
       effectiveGitHubAccessState,
       sovereignAgentStartAvailable,
@@ -2880,7 +2879,7 @@ export function BuilderContainer({
   const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(
     chatResponseBusy ||
-    scopedOpenHandsIsRunning ||
+    scopedAgentIsRunning ||
     repoBusy ||
     localRepoLoading ||
     runtimeBusy ||
@@ -2889,8 +2888,8 @@ export function BuilderContainer({
   const workStateStatus = runtimeThinkingActive
     ? chatResponseBusy
       ? "Cloudflare Worker antwortet"
-      : scopedOpenHandsJob
-        ? openhandsJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
+      : scopedAgentJob
+        ? agentJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
         : "Runtime arbeitet"
     : workerBlocker
       ? `blocked · ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : "Worker blockiert"}`
@@ -2907,15 +2906,15 @@ export function BuilderContainer({
     [runtimeThinkingActive, thinkingFrameIndex, workStateStatus],
   );
   const outcomeHints = useMemo(
-    () => buildOutcomeHints(scopedOpenHandsJob),
-    [scopedOpenHandsJob],
+    () => buildOutcomeHints(scopedAgentJob),
+    [scopedAgentJob],
   );
   const agentDisabled =
     !effectiveRepoReady ||
     repoBusy ||
     localRepoLoading ||
     runtimeBusy ||
-    Boolean(scopedOpenHandsIsRunning) ||
+    Boolean(scopedAgentIsRunning) ||
     !sovereignAgentStartAvailable;
   const agentStatus = workerBlocker
     ? "error"
@@ -2925,8 +2924,8 @@ export function BuilderContainer({
           repoBusy,
           runtimeBusy,
           isPublishing,
-          openhandsIsRunning: scopedOpenHandsIsRunning,
-          openhandsJob: scopedOpenHandsJob,
+          agentIsRunning: scopedAgentIsRunning,
+          agentJob: scopedAgentJob,
           localRepoLoading,
           localRepoError: Boolean(chatRepoError),
         });
@@ -2962,13 +2961,13 @@ export function BuilderContainer({
       id: "sovereign-agent-runtime",
       label: sovereignAgentStartAvailable ? "Sovereign Agent Runtime" : "Sovereign Agent offline",
       tier: (sovereignAgentStartAvailable
-        ? scopedOpenHandsIsRunning
+        ? scopedAgentIsRunning
           ? "active"
           : "ready"
         : "blocked") as RuntimeTier,
       description: sovereignAgentStartAvailable
         ? "Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge"
-        : openhandsReady
+        : agentReady
           ? "Sovereign Agent Runtime konfiguriert, aber Start-Callback nicht verdrahtet"
           : "Sovereign Agent Runtime nicht verbunden",
       available: sovereignAgentStartAvailable,
@@ -2990,7 +2989,7 @@ export function BuilderContainer({
         cuteThinkingLabel,
         sovereignSummary,
         disabledReason: state.disabledReason,
-        openhandsJob: scopedOpenHandsJob,
+        agentJob: scopedAgentJob,
         chatRepoSnapshot,
         chatRepoError,
         chatHistory,
@@ -3002,7 +3001,7 @@ export function BuilderContainer({
       cuteThinkingLabel,
       effectiveRepoReady,
       effectiveRepoReason,
-      scopedOpenHandsJob,
+      scopedAgentJob,
       runtimeThinkingActive,
       sovereignSummary,
       state.disabledReason,
@@ -3076,13 +3075,13 @@ export function BuilderContainer({
   // No simulated progress: lamps, phases and conditions are derived from real runtime state.
   useEffect(() => {
     const jobBlocked =
-      scopedOpenHandsJob?.status === "blocked" ||
-      scopedOpenHandsJob?.status === "failed" ||
+      scopedAgentJob?.status === "blocked" ||
+      scopedAgentJob?.status === "failed" ||
       Boolean(chatRepoError) ||
       Boolean(workerBlocker);
     const hasOutput =
-      (scopedOpenHandsJob?.changedFiles?.length ?? 0) > 0 ||
-      Boolean(scopedOpenHandsJob?.draftPrUrl);
+      (scopedAgentJob?.changedFiles?.length ?? 0) > 0 ||
+      Boolean(scopedAgentJob?.draftPrUrl);
     const budState = deriveBudFromLedger(budgetLedger);
     const budBlocked = budState.selectionResult?.status === "blocked";
     const nextSignals: Record<string, SignalType> = {
@@ -3104,14 +3103,14 @@ export function BuilderContainer({
       pattern: palDecisions.length > 0 ? "active" : "idle",
       sync: workerBlocker
         ? "error"
-        : scopedOpenHandsIsRunning
+        : scopedAgentIsRunning
           ? "processing"
-          : openhandsReady
+          : agentReady
             ? "active"
             : "warning",
       orchestr: jobBlocked
         ? "error"
-        : isPublishing || scopedOpenHandsIsRunning
+        : isPublishing || scopedAgentIsRunning
           ? "processing"
           : hasOutput
             ? "active"
@@ -3131,7 +3130,7 @@ export function BuilderContainer({
     const nextConditions: Partial<Record<ModuleId, ModuleCond[]>> = {
       init: [
         { label: "Module loaded", status: "pass" },
-        { label: "Config valid", status: openhandsConfig ? "pass" : "wait" },
+        { label: "Config valid", status: agentConfig ? "pass" : "wait" },
       ],
       router: [
         {
@@ -3166,11 +3165,11 @@ export function BuilderContainer({
         },
         {
           label: "Sovereign Agent configured",
-          status: openhandsReady ? "pass" : "wait",
+          status: agentReady ? "pass" : "wait",
         },
         {
           label: "Runtime active only on real job",
-          status: scopedOpenHandsIsRunning ? "pass" : "wait",
+          status: scopedAgentIsRunning ? "pass" : "wait",
         },
         {
           label: "Repo snapshot synced",
@@ -3224,7 +3223,7 @@ export function BuilderContainer({
     setConfidence(
       buildRuntimeConfidence({
         effectiveRepoReady,
-        openhandsReady,
+        agentReady,
         runtimeThinkingActive,
         blocked: jobBlocked || Boolean(state.disabledReason),
         palDecisions: palDecisions.length,
@@ -3249,12 +3248,12 @@ export function BuilderContainer({
     effectiveRepoReady,
     isPublishing,
     localRepoLoading,
-    openhandsConfig,
-    scopedOpenHandsIsRunning,
-    scopedOpenHandsJob?.changedFiles?.length,
-    scopedOpenHandsJob?.draftPrUrl,
-    scopedOpenHandsJob?.status,
-    openhandsReady,
+    agentConfig,
+    scopedAgentIsRunning,
+    scopedAgentJob?.changedFiles?.length,
+    scopedAgentJob?.draftPrUrl,
+    scopedAgentJob?.status,
+    agentReady,
     outcomeHints.length,
     palDecisions.length,
     budgetLedger,
@@ -3298,7 +3297,7 @@ export function BuilderContainer({
     );
     emitMissionChange(clean);
 
-    if (!onStartOpenHands) {
+    if (!onStartAgent) {
       appendActionEvent(buildBlockedActionEvent({
         route: 'agent-job',
         label: 'Sovereign Agent Start blockiert',
@@ -3309,7 +3308,7 @@ export function BuilderContainer({
         role: 'assistant',
         text: 'Sovereign Agent Runtime kann nicht gestartet werden: Start-Callback ist nicht verdrahtet. Es wurde kein Job gestartet und keine Datei geändert.',
       });
-      addLog('error', 'Sovereign Agent start blocked: missing onStartOpenHands callback', 'router');
+      addLog('error', 'Sovereign Agent start blocked: missing onStartAgent callback', 'router');
       return false;
     }
 
@@ -3323,7 +3322,7 @@ export function BuilderContainer({
     });
 
     try {
-      await onStartOpenHands(clean, { repoUrl: chatRepoSnapshot.repoUrl, branch: chatRepoSnapshot.branch });
+      await onStartAgent(clean, { repoUrl: chatRepoSnapshot.repoUrl, branch: chatRepoSnapshot.branch });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sovereign Agent Start fehlgeschlagen.';
@@ -3472,9 +3471,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         githubWriteAllowed,
         githubAccessState: effectiveGitHubAccessState,
         writeIntentBlockedByRepo: !effectiveRepoReady,
-        openhandsRunning: scopedOpenHandsJob?.status === 'running',
-        draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
+        agentRunning: scopedAgentJob?.status === 'running',
+        draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
         patchPreviewReady,
         patchConfirmed,
         hasWorkerResponse: hasScopedWorkerResponse,
@@ -3485,7 +3484,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
                 blocker: workerBlocker,
                 repoReady: effectiveRepoReady,
                 chatRepoSnapshot,
-                openhandsReady,
+                agentReady,
               })
           : undefined,
         questionText: submittedText,
@@ -3530,9 +3529,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           githubWriteAllowed,
           githubAccessState: effectiveGitHubAccessState,
           writeIntentBlockedByRepo: !effectiveRepoReady,
-          openhandsRunning: scopedOpenHandsJob?.status === 'running',
-          draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? null,
-          hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
+          agentRunning: scopedAgentJob?.status === 'running',
+          draftPrUrl: scopedAgentJob?.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
           patchPreviewReady,
           patchConfirmed,
           hasWorkerResponse: hasScopedWorkerResponse,
@@ -3543,7 +3542,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
                   blocker: workerBlocker,
                   repoReady: effectiveRepoReady,
                   chatRepoSnapshot,
-                  openhandsReady,
+                  agentReady,
                 })
             : undefined,
         });
@@ -3591,13 +3590,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
     // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
     const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
-      (scopedOpenHandsJob != null && scopedOpenHandsJob.status !== 'idle');
+      (scopedAgentJob != null && scopedAgentJob.status !== 'idle');
     if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
       const statusAnswer = buildExecutorStatusAnswer({
         agentState: agentWorkSnapshot.state,
-        openhandsStatus: scopedOpenHandsJob?.status,
-        changedFiles: scopedOpenHandsJob?.changedFiles?.length ?? 0,
-        draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        agentStatus: scopedAgentJob?.status,
+        changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
+        draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
         blockerReason: agentWorkSnapshot.blockerReason,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
@@ -3614,7 +3613,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     if (
       workerBlocker &&
       !isWorkerRetryIntent(submittedText) &&
-      !isOpenHandsExecutionIntent(submittedText)
+      !isSovereignAgentExecutionIntent(submittedText)
     ) {
       appendChatLine({
         role: "assistant",
@@ -3622,7 +3621,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           blocker: workerBlocker,
           repoReady: effectiveRepoReady,
           chatRepoSnapshot,
-          openhandsReady,
+          agentReady,
         }),
       });
       appendActionEvent(buildBlockedActionEvent({
@@ -3643,9 +3642,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     if (effectiveRepoReady &&
         !isSafeAnalysisPreset &&
-        !isOpenHandsExecutionIntent(submittedText) &&
+        !isSovereignAgentExecutionIntent(submittedText) &&
         !isDelegationIntent(submittedText) &&
-        !isDelegatedOpenHandsExecutionIntent(submittedText, chatHistory)) {
+        !isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory)) {
       const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
         path,
         type: 'blob' as const,
@@ -3670,12 +3669,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       text: submittedText,
       repoReady: effectiveRepoReady,
       githubAccessState: effectiveGitHubAccessState,
-      openhandsReady: openhandsReady ?? false,
+      agentReady: agentReady ?? false,
       directGitHubPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       workspaceReady: false, // Workspace executor not yet integrated
       hasActiveWorkerBlocker: Boolean(workerBlocker),
-      hasPackage: Boolean(scopedOpenHandsJob?.changedFiles?.length),
-      hasDraft: Boolean(scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
+      hasPackage: Boolean(scopedAgentJob?.changedFiles?.length),
+      hasDraft: Boolean(scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
       hasWorkflowReport: Boolean(agentWorkSnapshot.commitSha),
     };
     const capabilityDecision = decideSovereignCapabilityRoute(capabilityRouterInput);
@@ -3685,7 +3684,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // Cast to match SovereignActionEventInput (capability router uses its own route/kind types)
     appendActionEvent({
       kind: 'route_selected',
-      route: routeActionEvent.route as 'repo' | 'free-chat' | 'code-llm' | 'worker' | 'openhands' | 'github-patch' | 'direct-github-patch' | 'github-access' | 'toolchain' | 'runtime',
+      route: routeActionEvent.route as 'repo' | 'free-chat' | 'code-llm' | 'worker' | 'sovereign-agent' | 'github-patch' | 'direct-github-patch' | 'github-access' | 'toolchain' | 'runtime',
       label: routeActionEvent.label,
       detail: routeActionEvent.detail,
       state: routeActionEvent.state,
@@ -3745,9 +3744,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           githubWriteAllowed,
           githubAccessState: effectiveGitHubAccessState,
           writeIntentBlockedByRepo: !effectiveRepoReady,
-          openhandsRunning: scopedOpenHandsJob?.status === 'running',
-          draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-          hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
+          agentRunning: scopedAgentJob?.status === 'running',
+          draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
           patchPreviewReady,
           patchConfirmed,
           hasWorkerResponse: hasScopedWorkerResponse,
@@ -3758,7 +3757,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
                   blocker: workerBlocker,
                   repoReady: effectiveRepoReady,
                   chatRepoSnapshot,
-                  openhandsReady,
+                  agentReady,
                 })
             : undefined,
           questionText: submittedText,
@@ -3841,12 +3840,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // ── Aufgabe 1: Write intents (README/file/patch/commit/push/PR language)
     // must never reach the Worker chat while GitHub write access is missing.
     // Instead of asking for a token in chat, show the GitHubAccessCard.
-    // Explicit OpenHands execution intents ("OpenHands", "Draft PR" with
+    // Explicit Sovereign Agent execution intents ("Sovereign Agent", "Draft PR" with
     // execution framing, ...) already have their own dedicated executor
     // readiness gate below (agentDisabled) and must not be short-circuited
     // here — this gate only covers write-language that would otherwise be
     // sent straight to the advisory Worker chat.
-    if (isWriteIntent(submittedText) && !isOpenHandsExecutionIntent(submittedText)) {
+    if (isWriteIntent(submittedText) && !isSovereignAgentExecutionIntent(submittedText)) {
       if (!effectiveRepoReady) {
         appendActionEvent(buildBlockedActionEvent({
           route: 'github-access',
@@ -3895,11 +3894,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
             githubAccessState: effectiveGitHubAccessState,
             githubTokenPresent: Boolean(githubTokenRef.current),
             directPatchSupported: Boolean(chatRepoSnapshot),
-            openhandsConfigured: sovereignAgentStartAvailable,
+            agentConfigured: sovereignAgentStartAvailable,
             workerAvailable: !workerBlocker,
             workspaceConfigured: false,
             draftPrSupported: true,
-            activeExecutorStatus: scopedOpenHandsIsRunning ? "running" : "idle",
+            activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
           }),
           candidatePath: chatRepoSnapshot
             ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
@@ -3913,7 +3912,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           // Internal operator is available - show honest message, no fake patch
           appendChatLine({
             role: 'assistant',
-            text: `GitHub-Zugang ist bereit.\nSovereign Agent Fallback ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+            text: `GitHub-Zugang ist bereit.\nSovereignAgent Fallback ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
           });
           addLog('info', 'Write intent routed via Sovereign Internal Operator bridge', 'router');
           return;
@@ -4069,10 +4068,10 @@ Es wurde noch keine Datei geändert.`,
       return;
     }
 
-    // ── #500/#501 Alternative write route: answer locally without OpenHands lock-in.
+    // ── #500/#501 Alternative write route: answer locally without Sovereign Agent lock-in.
     // NOTE: Status, diagnostic, and retry intents are handled earlier in the flow
     // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.
-    // These questions must be answered from runtime state, not forwarded to OpenHands.
+    // These questions must be answered from runtime state, not forwarded to Sovereign Agent.
     if (isAlternativeWriteRouteIntent(submittedText)) {
       // #501: Calculate directPatchAvailable honestly
       // Direct Patch is available in principle (route exists) but requires:
@@ -4093,7 +4092,7 @@ Es wurde noch keine Datei geändert.`,
       const altRouteAnswer = buildAlternativeRouteStatusAnswer({
         githubAccessReady: githubWriteAllowed,
         githubAccessState: effectiveGitHubAccessState,
-        openhandsReady: openhandsReady ?? false,
+        agentReady: agentReady ?? false,
         directPatchAvailable,
       });
       appendChatLine({ role: 'assistant', text: altRouteAnswer });
@@ -4104,8 +4103,8 @@ Es wurde noch keine Datei geändert.`,
     // ── #458 + Delegation: Execution intent routing — BEFORE credit guard.
     // Sovereign Agent execution does not go through the Worker Chat (gemini-2.0-flash) path;
     // charging LLM credits for an executor handoff is incorrect.
-    const isExecutionIntent = isOpenHandsExecutionIntent(submittedText);
-    const isDelegatedExecution = isDelegatedOpenHandsExecutionIntent(submittedText, chatHistory);
+    const isExecutionIntent = isSovereignAgentExecutionIntent(submittedText);
+    const isDelegatedExecution = isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
 
     if (isExecutionIntent || isDelegatedExecution) {
       if (!agentDisabled) {
@@ -4144,11 +4143,11 @@ Es wurde noch keine Datei geändert.`,
           githubAccessState: effectiveGitHubAccessState,
           githubTokenPresent: Boolean(githubTokenRef.current),
           directPatchSupported: Boolean(chatRepoSnapshot),
-          openhandsConfigured: sovereignAgentStartAvailable,
+          agentConfigured: sovereignAgentStartAvailable,
           workerAvailable: !workerBlocker,
           workspaceConfigured: false,
           draftPrSupported: true,
-          activeExecutorStatus: scopedOpenHandsIsRunning ? "running" : "idle",
+          activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
         }),
         candidatePath: chatRepoSnapshot
           ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
@@ -4162,7 +4161,7 @@ Es wurde noch keine Datei geändert.`,
         // Internal operator is available - runtime handoff decision, no fake patch claimed
         appendChatLine({
           role: "assistant",
-          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereign Agent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereignAgent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
         });
         addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
@@ -4185,7 +4184,7 @@ ${executorBridgeDecision.reason}
 
 Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag belegen kann. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
         });
-        addLog('info', `Execution intent allowed by bridge without mandatory OpenHands · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
+        addLog('info', `Execution intent allowed by bridge without mandatory Sovereign Agent · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
       }
 
@@ -4220,7 +4219,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }));
     }
 
-    // ── #458 Credit guard — only for Worker Chat path (not OpenHands execution) ────────────
+    // ── #458 Credit guard — only for Worker Chat path (not Sovereign Agent execution) ────────────
     const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
     const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
     if (!_canProceed) {
@@ -4399,7 +4398,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         blocker,
         repoReady: effectiveRepoReady,
         chatRepoSnapshot,
-        openhandsReady,
+        agentReady,
       }),
     });
     addLog(
@@ -4432,12 +4431,12 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       repoFullName: chatRepoSnapshot ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}` : null,
       branch: chatRepoSnapshot?.branch ?? null,
       githubWriteReady: githubWriteAllowed,
-      openhandsReady: openhandsReady ?? false,
+      agentReady: agentReady ?? false,
     });
     const gate = evaluateSovereignPresetActionGate(action, {
       repoReady: effectiveRepoReady,
       githubWriteReady: githubWriteAllowed,
-      openhandsReady: openhandsReady ?? false,
+      agentReady: agentReady ?? false,
     });
 
     if (!gate.canStart) {
@@ -4820,12 +4819,12 @@ Das echte Repo-Setup wurde geöffnet.`,
                   githubAccessState: effectiveGitHubAccessState,
                   githubTokenPresent: Boolean(githubTokenRef.current),
                   directPatchSupported: Boolean(chatRepoSnapshot && githubWriteAllowed && githubTokenRef.current),
-                  openhandsConfigured: sovereignAgentStartAvailable,
+                  agentConfigured: sovereignAgentStartAvailable,
                   workerAvailable: true,
-                  workspaceConfigured: openhandsReady ?? false,
+                  workspaceConfigured: agentReady ?? false,
                   draftPrSupported: githubWriteAllowed,
                   activeExecutorStatus:
-                    agentWorkSnapshot.state !== 'idle' || (scopedOpenHandsJob && scopedOpenHandsJob.status !== 'idle')
+                    agentWorkSnapshot.state !== 'idle' || (scopedAgentJob && scopedAgentJob.status !== 'idle')
                       ? 'running'
                       : 'idle',
                 });
@@ -4849,11 +4848,11 @@ Das echte Repo-Setup wurde geöffnet.`,
                   repoReady: effectiveRepoReady,
                   githubWriteReady: capabilities.githubWrite.status === 'ready',
                   directPatchReady: capabilities.directPatch.canStart,
-                  openhandsReady: capabilities.openhands.canStart,
+                  agentReady: capabilities.agent.canStart,
                 };
 
                 // canExecute from runtime truth
-                const canExecute = capabilities.directPatch.canStart || capabilities.openhands.canStart;
+                const canExecute = capabilities.directPatch.canStart || capabilities.agent.canStart;
                 const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
 
                 return (
@@ -5039,7 +5038,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                           });
                           break;
 
-                        case 'openhands':
+                        case 'sovereign-agent':
                           // Sovereign Agent route — ONLY with validated GitHub write
                           if (!githubWriteAllowed) {
                             // Defensive: block and open access gate
@@ -5132,11 +5131,11 @@ Das echte Repo-Setup wurde geöffnet.`,
               {agentWorkSnapshot.state !== 'idle' && (
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
-                  job={scopedOpenHandsJob}
-                  onCancel={onCancelOpenHands}
+                  job={scopedAgentJob}
+                  onCancel={onCancelAgent}
                   onOpenDraftPr={
-                    (scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
-                      ? () => window.open((scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
+                    (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
+                      ? () => window.open((scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
                       : undefined
                   }
                   onOpenFile={openRepoExplorerFromFileBadge}
@@ -5159,7 +5158,7 @@ Das echte Repo-Setup wurde geöffnet.`,
               )}
 
               {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
-              {!githubWriteAllowed && (scopedOpenHandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
+              {!githubWriteAllowed && (scopedAgentJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
                 <GitHubAccessCard
                   snapshot={effectiveGitHubAccessSnapshot}
                   onProvideToken={async (token) => {
@@ -5277,7 +5276,7 @@ Das echte Repo-Setup wurde geöffnet.`,
 
                     if (agentDisabled) {
                       const tokenForDirectPatch = githubTokenRef.current;
-                      if (!openhandsReady && tokenForDirectPatch && validation.canWrite === true) {
+                      if (!agentReady && tokenForDirectPatch && validation.canWrite === true) {
                         const patchScopeKey = validationRepoScopeKey;
                         clearPatchEvidence();
                         const directPatchResult = await buildDirectPatchPlanWithContentLoad({
@@ -5342,7 +5341,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                           }));
                           appendChatLine({
                             role: 'assistant',
-                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nSovereign Agent Runtime ist nicht verbunden. Es wurde noch keine Datei geändert.`,
+                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nSovereignAgent Runtime ist nicht verbunden. Es wurde noch keine Datei geändert.`,
                           });
                           addLog('warn', 'Pending write intent direct patch unavailable: ' + directPatchResult.capability.reason, 'router');
                           return;
@@ -5371,12 +5370,12 @@ Das echte Repo-Setup wurde geöffnet.`,
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-patch',
                         label: 'Patch/Draft-PR Route blockiert',
-                        detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'Sovereign Agent Runtime ist nicht verbunden.',
+                        detail: agentReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'Sovereign Agent Runtime ist nicht verbunden.',
                         kind: 'patch_blocked',
                       }));
                       appendChatLine({
                         role: 'assistant',
-                        text: openhandsReady
+                        text: agentReady
                           ? 'Der GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
                           : 'Der GitHub-Zugang ist bereit, aber weder Direct GitHub Patch noch Sovereign Agent Runtime ist für diesen Auftrag verfügbar. Es wurde noch keine Datei geändert.',
                       });
@@ -5412,7 +5411,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     );
                     appendChatLine({ role: "assistant", text: explanation });
                   }}
-                  onOpenHandsInstead={(msg) => {
+                  onAgentInstead={(msg) => {
                     void startAgentFromText(msg);
                   }}
                   userMessage={lastWorkerRequestMessage ?? undefined}
@@ -5420,12 +5419,12 @@ Das echte Repo-Setup wurde geöffnet.`,
               )}
 
               {/* ── Issue #431: Draft PR Card */}
-              {scopedOpenHandsJob?.draftPrUrl && (
+              {scopedAgentJob?.draftPrUrl && (
                 <DraftPrCard
-                  url={scopedOpenHandsJob.draftPrUrl}
-                  changedFiles={scopedOpenHandsJob.changedFiles || []}
+                  url={scopedAgentJob.draftPrUrl}
+                  changedFiles={scopedAgentJob.changedFiles || []}
                   onOpenBrowser={() =>
-                    window.open(scopedOpenHandsJob.draftPrUrl, "_blank")
+                    window.open(scopedAgentJob.draftPrUrl, "_blank")
                   }
                   onDiscussInChat={() =>
                     setWishText(`Erkläre mir die Änderungen im Draft PR.`)
@@ -5539,7 +5538,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                 : 0,
               hasDiffEvidence: Boolean(
                 patchDiffReport ||
-                (scopedOpenHandsJob?.changedFiles?.length ?? 0) > 0,
+                (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
               ),
               githubAccessState: effectiveGitHubAccessState,
               executorAvailable: sovereignAgentStartAvailable,
@@ -5554,7 +5553,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                 repoFileCount: effectiveRepoReady && chatRepoSnapshot
                   ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
                   : 0,
-                changedFiles: scopedOpenHandsJob?.changedFiles ?? [],
+                changedFiles: scopedAgentJob?.changedFiles ?? [],
                 patchDiffAvailable: Boolean(patchDiffReport),
                 githubAccessState: effectiveGitHubAccessState,
                 executorAvailable: sovereignAgentStartAvailable,
@@ -5612,7 +5611,7 @@ Das echte Repo-Setup wurde geöffnet.`,
             actions={SOVEREIGN_PRESET_ACTIONS}
             repoReady={effectiveRepoReady}
             githubWriteReady={githubWriteAllowed}
-            openhandsReady={openhandsReady ?? false}
+            agentReady={agentReady ?? false}
             disabled={localRepoLoading || chatResponseBusy || isPublishing}
             onSelect={handlePresetActionSelect}
           />
@@ -5738,8 +5737,8 @@ Das echte Repo-Setup wurde geöffnet.`,
           onPublishDraftPr={onPublishDraftPr}
           isPublishing={isPublishing}
           chatRepoSnapshot={chatRepoSnapshot}
-          onCancelOpenHands={onCancelOpenHands}
-          openhandsIsRunning={scopedOpenHandsIsRunning}
+          onCancelAgent={onCancelAgent}
+          agentIsRunning={scopedAgentIsRunning}
           palStats={palStats}
           chatHistory={chatHistory}
           onExportChat={async () => {
@@ -5759,7 +5758,7 @@ Das echte Repo-Setup wurde geöffnet.`,
           }}
         />
       )}
-      {showOpenHandsBriefing && openhandsConfig && (
+      {showAgentBriefing && agentConfig && (
         <div
           onClick={() => setOHB(false)}
           style={{
@@ -5785,11 +5784,6 @@ Das echte Repo-Setup wurde geöffnet.`,
               border: `1px solid ${C.border}`,
             }}
           >
-            <OpenHandsOperatorBriefingPanel
-              config={openhandsConfig}
-              onClose={() => setOHB(false)}
-              initiallyExpanded={true}
-            />
           </div>
         </div>
       )}

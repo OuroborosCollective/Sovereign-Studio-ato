@@ -12,6 +12,8 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app import _DEFAULT_RUNTIME_CONFIG
+
 # These tests verify the actual function signatures and logic
 # by importing from app.py (which will fail if imports are broken)
 
@@ -158,8 +160,8 @@ class TestRuntimeConfig(unittest.TestCase):
     
     def test_default_config_values(self):
         """Default config should have expected values."""
-        # Use local copy of config
-        config = _RUNTIME_CONFIG
+        # Verify the real deployed default configuration.
+        config = _DEFAULT_RUNTIME_CONFIG
         
         self.assertEqual(config["byok_mode"], "user-key")
         self.assertIsInstance(config["cors_origins"], list)

@@ -2,7 +2,7 @@
  * SovereignActionStreamPanel
  *
  * Renders the live runtime action log as a chat-bubble in the message feed.
- * All LLM routes on the Sovereign Revolver (worker, code-llm, openhands, free-chat, …)
+ * All LLM routes on the Sovereign Revolver (worker, code-llm, sovereign-agent, free-chat, …)
  * are equal citizens here — every route contributes events, none is privileged.
  *
  * Hard rules:

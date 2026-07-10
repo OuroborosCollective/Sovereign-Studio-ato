@@ -223,9 +223,9 @@ export function deriveBlockerNextAction(args: {
   githubValidating: boolean;
   executorAvailable: boolean;
   patchRouteAvailable: boolean;
-  openhandsConfigured: boolean;
+  agentConfigured: boolean;
 }): string {
-  const { githubReady, githubValidating, executorAvailable, patchRouteAvailable, openhandsConfigured } = args;
+  const { githubReady, githubValidating, executorAvailable, patchRouteAvailable, agentConfigured } = args;
 
   // GitHub is validating - wait for result
   if (githubValidating) {
@@ -239,8 +239,8 @@ export function deriveBlockerNextAction(args: {
 
   // GitHub is ready but executor is unavailable
   if (!executorAvailable) {
-    if (!openhandsConfigured) {
-      return 'OpenHands konfigurieren.';
+    if (!agentConfigured) {
+      return 'Sovereign Agent konfigurieren.';
     }
     return 'Workspace Executor starten.';
   }

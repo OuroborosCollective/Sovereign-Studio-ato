@@ -10,7 +10,7 @@ export type SolutionPatternNode =
   | 'draft-pr-publisher'
   | 'learning-memory'
   | 'telemetry'
-  | 'openhands-runtime';
+  | 'sovereign-agent-runtime';
 
 export type SolutionPatternConfidence = 'reported' | 'completed' | 'manual' | 'inferred';
 export type SolutionPatternStatus = 'active' | 'rejected';

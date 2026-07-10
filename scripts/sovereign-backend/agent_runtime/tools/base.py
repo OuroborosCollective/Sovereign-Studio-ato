@@ -14,15 +14,43 @@ from typing import Any
 @dataclass
 class ToolResult:
     """Result of a tool execution.
-    
+
     Tools return ToolResult, never raw strings or exceptions.
     Exceptions are caught by the tool runner and converted to ToolResult with status='error'.
+
+    The extra route/evidence fields keep the older `/api/user/agent/jobs/<id>/tools/*`
+    route contract stable while the internal ToolRegistry remains minimal.
     """
+
     status: str = "done"  # done | error | blocked
     output: str | None = None
     error: str | None = None
     blocker: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    # Compatibility/evidence fields used by routes, events and gates.
+    tool: str = "unknown"
+    allowed: bool = True
+    stdout: str | None = None
+    stderr: str | None = None
+    changed_files: tuple[str, ...] = ()
+    diff_summary: str | None = None
+    test_summary: str | None = None
+    exit_code: int | None = None
+    events: tuple[Any, ...] = ()
+    predictive_signal: str = "agent_tool_result"
+
+    def __post_init__(self) -> None:
+        if self.status == "blocked":
+            self.allowed = False
+        if self.stdout is None and self.output is not None:
+            self.stdout = self.output
+        if self.stderr is None and self.error is not None:
+            self.stderr = self.error
+        if not self.blocker and self.status == "blocked" and self.error:
+            self.blocker = self.error
+        if self.exit_code is None:
+            self.exit_code = 0 if self.status == "done" else 1
 
     def is_ok(self) -> bool:
         return self.status == "done"
@@ -32,6 +60,24 @@ class ToolResult:
 
     def is_error(self) -> bool:
         return self.status == "error"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.is_ok(),
+            "tool": self.tool,
+            "status": self.status,
+            "output": self.output,
+            "stdout": self.stdout,
+            "error": self.error,
+            "stderr": self.stderr,
+            "blocker": self.blocker,
+            "metadata": self.metadata,
+            "changed_files": list(self.changed_files),
+            "diff_summary": self.diff_summary,
+            "test_summary": self.test_summary,
+            "exit_code": self.exit_code,
+            "predictive_signal": self.predictive_signal,
+        }
 
 
 @dataclass
@@ -48,7 +94,7 @@ class ToolPolicyError(ValueError):
 
 class ToolBase(ABC):
     """Abstract base class for all Sovereign agent tools.
-    
+
     Each tool:
     - Has a unique name used for registration and routing
     - Declares required/optional parameters in `parameters` dict
@@ -64,18 +110,18 @@ class ToolBase(ABC):
     @abstractmethod
     def execute(self, params: dict[str, Any], workspace_path: str | None = None) -> ToolResult:
         """Execute the tool with given parameters.
-        
+
         Args:
             params: Tool-specific parameters
             workspace_path: Optional workspace directory path
-            
+
         Returns:
             ToolResult with status, output, and metadata
         """
 
     def validate(self, params: dict[str, Any]) -> None:
         """Validate parameters before execution.
-        
+
         Raises ToolPolicyError if validation fails.
         Subclasses should override to add parameter validation.
         """
@@ -100,7 +146,7 @@ class ToolBase(ABC):
 
 class ToolRegistry:
     """Central registry for all Sovereign agent tools.
-    
+
     Provides tool lookup and execution routing.
     """
 
@@ -140,20 +186,28 @@ class ToolRegistry:
         if not tool:
             return ToolResult(
                 status="error",
+                tool=tool_name,
                 error=f"Unknown tool: {tool_name}",
+                predictive_signal="agent_tool_unknown",
             )
         try:
             tool.validate(params)
-            return tool.execute(params, workspace_path)
+            result = tool.execute(params, workspace_path)
+            result.tool = tool_name
+            return result
         except ToolPolicyError as e:
             return ToolResult(
                 status="blocked",
+                tool=tool_name,
                 blocker=str(e),
+                predictive_signal="agent_tool_policy_blocked",
             )
         except Exception as e:
             return ToolResult(
                 status="error",
+                tool=tool_name,
                 error=str(e),
+                predictive_signal="agent_tool_failed",
             )
 
 

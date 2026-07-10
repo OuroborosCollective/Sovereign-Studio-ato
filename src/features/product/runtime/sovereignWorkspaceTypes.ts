@@ -94,7 +94,7 @@ export interface SovereignWorkspaceResult {
 
 /**
  * Workspace adapter interface - for plugging in different executors
- * This makes the runtime agent-neutral, not OpenHands-hardcoded.
+ * This makes the runtime agent-neutral, not Sovereign Agent-hardcoded.
  */
 export interface WorkspaceAdapter {
   readonly id: string;
@@ -165,7 +165,7 @@ export type WorkspaceRoute =
   | 'worker-chat'
   | 'direct-github-patch'
   | 'isolated-workspace'
-  | 'openhands'
+  | 'sovereign-agent'
   | 'snapshot-analysis';
 
 export type WorkspaceCapability =

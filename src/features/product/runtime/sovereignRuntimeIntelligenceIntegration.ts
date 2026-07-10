@@ -143,7 +143,7 @@ export async function onSessionStuck(session: SovereignExecutionSession, reason:
 }
 
 /**
- * Called when strategy changes (e.g., from openhands to direct-patch).
+ * Called when strategy changes (e.g., from sovereign-agent to direct-patch).
  */
 export async function onStrategyChange(
   session: SovereignExecutionSession,

@@ -3,7 +3,7 @@
 The UI never creates agent truth. This module defines the backend truth contract
 for agent jobs and validates every state before a live path can use it.
 
-OpenHands is allowed to be an executor adapter, but it is not the truth source.
+The internal sovereign-local-runner is the only live executor and truth producer.
 """
 
 from __future__ import annotations
@@ -26,11 +26,7 @@ AgentStatus = Literal[
     "cleaned",
 ]
 
-AgentExecutor = Literal[
-    "sovereign-local-runner",
-    "openhands-compat-adapter",
-    "external-code-agent",
-]
+AgentExecutor = Literal["sovereign-local-runner"]
 
 AgentEventLevel = Literal["info", "warning", "error", "success"]
 
@@ -53,11 +49,7 @@ AGENT_TERMINAL_STATUSES: tuple[AgentStatus, ...] = (
     "cleaned",
 )
 
-AGENT_EXECUTORS: tuple[AgentExecutor, ...] = (
-    "sovereign-local-runner",
-    "openhands-compat-adapter",
-    "external-code-agent",
-)
+AGENT_EXECUTORS: tuple[AgentExecutor, ...] = ("sovereign-local-runner",)
 
 _SAFE_BRANCH = re.compile(r"^[\w./-]{1,160}$")
 _SAFE_RELATIVE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))(?!.*\0)[\w .@/+~=-]+$")
@@ -295,9 +287,6 @@ def validate_agent_job_request(request: SovereignAgentJobRequest) -> SovereignAg
 
     if any(path is None for path in [normalize_agent_path(path) for path in request.forbidden_paths]):
         blockers.append("agent forbidden_paths contains an unsafe path")
-
-    if request.executor == "openhands-compat-adapter":
-        warnings.append("OpenHands is a compatibility executor, not the runtime truth source")
 
     return SovereignAgentValidationResult(
         allowed=not blockers,

@@ -3,7 +3,7 @@
  *
  * Test cases from Issue #504:
  * 1. Three same executor_unavailable events create one blocker with occurrences: 3, not three errors
- * 2. GitHub ready + OpenHands missing shows nextAction not "GitHub-Zugang öffnen"
+ * 2. GitHub ready + Sovereign Agent missing shows nextAction not "GitHub-Zugang öffnen"
  * 3. GitHub validating shows status "GitHub-Zugang wird geprüft"
  * 4. Worker HTTP 500 stays its own worker_blocked blocker
  * 5. Action Stream shows blocker inline, no extra dashboard
@@ -34,8 +34,8 @@ describe('sovereignBlockerRegistry', () => {
     it('generates consistent keys for identical inputs', () => {
       const input1 = {
         kind: 'executor_unavailable' as SovereignBlockerKind,
-        route: 'openhands',
-        label: 'OpenHands nicht bereit',
+        route: 'sovereign-agent',
+        label: 'Sovereign Agent nicht bereit',
         detail: 'Executor ist nicht verfügbar',
         nextAction: 'Executor starten',
       };
@@ -49,7 +49,7 @@ describe('sovereignBlockerRegistry', () => {
     it('generates different keys for different routes', () => {
       const input1 = {
         kind: 'executor_unavailable' as SovereignBlockerKind,
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Test',
         detail: 'Same detail',
         nextAction: 'Test',
@@ -151,8 +151,8 @@ describe('sovereignBlockerRegistry', () => {
 
       const executorBlocker = {
         kind: 'executor_unavailable' as SovereignBlockerKind,
-        route: 'openhands',
-        label: 'OpenHands Executor',
+        route: 'sovereign-agent',
+        label: 'Sovereign Agent Executor',
         detail: 'Executor ist nicht verfügbar',
         nextAction: 'Executor starten',
       };
@@ -174,7 +174,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Executor 1',
         detail: 'Detail 1',
         nextAction: 'Action 1',
@@ -182,7 +182,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'worker_blocked',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Executor 2',
         detail: 'Detail 2',
         nextAction: 'Action 2',
@@ -197,7 +197,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Same blocker',
         detail: 'Same detail',
         nextAction: 'Same action',
@@ -205,7 +205,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Same blocker',
         detail: 'Same detail',
         nextAction: 'Same action',
@@ -221,7 +221,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Same blocker',
         detail: 'Same detail',
         nextAction: 'Same action',
@@ -234,7 +234,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Same blocker',
         detail: 'Same detail',
         nextAction: 'Same action',
@@ -255,7 +255,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Test',
         detail: 'Detail',
         nextAction: 'Action',
@@ -273,7 +273,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Test',
         detail: 'Detail',
         nextAction: 'Action',
@@ -293,7 +293,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Executor blocker',
         detail: 'Detail',
         nextAction: 'Action',
@@ -330,18 +330,18 @@ describe('sovereignBlockerRegistry', () => {
   // ─── Next Action Derivation ────────────────────────────────────────────────
 
   describe('deriveBlockerNextAction', () => {
-    it('Test 2: GitHub ready + OpenHands missing shows nextAction not "GitHub-Zugang öffnen"', () => {
+    it('Test 2: GitHub ready + Sovereign Agent missing shows nextAction not "GitHub-Zugang öffnen"', () => {
       const action = deriveBlockerNextAction({
         githubReady: true,
         githubValidating: false,
         executorAvailable: false,
         patchRouteAvailable: true,
-        openhandsConfigured: false,
+        agentConfigured: false,
       });
 
       // Should NOT suggest opening GitHub access
       expect(action).not.toContain('GitHub-Zugang öffnen');
-      expect(action).toBe('OpenHands konfigurieren.');
+      expect(action).toBe('Sovereign Agent konfigurieren.');
     });
 
     it('Test 3: GitHub validating shows status "GitHub-Zugang wird geprüft"', () => {
@@ -350,7 +350,7 @@ describe('sovereignBlockerRegistry', () => {
         githubValidating: true,
         executorAvailable: false,
         patchRouteAvailable: false,
-        openhandsConfigured: false,
+        agentConfigured: false,
       });
 
       expect(action).toBe('GitHub-Zugang wird geprüft. Bitte Ergebnis abwarten.');
@@ -362,7 +362,7 @@ describe('sovereignBlockerRegistry', () => {
         githubValidating: false,
         executorAvailable: false,
         patchRouteAvailable: false,
-        openhandsConfigured: false,
+        agentConfigured: false,
       });
 
       expect(action).toBe('Sicheren GitHub-Zugang öffnen.');
@@ -374,7 +374,7 @@ describe('sovereignBlockerRegistry', () => {
         githubValidating: false,
         executorAvailable: false,
         patchRouteAvailable: true,
-        openhandsConfigured: true,
+        agentConfigured: true,
       });
 
       expect(action).toBe('Workspace Executor starten.');
@@ -386,7 +386,7 @@ describe('sovereignBlockerRegistry', () => {
         githubValidating: false,
         executorAvailable: true,
         patchRouteAvailable: false,
-        openhandsConfigured: true,
+        agentConfigured: true,
       });
 
       expect(action).toBe('Direct GitHub Patch Runtime aktivieren.');
@@ -398,7 +398,7 @@ describe('sovereignBlockerRegistry', () => {
         githubValidating: false,
         executorAvailable: true,
         patchRouteAvailable: true,
-        openhandsConfigured: true,
+        agentConfigured: true,
       });
 
       expect(action).toBe('Auftrag eingeben und ausführen.');
@@ -514,7 +514,7 @@ describe('sovereignBlockerRegistry', () => {
 
       state = registerBlocker(state, {
         kind: 'executor_unavailable',
-        route: 'openhands',
+        route: 'sovereign-agent',
         label: 'Test',
         detail: 'Detail',
         nextAction: 'Action',

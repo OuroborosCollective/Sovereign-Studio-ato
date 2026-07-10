@@ -1,7 +1,7 @@
 """Sovereign Agent Runtime package.
 
 This package owns the neutral backend contract for Sovereign agent jobs.
-OpenHands may be one executor adapter, but the runtime truth is produced here.
+The internal sovereign-local-runner produces runtime truth here.
 """
 
 from .contracts import (  # noqa: F401
@@ -17,6 +17,15 @@ from .contracts import (  # noqa: F401
     sanitize_agent_text,
     validate_agent_job_request,
     validate_agent_job_result,
+)
+from .draft_pr_create_gate import (  # noqa: F401
+    DraftPrCreateRequest,
+    DraftPrCreateResult,
+    GitHubApiDraftPrCreator,
+    create_draft_pr_for_job,
+    draft_pr_create_request_from_job,
+    draft_pr_create_signal,
+    validate_draft_pr_create_request,
 )
 from .draft_pr_gate import (  # noqa: F401
     DraftPrPreparationInput,
@@ -50,10 +59,19 @@ from .job_store import (  # noqa: F401
     append_agent_event,
     create_agent_job_record,
     list_agent_jobs,
+    mark_draft_pr_created,
     mark_draft_pr_prepared,
     read_agent_job,
     result_from_stored_job,
     update_agent_job_state,
+)
+from .pattern_gateway import (  # noqa: F401
+    PatternLearningInput,
+    PatternLearningResult,
+    evaluate_pattern_learning,
+    pattern_input_from_job,
+    pattern_learning_signal,
+    persist_pattern_learning_candidate,
 )
 from .tool_events import (  # noqa: F401
     append_tool_result_to_job,

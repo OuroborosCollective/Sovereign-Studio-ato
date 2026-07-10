@@ -5,13 +5,13 @@
  * user-understandable Workbench status truth: Actions, Files, Logs, Errors, Draft PR.
  *
  * Hard rule: this module only reads existing runtime state (logs, worker blocker,
- * OpenHands job, repo error, published PR). It never invents log lines, files or
+ * Sovereign Agent job, repo error, published PR). It never invents log lines, files or
  * actions. Empty slots stay empty and are labelled as such by the caller.
  *
  * Issue #504: Error deduplication - same blocker should not be counted multiple times.
  */
 import type { WorkerRuntimeBlocker } from './builderContainerTypes';
-import type { OpenHandsJobSnapshot } from './openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 import { deriveBlockerNextAction } from './sovereignBlockerRegistry';
 import type { GitHubAccessState } from './githubAccessRuntime';
 
@@ -41,12 +41,12 @@ export interface WorkbenchStatusInput {
   readonly logs: readonly WorkbenchStatusLogEntry[];
   readonly workerBlocker: WorkerRuntimeBlocker | null;
   readonly chatRepoError: string | null;
-  readonly openhandsJob?: OpenHandsJobSnapshot;
+  readonly agentJob?: SovereignAgentJobSnapshot;
   readonly publishedPrUrl?: string;
   /** GitHub access state for Issue #504 */
   readonly githubState?: GitHubAccessState;
-  /** OpenHands configured state for Issue #504 */
-  readonly openhandsConfigured?: boolean;
+  /** Sovereign Agent configured state for Issue #504 */
+  readonly agentConfigured?: boolean;
   /** Patch route available for Issue #504 */
   readonly patchRouteAvailable?: boolean;
 }
@@ -82,9 +82,9 @@ export function deriveSystemActionEntries(input: WorkbenchStatusInput): string[]
     .map((log) => `${log.ts} · ${log.msg}`);
 }
 
-/** Edited Files: only real OpenHands changed files, never invented paths. */
+/** Edited Files: only real Sovereign Agent changed files, never invented paths. */
 export function deriveEditedFileEntries(input: WorkbenchStatusInput): string[] {
-  return [...(input.openhandsJob?.changedFiles ?? [])];
+  return [...(input.agentJob?.changedFiles ?? [])];
 }
 
 /** Logs: full chronological runtime log, human readable. */
@@ -92,7 +92,7 @@ export function deriveLogEntries(input: WorkbenchStatusInput): string[] {
   return input.logs.map((log) => `${log.ts} · [${log.level}] ${log.msg}`);
 }
 
-/** Errors: worker blocker, repo load failure, failed/blocked OpenHands job and log-level errors/warnings.
+/** Errors: worker blocker, repo load failure, failed/blocked Sovereign Agent job and log-level errors/warnings.
  * Issue #504: Deduplicates by normalized message to prevent repeated blockers from inflating count.
  */
 export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
@@ -114,11 +114,11 @@ export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
   if (input.chatRepoError) {
     addUniqueEntry(`Repo Ladefehler · ${input.chatRepoError}`);
   }
-  if (input.openhandsJob?.status === 'failed') {
-    addUniqueEntry(`Sovereign Agent Job fehlgeschlagen${input.openhandsJob.lastError ? ` · ${input.openhandsJob.lastError}` : ''}`);
+  if (input.agentJob?.status === 'failed') {
+    addUniqueEntry(`Sovereign Agent Job fehlgeschlagen${input.agentJob.lastError ? ` · ${input.agentJob.lastError}` : ''}`);
   }
-  if (input.openhandsJob?.status === 'blocked') {
-    addUniqueEntry(`Sovereign Agent Job blockiert${input.openhandsJob.lastError ? ` · ${input.openhandsJob.lastError}` : ''}`);
+  if (input.agentJob?.status === 'blocked') {
+    addUniqueEntry(`Sovereign Agent Job blockiert${input.agentJob.lastError ? ` · ${input.agentJob.lastError}` : ''}`);
   }
   for (const log of input.logs) {
     if (isNoiseLevel(log.level) && !isResolvedGithubAccessLog(input, log.msg)) {
@@ -129,12 +129,12 @@ export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
 }
 
 export function deriveDraftPrUrl(input: WorkbenchStatusInput): string | undefined {
-  return input.openhandsJob?.draftPrUrl ?? input.publishedPrUrl;
+  return input.agentJob?.draftPrUrl ?? input.publishedPrUrl;
 }
 
 export function deriveDraftPrStatus(input: WorkbenchStatusInput): { label: string; tone: WorkbenchStatusTone } {
   if (deriveDraftPrUrl(input)) return { label: 'bereit', tone: 'positive' };
-  if (input.openhandsJob?.status === 'running' || input.openhandsJob?.status === 'queued') {
+  if (input.agentJob?.status === 'running' || input.agentJob?.status === 'queued') {
     return { label: 'läuft', tone: 'warning' };
   }
   return { label: 'fehlt', tone: 'neutral' };
@@ -146,13 +146,13 @@ export function deriveDraftPrStatus(input: WorkbenchStatusInput): { label: strin
  */
 function deriveHonestNextAction(input: WorkbenchStatusInput): string {
   // If extended inputs are provided, use blocker registry logic
-  if (input.githubState !== undefined || input.openhandsConfigured !== undefined) {
+  if (input.githubState !== undefined || input.agentConfigured !== undefined) {
     return deriveBlockerNextAction({
       githubReady: input.githubState === 'ready',
       githubValidating: input.githubState === 'validating',
-      executorAvailable: input.openhandsJob?.status === 'running' || input.openhandsJob?.status === 'queued',
+      executorAvailable: input.agentJob?.status === 'running' || input.agentJob?.status === 'queued',
       patchRouteAvailable: input.patchRouteAvailable ?? false,
-      openhandsConfigured: input.openhandsConfigured ?? false,
+      agentConfigured: input.agentConfigured ?? false,
     });
   }
 

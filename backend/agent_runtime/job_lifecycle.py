@@ -177,7 +177,7 @@ def create_sovereign_agent_job(
 
 
 def _safe_executor(request: SovereignAgentJobRequest) -> str:
-    return request.executor if request.executor in ("sovereign-local-runner", "openhands-compat-adapter", "external-code-agent") else "sovereign-local-runner"
+    return "sovereign-local-runner"
 
 
 def _safe_blocked_request(request: SovereignAgentJobRequest) -> SovereignAgentJobRequest:

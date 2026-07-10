@@ -1,6 +1,6 @@
 ---
 name: sovereign-studio-agent
-description: Use this skill when working on Sovereign Studio ATO (OuroborosCollective/Sovereign-Studio-ato). Activate when the user mentions apply patch, implement issue, BuilderContainer, runtime truth, capability router, direct GitHub patch, OpenHands, workspace executor, Draft PR, run checks, push or close issues. Provides guidance on chat-first product rules, runtime library integration, GitHub access safety, branch/Draft PR workflow and issue management.
+description: Use this skill when working on Sovereign Studio ATO (OuroborosCollective/Sovereign-Studio-ato). Activate when the user mentions apply patch, implement issue, BuilderContainer, runtime truth, capability router, direct GitHub patch, Sovereign Agent, workspace executor, Draft PR, run checks, push or close issues. Provides guidance on chat-first product rules, runtime library integration, GitHub access safety, branch/Draft PR workflow and issue management.
 ---
 
 # Sovereign Studio Agent Skill
@@ -46,7 +46,7 @@ src/App.tsx
 
 ## Capability routing baseline
 
-Do not treat OpenHands as the only write route.
+Do not treat Sovereign Agent as the only write route.
 
 Correct model:
 
@@ -54,11 +54,11 @@ Correct model:
 normal question → worker/model route
 status question → local runtime answer
 README/docs mini-patch → Direct GitHub Patch route
-multi-file code/test/build task → workspace executor or OpenHands
+multi-file code/test/build task → workspace executor or Sovereign Agent
 Draft PR → Draft PR runtime
 ```
 
-OpenHands is not a normal LLM route. It is an optional workspace/code executor that may use an LLM. It can work with files and commands. It must not be the only way to change files.
+Sovereign Agent is not a normal LLM route. It is an optional workspace/code executor that may use an LLM. It can work with files and commands. It must not be the only way to change files.
 
 Related docs:
 
@@ -75,7 +75,7 @@ docs/SOVEREIGN_READER.md
 Use these issues as the route map:
 
 ```text
-#500 Route write intents after GitHub ready without OpenHands lock-in
+#500 Route write intents after GitHub ready without Sovereign Agent lock-in
 #501 Direct GitHub Patch route for README/docs changes
 #502 Sovereign Capability Router
 #503 Agent-neutral Workspace Runtime
@@ -245,9 +245,9 @@ When closing, add a comment summarizing commit SHA, files changed and checks.
 
 Do not create a new dashboard, wrapper shell or parallel workbench as the live path. New UI belongs inside the existing product surface or as an inspection component.
 
-### Pitfall: OpenHands lock-in
+### Pitfall: Sovereign Agent lock-in
 
-If GitHub access is ready but OpenHands is missing, the blocker is executor capability, not GitHub access. Check Direct GitHub Patch or Workspace Runtime capability next.
+If GitHub access is ready but Sovereign Agent is missing, the blocker is executor capability, not GitHub access. Check Direct GitHub Patch or Workspace Runtime capability next.
 
 ### Pitfall: worker answer equals code change
 

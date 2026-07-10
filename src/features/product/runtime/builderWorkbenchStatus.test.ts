@@ -46,9 +46,9 @@ describe('builderWorkbenchStatus', () => {
     expect(actions[0]).toContain('Worker retry requested by user');
   });
 
-  it('derives edited files only from real OpenHands changed files', () => {
+  it('derives edited files only from real Sovereign Agent changed files', () => {
     const input = baseInput({
-      openhandsJob: {
+      agentJob: {
         status: 'running',
         changedFiles: ['src/App.tsx', 'src/features/product/containers/BuilderContainer.tsx'],
         events: [],
@@ -70,7 +70,7 @@ describe('builderWorkbenchStatus', () => {
     expect(deriveLogEntries(input)).toHaveLength(2);
   });
 
-  it('collects worker blocker, repo error and failed/blocked OpenHands jobs as errors', () => {
+  it('collects worker blocker, repo error and failed/blocked Sovereign Agent jobs as errors', () => {
     const input = baseInput({
       workerBlocker: {
         message: 'Worker HTTP 500',
@@ -78,7 +78,7 @@ describe('builderWorkbenchStatus', () => {
         createdAt: Date.now(),
       },
       chatRepoError: 'Repo tree fetch failed',
-      openhandsJob: { status: 'failed', changedFiles: [], events: [], lastError: 'boom' },
+      agentJob: { status: 'failed', changedFiles: [], events: [], lastError: 'boom' },
     });
     const errors = deriveErrorEntries(input);
     expect(errors.some((e) => e.includes('Worker HTTP 500'))).toBe(true);
@@ -101,11 +101,11 @@ describe('builderWorkbenchStatus', () => {
   it('reports Draft PR as bereit only when a real PR url exists', () => {
     expect(deriveDraftPrStatus(baseInput()).label).toBe('fehlt');
     expect(
-      deriveDraftPrStatus(baseInput({ openhandsJob: { status: 'running', changedFiles: [], events: [] } })).label,
+      deriveDraftPrStatus(baseInput({ agentJob: { status: 'running', changedFiles: [], events: [] } })).label,
     ).toBe('läuft');
     expect(
       deriveDraftPrStatus(
-        baseInput({ openhandsJob: { status: 'running', changedFiles: [], events: [], draftPrUrl: 'https://x' } }),
+        baseInput({ agentJob: { status: 'running', changedFiles: [], events: [], draftPrUrl: 'https://x' } }),
       ).label,
     ).toBe('bereit');
     expect(deriveDraftPrStatus(baseInput({ publishedPrUrl: 'https://x' })).label).toBe('bereit');

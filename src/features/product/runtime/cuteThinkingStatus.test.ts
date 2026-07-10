@@ -72,10 +72,10 @@ describe('cuteThinkingStatus', () => {
   });
 
   it('formats active workstate labels with kaomoji and changing dots', () => {
-    const label = formatCuteWorkStateLabel({ index: 2, active: true, status: 'OpenHands läuft' });
+    const label = formatCuteWorkStateLabel({ index: 2, active: true, status: 'Sovereign Agent läuft' });
 
     expect(label).toContain('.');
-    expect(label).toContain('OpenHands läuft');
+    expect(label).toContain('Sovereign Agent läuft');
     expect(CUTE_KAOMOJI_FRAMES.some((kaomoji) => label.includes(kaomoji))).toBe(true);
     expect(label).not.toMatch(/\d+%/);
   });

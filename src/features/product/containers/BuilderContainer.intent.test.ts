@@ -4,51 +4,51 @@
  */
 
 import {
-  isOpenHandsExecutionIntent,
+  isSovereignAgentExecutionIntent,
   isCodeGenerationIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   getWorkerActionHint,
 } from '../runtime/workerIntentDetector';
 
-describe('isOpenHandsExecutionIntent', () => {
-  it('detects OpenHands keyword', () => {
-    expect(isOpenHandsExecutionIntent('Use OpenHands to fix this')).toBe(true);
+describe('isSovereignAgentExecutionIntent', () => {
+  it('detects Sovereign Agent keyword', () => {
+    expect(isSovereignAgentExecutionIntent('Use Sovereign Agent to fix this')).toBe(true);
   });
 
   it('detects draft PR intent', () => {
-    expect(isOpenHandsExecutionIntent('Create a draft PR')).toBe(true);
-    expect(isOpenHandsExecutionIntent('pr erstellen')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('Create a draft PR')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('pr erstellen')).toBe(true);
   });
 
   it('detects push/commit intent', () => {
-    expect(isOpenHandsExecutionIntent('push to main')).toBe(true);
-    expect(isOpenHandsExecutionIntent('commit the changes')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('push to main')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('commit the changes')).toBe(true);
   });
 
-  it('keeps generic build/implement intent out of OpenHands-only routing', () => {
-    expect(isOpenHandsExecutionIntent('baue die app')).toBe(false);
-    expect(isOpenHandsExecutionIntent('implementiere feature')).toBe(false);
+  it('keeps generic build/implement intent out of Sovereign Agent-only routing', () => {
+    expect(isSovereignAgentExecutionIntent('baue die app')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('implementiere feature')).toBe(false);
   });
 
-  it('keeps generic fix intent out of OpenHands-only routing', () => {
-    expect(isOpenHandsExecutionIntent('fixe den bug')).toBe(false);
-    expect(isOpenHandsExecutionIntent('repariere den server')).toBe(false);
+  it('keeps generic fix intent out of Sovereign Agent-only routing', () => {
+    expect(isSovereignAgentExecutionIntent('fixe den bug')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('repariere den server')).toBe(false);
   });
 
   it('returns false for non-execution text', () => {
-    expect(isOpenHandsExecutionIntent('Hello world')).toBe(false);
-    expect(isOpenHandsExecutionIntent('What is this project about?')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('Hello world')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('What is this project about?')).toBe(false);
   });
 
   it('is case insensitive', () => {
-    expect(isOpenHandsExecutionIntent('openhands')).toBe(true);
-    expect(isOpenHandsExecutionIntent('OPENHANDS')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('sovereign-agent')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('SOVEREIGN_AGENT')).toBe(true);
   });
 });
 
 describe('isCodeGenerationIntent', () => {
-  it('detects generic code-generation intent without forcing OpenHands', () => {
+  it('detects generic code-generation intent without forcing Sovereign Agent', () => {
     expect(isCodeGenerationIntent('baue die app')).toBe(true);
     expect(isCodeGenerationIntent('implementiere feature')).toBe(true);
     expect(isCodeGenerationIntent('fixe den bug')).toBe(true);
@@ -114,14 +114,14 @@ describe('isWorkerDiagnosticQuestion', () => {
 describe('getWorkerActionHint', () => {
   it('returns executor write-route hint for explicit executor intent', () => {
     expect(getWorkerActionHint({
-      submittedText: 'Use OpenHands to fix',
+      submittedText: 'Use Sovereign Agent to fix',
       workerBlocked: false,
     })).toBe('Executor-Schreibroute starten');
   });
 
   it('returns blocked executor hint when agent disabled', () => {
     expect(getWorkerActionHint({
-      submittedText: 'openhands do something',
+      submittedText: 'sovereign-agent do something',
       workerBlocked: true,
       agentDisabled: true,
     })).toBe('Executor blockiert · Code-Route prüft zuerst');

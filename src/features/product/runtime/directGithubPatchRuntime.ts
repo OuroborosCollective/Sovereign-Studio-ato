@@ -1,7 +1,7 @@
 /*
  * Direct GitHub Patch Runtime
  *
- * Lightweight runtime route for small README/docs changes when OpenHands is not
+ * Lightweight runtime route for small README/docs changes when Sovereign Agent is not
  * configured. This module produces only a reviewable patch plan. It does not
  * write to GitHub and it never persists credentials.
  */
@@ -139,7 +139,7 @@ export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs)
   const { repoContext, githubAccessReady, instruction, baseContent } = args;
   if (!githubAccessReady) return { available: false, reason: 'GitHub-Zugang nicht bereit für Direct Patch Route.', blocker: 'github_access_missing' };
   if (!repoContext) return { available: false, reason: 'Repo-Kontext fehlt für Direct Patch Route.', blocker: 'repo_missing' };
-  if (!isDirectPatchIntent(instruction)) return { available: false, reason: 'Auftrag ist nicht einfach genug für Direct Patch Route. OpenHands/Executor wird empfohlen.', blocker: 'unsupported_intent' };
+  if (!isDirectPatchIntent(instruction)) return { available: false, reason: 'Auftrag ist nicht einfach genug für Direct Patch Route. Sovereign Agent/Executor wird empfohlen.', blocker: 'unsupported_intent' };
 
   const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
   if (!targetPath) return { available: false, reason: 'Zieldatei konnte nicht erkannt werden.', blocker: 'target_not_in_repo' };
@@ -147,7 +147,7 @@ export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs)
   const pathBlocker = getDirectPatchPathBlocker(targetPath);
   if (pathBlocker) {
     const blockerMessages: Record<DirectPatchBlocker, string> = {
-      unsafe_target: 'Dateipfad nicht erlaubt für Direct Patch. Nutze OpenHands/Executor.',
+      unsafe_target: 'Dateipfad nicht erlaubt für Direct Patch. Nutze Sovereign Agent/Executor.',
       unsupported_intent: 'Dateityp nicht unterstützt für Direct Patch v1.',
       repo_missing: 'Repo-Kontext fehlt.',
       github_access_missing: 'GitHub-Zugang nicht bereit.',
@@ -255,7 +255,7 @@ export interface DirectPatchRuntimeArgs {
 export function executeDirectPatchRuntime(args: DirectPatchRuntimeArgs): DirectGitHubPatchResult {
   const { instruction, baseContent, targetPath } = args;
   if (!baseContent.trim() || baseContent.trim() === '[loaded]') return { ok: false, reason: 'Zieldatei konnte nicht geladen werden.', blocker: 'content_load_failed' };
-  if (isDirectPatchForbiddenPath(targetPath)) return { ok: false, reason: `Dateipfad "${targetPath}" nicht erlaubt für Direct Patch. Nutze OpenHands/Executor.`, blocker: 'unsafe_target' };
+  if (isDirectPatchForbiddenPath(targetPath)) return { ok: false, reason: `Dateipfad "${targetPath}" nicht erlaubt für Direct Patch. Nutze Sovereign Agent/Executor.`, blocker: 'unsafe_target' };
   if (!isDirectPatchAllowedPath(targetPath)) return { ok: false, reason: `Dateipfad "${targetPath}" nicht unterstützt für Direct Patch v1.`, blocker: 'unsupported_intent' };
 
   const patchResult = generateDirectPatchContent(baseContent, instruction);

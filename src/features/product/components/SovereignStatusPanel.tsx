@@ -6,7 +6,7 @@
  * - Top counters distinguish Errors, Warnings, Active Blockers
  * - Repeated same blockers are deduplicated
  * - Next Action matches actual state
- * - GitHub ready stays ready even if OpenHands missing
+ * - GitHub ready stays ready even if Sovereign Agent missing
  * - No global "bereit" when write route is blocked
  * - UI shows only Runtime state
  */
@@ -19,10 +19,10 @@ import type { GitHubAccessState } from '../runtime/githubAccessRuntime';
 export interface SovereignStatusPanelProps {
   /** GitHub access state */
   githubState: GitHubAccessState;
-  /** Whether executor (OpenHands) is available */
+  /** Whether executor (Sovereign Agent) is available */
   executorAvailable: boolean;
-  /** Whether OpenHands is configured */
-  openhandsConfigured: boolean;
+  /** Whether Sovereign Agent is configured */
+  agentConfigured: boolean;
   /** Whether patch route is available */
   patchRouteAvailable: boolean;
   /** Whether repo is ready (from runtime state) */
@@ -134,7 +134,7 @@ function SubStatus({
 export function SovereignStatusPanel({
   githubState,
   executorAvailable,
-  openhandsConfigured,
+  agentConfigured,
   patchRouteAvailable,
   repoReady,
   blockerCounts,
@@ -149,7 +149,7 @@ export function SovereignStatusPanel({
       githubValidating: githubState === 'validating',
       executorAvailable,
       patchRouteAvailable,
-      openhandsConfigured,
+      agentConfigured,
     });
 
   const hasErrors = (blockerCounts?.errors ?? 0) > 0;

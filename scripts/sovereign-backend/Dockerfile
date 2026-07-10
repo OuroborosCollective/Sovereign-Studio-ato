@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY security_oauth.py .
 COPY agent_runtime/ ./agent_runtime/
+COPY migrations ./migrations
 COPY auto-migrate.sh /docker-entrypoint.d/auto-migrate.sh
 RUN chmod +x /docker-entrypoint.d/auto-migrate.sh
 

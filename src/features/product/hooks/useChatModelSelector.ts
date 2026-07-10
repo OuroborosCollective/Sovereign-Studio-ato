@@ -8,7 +8,7 @@ import type { LlmModelInfo } from '../components/ChatSidebar';
 function getProviderLabel(id: string, kind: string): string {
   switch (id) {
     case 'optional-user-keys':
-      return 'OpenHands Bridge';
+      return 'Sovereign Agent Bridge';
     case 'mlvoca':
       return 'MLVoca';
     case 'pollinations':

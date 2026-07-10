@@ -7,7 +7,7 @@ import {
   evaluateSovereignPresetActionGate,
   getSovereignPresetAction,
 } from './sovereignPresetActionRuntime';
-import { isOpenHandsExecutionIntent } from './workerIntentDetector';
+import { isSovereignAgentExecutionIntent } from './workerIntentDetector';
 
 describe('sovereignPresetActionRuntime', () => {
   it('defines stable guided actions for common repo tasks', () => {
@@ -42,7 +42,7 @@ describe('sovereignPresetActionRuntime', () => {
       repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',
       branch: 'main',
       githubWriteReady: false,
-      openhandsReady: false,
+      agentReady: false,
     });
 
     expect(prompt).toContain('Sovereign Preset: Runtime härten');
@@ -58,7 +58,7 @@ describe('sovereignPresetActionRuntime', () => {
       repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',
       branch: 'main',
       githubWriteReady: false,
-      openhandsReady: false,
+      agentReady: false,
     });
 
     expect(submitted).toContain('GitHub Write: wird vor Ausführung geprüft');
@@ -73,13 +73,13 @@ describe('sovereignPresetActionRuntime', () => {
         repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',
         branch: 'main',
         githubWriteReady: false,
-        openhandsReady: false,
+        agentReady: false,
       });
 
       expect(action.risk).toBe('safe_analysis');
-      expect(submitted).not.toContain('OpenHands:');
+      expect(submitted).not.toContain('Sovereign Agent:');
       expect(isWriteIntent(submitted)).toBe(false);
-      expect(isOpenHandsExecutionIntent(submitted)).toBe(false);
+      expect(isSovereignAgentExecutionIntent(submitted)).toBe(false);
     }
   });
 });

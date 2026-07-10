@@ -47,7 +47,7 @@ describe('main app entry', () => {
     expect(app).not.toContain('decideSovereignAutoView');
     expect(app).not.toContain('setActiveTab(decision.tab)');
     expect(app).not.toContain('workflowStatus: workflowReport?.status');
-    expect(app).toContain('onStartOpenHands={startChatOnlyTask}');
+    expect(app).toContain('onStartAgent={startChatOnlyTask}');
   });
 
   it('keeps the release shell styling contract in the Android web build', () => {

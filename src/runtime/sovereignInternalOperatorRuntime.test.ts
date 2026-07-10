@@ -11,7 +11,7 @@ function capabilities(overrides: Partial<Parameters<typeof buildSovereignToolCap
     githubAccessState: 'ready',
     githubTokenPresent: true,
     directPatchSupported: true,
-    openhandsConfigured: true,
+    agentConfigured: true,
     workerAvailable: true,
     workspaceConfigured: true,
     draftPrSupported: true,
@@ -34,7 +34,7 @@ describe('sovereignInternalOperatorRuntime', () => {
     expect(decision.stages).toContain('diff_guard');
   });
 
-  it('prefers the own workspace before the optional OpenHands bridge', () => {
+  it('prefers the own workspace before the optional Sovereign Agent bridge', () => {
     const decision = decideSovereignInternalOperator({
       text: 'Implementiere eine Runtime mit Tests',
       capabilities: capabilities({ directPatchSupported: false }),
@@ -47,12 +47,12 @@ describe('sovereignInternalOperatorRuntime', () => {
     expect(decision.stages).toContain('test_selection');
   });
 
-  it('falls back to the internal runtime patch path when OpenHands and workspace are absent', () => {
+  it('falls back to the internal runtime patch path when Sovereign Agent and workspace are absent', () => {
     const decision = decideSovereignInternalOperator({
       text: 'Baue den internen Operator ein und teste die Route',
       capabilities: capabilities({
         directPatchSupported: false,
-        openhandsConfigured: false,
+        agentConfigured: false,
         workspaceConfigured: false,
       }),
       traceIdProvider: () => 'test-internal',
@@ -61,7 +61,7 @@ describe('sovereignInternalOperatorRuntime', () => {
     expect(decision.state).toBe('allowed');
     expect(decision.route).toBe('internal_runtime_patch');
     expect(decision.nextAction).toBe('run_internal_operator');
-    expect(decision.reason).toContain('ohne OpenHands-Pflicht');
+    expect(decision.reason).toContain('ohne Sovereign Agent-Pflicht');
     expect(decision.stages).toContain('draft_pr_gate');
   });
 
@@ -90,7 +90,7 @@ describe('sovereignInternalOperatorRuntime', () => {
       text: 'Baue den internen Operator ein',
       capabilities: capabilities({
         directPatchSupported: false,
-        openhandsConfigured: false,
+        agentConfigured: false,
         workspaceConfigured: false,
       }),
       signals,

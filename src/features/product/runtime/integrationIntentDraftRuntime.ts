@@ -45,7 +45,7 @@ export interface IntegrationIntentDraftGateSnapshot {
   readonly repoReady: boolean;
   readonly githubWriteReady: boolean;
   readonly directPatchReady: boolean;
-  readonly openhandsReady: boolean;
+  readonly agentReady: boolean;
   readonly blockerMessage?: string;
 }
 
@@ -98,7 +98,7 @@ function extractScopeKeywords(input: string): string[] {
     { pattern: /test|testen|pruef|validierung/i, label: 'Tests/Validierung' },
     { pattern: /repo|repository|datei|file|struktur|architektur/i, label: 'Repo/Struktur' },
     { pattern: /github|pr|pull.?request|branch|commit/i, label: 'GitHub/Versionierung' },
-    { pattern: /worker|executor|openhands|agent/i, label: 'Executor/Agent' },
+    { pattern: /worker|executor|sovereign-agent|agent/i, label: 'Executor/Agent' },
     { pattern: /chat|nachricht|eingabe|eingabefeld/i, label: 'Chat/Interface' },
     { pattern: /api|endpoint|server|daten/i, label: 'API/Daten' },
     { pattern: /build|deploy|produktion|publish/i, label: 'Build/Deploy' },
@@ -143,8 +143,8 @@ function deriveAffectedFiles(input: string, repoFiles?: RepoFile[]): string[] {
       patterns: ['github', 'pr'],
     },
     {
-      keywords: ['worker', 'executor', 'openhands'],
-      patterns: ['worker', 'executor', 'openhands'],
+      keywords: ['worker', 'executor', 'sovereign-agent'],
+      patterns: ['worker', 'executor', 'sovereign-agent'],
     },
     {
       keywords: ['security', 'sicherheit', 'token'],
@@ -378,7 +378,7 @@ export function formatIntegrationIntentDraft(draft: IntegrationIntentDraft): {
  * P2 Fix 4: Considers all valid execution paths:
  * - GitHub write ready (for Direct Patch)
  * - Direct Patch ready (valid token + repo)
- * - OpenHands ready (but GitHub write is still needed for actual writes)
+ * - Sovereign Agent ready (but GitHub write is still needed for actual writes)
  */
 export function canConfirmIntegrationIntentDraft(
   draft: IntegrationIntentDraft,
@@ -394,24 +394,24 @@ export function canConfirmIntegrationIntentDraft(
 
   // P2 Fix 4: Accept any valid execution path
   // Direct Patch and GitHub write are sufficient
-  // OpenHands requires GitHub write for actual writes, but we allow the path
+  // Sovereign Agent requires GitHub write for actual writes, but we allow the path
   // because the user can set up GitHub access when prompted
   if (gates.directPatchReady || gates.githubWriteReady) {
     return { canConfirm: true };
   }
 
-  // OpenHands without GitHub write - show access gate option
-  if (gates.openhandsReady) {
+  // Sovereign Agent without GitHub write - show access gate option
+  if (gates.agentReady) {
     return {
       canConfirm: false,
-      blocker: 'GitHub-Zugang erforderlich für OpenHands-Ausführung.',
+      blocker: 'GitHub-Zugang erforderlich für Sovereign Agent-Ausführung.',
     };
   }
 
   // No write path available
   return {
     canConfirm: false,
-    blocker: gates.blockerMessage || 'Kein Ausführungspfad verfügbar. Bitte GitHub-Zugang oder OpenHands konfigurieren.',
+    blocker: gates.blockerMessage || 'Kein Ausführungspfad verfügbar. Bitte GitHub-Zugang oder Sovereign Agent konfigurieren.',
   };
 }
 

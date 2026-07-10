@@ -56,7 +56,7 @@ describe('workspaceErrorPolicy', () => {
         status: 'blocked',
         events: [],
         changedFiles: [],
-        blocker: 'OpenHands backend is not ready.',
+        blocker: 'Sovereign Agent backend is not ready.',
       };
       const error = classifyWorkspaceError(result);
       expect(error.kind).toBe('backend-unavailable');

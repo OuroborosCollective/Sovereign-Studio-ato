@@ -12,8 +12,8 @@
  * - No secrets in workspace logs, chat, telemetry or PR body
  * - No mocks/stubs/facades in the live path
  *
- * This runtime is agent-neutral, not OpenHands-hardcoded.
- * OpenHands can be connected as the first adapter.
+ * This runtime is agent-neutral, not Sovereign Agent-hardcoded.
+ * Sovereign Agent can be connected as the first adapter.
  */
 
 import type {

@@ -4,7 +4,7 @@
  * Entry -> Process -> Exit data flow for chat diagnostics.
  * The official live user path is the BuilderContainer NoCode Chat Workbench.
  * This runtime is deliberately honest: it validates input and may call an
- * explicitly supplied processor, but it never fabricates LLM/OpenHands output.
+ * explicitly supplied processor, but it never fabricates LLM/Sovereign Agent output.
  */
 
 import { defaultTraceIdProvider, globalTelemetry, runtimeIntelligence } from '../../../runtime/RuntimeIntelligence';
@@ -52,7 +52,7 @@ export interface ChatExitState {
     latencyMs: number | null;
     modelId: string | null;
   };
-  openHandsStatus: {
+  agentStatus: {
     status: 'idle' | 'running' | 'completed' | 'failed';
     jobId?: string;
   };
@@ -74,7 +74,7 @@ export interface ChatRuntimeConfig {
   maxMessageLength?: number;
   minMessageLength?: number;
   checkModelHealth?: boolean;
-  enableOpenHands?: boolean;
+  enableSovereignAgent?: boolean;
   responseTimeoutMs?: number;
   processor?: ChatRuntimeProcessor;
 }
@@ -83,7 +83,7 @@ const DEFAULT_CONFIG: Required<Omit<ChatRuntimeConfig, 'processor'>> = {
   maxMessageLength: 10000,
   minMessageLength: 1,
   checkModelHealth: true,
-  enableOpenHands: true,
+  enableSovereignAgent: true,
   responseTimeoutMs: 30000,
 };
 
@@ -190,7 +190,7 @@ export async function processChatMessage(
     if (!cfg.processor) {
       return {
         success: false,
-        error: 'No executable chat processor configured. Use the Builder Chat Workbench/OpenHands live path.',
+        error: 'No executable chat processor configured. Use the Builder Chat Workbench/Sovereign Agent live path.',
         modelUsed: model.modelId,
         latencyMs: Math.round(nowMs() - startTime),
       };
@@ -247,7 +247,7 @@ export function buildChatExitState(messages: ChatMessage[], result: ChatProcessR
     suggestions.push({
       id: 'retry',
       title: 'Retry with the official Builder Chat Workbench',
-      description: 'Live work must go through the runtime-backed OpenHands flow.',
+      description: 'Live work must go through the runtime-backed Sovereign Agent flow.',
       action: 'retry-builder-chat',
       accepted: false,
       priority: 10,
@@ -275,7 +275,7 @@ export function buildChatExitState(messages: ChatMessage[], result: ChatProcessR
       latencyMs: result.latencyMs ?? null,
       modelId: result.modelUsed ?? null,
     },
-    openHandsStatus: { status: 'idle' },
+    agentStatus: { status: 'idle' },
   };
 }
 

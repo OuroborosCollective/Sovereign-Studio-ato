@@ -7,7 +7,7 @@ export interface RouteFailoverInput {
   readonly taskKind: RouteFailoverTaskKind;
   readonly workerAvailable: boolean;
   readonly githubWriteReady: boolean;
-  readonly openhandsReady: boolean;
+  readonly agentReady: boolean;
   readonly directPatchAvailable: boolean;
   readonly activeBlocker?: string | null;
 }
@@ -85,12 +85,12 @@ export function decideRouteFailover(input: RouteFailoverInput): RouteFailoverDec
         nextAction: 'Patch planen, Diff anzeigen und erst danach Draft PR/Apply erlauben.',
       });
     }
-    if (input.openhandsReady) {
+    if (input.agentReady) {
       return decision({
         kind: 'route',
-        route: 'openhands',
+        route: 'sovereign-agent',
         allowed: true,
-        reason: 'Direct Patch ist nicht verfügbar; OpenHands ist bereit.',
+        reason: 'Direct Patch ist nicht verfügbar; Sovereign Agent ist bereit.',
         nextAction: 'Isolierten Executor-Job starten.',
       });
     }
@@ -98,26 +98,26 @@ export function decideRouteFailover(input: RouteFailoverInput): RouteFailoverDec
       kind: 'blocked',
       route: 'github-patch',
       allowed: false,
-      reason: 'Weder Direct Patch noch OpenHands ist verfügbar.',
-      nextAction: 'Direct-Patch-Voraussetzungen oder OpenHands-Konfiguration prüfen.',
+      reason: 'Weder Direct Patch noch Sovereign Agent ist verfügbar.',
+      nextAction: 'Direct-Patch-Voraussetzungen oder Sovereign Agent-Konfiguration prüfen.',
     });
   }
 
-  if (input.openhandsReady) {
+  if (input.agentReady) {
     return decision({
       kind: 'route',
-      route: 'openhands',
+      route: 'sovereign-agent',
       allowed: true,
       reason: `${input.taskKind === 'draft_pr' ? 'Draft-PR' : 'Komplexer Patch'} braucht Executor-Route.`,
-      nextAction: 'OpenHands/Workspace-Executor starten; Ergebnis bleibt Draft PR.',
+      nextAction: 'Sovereign Agent/Workspace-Executor starten; Ergebnis bleibt Draft PR.',
     });
   }
 
   return decision({
     kind: 'blocked',
-    route: 'openhands',
+    route: 'sovereign-agent',
     allowed: false,
     reason: 'Executor-Route ist nicht bereit.',
-    nextAction: 'OpenHands/Workspace-Health prüfen oder Auftrag verkleinern.',
+    nextAction: 'Sovereign Agent/Workspace-Health prüfen oder Auftrag verkleinern.',
   });
 }

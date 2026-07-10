@@ -40,7 +40,7 @@ const CUTE_CHICK_THINKING_TEXTS = [
   'Küken hält den Draft PR warm',
   'Piep, ich suche keinen Fake-Fortschritt',
   'Küken schnäbelt durch die Logs',
-  'Küken klopft sanft an OpenHands',
+  'Küken klopft sanft an Sovereign Agent',
   'Küken sortiert Diff-Krümel',
   'Küken zählt keine Fake-Prozente',
   'Piep, ich verbinde Chat und Runtime',

@@ -73,14 +73,14 @@ describe('sovereignExecutionSessionRuntime', () => {
 
   it('detects repeated blockers and recommends strategy change', () => {
     let transition = startSovereignExecutionSession(
-      createSovereignExecutionSession('Bitte OpenHands starten', 1700000000000),
+      createSovereignExecutionSession('Bitte Sovereign Agent starten', 1700000000000),
       1700000000001,
     );
 
     for (const createdAt of [1700000000002, 1700000000003, 1700000000004]) {
       transition = observeSovereignExecutionTool(transition.session, {
-        toolName: 'openhands',
-        route: 'openhands',
+        toolName: 'sovereign-agent',
+        route: 'sovereign-agent',
         phase: 'blocked',
         blocker: 'github_access_missing',
         createdAt,

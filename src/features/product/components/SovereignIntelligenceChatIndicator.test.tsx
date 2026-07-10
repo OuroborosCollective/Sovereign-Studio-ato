@@ -93,7 +93,7 @@ describe('SovereignToolSuccessHint', () => {
   it('shows failed history', () => {
     render(
       <SovereignToolSuccessHint
-        toolName="openhands"
+        toolName="sovereign-agent"
         hasHistory={true}
         wasSuccessful={false}
       />
@@ -132,11 +132,11 @@ describe('SovereignStrategyChangeHint', () => {
   it('renders strategy change hint', () => {
     render(
       <SovereignStrategyChangeHint
-        fromStrategy="openhands"
+        fromStrategy="sovereign-agent"
         toStrategy="direct-patch"
       />
     );
 
-    expect(screen.getByText(/openhands → direct-patch/)).toBeInTheDocument();
+    expect(screen.getByText(/sovereign-agent → direct-patch/)).toBeInTheDocument();
   });
 });

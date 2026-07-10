@@ -16,10 +16,10 @@ import {
   detectAndroidQuickRepoUrl,
 } from "./androidQuickInteractionRuntime";
 import {
-  isOpenHandsExecutionIntent,
+  isSovereignAgentExecutionIntent,
   isWorkerRetryIntent,
 } from "./workerIntentDetector";
-import type { OpenHandsJobSnapshot } from "./openhandsEnterpriseRuntime";
+import type { SovereignAgentJobSnapshot } from "./sovereignAgentRuntime";
 import type {
   AnimPhase,
   ChatLine,
@@ -152,7 +152,7 @@ export interface LocalStatusAnswerArgs {
   readonly githubWriteAllowed: boolean;
   readonly githubAccessState?: string;
   readonly writeIntentBlockedByRepo: boolean;
-  readonly openhandsRunning: boolean;
+  readonly agentRunning: boolean;
   readonly draftPrUrl?: string | null;
   readonly hasPatch: boolean;
   /** True when a Direct GitHub Patch preview has been generated but not yet applied/committed */
@@ -180,7 +180,7 @@ export interface LocalStatusAnswerArgs {
  */
 export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
   // Startup questions get priority: "Is the Sovereign Agent running?" must answer that directly
-  if (args.questionText && isStartupQuestion(args.questionText) && args.openhandsRunning) {
+  if (args.questionText && isStartupQuestion(args.questionText) && args.agentRunning) {
     return "Ja, Sovereign Agent läuft.";
   }
 
@@ -199,7 +199,7 @@ export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
   if (args.patchPreviewReady) {
     return "Patch-Vorschau wurde erzeugt. Noch nicht angewendet. Noch kein geprüfter Diff, kein Commit, kein Draft PR.\nNächster Schritt: Diff prüfen oder Patch bestätigen.";
   }
-  if (args.openhandsRunning) {
+  if (args.agentRunning) {
     return "Noch nicht. Sovereign Agent arbeitet noch.";
   }
   if (args.workerBlocker) {
@@ -239,14 +239,14 @@ export function buildChatLines(args: {
   readonly cuteThinkingLabel: string;
   readonly sovereignSummary: string;
   readonly disabledReason?: string;
-  readonly openhandsJob?: OpenHandsJobSnapshot;
+  readonly agentJob?: SovereignAgentJobSnapshot;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
   readonly chatRepoError: string | null;
   readonly chatHistory: readonly ChatLine[];
 }): ChatLine[] {
   const lines: ChatLine[] = [];
   const firstFile = splitFilePath(
-    args.openhandsJob?.changedFiles?.[0] ?? args.chatRepoSnapshot?.lastFile,
+    args.agentJob?.changedFiles?.[0] ?? args.chatRepoSnapshot?.lastFile,
   );
   const effectiveRepoReady = args.repoReady || Boolean(args.chatRepoSnapshot);
 
@@ -370,7 +370,7 @@ export function buildWorkerBlockerAnswer(args: {
   readonly blocker: WorkerRuntimeBlocker;
   readonly repoReady: boolean;
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
-  readonly openhandsReady?: boolean;
+  readonly agentReady?: boolean;
 }): string {
   const { diagnostic, health } = args.blocker;
   const repoLine = args.chatRepoSnapshot
@@ -390,7 +390,7 @@ export function buildWorkerBlockerAnswer(args: {
     explainDevChatWorkerDiagnostic(diagnostic),
     healthLine,
     repoLine,
-    args.openhandsReady
+    args.agentReady
       ? "Sovereign Agent Runtime ist nur für echte Code-/Draft-PR-Aufträge zuständig und wurde für diese Chatfrage nicht gestartet."
       : "Sovereign Agent Runtime ist nicht bereit; normale Chatfragen bleiben Worker-Route.",
     codeLine,
@@ -437,7 +437,7 @@ export function composerRouteHint(args: {
   const quickRepo = detectAndroidQuickRepoUrl(clean);
   if (quickRepo.recognized) return quickRepo.hint;
   if (parseDevChatGithubUrl(clean)) return "Repo laden · Runtime Snapshot";
-  if (isOpenHandsExecutionIntent(clean))
+  if (isSovereignAgentExecutionIntent(clean))
     return args.agentDisabled
       ? "Sovereign Agent blockiert · Worker erklärt zuerst"
       : "Sovereign Agent starten";
@@ -490,7 +490,7 @@ export function sameConditions(
 
 export function buildRuntimeConfidence(args: {
   readonly effectiveRepoReady: boolean;
-  readonly openhandsReady?: boolean;
+  readonly agentReady?: boolean;
   readonly runtimeThinkingActive: boolean;
   readonly blocked: boolean;
   readonly palDecisions: number;
@@ -498,7 +498,7 @@ export function buildRuntimeConfidence(args: {
 }): number {
   let score = 0.12;
   if (args.effectiveRepoReady) score += 0.22;
-  if (args.openhandsReady) score += 0.2;
+  if (args.agentReady) score += 0.2;
   if (args.runtimeThinkingActive) score += 0.12;
   if (args.palDecisions > 0) score += 0.12;
   if (args.outcomeHints > 0) score += 0.1;

@@ -12,7 +12,7 @@ function readyInput() {
     githubAccessState: 'ready' as const,
     githubTokenPresent: true,
     directPatchSupported: true,
-    openhandsConfigured: true,
+    agentConfigured: true,
     workerAvailable: true,
     workspaceConfigured: true,
     draftPrSupported: true,
@@ -27,7 +27,7 @@ describe('sovereignToolCapabilityRuntime', () => {
     expect(registry.repo.status).toBe('ready');
     expect(registry.githubWrite.status).toBe('ready');
     expect(registry.directPatch.canStart).toBe(true);
-    expect(registry.openhands.canStart).toBe(true);
+    expect(registry.agent.canStart).toBe(true);
     expect(registry.workspace.canStart).toBe(true);
     expect(registry.draftPr.canStart).toBe(true);
   });
@@ -38,7 +38,7 @@ describe('sovereignToolCapabilityRuntime', () => {
     expect(isGitHubWriteReady({ githubAccessState: 'ready', githubTokenPresent: true })).toBe(true);
   });
 
-  it('blocks Direct Patch and OpenHands without validated GitHub write access', () => {
+  it('blocks Direct Patch and Sovereign Agent without validated GitHub write access', () => {
     const registry = buildSovereignToolCapabilityRegistry({
       ...readyInput(),
       githubAccessState: 'missing',
@@ -49,8 +49,8 @@ describe('sovereignToolCapabilityRuntime', () => {
     expect(registry.githubWrite.nextAction).toBe('request_github_access');
     expect(registry.directPatch.canStart).toBe(false);
     expect(registry.directPatch.blocker).toBe('github_access_missing');
-    expect(registry.openhands.canStart).toBe(false);
-    expect(registry.openhands.blocker).toBe('github_access_missing');
+    expect(registry.agent.canStart).toBe(false);
+    expect(registry.agent.blocker).toBe('github_access_missing');
   });
 
   it('blocks parallel executors while another executor is active', () => {
@@ -61,8 +61,8 @@ describe('sovereignToolCapabilityRuntime', () => {
 
     expect(registry.directPatch.canStart).toBe(false);
     expect(registry.directPatch.blocker).toBe('executor_active');
-    expect(registry.openhands.canStart).toBe(false);
-    expect(registry.openhands.blocker).toBe('executor_active');
+    expect(registry.agent.canStart).toBe(false);
+    expect(registry.agent.blocker).toBe('executor_active');
     expect(registry.workspace.canStart).toBe(false);
     expect(registry.workspace.blocker).toBe('executor_active');
   });
@@ -85,7 +85,7 @@ describe('sovereignToolCapabilityRuntime', () => {
       ...readyInput(),
       repoReady: false,
       directPatchSupported: false,
-      openhandsConfigured: false,
+      agentConfigured: false,
       workspaceConfigured: false,
       draftPrSupported: false,
     });
@@ -93,6 +93,6 @@ describe('sovereignToolCapabilityRuntime', () => {
     const blocked = summarizeBlockedCapabilities(registry).map((item) => item.id);
     expect(blocked).toContain('repo');
     expect(blocked).toContain('direct_patch');
-    expect(blocked).toContain('openhands');
+    expect(blocked).toContain('sovereign-agent');
   });
 });

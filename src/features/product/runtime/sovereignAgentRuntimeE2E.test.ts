@@ -22,7 +22,7 @@ function predictiveDecision(action: 'create_agent_job' | 'run_agent_tool' | 'val
 }
 
 describe('sovereignAgentRuntimeE2E', () => {
-  it('proves backend agent state maps into predictive action stream without OpenHands truth', () => {
+  it('proves backend agent state maps into predictive action stream without Sovereign Agent truth', () => {
     const createPolicy = evaluatePredictiveRuntimePolicy({
       capabilityDecision: {
         route: 'workspace-executor',
@@ -139,7 +139,7 @@ describe('sovereignAgentRuntimeE2E', () => {
     expect(stream.events.map((event) => event.kind)).toContain('agent_result_ready');
     expect(stream.events.map((event) => event.kind)).toContain('agent_pattern_candidate_ready');
     expect(stream.activeRoute).toBeNull();
-    expect(JSON.stringify(stream)).not.toContain('OpenHands gestartet');
+    expect(JSON.stringify(stream)).not.toContain('Sovereign Agent gestartet');
     expect(JSON.stringify(stream)).not.toContain('github_pat_');
   });
 

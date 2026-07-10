@@ -49,8 +49,8 @@ describe('sovereignPredictiveToolSelector', () => {
 
     it('handles multiple tools', () => {
       const signals: ContainerDecisionLearningSignal[] = [
-        createMockSignal('openhands', 'success'),
-        createMockSignal('openhands', 'success'),
+        createMockSignal('sovereign-agent', 'success'),
+        createMockSignal('sovereign-agent', 'success'),
         createMockSignal('repo_loader', 'success'),
         createMockSignal('repo_loader', 'failure'),
       ];
@@ -58,8 +58,8 @@ describe('sovereignPredictiveToolSelector', () => {
       const performance = analyzeToolPerformance(signals);
 
       expect(performance).toHaveLength(2);
-      // openhands has 100% success, should be first
-      expect(performance[0].toolName).toBe('openhands');
+      // sovereign-agent has 100% success, should be first
+      expect(performance[0].toolName).toBe('sovereign-agent');
       expect(performance[1].toolName).toBe('repo_loader');
     });
 
@@ -132,11 +132,11 @@ describe('sovereignPredictiveToolSelector', () => {
   describe('suggestAlternativeStrategy', () => {
     it('suggests alternative when tool is stuck', () => {
       const performance = [
-        { toolName: 'openhands', route: 'openhands', totalAttempts: 5, successCount: 1, failureCount: 4, successRate: 0.2, lastUsed: Date.now() },
+        { toolName: 'sovereign-agent', route: 'sovereign-agent', totalAttempts: 5, successCount: 1, failureCount: 4, successRate: 0.2, lastUsed: Date.now() },
         { toolName: 'direct-patch', route: 'direct-patch', totalAttempts: 5, successCount: 4, failureCount: 1, successRate: 0.8, lastUsed: Date.now() },
       ];
 
-      const suggestion = suggestAlternativeStrategy('openhands', performance);
+      const suggestion = suggestAlternativeStrategy('sovereign-agent', performance);
 
       expect(suggestion).not.toBeNull();
       expect(suggestion!.toolName).toBe('direct-patch');

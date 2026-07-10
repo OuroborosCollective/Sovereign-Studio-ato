@@ -104,7 +104,7 @@ export const SOVEREIGN_CONTROL_FRAME_CONTRACT: SovereignControlFrameContract = {
     { id: 'router', label: 'ROUTER', short: 'ROU', runtimeSource: 'sovereignAutoViewRouter', menuOnly: true },
     { id: 'pattern', label: 'PATTERN', short: 'PAT', runtimeSource: 'solutionPatternStore', menuOnly: true },
     { id: 'sync', label: 'SYNC', short: 'SYN', runtimeSource: 'remoteMemoryConfig/remoteMemoryResults', menuOnly: true },
-    { id: 'orchestr', label: 'ORCHESTR', short: 'ORC', runtimeSource: 'sequentialRuntime/openhandsJob', menuOnly: true },
+    { id: 'orchestr', label: 'ORCHESTR', short: 'ORC', runtimeSource: 'sequentialRuntime/agentJob', menuOnly: true },
     { id: 'session', label: 'SESSION', short: 'SES', runtimeSource: 'sovereignSessionMemory', menuOnly: true },
     { id: 'logger', label: 'LOGGER', short: 'LOG', runtimeSource: 'sovereignTelemetry', menuOnly: true },
     { id: 'restore', label: 'RESTORE', short: 'RST', runtimeSource: 'restoreRepoSnapshot/clearRepoSnapshot', menuOnly: true },

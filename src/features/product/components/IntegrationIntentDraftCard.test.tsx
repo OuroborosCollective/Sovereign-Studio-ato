@@ -25,7 +25,7 @@ describe('IntegrationIntentDraftCard', () => {
     repoReady: true,
     githubWriteReady: true,
     directPatchReady: false,
-    openhandsReady: false,
+    agentReady: false,
     ...overrides,
   });
 
@@ -248,7 +248,7 @@ describe('IntegrationIntentDraftCard', () => {
         repoReady: true,
         githubWriteReady: false,
         directPatchReady: false,
-        openhandsReady: false,
+        agentReady: false,
       });
 
       render(
@@ -274,7 +274,7 @@ describe('IntegrationIntentDraftCard', () => {
         repoReady: true,
         githubWriteReady: false,
         directPatchReady: false,
-        openhandsReady: false,
+        agentReady: false,
       });
 
       render(
@@ -336,7 +336,7 @@ describe('IntegrationIntentDraftCard', () => {
       expect(screen.getByText('Repo ready')).toBeInTheDocument();
       expect(screen.getByText('GitHub Write')).toBeInTheDocument();
       expect(screen.getByText('Direct Patch')).toBeInTheDocument();
-      expect(screen.getByText('OpenHands')).toBeInTheDocument();
+      expect(screen.getByText('Sovereign Agent')).toBeInTheDocument();
     });
 
     it('reflects gate state in indicators', () => {
@@ -345,7 +345,7 @@ describe('IntegrationIntentDraftCard', () => {
         repoReady: true,
         githubWriteReady: false,
         directPatchReady: false,
-        openhandsReady: true,
+        agentReady: true,
       });
 
       render(

@@ -178,7 +178,7 @@ describe('integrationIntentDraftRuntime', () => {
         repoReady: true,
         githubWriteReady: true,
         directPatchReady: false,
-        openhandsReady: false,
+        agentReady: false,
       });
 
       expect(result.canConfirm).toBe(true);
@@ -192,15 +192,15 @@ describe('integrationIntentDraftRuntime', () => {
         repoReady: false,
         githubWriteReady: true,
         directPatchReady: false,
-        openhandsReady: false,
+        agentReady: false,
       });
 
       expect(result.canConfirm).toBe(false);
       expect(result.blocker).toContain('Repository nicht geladen');
     });
 
-    it('blocks confirm when openhands is ready but github is missing', () => {
-      // P1 Fix: OpenHands without GitHub write should be blocked
+    it('blocks confirm when sovereign-agent is ready but github is missing', () => {
+      // P1 Fix: Sovereign Agent without GitHub write should be blocked
       const draft = createIntegrationIntentDraft('Test input', undefined, { now: 1700000000000, idSeed: 'confirm-seed' });
       if (!draft) throw new Error('Draft should not be null');
 
@@ -208,7 +208,7 @@ describe('integrationIntentDraftRuntime', () => {
         repoReady: true,
         githubWriteReady: false,
         directPatchReady: false,
-        openhandsReady: true,
+        agentReady: true,
       });
 
       expect(result.canConfirm).toBe(false);
@@ -223,7 +223,7 @@ describe('integrationIntentDraftRuntime', () => {
         repoReady: true,
         githubWriteReady: false,
         directPatchReady: true,
-        openhandsReady: false,
+        agentReady: false,
       });
 
       expect(result.canConfirm).toBe(true);
@@ -237,7 +237,7 @@ describe('integrationIntentDraftRuntime', () => {
         repoReady: true,
         githubWriteReady: false,
         directPatchReady: false,
-        openhandsReady: false,
+        agentReady: false,
       });
 
       expect(result.canConfirm).toBe(false);
@@ -406,7 +406,7 @@ describe('integrationIntentDraftRuntime', () => {
     });
 
     it('buildRouteStartedEvent creates running event', () => {
-      const event = buildRouteStartedEvent('openhands');
+      const event = buildRouteStartedEvent('sovereign-agent');
 
       expect(event.kind).toBe('route_selected');
       expect(event.state).toBe('running');

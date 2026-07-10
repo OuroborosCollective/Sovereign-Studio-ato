@@ -34,10 +34,10 @@ The current runtime path is:
 | `code-llm` | Plan or propose patch text | No direct write | Maybe later | No |
 | `direct-github-patch` | Small README/docs file changes | Yes | Yes | No |
 | `workspace-executor` | Larger code work with files/tests | Yes | Usually | Yes |
-| `openhands` | Optional workspace/code executor adapter | Yes | Usually | Yes |
+| `sovereign-agent` | Optional workspace/code executor adapter | Yes | Usually | Yes |
 | `draft-pr-runtime` | Create branch/commit/Draft PR | Yes | Yes | No/depends on source diff |
 
-OpenHands is not a normal LLM route. It is a workspace executor that can use an LLM. It should be one possible executor behind Sovereign, not the only write path.
+Sovereign Agent is not a normal LLM route. It is a workspace executor that can use an LLM. It should be one possible executor behind Sovereign, not the only write path.
 
 ## GitHub access gate
 
@@ -57,8 +57,8 @@ Rules:
 - Tokens are used one-shot for validation/write operations and must never be copied into chat, logs, telemetry or action events.
 - The state may store only a masked representation.
 - `ready` means the GitHub API confirmed write/push capability for the loaded repo.
-- `ready` must not be reset just because OpenHands is missing.
-- OpenHands missing is an executor/capability blocker, not a GitHub access blocker.
+- `ready` must not be reset just because Sovereign Agent is missing.
+- Sovereign Agent missing is an executor/capability blocker, not a GitHub access blocker.
 
 ## Capability Router
 
@@ -71,7 +71,7 @@ const decision = decideSovereignCapabilityRoute({
   text: submittedText,
   repoReady,
   githubAccessState,
-  openhandsReady,
+  sovereign-agentReady,
   directGitHubPatchReady,
   workspaceReady,
   hasActiveWorkerBlocker,
@@ -98,10 +98,10 @@ Questions like these must be answered locally from runtime state when possible:
 Bist du fertig?
 Warum passiert nichts?
 Wo ist der Patch?
-Nutzen wir eine andere Route und nicht OpenHands?
+Nutzen wir eine andere Route und nicht Sovereign Agent?
 ```
 
-They must not blindly call a broken worker route or restart OpenHands.
+They must not blindly call a broken worker route or restart Sovereign Agent.
 
 Examples:
 
@@ -133,7 +133,7 @@ The long-term workspace design is agent-neutral:
 
 ```text
 Sovereign Agent Workspace Runtime
-  ├─ OpenHands adapter
+  ├─ Sovereign Agent adapter
   ├─ future code-agent adapter
   ├─ test runner adapter
   └─ analysis-only snapshot adapter
@@ -160,7 +160,7 @@ A response that touches forbidden paths, duplicates generated output, leaks secr
 
 ## Action Stream
 
-The Sovereign Action Stream is route-wide. It is not an OpenHands-only stream.
+The Sovereign Action Stream is route-wide. It is not an Sovereign Agent-only stream.
 
 It should include events like:
 
@@ -199,7 +199,7 @@ Not:
 Errors: 3
 ```
 
-only because the same `OpenHands not configured` blocker appeared three times.
+only because the same `Sovereign Agent not configured` blocker appeared three times.
 
 A blocker should expose:
 
@@ -260,7 +260,7 @@ Release checks should also include runtime/UX/live-path contract scans, Android 
 ## Related issues
 
 ```text
-#500 Route write intents after GitHub ready without OpenHands lock-in
+#500 Route write intents after GitHub ready without Sovereign Agent lock-in
 #501 Direct GitHub Patch route for small README/docs changes
 #502 Sovereign Capability Router
 #503 Sovereign Agent Workspace Runtime

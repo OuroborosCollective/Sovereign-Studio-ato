@@ -19,7 +19,7 @@
  *   → src/features/product/components/**
  */
 
-import type { OpenHandsJobSnapshot } from './openhandsEnterpriseRuntime';
+import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 
 // ─────────────────────────────────────────────────────────────
 // LOCAL TYPES  (extracted from BuilderContainer)
@@ -140,7 +140,7 @@ export function splitFilePath(filePath: string | undefined): {
 }
 
 export function buildOutcomeHints(
-  job: OpenHandsJobSnapshot | undefined,
+  job: SovereignAgentJobSnapshot | undefined,
 ): ChatOutcomeHint[] {
   if (!job || job.status === 'idle') return [];
   const hints: ChatOutcomeHint[] = [];
@@ -148,8 +148,8 @@ export function buildOutcomeHints(
     .filter((f) => typeof f === 'string' && f.trim())
     .map((f) => f.trim());
   const draftPrUrl = safeHttpsUrl(job.draftPrUrl);
-  if (job.openHandsId?.trim())
-    hints.push({ kind: 'runtime', text: `🐤 Sovereign Agent ID: ${job.openHandsId.trim()}` });
+  if (job.runtimeId?.trim())
+    hints.push({ kind: 'runtime', text: `🐤 Sovereign Agent ID: ${job.runtimeId.trim()}` });
   if (files.length > 0)
     hints.push({ kind: 'files', text: `${files.length} Datei(en) geändert · Details im Files-Menü` });
   if (draftPrUrl)
@@ -165,26 +165,26 @@ export function deriveAgentStatus(args: {
   readonly repoBusy: boolean;
   readonly runtimeBusy: boolean;
   readonly isPublishing: boolean;
-  readonly openhandsIsRunning?: boolean;
-  readonly openhandsJob?: OpenHandsJobSnapshot;
+  readonly agentIsRunning?: boolean;
+  readonly agentJob?: SovereignAgentJobSnapshot;
   readonly localRepoLoading: boolean;
   readonly localRepoError: boolean;
 }): AgentStatus {
   if (
     args.localRepoError ||
-    args.openhandsJob?.status === 'failed' ||
-    args.openhandsJob?.status === 'blocked'
+    args.agentJob?.status === 'failed' ||
+    args.agentJob?.status === 'blocked'
   )
     return 'error';
-  if (args.isPublishing || args.openhandsJob?.status === 'running') return 'running';
+  if (args.isPublishing || args.agentJob?.status === 'running') return 'running';
   if (
-    (args.openhandsJob?.changedFiles?.length ?? 0) > 0 ||
-    Boolean(args.openhandsJob?.draftPrUrl)
+    (args.agentJob?.changedFiles?.length ?? 0) > 0 ||
+    Boolean(args.agentJob?.draftPrUrl)
   )
     return 'editing';
   if (
     args.localRepoLoading ||
-    args.openhandsIsRunning ||
+    args.agentIsRunning ||
     args.repoBusy ||
     args.runtimeBusy
   )

@@ -7,7 +7,7 @@ describe('routeFailoverRuntime', () => {
       taskKind: 'status',
       workerAvailable: false,
       githubWriteReady: false,
-      openhandsReady: false,
+      agentReady: false,
       directPatchAvailable: false,
       activeBlocker: 'Worker HTTP 500',
     });
@@ -23,7 +23,7 @@ describe('routeFailoverRuntime', () => {
       taskKind: 'small_patch',
       workerAvailable: true,
       githubWriteReady: false,
-      openhandsReady: true,
+      agentReady: true,
       directPatchAvailable: true,
     });
 
@@ -37,7 +37,7 @@ describe('routeFailoverRuntime', () => {
       taskKind: 'small_patch',
       workerAvailable: true,
       githubWriteReady: true,
-      openhandsReady: false,
+      agentReady: false,
       directPatchAvailable: true,
     });
 
@@ -45,17 +45,17 @@ describe('routeFailoverRuntime', () => {
     expect(decision.route).toBe('direct-github-patch');
   });
 
-  it('falls back from direct patch to OpenHands for small patch when executor is ready', () => {
+  it('falls back from direct patch to Sovereign Agent for small patch when executor is ready', () => {
     const decision = decideRouteFailover({
       taskKind: 'small_patch',
       workerAvailable: true,
       githubWriteReady: true,
-      openhandsReady: true,
+      agentReady: true,
       directPatchAvailable: false,
     });
 
     expect(decision.allowed).toBe(true);
-    expect(decision.route).toBe('openhands');
+    expect(decision.route).toBe('sovereign-agent');
   });
 
   it('honestly blocks complex work when executor is unavailable', () => {
@@ -63,12 +63,12 @@ describe('routeFailoverRuntime', () => {
       taskKind: 'complex_patch',
       workerAvailable: true,
       githubWriteReady: true,
-      openhandsReady: false,
+      agentReady: false,
       directPatchAvailable: true,
     });
 
     expect(decision.allowed).toBe(false);
-    expect(decision.route).toBe('openhands');
+    expect(decision.route).toBe('sovereign-agent');
     expect(decision.event.state).toBe('blocked');
   });
 });
