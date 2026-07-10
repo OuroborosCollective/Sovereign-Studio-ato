@@ -5,6 +5,8 @@
  * Every shortcut resolves to an explicit gate, reason and next action.
  */
 
+import type { SovereignToolInspectionEvidenceMap } from './sovereignToolInspectionRuntime';
+
 export type SovereignToolShortcutId =
   | 'repo'
   | 'files'
@@ -25,10 +27,15 @@ export type SovereignToolShortcutState =
 
 export type SovereignToolShortcutRoute =
   | 'repo'
+  | 'files'
+  | 'diff'
   | 'github-access'
   | 'agent-job'
-  | 'runtime'
-  | 'memory';
+  | 'runtime-logs'
+  | 'health'
+  | 'memory'
+  | 'coverage'
+  | 'settings';
 
 export interface SovereignToolShortcutContext {
   readonly repoReady: boolean;
@@ -38,6 +45,7 @@ export interface SovereignToolShortcutContext {
   readonly executorAvailable: boolean;
   readonly hasExecutorMission: boolean;
   readonly runtimeLogCount: number;
+  readonly inspectionEvidence?: SovereignToolInspectionEvidenceMap;
 }
 
 export interface SovereignToolShortcutDefinition {
@@ -57,15 +65,15 @@ export interface SovereignToolShortcutGate extends SovereignToolShortcutDefiniti
 
 export const SOVEREIGN_TOOL_SHORTCUTS: readonly SovereignToolShortcutDefinition[] = [
   { id: 'repo', label: 'Repo', icon: '⎇', route: 'repo' },
-  { id: 'files', label: 'Files', icon: '📄', route: 'repo' },
-  { id: 'diff', label: 'Diff', icon: '±', route: 'runtime' },
+  { id: 'files', label: 'Files', icon: '📄', route: 'files' },
+  { id: 'diff', label: 'Diff', icon: '±', route: 'diff' },
   { id: 'github_access', label: 'GitHub Access', icon: '🔑', route: 'github-access' },
   { id: 'executor', label: 'Executor', icon: '▶', route: 'agent-job' },
-  { id: 'runtime_logs', label: 'Runtime Logs', icon: '≡', route: 'runtime' },
-  { id: 'health', label: 'Health', icon: '♥', route: 'runtime' },
+  { id: 'runtime_logs', label: 'Runtime Logs', icon: '≡', route: 'runtime-logs' },
+  { id: 'health', label: 'Health', icon: '♥', route: 'health' },
   { id: 'memory', label: 'Memory', icon: '◈', route: 'memory' },
-  { id: 'coverage', label: 'Coverage', icon: '✦', route: 'runtime' },
-  { id: 'settings', label: 'Settings', icon: '⚙', route: 'runtime' },
+  { id: 'coverage', label: 'Coverage', icon: '✦', route: 'coverage' },
+  { id: 'settings', label: 'Settings', icon: '⚙', route: 'settings' },
 ] as const;
 
 function normalizeCount(value: number): number {
@@ -77,6 +85,38 @@ function gate(
   values: Omit<SovereignToolShortcutGate, keyof SovereignToolShortcutDefinition>,
 ): SovereignToolShortcutGate {
   return { ...definition, ...values };
+}
+
+function inspectionGate(
+  definition: SovereignToolShortcutDefinition,
+  context: SovereignToolShortcutContext,
+  fallback: Omit<SovereignToolShortcutGate, keyof SovereignToolShortcutDefinition>,
+): SovereignToolShortcutGate {
+  if (
+    definition.id !== 'health'
+    && definition.id !== 'memory'
+    && definition.id !== 'coverage'
+    && definition.id !== 'settings'
+  ) {
+    return gate(definition, fallback);
+  }
+
+  const evidence = context.inspectionEvidence?.[definition.id];
+  if (!evidence) return gate(definition, fallback);
+
+  const state: SovereignToolShortcutState = evidence.outcome === 'ready'
+    ? 'ready'
+    : evidence.outcome === 'checking'
+      ? 'inspection'
+      : 'evidence_missing';
+
+  return gate(definition, {
+    canOpen: true,
+    state,
+    statusLabel: evidence.statusLabel,
+    reason: evidence.reason,
+    nextAction: evidence.nextAction,
+  });
 }
 
 export function evaluateSovereignToolShortcutGate(
@@ -109,13 +149,13 @@ export function evaluateSovereignToolShortcutGate(
     case 'runtime_logs':
       return gate(definition, { canOpen: true, state: context.runtimeLogCount > 0 ? 'ready' : 'inspection', statusLabel: context.runtimeLogCount > 0 ? `${normalizeCount(context.runtimeLogCount)} Events` : 'Noch leer', reason: context.runtimeLogCount > 0 ? 'Gespeicherte Runtime-Events sind vorhanden.' : 'Die Log-Fläche darf geöffnet werden, behauptet aber noch keine Events.', nextAction: 'Runtime-Logs öffnen.' });
     case 'health':
-      return gate(definition, { canOpen: true, state: 'inspection', statusLabel: 'Prüft beim Öffnen', reason: 'Health wird erst im Tool durch echte Runtime-Checks bestimmt.', nextAction: 'Health-Checks öffnen.' });
+      return inspectionGate(definition, context, { canOpen: true, state: 'inspection', statusLabel: 'Prüft beim Öffnen', reason: 'Health wird erst im Tool durch echte Runtime-Checks bestimmt.', nextAction: 'Health-Checks öffnen.' });
     case 'memory':
-      return gate(definition, { canOpen: true, state: 'inspection', statusLabel: 'Prüft beim Öffnen', reason: 'Memory-Verfügbarkeit wird erst im Tool aus Runtime-Evidence gelesen.', nextAction: 'Memory-Inspektion öffnen.' });
+      return inspectionGate(definition, context, { canOpen: true, state: 'inspection', statusLabel: 'Prüft beim Öffnen', reason: 'Memory-Verfügbarkeit wird erst im Tool aus Runtime-Evidence gelesen.', nextAction: 'Memory-Inspektion öffnen.' });
     case 'coverage':
-      return gate(definition, { canOpen: true, state: 'inspection', statusLabel: 'Prüft beim Öffnen', reason: 'Coverage wird erst aus vorhandenen Reports oder Runtime-Checks bestimmt.', nextAction: 'Coverage-Prüfung öffnen.' });
+      return inspectionGate(definition, context, { canOpen: true, state: 'inspection', statusLabel: 'Prüft beim Öffnen', reason: 'Coverage wird erst aus vorhandenen Reports oder Runtime-Checks bestimmt.', nextAction: 'Coverage-Prüfung öffnen.' });
     case 'settings':
-      return gate(definition, { canOpen: true, state: 'inspection', statusLabel: 'Session-Einstellungen', reason: 'Settings öffnen nur die Session-Konfiguration und behaupten keinen Runtime-Erfolg.', nextAction: 'Settings öffnen.' });
+      return inspectionGate(definition, context, { canOpen: true, state: 'inspection', statusLabel: 'Session-Einstellungen', reason: 'Settings öffnen nur die Session-Konfiguration und behaupten keinen Runtime-Erfolg.', nextAction: 'Settings öffnen.' });
   }
 }
 
@@ -124,5 +164,5 @@ export function deriveSovereignToolShortcutGates(context: SovereignToolShortcutC
 }
 
 export function createEmptySovereignToolShortcutContext(): SovereignToolShortcutContext {
-  return { repoReady: false, repoFileCount: 0, hasDiffEvidence: false, githubAccessState: 'missing', executorAvailable: false, hasExecutorMission: false, runtimeLogCount: 0 };
+  return { repoReady: false, repoFileCount: 0, hasDiffEvidence: false, githubAccessState: 'missing', executorAvailable: false, hasExecutorMission: false, runtimeLogCount: 0, inspectionEvidence: {} };
 }
