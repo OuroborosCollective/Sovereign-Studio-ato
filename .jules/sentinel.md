@@ -27,3 +27,8 @@
 **Vulnerability:** Runtime monitors and "Coach" components captured DOM text and unmasked runtime signals, potentially displaying API keys or tokens in persistent UI logs or session storage.
 **Learning:** Masking at the source (publishers) is necessary but insufficient if components also scrape the DOM. A dual-layer strategy—masking at the publishing layer (e.g., `useCoachRuntimeBridge`) AND the UI rendering layer (e.g., `AgentMonitor`)—provides robust protection against secrets entering the UI from multiple paths.
 **Prevention:** Always apply `maskSecrets` at the point of data publishing (CustomEvents/Window state) and as a final filter during UI rendering of captured or log-based text.
+
+## 2026-06-25 - Defense-in-Depth for Secure Logging Components
+**Vulnerability:** The `SafeLogText` component only applied masking when explicitly flagged as sensitive. Additionally, internal transmission errors and the bridge payload itself could leak raw secrets if the `isSensitive` prop was omitted or set incorrectly by the developer.
+**Learning:** Security utilities designed for "safe" logging should not rely solely on developer-provided flags for protection. Automatic pattern-based redaction provides a critical safety net (defense-in-depth) for cases where sensitive data is passed to a generic log field.
+**Prevention:** Always integrate a central `maskSecrets` utility as a mandatory filter in safe-rendering components. Ensure that even "unlabeled" data passes through pattern recognition before it reaches the UI, logs, or external bridges.
