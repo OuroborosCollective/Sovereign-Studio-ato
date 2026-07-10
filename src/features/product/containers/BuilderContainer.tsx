@@ -205,9 +205,9 @@ import {
 } from "../runtime/sovereignExecutorRuntime";
 import { decideSovereignExecutorBridgeRoute } from "../../../runtime/sovereignExecutorBridgeRuntime";
 
-// ─────────────────────────────────────────────────────────────
-// TYPES  (identical props to BuilderContainer — drop-in swap)
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// TYPES  (identical props to BuilderContainer â drop-in swap)
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export interface BuilderContainerProps {
   mission: string;
@@ -230,13 +230,13 @@ export interface BuilderContainerProps {
   onStartOpenHands?: (mission: string) => void | Promise<void>;
   onCancelOpenHands?: () => void;
   /**
-   * Traditional publish path — set by the parent to the PR URL returned by
+   * Traditional publish path â set by the parent to the PR URL returned by
    * mergeWhenGreen once approvalConfirmed === true. Omit when not available.
    */
   publishedPrUrl?: string;
 }
 
-// Local types — extracted to builderContainerTypes.ts
+// Local types â extracted to builderContainerTypes.ts
 import type {
   AnimPhase,
   ChatLine,
@@ -256,7 +256,7 @@ import {
   type WorkbenchStatusSlotId,
   type WorkbenchStatusTone,
 } from "../runtime/builderWorkbenchStatus";
-// Chat/PAL helpers — extracted to builderChatHelpers.ts / builderPALRuntime.ts
+// Chat/PAL helpers â extracted to builderChatHelpers.ts / builderPALRuntime.ts
 import {
   buildChatLines,
   buildLocalStatusAnswer,
@@ -281,9 +281,9 @@ import {
   type PALDecision,
 } from "../runtime/builderPALRuntime";
 
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // CONSTANTS
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const CUTE_THINKING_FRAME_MS = 1100;
 const CUTE_IDLE_FRAME_MS = 1450;
@@ -297,14 +297,14 @@ const TIER_COLOR: Record<RuntimeTier, string> = {
 
 // AppControl module definitions
 const MODULES: ModuleCfg[] = [
-  { id: "chat", short: "CHAT", icon: "⬡", color: C.sky },
-  { id: "init", short: "INT", icon: "⬡", color: C.green },
-  { id: "router", short: "ROU", icon: "⟳", color: C.sky },
-  { id: "pattern", short: "PAT", icon: "◈", color: C.violet },
-  { id: "sync", short: "SYN", icon: "⇄", color: C.accent },
-  { id: "orchestr", short: "ORC", icon: "⚡", color: C.amber },
-  { id: "logger", short: "LOG", icon: "▣", color: C.rose },
-  { id: "budget", short: "BUD", icon: "◎", color: C.green },
+  { id: "chat", short: "CHAT", icon: "â¬¡", color: C.sky },
+  { id: "init", short: "INT", icon: "â¬¡", color: C.green },
+  { id: "router", short: "ROU", icon: "â³", color: C.sky },
+  { id: "pattern", short: "PAT", icon: "â", color: C.violet },
+  { id: "sync", short: "SYN", icon: "â", color: C.accent },
+  { id: "orchestr", short: "ORC", icon: "â¡", color: C.amber },
+  { id: "logger", short: "LOG", icon: "â£", color: C.rose },
+  { id: "budget", short: "BUD", icon: "â", color: C.green },
 ];
 
 const INIT_CONDITIONS: Partial<Record<ModuleId, ModuleCond[]>> = {
@@ -318,8 +318,8 @@ const INIT_CONDITIONS: Partial<Record<ModuleId, ModuleCond[]>> = {
     { label: "Tab completed", status: "wait" },
   ],
   pattern: [
-    { label: "Seq ≥ 2", status: "pass" },
-    { label: "Confidence ≥ 0.80", status: "fail" },
+    { label: "Seq â¥ 2", status: "pass" },
+    { label: "Confidence â¥ 0.80", status: "fail" },
     { label: "Store > 0", status: "wait" },
   ],
   sync: [
@@ -345,29 +345,29 @@ const INIT_CONDITIONS: Partial<Record<ModuleId, ModuleCond[]>> = {
 
 const IDEA_OPTIONS: IdeaOption[] = [
   {
-    label: "✨ Feature",
-    text: "Schlage mir ein kleines, cooles Feature vor, prüfe zuerst das Repo und baue es nur als echten, sicheren Draft-PR-tauglichen Änderungspfad.",
+    label: "â¨ Feature",
+    text: "Schlage mir ein kleines, cooles Feature vor, prÃ¼fe zuerst das Repo und baue es nur als echten, sicheren Draft-PR-tauglichen Ãnderungspfad.",
   },
   {
-    label: "🐛 Bug Fix",
+    label: "ð Bug Fix",
     text: "Analysiere den aktuellen Fehlerstatus, finde die betroffenen Dateien und erzeuge einen minimalen echten Fix mit passenden Tests.",
   },
   {
-    label: "📱 Android UX",
-    text: "Verbessere die Bedienbarkeit auf Android: Chat, Navigation, Statushinweise und klare Nutzerführung ohne neue Fensterflut.",
+    label: "ð± Android UX",
+    text: "Verbessere die Bedienbarkeit auf Android: Chat, Navigation, Statushinweise und klare NutzerfÃ¼hrung ohne neue Fensterflut.",
   },
   {
-    label: "🔒 Runtime",
-    text: "Prüfe den schwächsten Ablauf und ergänze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.",
+    label: "ð Runtime",
+    text: "PrÃ¼fe den schwÃ¤chsten Ablauf und ergÃ¤nze Runtime-Checks, Validierungen und Tests ohne Mock-, Stub- oder Facade-Live-Pfade.",
   },
 ];
 
-// ─────────────────────────────────────────────────────────────
-// HELPERS — extracted to builderContainerHelpers.ts
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// HELPERS â extracted to builderContainerHelpers.ts
 // appendOption, normalizeMissionText, collapseRepeatedAnalyzedMission,
 // isAnalyzedMission, missionToWishText, buildAnalyzedMission,
 // safeHttpsUrl, splitFilePath, buildOutcomeHints, deriveAgentStatus, fmtTime
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 // Intent detection from workerIntentDetector module
 import {
@@ -394,15 +394,15 @@ import { useToolchainStore } from '../../toolchain/useToolchainStore';
 import { useSkillsStore } from '../../toolchain/useSkillsStore';
 import { SkillScanPanel } from '../../toolchain/components/SkillScanPanel';
 
-// ─────────────────────────────────────────────────────────────
-// PAL ROUTER — imported from builderPALRuntime.ts
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// PAL ROUTER â imported from builderPALRuntime.ts
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // SUB-COMPONENTS
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-// Module lamps row — AppControl addition
+// Module lamps row â AppControl addition
 function ModuleLamps({
   modules,
   signals,
@@ -488,7 +488,7 @@ function ModuleLamps({
 
 
 
-// TopBar — v3 verbatim + Workbench status chips + panel toggle + PAL badge
+// TopBar â v3 verbatim + Workbench status chips + panel toggle + PAL badge
 function TopBar({
   status,
   repoReady,
@@ -543,7 +543,7 @@ function TopBar({
   const repoLabel = chatRepoSnapshot
     ? `${chatRepoSnapshot.name}:${chatRepoSnapshot.branch}`
     : repoReady
-      ? "Repo ✓"
+      ? "Repo â"
       : "Repo fehlt";
   const repoColor = repoReady || chatRepoSnapshot ? C.green : C.amber;
 
@@ -555,7 +555,7 @@ function TopBar({
         flexShrink: 0,
       }}
     >
-      {/* Main top row — verbatim v3 */}
+      {/* Main top row â verbatim v3 */}
       <div
         style={{
           height: 52,
@@ -568,8 +568,8 @@ function TopBar({
         <button
           type="button"
           onClick={onMenuOpen}
-          aria-label="Menü"
-          title="Menü"
+          aria-label="MenÃ¼"
+          title="MenÃ¼"
           style={{
             width: 40,
             height: 40,
@@ -585,7 +585,7 @@ function TopBar({
             flexShrink: 0,
           }}
         >
-          ☰
+          â°
         </button>
 
         <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
@@ -634,7 +634,7 @@ function TopBar({
                 }}
               >
                 {palTier.toUpperCase()}
-                {palSavings !== null ? " · sparsam" : ""}
+                {palSavings !== null ? " Â· sparsam" : ""}
               </span>
             )}
           </div>
@@ -642,7 +642,7 @@ function TopBar({
             type="button"
             onClick={onRepoClick}
             disabled={!chatRepoSnapshot}
-            aria-label={chatRepoSnapshot ? "Repo Inspector öffnen" : undefined}
+            aria-label={chatRepoSnapshot ? "Repo Inspector Ã¶ffnen" : undefined}
             style={{
               display: "block",
               width: "100%",
@@ -664,7 +664,7 @@ function TopBar({
             {chatRepoSnapshot && (
               <span style={{ color: C.textMuted }}>
                 {" "}
-                · {chatRepoSnapshot.fileCount} files
+                Â· {chatRepoSnapshot.fileCount} files
               </span>
             )}
           </button>
@@ -674,7 +674,7 @@ function TopBar({
           <CreditDisplay credits={credits} />
         )}
 
-        {/* User avatar / login button — Issue #459 */}
+        {/* User avatar / login button â Issue #459 */}
         {onUserClick && (
           <button
             type="button"
@@ -697,7 +697,7 @@ function TopBar({
               ? <img src={userAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               : userLoggedIn
                 ? <span style={{ fontSize: 11 }}>{userInitials || '?'}</span>
-                : <span>👤</span>
+                : <span>ð¤</span>
             }
           </button>
         )}
@@ -707,7 +707,7 @@ function TopBar({
         <button
           type="button"
           onClick={onSourceClick}
-          aria-label="RT – Runtime Quelle"
+          aria-label="RT â Runtime Quelle"
           title="Runtime Quelle"
           style={{
             display: "flex",
@@ -741,8 +741,8 @@ function TopBar({
         <button
           type="button"
           onClick={onPanelToggle}
-          aria-label={panelOpen ? "Panel schließen" : "Panel öffnen"}
-          title={panelOpen ? "Panel schließen" : "Panel öffnen"}
+          aria-label={panelOpen ? "Panel schlieÃen" : "Panel Ã¶ffnen"}
+          title={panelOpen ? "Panel schlieÃen" : "Panel Ã¶ffnen"}
           style={{
             background: "transparent",
             border: "none",
@@ -753,14 +753,14 @@ function TopBar({
             borderRadius: 6,
           }}
         >
-          {panelOpen ? "▴" : "▾"}
+          {panelOpen ? "â´" : "â¾"}
         </button>
       </div>
 
-      {/* Werkbank Status — Actions/Files/Logs/Errors/Draft PR, primary and always visible */}
+      {/* Werkbank Status â Actions/Files/Logs/Errors/Draft PR, primary and always visible */}
       <WorkbenchStatusChips slots={workbenchStatusSlots} onSlotClick={onWorkbenchSlotClick} />
 
-      {/* Inspector — technical runtime modules, internal-only, hidden unless explicitly opened */}
+      {/* Inspector â technical runtime modules, internal-only, hidden unless explicitly opened */}
       {showInspector && (
         <>
           <div
@@ -847,8 +847,8 @@ function StatusPanel({
           <button
             type="button"
             onClick={onClearLogs}
-            aria-label="Logs löschen"
-            title="Logs löschen"
+            aria-label="Logs lÃ¶schen"
+            title="Logs lÃ¶schen"
             style={{
               position: "absolute",
               right: 8,
@@ -861,7 +861,7 @@ function StatusPanel({
               cursor: "pointer",
             }}
           >
-            ✕
+            â
           </button>
         )}
       </div>
@@ -973,7 +973,7 @@ function Bubble({
   const isUser = msg.role === "user";
   const [showMenu, setShowMenu] = useState(false);
 
-  // ── Issue #429: Haptic feedback helper using runtime
+  // ââ Issue #429: Haptic feedback helper using runtime
   const triggerHaptic = useCallback(
     (type: "light" | "medium" | "heavy" = "light") => {
       triggerAndroidHaptic(typeof navigator === "undefined" ? undefined : navigator, type);
@@ -1002,7 +1002,7 @@ function Bubble({
     );
   if (msg.role === "thought") return <ThoughtBubble text={msg.text} />;
 
-  // ── Issue #429: Long-press for copy/follow-up using runtime helpers
+  // ââ Issue #429: Long-press for copy/follow-up using runtime helpers
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setShowMenu(true);
@@ -1050,7 +1050,7 @@ function Bubble({
             marginBottom: 2,
           }}
         >
-          ⬡
+          â¬¡
         </div>
       )}
       <div
@@ -1064,7 +1064,7 @@ function Bubble({
       >
         <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
         <div style={{ position: "relative" }}>
-          {/* ── Issue #427: Markdown rendering for assistant bubbles */}
+          {/* ââ Issue #427: Markdown rendering for assistant bubbles */}
           <div
             style={{
               padding: "9px 12px",
@@ -1083,7 +1083,7 @@ function Bubble({
           >
             {isUser ? msg.text : <PacedChatText content={msg.text} />}
           </div>
-          {/* ── Issue #429: Long-press menu */}
+          {/* ââ Issue #429: Long-press menu */}
           {showMenu && (
             <div
               style={{
@@ -1116,7 +1116,7 @@ function Bubble({
                   borderRadius: 6,
                 }}
               >
-                📋 Kopieren
+                ð Kopieren
               </button>
               <button
                 type="button"
@@ -1133,7 +1133,7 @@ function Bubble({
                   borderRadius: 6,
                 }}
               >
-                💬 Zitieren
+                ð¬ Zitieren
               </button>
             </div>
           )}
@@ -1176,7 +1176,7 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
           marginBottom: 20,
         }}
       >
-        🐥
+        ð¥
       </div>
       <h2
         style={{
@@ -1199,7 +1199,7 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
           marginBottom: 28,
         }}
       >
-        Schreib dein Ziel oder füge eine GitHub-URL ein. Sovereign prüft Gates
+        Schreib dein Ziel oder fÃ¼ge eine GitHub-URL ein. Sovereign prÃ¼ft Gates
         und handelt nur bei echten Stop-Punkten.
       </p>
       <div
@@ -1250,7 +1250,7 @@ function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
   );
 }
 
-// ModuleScreen — AppControl detail view for non-chat tabs
+// ModuleScreen â AppControl detail view for non-chat tabs
 function ModuleScreen({
   mod,
   signals,
@@ -1282,12 +1282,12 @@ function ModuleScreen({
     error: C.rose,
   };
   const phaseSub: Record<AnimPhase, string> = {
-    idle: "—",
-    spinup: "initializing…",
+    idle: "â",
+    spinup: "initializingâ¦",
     working: "waiting / running",
-    completing: "wrapping up…",
-    done: "✓ complete",
-    error: "✗ failed",
+    completing: "wrapping upâ¦",
+    done: "â complete",
+    error: "â failed",
   };
 
   return (
@@ -1326,7 +1326,7 @@ function ModuleScreen({
           <div
             style={{ fontFamily: "monospace", fontSize: 9, color: C.textMuted }}
           >
-            {mod.id} · {sig}
+            {mod.id} Â· {sig}
           </div>
         </div>
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
@@ -1432,9 +1432,9 @@ function ModuleScreen({
         </div>
         {conds.map((c, i) => {
           const cfg = {
-            pass: { icon: "✓", color: C.green, bg: "rgba(52,211,153,0.08)" },
-            fail: { icon: "✗", color: C.rose, bg: "rgba(251,113,133,0.08)" },
-            wait: { icon: "⏳", color: C.amber, bg: "rgba(251,191,36,0.08)" },
+            pass: { icon: "â", color: C.green, bg: "rgba(52,211,153,0.08)" },
+            fail: { icon: "â", color: C.rose, bg: "rgba(251,113,133,0.08)" },
+            wait: { icon: "â³", color: C.amber, bg: "rgba(251,191,36,0.08)" },
           }[c.status];
           return (
             <div
@@ -1553,7 +1553,7 @@ function ModuleScreen({
                   )}
                 </div>
                 {i < arr.length - 1 && (
-                  <span style={{ color: C.border, fontSize: 10 }}>›</span>
+                  <span style={{ color: C.border, fontSize: 10 }}>âº</span>
                 )}
               </React.Fragment>
             );
@@ -1572,7 +1572,7 @@ function ModuleScreen({
         </div>
       </div>
 
-      {/* ── Issue #433: Runtime Inspector Signals */}
+      {/* ââ Issue #433: Runtime Inspector Signals */}
       {inspectorSignals.length > 0 && (
         <div
           style={{
@@ -1760,7 +1760,7 @@ function RuntimeSheet({
               </span>
             </span>
             {s.id === current.id && (
-              <span style={{ color: TIER_COLOR[s.tier], fontSize: 12 }}>✓</span>
+              <span style={{ color: TIER_COLOR[s.tier], fontSize: 12 }}>â</span>
             )}
           </button>
         ))}
@@ -1840,7 +1840,7 @@ function SideDrawer({
               fontSize: 16,
             }}
           >
-            ⬡
+            â¬¡
           </div>
           <div>
             <div
@@ -1866,8 +1866,8 @@ function SideDrawer({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Menü schließen"
-            title="Menü schließen"
+            aria-label="MenÃ¼ schlieÃen"
+            title="MenÃ¼ schlieÃen"
             style={{
               marginLeft: "auto",
               background: "transparent",
@@ -1879,7 +1879,7 @@ function SideDrawer({
               borderRadius: 6,
             }}
           >
-            ✕
+            â
           </button>
         </div>
 
@@ -1912,7 +1912,7 @@ function SideDrawer({
                 marginTop: 2,
               }}
             >
-              {chatRepoSnapshot.branch} · {chatRepoSnapshot.fileCount} files
+              {chatRepoSnapshot.branch} Â· {chatRepoSnapshot.fileCount} files
             </div>
           </div>
         )}
@@ -1950,8 +1950,8 @@ function SideDrawer({
                 color: C.textMuted,
               }}
             >
-              {palStats.total} Calls · {DEV_CHAT_WORKER_MODELS.length} Modelle
-              verfügbar
+              {palStats.total} Calls Â· {DEV_CHAT_WORKER_MODELS.length} Modelle
+              verfÃ¼gbar
             </div>
           </div>
         )}
@@ -2012,7 +2012,7 @@ function SideDrawer({
             gap: 8,
           }}
         >
-          {/* ── Issue #432: Chat export button */}
+          {/* ââ Issue #432: Chat export button */}
           {onExportChat && (
             <button
               type="button"
@@ -2037,7 +2037,7 @@ function SideDrawer({
                 gap: 8,
               }}
             >
-              <span>📤</span> Chat teilen
+              <span>ð¤</span> Chat teilen
             </button>
           )}
           <button
@@ -2063,7 +2063,7 @@ function SideDrawer({
               textAlign: "left",
             }}
           >
-            🔍 Interne Prüfung
+            ð Interne PrÃ¼fung
           </button>
           <button
             type="button"
@@ -2085,7 +2085,7 @@ function SideDrawer({
               textAlign: "left",
             }}
           >
-            ⚠ Fehleranalyse
+            â  Fehleranalyse
           </button>
           {openhandsIsRunning && onCancelOpenHands && (
             <button
@@ -2108,7 +2108,7 @@ function SideDrawer({
                 textAlign: "left",
               }}
             >
-              ✕ Agent stoppen
+              â Agent stoppen
             </button>
           )}
         </div>
@@ -2260,7 +2260,7 @@ function Composer({
             opacity: disabled || loading ? 0.45 : 1,
           }}
         >
-          {loading ? "…" : "↑"}
+          {loading ? "â¦" : "â"}
         </button>
       </div>
       <div
@@ -2278,7 +2278,7 @@ function Composer({
   );
 }
 
-// BottomTabBar — Chat stays the sole primary destination; the Inspector toggle
+// BottomTabBar â Chat stays the sole primary destination; the Inspector toggle
 // reveals the technical runtime modules (see ModuleLamps) as an internal debug
 // view. Files/Diff/Draft PR/Logs live as understandable Workbench surfaces
 // (WorkbenchStatusChips + drawer), not as bottom-nav module abbreviations.
@@ -2324,7 +2324,7 @@ function BottomTabBar({
           minWidth: 0,
         }}
       >
-        <span style={{ fontSize: 15, color: isChat ? C.sky : C.textMuted }}>⬡</span>
+        <span style={{ fontSize: 15, color: isChat ? C.sky : C.textMuted }}>â¬¡</span>
         <span
           style={{
             fontFamily: "monospace",
@@ -2355,7 +2355,7 @@ function BottomTabBar({
           minWidth: 0,
         }}
       >
-        <span style={{ fontSize: 15, color: inspectorOpen ? C.violet : C.textMuted }}>⚙</span>
+        <span style={{ fontSize: 15, color: inspectorOpen ? C.violet : C.textMuted }}>â</span>
         <span
           style={{
             fontFamily: "monospace",
@@ -2371,9 +2371,9 @@ function BottomTabBar({
   );
 }
 
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // MAIN COMPONENT
-// ─────────────────────────────────────────────────────────────
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export function BuilderContainer({
   mission,
@@ -2397,7 +2397,7 @@ export function BuilderContainer({
   onCancelOpenHands,
   publishedPrUrl,
 }: BuilderContainerProps) {
-  // ── Original v3 state (verbatim)
+  // ââ Original v3 state (verbatim)
   const [patternMemoryStore, setPatternMemoryStore] = useState<PatternMemoryStore>(() => loadPatternMemoryStoreFromStorage());
   const [wishText, setWishText] = useState(() => missionToWishText(mission));
   const [thinkingFrameIndex, setTFI] = useState(0);
@@ -2425,7 +2425,7 @@ export function BuilderContainer({
   const scrollRef = useRef<HTMLDivElement>(null);
   const nowRef = useRef(Date.now());
 
-  // ── AppControl state (additions)
+  // ââ AppControl state (additions)
   const [activeTab, setActiveTab] = useState<string>("chat");
   const [sequence, setSequence] = useState<
     Array<{ tabId: string; auto: boolean }>
@@ -2439,11 +2439,11 @@ export function BuilderContainer({
   const [conditions, setConditions] =
     useState<Partial<Record<ModuleId, ModuleCond[]>>>(INIT_CONDITIONS);
   const [confidence, setConfidence] = useState(0.12);
-  // ── Gap 3: Security card state — shown inline when a secret is detected in input
+  // ââ Gap 3: Security card state â shown inline when a secret is detected in input
   const [securityCardPending, setSecurityCardPending] = useState<{
     title: string; text: string; hint: string; buttonLabel: string;
   } | null>(null);
-  // When user taps "GitHub-Zugang öffnen" in SecurityBlockCard, force GitHubAccessCard visible
+  // When user taps "GitHub-Zugang Ã¶ffnen" in SecurityBlockCard, force GitHubAccessCard visible
   const [showGitHubAccessOverride, setShowGitHubAccessOverride] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
@@ -2451,20 +2451,20 @@ export function BuilderContainer({
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
   const { credits, chargeCredits } = useCreditGuard();
-  // ── Issue #459: User auth state
+  // ââ Issue #459: User auth state
   const { user: authUser, refreshUser } = useUserStore();
   const [showLogin, setShowLogin]     = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sovereign App Toolchain — auto-load after login
+  // ââ Sovereign App Toolchain â auto-load after login
   const { loadTools: loadToolchain, getToolContext, loaded: toolchainLoaded } = useToolchainStore();
   useEffect(() => {
     if (authUser && !toolchainLoaded) { loadToolchain(); }
   }, [authUser, toolchainLoaded, loadToolchain]);
 
-  // ── Sovereign Skill System — auto-load + dynamic slash commands
+  // ââ Sovereign Skill System â auto-load + dynamic slash commands
   const {
     loadSkills,
     getActiveSkillContext,
@@ -2494,11 +2494,11 @@ export function BuilderContainer({
     Array<{ ts: string; level: string; msg: string; tabId: string }>
   >([]);
 
-  // ── Issue #425: Auto-scroll lock and jump badge
+  // ââ Issue #425: Auto-scroll lock and jump badge
   const [userScrolledAway, setUserScrolledAway] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
 
-  // ── Issue #443: GitHub Access State
+  // ââ Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
     createGitHubAccessSnapshot(),
   );
@@ -2510,18 +2510,18 @@ export function BuilderContainer({
   // SECURITY: Never persisted to sessionStorage/localStorage
   const githubTokenRef = useRef<string | null>(null);
 
-  // ── Issue #445: AgentWorkTimeline state
+  // ââ Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
     () => createIdleSnapshot(`sovereign-${Date.now()}`),
   );
 
-  // ── Issue #520: Integration Intent Draft State
+  // ââ Issue #520: Integration Intent Draft State
   // Shows draft card for recognized integration tasks before execution
   const [intentDraftState, setIntentDraftState] = useState<IntegrationIntentDraftState>(
     createInitialDraftState,
   );
 
-  // ── Issue #445: Sync AgentWorkSnapshot from openhandsJob transitions
+  // ââ Issue #445: Sync AgentWorkSnapshot from openhandsJob transitions
   useEffect(() => {
     if (!openhandsJob) return;
     
@@ -2561,7 +2561,7 @@ export function BuilderContainer({
       // draftPrUrl only transitions to ready if no terminal failure state exists
       if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
         snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
-        // Patch wurde committed → Vorschau-State auf "bestätigt" wechseln
+        // Patch wurde committed â Vorschau-State auf "bestÃ¤tigt" wechseln
         if (patchPreviewReady) {
           setPatchPreviewReady(false);
           setPatchConfirmed(true);
@@ -2574,7 +2574,7 @@ export function BuilderContainer({
     });
   }, [openhandsJob, chatRepoSnapshot]);
 
-  // ── Slash command menu state (Issue #428)
+  // ââ Slash command menu state (Issue #428)
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
   const slashMatches = useMemo(
@@ -2586,7 +2586,7 @@ export function BuilderContainer({
     slashMatches.length > 0 &&
     !slashMenuDismissed;
 
-  // ── Issue #429: Haptic feedback helper using runtime
+  // ââ Issue #429: Haptic feedback helper using runtime
   const triggerHaptic = useCallback(
     (type: "light" | "medium" | "heavy" = "light") => {
       triggerAndroidHaptic(typeof navigator === "undefined" ? undefined : navigator, type);
@@ -2609,7 +2609,7 @@ export function BuilderContainer({
   }, []);
   const sovereignAgentStartAvailable = Boolean(openhandsReady && onStartOpenHands);
 
-  // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
+  // ââ Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) â
   // derived purely from runtime state, never fabricated. Fronts the technical
   // module lamps as the primary, always-visible status vocabulary.
   const workbenchStatusSlots = useMemo(
@@ -2679,7 +2679,7 @@ export function BuilderContainer({
     [],
   );
 
-  // ── Issue #557: Show session restore age on startup
+  // ââ Issue #557: Show session restore age on startup
   useEffect(() => {
     const snapshot = loadSessionMemory(localStorage);
     if (!snapshot) return;
@@ -2687,12 +2687,12 @@ export function BuilderContainer({
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     const isVeryOld = Date.now() - snapshot.savedAt > ONE_DAY_MS;
     const message = isVeryOld
-      ? `Ältere Sitzung wiederhergestellt — bitte Repo/Status prüfen. (${age})`
+      ? `Ãltere Sitzung wiederhergestellt â bitte Repo/Status prÃ¼fen. (${age})`
       : `Letzte Sitzung von vor ${age} wiederhergestellt.`;
     appendChatLine({ role: 'assistant', text: message });
   }, [appendChatLine]);
 
-  // ── Issue #447: Auto-save workflow patterns after Draft PR success
+  // ââ Issue #447: Auto-save workflow patterns after Draft PR success
   usePatternMemoryStore({
     agentWorkSnapshot,
     patternMemoryStore,
@@ -2704,7 +2704,7 @@ export function BuilderContainer({
     publishedPrUrl,
   });
 
-  // ── Aufgabe 5: Track unseen activity — not just chat lines, but also the
+  // ââ Aufgabe 5: Track unseen activity â not just chat lines, but also the
   // inline action stream (Sovereign trace) and streaming worker replies.
   // Every new chat line, action-stream event, or freshly-started stream
   // counts as one unit of "unseen" activity while the user has scrolled away.
@@ -2744,12 +2744,12 @@ export function BuilderContainer({
     (id: string, auto = false) => {
       setActiveTab(id);
       setSequence((prev) => [...prev.slice(-11), { tabId: id, auto }]);
-      addLog("info", `Tab → ${id} (${auto ? "auto" : "manual"})`, id);
+      addLog("info", `Tab â ${id} (${auto ? "auto" : "manual"})`, id);
     },
     [addLog],
   );
 
-  // ── Original v3 derived values (verbatim)
+  // ââ Original v3 derived values (verbatim)
   const state = deriveBuilderContainerState({
     repoReady: repoReady || Boolean(chatRepoSnapshot),
     repoBusy: repoBusy || localRepoLoading,
@@ -2764,7 +2764,7 @@ export function BuilderContainer({
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
     : repoReason;
 
-  // Fix 5: Partial-Snapshot Guard — detects a snapshot that is loaded but missing
+  // Fix 5: Partial-Snapshot Guard â detects a snapshot that is loaded but missing
   // critical fields. Showing such state as "truth" would fabricate reality.
   // UI renders a visible warning instead of silently proceeding with bad state.
   const isPartialRepoSnapshot = Boolean(
@@ -2785,10 +2785,10 @@ export function BuilderContainer({
       ? "Cloudflare Worker antwortet"
       : openhandsJobStatus?.trim() || "Runtime arbeitet"
     : workerBlocker
-      ? `blocked · ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : "Worker blockiert"}`
+      ? `blocked Â· ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : "Worker blockiert"}`
       : effectiveRepoReady
-        ? "idle · Repo-Kontext bereit"
-        : "idle · Repo fehlt";
+        ? "idle Â· Repo-Kontext bereit"
+        : "idle Â· Repo fehlt";
   const cuteThinkingLabel = useMemo(
     () =>
       formatCuteWorkStateLabel({
@@ -2847,7 +2847,7 @@ export function BuilderContainer({
       id: "worker-models",
       label: `${DEV_CHAT_WORKER_MODELS.length} Modelle`,
       tier: "ready" as RuntimeTier,
-      description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(" · "),
+      description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(" Â· "),
       available: true,
     },
     {
@@ -2859,7 +2859,7 @@ export function BuilderContainer({
           : "ready"
         : "blocked") as RuntimeTier,
       description: sovereignAgentStartAvailable
-        ? "Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge"
+        ? "Interne Sovereign Agent Runtime fÃ¼r Code/Draft-PR-AuftrÃ¤ge"
         : openhandsReady
           ? "Sovereign Agent Runtime konfiguriert, aber Start-Callback nicht verdrahtet"
           : "Sovereign Agent Runtime nicht verbunden",
@@ -2913,7 +2913,7 @@ export function BuilderContainer({
   }, [palDecisions]);
   const lastPal = palDecisions[palDecisions.length - 1] ?? null;
 
-  // ── Original v3 effects (verbatim)
+  // ââ Original v3 effects (verbatim)
   useEffect(() => {
     const h = window.setInterval(
       () => setTFI((c) => c + 1),
@@ -2933,7 +2933,7 @@ export function BuilderContainer({
     setWishText(missionToWishText(mission));
   }, [chatHistory.length, mission, wishText]);
 
-  // ── Aufgabe 5: Robust autoscroll — scroll to bottom on any new chat line,
+  // ââ Aufgabe 5: Robust autoscroll â scroll to bottom on any new chat line,
   // action-stream event, or stream update, UNLESS the user has intentionally
   // scrolled away. While scrolled away, new activity only bumps the unseen
   // badge (see chatActivitySignal effect above), never yanks the viewport.
@@ -2964,7 +2964,7 @@ export function BuilderContainer({
     nowRef.current = Date.now();
   }, [chatLines.length]);
 
-  // ── AppControl runtime binding
+  // ââ AppControl runtime binding
   // No simulated progress: lamps, phases and conditions are derived from real runtime state.
   useEffect(() => {
     const jobBlocked =
@@ -3129,7 +3129,7 @@ export function BuilderContainer({
       const previous = previousSignals[module.id] ?? "idle";
       const next = nextSignals[module.id] ?? "idle";
       if (previous !== next)
-        addLog("signal", `Signal[${module.id}] → ${next}`, module.id);
+        addLog("signal", `Signal[${module.id}] â ${next}`, module.id);
     }
   }, [
     addLog,
@@ -3160,7 +3160,7 @@ export function BuilderContainer({
     workerBlocker,
   ]);
 
-  // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
+  // ââ Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
   const startAgentFromText = async (text: string): Promise<boolean> => {
     const clean = collapseRepeatedAnalyzedMission(
       buildAnalyzedMission({
@@ -3175,12 +3175,12 @@ export function BuilderContainer({
       appendActionEvent(buildBlockedActionEvent({
         route: 'agent-job',
         label: 'Sovereign Agent Start blockiert',
-        detail: 'Kein Start-Callback für die Sovereign Agent Runtime verdrahtet.',
+        detail: 'Kein Start-Callback fÃ¼r die Sovereign Agent Runtime verdrahtet.',
         kind: 'blocked',
       }));
       appendChatLine({
         role: 'assistant',
-        text: 'Sovereign Agent Runtime kann nicht gestartet werden: Start-Callback ist nicht verdrahtet. Es wurde kein Job gestartet und keine Datei geändert.',
+        text: 'Sovereign Agent Runtime kann nicht gestartet werden: Start-Callback ist nicht verdrahtet. Es wurde kein Job gestartet und keine Datei geÃ¤ndert.',
       });
       addLog('error', 'Sovereign Agent start blocked: missing onStartOpenHands callback', 'router');
       return false;
@@ -3190,7 +3190,7 @@ export function BuilderContainer({
       kind: 'agent_job_requested',
       route: 'agent-job',
       label: 'Sovereign Agent Job angefragt',
-      detail: 'Startanforderung wurde an die Runtime übergeben. Warte auf bestätigten Job-State.',
+      detail: 'Startanforderung wurde an die Runtime Ã¼bergeben. Warte auf bestÃ¤tigten Job-State.',
       state: 'queued',
     });
 
@@ -3208,7 +3208,7 @@ export function BuilderContainer({
       });
       appendChatLine({
         role: 'assistant',
-        text: `Sovereign Agent Runtime konnte nicht gestartet werden.\nGrund: ${message}\nEs wurde kein Job gestartet und keine Datei geändert.`,
+        text: `Sovereign Agent Runtime konnte nicht gestartet werden.\nGrund: ${message}\nEs wurde kein Job gestartet und keine Datei geÃ¤ndert.`,
       });
       addLog('error', `Sovereign Agent start failed: ${message}`, 'router');
       return false;
@@ -3231,23 +3231,23 @@ export function BuilderContainer({
   };
 
   const _processSubmit = async (submittedText: string) => {
-    // ── Issue #445: SecureInputGuard — block secrets before any storage or LLM path
+    // ââ Issue #445: SecureInputGuard â block secrets before any storage or LLM path
     const securePolicy = evaluateInputPolicy(submittedText);
     if (securePolicy.shouldBlock) {
-      // Show security card with "GitHub-Zugang öffnen" button — never store token or route to LLM
+      // Show security card with "GitHub-Zugang Ã¶ffnen" button â never store token or route to LLM
       const card = createSecurityCardDisplay(securePolicy);
       if (card) setSecurityCardPending(card);
       addLog("warn", `SecureInputGuard: ${securePolicy.kind ?? "secret"} detected and blocked`, "router");
       return;
     }
 
-    // ── Issue #428: Slash command handling
+    // ââ Issue #428: Slash command handling
     if (submittedText.startsWith("/")) {
       const parsedSlash = parseSlashCommand(submittedText, skillSlashCommands);
       if (!parsedSlash) {
         appendChatLine({
           role: "assistant",
-          text: `Unbekannter Befehl. Verfügbare: ${[...SOVEREIGN_SLASH_COMMANDS, ...skillSlashCommands].map((c) => c.cmd).join(", ")}`,
+          text: `Unbekannter Befehl. VerfÃ¼gbare: ${[...SOVEREIGN_SLASH_COMMANDS, ...skillSlashCommands].map((c) => c.cmd).join(", ")}`,
         });
         return;
       }
@@ -3286,7 +3286,7 @@ export function BuilderContainer({
         triggerHaptic("light");
         appendChatLine({
           role: "assistant",
-          text: "Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.",
+          text: "Chat-Verlauf gelÃ¶scht. Repository und Token bleiben erhalten.",
         });
         return;
       }
@@ -3302,9 +3302,9 @@ export function BuilderContainer({
             role: "assistant",
             text: [
               `**${active.length} installierte Skills:**`,
-              ...active.map((s) => `• \`/${s.slug}\` — ${s.description}`),
+              ...active.map((s) => `â¢ \`/${s.slug}\` â ${s.description}`),
               "",
-              "Tipp: /scan-skills <owner/repo> für mehr Skills.",
+              "Tipp: /scan-skills <owner/repo> fÃ¼r mehr Skills.",
             ].join("\n"),
           });
         }
@@ -3319,7 +3319,7 @@ export function BuilderContainer({
         appendChatLine({ role: "user", text: submittedText });
         appendChatLine({
           role: "assistant",
-          text: `**${command.label}** wird ausgeführt…\n\n${command.adapted_prompt.slice(0, 600)}`,
+          text: `**${command.label}** wird ausgefÃ¼hrtâ¦\n\n${command.adapted_prompt.slice(0, 600)}`,
         });
         return;
       }
@@ -3331,7 +3331,7 @@ export function BuilderContainer({
     appendChatLine({ role: "user", text: submittedText });
     appendActionEvent(buildInputReceivedEvent(submittedText));
 
-    // ── Issue #522 P2 Fix 2 & 3: Local routing BEFORE Integration Intent Draft Detection
+    // ââ Issue #522 P2 Fix 2 & 3: Local routing BEFORE Integration Intent Draft Detection
     // Status, diagnostic, and retry intents must be handled locally FIRST.
     // They should NOT create an integration draft card.
     // Order matters: local routes > createIntegrationIntentDraft > capability router
@@ -3371,28 +3371,28 @@ export function BuilderContainer({
       return;
     }
 
-    // Fix: "Warum?" follow-up after local status answer → answer locally, no worker call
+    // Fix: "Warum?" follow-up after local status answer â answer locally, no worker call
     if (lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
       const whyAnswer = patchPreviewReady
-        ? "Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss."
+        ? "Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprÃ¼ft und bestÃ¤tigt werden muss."
         : !githubWriteAllowed
-        ? "Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, läuft der Auftrag automatisch weiter."
+        ? "Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, lÃ¤uft der Auftrag automatisch weiter."
         : workerBlocker
-        ? "Weil der Worker blockiert ist. Bitte den Fehler prüfen oder den Auftrag präzisieren."
+        ? "Weil der Worker blockiert ist. Bitte den Fehler prÃ¼fen oder den Auftrag prÃ¤zisieren."
         : "Weil noch kein Auftrag gestartet wurde oder der Auftrag blockiert ist. Bitte Auftrag neu starten.";
       appendChatLine({ role: 'assistant', text: whyAnswer });
       setLastAnswerWasLocal(true);
       appendActionEvent(buildBlockedActionEvent({
         route: 'runtime',
         label: 'Warum-Folgefrage',
-        detail: 'Lokale Erklärung aus Runtime-State — kein Worker-Call',
+        detail: 'Lokale ErklÃ¤rung aus Runtime-State â kein Worker-Call',
       }));
       addLog('info', 'Fix: Follow-up why question answered locally - no worker call', 'router');
       return;
     }
 
     // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
-    // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
+    // Runtime-Truth: Retry must produce Action â Request â Response, not just UI reset
     if (isWorkerRetryIntent(submittedText) && workerBlocker) {
       // If user asks status question, answer locally first before retry
               if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
@@ -3423,7 +3423,7 @@ export function BuilderContainer({
           label: 'Status-Frage beantwortet',
           detail: 'Lokale Antwort aus Runtime-State',
         }));
-        addLog('info', 'Retry + status question → local answer first', 'router');
+        addLog('info', 'Retry + status question â local answer first', 'router');
         return;
       }
       if (lastWorkerRequestMessage) {
@@ -3431,12 +3431,12 @@ export function BuilderContainer({
         setWorkerBlocker(null);
         appendChatLine({
           role: 'assistant',
-          text: 'Worker-Blocker zurückgesetzt. Retry wird ausgeführt...',
+          text: 'Worker-Blocker zurÃ¼ckgesetzt. Retry wird ausgefÃ¼hrt...',
         });
         appendActionEvent(buildBlockedActionEvent({
           route: 'runtime',
           label: 'Retry gestartet',
-          detail: 'Worker-Blocker zurückgesetzt; letzter Request wird erneut ausgeführt',
+          detail: 'Worker-Blocker zurÃ¼ckgesetzt; letzter Request wird erneut ausgefÃ¼hrt',
         }));
         addLog('info', 'Issue #522 P2 Fix 2: Retry intent triggers real retry via retrySubmit', 'router');
         retrySubmit(lastWorkerRequestMessage);
@@ -3445,12 +3445,12 @@ export function BuilderContainer({
         // Honest state: no prior request to retry
         appendChatLine({
           role: 'assistant',
-          text: 'Worker-Blocker zurückgesetzt. Es gibt keinen vorherigen Request zum Wiederholen.',
+          text: 'Worker-Blocker zurÃ¼ckgesetzt. Es gibt keinen vorherigen Request zum Wiederholen.',
         });
         appendActionEvent(buildBlockedActionEvent({
           route: 'runtime',
           label: 'Retry',
-          detail: 'Worker-Blocker zurückgesetzt; kein vorheriger Request vorhanden',
+          detail: 'Worker-Blocker zurÃ¼ckgesetzt; kein vorheriger Request vorhanden',
         }));
         addLog('info', 'Issue #522 P2 Fix 2: Retry intent clears blocker - no prior request to retry', 'router');
         setWorkerBlocker(null);
@@ -3504,13 +3504,13 @@ export function BuilderContainer({
       return;
     }
 
-    // ── Issue #520: Integration Intent Draft Detection
+    // ââ Issue #520: Integration Intent Draft Detection
     // Normal non-question inputs with a connected repo are treated as potential
     // integration/implementation requests. Show a draft card for confirmation.
     // BUT: Explicit executor commands and delegation intents bypass the draft card
     // to maintain backward compatibility with existing test expectations.
     // Fix: Safe-analysis presets are read-only and must never create an integration draft.
-    const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
+    const isSafeAnalysisPreset = submittedText.includes('Preset-AusfÃ¼hrungsmodus: safe_analysis');
     if (effectiveRepoReady &&
         !isSafeAnalysisPreset &&
         !isOpenHandsExecutionIntent(submittedText) &&
@@ -3533,7 +3533,7 @@ export function BuilderContainer({
       }
     }
 
-    // ── Issue #502: Sovereign Capability Router
+    // ââ Issue #502: Sovereign Capability Router
     // Central routing decision using real runtime state.
     // BuilderContainer shows the decision; it does not create it.
     const capabilityRouterInput: CapabilityRouterInput = {
@@ -3564,11 +3564,11 @@ export function BuilderContainer({
     // Log routing decision for telemetry
     addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
 
-    // ── Issue #502: Blocked capability decisions stop legacy routing
+    // ââ Issue #502: Blocked capability decisions stop legacy routing
     // BUT: Some cases must let legacy flow handle them:
     // - Worker retry (retry/nochmal) should clear blocker and retry
-    // - Repo-first: no repo + no GitHub → tell user to load repo first
-    // - Legacy fallback: unrecognized intents → Worker handles them
+    // - Repo-first: no repo + no GitHub â tell user to load repo first
+    // - Legacy fallback: unrecognized intents â Worker handles them
     if (!capabilityDecision.allowed) {
       // P1: Worker retry should bypass blocking - let legacy handle it
       if (isWorkerRetryIntent(submittedText) && workerBlocker) {
@@ -3604,7 +3604,7 @@ export function BuilderContainer({
       }
     }
 
-    // ── Issue #502: Terminal decisions (like local-runtime-answer) stop routing
+    // ââ Issue #502: Terminal decisions (like local-runtime-answer) stop routing
     // These are completed immediately - no Worker/executor calls needed.
     // BUT: local-runtime-answer must still produce an assistant chat line!
     if (capabilityDecision.isTerminal) {
@@ -3649,7 +3649,7 @@ export function BuilderContainer({
       appendActionEvent({
         kind: 'route_selected',
         route: 'repo',
-        label: 'Route gewählt: repo',
+        label: 'Route gewÃ¤hlt: repo',
         detail: 'Repo-Snapshot wird geladen.',
         state: 'running',
       });
@@ -3663,7 +3663,7 @@ export function BuilderContainer({
         appendActionEvent(buildRepoLoadedEvent(summary));
         appendChatLine({
           role: "assistant",
-          text: `Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(" · ") || "keine Top-Level-Ordner erkannt"}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`,
+          text: `Repo geladen. ${summary}\nTop-Level: ${result.snapshot.dirs.join(" Â· ") || "keine Top-Level-Ordner erkannt"}\nDer Repo-Snapshot bleibt Runtime-Kontext und wird nicht in die Eingabezeile geschrieben.`,
           file: result.snapshot.lastFile,
           path: result.snapshot.lastPath,
         });
@@ -3675,7 +3675,7 @@ export function BuilderContainer({
         );
         setPalDecisions((prev) => [...prev.slice(-99), d]);
         setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
-        addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
+        addLog("info", `PAL â ${d.tier} Â· ${d.modelLabel}`, "sys");
         return;
       }
       const errorText = result.error ?? "Repo konnte nicht geladen werden.";
@@ -3694,29 +3694,29 @@ export function BuilderContainer({
       return;
     }
 
-    // ── Aufgabe 2: Local completion-status questions
+    // ââ Aufgabe 2: Local completion-status questions
     // NOTE: Handled earlier in the flow (see Issue #522 P2 Fix 2 above)
     // to ensure status questions don't create integration drafts.
 
-    // ── Aufgabe 1: Write intents (README/file/patch/commit/push/PR language)
+    // ââ Aufgabe 1: Write intents (README/file/patch/commit/push/PR language)
     // must never reach the Worker chat while GitHub write access is missing.
     // Instead of asking for a token in chat, show the GitHubAccessCard.
     // Explicit OpenHands execution intents ("OpenHands", "Draft PR" with
     // execution framing, ...) already have their own dedicated executor
     // readiness gate below (agentDisabled) and must not be short-circuited
-    // here — this gate only covers write-language that would otherwise be
+    // here â this gate only covers write-language that would otherwise be
     // sent straight to the advisory Worker chat.
     if (isWriteIntent(submittedText) && !isOpenHandsExecutionIntent(submittedText)) {
       if (!effectiveRepoReady) {
         appendActionEvent(buildBlockedActionEvent({
           route: 'github-access',
           label: 'Schreibauftrag blockiert',
-          detail: 'Kein Repo geladen. GitHub-Repo-Link zuerst einfügen.',
+          detail: 'Kein Repo geladen. GitHub-Repo-Link zuerst einfÃ¼gen.',
           kind: 'access_required',
         }));
         appendChatLine({
           role: 'assistant',
-          text: 'Schreibauftrag erkannt.\nEs ist noch kein Repo geladen — bitte zuerst einen GitHub-Repo-Link senden.',
+          text: 'Schreibauftrag erkannt.\nEs ist noch kein Repo geladen â bitte zuerst einen GitHub-Repo-Link senden.',
         });
         addLog('warn', 'Write intent blocked: no repo loaded', 'router');
         return;
@@ -3726,14 +3726,14 @@ export function BuilderContainer({
           kind: 'github_access_required',
           route: 'github-access',
           label: 'GitHub-Schreibzugang erforderlich',
-          detail: 'Schreibauftrag erkannt · Worker-Chat wird übersprungen.',
+          detail: 'Schreibauftrag erkannt Â· Worker-Chat wird Ã¼bersprungen.',
           state: 'blocked',
         });
         pendingWriteIntentRef.current = submittedText;
         setShowGitHubAccessOverride(true);
         appendChatLine({
           role: 'assistant',
-          text: 'Schreibauftrag erkannt.\nFür Datei-/Repo-Änderungen wird sicherer GitHub-Schreibzugang benötigt.\nBitte GitHub-Zugang unten einrichten — der Auftrag wird nicht an den Worker-Chat gesendet.',
+          text: 'Schreibauftrag erkannt.\nFÃ¼r Datei-/Repo-Ãnderungen wird sicherer GitHub-Schreibzugang benÃ¶tigt.\nBitte GitHub-Zugang unten einrichten â der Auftrag wird nicht an den Worker-Chat gesendet.',
         });
         addLog('warn', 'Write intent blocked: GitHub write access missing', 'router');
         return;
@@ -3742,7 +3742,7 @@ export function BuilderContainer({
         kind: 'route_selected',
         route: 'github-patch',
         label: 'Patch/Draft-PR Route gestartet',
-        detail: 'GitHub-Schreibzugang bereit · Schreibauftrag wird an Executor übergeben.',
+        detail: 'GitHub-Schreibzugang bereit Â· Schreibauftrag wird an Executor Ã¼bergeben.',
         state: 'running',
       });
       if (agentDisabled) {
@@ -3773,7 +3773,7 @@ export function BuilderContainer({
           // Internal operator is available - show honest message, no fake patch
           appendChatLine({
             role: 'assistant',
-            text: `GitHub-Zugang ist bereit.\nSovereign Agent Fallback ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+            text: `GitHub-Zugang ist bereit.\nSovereign Agent Fallback ist nicht erforderlich.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prÃ¼fen, dann Draft PR.\nKein Auto-Merge.`,
           });
           addLog('info', 'Write intent routed via Sovereign Internal Operator bridge', 'router');
           return;
@@ -3805,7 +3805,7 @@ export function BuilderContainer({
               appendActionEvent({
                 kind: 'route_selected',
                 route: 'direct-github-patch',
-                label: 'Direct GitHub Patch Route gewählt',
+                label: 'Direct GitHub Patch Route gewÃ¤hlt',
                 detail: `Zieldatei: ${res.targetPath}`,
                 state: 'running',
               });
@@ -3821,12 +3821,12 @@ export function BuilderContainer({
 
               appendChatLine({
                 role: 'assistant',
-                text: `Direct GitHub Patch Route verfügbar für ${res.targetPath}.
+                text: `Direct GitHub Patch Route verfÃ¼gbar fÃ¼r ${res.targetPath}.
 
 Patch-Vorschlag:
 ${res.patchSummary}
 
-Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+NÃ¤chste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prÃ¼fen' : 'Draft PR erstellen'}`,
               });
               
               setPatchPreviewReady(true);
@@ -3839,8 +3839,8 @@ Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' :
             if ('capability' in directPatchResult && !directPatchResult.capability.available) {
               appendActionEvent(buildBlockedActionEvent({
                 route: 'github-patch',
-                label: 'Direct Patch nicht verfügbar',
-                detail: `Route erlaubt; Direct Patch noch nicht verfügbar: ${directPatchResult.capability.reason}`,
+                label: 'Direct Patch nicht verfÃ¼gbar',
+                detail: `Route erlaubt; Direct Patch noch nicht verfÃ¼gbar: ${directPatchResult.capability.reason}`,
                 kind: 'patch_blocked',
               }));
               appendChatLine({
@@ -3851,7 +3851,7 @@ ${executorBridgeDecision.reason}
 Route ist erlaubt, aber Direct Patch konnte noch keinen Patchplan erzeugen.
 Grund: ${directPatchResult.capability.reason}
 
-Es wurde noch keine Datei geändert. Nächste Aktion: Zielpfad präzisieren oder Executor verbinden.`,
+Es wurde noch keine Datei geÃ¤ndert. NÃ¤chste Aktion: Zielpfad prÃ¤zisieren oder Executor verbinden.`,
               });
               addLog('info', 'Write intent bridge allowed; direct patch not available: ' + directPatchResult.capability.reason, 'router');
               return;
@@ -3880,8 +3880,8 @@ Es wurde noch keine Datei geändert. Nächste Aktion: Zielpfad präzisieren oder
           appendActionEvent({
             kind: 'patch_blocked',
             route: 'github-patch',
-            label: 'Patch/Draft-PR Route geprüft — wartet auf Zielpfad',
-            detail: 'Route erlaubt; kein Patch/Diff erzeugt — Zielpfad oder Executor erforderlich.',
+            label: 'Patch/Draft-PR Route geprÃ¼ft â wartet auf Zielpfad',
+            detail: 'Route erlaubt; kein Patch/Diff erzeugt â Zielpfad oder Executor erforderlich.',
             state: 'blocked',
           });
           appendChatLine({
@@ -3890,8 +3890,8 @@ Es wurde noch keine Datei geändert. Nächste Aktion: Zielpfad präzisieren oder
 ${executorBridgeDecision.reason}
 
 Route ist erlaubt, aber es wurde noch kein Patch/Diff erzeugt.
-Nächste Aktion: Zielpfad nennen oder Executor verbinden.
-Es wurde noch keine Datei geändert.`,
+NÃ¤chste Aktion: Zielpfad nennen oder Executor verbinden.
+Es wurde noch keine Datei geÃ¤ndert.`,
           });
           addLog('info', 'Write intent bridge allowed without patch result: ' + executorBridgeDecision.reason, 'router');
           return;
@@ -3900,7 +3900,7 @@ Es wurde noch keine Datei geändert.`,
         // Bridge blocked - show clear blocker message with reason
         appendChatLine({
           role: 'assistant',
-          text: `Schreibauftrag kann nicht ausgeführt werden.\n\nGrund: ${executorBridgeDecision.reason}\n\nEs wurde noch keine Datei geändert.`,
+          text: `Schreibauftrag kann nicht ausgefÃ¼hrt werden.\n\nGrund: ${executorBridgeDecision.reason}\n\nEs wurde noch keine Datei geÃ¤ndert.`,
         });
         addLog('warn', 'Write intent blocked by bridge: ' + executorBridgeDecision.reason, 'router');
         return;
@@ -3910,13 +3910,13 @@ Es wurde noch keine Datei geändert.`,
       if (agentStartRequested) {
         appendChatLine({
           role: 'assistant',
-          text: 'GitHub-Zugang ist bereit. Schreibauftrag wurde an die Sovereign Agent Runtime übergeben. Warte auf bestätigten Job-State. Ergebnis bleibt Draft PR, kein Auto-Merge.',
+          text: 'GitHub-Zugang ist bereit. Schreibauftrag wurde an die Sovereign Agent Runtime Ã¼bergeben. Warte auf bestÃ¤tigten Job-State. Ergebnis bleibt Draft PR, kein Auto-Merge.',
         });
       }
       return;
     }
 
-    // ── #500/#501 Alternative write route: answer locally without OpenHands lock-in.
+    // ââ #500/#501 Alternative write route: answer locally without OpenHands lock-in.
     // NOTE: Status, diagnostic, and retry intents are handled earlier in the flow
     // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.
     // These questions must be answered from runtime state, not forwarded to OpenHands.
@@ -3944,11 +3944,11 @@ Es wurde noch keine Datei geändert.`,
         directPatchAvailable,
       });
       appendChatLine({ role: 'assistant', text: altRouteAnswer });
-      addLog('info', 'Alternative route question answered locally · githubAccessReady=' + githubWriteAllowed + ' · tokenAvailable=' + tokenAvailable + ' · target=' + targetPath, 'router');
+      addLog('info', 'Alternative route question answered locally Â· githubAccessReady=' + githubWriteAllowed + ' Â· tokenAvailable=' + tokenAvailable + ' Â· target=' + targetPath, 'router');
       return;
     }
 
-    // ── #458 + Delegation: Execution intent routing — BEFORE credit guard.
+    // ââ #458 + Delegation: Execution intent routing â BEFORE credit guard.
     // Sovereign Agent execution does not go through the Worker Chat (gemini-2.0-flash) path;
     // charging LLM credits for an executor handoff is incorrect.
     const isExecutionIntent = isOpenHandsExecutionIntent(submittedText);
@@ -3956,14 +3956,14 @@ Es wurde noch keine Datei geändert.`,
 
     if (isExecutionIntent || isDelegatedExecution) {
       if (!agentDisabled) {
-        // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.
+        // Immediately reflect intent in AgentWorkTimeline â truth from runtime, not from polling.
         const _repo = chatRepoSnapshot
           ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
           : 'unknown/repo';
         appendActionEvent({
           kind: 'intent_detected',
           route: 'runtime',
-          label: 'Ausführungsabsicht erkannt',
+          label: 'AusfÃ¼hrungsabsicht erkannt',
           detail: `Repo: ${_repo}`,
           state: 'done',
         });
@@ -3972,12 +3972,12 @@ Es wurde noch keine Datei geändert.`,
             ? transitionIntentDetected(prev, _repo, chatRepoSnapshot?.branch ?? 'main')
             : prev,
         );
-        addLog('info', `Execution intent · type=${isDelegatedExecution ? 'delegated' : 'explicit'} · repo=${_repo}`, 'router');
+        addLog('info', `Execution intent Â· type=${isDelegatedExecution ? 'delegated' : 'explicit'} Â· repo=${_repo}`, 'router');
         const agentStartRequested = await startAgentFromText(submittedText);
         if (agentStartRequested) {
           appendChatLine({
             role: "assistant",
-            text: "Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Agent Runtime.\nJob-Start wurde angefragt; bestätigter Job-State kommt aus der Runtime. Ergebnis bleibt Draft PR, kein Auto-Merge.",
+            text: "AusfÃ¼hrungsauftrag erkannt.\nRoute gewÃ¤hlt: Sovereign Agent Runtime.\nJob-Start wurde angefragt; bestÃ¤tigter Job-State kommt aus der Runtime. Ergebnis bleibt Draft PR, kein Auto-Merge.",
           });
         }
         return;
@@ -4009,9 +4009,9 @@ Es wurde noch keine Datei geändert.`,
         // Internal operator is available - runtime handoff decision, no fake patch claimed
         appendChatLine({
           role: "assistant",
-          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereign Agent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+          text: `AusfÃ¼hrungsauftrag erkannt.\nRoute gewÃ¤hlt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereign Agent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prÃ¼fen, dann Draft PR.\nKein Auto-Merge.`,
         });
-        addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
+        addLog('info', `Execution intent via Sovereign Internal Operator bridge Â· intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
       }
 
@@ -4019,20 +4019,20 @@ Es wurde noch keine Datei geändert.`,
         appendActionEvent({
           kind: 'patch_blocked',
           route: 'github-patch',
-          label: 'Patch/Draft-PR Route geprüft — wartet auf Zielpfad',
+          label: 'Patch/Draft-PR Route geprÃ¼ft â wartet auf Zielpfad',
           detail: executorBridgeDecision.reason,
           state: 'blocked',
         });
         appendChatLine({
           role: "assistant",
-          text: `Ausführungsauftrag erkannt.
-Route gewählt: Patch/Draft-PR Runtime.
+          text: `AusfÃ¼hrungsauftrag erkannt.
+Route gewÃ¤hlt: Patch/Draft-PR Runtime.
 
 ${executorBridgeDecision.reason}
 
-Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag belegen kann. Es wurde noch keine Datei geändert; nächster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
+Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag belegen kann. Es wurde noch keine Datei geÃ¤ndert; nÃ¤chster Schritt ist Patch/Diff erzeugen oder Executor verbinden.`,
         });
-        addLog('info', `Execution intent allowed by bridge without mandatory OpenHands · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
+        addLog('info', `Execution intent allowed by bridge without mandatory OpenHands Â· intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
       }
 
@@ -4040,9 +4040,9 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       const blockerReason = executorBridgeDecision.reason;
       appendChatLine({
         role: "assistant",
-        text: `Ausführungsauftrag kann nicht ausgeführt werden.\n\nGrund: ${blockerReason}`,
+        text: `AusfÃ¼hrungsauftrag kann nicht ausgefÃ¼hrt werden.\n\nGrund: ${blockerReason}`,
       });
-      addLog("warn", `Execution blocked by bridge: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} · ${blockerReason}`, "router");
+      addLog("warn", `Execution blocked by bridge: agentDisabled=true, intent=${isDelegatedExecution ? 'delegated' : 'explicit'} Â· ${blockerReason}`, "router");
       return;
     }
 
@@ -4054,9 +4054,9 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }));
     }
 
-    // ── Aufgabe 6: Write-intent result gate. GitHub write access is verified
+    // ââ Aufgabe 6: Write-intent result gate. GitHub write access is verified
     // above, but a mere Worker text response still must not be treated as
-    // "done" — the result gate (sovereignActionStreamRuntime) requires a
+    // "done" â the result gate (sovereignActionStreamRuntime) requires a
     // patch/diff, Draft PR, or an explicit blocked/access_required state
     // before the write intent can be considered resolved.
     if (isWriteIntent(submittedText) && !isCodeGenerationIntent(submittedText)) {
@@ -4067,11 +4067,11 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }));
     }
 
-    // ── #458 Credit guard — only for Worker Chat path (not OpenHands execution) ────────────
+    // ââ #458 Credit guard â only for Worker Chat path (not OpenHands execution) ââââââââââââ
     const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
     const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
     if (!_canProceed) {
-      addLog("warn", "Credits nicht ausreichend — Paywall geöffnet", "billing");
+      addLog("warn", "Credits nicht ausreichend â Paywall geÃ¶ffnet", "billing");
       return;
     }
 
@@ -4083,7 +4083,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     );
     setPalDecisions((prev) => [...prev.slice(-99), d]);
     setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
-    addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
+    addLog("info", `PAL â ${d.tier} Â· ${d.modelLabel}`, "sys");
     appendActionEvent(buildWorkerRequestEvent(d.modelLabel));
 
     setLastAnswerWasLocal(false);
@@ -4092,7 +4092,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     setChatResponseBusy(true);
     setStreamingText("");
 
-    // ── Issue #468: Toolchain Auto-Calling — read-only Auto-Calls vor Worker-Messages
+    // ââ Issue #468: Toolchain Auto-Calling â read-only Auto-Calls vor Worker-Messages
     const toolchainAutoResult = await buildToolchainAutoContext({
       submittedText,
       repoSnapshot: chatRepoSnapshot,
@@ -4165,7 +4165,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (fullText) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
-      // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display
+      // ââ Issue #445: chatClaimGuard â verify response against runtime snapshot before display
       const claimCheck = checkChatClaim(fullText, agentWorkSnapshot);
       let textToAppend =
         claimCheck.allowed || !claimCheck.honestFallback
@@ -4221,8 +4221,8 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         scope: streamError?.status ? "worker_runtime" : "network",
         canClientFix: false,
         nextAction: streamError?.status
-          ? "Worker-Diagnose prüfen; kaputten Call nicht blind wiederholen."
-          : "Netzwerk, CORS oder Worker-Erreichbarkeit prüfen.",
+          ? "Worker-Diagnose prÃ¼fen; kaputten Call nicht blind wiederholen."
+          : "Netzwerk, CORS oder Worker-Erreichbarkeit prÃ¼fen.",
         status: streamError?.status,
         statusText: streamError?.statusText,
         bodySnippet: streamError?.bodySnippet,
@@ -4251,7 +4251,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     });
     addLog(
       "error",
-      `Worker blocked · ${diagnostic.scope}${diagnostic.status ? ` · HTTP ${diagnostic.status}` : ""}`,
+      `Worker blocked Â· ${diagnostic.scope}${diagnostic.status ? ` Â· HTTP ${diagnostic.status}` : ""}`,
       "router",
     );
   };
@@ -4279,7 +4279,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           kind: 'github_access_required',
           route: 'github-access',
           label: `GitHub-Schreibzugang erforderlich: ${action.shortLabel}`,
-          detail: 'Preset-Auftrag wurde vorgemerkt; Worker-Chat wird übersprungen.',
+          detail: 'Preset-Auftrag wurde vorgemerkt; Worker-Chat wird Ã¼bersprungen.',
           state: 'blocked',
         });
         appendChatLine({
@@ -4288,7 +4288,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
             `${action.icon} ${action.label}`,
             `Status: ${gate.reason}`,
             'Ich habe diesen Auftrag vorgemerkt.',
-            'Bitte GitHub-Zugang im sicheren Feld eingeben — danach läuft dieser Auftrag automatisch weiter.',
+            'Bitte GitHub-Zugang im sicheren Feld eingeben â danach lÃ¤uft dieser Auftrag automatisch weiter.',
           ].join('\n'),
         });
         addLog('warn', `Preset write action blocked: GitHub access gate opened for ${action.id}`, 'router');
@@ -4306,7 +4306,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         text: [
           `${action.icon} ${action.label}`,
           `Status: ${gate.reason}`,
-          `Nächste Aktion: ${gate.nextAction}`,
+          `NÃ¤chste Aktion: ${gate.nextAction}`,
         ].join('\n'),
       });
       return;
@@ -4372,9 +4372,9 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
   const isChat = activeTab === "chat";
   const activeMod = MODULES.find((m) => m.id === activeTab) ?? MODULES[0];
 
-  // ─────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   // RENDER
-  // ─────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   return (
     <>
     <section
@@ -4406,7 +4406,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         textarea::placeholder { color: #3d4f61; }
         ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-thumb { background: #232d3a; border-radius: 2px; }
-        /* Responsive shell width — phones and tablets (portrait/landscape, e.g. iPad 9th gen "A9")
+        /* Responsive shell width â phones and tablets (portrait/landscape, e.g. iPad 9th gen "A9")
            use the full device viewport; only large desktop/tablet-landscape screens get a
            comfortable reading-width cap so the chat doesn't stretch edge-to-edge forever. */
         .sovereign-builder-container { max-width: 100vw; }
@@ -4458,7 +4458,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         ::-webkit-scrollbar-track { background: transparent; }
       `}</style>
 
-      {/* TOP BAR — v3 design + Workbench status chips + PAL badge */}
+      {/* TOP BAR â v3 design + Workbench status chips + PAL badge */}
       <TopBar
         status={agentStatus}
         repoReady={effectiveRepoReady}
@@ -4504,7 +4504,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         onClearLogs={() => setStatusLogs([])}
       />
 
-      {/* Werkbank Slot Drawer — Actions/Files/Errors/Draft PR bottom sheet */}
+      {/* Werkbank Slot Drawer â Actions/Files/Errors/Draft PR bottom sheet */}
       {openWorkbenchSlot && (
         <WorkbenchSlotDrawer
           slot={workbenchStatusSlots.find((s) => s.id === openWorkbenchSlot) ?? workbenchStatusSlots[0]}
@@ -4513,7 +4513,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         />
       )}
 
-      {/* ── Issue #426: Worker Degraded Banner */}
+      {/* ââ Issue #426: Worker Degraded Banner */}
       {workerBlocker && (
         <WorkerDegradedBanner
           blocker={workerBlocker}
@@ -4538,7 +4538,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           </aside>
         ) : null}
       {isChat ? (
-        /* ── CHAT VIEW with auto-scroll lock (Issue #425) */
+        /* ââ CHAT VIEW with auto-scroll lock (Issue #425) */
         <div
           ref={scrollRef}
           className="sovereign-chat-body"
@@ -4559,7 +4559,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
             flexDirection: "column",
           }}
         >
-          {/* Fix 5: Partial-Snapshot Guard — never show fabricated repo truth */}
+          {/* Fix 5: Partial-Snapshot Guard â never show fabricated repo truth */}
           {isPartialRepoSnapshot && (
             <div
               role="alert"
@@ -4577,10 +4577,10 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 alignItems: 'flex-start',
               }}
             >
-              <span style={{ flexShrink: 0 }}>⚠️</span>
+              <span style={{ flexShrink: 0 }}>â ï¸</span>
               <span>
-                <strong>Unvollständiger Repo-Snapshot.</strong> Owner, Repo, Branch oder URL fehlt.
-                Der angezeigte Zustand wäre unvollständig. Bitte Repo neu laden.
+                <strong>UnvollstÃ¤ndiger Repo-Snapshot.</strong> Owner, Repo, Branch oder URL fehlt.
+                Der angezeigte Zustand wÃ¤re unvollstÃ¤ndig. Bitte Repo neu laden.
               </span>
             </div>
           )}
@@ -4624,7 +4624,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
               <OutcomeHints hints={outcomeHints} />
               <SovereignActionStreamPanel stream={actionStream} />
 
-              {/* ── Issue #520 + #522: Integration Intent Draft Card — runtime-contracted routing */}
+              {/* ââ Issue #520 + #522: Integration Intent Draft Card â runtime-contracted routing */}
               {hasPendingDraft(intentDraftState) && (() => {
                 const draft = intentDraftState.draft;
                 
@@ -4702,7 +4702,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                           // Internal operator is available - runtime handoff decision
                           appendChatLine({
                             role: 'assistant',
-                            text: `Integrationsauftrag bestätigt.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+                            text: `Integrationsauftrag bestÃ¤tigt.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prÃ¼fen, dann Draft PR.\nKein Auto-Merge.`,
                           });
                           addLog('info', `Integration via Sovereign Internal Operator bridge: ${bridgeDecision.reason}`, 'router');
                           setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
@@ -4735,7 +4735,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                           setShowGitHubAccessOverride(true);
                           appendChatLine({
                             role: 'assistant',
-                            text: 'GitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.',
+                            text: 'GitHub-Schreibzugang wird benÃ¶tigt.\nBitte Zugang unten einrichten.',
                           });
                           break;
 
@@ -4764,7 +4764,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                               appendActionEvent({
                                 kind: 'route_selected',
                                 route: 'direct-github-patch',
-                                label: 'Direct GitHub Patch Route gewählt',
+                                label: 'Direct GitHub Patch Route gewÃ¤hlt',
                                 detail: `Zieldatei: ${result.result.targetPath}`,
                                 state: 'running',
                               });
@@ -4777,7 +4777,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                               });
                               appendChatLine({
                                 role: 'assistant',
-                                text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+                                text: `Direct GitHub Patch Route verfÃ¼gbar fÃ¼r ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNÃ¤chste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prÃ¼fen' : 'Draft PR erstellen'}`,
                               });
                               setPatchPreviewReady(true);
                               setPatchConfirmed(false);
@@ -4790,13 +4790,13 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                               appendActionEvent({
                                 kind: 'patch_blocked',
                                 route: 'direct-github-patch',
-                                label: 'Direct Patch nicht verfügbar',
+                                label: 'Direct Patch nicht verfÃ¼gbar',
                                 detail: result.capability.reason,
                                 state: 'blocked',
                               });
                               appendChatLine({
                                 role: 'assistant',
-                                text: `Direct GitHub Patch nicht möglich: ${result.capability.reason}`,
+                                text: `Direct GitHub Patch nicht mÃ¶glich: ${result.capability.reason}`,
                               });
                               return;
                             }
@@ -4837,14 +4837,14 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                           break;
 
                         case 'openhands':
-                          // Sovereign Agent route — ONLY with validated GitHub write
+                          // Sovereign Agent route â ONLY with validated GitHub write
                           if (!githubWriteAllowed) {
                             // Defensive: block and open access gate
                             appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
                             setShowGitHubAccessOverride(true);
                             appendChatLine({
                               role: 'assistant',
-                              text: 'Sovereign Agent Runtime benötigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.',
+                              text: 'Sovereign Agent Runtime benÃ¶tigt GitHub-Schreibzugang.\nBitte Zugang unten einrichten.',
                             });
                             break;
                           }
@@ -4853,7 +4853,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                           break;
 
                         case 'workspace':
-                          // Workspace route detected but not yet connected — honest block
+                          // Workspace route detected but not yet connected â honest block
                           appendChatLine({
                             role: 'assistant',
                             text: `Workspace-Route erkannt, aber noch nicht verbunden.\n\nGrund: ${decision.reason}`,
@@ -4861,15 +4861,15 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                           break;
 
                         case 'worker_chat':
-                          // Worker Chat — advisory only, no write success
+                          // Worker Chat â advisory only, no write success
                           appendChatLine({
                             role: 'assistant',
-                            text: 'Beratungsroute erkannt. Worker Chat kann Rückfragen beantworten.',
+                            text: 'Beratungsroute erkannt. Worker Chat kann RÃ¼ckfragen beantworten.',
                           });
                           break;
 
                         case 'local_status':
-                          // Status query — answer from runtime state
+                          // Status query â answer from runtime state
                           break;
 
                         case 'blocked':
@@ -4886,20 +4886,20 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                       setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
                     }}
                     onConfirmWithGitHubAccess={() => {
-                      // P2 Fix 4: Called when user clicks "GitHub-Zugang benötigt"
+                      // P2 Fix 4: Called when user clicks "GitHub-Zugang benÃ¶tigt"
                       // Opens the GitHub Access Gate
                       appendActionEvent({
                         kind: 'github_access_required',
                         route: 'github-access',
                         label: 'GitHub-Schreibzugang erforderlich',
-                        detail: 'Draft bestätigt aber GitHub-Zugang fehlt',
+                        detail: 'Draft bestÃ¤tigt aber GitHub-Zugang fehlt',
                         state: 'blocked',
                       });
                       pendingWriteIntentRef.current = draft.originalText;
                       setShowGitHubAccessOverride(true);
                       appendChatLine({
                         role: 'assistant',
-                        text: 'Integrationsauftrag bestätigt.\nGitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.',
+                        text: 'Integrationsauftrag bestÃ¤tigt.\nGitHub-Schreibzugang wird benÃ¶tigt.\nBitte Zugang unten einrichten.',
                       });
                       setIntentDraftState({ status: 'idle' });
                       addLog('info', 'Integration draft confirmed: GitHub access gate opened', 'router');
@@ -4925,7 +4925,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 );
               })()}
 
-              {/* ── Manus/Replit-style live event stream — Sovereign Agent remains one route among several */}
+              {/* ââ Manus/Replit-style live event stream â Sovereign Agent remains one route among several */}
               {agentWorkSnapshot.state !== 'idle' && (
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
@@ -4940,7 +4940,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 />
               )}
 
-              {/* ── Gap 3: Security Block Card — shown when secret detected in chat input */}
+              {/* ââ Gap 3: Security Block Card â shown when secret detected in chat input */}
               {securityCardPending && (
                 <SecurityBlockCard
                   title={securityCardPending.title}
@@ -4955,7 +4955,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 />
               )}
 
-              {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
+              {/* ââ Issue #443: GitHub Access Card (shown when write access needed but not available) */}
               {!githubWriteAllowed && (openhandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
                 <GitHubAccessCard
                   snapshot={githubAccessState}
@@ -4964,7 +4964,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                     // It is never written into chat history, logs, telemetry or action events.
                     const formatResult = validateGitHubTokenFormat(token);
                     if (!formatResult.isValid) {
-                      setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
+                      setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'UngÃ¼ltiges Format'));
                       // #501: Clear token on validation failure
                       githubTokenRef.current = null;
                       return;
@@ -4974,23 +4974,23 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                     appendActionEvent({
                       kind: 'route_selected',
                       route: 'github-access',
-                      label: 'GitHub-Zugang wird geprüft',
-                      detail: 'Echte GitHub-API-Prüfung läuft.',
+                      label: 'GitHub-Zugang wird geprÃ¼ft',
+                      detail: 'Echte GitHub-API-PrÃ¼fung lÃ¤uft.',
                       state: 'running',
                     });
                     appendChatLine({
                       role: 'assistant',
-                      text: 'Token wurde übernommen. GitHub-Zugang wird jetzt geprüft. Bitte Zwischenablage auf Android leeren, falls das Token kopiert wurde.',
+                      text: 'Token wurde Ã¼bernommen. GitHub-Zugang wird jetzt geprÃ¼ft. Bitte Zwischenablage auf Android leeren, falls das Token kopiert wurde.',
                     });
 
                     if (!chatRepoSnapshot) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt fÃ¼r GitHub-ZugangsprÃ¼fung.'));
                       // #501: Clear token on repo target missing
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
                         label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
+                        detail: 'Repo-Ziel fehlt fÃ¼r GitHub-ZugangsprÃ¼fung.',
                         kind: 'failed',
                       }));
                       return;
@@ -5003,18 +5003,18 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                     );
 
                     if (!validation.ok) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.'));
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-ZugangsprÃ¼fung fehlgeschlagen.'));
                       // #501: Clear token on validation failure
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
                         label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.',
+                        detail: validation.error || 'GitHub-ZugangsprÃ¼fung fehlgeschlagen.',
                         kind: 'failed',
                       }));
                       appendChatLine({
                         role: 'assistant',
-                        text: `GitHub-Zugangsprüfung fehlgeschlagen: ${validation.error || 'unbekannter Fehler'}`,
+                        text: `GitHub-ZugangsprÃ¼fung fehlgeschlagen: ${validation.error || 'unbekannter Fehler'}`,
                       });
                       return;
                     }
@@ -5026,7 +5026,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                       kind: 'done',
                       route: 'github-access',
                       label: 'GitHub-Zugang bereit',
-                      detail: 'Schreibzugriff auf das geladene Repo wurde bestätigt.',
+                      detail: 'Schreibzugriff auf das geladene Repo wurde bestÃ¤tigt.',
                       state: 'done',
                     });
 
@@ -5048,7 +5048,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                       kind: 'route_selected',
                       route: 'github-patch',
                       label: 'Patch/Draft-PR Route gestartet',
-                      detail: 'Blockierter Schreibauftrag wird nach bestätigtem GitHub-Zugang fortgesetzt.',
+                      detail: 'Blockierter Schreibauftrag wird nach bestÃ¤tigtem GitHub-Zugang fortgesetzt.',
                       state: 'running',
                     });
 
@@ -5072,7 +5072,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                           appendActionEvent({
                             kind: 'route_selected',
                             route: 'direct-github-patch',
-                            label: 'Direct GitHub Patch Route gewählt',
+                            label: 'Direct GitHub Patch Route gewÃ¤hlt',
                             detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
                             state: 'running',
                           });
@@ -5085,7 +5085,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                           });
                           appendChatLine({
                             role: 'assistant',
-                            text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
+                            text: `Direct GitHub Patch Route verfÃ¼gbar fÃ¼r ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNÃ¤chste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prÃ¼fen' : 'Draft PR erstellen'}`,
                           });
                           setPatchPreviewReady(true);
                           setPatchConfirmed(false);
@@ -5097,13 +5097,13 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                         if ('capability' in directPatchResult && !directPatchResult.capability.available) {
                           appendActionEvent(buildBlockedActionEvent({
                             route: 'direct-github-patch',
-                            label: 'Direct Patch nicht verfügbar',
+                            label: 'Direct Patch nicht verfÃ¼gbar',
                             detail: directPatchResult.capability.reason,
                             kind: 'patch_blocked',
                           }));
                           appendChatLine({
                             role: 'assistant',
-                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nSovereign Agent Runtime ist nicht verbunden. Es wurde noch keine Datei geändert.`,
+                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist fÃ¼r diesen Auftrag nicht verfÃ¼gbar.\nGrund: ${directPatchResult.capability.reason}\n\nSovereign Agent Runtime ist nicht verbunden. Es wurde noch keine Datei geÃ¤ndert.`,
                           });
                           addLog('warn', 'Pending write intent direct patch unavailable: ' + directPatchResult.capability.reason, 'router');
                           return;
@@ -5132,14 +5132,14 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-patch',
                         label: 'Patch/Draft-PR Route blockiert',
-                        detail: openhandsReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'Sovereign Agent Runtime ist nicht verbunden.',
+                        detail: openhandsReady ? 'Executor ist fÃ¼r diesen Auftrag nicht startklar.' : 'Sovereign Agent Runtime ist nicht verbunden.',
                         kind: 'patch_blocked',
                       }));
                       appendChatLine({
                         role: 'assistant',
                         text: openhandsReady
-                          ? 'Der GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
-                          : 'Der GitHub-Zugang ist bereit, aber weder Direct GitHub Patch noch Sovereign Agent Runtime ist für diesen Auftrag verfügbar. Es wurde noch keine Datei geändert.',
+                          ? 'Der GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geÃ¤ndert.'
+                          : 'Der GitHub-Zugang ist bereit, aber weder Direct GitHub Patch noch Sovereign Agent Runtime ist fÃ¼r diesen Auftrag verfÃ¼gbar. Es wurde noch keine Datei geÃ¤ndert.',
                       });
                       return;
                     }
@@ -5150,7 +5150,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 />
               )}
 
-              {/* ── Issue #426: Worker Blocker Card */}
+              {/* ââ Issue #426: Worker Blocker Card */}
               {workerBlocker && (
                 <WorkerBlockerCard
                   blocker={workerBlocker}
@@ -5180,7 +5180,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 />
               )}
 
-              {/* ── Issue #431: Draft PR Card */}
+              {/* ââ Issue #431: Draft PR Card */}
               {openhandsJob?.draftPrUrl && (
                 <DraftPrCard
                   url={openhandsJob.draftPrUrl}
@@ -5189,23 +5189,23 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                     window.open(openhandsJob.draftPrUrl, "_blank")
                   }
                   onDiscussInChat={() =>
-                    setWishText(`Erkläre mir die Änderungen im Draft PR.`)
+                    setWishText(`ErklÃ¤re mir die Ãnderungen im Draft PR.`)
                   }
                 />
               )}
 
-              {/* ── Issue #445: AgentResultCard — structured result when PR is ready */}
+              {/* ââ Issue #445: AgentResultCard â structured result when PR is ready */}
               {agentWorkSnapshot.state === 'draft_pr_ready' && agentWorkSnapshot.draftPrUrl && (
                 <AgentResultCard
                   snapshot={agentWorkSnapshot}
                   onOpen={() => window.open(agentWorkSnapshot.draftPrUrl!, '_blank')}
                   onViewDiff={() =>
-                    setWishText('Erkläre mir die Änderungen im Draft PR.')
+                    setWishText('ErklÃ¤re mir die Ãnderungen im Draft PR.')
                   }
                 />
               )}
 
-              {/* ── Issue #425: Scroll-away indicator */}
+              {/* ââ Issue #425: Scroll-away indicator */}
               {userScrolledAway && (
                 <div
                   style={{
@@ -5216,11 +5216,11 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                     fontFamily: "monospace",
                   }}
                 >
-                  ↑ Nach oben gescrollt · Neue Nachrichten unten
+                  â Nach oben gescrollt Â· Neue Nachrichten unten
                 </div>
               )}
 
-              {/* ── Issue #425: Jump Badge */}
+              {/* ââ Issue #425: Jump Badge */}
               {unseenCount > 0 && (
                 <button
                   type="button"
@@ -5249,7 +5249,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                     gap: 6,
                   }}
                 >
-                  ↓ {unseenCount} Neue Nachricht{unseenCount > 1 ? "en" : ""}
+                  â {unseenCount} Neue Nachricht{unseenCount > 1 ? "en" : ""}
                 </button>
               )}
 
@@ -5258,7 +5258,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           )}
         </div>
       ) : (
-        /* ── MODULE VIEW */
+        /* ââ MODULE VIEW */
         <div style={{ flex: 1, overflowY: "auto", background: C.bg }}>
           <ModuleScreen
             mod={activeMod}
@@ -5286,13 +5286,26 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       )}
       </div>
 
-      {/* COMPOSER — only in chat view, v3 verbatim */}
+      {/* COMPOSER â only in chat view, v3 verbatim */}
       {isChat && (
         <>
-          {/* ── Issue #453: LauncherTaskbar — offene Tools als Chips */}
+          {/* ââ Issue #453: LauncherTaskbar â offene Tools als Chips */}
           <LauncherTaskbar />
-          {/* ── Issue #445 + #452: SovereignToolLauncher — quick-action "+" launcher + Sovereign Launcher */}
+          {/* ââ Issue #445 + #452: SovereignToolLauncher â quick-action "+" launcher + Sovereign Launcher */}
           <SovereignToolLauncher
+            runtimeContext={{
+              repoReady: effectiveRepoReady,
+              repoFileCount: chatRepoSnapshot?.fileCount ?? 0,
+              hasDiffEvidence: Boolean(
+                patchPreviewReady ||
+                patchConfirmed ||
+                (openhandsJob?.changedFiles?.length ?? 0) > 0,
+              ),
+              githubAccessState: githubAccessState.state,
+              executorAvailable: sovereignAgentStartAvailable,
+              hasExecutorMission: Boolean(wishText.trim()),
+              runtimeLogCount: statusLogs.length,
+            }}
             onSelect={(toolId: ToolId) => {
               if (toolId === 'repo') { setShowRepoExplorer(true); return; }
               if (toolId === 'executor') {
@@ -5305,13 +5318,13 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                   appendActionEvent({
                     kind: 'access_required',
                     route: 'github-access',
-                    label: 'GitHub-Zugang geöffnet',
-                    detail: 'Sicheres Zugangsfeld wurde über das Tool-Menü geöffnet.',
+                    label: 'GitHub-Zugang geÃ¶ffnet',
+                    detail: 'Sicheres Zugangsfeld wurde Ã¼ber das Tool-MenÃ¼ geÃ¶ffnet.',
                     state: 'blocked',
                   });
                   appendChatLine({
                     role: 'assistant',
-                    text: 'Sicheres GitHub-Zugangsfeld geöffnet. Bitte Token nur dort eingeben, niemals im Chat.',
+                    text: 'Sicheres GitHub-Zugangsfeld geÃ¶ffnet. Bitte Token nur dort eingeben, niemals im Chat.',
                   });
                   return;
                 }
@@ -5323,7 +5336,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
               }
               if (toolId === 'runtime_logs') { setPanelOpen((v) => !v); return; }
               if (toolId === 'diff') {
-                setWishText('Zeige mir die aktuellen Änderungen im Repo.');
+                setWishText('Zeige mir die aktuellen Ãnderungen im Repo.');
                 return;
               }
             }}
@@ -5348,8 +5361,8 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
             loading={localRepoLoading}
             placeholder={
               chatRepoSnapshot
-                ? `Frage zu ${chatRepoSnapshot.name}…`
-                : "GitHub URL oder Auftrag…"
+                ? `Frage zu ${chatRepoSnapshot.name}â¦`
+                : "GitHub URL oder Auftragâ¦"
             }
             routeHint={composerRouteHint({
               draft: wishText,
@@ -5369,7 +5382,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         </>
       )}
 
-      {/* BOTTOM TAB BAR — Chat + Inspector toggle; technical modules live behind Inspector */}
+      {/* BOTTOM TAB BAR â Chat + Inspector toggle; technical modules live behind Inspector */}
       <BottomTabBar
         activeTab={activeTab}
         onChatClick={() => switchTab("chat")}
@@ -5377,13 +5390,13 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         onToggleInspector={() => setShowInspector((v) => !v)}
       />
 
-      {/* SOVEREIGN LAUNCHER — App-Grid Overlay + Window Host (Issues #452, #453) */}
+      {/* SOVEREIGN LAUNCHER â App-Grid Overlay + Window Host (Issues #452, #453) */}
       <LauncherProvider value={{ geminiApiKey: readGeminiApiKeyFromStorage() }}>
         <LauncherMenu />
         <LauncherWindowHost />
       </LauncherProvider>
 
-      {/* OVERLAYS — v3 verbatim */}
+      {/* OVERLAYS â v3 verbatim */}
       {showRuntimeSheet && (
         <RuntimeSheet
           sources={runtimeSources}
@@ -5499,17 +5512,17 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         />
       )}
 
-      {/* Paywall Modal — Credit Packages from Backend */}
+      {/* Paywall Modal â Credit Packages from Backend */}
       <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
 
-      {/* Sovereign Skill Scanner — /scan-skills opens this */}
+      {/* Sovereign Skill Scanner â /scan-skills opens this */}
       {showSkillScan && (
         <SkillScanPanel
           onClose={() => setShowSkillScan(false)}
           onInstalled={(slug) => {
             appendChatLine({
               role: "assistant",
-              text: `✅ Skill \`/${slug}\` installiert. Tippe \`/${slug}\` um ihn zu nutzen.`,
+              text: `â Skill \`/${slug}\` installiert. Tippe \`/${slug}\` um ihn zu nutzen.`,
             });
           }}
         />
