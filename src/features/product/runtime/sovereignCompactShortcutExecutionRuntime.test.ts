@@ -57,9 +57,11 @@ describe('sovereignCompactShortcutExecutionRuntime', () => {
       kind: 'done', route: 'repo', label: 'Repo geprüft', state: 'done', createdAt: 10,
     });
     const log = buildSovereignRuntimeEvidenceLog(stream.events, [
-      { at: 20, level: 'info', stage: 'agent-request', message: 'Job angefragt' },
+      { at: 20, level: 'info', stage: 'agent-request', message: 'Job angefragt · token=super-secret-value' },
     ]);
     expect(log).toHaveLength(2);
     expect(log.map((entry) => entry.source)).toEqual(['action-stream', 'agent-runtime']);
+    expect(log[1]?.message).not.toContain('super-secret-value');
+    expect(log[1]?.message).toContain('****');
   });
 });

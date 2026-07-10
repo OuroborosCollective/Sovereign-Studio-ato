@@ -2626,6 +2626,12 @@ export function BuilderContainer({
     () => buildSovereignRuntimeEvidenceLog(actionStream.events, openhandsJob?.events ?? []),
     [actionStream.events, openhandsJob?.events],
   );
+  const clearPatchEvidence = useCallback(() => {
+    setPatchDiffReport(null);
+    setPatchPreviewReady(false);
+    setPatchConfirmed(false);
+    setShowPatchDiffEvidence(false);
+  }, []);
 
   // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
   // derived purely from runtime state, never fabricated. Fronts the technical
@@ -3226,6 +3232,7 @@ export function BuilderContainer({
       return false;
     }
 
+    clearPatchEvidence();
     appendActionEvent({
       kind: 'agent_job_requested',
       route: 'agent-job',
@@ -3699,6 +3706,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       const result = await fetchDevChatRepoTree(parsedRepo);
       setRepoLoading(false);
       if (result.ok && result.snapshot) {
+        githubTokenRef.current = null;
+        setGitHubAccessState(createGitHubAccessSnapshot());
+        pendingWriteIntentRef.current = null;
+        clearPatchEvidence();
         setChatRepo(result.snapshot);
         triggerHaptic("medium");
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
@@ -3824,6 +3835,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
           const tokenForDirectPatch = githubTokenRef.current;
           if (chatRepoSnapshot && tokenForDirectPatch) {
+            clearPatchEvidence();
             const directPatchResult = await buildDirectPatchPlanWithContentLoad({
               repoContext: {
                 owner: chatRepoSnapshot.owner,
@@ -4820,6 +4832,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                           // Runtime-Truth: All result types must be terminal-handled
                           if (!chatRepoSnapshot) break;
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
+                          clearPatchEvidence();
                           buildDirectPatchPlanWithContentLoad({
                             repoContext: {
                               owner: chatRepoSnapshot.owner,
@@ -5135,6 +5148,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     if (agentDisabled) {
                       const tokenForDirectPatch = githubTokenRef.current;
                       if (!openhandsReady && tokenForDirectPatch && validation.canWrite === true) {
+                        clearPatchEvidence();
                         const directPatchResult = await buildDirectPatchPlanWithContentLoad({
                           repoContext: {
                             owner: chatRepoSnapshot.owner,
