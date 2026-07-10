@@ -4817,7 +4817,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                 // Build Capability Registry from runtime truth (no tokens, no fakes)
                 const capabilities = buildSovereignToolCapabilityRegistry({
                   repoReady: effectiveRepoReady,
-                  githubAccessState: githubAccessState.state,
+                  githubAccessState: effectiveGitHubAccessState,
                   githubTokenPresent: Boolean(githubTokenRef.current),
                   directPatchSupported: Boolean(chatRepoSnapshot && githubWriteAllowed && githubTokenRef.current),
                   openhandsConfigured: sovereignAgentStartAvailable,
@@ -4825,7 +4825,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                   workspaceConfigured: openhandsReady ?? false,
                   draftPrSupported: githubWriteAllowed,
                   activeExecutorStatus:
-                    agentWorkSnapshot.state !== 'idle' || (openhandsJob && openhandsJob.status !== 'idle')
+                    agentWorkSnapshot.state !== 'idle' || (scopedOpenHandsJob && scopedOpenHandsJob.status !== 'idle')
                       ? 'running'
                       : 'idle',
                 });
@@ -4930,6 +4930,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                           // Runtime-Truth: All result types must be terminal-handled
                           if (!chatRepoSnapshot) break;
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
+                          const patchScopeKey = currentRepoScopeKey;
                           clearPatchEvidence();
                           buildDirectPatchPlanWithContentLoad({
                             repoContext: {
@@ -4943,6 +4944,17 @@ Das echte Repo-Setup wurde geöffnet.`,
                             token: githubTokenRef.current!,
                             fetcher: globalThis.fetch,
                           }).then((result) => {
+                            if (!isCurrentRepoScope(patchScopeKey)) {
+                              appendActionEvent(buildBlockedActionEvent({
+                                route: 'direct-github-patch',
+                                label: 'Patch-Ergebnis verworfen',
+                                detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
+                                kind: 'blocked',
+                              }));
+                              setIntentDraftState({ status: 'idle' });
+                              return;
+                            }
+
                             // Terminal state: clear draft only after result
                             setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
 
@@ -5120,11 +5132,11 @@ Das echte Repo-Setup wurde geöffnet.`,
               {agentWorkSnapshot.state !== 'idle' && (
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
-                  job={openhandsJob}
+                  job={scopedOpenHandsJob}
                   onCancel={onCancelOpenHands}
                   onOpenDraftPr={
-                    (openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
-                      ? () => window.open((openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
+                    (scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
+                      ? () => window.open((scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
                       : undefined
                   }
                   onOpenFile={openRepoExplorerFromFileBadge}
@@ -5147,20 +5159,37 @@ Das echte Repo-Setup wurde geöffnet.`,
               )}
 
               {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
-              {!githubWriteAllowed && (openhandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
+              {!githubWriteAllowed && (scopedOpenHandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
                 <GitHubAccessCard
-                  snapshot={githubAccessState}
+                  snapshot={effectiveGitHubAccessSnapshot}
                   onProvideToken={async (token) => {
                     // SECURITY: Token is only used for this one-shot validation.
                     // It is never written into chat history, logs, telemetry or action events.
                     const formatResult = validateGitHubTokenFormat(token);
                     if (!formatResult.isValid) {
                       setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
-                      // #501: Clear token on validation failure
+                      setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       return;
                     }
 
+                    const validationTargetKey = currentRepositoryTargetKey;
+                    const validationRepoScopeKey = currentRepoScopeKey;
+                    const validationRepoSnapshot = chatRepoSnapshot;
+                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
+                      setValidatedGitHubTargetKey(null);
+                      githubTokenRef.current = null;
+                      appendActionEvent(buildBlockedActionEvent({
+                        route: 'github-access',
+                        label: 'GitHub-Zugang fehlgeschlagen',
+                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
+                        kind: 'failed',
+                      }));
+                      return;
+                    }
+
+                    setValidatedGitHubTargetKey(null);
                     setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
                     appendActionEvent({
                       kind: 'route_selected',
@@ -5174,28 +5203,31 @@ Das echte Repo-Setup wurde geöffnet.`,
                       text: 'Token wurde übernommen. GitHub-Zugang wird jetzt geprüft. Bitte Zwischenablage auf Android leeren, falls das Token kopiert wurde.',
                     });
 
-                    if (!chatRepoSnapshot) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
-                      // #501: Clear token on repo target missing
+                    const validation = await validateGitHubTokenForRepo(
+                      token,
+                      { owner: validationRepoSnapshot.owner, repo: validationRepoSnapshot.repo },
+                      globalThis.fetch,
+                    );
+
+                    if (
+                      currentRepositoryTargetKeyRef.current !== validationTargetKey
+                      || !isCurrentRepoScope(validationRepoScopeKey)
+                    ) {
+                      setGitHubAccessState(createGitHubAccessSnapshot());
+                      setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
-                        label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
-                        kind: 'failed',
+                        label: 'GitHub-Zugangsprüfung verworfen',
+                        detail: 'Das Repo-Ziel hat sich während der Validierung geändert. Der alte Prüferfolg wurde nicht übernommen.',
+                        kind: 'blocked',
                       }));
                       return;
                     }
 
-                    const validation = await validateGitHubTokenForRepo(
-                      token,
-                      { owner: chatRepoSnapshot.owner, repo: chatRepoSnapshot.repo },
-                      globalThis.fetch,
-                    );
-
                     if (!validation.ok) {
                       setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.'));
-                      // #501: Clear token on validation failure
+                      setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
@@ -5211,7 +5243,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     }
 
                     setGitHubAccessState(completeGitHubAccessValidation(formatResult.maskedToken));
-                    // #501: Store token in memory for Direct Patch content loading
+                    setValidatedGitHubTargetKey(validationTargetKey);
                     githubTokenRef.current = token;
                     appendActionEvent({
                       kind: 'done',
