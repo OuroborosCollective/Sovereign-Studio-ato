@@ -7,9 +7,16 @@ on:
     paths:
       - 'scripts/patches/apply_sovereign_agent_internal_migration.py'
       - '.github/workflows/_apply-sovereign-agent-internal-migration.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'scripts/patches/apply_sovereign_agent_internal_migration.py'
+      - '.github/workflows/_apply-sovereign-agent-internal-migration.yml'
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: sovereign-agent-internal-runtime-migration
