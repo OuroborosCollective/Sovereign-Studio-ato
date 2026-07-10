@@ -112,12 +112,52 @@ jobs:
       - name: Truth card tests
         run: pnpm exec vitest run src/features/product/components/SovereignAgentJobTruthCard.test.tsx
 
-      - name: Builder integration tests
+      - name: Run Builder integration tests
+        id: builder_tests
         shell: bash
         run: |
-          set -o pipefail
+          set +e
           pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx \
-            --reporter=verbose 2>&1 | tee /tmp/builder-gate.log
+            --reporter=json --outputFile=/tmp/builder-gate.json
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload Builder test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-gate-report
+          path: /tmp/builder-gate.json
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Enforce Builder integration gate
+        if: steps.builder_tests.outputs.status != '0'
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('/tmp/builder-gate.json', 'utf8'));
+          const failed = [];
+          for (const suite of data.testResults || []) {
+            for (const result of suite.assertionResults || []) {
+              if (result.status === 'failed') {
+                failed.push({
+                  name: [...(result.ancestorTitles || []), result.title].filter(Boolean).join(' > '),
+                  messages: result.failureMessages || [],
+                });
+              }
+            }
+          }
+          console.log(`BUILDER_TESTS_TOTAL=${data.numTotalTests ?? 'unknown'}`);
+          console.log(`BUILDER_TESTS_FAILED=${failed.length}`);
+          for (const item of failed) {
+            console.log(`TEST: ${item.name}`);
+            for (const message of item.messages) console.log(message);
+          }
+          NODE
+          exit 1
 
       - name: Build web product
         run: pnpm exec vite build
