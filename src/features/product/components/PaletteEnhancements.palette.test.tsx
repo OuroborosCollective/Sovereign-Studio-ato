@@ -90,7 +90,7 @@ describe('Palette Accessibility Enhancements', () => {
       render(<SovereignToolLauncher onSelect={vi.fn()} />);
       fireEvent.click(screen.getByRole('button', { name: /Tool Launcher öffnen/i }));
       const repoItem = screen.getByRole('menuitem', { name: /Repo/i });
-      expect(repoItem).toHaveAttribute('title', 'Repo');
+      expect(repoItem.getAttribute('title')).toMatch(/^Repo:/);
     });
   });
 
