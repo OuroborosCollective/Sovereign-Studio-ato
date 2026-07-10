@@ -199,34 +199,21 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
-      - name: Download regression test diagnostic
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: sovereign-agent-test-diagnostics
-          path: /tmp/sovereign-agent-test-diagnostic
-      - name: Download TypeScript diagnostic
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: sovereign-agent-typecheck-diagnostics
-          path: /tmp/sovereign-agent-typecheck-diagnostic
-      - name: Download migration diagnostic fallback
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: sovereign-agent-migration-diagnostics
-          path: /tmp/sovereign-agent-diagnostic
       - name: Print exact failing diagnostic
-        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          tests="$(find /tmp/sovereign-agent-test-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1 || true)"
-          typecheck="$(find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1 || true)"
+          mkdir -p /tmp/test /tmp/typecheck /tmp/migration
+          gh run download "$GITHUB_RUN_ID" -n sovereign-agent-test-diagnostics -D /tmp/test 2>/dev/null || true
+          gh run download "$GITHUB_RUN_ID" -n sovereign-agent-typecheck-diagnostics -D /tmp/typecheck 2>/dev/null || true
+          gh run download "$GITHUB_RUN_ID" -n sovereign-agent-migration-diagnostics -D /tmp/migration 2>/dev/null || true
+          tests="$(find /tmp/test -type f | head -n 1 || true)"
+          typecheck="$(find /tmp/typecheck -type f | head -n 1 || true)"
           if [ -n "$tests" ] && [ -s "$tests" ]; then
             cat "$tests"
           elif [ -n "$typecheck" ] && [ -s "$typecheck" ]; then
             cat "$typecheck"
           else
-            find /tmp/sovereign-agent-diagnostic -type f -maxdepth 1 -print -exec cat {} \; 2>/dev/null || true
+            find /tmp/migration -type f -print -exec cat {} \; 2>/dev/null || true
           fi
