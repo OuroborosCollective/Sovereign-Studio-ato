@@ -59,6 +59,16 @@ jobs:
           } > /tmp/sovereign-agent-migration.log 2>&1
           status=$?
           cat /tmp/sovereign-agent-migration.log
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/sovereign-agent-migration.log migration-diagnostic.txt
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add migration-diagnostic.txt
+            if ! git diff --cached --quiet; then
+              git commit -m 'chore(migration): persist fail-closed diagnostic'
+              git push origin HEAD:refactor/sovereign-agent-internal-runtime-v2
+            fi
+          fi
           exit $status
 
       - name: Upload migration diagnostics
@@ -129,6 +139,7 @@ jobs:
           set -euo pipefail
           rm -f scripts/patches/apply_sovereign_agent_internal_migration.py
           rm -f .github/workflows/_apply-sovereign-agent-internal-migration.yml
+          rm -f migration-diagnostic.txt
           git add -A
           git diff --cached --check
           test -n "$(git status --porcelain)" || {
