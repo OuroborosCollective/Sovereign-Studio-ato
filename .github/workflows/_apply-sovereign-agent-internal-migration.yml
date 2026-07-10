@@ -47,13 +47,11 @@ jobs:
             exit 1
           }
 
-      - name: Validate and apply deterministic migration
+      - name: Apply deterministic migration
         shell: bash
         run: |
-          set +e
-          {
-            set -euo pipefail
-            python - <<'PY'
+          set -euo pipefail
+          python - <<'PY'
           from pathlib import Path
           migration = Path('scripts/patches/apply_sovereign_agent_internal_migration.py')
           content = migration.read_text(encoding='utf-8')
@@ -63,27 +61,14 @@ jobs:
               raise SystemExit(f'Dockerfile anchor patch expected once, found {content.count(old)}')
           migration.write_text(content.replace(old, new, 1), encoding='utf-8')
           PY
-            python -m py_compile \
-              scripts/patches/apply_sovereign_agent_internal_migration.py \
-              scripts/patches/finalize_sovereign_agent_internal_contract.py
-            python scripts/patches/apply_sovereign_agent_internal_migration.py
-            python scripts/patches/finalize_sovereign_agent_internal_contract.py
-            git diff --check
-            node --test scripts/sovereign-agent-internal-live-path.test.mjs
-            bash -n scripts/sovereign-backend/auto-migrate.sh
-          } > /tmp/sovereign-agent-migration.log 2>&1
-          status=$?
-          cat /tmp/sovereign-agent-migration.log
-          exit $status
-
-      - name: Upload migration diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sovereign-agent-migration-diagnostics
-          path: /tmp/sovereign-agent-migration.log
-          if-no-files-found: ignore
-          retention-days: 1
+          python -m py_compile \
+            scripts/patches/apply_sovereign_agent_internal_migration.py \
+            scripts/patches/finalize_sovereign_agent_internal_contract.py
+          python scripts/patches/apply_sovereign_agent_internal_migration.py
+          python scripts/patches/finalize_sovereign_agent_internal_contract.py
+          git diff --check
+          node --test scripts/sovereign-agent-internal-live-path.test.mjs
+          bash -n scripts/sovereign-backend/auto-migrate.sh
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -168,13 +153,20 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r scripts/sovereign-backend/requirements.txt pytest
 
-      - name: Run backend runtime tests
+      - name: Compile canonical and deployed runtimes
         shell: bash
         run: |
           python -m py_compile backend/agent_runtime/*.py backend/agent_runtime/tools/*.py
           python -m py_compile scripts/sovereign-backend/app.py scripts/sovereign-backend/agent_runtime/*.py scripts/sovereign-backend/agent_runtime/tools/*.py
-          pytest backend/tests scripts/sovereign-backend/tests -q
-          diff -qr backend/agent_runtime scripts/sovereign-backend/agent_runtime --exclude='__pycache__' --exclude='*.pyc'
+
+      - name: Canonical backend tests
+        run: pytest backend/tests -q
+
+      - name: Deployed backend tests
+        run: pytest scripts/sovereign-backend/tests -q
+
+      - name: Runtime mirror contract
+        run: diff -qr backend/agent_runtime scripts/sovereign-backend/agent_runtime --exclude='__pycache__' --exclude='*.pyc'
 
       - name: Commit verified product migration
         shell: bash
@@ -183,6 +175,7 @@ jobs:
           rm -f scripts/patches/apply_sovereign_agent_internal_migration.py
           rm -f scripts/patches/finalize_sovereign_agent_internal_contract.py
           rm -f .github/workflows/_apply-sovereign-agent-internal-migration.yml
+          rm -f .github/workflows/_diagnose-sovereign-agent-backend.yml
           rm -f migration-diagnostic.txt
           git add -A
           git diff --cached --check
@@ -194,104 +187,3 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'refactor(agent): make Sovereign runtime internal-only'
           git push origin HEAD:refactor/sovereign-agent-internal-runtime-v2
-
-  builder-diagnostic:
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout branch
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Enable pnpm and install
-        shell: bash
-        run: |
-          corepack enable
-          corepack prepare pnpm@9.12.2 --activate
-          pnpm install --frozen-lockfile --reporter=silent
-
-      - name: Apply same migration
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          migration = Path('scripts/patches/apply_sovereign_agent_internal_migration.py')
-          content = migration.read_text(encoding='utf-8')
-          old = "anchor = 'COPY agent_runtime ./agent_runtime\\n'"
-          new = "anchor = 'COPY agent_runtime/ ./agent_runtime/\\n'"
-          if content.count(old) != 1:
-              raise SystemExit(f'Dockerfile anchor patch expected once, found {content.count(old)}')
-          migration.write_text(content.replace(old, new, 1), encoding='utf-8')
-          PY
-          python scripts/patches/apply_sovereign_agent_internal_migration.py >/dev/null
-          python scripts/patches/finalize_sovereign_agent_internal_contract.py >/dev/null
-
-      - name: Build compact Builder diagnostic
-        id: builder-test
-        shell: bash
-        run: |
-          set +e
-          pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx \
-            --reporter=json --outputFile=/tmp/builder-results.json >/dev/null 2>&1
-          status=$?
-          node - <<'NODE' | tee /tmp/builder-failures.txt
-          const fs = require('fs');
-          const file = '/tmp/builder-results.json';
-          if (!fs.existsSync(file)) {
-            console.log('Builder JSON result missing.');
-            process.exit(0);
-          }
-          const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-          const failed = [];
-          for (const suite of data.testResults || []) {
-            for (const result of suite.assertionResults || []) {
-              if (result.status === 'failed') {
-                failed.push({
-                  name: [...(result.ancestorTitles || []), result.title].filter(Boolean).join(' > '),
-                  messages: result.failureMessages || [],
-                });
-              }
-            }
-          }
-          console.log(`BUILDER_FAILED_TESTS=${failed.length}`);
-          for (const item of failed) {
-            console.log(`TEST: ${item.name}`);
-            for (const message of item.messages) console.log(message);
-          }
-          NODE
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-
-      - name: Upload compact Builder diagnostic
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: compact-builder-diagnostic
-          path: /tmp/builder-failures.txt
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Enforce Builder result
-        if: always()
-        shell: bash
-        run: test '${{ steps.builder-test.outputs.status }}' = '0'
-
-  builder-diagnostic-output:
-    needs: builder-diagnostic
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download compact Builder diagnostic
-        uses: actions/download-artifact@v4
-        with:
-          name: compact-builder-diagnostic
-          path: /tmp/builder-diagnostic
-      - name: Print compact Builder diagnostic
-        shell: bash
-        run: cat /tmp/builder-diagnostic/builder-failures.txt
