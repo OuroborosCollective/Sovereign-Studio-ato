@@ -10,6 +10,7 @@ import type {
   SovereignExecutorIntentKind,
 } from './sovereignExecutorRuntime';
 import type { GitHubAccessState } from './githubAccessRuntime';
+import { maskSecrets } from '../../../shared/utils/crypto';
 
 export type SovereignCompactShortcutSurface =
   | 'repo-setup'
@@ -238,7 +239,7 @@ export function buildSovereignRuntimeEvidenceLog(
     source: 'agent-runtime' as const,
     level: entry.level,
     scope: entry.stage,
-    message: entry.message,
+    message: maskSecrets(entry.message),
   }));
   return [...fromActions, ...fromAgent].sort((left, right) => left.at - right.at);
 }

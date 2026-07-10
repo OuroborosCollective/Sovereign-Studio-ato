@@ -758,6 +758,30 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Repo-Setup geöffnet");
   });
 
+  it("resets repo-scoped GitHub access when a different repo snapshot is loaded", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+      jsonResponse({ tree: [{ path: "src/Other.tsx", type: "blob", size: 21 }], truncated: false }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    expect(screen.getByText("Validiert")).toBeDefined();
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+
+    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/SecondRepo" } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/SecondRepo:main/)).toBeDefined());
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    expect(screen.getByText("Zugang fehlt")).toBeDefined();
+    expect(screen.queryByText("Validiert")).toBeNull();
+  });
+
   it("Files shortcut preserves its own intent and opens the confirmed file explorer", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
