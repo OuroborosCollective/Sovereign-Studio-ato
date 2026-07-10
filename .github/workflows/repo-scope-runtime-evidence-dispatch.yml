@@ -1,0 +1,55 @@
+name: Repo Scope Runtime Evidence Dispatch
+
+on:
+  push:
+    branches:
+      - sovereign/repo-scope-dispatch
+    paths:
+      - .github/workflows/repo-scope-runtime-evidence-dispatch.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply-exact-patches:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
+      REPO_FULL_NAME: ${{ github.repository }}
+      BASE_BRANCH: main
+      PATCH_BRANCH: sovereign/repo-scoped-runtime-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch manifests
+        run: |
+          set -euo pipefail
+          for file in \
+            repo-scope-builder-01.json \
+            repo-scope-builder-02.json \
+            repo-scope-builder-03.json \
+            repo-scope-builder-04.json \
+            repo-scope-builder-05.json \
+            repo-scope-builder-06.json \
+            repo-scope-builder-test-01.json \
+            repo-scope-builder-test-02.json
+          do
+            jq empty "scripts/patches/pending/${file}"
+          done
+      - name: Apply exact SEARCH REPLACE chain
+        run: |
+          set -euo pipefail
+          for file in \
+            repo-scope-builder-01.json \
+            repo-scope-builder-02.json \
+            repo-scope-builder-03.json \
+            repo-scope-builder-04.json \
+            repo-scope-builder-05.json \
+            repo-scope-builder-06.json \
+            repo-scope-builder-test-01.json \
+            repo-scope-builder-test-02.json
+          do
+            echo "Applying ${file}"
+            python3 scripts/patches/search_replace_runner.py "scripts/patches/pending/${file}"
+          done
