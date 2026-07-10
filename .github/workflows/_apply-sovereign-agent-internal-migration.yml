@@ -206,19 +206,20 @@ jobs:
           python scripts/patches/apply_sovereign_agent_internal_migration.py >/dev/null
           python scripts/patches/finalize_sovereign_agent_internal_contract.py >/dev/null
 
-      - name: Print failed Builder assertions only
+      - name: Build compact Builder diagnostic
+        id: builder-test
         shell: bash
         run: |
           set +e
           pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx \
             --reporter=json --outputFile=/tmp/builder-results.json >/dev/null 2>&1
           status=$?
-          node - <<'NODE'
+          node - <<'NODE' | tee /tmp/builder-failures.txt
           const fs = require('fs');
           const file = '/tmp/builder-results.json';
           if (!fs.existsSync(file)) {
-            console.error('Builder JSON result missing.');
-            process.exit(2);
+            console.log('Builder JSON result missing.');
+            process.exit(0);
           }
           const data = JSON.parse(fs.readFileSync(file, 'utf8'));
           const failed = [];
@@ -238,4 +239,32 @@ jobs:
             for (const message of item.messages) console.log(message);
           }
           NODE
-          exit $status
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Upload compact Builder diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compact-builder-diagnostic
+          path: /tmp/builder-failures.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Enforce Builder result
+        if: always()
+        shell: bash
+        run: test '${{ steps.builder-test.outputs.status }}' = '0'
+
+  builder-diagnostic-output:
+    needs: builder-diagnostic
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download compact Builder diagnostic
+        uses: actions/download-artifact@v4
+        with:
+          name: compact-builder-diagnostic
+          path: /tmp/builder-diagnostic
+      - name: Print compact Builder diagnostic
+        shell: bash
+        run: cat /tmp/builder-diagnostic/builder-failures.txt
