@@ -6,12 +6,14 @@ on:
       - refactor/sovereign-agent-internal-runtime-v2
     paths:
       - 'scripts/patches/apply_sovereign_agent_internal_migration.py'
+      - 'scripts/patches/finalize_sovereign_agent_internal_contract.py'
       - '.github/workflows/_apply-sovereign-agent-internal-migration.yml'
   pull_request:
     branches:
       - main
     paths:
       - 'scripts/patches/apply_sovereign_agent_internal_migration.py'
+      - 'scripts/patches/finalize_sovereign_agent_internal_contract.py'
       - '.github/workflows/_apply-sovereign-agent-internal-migration.yml'
 
 permissions:
@@ -61,8 +63,11 @@ jobs:
               raise SystemExit(f'Dockerfile anchor patch expected once, found {content.count(old)}')
           migration.write_text(content.replace(old, new, 1), encoding='utf-8')
           PY
-            python -m py_compile scripts/patches/apply_sovereign_agent_internal_migration.py
+            python -m py_compile \
+              scripts/patches/apply_sovereign_agent_internal_migration.py \
+              scripts/patches/finalize_sovereign_agent_internal_contract.py
             python scripts/patches/apply_sovereign_agent_internal_migration.py
+            python scripts/patches/finalize_sovereign_agent_internal_contract.py
             git diff --check
             node --test scripts/sovereign-agent-internal-live-path.test.mjs
             bash -n scripts/sovereign-backend/auto-migrate.sh
@@ -106,6 +111,7 @@ jobs:
             src/features/product/runtime/sovereignAgentClient.test.ts \
             src/features/product/runtime/sovereignAgentPatternGatewayBridge.test.ts \
             src/features/product/runtime/sovereignRepoEvidenceScopeRuntime.test.ts \
+            src/features/product/runtime/agentWorkspaceRuntime.test.ts \
             src/features/product/runtime/workerIntentDetector.test.ts \
             src/features/product/runtime/sovereignCapabilityRouter.test.ts \
             src/features/product/runtime/sovereignToolCapabilityRuntime.test.ts \
@@ -138,6 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f scripts/patches/apply_sovereign_agent_internal_migration.py
+          rm -f scripts/patches/finalize_sovereign_agent_internal_contract.py
           rm -f .github/workflows/_apply-sovereign-agent-internal-migration.yml
           rm -f migration-diagnostic.txt
           git add -A
