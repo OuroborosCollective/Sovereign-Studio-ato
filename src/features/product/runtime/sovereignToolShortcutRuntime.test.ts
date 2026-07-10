@@ -48,10 +48,19 @@ describe('sovereignToolShortcutRuntime', () => {
     expect(gate('github_access', { githubAccessState: 'ready' })).toMatchObject({ canOpen: true, state: 'ready', statusLabel: 'Validiert' });
   });
 
-  it('blocks Executor until repo, GitHub, runtime and execution-intent evidence exist', () => {
+  it('reports missing execution intent before asking for GitHub access', () => {
+    expect(gate('executor', { repoReady: true, executorAvailable: true, hasExecutorMission: true, executorIntent: 'question' })).toMatchObject({
+      canOpen: false,
+      state: 'evidence_missing',
+      statusLabel: 'Ausführungsauftrag fehlt',
+    });
+  });
+
+  it('blocks Executor until repo, execution-intent, GitHub and runtime evidence exist', () => {
     expect(gate('executor')).toMatchObject({ canOpen: false, statusLabel: 'Repo fehlt' });
-    expect(gate('executor', { repoReady: true })).toMatchObject({ canOpen: false, statusLabel: 'GitHub-Zugang fehlt' });
-    expect(gate('executor', { repoReady: true, githubAccessState: 'ready' })).toMatchObject({ canOpen: false, statusLabel: 'Nicht verbunden' });
+    expect(gate('executor', { repoReady: true })).toMatchObject({ canOpen: false, statusLabel: 'Ausführungsauftrag fehlt' });
+    expect(gate('executor', { repoReady: true, hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: false, statusLabel: 'GitHub-Zugang fehlt' });
+    expect(gate('executor', { repoReady: true, githubAccessState: 'ready', hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: false, statusLabel: 'Nicht verbunden' });
     expect(gate('executor', { repoReady: true, githubAccessState: 'ready', executorAvailable: true, hasExecutorMission: true, executorIntent: 'question' })).toMatchObject({ canOpen: false, statusLabel: 'Ausführungsauftrag fehlt' });
     expect(gate('executor', { repoReady: true, githubAccessState: 'ready', executorAvailable: true, hasExecutorMission: true, executorIntent: 'code_execution' })).toMatchObject({ canOpen: true, statusLabel: 'Start möglich' });
   });

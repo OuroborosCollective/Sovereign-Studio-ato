@@ -221,17 +221,25 @@ function actionLevel(event: SovereignActionEvent): SovereignRuntimeEvidenceLogEn
   return 'info';
 }
 
+const SURFACE_ONLY_ACTION_LABEL = /(?:geöffnet|angezeigt)$/i;
+
+export function isRuntimeEvidenceActionEvent(event: SovereignActionEvent): boolean {
+  if (event.route === 'runtime-logs') return false;
+  if (event.kind === 'done' && SURFACE_ONLY_ACTION_LABEL.test(event.label.trim())) return false;
+  return true;
+}
+
 export function buildSovereignRuntimeEvidenceLog(
   actionEvents: readonly SovereignActionEvent[],
   agentEvents: readonly OpenHandsRuntimeEvent[],
 ): readonly SovereignRuntimeEvidenceLogEntry[] {
-  const fromActions = actionEvents.map((entry) => ({
+  const fromActions = actionEvents.filter(isRuntimeEvidenceActionEvent).map((entry) => ({
     id: `action:${entry.id}`,
     at: entry.createdAt,
     source: 'action-stream' as const,
     level: actionLevel(entry),
     scope: `${entry.route}/${entry.kind}`,
-    message: entry.detail ? `${entry.label} · ${entry.detail}` : entry.label,
+    message: maskSecrets(entry.detail ? `${entry.label} · ${entry.detail}` : entry.label),
   }));
   const fromAgent = agentEvents.map((entry, index) => ({
     id: `agent:${entry.at}:${entry.stage}:${index}`,

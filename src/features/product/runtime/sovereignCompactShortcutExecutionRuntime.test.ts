@@ -53,8 +53,14 @@ describe('sovereignCompactShortcutExecutionRuntime', () => {
   });
 
   it('builds runtime logs only from Action Stream and agent runtime events', () => {
-    const stream = appendSovereignActionEvent(createSovereignActionStreamState(), {
+    let stream = appendSovereignActionEvent(createSovereignActionStreamState(), {
       kind: 'done', route: 'repo', label: 'Repo geprüft', state: 'done', createdAt: 10,
+    });
+    stream = appendSovereignActionEvent(stream, {
+      kind: 'done', route: 'runtime-logs', label: 'Runtime-Evidence-Log geöffnet', state: 'done', createdAt: 15,
+    });
+    stream = appendSovereignActionEvent(stream, {
+      kind: 'done', route: 'files', label: 'Datei-Explorer geöffnet', state: 'done', createdAt: 16,
     });
     const log = buildSovereignRuntimeEvidenceLog(stream.events, [
       { at: 20, level: 'info', stage: 'agent-request', message: 'Job angefragt · token=super-secret-value' },

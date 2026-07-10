@@ -50,6 +50,8 @@ describe('OpenHandsEnterpriseClient', () => {
     expect(snapshot.jobId).toBe('job_123');
     expect(snapshot.openHandsId).toBe('conv_real_456');
     expect(snapshot.status).toBe('running');
+    expect(snapshot.repoUrl).toBe('https://github.com/OuroborosCollective/Sovereign-Studio-ato');
+    expect(snapshot.branch).toBe('main');
     expect(snapshot.events[0]?.message).toContain('Real OpenHands');
   });
 
