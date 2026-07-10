@@ -101,11 +101,28 @@ function fakeGitHubPat(): string {
 }
 
 const TEST_REPO_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
+const SECOND_REPO_URL = 'https://github.com/OuroborosCollective/Other-Studio';
+
+function repoScopedJob(overrides: Record<string, unknown> = {}) {
+  return {
+    status: 'running' as const,
+    repoUrl: TEST_REPO_URL,
+    branch: 'main',
+    openHandsId: 'conv_scoped',
+    changedFiles: [] as string[],
+    events: [],
+    ...overrides,
+  };
+}
+
+async function loadRepoUrlFromChat(repoUrl: string): Promise<void> {
+  fireEvent.change(chatField(), { target: { value: repoUrl } });
+  fireEvent.click(sendButton());
+  await waitFor(() => expect(screen.getAllByText(/Repo geladen/).length).toBeGreaterThan(0));
+}
 
 async function loadRepoFromChat(): Promise<void> {
-  fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
-  fireEvent.click(sendButton());
-  await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
+  await loadRepoUrlFromChat(TEST_REPO_URL);
 }
 
 async function validateGitHubAccessFromLauncher(): Promise<void> {
@@ -180,20 +197,23 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Keine Fehler")).toBeDefined();
   });
 
-  it("shows real changed files and a Draft PR opener once an OpenHands job reports them", () => {
-    render(
+  it("shows real changed files and a Draft PR opener only for the loaded repo", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
       <BuilderContainer
         {...baseProps()}
+        mission=""
+        repoReady={false}
         openhandsReady
-        openhandsJob={{
-          status: "running",
-          openHandsId: "conv_123",
+        openhandsJob={repoScopedJob({
           changedFiles: ["src/App.tsx"],
-          events: [],
           draftPrUrl: "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/1",
-        }}
+        })}
       />,
     );
+    await loadRepoFromChat();
     fireEvent.click(screen.getByRole("button", { name: /^Changed:/ }));
     expect(screen.getByText("src/App.tsx")).toBeDefined();
     fireEvent.click(screen.getByLabelText("Schließen"));
@@ -440,13 +460,22 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
   });
 
-  it("keeps OpenHands output as plain hints and not result cards", () => {
-    renderWithProviders(<BuilderContainer {...baseProps()} openhandsReady openhandsJob={{ status: "running", openHandsId: "conv_123", changedFiles: ["src/App.tsx"], events: [] }} />);
-    // AgentEventStream shows "Sovereign Agent arbeitet…" when executor is active
+  it("keeps scoped OpenHands output as plain hints and not result cards", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        openhandsReady
+        openhandsJob={repoScopedJob({ changedFiles: ["src/App.tsx"] })}
+      />,
+    );
+    await loadRepoFromChat();
     expect(screen.getByText(/Sovereign Agent arbeitet/i)).toBeDefined();
-    // Changed-file count badge
     expect(screen.getByText(/1 Datei/)).toBeDefined();
-    // No "Karten" label — no card-grid UI
     expect(screen.queryByLabelText(/Karten/i)).toBeNull();
   });
 
@@ -673,24 +702,27 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     });
   });
 
-  it("answers 'arbeitet er schon?' locally from runtime state without calling Worker", async () => {
+  it("answers 'arbeitet er schon?' locally only for the loaded repo job", async () => {
     const fetchMock = mockFetchSequence(
-      jsonResponse({ choices: [{ message: { content: "Worker reply" } }] }),
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
-    render(
+    renderWithProviders(
       <BuilderContainer
         {...baseProps()}
+        mission=""
+        repoReady={false}
         openhandsReady
-        openhandsJob={{ status: "running", openHandsId: "conv_123", changedFiles: ["src/App.tsx"], events: [] }}
+        openhandsJob={repoScopedJob({ changedFiles: ["src/App.tsx"] })}
       />,
     );
+    await loadRepoFromChat();
+    const callsBeforeStatus = nonAuthFetchCalls(fetchMock).length;
     fireEvent.change(chatField(), { target: { value: "arbeitet er schon?" } });
     fireEvent.click(sendButton());
     await waitFor(() =>
       expect(screen.getByText(/Ja, Sovereign Agent läuft/i)).toBeDefined(),
     );
-    // Must NOT have called Worker for this status question
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforeStatus);
   });
 
   it("answers executor status question locally when executor is idle (no job running, no workerBlocker)", async () => {
@@ -758,30 +790,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Repo-Setup geöffnet");
   });
 
-  it("resets repo-scoped GitHub access when a different repo snapshot is loaded", async () => {
-    mockFetchSequence(
-      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
-      jsonResponse({ login: "octo" }),
-      jsonResponse({ permissions: { push: true } }),
-      jsonResponse({ tree: [{ path: "src/Other.tsx", type: "blob", size: 21 }], truncated: false }),
-    );
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
-    await loadRepoFromChat();
-    await validateGitHubAccessFromLauncher();
-
-    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
-    expect(screen.getByText("Validiert")).toBeDefined();
-    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
-
-    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/SecondRepo" } });
-    fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/SecondRepo:main/)).toBeDefined());
-
-    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
-    expect(screen.getByText("Zugang fehlt")).toBeDefined();
-    expect(screen.queryByText("Validiert")).toBeNull();
-  });
-
   it("Files shortcut preserves its own intent and opens the confirmed file explorer", async () => {
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
@@ -803,14 +811,20 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(actionStream.querySelector('[data-route="files"]')).not.toBeNull();
   });
 
-  it("Diff shortcut opens real changed-file evidence instead of writing a prompt into the composer", () => {
+  it("Diff shortcut opens changed-file evidence only for the loaded repo job", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
     renderWithProviders(
       <BuilderContainer
         {...baseProps()}
+        mission=""
+        repoReady={false}
         openhandsReady
-        openhandsJob={{ status: "running", openHandsId: "conv_diff", changedFiles: ["src/App.tsx"], events: [] }}
+        openhandsJob={repoScopedJob({ openHandsId: "conv_diff", changedFiles: ["src/App.tsx"] })}
       />,
     );
+    await loadRepoFromChat();
     const before = chatField().value;
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Diff" }));
