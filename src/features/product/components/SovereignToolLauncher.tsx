@@ -39,7 +39,6 @@ const DIRECT_LAUNCHER_TOOLS: ReadonlySet<ToolId> = new Set([
 ]);
 
 export interface SovereignToolLauncherProps {
-  tools?: readonly ToolEntry[];
   runtimeContext?: SovereignToolShortcutContext;
   onSelect: (id: ToolId) => void;
   activeToolId?: ToolId | null;
@@ -47,7 +46,6 @@ export interface SovereignToolLauncherProps {
 }
 
 export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
-  tools,
   runtimeContext = createEmptySovereignToolShortcutContext(),
   onSelect,
   activeToolId = null,
@@ -62,8 +60,8 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
     [inspectionEvidence, runtimeContext],
   );
   const resolvedTools = useMemo(
-    () => tools ?? deriveSovereignToolShortcutGates(resolvedRuntimeContext),
-    [resolvedRuntimeContext, tools],
+    () => deriveSovereignToolShortcutGates(resolvedRuntimeContext),
+    [resolvedRuntimeContext],
   );
 
   const close = useCallback(() => setOpen(false), []);
