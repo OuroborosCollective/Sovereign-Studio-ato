@@ -14,6 +14,7 @@ import {
   type SovereignToolShortcutGate,
   type SovereignToolShortcutId,
 } from '../runtime/sovereignToolShortcutRuntime';
+import { useSovereignToolInspectionStore } from '../runtime/sovereignToolInspectionRuntime';
 
 const C = {
   bg: '#0e1116',
@@ -59,9 +60,14 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const launchTool = useLauncherStore((store) => store.launchTool);
+  const inspectionEvidence = useSovereignToolInspectionStore((store) => store.evidence);
+  const resolvedRuntimeContext = useMemo(
+    () => ({ ...runtimeContext, inspectionEvidence }),
+    [inspectionEvidence, runtimeContext],
+  );
   const resolvedTools = useMemo(
-    () => tools ?? deriveSovereignToolShortcutGates(runtimeContext),
-    [runtimeContext, tools],
+    () => tools ?? deriveSovereignToolShortcutGates(resolvedRuntimeContext),
+    [resolvedRuntimeContext, tools],
   );
 
   const close = useCallback(() => setOpen(false), []);
