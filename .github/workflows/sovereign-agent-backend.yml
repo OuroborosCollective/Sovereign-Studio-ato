@@ -43,6 +43,7 @@ jobs:
         run: |
           python -m py_compile \
             scripts/sovereign-backend/app.py \
+            scripts/sovereign-backend/runner.py \
             scripts/sovereign-backend/agent_runtime/*.py \
             scripts/sovereign-backend/agent_runtime/tools/*.py
 
@@ -200,16 +201,26 @@ jobs:
             test -d "$BUILD_DIR/agent_runtime"
             test -d "$BUILD_DIR/migrations"
             test -f /opt/sovereign-backend/.env
+            test -d /opt/secure
+            for network in supabase_default areloria_arelorian-network openhands-enterprise_default; do
+              docker network inspect "$network" >/dev/null
+            done
 
             PREVIOUS_IMAGE="$(docker inspect --format='{{.Config.Image}}' sovereign-backend 2>/dev/null || true)"
-            docker build -t "$IMAGE_TAG" "$BUILD_DIR"
+            COMMIT_SHA="${IMAGE_TAG#sovereign-backend:}"
+            docker build --label "org.opencontainers.image.revision=$COMMIT_SHA" -t "$IMAGE_TAG" "$BUILD_DIR"
             docker rm -f sovereign-backend 2>/dev/null || true
             docker run -d \
               --name sovereign-backend \
               --restart unless-stopped \
               --env-file /opt/sovereign-backend/.env \
-              -p 127.0.0.1:8788:8788 \
+              --label "org.opencontainers.image.revision=$COMMIT_SHA" \
+              --network supabase_default \
+              --volume /opt/secure:/opt/secure:ro \
+              -p 127.0.0.1:8788:8787 \
               "$IMAGE_TAG"
+            docker network connect areloria_arelorian-network sovereign-backend
+            docker network connect openhands-enterprise_default sovereign-backend
 
             HEALTH=""
             for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
@@ -231,8 +242,12 @@ jobs:
                   --name sovereign-backend \
                   --restart unless-stopped \
                   --env-file /opt/sovereign-backend/.env \
-                  -p 127.0.0.1:8788:8788 \
+                  --network supabase_default \
+                  --volume /opt/secure:/opt/secure:ro \
+                  -p 127.0.0.1:8788:8787 \
                   "$PREVIOUS_IMAGE"
+                docker network connect areloria_arelorian-network sovereign-backend
+                docker network connect openhands-enterprise_default sovereign-backend
               fi
               exit 1
             fi
