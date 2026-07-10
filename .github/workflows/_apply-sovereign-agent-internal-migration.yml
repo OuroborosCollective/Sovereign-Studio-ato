@@ -128,7 +128,34 @@ jobs:
         run: pnpm exec vitest run src/features/product/components/SovereignAgentJobTruthCard.test.tsx
 
       - name: Builder integration tests
-        run: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx
+        shell: bash
+        run: |
+          set +e
+          pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx \
+            --reporter=json --outputFile=/tmp/builder-gate.json >/dev/null 2>&1
+          status=$?
+          node - <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('/tmp/builder-gate.json', 'utf8'));
+          const failed = [];
+          for (const suite of data.testResults || []) {
+            for (const result of suite.assertionResults || []) {
+              if (result.status === 'failed') {
+                failed.push({
+                  name: [...(result.ancestorTitles || []), result.title].filter(Boolean).join(' > '),
+                  messages: result.failureMessages || [],
+                });
+              }
+            }
+          }
+          console.log(`BUILDER_TESTS_TOTAL=${data.numTotalTests ?? 'unknown'}`);
+          console.log(`BUILDER_TESTS_FAILED=${failed.length}`);
+          for (const item of failed) {
+            console.log(`TEST: ${item.name}`);
+            for (const message of item.messages) console.log(message);
+          }
+          NODE
+          exit $status
 
       - name: Build web product
         run: pnpm exec vite build
