@@ -74,6 +74,18 @@ def main() -> None:
         '    expect(screen.getAllByTitle("läuft").length).toBeGreaterThan(0);',
     )
 
+    admin_test = 'scripts/sovereign-backend/tests/test_admin_api.py'
+    replace_exact(
+        admin_test,
+        'sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))\n',
+        'sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))\n\nfrom app import _DEFAULT_RUNTIME_CONFIG\n',
+    )
+    replace_exact(
+        admin_test,
+        '        # Use local copy of config\n        config = _RUNTIME_CONFIG',
+        '        # Verify the real deployed default configuration.\n        config = _DEFAULT_RUNTIME_CONFIG',
+    )
+
     for relative in [
         'src/features/product/components/WorkerBlockerCard.tsx',
         'src/features/product/components/WorkerBlockerCard.test.tsx',
