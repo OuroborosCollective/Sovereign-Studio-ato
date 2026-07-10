@@ -202,7 +202,7 @@ export class OpenHandsEnterpriseClient {
   async startJob(input: OpenHandsStartJobInput): Promise<OpenHandsJobSnapshot> {
     assertReady(this.config);
     const job = this.buildJobRequest(input);
-    return requestSnapshot({
+    const snapshot = await requestSnapshot({
       url: endpoint(this.config.agentApiUrl, jobPath(this.config)),
       init: {
         method: 'POST',
@@ -213,6 +213,11 @@ export class OpenHandsEnterpriseClient {
       fetcher: this.fetcher,
       now: this.now,
     });
+    return {
+      ...snapshot,
+      repoUrl: snapshot.repoUrl ?? job.repoUrl,
+      branch: snapshot.branch ?? job.branch,
+    };
   }
 
   async getJob(jobId: string): Promise<OpenHandsJobSnapshot> {

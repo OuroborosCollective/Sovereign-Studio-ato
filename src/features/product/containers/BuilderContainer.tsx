@@ -391,6 +391,12 @@ import {
   buildSovereignRuntimeEvidenceLog,
   decideSovereignCompactShortcutExecution,
 } from "../runtime/sovereignCompactShortcutExecutionRuntime";
+import {
+  buildRepoEvidenceScopeKey,
+  buildRepositoryTargetKey,
+  selectRepoScopedOpenHandsJob,
+  selectRepositoryScopedPullRequestUrl,
+} from "../runtime/sovereignRepoEvidenceScopeRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { PaywallModal } from '../../billing/PaywallModal';
@@ -2437,6 +2443,12 @@ export function BuilderContainer({
   const chatLineIndexRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nowRef = useRef(Date.now());
+  const clearPatchEvidence = useCallback(() => {
+    setPatchDiffReport(null);
+    setPatchPreviewReady(false);
+    setPatchConfirmed(false);
+    setShowPatchDiffEvidence(false);
+  }, []);
 
   // ── AppControl state (additions)
   const [activeTab, setActiveTab] = useState<string>("chat");
@@ -2511,22 +2523,94 @@ export function BuilderContainer({
   const [userScrolledAway, setUserScrolledAway] = useState(false);
   const [unseenCount, setUnseenCount] = useState(0);
 
+  const currentRepoScopeKey = useMemo(
+    () => buildRepoEvidenceScopeKey(chatRepoSnapshot),
+    [chatRepoSnapshot],
+  );
+  const currentRepositoryTargetKey = useMemo(
+    () => buildRepositoryTargetKey(chatRepoSnapshot),
+    [chatRepoSnapshot],
+  );
+  const scopedPublishedPrUrl = useMemo(
+    () => selectRepositoryScopedPullRequestUrl(publishedPrUrl, currentRepositoryTargetKey),
+    [currentRepositoryTargetKey, publishedPrUrl],
+  );
+  const scopedOpenHandsJob = useMemo(
+    () => selectRepoScopedOpenHandsJob(openhandsJob, chatRepoSnapshot),
+    [chatRepoSnapshot, openhandsJob],
+  );
+  const scopedOpenHandsIsRunning = Boolean(
+    scopedOpenHandsJob
+    && ['queued', 'provisioning', 'running', 'validating'].includes(scopedOpenHandsJob.status),
+  );
+
   // ── Issue #443: GitHub Access State
   const [githubAccessState, setGitHubAccessState] = useState<GitHubAccessSnapshot>(
     createGitHubAccessSnapshot(),
   );
+  const [validatedGitHubTargetKey, setValidatedGitHubTargetKey] = useState<string | null>(null);
   const pendingWriteIntentRef = useRef<string | null>(null);
-  const githubWriteAllowed = canPerformGitHubWrite(githubAccessState);
+  const currentRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
+  currentRepoScopeKeyRef.current = currentRepoScopeKey;
+  const isCurrentRepoScope = useCallback(
+    (scopeKey: string | null) => Boolean(scopeKey && currentRepoScopeKeyRef.current === scopeKey),
+    [],
+  );
+  const currentRepositoryTargetKeyRef = useRef<string | null>(currentRepositoryTargetKey);
+  currentRepositoryTargetKeyRef.current = currentRepositoryTargetKey;
+  const githubWriteAllowed = Boolean(
+    currentRepositoryTargetKey
+    && validatedGitHubTargetKey === currentRepositoryTargetKey
+    && canPerformGitHubWrite(githubAccessState),
+  );
+  const effectiveGitHubAccessState = githubAccessState.state === 'ready' && !githubWriteAllowed
+    ? 'missing'
+    : githubAccessState.state;
+  const effectiveGitHubAccessSnapshot = useMemo(
+    () => effectiveGitHubAccessState === githubAccessState.state
+      ? githubAccessState
+      : createGitHubAccessSnapshot(),
+    [effectiveGitHubAccessState, githubAccessState],
+  );
   
   // #501: Store validated token in memory for Direct Patch content loading
   // Token is kept only for the current session (component lifetime)
   // SECURITY: Never persisted to sessionStorage/localStorage
   const githubTokenRef = useRef<string | null>(null);
+  const previousRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
     () => createIdleSnapshot(`sovereign-${Date.now()}`),
   );
+
+  useEffect(() => {
+    const previousScopeKey = previousRepoScopeKeyRef.current;
+    if (previousScopeKey === currentRepoScopeKey) return;
+    previousRepoScopeKeyRef.current = currentRepoScopeKey;
+
+    clearPatchEvidence();
+    setOpenWorkbenchSlot(null);
+    setShowRepoExplorer(false);
+    setAgentWorkSnapshot(createIdleSnapshot(`sovereign-${Date.now()}`));
+
+    const accessMatchesCurrentRepo = Boolean(
+      currentRepositoryTargetKey
+      && validatedGitHubTargetKey === currentRepositoryTargetKey,
+    );
+    if (!accessMatchesCurrentRepo) {
+      githubTokenRef.current = null;
+      pendingWriteIntentRef.current = null;
+      setValidatedGitHubTargetKey(null);
+      setGitHubAccessState(createGitHubAccessSnapshot());
+      setShowGitHubAccessOverride(false);
+    }
+  }, [
+    clearPatchEvidence,
+    currentRepoScopeKey,
+    currentRepositoryTargetKey,
+    validatedGitHubTargetKey,
+  ]);
 
   // ── Issue #520: Integration Intent Draft State
   // Shows draft card for recognized integration tasks before execution
@@ -2534,21 +2618,21 @@ export function BuilderContainer({
     createInitialDraftState,
   );
 
-  // ── Issue #445: Sync AgentWorkSnapshot from openhandsJob transitions
+  // ── Issue #445: Sync AgentWorkSnapshot only from the current repo/branch job.
   useEffect(() => {
-    if (!openhandsJob) return;
-    
-    // #501: Clear token when repo changes or is unloaded
-    // Token is only valid for the loaded repo
-    if (!chatRepoSnapshot) {
-      githubTokenRef.current = null;
+    if (!scopedOpenHandsJob) {
+      if (openhandsJob && openhandsJob.status !== 'idle') {
+        setAgentWorkSnapshot(createIdleSnapshot(`sovereign-${Date.now()}`));
+      }
+      return;
     }
+
     const repo = chatRepoSnapshot
       ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}`
       : null;
     setAgentWorkSnapshot((prev) => {
       let snap = prev;
-      if (openhandsJob.status === 'queued' || openhandsJob.status === 'running') {
+      if (scopedOpenHandsJob.status === 'queued' || scopedOpenHandsJob.status === 'running') {
         if (snap.state === 'idle') {
           snap = transitionIntentDetected(
             snap,
@@ -2559,33 +2643,29 @@ export function BuilderContainer({
         if (snap.state === 'intent_detected') {
           snap = transitionExecutorStarting(snap, 'sovereign-agent');
         }
-        if (snap.state === 'executor_starting' && openhandsJob.jobId) {
-          snap = transitionExecutorRunning(snap, openhandsJob.jobId);
+        if (snap.state === 'executor_starting' && scopedOpenHandsJob.jobId) {
+          snap = transitionExecutorRunning(snap, scopedOpenHandsJob.jobId);
         }
       }
-      // Priority: failed/blocked are terminal states, must be checked BEFORE draftPrUrl
-      // Otherwise a failed job with a stale draftPrUrl would show as 'draft_pr_ready'
-      if (openhandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
+      if (scopedOpenHandsJob.status === 'failed' && snap.state !== 'failed' && snap.state !== 'draft_pr_ready') {
         snap = transitionFailed(snap, 'Sovereign Agent Runtime fehlgeschlagen.');
       }
-      if (openhandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
+      if (scopedOpenHandsJob.status === 'blocked' && snap.state !== 'blocked' && snap.state !== 'draft_pr_ready') {
         snap = transitionBlocked(snap, 'Sovereign Agent Runtime blockiert.');
       }
-      // draftPrUrl only transitions to ready if no terminal failure state exists
-      if (openhandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
-        snap = transitionDraftPrReady(snap, openhandsJob.draftPrUrl);
-        // Patch wurde committed → Vorschau-State auf "bestätigt" wechseln
+      if (scopedOpenHandsJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
+        snap = transitionDraftPrReady(snap, scopedOpenHandsJob.draftPrUrl);
         if (patchPreviewReady) {
           setPatchPreviewReady(false);
           setPatchConfirmed(true);
         }
       }
-      if (openhandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
+      if (scopedOpenHandsJob.status === 'idle' && snap.state !== 'idle' && snap.state !== 'draft_pr_ready') {
         snap = createIdleSnapshot(`sovereign-${Date.now()}`);
       }
       return snap;
     });
-  }, [openhandsJob, chatRepoSnapshot]);
+  }, [chatRepoSnapshot, openhandsJob, patchPreviewReady, scopedOpenHandsJob]);
 
   // ── Slash command menu state (Issue #428)
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
@@ -2623,15 +2703,17 @@ export function BuilderContainer({
   const sovereignAgentStartAvailable = Boolean(openhandsReady && onStartOpenHands);
   const executorIntent = useMemo(() => classifySovereignExecutorIntent(wishText), [wishText]);
   const runtimeEvidenceLog = useMemo(
-    () => buildSovereignRuntimeEvidenceLog(actionStream.events, openhandsJob?.events ?? []),
-    [actionStream.events, openhandsJob?.events],
+    () => buildSovereignRuntimeEvidenceLog(actionStream.events, scopedOpenHandsJob?.events ?? []),
+    [actionStream.events, scopedOpenHandsJob?.events],
   );
-  const clearPatchEvidence = useCallback(() => {
-    setPatchDiffReport(null);
-    setPatchPreviewReady(false);
-    setPatchConfirmed(false);
-    setShowPatchDiffEvidence(false);
-  }, []);
+  const hasScopedWorkerResponse = useMemo(
+    () => actionStream.events.some((event) =>
+      event.route === 'worker'
+      && event.kind === 'llm_response_received'
+      && event.state === 'done'
+    ),
+    [actionStream.events],
+  );
 
   // ── Builder Workbench status slots (Actions/Files/Logs/Errors/Draft PR) —
   // derived purely from runtime state, never fabricated. Fronts the technical
@@ -2642,9 +2724,9 @@ export function BuilderContainer({
         logs: statusLogs,
         workerBlocker,
         chatRepoError,
-        openhandsJob,
-        publishedPrUrl,
-        githubState: githubAccessState.state,
+        openhandsJob: scopedOpenHandsJob,
+        publishedPrUrl: scopedPublishedPrUrl,
+        githubState: effectiveGitHubAccessState,
         openhandsConfigured: sovereignAgentStartAvailable,
         patchRouteAvailable: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       }),
@@ -2652,9 +2734,9 @@ export function BuilderContainer({
       statusLogs,
       workerBlocker,
       chatRepoError,
-      openhandsJob,
-      publishedPrUrl,
-      githubAccessState.state,
+      scopedOpenHandsJob,
+      scopedPublishedPrUrl,
+      effectiveGitHubAccessState,
       sovereignAgentStartAvailable,
       githubWriteAllowed,
       chatRepoSnapshot,
@@ -2725,7 +2807,7 @@ export function BuilderContainer({
     repoOwner: chatRepoSnapshot?.owner ?? '',
     repoName: chatRepoSnapshot?.repo ?? '',
     appendChatLine,
-    publishedPrUrl,
+    publishedPrUrl: scopedPublishedPrUrl,
   });
 
   // ── Aufgabe 5: Track unseen activity — not just chat lines, but also the
@@ -2776,11 +2858,8 @@ export function BuilderContainer({
   // ── Original v3 derived values (verbatim)
   // A complete local runtime snapshot is the sole Builder repo truth. The legacy
   // repoReady prop may describe another surface, but cannot authorize Builder work.
-  const isPartialRepoSnapshot = Boolean(
-    chatRepoSnapshot &&
-    (!chatRepoSnapshot.owner || !chatRepoSnapshot.repo || !chatRepoSnapshot.branch || !chatRepoSnapshot.repoUrl)
-  );
-  const effectiveRepoReady = Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot;
+  const isPartialRepoSnapshot = Boolean(chatRepoSnapshot && !currentRepoScopeKey);
+  const effectiveRepoReady = Boolean(currentRepoScopeKey);
   const effectiveRepoReason = effectiveRepoReady && chatRepoSnapshot
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
     : repoReason.trim() || 'Kein vollständiger Builder-Repo-Snapshot vorhanden.';
@@ -2801,7 +2880,7 @@ export function BuilderContainer({
   const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(
     chatResponseBusy ||
-    openhandsIsRunning ||
+    scopedOpenHandsIsRunning ||
     repoBusy ||
     localRepoLoading ||
     runtimeBusy ||
@@ -2810,7 +2889,9 @@ export function BuilderContainer({
   const workStateStatus = runtimeThinkingActive
     ? chatResponseBusy
       ? "Cloudflare Worker antwortet"
-      : openhandsJobStatus?.trim() || "Runtime arbeitet"
+      : scopedOpenHandsJob
+        ? openhandsJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
+        : "Runtime arbeitet"
     : workerBlocker
       ? `blocked · ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : "Worker blockiert"}`
       : effectiveRepoReady
@@ -2826,15 +2907,15 @@ export function BuilderContainer({
     [runtimeThinkingActive, thinkingFrameIndex, workStateStatus],
   );
   const outcomeHints = useMemo(
-    () => buildOutcomeHints(openhandsJob),
-    [openhandsJob],
+    () => buildOutcomeHints(scopedOpenHandsJob),
+    [scopedOpenHandsJob],
   );
   const agentDisabled =
     !effectiveRepoReady ||
     repoBusy ||
     localRepoLoading ||
     runtimeBusy ||
-    Boolean(openhandsIsRunning) ||
+    Boolean(scopedOpenHandsIsRunning) ||
     !sovereignAgentStartAvailable;
   const agentStatus = workerBlocker
     ? "error"
@@ -2844,8 +2925,8 @@ export function BuilderContainer({
           repoBusy,
           runtimeBusy,
           isPublishing,
-          openhandsIsRunning,
-          openhandsJob,
+          openhandsIsRunning: scopedOpenHandsIsRunning,
+          openhandsJob: scopedOpenHandsJob,
           localRepoLoading,
           localRepoError: Boolean(chatRepoError),
         });
@@ -2881,7 +2962,7 @@ export function BuilderContainer({
       id: "sovereign-agent-runtime",
       label: sovereignAgentStartAvailable ? "Sovereign Agent Runtime" : "Sovereign Agent offline",
       tier: (sovereignAgentStartAvailable
-        ? openhandsIsRunning
+        ? scopedOpenHandsIsRunning
           ? "active"
           : "ready"
         : "blocked") as RuntimeTier,
@@ -2909,7 +2990,7 @@ export function BuilderContainer({
         cuteThinkingLabel,
         sovereignSummary,
         disabledReason: state.disabledReason,
-        openhandsJob,
+        openhandsJob: scopedOpenHandsJob,
         chatRepoSnapshot,
         chatRepoError,
         chatHistory,
@@ -2921,7 +3002,7 @@ export function BuilderContainer({
       cuteThinkingLabel,
       effectiveRepoReady,
       effectiveRepoReason,
-      openhandsJob,
+      scopedOpenHandsJob,
       runtimeThinkingActive,
       sovereignSummary,
       state.disabledReason,
@@ -2995,13 +3076,13 @@ export function BuilderContainer({
   // No simulated progress: lamps, phases and conditions are derived from real runtime state.
   useEffect(() => {
     const jobBlocked =
-      openhandsJob?.status === "blocked" ||
-      openhandsJob?.status === "failed" ||
+      scopedOpenHandsJob?.status === "blocked" ||
+      scopedOpenHandsJob?.status === "failed" ||
       Boolean(chatRepoError) ||
       Boolean(workerBlocker);
     const hasOutput =
-      (openhandsJob?.changedFiles?.length ?? 0) > 0 ||
-      Boolean(openhandsJob?.draftPrUrl);
+      (scopedOpenHandsJob?.changedFiles?.length ?? 0) > 0 ||
+      Boolean(scopedOpenHandsJob?.draftPrUrl);
     const budState = deriveBudFromLedger(budgetLedger);
     const budBlocked = budState.selectionResult?.status === "blocked";
     const nextSignals: Record<string, SignalType> = {
@@ -3023,14 +3104,14 @@ export function BuilderContainer({
       pattern: palDecisions.length > 0 ? "active" : "idle",
       sync: workerBlocker
         ? "error"
-        : openhandsIsRunning
+        : scopedOpenHandsIsRunning
           ? "processing"
           : openhandsReady
             ? "active"
             : "warning",
       orchestr: jobBlocked
         ? "error"
-        : isPublishing || openhandsIsRunning
+        : isPublishing || scopedOpenHandsIsRunning
           ? "processing"
           : hasOutput
             ? "active"
@@ -3089,7 +3170,7 @@ export function BuilderContainer({
         },
         {
           label: "Runtime active only on real job",
-          status: openhandsIsRunning ? "pass" : "wait",
+          status: scopedOpenHandsIsRunning ? "pass" : "wait",
         },
         {
           label: "Repo snapshot synced",
@@ -3169,10 +3250,10 @@ export function BuilderContainer({
     isPublishing,
     localRepoLoading,
     openhandsConfig,
-    openhandsIsRunning,
-    openhandsJob?.changedFiles?.length,
-    openhandsJob?.draftPrUrl,
-    openhandsJob?.status,
+    scopedOpenHandsIsRunning,
+    scopedOpenHandsJob?.changedFiles?.length,
+    scopedOpenHandsJob?.draftPrUrl,
+    scopedOpenHandsJob?.status,
     openhandsReady,
     outcomeHints.length,
     palDecisions.length,
@@ -3389,14 +3470,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     if (isLocalCompletionStatusQuestion(submittedText)) {
       const statusAnswer = buildLocalStatusAnswer({
         githubWriteAllowed,
-        githubAccessState: githubAccessState.state,
+        githubAccessState: effectiveGitHubAccessState,
         writeIntentBlockedByRepo: !effectiveRepoReady,
-        openhandsRunning: openhandsJob?.status === 'running',
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+        openhandsRunning: scopedOpenHandsJob?.status === 'running',
+        draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
         patchPreviewReady,
         patchConfirmed,
-        hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+        hasWorkerResponse: hasScopedWorkerResponse,
         workerBlocker,
         buildWorkerBlockerAnswer: workerBlocker
           ? () =>
@@ -3447,14 +3528,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
               if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
         const statusAnswer = buildLocalStatusAnswer({
           githubWriteAllowed,
-          githubAccessState: githubAccessState.state,
+          githubAccessState: effectiveGitHubAccessState,
           writeIntentBlockedByRepo: !effectiveRepoReady,
-          openhandsRunning: openhandsJob?.status === 'running',
-          draftPrUrl: openhandsJob?.draftPrUrl ?? null,
-          hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          openhandsRunning: scopedOpenHandsJob?.status === 'running',
+          draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
           patchPreviewReady,
           patchConfirmed,
-          hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+          hasWorkerResponse: hasScopedWorkerResponse,
           workerBlocker,
           buildWorkerBlockerAnswer: workerBlocker
             ? () =>
@@ -3510,13 +3591,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
     // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
     const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
-      (openhandsJob != null && openhandsJob.status !== 'idle');
+      (scopedOpenHandsJob != null && scopedOpenHandsJob.status !== 'idle');
     if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
       const statusAnswer = buildExecutorStatusAnswer({
         agentState: agentWorkSnapshot.state,
-        openhandsStatus: openhandsJob?.status,
-        changedFiles: openhandsJob?.changedFiles?.length ?? 0,
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        openhandsStatus: scopedOpenHandsJob?.status,
+        changedFiles: scopedOpenHandsJob?.changedFiles?.length ?? 0,
+        draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
         blockerReason: agentWorkSnapshot.blockerReason,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
@@ -3588,13 +3669,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     const capabilityRouterInput: CapabilityRouterInput = {
       text: submittedText,
       repoReady: effectiveRepoReady,
-      githubAccessState: githubAccessState.state,
+      githubAccessState: effectiveGitHubAccessState,
       openhandsReady: openhandsReady ?? false,
       directGitHubPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       workspaceReady: false, // Workspace executor not yet integrated
       hasActiveWorkerBlocker: Boolean(workerBlocker),
-      hasPackage: Boolean(openhandsJob?.changedFiles?.length),
-      hasDraft: Boolean(openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
+      hasPackage: Boolean(scopedOpenHandsJob?.changedFiles?.length),
+      hasDraft: Boolean(scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
       hasWorkflowReport: Boolean(agentWorkSnapshot.commitSha),
     };
     const capabilityDecision = decideSovereignCapabilityRoute(capabilityRouterInput);
@@ -3662,14 +3743,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         // #500: Pass questionText to enable correct startup vs completion question differentiation
         const statusAnswer = buildLocalStatusAnswer({
           githubWriteAllowed,
-          githubAccessState: githubAccessState.state,
+          githubAccessState: effectiveGitHubAccessState,
           writeIntentBlockedByRepo: !effectiveRepoReady,
-          openhandsRunning: openhandsJob?.status === 'running',
-          draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-          hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          openhandsRunning: scopedOpenHandsJob?.status === 'running',
+          draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
           patchPreviewReady,
           patchConfirmed,
-          hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+          hasWorkerResponse: hasScopedWorkerResponse,
           workerBlocker,
           buildWorkerBlockerAnswer: workerBlocker
             ? () =>
@@ -3706,10 +3787,16 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       const result = await fetchDevChatRepoTree(parsedRepo);
       setRepoLoading(false);
       if (result.ok && result.snapshot) {
-        githubTokenRef.current = null;
-        setGitHubAccessState(createGitHubAccessSnapshot());
-        pendingWriteIntentRef.current = null;
         clearPatchEvidence();
+        githubTokenRef.current = null;
+        pendingWriteIntentRef.current = null;
+        setValidatedGitHubTargetKey(null);
+        setGitHubAccessState(createGitHubAccessSnapshot());
+        setActionStream(createSovereignActionStreamState());
+        setStatusLogs([]);
+        setWorkerBlocker(null);
+        setLastWorkerRequestMessage(null);
+        setLastAnswerWasLocal(false);
         setChatRepo(result.snapshot);
         triggerHaptic("medium");
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
@@ -3805,14 +3892,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           intent: classifySovereignExecutorIntent(submittedText),
           capabilities: buildSovereignToolCapabilityRegistry({
             repoReady: effectiveRepoReady,
-            githubAccessState: githubAccessState.state,
+            githubAccessState: effectiveGitHubAccessState,
             githubTokenPresent: Boolean(githubTokenRef.current),
             directPatchSupported: Boolean(chatRepoSnapshot),
             openhandsConfigured: sovereignAgentStartAvailable,
             workerAvailable: !workerBlocker,
             workspaceConfigured: false,
             draftPrSupported: true,
-            activeExecutorStatus: openhandsIsRunning ? "running" : "idle",
+            activeExecutorStatus: scopedOpenHandsIsRunning ? "running" : "idle",
           }),
           candidatePath: chatRepoSnapshot
             ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
@@ -3835,6 +3922,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
           const tokenForDirectPatch = githubTokenRef.current;
           if (chatRepoSnapshot && tokenForDirectPatch) {
+            const patchScopeKey = currentRepoScopeKey;
             clearPatchEvidence();
             const directPatchResult = await buildDirectPatchPlanWithContentLoad({
               repoContext: {
@@ -3848,6 +3936,16 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
               token: tokenForDirectPatch,
               fetcher: globalThis.fetch,
             });
+
+            if (!isCurrentRepoScope(patchScopeKey)) {
+              appendActionEvent(buildBlockedActionEvent({
+                route: 'direct-github-patch',
+                label: 'Patch-Ergebnis verworfen',
+                detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
+                kind: 'blocked',
+              }));
+              return;
+            }
 
             if ('result' in directPatchResult && directPatchResult.result.ok) {
               const res = directPatchResult.result;
@@ -3994,7 +4092,7 @@ Es wurde noch keine Datei geändert.`,
       );
       const altRouteAnswer = buildAlternativeRouteStatusAnswer({
         githubAccessReady: githubWriteAllowed,
-        githubAccessState: githubAccessState.state,
+        githubAccessState: effectiveGitHubAccessState,
         openhandsReady: openhandsReady ?? false,
         directPatchAvailable,
       });
@@ -4043,14 +4141,14 @@ Es wurde noch keine Datei geändert.`,
         intent: classifySovereignExecutorIntent(submittedText),
         capabilities: buildSovereignToolCapabilityRegistry({
           repoReady: effectiveRepoReady,
-          githubAccessState: githubAccessState.state,
+          githubAccessState: effectiveGitHubAccessState,
           githubTokenPresent: Boolean(githubTokenRef.current),
           directPatchSupported: Boolean(chatRepoSnapshot),
           openhandsConfigured: sovereignAgentStartAvailable,
           workerAvailable: !workerBlocker,
           workspaceConfigured: false,
           draftPrSupported: true,
-          activeExecutorStatus: openhandsIsRunning ? "running" : "idle",
+          activeExecutorStatus: scopedOpenHandsIsRunning ? "running" : "idle",
         }),
         candidatePath: chatRepoSnapshot
           ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
@@ -4719,7 +4817,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                 // Build Capability Registry from runtime truth (no tokens, no fakes)
                 const capabilities = buildSovereignToolCapabilityRegistry({
                   repoReady: effectiveRepoReady,
-                  githubAccessState: githubAccessState.state,
+                  githubAccessState: effectiveGitHubAccessState,
                   githubTokenPresent: Boolean(githubTokenRef.current),
                   directPatchSupported: Boolean(chatRepoSnapshot && githubWriteAllowed && githubTokenRef.current),
                   openhandsConfigured: sovereignAgentStartAvailable,
@@ -4727,7 +4825,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                   workspaceConfigured: openhandsReady ?? false,
                   draftPrSupported: githubWriteAllowed,
                   activeExecutorStatus:
-                    agentWorkSnapshot.state !== 'idle' || (openhandsJob && openhandsJob.status !== 'idle')
+                    agentWorkSnapshot.state !== 'idle' || (scopedOpenHandsJob && scopedOpenHandsJob.status !== 'idle')
                       ? 'running'
                       : 'idle',
                 });
@@ -4832,6 +4930,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                           // Runtime-Truth: All result types must be terminal-handled
                           if (!chatRepoSnapshot) break;
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
+                          const patchScopeKey = currentRepoScopeKey;
                           clearPatchEvidence();
                           buildDirectPatchPlanWithContentLoad({
                             repoContext: {
@@ -4845,6 +4944,17 @@ Das echte Repo-Setup wurde geöffnet.`,
                             token: githubTokenRef.current!,
                             fetcher: globalThis.fetch,
                           }).then((result) => {
+                            if (!isCurrentRepoScope(patchScopeKey)) {
+                              appendActionEvent(buildBlockedActionEvent({
+                                route: 'direct-github-patch',
+                                label: 'Patch-Ergebnis verworfen',
+                                detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
+                                kind: 'blocked',
+                              }));
+                              setIntentDraftState({ status: 'idle' });
+                              return;
+                            }
+
                             // Terminal state: clear draft only after result
                             setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
 
@@ -5022,11 +5132,11 @@ Das echte Repo-Setup wurde geöffnet.`,
               {agentWorkSnapshot.state !== 'idle' && (
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
-                  job={openhandsJob}
+                  job={scopedOpenHandsJob}
                   onCancel={onCancelOpenHands}
                   onOpenDraftPr={
-                    (openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
-                      ? () => window.open((openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
+                    (scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)
+                      ? () => window.open((scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)!, '_blank')
                       : undefined
                   }
                   onOpenFile={openRepoExplorerFromFileBadge}
@@ -5049,20 +5159,37 @@ Das echte Repo-Setup wurde geöffnet.`,
               )}
 
               {/* ── Issue #443: GitHub Access Card (shown when write access needed but not available) */}
-              {!githubWriteAllowed && (openhandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
+              {!githubWriteAllowed && (scopedOpenHandsJob?.status === 'running' || isPublishing || showGitHubAccessOverride) && (
                 <GitHubAccessCard
-                  snapshot={githubAccessState}
+                  snapshot={effectiveGitHubAccessSnapshot}
                   onProvideToken={async (token) => {
                     // SECURITY: Token is only used for this one-shot validation.
                     // It is never written into chat history, logs, telemetry or action events.
                     const formatResult = validateGitHubTokenFormat(token);
                     if (!formatResult.isValid) {
                       setGitHubAccessState(failGitHubAccessValidation('', formatResult.error || 'Ungültiges Format'));
-                      // #501: Clear token on validation failure
+                      setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       return;
                     }
 
+                    const validationTargetKey = currentRepositoryTargetKey;
+                    const validationRepoScopeKey = currentRepoScopeKey;
+                    const validationRepoSnapshot = chatRepoSnapshot;
+                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
+                      setValidatedGitHubTargetKey(null);
+                      githubTokenRef.current = null;
+                      appendActionEvent(buildBlockedActionEvent({
+                        route: 'github-access',
+                        label: 'GitHub-Zugang fehlgeschlagen',
+                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
+                        kind: 'failed',
+                      }));
+                      return;
+                    }
+
+                    setValidatedGitHubTargetKey(null);
                     setGitHubAccessState(startGitHubAccessValidation(formatResult.maskedToken));
                     appendActionEvent({
                       kind: 'route_selected',
@@ -5076,28 +5203,31 @@ Das echte Repo-Setup wurde geöffnet.`,
                       text: 'Token wurde übernommen. GitHub-Zugang wird jetzt geprüft. Bitte Zwischenablage auf Android leeren, falls das Token kopiert wurde.',
                     });
 
-                    if (!chatRepoSnapshot) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
-                      // #501: Clear token on repo target missing
+                    const validation = await validateGitHubTokenForRepo(
+                      token,
+                      { owner: validationRepoSnapshot.owner, repo: validationRepoSnapshot.repo },
+                      globalThis.fetch,
+                    );
+
+                    if (
+                      currentRepositoryTargetKeyRef.current !== validationTargetKey
+                      || !isCurrentRepoScope(validationRepoScopeKey)
+                    ) {
+                      setGitHubAccessState(createGitHubAccessSnapshot());
+                      setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
-                        label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
-                        kind: 'failed',
+                        label: 'GitHub-Zugangsprüfung verworfen',
+                        detail: 'Das Repo-Ziel hat sich während der Validierung geändert. Der alte Prüferfolg wurde nicht übernommen.',
+                        kind: 'blocked',
                       }));
                       return;
                     }
 
-                    const validation = await validateGitHubTokenForRepo(
-                      token,
-                      { owner: chatRepoSnapshot.owner, repo: chatRepoSnapshot.repo },
-                      globalThis.fetch,
-                    );
-
                     if (!validation.ok) {
                       setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, validation.error || 'GitHub-Zugangsprüfung fehlgeschlagen.'));
-                      // #501: Clear token on validation failure
+                      setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
@@ -5113,7 +5243,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     }
 
                     setGitHubAccessState(completeGitHubAccessValidation(formatResult.maskedToken));
-                    // #501: Store token in memory for Direct Patch content loading
+                    setValidatedGitHubTargetKey(validationTargetKey);
                     githubTokenRef.current = token;
                     appendActionEvent({
                       kind: 'done',
@@ -5148,6 +5278,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     if (agentDisabled) {
                       const tokenForDirectPatch = githubTokenRef.current;
                       if (!openhandsReady && tokenForDirectPatch && validation.canWrite === true) {
+                        const patchScopeKey = validationRepoScopeKey;
                         clearPatchEvidence();
                         const directPatchResult = await buildDirectPatchPlanWithContentLoad({
                           repoContext: {
@@ -5161,6 +5292,16 @@ Das echte Repo-Setup wurde geöffnet.`,
                           token: tokenForDirectPatch,
                           fetcher: globalThis.fetch,
                         });
+
+                        if (!isCurrentRepoScope(patchScopeKey)) {
+                          appendActionEvent(buildBlockedActionEvent({
+                            route: 'direct-github-patch',
+                            label: 'Patch-Ergebnis verworfen',
+                            detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
+                            kind: 'blocked',
+                          }));
+                          return;
+                        }
 
                         if ('result' in directPatchResult && directPatchResult.result.ok) {
                           appendActionEvent({
@@ -5279,12 +5420,12 @@ Das echte Repo-Setup wurde geöffnet.`,
               )}
 
               {/* ── Issue #431: Draft PR Card */}
-              {openhandsJob?.draftPrUrl && (
+              {scopedOpenHandsJob?.draftPrUrl && (
                 <DraftPrCard
-                  url={openhandsJob.draftPrUrl}
-                  changedFiles={openhandsJob.changedFiles || []}
+                  url={scopedOpenHandsJob.draftPrUrl}
+                  changedFiles={scopedOpenHandsJob.changedFiles || []}
                   onOpenBrowser={() =>
-                    window.open(openhandsJob.draftPrUrl, "_blank")
+                    window.open(scopedOpenHandsJob.draftPrUrl, "_blank")
                   }
                   onDiscussInChat={() =>
                     setWishText(`Erkläre mir die Änderungen im Draft PR.`)
@@ -5398,9 +5539,9 @@ Das echte Repo-Setup wurde geöffnet.`,
                 : 0,
               hasDiffEvidence: Boolean(
                 patchDiffReport ||
-                (openhandsJob?.changedFiles?.length ?? 0) > 0,
+                (scopedOpenHandsJob?.changedFiles?.length ?? 0) > 0,
               ),
-              githubAccessState: githubAccessState.state,
+              githubAccessState: effectiveGitHubAccessState,
               executorAvailable: sovereignAgentStartAvailable,
               hasExecutorMission: Boolean(wishText.trim()),
               executorIntent,
@@ -5413,9 +5554,9 @@ Das echte Repo-Setup wurde geöffnet.`,
                 repoFileCount: effectiveRepoReady && chatRepoSnapshot
                   ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
                   : 0,
-                changedFiles: openhandsJob?.changedFiles ?? [],
+                changedFiles: scopedOpenHandsJob?.changedFiles ?? [],
                 patchDiffAvailable: Boolean(patchDiffReport),
-                githubAccessState: githubAccessState.state,
+                githubAccessState: effectiveGitHubAccessState,
                 executorAvailable: sovereignAgentStartAvailable,
                 executorIntent,
                 runtimeEventCount: runtimeEvidenceLog.length,
@@ -5447,7 +5588,7 @@ Das echte Repo-Setup wurde geöffnet.`,
               if (decision.surface === 'github-status') {
                 appendChatLine({
                   role: 'assistant',
-                  text: githubAccessState.state === 'ready'
+                  text: effectiveGitHubAccessState === 'ready'
                     ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
                     : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
                 });
@@ -5534,7 +5675,11 @@ Das echte Repo-Setup wurde geöffnet.`,
           value={repoSetupUrl}
           busy={localRepoLoading}
           error={repoSetupError ?? chatRepoError}
-          onChange={setRepoSetupUrl}
+          onChange={(value) => {
+            setRepoSetupUrl(value);
+            setRepoSetupError(null);
+            setChatRepoError(null);
+          }}
           onLoad={handleRepoSetupLoad}
           onClose={() => setShowRepoSetup(false)}
         />
@@ -5594,7 +5739,7 @@ Das echte Repo-Setup wurde geöffnet.`,
           isPublishing={isPublishing}
           chatRepoSnapshot={chatRepoSnapshot}
           onCancelOpenHands={onCancelOpenHands}
-          openhandsIsRunning={openhandsIsRunning}
+          openhandsIsRunning={scopedOpenHandsIsRunning}
           palStats={palStats}
           chatHistory={chatHistory}
           onExportChat={async () => {
