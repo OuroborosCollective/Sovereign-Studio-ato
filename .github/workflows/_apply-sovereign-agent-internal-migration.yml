@@ -100,61 +100,49 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        shell: bash
-        run: |
-          set +e
-          pnpm exec tsc --noEmit > /tmp/sovereign-agent-typecheck.log 2>&1
-          status=$?
-          cat /tmp/sovereign-agent-typecheck.log
-          exit $status
+        run: pnpm exec tsc --noEmit
 
-      - name: Upload TypeScript diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sovereign-agent-typecheck-diagnostics
-          path: /tmp/sovereign-agent-typecheck.log
-          if-no-files-found: ignore
-          retention-days: 1
-
-      - name: Run migration regression tests
-        shell: bash
+      - name: Runtime contract tests
+        id: runtime-tests
+        continue-on-error: true
         run: |
-          set +e
           pnpm exec vitest run \
             src/features/product/runtime/sovereignAgentRuntime.test.ts \
             src/features/product/runtime/sovereignAgentClient.test.ts \
             src/features/product/runtime/sovereignAgentPatternGatewayBridge.test.ts \
             src/features/product/runtime/sovereignRepoEvidenceScopeRuntime.test.ts \
             src/features/product/runtime/agentWorkspaceRuntime.test.ts \
-            src/features/product/runtime/workerIntentDetector.test.ts \
+            src/features/product/runtime/workerIntentDetector.test.ts
+
+      - name: Routing contract tests
+        id: routing-tests
+        continue-on-error: true
+        run: |
+          pnpm exec vitest run \
             src/features/product/runtime/sovereignCapabilityRouter.test.ts \
             src/features/product/runtime/sovereignToolCapabilityRuntime.test.ts \
             src/features/product/runtime/sovereignExecutorRuntime.test.ts \
-            src/runtime/sovereignInternalOperatorRuntime.test.ts \
-            src/features/product/components/SovereignAgentJobTruthCard.test.tsx \
-            src/features/product/containers/BuilderContainer.test.tsx \
-            > /tmp/sovereign-agent-tests-full.log 2>&1
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            awk '/Failed Tests/{capture=1} capture{print}' /tmp/sovereign-agent-tests-full.log | tail -n 100 > /tmp/sovereign-agent-tests.log
-            if [ ! -s /tmp/sovereign-agent-tests.log ]; then
-              tail -n 100 /tmp/sovereign-agent-tests-full.log > /tmp/sovereign-agent-tests.log
-            fi
-          else
-            tail -n 25 /tmp/sovereign-agent-tests-full.log > /tmp/sovereign-agent-tests.log
-          fi
-          cat /tmp/sovereign-agent-tests.log
-          exit $status
+            src/runtime/sovereignInternalOperatorRuntime.test.ts
 
-      - name: Upload regression test diagnostics
+      - name: Truth card tests
+        id: truth-card-tests
+        continue-on-error: true
+        run: pnpm exec vitest run src/features/product/components/SovereignAgentJobTruthCard.test.tsx
+
+      - name: Builder integration tests
+        id: builder-tests
+        continue-on-error: true
+        run: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx
+
+      - name: Enforce frontend regression gates
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sovereign-agent-test-diagnostics
-          path: /tmp/sovereign-agent-tests.log
-          if-no-files-found: ignore
-          retention-days: 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test '${{ steps.runtime-tests.outcome }}' = 'success'
+          test '${{ steps.routing-tests.outcome }}' = 'success'
+          test '${{ steps.truth-card-tests.outcome }}' = 'success'
+          test '${{ steps.builder-tests.outcome }}' = 'success'
 
       - name: Build web product
         run: pnpm exec vite build
@@ -193,27 +181,3 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'refactor(agent): make Sovereign runtime internal-only'
           git push origin HEAD:refactor/sovereign-agent-internal-runtime-v2
-
-  diagnose-failure:
-    needs: apply-and-verify
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Print exact failing diagnostic
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          mkdir -p /tmp/test /tmp/typecheck /tmp/migration
-          gh run download "$GITHUB_RUN_ID" -n sovereign-agent-test-diagnostics -D /tmp/test 2>/dev/null || true
-          gh run download "$GITHUB_RUN_ID" -n sovereign-agent-typecheck-diagnostics -D /tmp/typecheck 2>/dev/null || true
-          gh run download "$GITHUB_RUN_ID" -n sovereign-agent-migration-diagnostics -D /tmp/migration 2>/dev/null || true
-          tests="$(find /tmp/test -type f | head -n 1 || true)"
-          typecheck="$(find /tmp/typecheck -type f | head -n 1 || true)"
-          if [ -n "$tests" ] && [ -s "$tests" ]; then
-            cat "$tests"
-          elif [ -n "$typecheck" ] && [ -s "$typecheck" ]; then
-            cat "$typecheck"
-          else
-            find /tmp/migration -type f -print -exec cat {} \; 2>/dev/null || true
-          fi
