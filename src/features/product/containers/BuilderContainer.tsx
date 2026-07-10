@@ -3002,7 +3002,7 @@ export function BuilderContainer({
       cuteThinkingLabel,
       effectiveRepoReady,
       effectiveRepoReason,
-      openhandsJob,
+      scopedOpenHandsJob,
       runtimeThinkingActive,
       sovereignSummary,
       state.disabledReason,
@@ -3076,13 +3076,13 @@ export function BuilderContainer({
   // No simulated progress: lamps, phases and conditions are derived from real runtime state.
   useEffect(() => {
     const jobBlocked =
-      openhandsJob?.status === "blocked" ||
-      openhandsJob?.status === "failed" ||
+      scopedOpenHandsJob?.status === "blocked" ||
+      scopedOpenHandsJob?.status === "failed" ||
       Boolean(chatRepoError) ||
       Boolean(workerBlocker);
     const hasOutput =
-      (openhandsJob?.changedFiles?.length ?? 0) > 0 ||
-      Boolean(openhandsJob?.draftPrUrl);
+      (scopedOpenHandsJob?.changedFiles?.length ?? 0) > 0 ||
+      Boolean(scopedOpenHandsJob?.draftPrUrl);
     const budState = deriveBudFromLedger(budgetLedger);
     const budBlocked = budState.selectionResult?.status === "blocked";
     const nextSignals: Record<string, SignalType> = {
@@ -3104,14 +3104,14 @@ export function BuilderContainer({
       pattern: palDecisions.length > 0 ? "active" : "idle",
       sync: workerBlocker
         ? "error"
-        : openhandsIsRunning
+        : scopedOpenHandsIsRunning
           ? "processing"
           : openhandsReady
             ? "active"
             : "warning",
       orchestr: jobBlocked
         ? "error"
-        : isPublishing || openhandsIsRunning
+        : isPublishing || scopedOpenHandsIsRunning
           ? "processing"
           : hasOutput
             ? "active"
@@ -3170,7 +3170,7 @@ export function BuilderContainer({
         },
         {
           label: "Runtime active only on real job",
-          status: openhandsIsRunning ? "pass" : "wait",
+          status: scopedOpenHandsIsRunning ? "pass" : "wait",
         },
         {
           label: "Repo snapshot synced",
@@ -3250,10 +3250,10 @@ export function BuilderContainer({
     isPublishing,
     localRepoLoading,
     openhandsConfig,
-    openhandsIsRunning,
-    openhandsJob?.changedFiles?.length,
-    openhandsJob?.draftPrUrl,
-    openhandsJob?.status,
+    scopedOpenHandsIsRunning,
+    scopedOpenHandsJob?.changedFiles?.length,
+    scopedOpenHandsJob?.draftPrUrl,
+    scopedOpenHandsJob?.status,
     openhandsReady,
     outcomeHints.length,
     palDecisions.length,
@@ -3470,14 +3470,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     if (isLocalCompletionStatusQuestion(submittedText)) {
       const statusAnswer = buildLocalStatusAnswer({
         githubWriteAllowed,
-        githubAccessState: githubAccessState.state,
+        githubAccessState: effectiveGitHubAccessState,
         writeIntentBlockedByRepo: !effectiveRepoReady,
-        openhandsRunning: openhandsJob?.status === 'running',
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-        hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+        openhandsRunning: scopedOpenHandsJob?.status === 'running',
+        draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
         patchPreviewReady,
         patchConfirmed,
-        hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+        hasWorkerResponse: hasScopedWorkerResponse,
         workerBlocker,
         buildWorkerBlockerAnswer: workerBlocker
           ? () =>
@@ -3528,14 +3528,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
               if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
         const statusAnswer = buildLocalStatusAnswer({
           githubWriteAllowed,
-          githubAccessState: githubAccessState.state,
+          githubAccessState: effectiveGitHubAccessState,
           writeIntentBlockedByRepo: !effectiveRepoReady,
-          openhandsRunning: openhandsJob?.status === 'running',
-          draftPrUrl: openhandsJob?.draftPrUrl ?? null,
-          hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          openhandsRunning: scopedOpenHandsJob?.status === 'running',
+          draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
           patchPreviewReady,
           patchConfirmed,
-          hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+          hasWorkerResponse: hasScopedWorkerResponse,
           workerBlocker,
           buildWorkerBlockerAnswer: workerBlocker
             ? () =>
@@ -3591,13 +3591,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
     // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
     const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
-      (openhandsJob != null && openhandsJob.status !== 'idle');
+      (scopedOpenHandsJob != null && scopedOpenHandsJob.status !== 'idle');
     if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
       const statusAnswer = buildExecutorStatusAnswer({
         agentState: agentWorkSnapshot.state,
-        openhandsStatus: openhandsJob?.status,
-        changedFiles: openhandsJob?.changedFiles?.length ?? 0,
-        draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+        openhandsStatus: scopedOpenHandsJob?.status,
+        changedFiles: scopedOpenHandsJob?.changedFiles?.length ?? 0,
+        draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
         blockerReason: agentWorkSnapshot.blockerReason,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
