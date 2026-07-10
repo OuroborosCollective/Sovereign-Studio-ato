@@ -1,130 +1,18 @@
-Builder migration gate failed
-total=52
-failed=1
+Deployed backend migration gate failed
+tests=unknown
+failures=unknown
+errors=unknown
 
-TEST: BuilderContainer (AppControl DevChat shell) > keeps scoped Sovereign Agent output as plain hints and not result cards
-TestingLibraryElementError: Unable to find an element with the text: /Sovereign Agent arbeitet/i. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+TEST: scripts.sovereign-backend.tests.test_admin_api.TestRuntimeConfig::test_default_config_values
+NameError: name '_RUNTIME_CONFIG' is not defined
+self = <test_admin_api.TestRuntimeConfig testMethod=test_default_config_values>
 
-Ignored nodes: comments, script, style
-[36m<body[39m
-  [33mstyle[39m=[32m"overflow: unset;"[39m
-[36m>[39m
-  [36m<div>[39m
-    [36m<section[39m
-      [33maria-label[39m=[32m"Sovereign Builder"[39m
-      [33mclass[39m=[32m"sovereign-card sovereign-container sovereign-builder-container sovereign-builder-container--repo-ready"[39m
-      [33mdata-layout[39m=[32m"devchat-appcontrol-integrated"[39m
-      [33mdata-role[39m=[32m"sovereign-container-builder"[39m
-      [33mdata-testid[39m=[32m"builder-container"[39m
-      [33mstyle[39m=[32m"width: 100%; margin: 0px auto; height: 100dvh; display: flex; flex-direction: column; background: rgb(14, 17, 22); color: rgb(205, 217, 229); font-family: system-ui, -apple-system, sans-serif; overflow: hidden; position: relative; -webkit-tap-highlight-color: transparent;"[39m
-    [36m>[39m
-      [36m<div[39m
-        [33mstyle[39m=[32m"background: rgb(22, 28, 36); border-bottom: 1px solid rgb(35, 45, 58); flex-shrink: 0;"[39m
-      [36m>[39m
-        [36m<div[39m
-          [33mstyle[39m=[32m"height: 52px; display: flex; align-items: center; padding: 0px 12px; gap: 10px;"[39m
-        [36m>[39m
-          [36m<button[39m
-            [33maria-label[39m=[32m"Menü"[39m
-            [33mstyle[39m=[32m"width: 40px; height: 40px; border-radius: 10px; background: rgb(14, 17, 22); border: 1px solid rgb(35, 45, 58); color: rgb(118, 131, 144); font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;"[39m
-            [33mtitle[39m=[32m"Menü"[39m
-            [33mtype[39m=[32m"button"[39m
-          [36m>[39m
-            [0m☰[0m
-          [36m</button>[39m
-          [36m<div[39m
-            [33mstyle[39m=[32m"flex: 1 1 0%; min-width: 0; overflow: hidden;"[39m
-          [36m>[39m
-            [36m<div[39m
-              [33mstyle[39m=[32m"display: flex; align-items: center; gap: 6px; overflow: hidden;"[39m
-            [36m>[39m
-              [36m<span[39m
-                [33mstyle[39m=[32m"font-family: monospace; font-size: 13px; font-weight: 700; color: rgb(205, 217, 229); letter-spacing: -0.3px; white-space: nowrap;"[39m
-              [36m>[39m
-                [0mSovereign[0m
-              [36m</span>[39m
-              [36m<span[39m
-                [33mstyle[39m=[32m"font-family: monospace; font-size: 9px; padding: 2px 6px; border-radius: 10px; background: rgba(0, 217, 177, 0.094); color: rgb(0, 217, 177); border: 1px solid rgba(0, 217, 177, 0.2);"[39m
-              [36m>[39m
-                [0mDevChat[0m
-              [36m</span>[39m
-              [36m<span[39m
-                [33mstyle[39m=[32m"font-family: monospace; font-size: 8px; padding: 2px 5px; border-radius: 6px; background: rgba(52, 211, 153, 0.094); color: rgb(52, 211, 153); border: 1px solid rgba(52, 211, 153, 0.2);"[39m
-              [36m>[39m
-                [0mFAST[0m
-                [0m · sparsam[0m
-              [36m</span>[39m
-            [36m</div>[39m
-            [36m<button[39m
-              [33maria-label[39m=[32m"Repo Inspector öffnen"[39m
-              [33mstyle[39m=[32m"display: block; width: 100%; padding: 0px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; color: rgb(52, 211, 153); cursor: pointer; font-family: monospace; font-size: 9px; text-align: left;"[39m
-              [33mtype[39m=[32m"button"[39m
-            [36m>[39m
-              [0mSovereign-Studio-ato:main[0m
-              [36m<span[39m
-                [33mstyle[39m=[32m"color: rgb(61, 79, 97);"[39m
-              [36m>[39m
-                [0m [0m
-                [0m· [0m
-                [0m1[0m
-                [0m files[0m
-              [36m</span>[39m
-            [36m</button>[39m
-          [36m</div>[39m
-          [36m<button[39m
-            [33maria-label[39m=[32m"Anmelden"[39m
-            [33mstyle[39m=[32m"width: 32px; height: 32px; border-radius: 50%; background: rgb(14, 17, 22); border: 1px solid rgb(35, 45, 58); color: rgb(118, 131, 144); font-size: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; overflow: hidden; font-weight: 700; padding: 0px;"[39m
-            [33mtitle[39m=[32m"Anmelden"[39m
-            [33mtype[39m=[32m"button"[39m
-          [36m>[39m
-            [36m<span>[39m
-              [0m👤[0m
-            [36m</span>[39m
-          [36m</button>[39m
-          [36m<div[39m
-            [33mstyle[39m=[32m"display: flex; align-items: center; gap: 5px;"[39m
-            [33mtitle[39m=[32m"läuft"[39m
-          [36m>[39m
-            [36m<span[39m
-              [33mstyle[39m=[32m"display: inline-block; width: 7px; height: 7px; border-radius: 50%; box-shadow: none; transition: all 0.3s; background: rgba(52, 211, 153, 0.19);"[39m
-            [36m/>[39m
-            [36m<span[39m
-              [33mstyle[39m=[32m"display: inline-block; width: 7px; height: 7px; border-radius: 50%; box-shadow: none; transition: all 0.3s; background: rgba(34, 211, 238, 0.19);"[39m
-            [36m/>[39m
-            [36m<span[39m
-              [33mstyle[39m=[32m"display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: rgba(251, 191, 36, 0.19); box-shadow: none; transition: all 0.3s;"[39m
-            [36m/>[39m
-          [36m</div>[39m
-          [36m<button[39m
-            [33maria-label[39m=[32m"RT – Runtime Quelle"[39m
-            [33mstyle[39m=[32m"display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 8px; background: rgb(14, 17, 22); border: 1px solid rgb(35, 45, 58); color: rgb(52, 211, 153); font-family: monospace; font-size: 9px; cursor: pointer; flex-shrink: 0;"[39m
-            [33mtitle[39m=[32m"Runtime Quelle"[39m
-            [33mtype[39m=[32m"button"[39m
-          [36m>[39m
-            [36m<span[39m
-              [33mstyle[39m=[32m"width: 6px; height: 6px; border-radius: 50%; background: rgb(52, 211, 153); box-shadow: 0 0 5px #34d399; display: inline-block;"[39m
-            [36m/>[39m
-            [0mRT[0m
-          [36m</button>[39m
-          [36m<button[39m
-            [33maria-label[39m=[32m"Panel öffnen"[39m
-            [33mstyle[39m=[32m"background: transparent; color: rgb(61, 79, 97); font-size: 12px; cursor: pointer; padding: 4px; border-radius: 6px;"[39m
-            [33mtitle[39m=[32m"Panel öffnen"[39m
-            [33mtype[39m=[32m"button"[39m
-          [36m>[39m
-            [0m▾[0m
-          [36m</button>[39m
-        [36m</div>[39m
-        [36m<div[39m
-          [33maria-label[39m=[32m"Werkbank Status"[39m
-          [33mrole[39m=[32m"tablist"[39m
-          [33mstyle[39m=[32m"display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid rgb(35, 45, 58); overflow-x: auto;"[39m
-        [36m>[39m
-          [36m<button[39...
-    at Object.getElementError (/home/runner/work/Sovereign-Studio-ato/Sovereign-Studio-ato/node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/config.js:37:19)
-    at /home/runner/work/Sovereign-Studio-ato/Sovereign-Studio-ato/node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
-    at /home/runner/work/Sovereign-Studio-ato/Sovereign-Studio-ato/node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
-    at /home/runner/work/Sovereign-Studio-ato/Sovereign-Studio-ato/node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
-    at /home/runner/work/Sovereign-Studio-ato/Sovereign-Studio-ato/src/features/product/containers/BuilderContainer.test.tsx:477:19
-    at file:///home/runner/work/Sovereign-Studio-ato/Sovereign-Studio-ato/node_modules/.pnpm/@vitest+runner@4.1.8/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+    def test_default_config_values(self):
+        """Default config should have expected values."""
+        # Use local copy of config
+>       config = _RUNTIME_CONFIG
+                 ^^^^^^^^^^^^^^^
+E       NameError: name '_RUNTIME_CONFIG' is not defined
+
+scripts/sovereign-backend/tests/test_admin_api.py:162: NameError
 
