@@ -38,10 +38,6 @@ const DIRECT_LAUNCHER_TOOLS: ReadonlySet<ToolId> = new Set([
   'settings',
 ]);
 
-function parentSelectId(id: ToolId): ToolId {
-  return id === 'files' ? 'repo' : id;
-}
-
 export interface SovereignToolLauncherProps {
   tools?: readonly ToolEntry[];
   runtimeContext?: SovereignToolShortcutContext;
@@ -90,7 +86,7 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
 
   function handleSelect(tool: ToolEntry) {
     if (!tool.canOpen) return;
-    onSelect(parentSelectId(tool.id));
+    onSelect(tool.id);
     if (DIRECT_LAUNCHER_TOOLS.has(tool.id)) launchTool(tool.id);
     setOpen(false);
   }
