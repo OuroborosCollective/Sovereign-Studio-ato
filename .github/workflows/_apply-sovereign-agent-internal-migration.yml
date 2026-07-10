@@ -177,21 +177,25 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
-      - name: Download migration diagnostic
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: sovereign-agent-migration-diagnostics
-          path: /tmp/sovereign-agent-diagnostic
       - name: Download TypeScript diagnostic
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: sovereign-agent-typecheck-diagnostics
           path: /tmp/sovereign-agent-typecheck-diagnostic
-      - name: Print exact diagnostics
+      - name: Download migration diagnostic fallback
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: sovereign-agent-migration-diagnostics
+          path: /tmp/sovereign-agent-diagnostic
+      - name: Print exact failing diagnostic
         if: always()
         shell: bash
         run: |
-          find /tmp/sovereign-agent-diagnostic -type f -maxdepth 1 -print -exec cat {} \; 2>/dev/null || true
-          find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 -print -exec cat {} \; 2>/dev/null || true
+          typecheck="$(find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1)"
+          if [ -n "$typecheck" ] && [ -s "$typecheck" ]; then
+            cat "$typecheck"
+          else
+            find /tmp/sovereign-agent-diagnostic -type f -maxdepth 1 -print -exec cat {} \; 2>/dev/null || true
+          fi
