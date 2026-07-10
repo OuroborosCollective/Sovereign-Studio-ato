@@ -320,3 +320,132 @@ class GitLogTool(ToolBase):
             output=stdout.strip() if stdout else "No commits",
             metadata={"count": stdout.count("\n") + 1 if stdout.strip() else 0},
         )
+
+
+class GitUniversalTool(ToolBase):
+    """Universal git tool that handles 'git' calls from LLM.
+
+    The LLM returns calls like:
+        {"tool": "git", "parameters": {"clone": ["url", "--branch=main", "--work-tree=/path"]}}
+    or:
+        {"tool": "git", "parameters": ["clone", "url", "--branch=main"]}
+    """
+
+    name = "git"
+    description = "Execute git commands in the workspace"
+    parameters = {
+        "command": {"type": "string", "required": True, "description": "Git subcommand"},
+        "args": {"type": "array", "required": False, "description": "Additional git arguments"},
+    }
+    requires_workspace = True
+
+    def execute(self, params: dict[str, Any], workspace_path: str | None = None) -> ToolResult:
+        if not workspace_path:
+            return ToolResult(status="blocked", blocker="No workspace path provided")
+
+        if isinstance(params, list):
+            cmd_parts = list(params)
+        elif isinstance(params, dict):
+            cmd_parts = []
+            for key, value in params.items():
+                if key == "command":
+                    cmd_parts.append(str(value))
+                elif key == "args" and isinstance(value, list):
+                    cmd_parts.extend(str(v) for v in value)
+                elif isinstance(value, list):
+                    cmd_parts.append(str(key))
+                    cmd_parts.extend(str(v) for v in value if v is not None and v != "")
+                elif value is not None and value != "":
+                    cmd_parts.append(str(key))
+                    cmd_parts.append(str(value))
+        else:
+            return ToolResult(status="error", error="Invalid params type: " + str(type(params)))
+
+        if not cmd_parts:
+            return ToolResult(status="error", error="No git command provided")
+
+        subcommand = cmd_parts[0]
+        args = cmd_parts[1:]
+        repo_path = Path(workspace_path)
+        git_dir = repo_path / ".git"
+
+        if subcommand == "clone":
+            url = None
+            branch = "main"
+            i = 0
+            while i < len(args):
+                arg = str(args[i])
+                if arg.startswith("--branch="):
+                    branch = arg.split("=", 1)[1]
+                elif arg == "-b" and i + 1 < len(args):
+                    branch = str(args[i + 1])
+                    i += 1
+                elif not arg.startswith("-"):
+                    url = arg
+                i += 1
+            if not url:
+                return ToolResult(status="error", error="No repository URL provided for clone")
+            exit_code, stdout, stderr = _run_git(
+                ["clone", "--quiet", "--depth=1", "--branch", branch, url, str(repo_path)],
+                cwd="/", timeout=120
+            )
+            if exit_code != 0:
+                return ToolResult(status="error", error="Git clone failed: " + (stderr or stdout))
+            return ToolResult(
+                status="done",
+                output="Repository cloned to " + str(repo_path),
+                metadata={"url": url, "branch": branch}
+            )
+
+        elif subcommand == "status":
+            if not git_dir.exists():
+                return ToolResult(status="blocked", blocker="Not a git repository")
+            exit_code, stdout, stderr = _run_git(["status", "--porcelain"], repo_path)
+            if exit_code != 0:
+                return ToolResult(status="error", error="Git status failed: " + stderr)
+            lines_out = [l.strip() for l in stdout.split(chr(10)) if l.strip()]
+            return ToolResult(
+                status="done",
+                output=stdout.strip() or "Repository is clean",
+                metadata={"changed_files": len(lines_out), "files": lines_out[:100]}
+            )
+
+        elif subcommand == "diff":
+            if not git_dir.exists():
+                return ToolResult(status="blocked", blocker="Not a git repository")
+            exit_code, stdout, stderr = _run_git(["diff", "--stat"], repo_path)
+            if exit_code != 0:
+                return ToolResult(status="error", error="Git diff failed: " + stderr)
+            return ToolResult(
+                status="done",
+                output=stdout.strip() or "No changes",
+                metadata={"has_changes": bool(stdout.strip())}
+            )
+
+        elif subcommand == "add":
+            if not git_dir.exists():
+                return ToolResult(status="blocked", blocker="Not a git repository")
+            files = args if args else ["."]
+            exit_code, stdout, stderr = _run_git(["add"] + files, repo_path)
+            if exit_code != 0:
+                return ToolResult(status="error", error="Git add failed: " + stderr)
+            return ToolResult(status="done", output="Staged: " + ", ".join(files))
+
+        elif subcommand == "commit":
+            msg = " ".join(args) if args else "Update"
+            exit_code, stdout, stderr = _run_git(["commit", "-m", msg], repo_path)
+            if exit_code != 0:
+                return ToolResult(status="error", error="Git commit failed: " + stderr)
+            return ToolResult(status="done", output=stdout.strip() or "Committed")
+
+        elif subcommand == "log":
+            if not git_dir.exists():
+                return ToolResult(status="blocked", blocker="Not a git repository")
+            exit_code, stdout, stderr = _run_git(["log", "--oneline", "-5"], repo_path)
+            if exit_code != 0:
+                return ToolResult(status="error", error="Git log failed: " + stderr)
+            return ToolResult(status="done", output=stdout.strip())
+
+        else:
+            return ToolResult(status="error", error="Unsupported git subcommand: " + subcommand)
+
