@@ -120,6 +120,7 @@ jobs:
       - name: Run migration regression tests
         shell: bash
         run: |
+          set +e
           pnpm exec vitest run \
             src/features/product/runtime/sovereignAgentRuntime.test.ts \
             src/features/product/runtime/sovereignAgentClient.test.ts \
@@ -132,7 +133,20 @@ jobs:
             src/features/product/runtime/sovereignExecutorRuntime.test.ts \
             src/runtime/sovereignInternalOperatorRuntime.test.ts \
             src/features/product/components/SovereignAgentJobTruthCard.test.tsx \
-            src/features/product/containers/BuilderContainer.test.tsx
+            src/features/product/containers/BuilderContainer.test.tsx \
+            > /tmp/sovereign-agent-tests.log 2>&1
+          status=$?
+          cat /tmp/sovereign-agent-tests.log
+          exit $status
+
+      - name: Upload regression test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-agent-test-diagnostics
+          path: /tmp/sovereign-agent-tests.log
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Build web product
         run: pnpm exec vite build
@@ -177,6 +191,12 @@ jobs:
     if: failure()
     runs-on: ubuntu-latest
     steps:
+      - name: Download regression test diagnostic
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: sovereign-agent-test-diagnostics
+          path: /tmp/sovereign-agent-test-diagnostic
       - name: Download TypeScript diagnostic
         continue-on-error: true
         uses: actions/download-artifact@v4
@@ -193,8 +213,11 @@ jobs:
         if: always()
         shell: bash
         run: |
+          tests="$(find /tmp/sovereign-agent-test-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1 || true)"
           typecheck="$(find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1 || true)"
-          if [ -n "$typecheck" ] && [ -s "$typecheck" ]; then
+          if [ -n "$tests" ] && [ -s "$tests" ]; then
+            tail -n 160 "$tests"
+          elif [ -n "$typecheck" ] && [ -s "$typecheck" ]; then
             cat "$typecheck"
           else
             find /tmp/sovereign-agent-diagnostic -type f -maxdepth 1 -print -exec cat {} \; 2>/dev/null || true
