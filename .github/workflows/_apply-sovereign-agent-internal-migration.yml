@@ -47,8 +47,6 @@ jobs:
 
       - name: Validate and apply deterministic migration
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
           {
@@ -61,13 +59,6 @@ jobs:
           } > /tmp/sovereign-agent-migration.log 2>&1
           status=$?
           cat /tmp/sovereign-agent-migration.log
-          if [ "$status" -ne 0 ]; then
-            encoded="$(base64 -w0 /tmp/sovereign-agent-migration.log)"
-            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/migration-diagnostic.txt" \
-              -f message='chore(migration): persist fail-closed diagnostic' \
-              -f content="$encoded" \
-              -f branch='refactor/sovereign-agent-internal-runtime-v2'
-          fi
           exit $status
 
       - name: Upload migration diagnostics
@@ -149,3 +140,17 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'refactor(agent): make Sovereign runtime internal-only'
           git push origin HEAD:refactor/sovereign-agent-internal-runtime-v2
+
+  diagnose-failure:
+    needs: apply-and-verify
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download migration diagnostic
+        uses: actions/download-artifact@v4
+        with:
+          name: sovereign-agent-migration-diagnostics
+          path: /tmp/sovereign-agent-diagnostic
+      - name: Print exact migration diagnostic
+        shell: bash
+        run: cat /tmp/sovereign-agent-diagnostic/sovereign-agent-migration.log
