@@ -689,6 +689,64 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/Token im Kanal/i)).toBeNull();
   });
 
+  it("compact launcher trusts only a complete runtime repo snapshot, not the repoReady prop", () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+
+    const repoItem = screen.getByRole("menuitem", { name: "Repo" });
+    const filesItem = screen.getByRole("menuitem", { name: "Files" });
+    expect(repoItem).toHaveAttribute("data-gate-state", "setup_required");
+    expect(repoItem.getAttribute("title")).toContain("Noch kein bestätigter Repo-Snapshot");
+    expect(filesItem).toBeDisabled();
+  });
+
+  it("Files shortcut preserves its own intent and opens the confirmed file explorer", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    const filesItem = screen.getByRole("menuitem", { name: "Files" });
+    expect(filesItem).toHaveAttribute("data-gate-state", "ready");
+    fireEvent.click(filesItem);
+
+    expect(screen.getByRole("dialog", { name: "Repo Inspector" })).toBeDefined();
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Datei-Explorer geöffnet");
+  });
+
+  it("Diff shortcut opens real changed-file evidence instead of writing a prompt into the composer", () => {
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        openhandsReady
+        openhandsJob={{ status: "running", openHandsId: "conv_diff", changedFiles: ["src/App.tsx"], events: [] }}
+      />,
+    );
+    const before = chatField().value;
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Diff" }));
+
+    expect(screen.getAllByText("Changed").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("src/App.tsx")).toBeDefined();
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Diff-Prüfung geöffnet");
+    expect(chatField().value).toBe(before);
+  });
+
+  it("Runtime Logs shortcut is idempotent and never closes the requested log surface", () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Runtime Logs" }));
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Runtime-Logs geöffnet");
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Runtime Logs" }));
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Runtime-Logs geöffnet");
+  });
+
   it("README & Docs preset opens GitHubAccessCard and stores the pending write intent", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} openhandsReady={false} />);
     fireEvent.click(screen.getByRole("button", { name: /README & Docs aktualisieren/i }));
