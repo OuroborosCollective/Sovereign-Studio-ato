@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SovereignToolLauncher } from './SovereignToolLauncher';
 import { useLauncherStore } from '../../launcher/useLauncherStore';
 import { createEmptySovereignToolShortcutContext } from '../runtime/sovereignToolShortcutRuntime';
+import { useSovereignToolInspectionStore } from '../runtime/sovereignToolInspectionRuntime';
 
 beforeEach(() => {
   useLauncherStore.setState({ isMenuOpen: false, windows: [] });
+  useSovereignToolInspectionStore.getState().resetEvidence();
 });
 
 describe('SovereignToolLauncher', () => {
@@ -70,6 +72,21 @@ describe('SovereignToolLauncher', () => {
 
     expect(onSelect).toHaveBeenCalledWith('settings');
     expect(useLauncherStore.getState().windows.some((entry) => entry.id === 'settings')).toBe(true);
+  });
+
+  it('shows stored inspection evidence after a core tool has produced a result', () => {
+    useSovereignToolInspectionStore.getState().recordEvidence('health', {
+      outcome: 'ready',
+      statusLabel: 'Client-Checks bestanden',
+      reason: 'Echte Client-Evidence vorhanden.',
+      nextAction: 'CI separat prüfen.',
+    });
+    render(<SovereignToolLauncher onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+
+    const health = screen.getByRole('menuitem', { name: 'Health' });
+    expect(health).toHaveAttribute('data-gate-state', 'ready');
+    expect(screen.getByText('Client-Checks bestanden')).toBeInTheDocument();
   });
 
   it('shows inspection status instead of pre-claiming health, memory or coverage', () => {
