@@ -1,0 +1,49 @@
+name: Apply Urgent Repository Containment
+
+on:
+  push:
+    branches:
+      - security/contain-runner-and-secrets-20260711
+    paths:
+      - 'scripts/patches/apply_urgent_repo_containment.py'
+      - '.github/workflows/apply-urgent-containment.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout containment branch
+        uses: actions/checkout@v4
+        with:
+          ref: security/contain-runner-and-secrets-20260711
+          fetch-depth: 0
+
+      - name: Apply deterministic containment
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "security/contain-runner-and-secrets-20260711"
+          python3 scripts/patches/apply_urgent_repo_containment.py
+          python3 -m py_compile \
+            scripts/patches/apply_urgent_repo_containment.py \
+            scripts/sovereign-backend/runner.py \
+            scripts/sovereign-backend/agent_runtime/sovereign_local_runner.py \
+            scripts/sovereign-backend/agent_runtime/git_workspace.py \
+            backend/agent_runtime/git_workspace.py
+          git diff --check
+
+      - name: Commit only to the containment branch
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-urgent-containment.yml
+          git config user.name "Sovereign Security Guard"
+          git config user.email "security-guard@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Containment was already applied."
+            exit 0
+          fi
+          git commit -m "security: apply urgent repository containment"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
