@@ -5,11 +5,13 @@ on:
     branches: [main, master, develop]
     paths:
       - 'scripts/sovereign-backend/**'
+      - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
       - '.github/workflows/sovereign-agent-backend.yml'
   pull_request:
     branches: [main, master, develop]
     paths:
       - 'scripts/sovereign-backend/**'
+      - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
   workflow_dispatch:
 
 concurrency:
@@ -30,6 +32,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Compile Agent Runtime
         run: |
@@ -57,6 +64,11 @@ jobs:
             agent_runtime/tools/diff_tool.py \
             agent_runtime/tools/test_tool.py \
             agent_runtime/tools/__init__.py
+
+      - name: Validate migrations and internal live-path contract
+        run: |
+          bash -n scripts/sovereign-backend/auto-migrate.sh
+          node --test scripts/sovereign-agent-internal-live-path.contract.mjs
 
   agent-tests:
     name: Agent Runtime Tests
