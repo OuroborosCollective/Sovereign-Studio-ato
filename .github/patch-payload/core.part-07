@@ -1,0 +1,342 @@
+ns ({max_iters}) reached."}], conn)
+-            print(f"[runner] Job {job_id} failed: max iterations")
++                summary = sanitize_agent_text(str(parameters.get("summary") or "Job completed."), 1200)
++                _update_job_runner(
++                    conn,
++                    job_id,
++                    "completed",
++                    changed_files=changed_files,
++                    diff_summary=diff_summary,
++                    test_summary=test_summary,
++                )
++                _job_events(job_id, [{"stage": "job_completed_by_runner", "level": "success", "message": summary}], conn)
++                return
++
++            if tool_name == "fail":
++                reason = sanitize_agent_text(str(parameters.get("reason") or "Job failed."), 1200)
++                _update_job_runner(conn, job_id, "failed", blocker=reason)
++                _job_events(job_id, [{"stage": "job_failed_by_runner", "level": "error", "message": reason}], conn)
++                return
++
++            repo_path = str(Path(state.workspace_path) / "repo")
++            tool_result = execute_tool_call(tool_name, parameters, repo_path)
++            state.tool_results.append(tool_result)
++            _job_events(job_id, tool_result.get("events", []), conn)
++
++            if tool_result["status"] in {"blocked", "error"}:
++                blocker = (
++                    tool_result.get("blocker")
++                    or tool_result.get("error")
++                    or f"Tool '{tool_name}' failed"
++                )
++                _update_job_runner(conn, job_id, "failed", blocker=blocker)
++                _job_events(job_id, [{"stage": "job_failed_tool", "level": "error", "message": blocker}], conn)
++                return
++
++            changed_files, diff_summary, test_summary, _ = _collect_workspace_evidence(state, root)
++            _update_job_runner(
++                conn,
++                job_id,
++                "running",
++                changed_files=changed_files,
++                diff_summary=diff_summary,
++                test_summary=test_summary,
++            )
++
++        reason = f"Job reached max iterations ({max_iterations}) without completing"
++        _update_job_runner(conn, job_id, "failed", blocker=reason)
++        _job_events(job_id, [{"stage": "job_failed_max_iterations", "level": "error", "message": reason}], conn)
+ 
+-        finally:
+-            if conn:
+-                runner_pool.putconn(conn)
+     except Exception as exc:
+-        print(f"[runner] Job {job_id} exception: {exc}\n{traceback.format_exc()}")
++        try:
++            conn.rollback()
++        except Exception:
++            pass
++        reason = sanitize_agent_text(
++            f"runner_exception:{type(exc).__name__}: {exc}",
++            1200,
++        )
++        try:
++            _update_job_runner(conn, job_id, "failed", blocker=reason)
++            _job_events(job_id, [{"stage": "runner_exception", "level": "error", "message": reason}], conn)
++        except Exception as persist_error:
++            print(
++                "[runner] Failed to persist terminal runner error "
++                f"for {job_id}: {type(persist_error).__name__}"
++            )
++        print(f"[runner] Job {job_id} failed with a persisted runner exception")
++    finally:
++        runner_pool.putconn(conn)
+ 
+ 
+-POLL_INTERVAL = int(os.getenv("SOVEREIGN_RUNNER_POLL_SECS", "5"))
+-ENABLED = os.getenv("SOVEREIGN_RUNNER_ENABLED", "true").lower() == "true"
++
++def _claim_provisioning_jobs(
++    runner_pool: psycopg2.pool.ThreadedConnectionPool,
++    limit: int,
++) -> tuple[str, ...]:
++    if limit <= 0:
++        return ()
++    conn = runner_pool.getconn()
++    try:
++        with conn.cursor() as cursor:
++            cursor.execute(
++                """
++                WITH candidates AS (
++                    SELECT job_id
++                    FROM sovereign_agent_jobs
++                    WHERE status = 'provisioning'
++                      AND executor = 'sovereign-local-runner'
++                      AND created_at < NOW() - INTERVAL '5 seconds'
++                    ORDER BY created_at ASC
++                    FOR UPDATE SKIP LOCKED
++                    LIMIT %s
++                )
++                UPDATE sovereign_agent_jobs AS jobs
++                SET status = 'running',
++                    started_at = COALESCE(jobs.started_at, NOW()),
++                    blocker = NULL,
++                    updated_at = NOW()
++                FROM candidates
++                WHERE jobs.job_id = candidates.job_id
++                RETURNING jobs.job_id
++                """,
++                (limit,),
++            )
++            claimed = tuple(str(row[0]) for row in cursor.fetchall())
++        conn.commit()
++        return claimed
++    except Exception:
++        conn.rollback()
++        raise
++    finally:
++        runner_pool.putconn(conn)
+ 
+ 
+ class SovereignRunnerDaemon(threading.Thread):
+     def __init__(
+         self,
+-        runner_pool: psycopg2.pool.SimpleConnectionPool,
++        runner_pool: psycopg2.pool.ThreadedConnectionPool,
+         workspace_root: str | None,
+     ):
+         super().__init__(name="sovereign-local-runner", daemon=True)
+         self._pool = runner_pool
+         self._workspace_root = workspace_root
+-        self._running = True
+         self._stop_event = threading.Event()
+         self._job_threads: dict[str, threading.Thread] = {}
+ 
+     def stop(self) -> None:
+-        self._running = False
+         self._stop_event.set()
+-        for t in list(self._job_threads.values()):
+-            t.join(timeout=5)
+-        self._pool.putconn(self._pool.getconn())
++        for thread in list(self._job_threads.values()):
++            thread.join(timeout=10)
++        self._pool.closeall()
+         print("[runner] sovereign-local-runner stopped")
+ 
+     def run(self) -> None:
+-        print(f"[runner] sovereign-local-runner started (poll={POLL_INTERVAL}s, enabled={ENABLED})")
+-        while self._running and not self._stop_event.is_set():
++        print(
++            "[runner] sovereign-local-runner started "
++            f"(poll={POLL_INTERVAL}s, max_jobs={MAX_CONCURRENT_JOBS})"
++        )
++        while not self._stop_event.is_set():
+             try:
+                 self._poll_and_dispatch()
+             except Exception as exc:
+-                print(f"[runner] poll error: {exc}")
++                message = sanitize_agent_text(
++                    f"{type(exc).__name__}: {exc}",
++                    600,
++                )
++                print(f"[runner] poll error: {message}")
+             self._stop_event.wait(timeout=POLL_INTERVAL)
+-        for t in list(self._job_threads.values()):
+-            t.join(timeout=5)
+-        print("[runner] sovereign-local-runner stopped")
++        for thread in list(self._job_threads.values()):
++            thread.join(timeout=10)
+ 
+     def _poll_and_dispatch(self) -> None:
+-        dead = [jid for jid, t in list(self._job_threads.items()) if not t.is_alive()]
+-        for jid in dead:
+-            del self._job_threads[jid]
++        finished = [
++            job_id
++            for job_id, thread in self._job_threads.items()
++            if not thread.is_alive()
++        ]
++        for job_id in finished:
++            del self._job_threads[job_id]
+ 
+         if not ENABLED:
+             return
+ 
+-        try:
+-            conn = self._pool.getconn()
+-            try:
+-                with conn.cursor(name="runner_poll_cursor") as cur:
+-                    cur.execute(
+-                        "SELECT job_id FROM sovereign_agent_jobs "
+-                        "WHERE status = 'provisioning' "
+-                        "AND created_at < NOW() - INTERVAL '5 seconds' "
+-                        "AND job_id NOT IN %s "
+-                        "ORDER BY created_at ASC LIMIT 5",
+-                        (tuple(self._job_threads.keys()) or ("__empty__",),),
+-                    )
+-                    rows = [row[0] for row in cur.fetchall()]
+-            finally:
+-                self._pool.putconn(conn)
+-
+-            for job_id in rows:
+-                if job_id in self._job_threads:
+-                    continue
+-                t = threading.Thread(
+-                    target=run_job_to_completion,
+-                    args=(job_id, self._pool, self._workspace_root),
+-                    name=f"runner-job-{job_id[:12]}",
+-                    daemon=True,
+-                )
+-                self._job_threads[job_id] = t
+-                t.start()
+-                print(f"[runner] Dispatched job {job_id} to sovereign-local-runner")
+-
+-        except Exception as exc:
+-            print(f"[runner] dispatch error: {exc}")
++        capacity = MAX_CONCURRENT_JOBS - len(self._job_threads)
++        for job_id in _claim_provisioning_jobs(self._pool, capacity):
++            thread = threading.Thread(
++                target=run_job_to_completion,
++                args=(job_id, self._pool, self._workspace_root),
++                name=f"runner-job-{job_id[:12]}",
++                daemon=True,
++            )
++            self._job_threads[job_id] = thread
++            thread.start()
++            print(f"[runner] Claimed and dispatched job {job_id}")
+ 
+ 
+ _runner_daemon: SovereignRunnerDaemon | None = None
+-
+-
+ _runner_lock = threading.Lock()
+ 
+ 
+ def register_sovereign_runner(workspace_root: str | None = None) -> SovereignRunnerDaemon | None:
+-    """Register and start the sovereign-local-runner daemon.
++    """Start one daemon in this process. Cross-process safety comes from DB claims."""
+ 
+-    Creates its own DB pool to avoid conflicts with Flask's request pool.
+-    Thread-safe singleton: only one daemon runs even with multiple gunicorn workers.
+-    """
+     global _runner_daemon
+     with _runner_lock:
+         if _runner_daemon is not None:
+-            print("[runner] sovereign-local-runner daemon already running")
+             return _runner_daemon
+         if not ENABLED:
+-            print("[runner] sovereign-local-runner disabled (SOVEREIGN_RUNNER_ENABLED=false)")
+-            return None
+-        try:
+-            pool = _create_runner_pool()
+-            # Use None so workspace_policy defaults to /tmp/sovereign-agent/workspaces
+-            # (matching what the POST /jobs endpoint creates)
+-            daemon = SovereignRunnerDaemon(pool, workspace_root)
+-            daemon.start()
+-            _runner_daemon = daemon
+-            print(f"[runner] sovereign-local-runner daemon registered")
+-            return daemon
+-        except Exception as exc:
+-            print(f"[runner] Failed to create runner pool: {exc}")
+-            import traceback
+-            traceback.print_exc()
++            print("[runner] disabled; set SOVEREIGN_RUNNER_ENABLED=true in a dedicated runner process")
+             return None
++        pool = _create_runner_pool()
++        daemon = SovereignRunnerDaemon(pool, workspace_root)
++        daemon.start()
++        _runner_daemon = daemon
++        return daemon
+ 
+ 
+ def stop_sovereign_runner() -> None:
+-    """Stop the runner daemon."""
+     global _runner_daemon
+-    if _runner_daemon:
++    if _runner_daemon is not None:
+         _runner_daemon.stop()
+         _runner_daemon = None
+diff --git a/scripts/sovereign-backend/agent_runtime/tool_policy.py b/scripts/sovereign-backend/agent_runtime/tool_policy.py
+index 178c22b77a23b0a213fcd42a593f6dffee11954c..cb940f464a08d91ec4a1cffe86054190189d1e00 100644
+--- a/scripts/sovereign-backend/agent_runtime/tool_policy.py
++++ b/scripts/sovereign-backend/agent_runtime/tool_policy.py
+@@ -76,6 +76,11 @@ ALLOWED_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+     ("pnpm", "run", "test:release-gate"),
+     ("pnpm", "run", "build:web"),
+     ("pnpm", "run", "audit:all"),
++    ("pnpm", "exec", "vitest", "run"),
++    ("npm", "test"),
++    ("npm", "run", "test"),
++    ("npx", "vitest", "run"),
++    ("npx", "jest"),
+     ("python", "-m", "pytest"),
+     ("python3", "-m", "pytest"),
+     ("git", "status"),
+diff --git a/scripts/sovereign-backend/agent_runtime/tools/__init__.py b/scripts/sovereign-backend/agent_runtime/tools/__init__.py
+index 9c6a15ed8af3fec7c21785d095ddf3942283d5dc..cd4f5610552d821bf7551a004a664fe477ad5194 100644
+--- a/scripts/sovereign-backend/agent_runtime/tools/__init__.py
++++ b/scripts/sovereign-backend/agent_runtime/tools/__init__.py
+@@ -38,7 +38,6 @@ from .git_tool import (
+     GitAddTool,
+     GitCommitTool,
+     GitLogTool,
+-    GitUniversalTool,
+ )
+ from .diff_tool import DiffTool, SemanticDiffTool
+ from .test_tool import TestTool
+@@ -59,7 +58,6 @@ __all__ = [
+     "GitAddTool",
+     "GitCommitTool",
+     "GitLogTool",
+-    "GitUniversalTool",
+     "DiffTool",
+     "SemanticDiffTool",
+     "TestTool",
+@@ -108,60 +106,33 @@ def failed_tool_result(error: str, tool: str = "unknown") -> dict:
+ 
+ # Workspace helper functions
+ def read_workspace_file(workspace_path: str, file_path: str) -> dict:
+-    """Read a file from workspace."""
+-    import os
+-    full_path = os.path.join(workspace_path, file_path)
+-    try:
+-        with open(full_path, "r") as f:
+-            return done_tool_result(f.read(), f"read:{file_path}")
+-    except Exception as e:
+-        return failed_tool_result(str(e), f"read:{file_path}")
++    """Read through the same policy-enforced tool used by the runtime."""
++    return FileReadTool().execute({"path": file_path}, workspace_path).to_dict()
+ 
+ 
+ def write_workspace_file(workspace_path: str, file_path: str, content: str) -> dict:
+-    """Write a file to workspace."""
+-    import os
+-    full_path = os.path.join(workspace_path, file_path)
+-    try:
+-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+-        with open(full_path, "w") as f:
+-            f.write(content)
+-        return done_tool_result(f"Written: {file_path}", f"write:{file_path}")
+-    except Exception as e:
+-        return failed_tool_result(str(e), f"write:{file_path}")
++    """Write through the same policy-enforced tool used by the runt
