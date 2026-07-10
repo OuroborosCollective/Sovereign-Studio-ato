@@ -33,13 +33,36 @@ test('frontend client is internal-route-only', () => {
   assert.doesNotMatch(runtime, /external-agent-runtime/);
 });
 
-test('database and deploy path enforce the internal executor', () => {
-  const migration = read('scripts/sovereign-backend/migrations/007_sovereign_agent_internal_executor_only.sql');
-  assert.match(migration, /CHECK \(executor = 'sovereign-local-runner'\)/);
+test('database and deploy path enforce internal, fail-closed migrations', () => {
+  const executorMigration = read('scripts/sovereign-backend/migrations/007_sovereign_agent_internal_executor_only.sql');
+  assert.match(executorMigration, /CHECK \(executor = 'sovereign-local-runner'\)/);
+
+  const bootstrap = read('scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql');
+  for (const table of [
+    'admin_api_keys',
+    'credit_ledger',
+    'payment_methods',
+    'credit_packages',
+    'llm_routes',
+    'launcher_overrides',
+    'toolchain_tools',
+    'audit_log',
+    'user_skills',
+    'transactions',
+    'schema_migrations',
+  ]) {
+    assert.match(bootstrap, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`), table);
+  }
+  assert.match(bootstrap, /WHERE NOT EXISTS[\s\S]*credit_packages/);
+
   const dockerfile = read('scripts/sovereign-backend/Dockerfile');
   assert.match(dockerfile, /COPY migrations/);
   const migrate = read('scripts/sovereign-backend/auto-migrate.sh');
   assert.match(migrate, /ON_ERROR_STOP=1/);
+  assert.match(migrate, /find "\$\{MIGRATION_DIR\}"[\s\S]*\| sort/);
+  assert.match(migrate, /No SQL migrations found/);
+  assert.match(migrate, /no matching bootstrap key could be persisted/);
+  assert.doesNotMatch(migrate, /\|\|\s*true/);
 });
 
 test('deployed runtime mirrors the canonical backend runtime', () => {
