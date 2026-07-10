@@ -1,0 +1,63 @@
+name: Diagnose Sovereign Agent Backend Migration
+
+on:
+  push:
+    branches:
+      - refactor/sovereign-agent-internal-runtime-v2
+    paths:
+      - 'scripts/patches/apply_sovereign_agent_internal_migration.py'
+      - 'scripts/patches/finalize_sovereign_agent_internal_contract.py'
+      - '.github/workflows/_diagnose-sovereign-agent-backend.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backend-diagnostic:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply deterministic migration
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          migration = Path('scripts/patches/apply_sovereign_agent_internal_migration.py')
+          content = migration.read_text(encoding='utf-8')
+          old = "anchor = 'COPY agent_runtime ./agent_runtime\\n'"
+          new = "anchor = 'COPY agent_runtime/ ./agent_runtime/\\n'"
+          if content.count(old) != 1:
+              raise SystemExit(f'Dockerfile anchor patch expected once, found {content.count(old)}')
+          migration.write_text(content.replace(old, new, 1), encoding='utf-8')
+          PY
+          python scripts/patches/apply_sovereign_agent_internal_migration.py
+          python scripts/patches/finalize_sovereign_agent_internal_contract.py
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: pip install -r scripts/sovereign-backend/requirements.txt pytest
+
+      - name: Compile both runtime trees
+        shell: bash
+        run: |
+          python -m py_compile backend/agent_runtime/*.py backend/agent_runtime/tools/*.py
+          python -m py_compile scripts/sovereign-backend/app.py scripts/sovereign-backend/agent_runtime/*.py scripts/sovereign-backend/agent_runtime/tools/*.py
+
+      - name: Canonical backend tests
+        run: pytest backend/tests -q
+
+      - name: Deployed backend tests
+        run: pytest scripts/sovereign-backend/tests -q
+
+      - name: Runtime mirror contract
+        run: diff -qr backend/agent_runtime scripts/sovereign-backend/agent_runtime --exclude='__pycache__' --exclude='*.pyc'
