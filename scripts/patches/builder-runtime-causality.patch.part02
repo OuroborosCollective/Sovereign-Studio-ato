@@ -1,0 +1,174 @@
+napshotReady
+-                    ? `${chatRepoSnapshot?.files.filter((entry) => entry.type === 'blob').length ?? 0} bestätigte Dateien im Snapshot.`
+-                    : 'Noch kein vollständiger Repo-Snapshot vorhanden.',
+-                  state: snapshotReady ? 'done' : 'blocked',
+-                });
+                 return;
+               }
+-              if (toolId === 'executor') {
+-                if (wishText.trim()) void startAgentFromText(wishText.trim());
++              if (decision.surface === 'changed-files') {
++                setOpenWorkbenchSlot('files');
+                 return;
+               }
+-              if (toolId === 'github_access') {
+-                if (githubAccessState.state === 'requested' || githubAccessState.state === 'validating') {
+-                  appendActionEvent({
+-                    kind: 'route_selected',
+-                    route: 'github-access',
+-                    label: 'GitHub-Zugangsprüfung angezeigt',
+-                    detail: 'Die laufende Validierung bleibt Runtime-Wahrheit; es wurde kein neuer Zugang angefordert.',
+-                    state: 'running',
+-                  });
+-                  appendChatLine({
+-                    role: 'assistant',
+-                    text: 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet und kein Secret angezeigt.',
+-                  });
+-                  return;
+-                }
+-                if (!githubWriteAllowed) {
+-                  setShowGitHubAccessOverride(true);
+-                  appendActionEvent({
+-                    kind: 'access_required',
+-                    route: 'github-access',
+-                    label: 'GitHub-Zugang geöffnet',
+-                    detail: 'Sicheres Zugangsfeld wurde über das Tool-Menü geöffnet.',
+-                    state: 'blocked',
+-                  });
+-                  appendChatLine({
+-                    role: 'assistant',
+-                    text: 'Sicheres GitHub-Zugangsfeld geöffnet. Bitte Token nur dort eingeben, niemals im Chat.',
+-                  });
+-                  return;
+-                }
+-                appendActionEvent({
+-                  kind: 'done',
+-                  route: 'github-access',
+-                  label: 'GitHub-Zugangsstatus angezeigt',
+-                  detail: 'Die Runtime meldet validierten Schreibzugang; Secret-Werte bleiben verborgen.',
+-                  state: 'done',
+-                });
++              if (decision.surface === 'patch-diff' && patchDiffReport) {
++                setShowPatchDiffEvidence(true);
++                return;
++              }
++              if (decision.surface === 'github-access') {
++                setShowGitHubAccessOverride(true);
++                appendChatLine({ role: 'assistant', text: `${decision.reason} ${decision.nextAction}` });
++                return;
++              }
++              if (decision.surface === 'github-status') {
+                 appendChatLine({
+                   role: 'assistant',
+-                  text: 'GitHub-Zugang ist bereits bereit. Der Zugangswert wird nicht im Chat angezeigt oder gespeichert.',
++                  text: githubAccessState.state === 'ready'
++                    ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
++                    : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
+                 });
+                 return;
+               }
+-              if (toolId === 'runtime_logs') {
+-                setPanelOpen(true);
+-                appendActionEvent({
+-                  kind: 'done',
+-                  route: 'runtime-logs',
+-                  label: 'Runtime-Logs geöffnet',
+-                  detail: statusLogs.length > 0
+-                    ? `${statusLogs.length} gespeicherte Runtime-Events sind vorhanden.`
+-                    : 'Die Log-Fläche ist geöffnet; noch keine Events vorhanden.',
+-                  state: 'done',
+-                });
++              if (decision.surface === 'executor-request') {
++                void startAgentFromText(wishText.trim());
+                 return;
+               }
+-              if (toolId === 'diff') {
+-                const changedFiles = openhandsJob?.changedFiles ?? [];
+-                setOpenWorkbenchSlot('files');
+-                appendActionEvent({
+-                  kind: 'done',
+-                  route: 'diff',
+-                  label: 'Diff-Prüfung geöffnet',
+-                  detail: changedFiles.length > 0
+-                    ? `${changedFiles.length} bestätigte Changed Files: ${changedFiles.join(' · ')}`
+-                    : patchConfirmed
+-                      ? 'Bestätigte Patch-Evidence ist vorhanden.'
+-                      : 'Patch-Vorschau-Evidence ist vorhanden.',
+-                  state: 'done',
+-                });
++              if (decision.surface === 'runtime-logs') {
++                setShowRuntimeEvidenceLogs(true);
+                 return;
+               }
++              if (decision.surface === 'blocked') {
++                appendChatLine({ role: 'assistant', text: `${decision.reason} Nächste Aktion: ${decision.nextAction}` });
++              }
+             }}
+             onOpenLauncher={useLauncherStore.getState().openMenu}
+           />
+@@ -5466,7 +5515,29 @@
+           onClose={() => setShowRuntime(false)}
+         />
+       )}
+-      {showRepoExplorer && (
++      {showRepoSetup && (
++        <CompactRepoSetupSheet
++          value={repoSetupUrl}
++          busy={localRepoLoading}
++          error={repoSetupError ?? chatRepoError}
++          onChange={setRepoSetupUrl}
++          onLoad={handleRepoSetupLoad}
++          onClose={() => setShowRepoSetup(false)}
++        />
++      )}
++      {showRuntimeEvidenceLogs && (
++        <RuntimeEvidenceLogSheet
++          entries={runtimeEvidenceLog}
++          onClose={() => setShowRuntimeEvidenceLogs(false)}
++        />
++      )}
++      {showPatchDiffEvidence && patchDiffReport && (
++        <PatchDiffEvidenceSheet
++          report={patchDiffReport}
++          onClose={() => setShowPatchDiffEvidence(false)}
++        />
++      )}
++      {showRepoExplorer && chatRepoSnapshot && effectiveRepoReady && (
+         <div
+           onClick={() => setShowRepoExplorer(false)}
+           style={{
+--- a/src/features/product/containers/BuilderContainer.test.tsx
++++ b/src/features/product/containers/BuilderContainer.test.tsx
+@@ -100,6 +100,22 @@
+   ].join('');
+ }
+ 
++const TEST_REPO_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
++
++async function loadRepoFromChat(): Promise<void> {
++  fireEvent.change(chatField(), { target: { value: TEST_REPO_URL } });
++  fireEvent.click(sendButton());
++  await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
++}
++
++async function validateGitHubAccessFromLauncher(): Promise<void> {
++  fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
++  fireEvent.click(screen.getByLabelText('GitHub Access'));
++  fireEvent.click(screen.getByText('Zugang eingeben'));
++  fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
++  fireEvent.click(screen.getByText('Übernehmen'));
++  await waitFor(() => expect(screen.getByText(/GitHub-Zugang ist bereit/i)).toBeDefined());
++}
+ 
+ beforeEach(() => {
+   window.localStorage.clear();
+@@ -197,7 +213,7 @@
+ 
+   it("keeps DevChat content as runtime-derived messages, not demo flow", () => {
+     renderWithProviders(<BuilderContainer {...baseProps()} />);
+-    expect(screen.getByText(/Repo verbunden/)).toBeDefined();
++    expect(screen.getAllByText(/Repo fehlt/).length).toBeGreaterThanOrEqual(1);
+     expect(screen.getAllByText("Bitte mobile UX verbessern und Log direkt sichtbar machen.").length).toBeGreaterThanOrEqual(1);
+     expect(screen.getByText("Package summary")).toBeDefined();
+     expect(screen.queryByText(/AutoSwitchOrchestrator/)).toBeNull();
+@@ -215,7 +231,9 @@
