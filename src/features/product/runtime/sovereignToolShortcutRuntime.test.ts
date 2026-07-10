@@ -70,6 +70,45 @@ describe('sovereignToolShortcutRuntime', () => {
     },
   );
 
+  it('assigns one explicit route to every shortcut', () => {
+    expect(Object.fromEntries(SOVEREIGN_TOOL_SHORTCUTS.map((entry) => [entry.id, entry.route]))).toEqual({
+      repo: 'repo',
+      files: 'files',
+      diff: 'diff',
+      github_access: 'github-access',
+      executor: 'agent-job',
+      runtime_logs: 'runtime-logs',
+      health: 'health',
+      memory: 'memory',
+      coverage: 'coverage',
+      settings: 'settings',
+    });
+  });
+
+  it('replaces inspection placeholders only after stored runtime evidence exists', () => {
+    expect(gate('health')).toMatchObject({ state: 'inspection', statusLabel: 'Prüft beim Öffnen' });
+    expect(gate('health', {
+      inspectionEvidence: {
+        health: {
+          outcome: 'ready',
+          statusLabel: 'Client-Checks bestanden',
+          reason: 'Echte Client-Evidence vorhanden.',
+          nextAction: 'CI separat prüfen.',
+        },
+      },
+    })).toMatchObject({ state: 'ready', statusLabel: 'Client-Checks bestanden' });
+    expect(gate('coverage', {
+      inspectionEvidence: {
+        coverage: {
+          outcome: 'failed',
+          statusLabel: 'Coverage Map fehlt',
+          reason: 'HTTP 404',
+          nextAction: 'Coverage-Job prüfen.',
+        },
+      },
+    })).toMatchObject({ canOpen: true, state: 'evidence_missing', statusLabel: 'Coverage Map fehlt' });
+  });
+
   it('returns one explicit gate for every shortcut', () => {
     const gates = deriveSovereignToolShortcutGates(context());
     expect(gates).toHaveLength(10);
