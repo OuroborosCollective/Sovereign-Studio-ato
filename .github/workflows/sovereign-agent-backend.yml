@@ -12,6 +12,7 @@ on:
     paths:
       - 'scripts/sovereign-backend/**'
       - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
+      - '.github/workflows/sovereign-agent-backend.yml'
   workflow_dispatch:
 
 concurrency:
@@ -40,30 +41,10 @@ jobs:
 
       - name: Compile Agent Runtime
         run: |
-          cd scripts/sovereign-backend
           python -m py_compile \
-            agent_runtime/routes.py \
-            agent_runtime/tool_runner.py \
-            agent_runtime/tool_events.py \
-            agent_runtime/mcp_integration.py \
-            agent_runtime/agent_tool_creator.py \
-            agent_runtime/contracts.py \
-            agent_runtime/job_lifecycle.py \
-            agent_runtime/job_store.py \
-            agent_runtime/workspace.py \
-            agent_runtime/workspace_policy.py
-
-      - name: Compile Tools
-        run: |
-          cd scripts/sovereign-backend
-          python -m py_compile \
-            agent_runtime/tools/base.py \
-            agent_runtime/tools/file_tool.py \
-            agent_runtime/tools/shell_tool.py \
-            agent_runtime/tools/git_tool.py \
-            agent_runtime/tools/diff_tool.py \
-            agent_runtime/tools/test_tool.py \
-            agent_runtime/tools/__init__.py
+            scripts/sovereign-backend/app.py \
+            scripts/sovereign-backend/agent_runtime/*.py \
+            scripts/sovereign-backend/agent_runtime/tools/*.py
 
       - name: Validate migrations and internal live-path contract
         run: |
@@ -85,13 +66,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        run: |
-          pip install pytest flask cryptography pyjwt psycopg2-binary -q
+        run: pip install -r scripts/sovereign-backend/requirements.txt pytest
 
-      - name: Run Agent Runtime Compilation Tests
-        run: |
-          cd scripts/sovereign-backend
-          python -m py_compile agent_runtime/*.py agent_runtime/tools/*.py
+      - name: Run Agent Runtime Tests
+        run: pytest scripts/sovereign-backend/tests -q
 
   deploy-vps:
     name: Deploy to VPS
@@ -106,6 +84,8 @@ jobs:
       VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
       VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      RELEASE_DIR: /opt/sovereign-backend/releases/${{ github.run_id }}-${{ github.run_attempt }}
+      IMAGE_TAG: sovereign-backend:${{ github.sha }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -131,23 +111,21 @@ jobs:
             echo "VPS_SSH_PORT/SSH_PORT must be numeric." >&2
             exit 1
           fi
+          case "${RELEASE_DIR}" in
+            /opt/sovereign-backend/releases/*) ;;
+            *)
+              echo "Unsafe release directory: ${RELEASE_DIR}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Create tar archive
         run: |
+          set -euo pipefail
           tar -czf sovereign-backend.tar.gz scripts/sovereign-backend
+          tar -tzf sovereign-backend.tar.gz >/dev/null
 
-      - name: Upload to VPS
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ env.VPS_HOST }}
-          username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
-          port: ${{ env.VPS_SSH_PORT }}
-          source: "sovereign-backend.tar.gz"
-          target: "/tmp"
-          overwrite: true
-
-      - name: Deploy to VPS
+      - name: Prepare remote release directory
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.VPS_HOST }}
@@ -157,23 +135,109 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            tar -xzf /tmp/sovereign-backend.tar.gz -C /tmp/
-            docker stop sovereign-backend 2>/dev/null || true
-            sleep 5
-            cd /tmp/scripts/sovereign-backend
-            docker build -t sovereign-backend:latest .
-            docker rm sovereign-backend 2>/dev/null || true
-            docker run -d --name sovereign-backend --restart unless-stopped --env-file /opt/sovereign-backend/.env -p 127.0.0.1:8788:8788 sovereign-backend:latest
-            sleep 25
-            HEALTH=$(curl -s http://127.0.0.1:8788/health)
-            echo "Health: $HEALTH"
-            if echo "$HEALTH" | grep -q '"ok":true'; then
-              echo "✅ Deployment successful!"
-            else
-              echo "❌ Health check failed"
-              docker logs sovereign-backend --tail 20
+            RELEASE_DIR='${{ env.RELEASE_DIR }}'
+            case "$RELEASE_DIR" in
+              /opt/sovereign-backend/releases/*) ;;
+              *)
+                echo "Unsafe release directory: $RELEASE_DIR" >&2
+                exit 1
+                ;;
+            esac
+            mkdir -p "$RELEASE_DIR"
+            test -d "$RELEASE_DIR"
+            test -w "$RELEASE_DIR"
+            rm -f "$RELEASE_DIR/sovereign-backend.tar.gz"
+
+      - name: Upload release archive to VPS
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          source: "sovereign-backend.tar.gz"
+          target: "${{ env.RELEASE_DIR }}"
+          overwrite: true
+
+      - name: Deploy release on VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            RELEASE_DIR='${{ env.RELEASE_DIR }}'
+            IMAGE_TAG='${{ env.IMAGE_TAG }}'
+            ARCHIVE="$RELEASE_DIR/sovereign-backend.tar.gz"
+            WORK_DIR="$RELEASE_DIR/work"
+            cleanup() {
+              rm -rf "$RELEASE_DIR" || true
+            }
+            trap cleanup EXIT
+
+            case "$RELEASE_DIR" in
+              /opt/sovereign-backend/releases/*) ;;
+              *)
+                echo "Unsafe release directory: $RELEASE_DIR" >&2
+                exit 1
+                ;;
+            esac
+
+            test -f "$ARCHIVE"
+            tar -tzf "$ARCHIVE" >/dev/null
+            rm -rf "$WORK_DIR"
+            mkdir -p "$WORK_DIR"
+            tar -xzf "$ARCHIVE" -C "$WORK_DIR"
+
+            BUILD_DIR="$WORK_DIR/scripts/sovereign-backend"
+            test -f "$BUILD_DIR/Dockerfile"
+            test -f "$BUILD_DIR/app.py"
+            test -f "$BUILD_DIR/requirements.txt"
+            test -x "$BUILD_DIR/auto-migrate.sh"
+            test -d "$BUILD_DIR/agent_runtime"
+            test -d "$BUILD_DIR/migrations"
+            test -f /opt/sovereign-backend/.env
+
+            PREVIOUS_IMAGE="$(docker inspect --format='{{.Config.Image}}' sovereign-backend 2>/dev/null || true)"
+            docker build -t "$IMAGE_TAG" "$BUILD_DIR"
+            docker rm -f sovereign-backend 2>/dev/null || true
+            docker run -d \
+              --name sovereign-backend \
+              --restart unless-stopped \
+              --env-file /opt/sovereign-backend/.env \
+              -p 127.0.0.1:8788:8788 \
+              "$IMAGE_TAG"
+
+            HEALTH=""
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              HEALTH="$(curl -fsS http://127.0.0.1:8788/health 2>/dev/null || true)"
+              if printf '%s' "$HEALTH" | grep -q '"ok":true'; then
+                echo "Deployment health check passed on attempt $attempt."
+                break
+              fi
+              sleep 5
+            done
+
+            if ! printf '%s' "$HEALTH" | grep -q '"ok":true'; then
+              echo "Deployment health check failed." >&2
+              docker logs sovereign-backend --tail 100 || true
+              docker rm -f sovereign-backend 2>/dev/null || true
+              if [ -n "$PREVIOUS_IMAGE" ]; then
+                echo "Restoring previous backend image: $PREVIOUS_IMAGE"
+                docker run -d \
+                  --name sovereign-backend \
+                  --restart unless-stopped \
+                  --env-file /opt/sovereign-backend/.env \
+                  -p 127.0.0.1:8788:8788 \
+                  "$PREVIOUS_IMAGE"
+              fi
               exit 1
             fi
+
+            echo "Health: $HEALTH"
 
       - name: Verify Routes
         uses: appleboy/ssh-action@master
@@ -184,24 +248,21 @@ jobs:
           port: ${{ env.VPS_SSH_PORT }}
           script_stop: true
           script: |
-            docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
+            set -euo pipefail
+            docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; assert routes, "No agent routes registered"; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
 
   smoke-test:
     name: VPS Smoke Tests
     needs: deploy-vps
     runs-on: ubuntu-latest
-    env:
-      ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
     steps:
       - name: Test Health Endpoint
         run: |
-          HEALTH=$(curl -s https://sovereign-backend.arelorian.de/health)
+          set -euo pipefail
+          HEALTH="$(curl -fsS https://sovereign-backend.arelorian.de/health)"
           echo "Health: $HEALTH"
-
-          if ! echo "$HEALTH" | grep -q '"ok":true'; then
-            echo "❌ Health check failed"
+          if ! printf '%s' "$HEALTH" | grep -q '"ok":true'; then
+            echo "Backend health check failed." >&2
             exit 1
           fi
-
-          echo "✅ All smoke tests passed"
+          echo "All smoke tests passed."
