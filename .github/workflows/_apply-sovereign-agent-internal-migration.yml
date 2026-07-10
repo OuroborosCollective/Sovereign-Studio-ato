@@ -85,11 +85,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-      - name: Setup Node and pnpm
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Enable pinned pnpm
         shell: bash
