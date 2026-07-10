@@ -100,7 +100,22 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm exec tsc --noEmit
+        shell: bash
+        run: |
+          set +e
+          pnpm exec tsc --noEmit > /tmp/sovereign-agent-typecheck.log 2>&1
+          status=$?
+          cat /tmp/sovereign-agent-typecheck.log
+          exit $status
+
+      - name: Upload TypeScript diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-agent-typecheck-diagnostics
+          path: /tmp/sovereign-agent-typecheck.log
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Run migration regression tests
         shell: bash
@@ -163,10 +178,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download migration diagnostic
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: sovereign-agent-migration-diagnostics
           path: /tmp/sovereign-agent-diagnostic
-      - name: Print exact migration diagnostic
+      - name: Download TypeScript diagnostic
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: sovereign-agent-typecheck-diagnostics
+          path: /tmp/sovereign-agent-typecheck-diagnostic
+      - name: Print exact diagnostics
+        if: always()
         shell: bash
-        run: cat /tmp/sovereign-agent-diagnostic/sovereign-agent-migration.log
+        run: |
+          find /tmp/sovereign-agent-diagnostic -type f -maxdepth 1 -print -exec cat {} \; 2>/dev/null || true
+          find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 -print -exec cat {} \; 2>/dev/null || true
