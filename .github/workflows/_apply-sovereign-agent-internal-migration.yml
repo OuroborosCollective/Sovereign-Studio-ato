@@ -193,7 +193,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          typecheck="$(find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1)"
+          typecheck="$(find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1 || true)"
           if [ -n "$typecheck" ] && [ -s "$typecheck" ]; then
             cat "$typecheck"
           else
