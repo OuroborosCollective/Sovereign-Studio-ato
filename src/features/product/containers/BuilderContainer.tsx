@@ -5314,7 +5314,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 setShowRepoExplorer(true);
                 appendActionEvent({
                   kind: snapshotReady ? 'done' : 'blocked',
-                  route: 'repo',
+                  route: toolId === 'files' ? 'files' : 'repo',
                   label: snapshotReady
                     ? toolId === 'files' ? 'Datei-Explorer geöffnet' : 'Repo-Explorer geöffnet'
                     : 'Repo-Setup erforderlich',
@@ -5376,7 +5376,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 setPanelOpen(true);
                 appendActionEvent({
                   kind: 'done',
-                  route: 'runtime',
+                  route: 'runtime-logs',
                   label: 'Runtime-Logs geöffnet',
                   detail: statusLogs.length > 0
                     ? `${statusLogs.length} gespeicherte Runtime-Events sind vorhanden.`
@@ -5390,7 +5390,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
                 setOpenWorkbenchSlot('files');
                 appendActionEvent({
                   kind: 'done',
-                  route: 'runtime',
+                  route: 'diff',
                   label: 'Diff-Prüfung geöffnet',
                   detail: changedFiles.length > 0
                     ? `${changedFiles.length} bestätigte Changed Files: ${changedFiles.join(' · ')}`
