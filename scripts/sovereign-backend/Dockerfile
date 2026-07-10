@@ -4,8 +4,8 @@ WORKDIR /app
 
 # Install system dependencies
 # - postgresql-client: for database migrations
-# - git: for workspace repository cloning (sovereign-local-runner)
-# Note: OpenHands is NOT installed - sovereign-local-runner is the primary executor
+# - git: for workspace repository cloning by sovereign-local-runner
+# No external agent runtime is installed; sovereign-local-runner is the only live executor.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     git \
