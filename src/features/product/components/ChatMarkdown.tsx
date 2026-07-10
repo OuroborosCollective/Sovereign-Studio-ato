@@ -142,11 +142,14 @@ function CopyButton({ code }: { code: string }) {
     }
   }, [code]);
 
+  const label = copied ? 'Kopiert!' : 'Code kopieren';
+
   return (
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={copied ? 'Copied!' : 'Copy code'}
+      aria-label={label}
+      title={label}
       style={{
         padding: '4px 8px',
         borderRadius: 4,

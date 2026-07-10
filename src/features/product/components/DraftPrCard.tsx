@@ -68,6 +68,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
     <div
       role="region"
       aria-label="Draft PR Karte"
+      title="Draft PR Karte"
       data-testid="draft-pr-card"
       style={{
         margin: '8px 0',
@@ -95,6 +96,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
       <div
         data-testid="draft-pr-build-badge"
         aria-label={`Buildstatus: ${buildStatus.label}`}
+        title={`Buildstatus: ${buildStatus.label}`}
         style={{
           borderRadius: 8,
           border: `1px solid ${buildColor}40`,
@@ -109,7 +111,13 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
         </div>
         <div style={{ marginTop: 2 }}>{buildStatus.detail}</div>
         {buildStatus.runUrl ? (
-          <a href={buildStatus.runUrl} target="_blank" rel="noreferrer" style={{ color: C.sky, marginTop: 4, display: 'inline-block' }}>
+          <a
+            href={buildStatus.runUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="GitHub Workflow Run öffnen"
+            style={{ color: C.sky, marginTop: 4, display: 'inline-block' }}
+          >
             Run öffnen
           </a>
         ) : null}
@@ -138,6 +146,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
             cursor: 'pointer',
           }}
           aria-label="Öffne PR im Browser"
+          title="Öffne PR im Browser"
         >
           Im Browser öffnen
         </button>
@@ -156,6 +165,7 @@ export const DraftPrCard: React.FC<DraftPrCardProps> = ({
             cursor: 'pointer',
           }}
           aria-label="Im Chat besprechen"
+          title="Im Chat besprechen"
         >
           Im Chat besprechen
         </button>

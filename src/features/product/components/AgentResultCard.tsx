@@ -69,6 +69,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
     <div
       role="region"
       aria-label="Agent Ergebnis"
+      title="Agent Ergebnis"
       data-testid="agent-result-card"
       style={{
         margin: '8px 0',
@@ -169,6 +170,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
               cursor: 'pointer',
             }}
             aria-label="Öffnen"
+            title="Öffnen"
           >
             Öffnen
           </button>
@@ -188,6 +190,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
               cursor: 'pointer',
             }}
             aria-label="Diff ansehen"
+            title="Diff ansehen"
           >
             Diff ansehen
           </button>
@@ -207,6 +210,7 @@ export const AgentResultCard: React.FC<AgentResultCardProps> = ({
               cursor: 'pointer',
             }}
             aria-label="Checks beobachten"
+            title="Checks beobachten"
           >
             Checks beobachten
           </button>
