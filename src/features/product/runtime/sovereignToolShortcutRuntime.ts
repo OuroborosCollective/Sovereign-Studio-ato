@@ -6,6 +6,7 @@
  */
 
 import type { SovereignToolInspectionEvidenceMap } from './sovereignToolInspectionRuntime';
+import type { SovereignExecutorIntentKind } from './sovereignExecutorRuntime';
 
 export type SovereignToolShortcutId =
   | 'repo'
@@ -44,6 +45,7 @@ export interface SovereignToolShortcutContext {
   readonly githubAccessState: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid' | 'failed';
   readonly executorAvailable: boolean;
   readonly hasExecutorMission: boolean;
+  readonly executorIntent: SovereignExecutorIntentKind;
   readonly runtimeLogCount: number;
   readonly inspectionEvidence?: SovereignToolInspectionEvidenceMap;
 }
@@ -143,9 +145,11 @@ export function evaluateSovereignToolShortcutGate(
       if (context.githubAccessState === 'validating' || context.githubAccessState === 'requested') return gate(definition, { canOpen: true, state: 'setup_required', statusLabel: 'Prüfung läuft', reason: 'GitHub-Zugang ist noch nicht validiert.', nextAction: 'Validierungsstatus anzeigen.' });
       return gate(definition, { canOpen: true, state: 'setup_required', statusLabel: 'Zugang fehlt', reason: 'Kein validierter GitHub-Zugang vorhanden.', nextAction: 'Sicheres Zugangsfeld öffnen.' });
     case 'executor':
+      if (!context.repoReady) return gate(definition, { canOpen: false, state: 'setup_required', statusLabel: 'Repo fehlt', reason: 'Der Executor braucht einen vollständigen Repo-Snapshot.', nextAction: 'Repo laden.' });
+      if (context.githubAccessState !== 'ready') return gate(definition, { canOpen: false, state: 'setup_required', statusLabel: context.githubAccessState === 'requested' || context.githubAccessState === 'validating' ? 'Zugang wird geprüft' : 'GitHub-Zugang fehlt', reason: 'Der Executor-Schreibpfad braucht validierten GitHub-Zugang.', nextAction: 'GitHub-Zugang sicher validieren.' });
       if (!context.executorAvailable) return gate(definition, { canOpen: false, state: 'setup_required', statusLabel: 'Nicht verbunden', reason: 'Die Agent-Runtime oder ihr Start-Callback ist nicht verfügbar.', nextAction: 'Agent-Runtime verbinden.' });
-      if (!context.hasExecutorMission) return gate(definition, { canOpen: false, state: 'evidence_missing', statusLabel: 'Auftrag fehlt', reason: 'Ein Executor-Start braucht einen nichtleeren, bestätigten Auftrag.', nextAction: 'Auftrag in den Chat eingeben.' });
-      return gate(definition, { canOpen: true, state: 'ready', statusLabel: 'Start möglich', reason: 'Agent-Runtime und nichtleerer Auftrag sind vorhanden.', nextAction: 'Agent-Job anfragen.' });
+      if (!context.hasExecutorMission || (context.executorIntent !== 'code_execution' && context.executorIntent !== 'draft_pr')) return gate(definition, { canOpen: false, state: 'evidence_missing', statusLabel: 'Ausführungsauftrag fehlt', reason: 'Ein Executor-Start braucht einen bestätigten Code- oder Draft-PR-Auftrag.', nextAction: 'Klaren Ausführungsauftrag in den Chat eingeben.' });
+      return gate(definition, { canOpen: true, state: 'ready', statusLabel: 'Start möglich', reason: 'Repo, GitHub-Zugang, Agent-Runtime und Ausführungsauftrag sind bestätigt.', nextAction: 'Agent-Job anfragen.' });
     case 'runtime_logs':
       return gate(definition, { canOpen: true, state: context.runtimeLogCount > 0 ? 'ready' : 'inspection', statusLabel: context.runtimeLogCount > 0 ? `${normalizeCount(context.runtimeLogCount)} Events` : 'Noch leer', reason: context.runtimeLogCount > 0 ? 'Gespeicherte Runtime-Events sind vorhanden.' : 'Die Log-Fläche darf geöffnet werden, behauptet aber noch keine Events.', nextAction: 'Runtime-Logs öffnen.' });
     case 'health':
@@ -164,5 +168,5 @@ export function deriveSovereignToolShortcutGates(context: SovereignToolShortcutC
 }
 
 export function createEmptySovereignToolShortcutContext(): SovereignToolShortcutContext {
-  return { repoReady: false, repoFileCount: 0, hasDiffEvidence: false, githubAccessState: 'missing', executorAvailable: false, hasExecutorMission: false, runtimeLogCount: 0, inspectionEvidence: {} };
+  return { repoReady: false, repoFileCount: 0, hasDiffEvidence: false, githubAccessState: 'missing', executorAvailable: false, hasExecutorMission: false, executorIntent: 'unknown', runtimeLogCount: 0, inspectionEvidence: {} };
 }
