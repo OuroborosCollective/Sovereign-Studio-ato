@@ -238,8 +238,6 @@ jobs:
           set -euo pipefail
           rm -f scripts/patches/apply_sovereign_agent_internal_migration.py
           rm -f scripts/patches/finalize_sovereign_agent_internal_contract.py
-          rm -f .github/workflows/_apply-sovereign-agent-internal-migration.yml
-          rm -f .github/workflows/_diagnose-sovereign-agent-backend.yml
           rm -f migration-diagnostic.txt
           git add -A
           git diff --cached --check
