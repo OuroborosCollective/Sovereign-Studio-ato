@@ -3669,13 +3669,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     const capabilityRouterInput: CapabilityRouterInput = {
       text: submittedText,
       repoReady: effectiveRepoReady,
-      githubAccessState: githubAccessState.state,
+      githubAccessState: effectiveGitHubAccessState,
       openhandsReady: openhandsReady ?? false,
       directGitHubPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       workspaceReady: false, // Workspace executor not yet integrated
       hasActiveWorkerBlocker: Boolean(workerBlocker),
-      hasPackage: Boolean(openhandsJob?.changedFiles?.length),
-      hasDraft: Boolean(openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
+      hasPackage: Boolean(scopedOpenHandsJob?.changedFiles?.length),
+      hasDraft: Boolean(scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
       hasWorkflowReport: Boolean(agentWorkSnapshot.commitSha),
     };
     const capabilityDecision = decideSovereignCapabilityRoute(capabilityRouterInput);
@@ -3743,14 +3743,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         // #500: Pass questionText to enable correct startup vs completion question differentiation
         const statusAnswer = buildLocalStatusAnswer({
           githubWriteAllowed,
-          githubAccessState: githubAccessState.state,
+          githubAccessState: effectiveGitHubAccessState,
           writeIntentBlockedByRepo: !effectiveRepoReady,
-          openhandsRunning: openhandsJob?.status === 'running',
-          draftPrUrl: openhandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
-          hasPatch: Boolean(openhandsJob?.changedFiles?.length),
+          openhandsRunning: scopedOpenHandsJob?.status === 'running',
+          draftPrUrl: scopedOpenHandsJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedOpenHandsJob?.changedFiles?.length),
           patchPreviewReady,
           patchConfirmed,
-          hasWorkerResponse: chatHistory.some((line) => line.role === 'assistant'),
+          hasWorkerResponse: hasScopedWorkerResponse,
           workerBlocker,
           buildWorkerBlockerAnswer: workerBlocker
             ? () =>
@@ -3787,10 +3787,16 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       const result = await fetchDevChatRepoTree(parsedRepo);
       setRepoLoading(false);
       if (result.ok && result.snapshot) {
-        githubTokenRef.current = null;
-        setGitHubAccessState(createGitHubAccessSnapshot());
-        pendingWriteIntentRef.current = null;
         clearPatchEvidence();
+        githubTokenRef.current = null;
+        pendingWriteIntentRef.current = null;
+        setValidatedGitHubTargetKey(null);
+        setGitHubAccessState(createGitHubAccessSnapshot());
+        setActionStream(createSovereignActionStreamState());
+        setStatusLogs([]);
+        setWorkerBlocker(null);
+        setLastWorkerRequestMessage(null);
+        setLastAnswerWasLocal(false);
         setChatRepo(result.snapshot);
         triggerHaptic("medium");
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
@@ -3886,14 +3892,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           intent: classifySovereignExecutorIntent(submittedText),
           capabilities: buildSovereignToolCapabilityRegistry({
             repoReady: effectiveRepoReady,
-            githubAccessState: githubAccessState.state,
+            githubAccessState: effectiveGitHubAccessState,
             githubTokenPresent: Boolean(githubTokenRef.current),
             directPatchSupported: Boolean(chatRepoSnapshot),
             openhandsConfigured: sovereignAgentStartAvailable,
             workerAvailable: !workerBlocker,
             workspaceConfigured: false,
             draftPrSupported: true,
-            activeExecutorStatus: openhandsIsRunning ? "running" : "idle",
+            activeExecutorStatus: scopedOpenHandsIsRunning ? "running" : "idle",
           }),
           candidatePath: chatRepoSnapshot
             ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
@@ -3916,6 +3922,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
           const tokenForDirectPatch = githubTokenRef.current;
           if (chatRepoSnapshot && tokenForDirectPatch) {
+            const patchScopeKey = currentRepoScopeKey;
             clearPatchEvidence();
             const directPatchResult = await buildDirectPatchPlanWithContentLoad({
               repoContext: {
@@ -3929,6 +3936,16 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
               token: tokenForDirectPatch,
               fetcher: globalThis.fetch,
             });
+
+            if (!isCurrentRepoScope(patchScopeKey)) {
+              appendActionEvent(buildBlockedActionEvent({
+                route: 'direct-github-patch',
+                label: 'Patch-Ergebnis verworfen',
+                detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
+                kind: 'blocked',
+              }));
+              return;
+            }
 
             if ('result' in directPatchResult && directPatchResult.result.ok) {
               const res = directPatchResult.result;
@@ -4075,7 +4092,7 @@ Es wurde noch keine Datei geändert.`,
       );
       const altRouteAnswer = buildAlternativeRouteStatusAnswer({
         githubAccessReady: githubWriteAllowed,
-        githubAccessState: githubAccessState.state,
+        githubAccessState: effectiveGitHubAccessState,
         openhandsReady: openhandsReady ?? false,
         directPatchAvailable,
       });
@@ -4124,14 +4141,14 @@ Es wurde noch keine Datei geändert.`,
         intent: classifySovereignExecutorIntent(submittedText),
         capabilities: buildSovereignToolCapabilityRegistry({
           repoReady: effectiveRepoReady,
-          githubAccessState: githubAccessState.state,
+          githubAccessState: effectiveGitHubAccessState,
           githubTokenPresent: Boolean(githubTokenRef.current),
           directPatchSupported: Boolean(chatRepoSnapshot),
           openhandsConfigured: sovereignAgentStartAvailable,
           workerAvailable: !workerBlocker,
           workspaceConfigured: false,
           draftPrSupported: true,
-          activeExecutorStatus: openhandsIsRunning ? "running" : "idle",
+          activeExecutorStatus: scopedOpenHandsIsRunning ? "running" : "idle",
         }),
         candidatePath: chatRepoSnapshot
           ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
