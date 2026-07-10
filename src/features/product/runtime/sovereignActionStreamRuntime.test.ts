@@ -90,6 +90,27 @@ describe('sovereignActionStreamRuntime', () => {
     expect(stream.lastEvent?.detail).not.toContain('%');
   });
 
+  it('stores compact shortcut results under their exact route identities', () => {
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+      { kind: 'done', route: 'files', label: 'Dateien geöffnet', state: 'done' },
+      { kind: 'done', route: 'diff', label: 'Diff geöffnet', state: 'done' },
+      { kind: 'done', route: 'runtime-logs', label: 'Logs geöffnet', state: 'done' },
+      { kind: 'done', route: 'health', label: 'Health geprüft', state: 'done' },
+      { kind: 'done', route: 'memory', label: 'Memory geprüft', state: 'done' },
+      { kind: 'done', route: 'coverage', label: 'Coverage geprüft', state: 'done' },
+      { kind: 'done', route: 'settings', label: 'Settings geprüft', state: 'done' },
+    ]);
+
+    const latest = latestSovereignActionByRoute(stream);
+    expect(latest.files?.label).toBe('Dateien geöffnet');
+    expect(latest.diff?.label).toBe('Diff geöffnet');
+    expect(latest['runtime-logs']?.label).toBe('Logs geöffnet');
+    expect(latest.health?.label).toBe('Health geprüft');
+    expect(latest.memory?.label).toBe('Memory geprüft');
+    expect(latest.coverage?.label).toBe('Coverage geprüft');
+    expect(latest.settings?.label).toBe('Settings geprüft');
+  });
+
   it('keeps latest truth per route', () => {
     const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
       buildWorkerRequestEvent('free route'),
