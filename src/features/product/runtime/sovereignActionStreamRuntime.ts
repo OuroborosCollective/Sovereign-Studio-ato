@@ -6,6 +6,13 @@ import type {
 
 export type SovereignActionRoute =
   | 'repo'
+  | 'files'
+  | 'diff'
+  | 'runtime-logs'
+  | 'health'
+  | 'memory'
+  | 'coverage'
+  | 'settings'
   | 'free-chat'
   | 'code-llm'
   | 'worker'
