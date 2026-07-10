@@ -1,0 +1,363 @@
+t("tool", "?")
++        status = result.get("status", "?")
++        output = sanitize_agent_text(
++            str(result.get("output") or result.get("error") or ""),
++            500,
++        )
++        context_lines.append(f"[{tool}] {status}: {output[:200]}")
++    context_block = "\n".join(context_lines) if context_lines else "(no previous results)"
++
++    tool_manifest = [
++        {"name": "file_read", "description": "Read a repository file", "params": {"path": "relative/path.md"}},
++        {"name": "file_write", "description": "Write a repository file", "params": {"path": "file.py", "content": "..."}},
++        {"name": "git_status", "description": "Collect changed repository files", "params": {}},
++        {"name": "git_diff", "description": "Collect the repository diff summary", "params": {}},
++        {"name": "test", "description": "Run an auto-detected supported test framework", "params": {"framework": "vitest"}},
++        {"name": "done", "description": "Request evidence validation", "params": {"summary": "What was accomplished"}},
++        {"name": "fail", "description": "Stop with a real blocker", "params": {"reason": "Why execution cannot continue"}},
++    ]
++
++    system_prompt = (
++        "You are the sovereign-local-runner inside Sovereign Studio. "
++        "Use only the listed tools and execute one tool at a time. "
++        "Never invent files, tests, output, or success. "
++        "A done request is only a request for runtime evidence validation. "
++        "Respond with exactly one JSON object and no prose: "
++        '{"tool":"tool_name","parameters":{}}'
++    )
++    user_prompt = (
++        f"Mission: {mission}\n"
++        f"Repository: {repo_url or 'no repo'}\n"
++        f"Branch: {branch}\n"
++        f"Workspace: {workspace_path or 'not provisioned'}\n"
++        f"Iteration: {len(tool_results) + 1}/{max_iterations}\n\n"
++        f"Previous results:\n{context_block}\n\n"
++        f"Available tools:\n{json.dumps(tool_manifest, indent=2)}"
++    )
++
++    try:
++        import requests
++
++        response = requests.post(
++            f"{WORKER_AI_BASE.rstrip('/')}/v1/chat/completions",
++            headers=_llm_headers(),
++            json={
++                "model": os.getenv("WORKER_AI_MODEL", "@cf/meta/llama-3.1-8b-instruct"),
++                "messages": [
++                    {"role": "system", "content": system_prompt},
++                    {"role": "user", "content": user_prompt},
++                ],
++                "max_tokens": 400,
++                "temperature": 0.1,
++            },
++            timeout=WORKER_AI_TIMEOUT,
++        )
++        if not response.ok:
++            return None, f"LLM returned HTTP {response.status_code}"
++        data = response.json()
++        raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
++        return _parse_llm_action(raw_content)
++    except Exception as exc:
++        return None, sanitize_agent_text(f"LLM call failed: {type(exc).__name__}: {exc}", 600)
++
++
++def execute_tool_call(
++    tool_name: str,
++    parameters: dict[str, Any],
++    workspace_path: str | None,
++) -> dict[str, Any]:
++    from .tool_events import tool_result_to_agent_events
++    from .tool_runner import ToolCall, ToolRunner
++    import uuid
++
++    if tool_name not in RUNNER_EXECUTABLE_TOOLS:
++        return {
++            "tool": tool_name,
++            "status": "blocked",
++            "output": "",
++            "error": "",
++            "blocker": "Tool is not allowed for autonomous runner execution",
++            "events": [],
++        }
++    if not isinstance(parameters, dict):
++        return {
++            "tool": tool_name,
++            "status": "blocked",
++            "output": "",
++            "error": "",
++            "blocker": "Tool parameters must be an object",
++            "events": [],
++        }
++    if workspace_path is None:
++        return {
++            "tool": tool_name,
++            "status": "blocked",
++            "output": "",
++            "error": "",
++            "blocker": "No workspace path",
++            "events": [],
++        }
++
++    runner = ToolRunner(workspace_path)
++    call = ToolCall(
++        tool_name=tool_name,
++        parameters=parameters,
++        call_id=f"runner-{uuid.uuid4().hex[:8]}",
++    )
++    execution = runner._execute_single(call)
++    result = execution.result
++
++    return {
++        "tool": tool_name,
++        "parameters": parameters,
++        "call_id": call.call_id,
++        "status": result.status,
++        "output": sanitize_agent_text(result.output or "", 4000),
++        "error": sanitize_agent_text(result.error or "", 1200),
++        "blocker": sanitize_agent_text(result.blocker or "", 1200) or None,
++        "metadata": result.metadata if isinstance(result.metadata, dict) else {},
++        "changed_files": list(result.changed_files) if result.changed_files else [],
++        "diff_summary": sanitize_agent_text(result.diff_summary or "", 2000) or None,
++        "test_summary": sanitize_agent_text(result.test_summary or "", 2000) or None,
++        "events": tool_result_to_agent_events(result),
++    }
++
++
++def _create_runner_pool() -> psycopg2.pool.ThreadedConnectionPool:
++    """Create a thread-safe pool reserved for the dedicated runner process."""
++
++    return psycopg2.pool.ThreadedConnectionPool(
++        1,
++        MAX_CONCURRENT_JOBS + 2,
++        host=os.getenv("POSTGRES_HOST", "supabase-db"),
++        port=int(os.getenv("POSTGRES_PORT", "5432")),
++        database=os.getenv("POSTGRES_DB", "postgres"),
++        user=os.getenv("POSTGRES_USER", "postgres"),
++        password=os.getenv("POSTGRES_PASSWORD", ""),
++    )
++
++
++@dataclass
++class RunnerJobState:
++    job_id: str
++    mission: str
++    repo_url: str | None
++    branch: str
++    workspace_id: str
++    workspace_path: str | None
++    tool_results: list[dict[str, Any]] = field(default_factory=list)
++    started_at: float = field(default_factory=time.time)
++
++
++def _job_events(job_id: str, events: list[dict[str, Any]], conn: Any) -> None:
++    from .job_store import append_agent_event as _append_event
++    from .contracts import SovereignAgentEvent
++    for ev in events:
++        # Handle both dict and ToolEvent/object
++        if isinstance(ev, dict):
++            stage = str(ev.get("stage", ""))[:80]
++            level = str(ev.get("level", "info"))[:20]
++            message = str(ev.get("message", ""))[:1200]
++            at = ev.get("at", int(time.time() * 1000))
++        else:
++            # ToolEvent or similar object
++            stage = str(getattr(ev, "stage", ""))[:80]
++            level = str(getattr(ev, "level", "info"))[:20]
++            message = str(getattr(ev, "message", ""))[:1200]
++            at = getattr(ev, "at", int(time.time() * 1000))
++        event = SovereignAgentEvent(
++            stage=stage,
++            level=level,
++            message=message,
++            at=at,
++        )
++        _append_event(conn, job_id, event)
++
++
++def _update_job_runner(
++    conn: Any,
++    job_id: str,
++    status: str,
++    *,
++    blocker: str | None = None,
++    workspace_id: str | None = None,
++    changed_files: tuple[str, ...] | list[str] | None = None,
++    diff_summary: str | None = None,
++    test_summary: str | None = None,
++) -> None:
++    parts = ["status = %s", "blocker = %s", "updated_at = NOW()"]
++    values: list[Any] = [status, sanitize_agent_text(blocker, 1200) if blocker else None]
++    if workspace_id is not None:
++        parts.append("workspace_id = %s")
++        values.append(workspace_id)
++    if changed_files is not None:
++        parts.append("changed_files = %s::jsonb")
++        values.append(json.dumps(list(normalize_agent_paths(changed_files))))
++    if diff_summary is not None:
++        parts.append("diff_summary = %s")
++        values.append(sanitize_agent_text(diff_summary, 2000) or None)
++    if test_summary is not None:
++        parts.append("test_summary = %s")
++        values.append(sanitize_agent_text(test_summary, 2000) or None)
++    if status == "running":
++        parts.append("started_at = COALESCE(started_at, NOW())")
++    values.append(job_id)
++
++    try:
++        with conn.cursor() as cursor:
++            cursor.execute(
++                f"UPDATE sovereign_agent_jobs SET {', '.join(parts)} WHERE job_id = %s",
++                values,
++            )
++        conn.commit()
++    except Exception:
++        conn.rollback()
++        raise
++
++
++def _latest_test_summary(tool_results: list[dict[str, Any]]) -> str | None:
++    for result in reversed(tool_results):
++        if result.get("tool") == "test" and result.get("status") == "done":
++            output = sanitize_agent_text(str(result.get("output") or ""), 2000)
++            if output:
++                return output
++    return None
++
++
++def _collect_workspace_evidence(
++    state: RunnerJobState,
++    workspace_root: Path,
++) -> tuple[tuple[str, ...], str | None, str | None, str | None]:
++    from .git_workspace import git_diff_summary, git_status_changed_files
++
++    status_result = git_status_changed_files(state.workspace_id, workspace_root)
++    if status_result.status != "done":
++        return (), None, _latest_test_summary(state.tool_results), status_result.blocker or "git status failed"
++
++    diff_result = git_diff_summary(state.workspace_id, workspace_root)
++    if diff_result.status != "done":
++        return status_result.changed_files, None, _latest_test_summary(state.tool_results), diff_result.blocker or "git diff failed"
++
++    return (
++        status_result.changed_files,
++        diff_result.diff_summary,
++        _latest_test_summary(state.tool_results),
++        None,
++    )
++
++
++def run_job_to_completion(
++    job_id: str,
++    runner_pool: psycopg2.pool.ThreadedConnectionPool,
++    workspace_root: str | None,
++) -> None:
++    conn = runner_pool.getconn()
++    try:
++        with conn.cursor() as cursor:
++            cursor.execute(
++                """
++                SELECT job_id, user_id, mission, repo_url, branch, executor, workspace_id
++                FROM sovereign_agent_jobs
++                WHERE job_id = %s
++                  AND status = 'running'
++                  AND executor = 'sovereign-local-runner'
++                LIMIT 1
++                """,
++                (job_id,),
++            )
++            row = cursor.fetchone()
++            if not row:
++                print(f"[runner] Job {job_id} is no longer claimable; skipping")
++                return
++            columns = [description[0] for description in cursor.description]
++            job = dict(zip(columns, row))
++
++        mission = str(job.get("mission") or "No mission provided")
++        repo_url = str(job.get("repo_url") or "") or None
++        branch = str(job.get("branch") or "main")
++        workspace_id = str(job.get("workspace_id") or job_id)
++        root = Path(workspace_root or os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "/tmp/sovereign-agent/workspaces"))
++        workspace_path = str(root / workspace_id)
++
++        _update_job_runner(
++            conn,
++            job_id,
++            "running",
++            workspace_id=workspace_id,
++        )
++        _job_events(
++            job_id,
++            [{
++                "stage": "job_started_by_runner",
++                "level": "info",
++                "message": "Dedicated sovereign-local-runner claimed this job.",
++            }],
++            conn,
++        )
++
++        workspace = Path(workspace_path)
++        workspace.mkdir(parents=True, exist_ok=True)
++
++        if repo_url:
++            from .git_workspace import clone_repo_into_workspace
++
++            clone_result = clone_repo_into_workspace(
++                workspace_id,
++                repo_url,
++                branch,
++                root,
++            )
++            tool_results: list[dict[str, Any]] = [{
++                "tool": "git_clone",
++                "status": clone_result.status,
++                "output": clone_result.events[0].message if clone_result.events else "",
++                "error": clone_result.blocker or "",
++            }]
++            _job_events(job_id, list(clone_result.events), conn)
++            if clone_result.status != "done":
++                _update_job_runner(
++                    conn,
++                    job_id,
++                    "failed",
++                    blocker=clone_result.blocker or "Repository clone failed",
++                )
++                return
++        else:
++            tool_results = []
++
++        state = RunnerJobState(
++            job_id=job_id,
++            mission=mission,
++            repo_url=repo_url,
++            branch=branch,
++            workspace_id=workspace_id,
++            workspace_path=workspace_path,
++            tool_results=tool_results,
++            started_at=time.time(),
++        )
++        max_iterations = 20
++
++        for iteration in range(max_iterations):
++            elapsed_seconds = time.time() - state.started_at
++            if elapsed_seconds > 3600:
++                reason = f"Job timed out after {elapsed_seconds / 3600:.1f}h"
++                _update_job_runner(conn, job_id, "failed", blocker=reason)
++                _job_events(job_id, [{"stage": "job_timeout", "level": "error", "message": reason}], conn)
++                return
++
++            llm_response, error = call_llm_for_next_action(
++                mission=state.mission,
++                repo_url=state.repo_url,
++                branch=state.branch,
++                workspace_path=state.workspace_path,
++                tool_results=state.tool_results,
++                max_iterations=max_iterations,
++            )
++            if error or llm_response is None:
++                if iteration == 0:
++                    _job_events(
++                        job_id,
++                        [{"stage": "llm_retry", "level": "warning", "message": error or "Invalid LLM response"}],
++                        conn,
++                    )
++                    cont
