@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile
     container_name: sovereign-backend
     ports:
-      - "8788:8787"
+      - "127.0.0.1:8788:8787"
     env_file: .env
     volumes:
       - /opt/secure:/opt/secure:ro
