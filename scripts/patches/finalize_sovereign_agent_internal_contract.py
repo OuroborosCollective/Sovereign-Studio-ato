@@ -94,7 +94,11 @@ def main() -> None:
         'src/features/product/runtime/sovereignCapabilityRouter.ts',
         "    agent: 'Sovereign Agent Executor Route',",
         "    'sovereign-agent': 'Sovereign Agent Executor Route',",
-        expected=2,
+    )
+    replace_exact(
+        'src/features/product/runtime/sovereignCapabilityRouter.ts',
+        "    agent: 'Sovereign Agent',",
+        "    'sovereign-agent': 'Sovereign Agent',",
     )
 
     client_test = ROOT / 'src/features/product/runtime/sovereignAgentClient.test.ts'
