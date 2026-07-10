@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,7 +14,22 @@ def replace_exact(relative: str, old: str, new: str, expected: int = 1) -> None:
     target.write_text(content.replace(old, new), encoding='utf-8')
 
 
+def normalize_compound_identifiers() -> None:
+    for target in (ROOT / 'src').rglob('*'):
+        if not target.is_file() or target.suffix not in {'.ts', '.tsx', '.js', '.jsx', '.mjs'}:
+            continue
+        content = target.read_text(encoding='utf-8')
+        content = re.sub(r'(?<=[A-Za-z0-9_$])Sovereign Agent', 'SovereignAgent', content)
+        content = re.sub(r'Sovereign Agent(?=[A-Za-z0-9_$])', 'SovereignAgent', content)
+        content = content.replace('scopedSovereignAgentJob', 'scopedAgentJob')
+        content = content.replace('scopedSovereignAgentIsRunning', 'scopedAgentIsRunning')
+        content = content.replace('showSovereignAgentBriefing', 'showAgentBriefing')
+        target.write_text(content, encoding='utf-8')
+
+
 def main() -> None:
+    normalize_compound_identifiers()
+
     runtime = 'src/features/product/runtime/agentWorkspaceRuntime.ts'
     replace_exact(
         runtime,
@@ -59,9 +75,9 @@ def main() -> None:
         target = ROOT / relative
         content = target.read_text(encoding='utf-8')
         for old, new in [
-            ('onSovereign AgentInstead', 'onAgentInstead'),
-            ('handleSovereign Agent', 'handleAgent'),
-            ('canSovereign Agent', 'canAgent'),
+            ('onSovereignAgentInstead', 'onAgentInstead'),
+            ('handleSovereignAgent', 'handleAgent'),
+            ('canSovereignAgent', 'canAgent'),
         ]:
             content = content.replace(old, new)
         target.write_text(content, encoding='utf-8')
