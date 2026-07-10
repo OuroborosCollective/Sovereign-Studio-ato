@@ -134,8 +134,16 @@ jobs:
             src/runtime/sovereignInternalOperatorRuntime.test.ts \
             src/features/product/components/SovereignAgentJobTruthCard.test.tsx \
             src/features/product/containers/BuilderContainer.test.tsx \
-            > /tmp/sovereign-agent-tests.log 2>&1
+            > /tmp/sovereign-agent-tests-full.log 2>&1
           status=$?
+          if [ "$status" -ne 0 ]; then
+            awk '/Failed Tests/{capture=1} capture{print}' /tmp/sovereign-agent-tests-full.log | tail -n 100 > /tmp/sovereign-agent-tests.log
+            if [ ! -s /tmp/sovereign-agent-tests.log ]; then
+              tail -n 100 /tmp/sovereign-agent-tests-full.log > /tmp/sovereign-agent-tests.log
+            fi
+          else
+            tail -n 25 /tmp/sovereign-agent-tests-full.log > /tmp/sovereign-agent-tests.log
+          fi
           cat /tmp/sovereign-agent-tests.log
           exit $status
 
@@ -216,7 +224,7 @@ jobs:
           tests="$(find /tmp/sovereign-agent-test-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1 || true)"
           typecheck="$(find /tmp/sovereign-agent-typecheck-diagnostic -type f -maxdepth 1 2>/dev/null | head -n 1 || true)"
           if [ -n "$tests" ] && [ -s "$tests" ]; then
-            tail -n 160 "$tests"
+            cat "$tests"
           elif [ -n "$typecheck" ] && [ -s "$typecheck" ]; then
             cat "$typecheck"
           else
