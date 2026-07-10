@@ -2724,9 +2724,9 @@ export function BuilderContainer({
         logs: statusLogs,
         workerBlocker,
         chatRepoError,
-        openhandsJob,
-        publishedPrUrl,
-        githubState: githubAccessState.state,
+        openhandsJob: scopedOpenHandsJob,
+        publishedPrUrl: scopedPublishedPrUrl,
+        githubState: effectiveGitHubAccessState,
         openhandsConfigured: sovereignAgentStartAvailable,
         patchRouteAvailable: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       }),
@@ -2734,9 +2734,9 @@ export function BuilderContainer({
       statusLogs,
       workerBlocker,
       chatRepoError,
-      openhandsJob,
-      publishedPrUrl,
-      githubAccessState.state,
+      scopedOpenHandsJob,
+      scopedPublishedPrUrl,
+      effectiveGitHubAccessState,
       sovereignAgentStartAvailable,
       githubWriteAllowed,
       chatRepoSnapshot,
@@ -2807,7 +2807,7 @@ export function BuilderContainer({
     repoOwner: chatRepoSnapshot?.owner ?? '',
     repoName: chatRepoSnapshot?.repo ?? '',
     appendChatLine,
-    publishedPrUrl,
+    publishedPrUrl: scopedPublishedPrUrl,
   });
 
   // ── Aufgabe 5: Track unseen activity — not just chat lines, but also the
@@ -2858,11 +2858,8 @@ export function BuilderContainer({
   // ── Original v3 derived values (verbatim)
   // A complete local runtime snapshot is the sole Builder repo truth. The legacy
   // repoReady prop may describe another surface, but cannot authorize Builder work.
-  const isPartialRepoSnapshot = Boolean(
-    chatRepoSnapshot &&
-    (!chatRepoSnapshot.owner || !chatRepoSnapshot.repo || !chatRepoSnapshot.branch || !chatRepoSnapshot.repoUrl)
-  );
-  const effectiveRepoReady = Boolean(chatRepoSnapshot) && !isPartialRepoSnapshot;
+  const isPartialRepoSnapshot = Boolean(chatRepoSnapshot && !currentRepoScopeKey);
+  const effectiveRepoReady = Boolean(currentRepoScopeKey);
   const effectiveRepoReason = effectiveRepoReady && chatRepoSnapshot
     ? summarizeDevChatRepoSnapshot(chatRepoSnapshot)
     : repoReason.trim() || 'Kein vollständiger Builder-Repo-Snapshot vorhanden.';
@@ -2883,7 +2880,7 @@ export function BuilderContainer({
   const workerBlocked = Boolean(workerBlocker);
   const runtimeThinkingActive = Boolean(
     chatResponseBusy ||
-    openhandsIsRunning ||
+    scopedOpenHandsIsRunning ||
     repoBusy ||
     localRepoLoading ||
     runtimeBusy ||
@@ -2892,7 +2889,9 @@ export function BuilderContainer({
   const workStateStatus = runtimeThinkingActive
     ? chatResponseBusy
       ? "Cloudflare Worker antwortet"
-      : openhandsJobStatus?.trim() || "Runtime arbeitet"
+      : scopedOpenHandsJob
+        ? openhandsJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
+        : "Runtime arbeitet"
     : workerBlocker
       ? `blocked · ${workerBlocker.diagnostic.status ? `Worker HTTP ${workerBlocker.diagnostic.status}` : "Worker blockiert"}`
       : effectiveRepoReady
@@ -2908,15 +2907,15 @@ export function BuilderContainer({
     [runtimeThinkingActive, thinkingFrameIndex, workStateStatus],
   );
   const outcomeHints = useMemo(
-    () => buildOutcomeHints(openhandsJob),
-    [openhandsJob],
+    () => buildOutcomeHints(scopedOpenHandsJob),
+    [scopedOpenHandsJob],
   );
   const agentDisabled =
     !effectiveRepoReady ||
     repoBusy ||
     localRepoLoading ||
     runtimeBusy ||
-    Boolean(openhandsIsRunning) ||
+    Boolean(scopedOpenHandsIsRunning) ||
     !sovereignAgentStartAvailable;
   const agentStatus = workerBlocker
     ? "error"
@@ -2926,8 +2925,8 @@ export function BuilderContainer({
           repoBusy,
           runtimeBusy,
           isPublishing,
-          openhandsIsRunning,
-          openhandsJob,
+          openhandsIsRunning: scopedOpenHandsIsRunning,
+          openhandsJob: scopedOpenHandsJob,
           localRepoLoading,
           localRepoError: Boolean(chatRepoError),
         });
@@ -2963,7 +2962,7 @@ export function BuilderContainer({
       id: "sovereign-agent-runtime",
       label: sovereignAgentStartAvailable ? "Sovereign Agent Runtime" : "Sovereign Agent offline",
       tier: (sovereignAgentStartAvailable
-        ? openhandsIsRunning
+        ? scopedOpenHandsIsRunning
           ? "active"
           : "ready"
         : "blocked") as RuntimeTier,
@@ -2991,7 +2990,7 @@ export function BuilderContainer({
         cuteThinkingLabel,
         sovereignSummary,
         disabledReason: state.disabledReason,
-        openhandsJob,
+        openhandsJob: scopedOpenHandsJob,
         chatRepoSnapshot,
         chatRepoError,
         chatHistory,
