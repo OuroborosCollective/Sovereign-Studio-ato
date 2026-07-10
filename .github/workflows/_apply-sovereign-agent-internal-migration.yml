@@ -112,13 +112,17 @@ jobs:
             src/features/product/runtime/agentWorkspaceRuntime.test.ts \
             src/features/product/runtime/workerIntentDetector.test.ts
 
-      - name: Routing contract tests
-        run: |
-          pnpm exec vitest run \
-            src/features/product/runtime/sovereignCapabilityRouter.test.ts \
-            src/features/product/runtime/sovereignToolCapabilityRuntime.test.ts \
-            src/features/product/runtime/sovereignExecutorRuntime.test.ts \
-            src/runtime/sovereignInternalOperatorRuntime.test.ts
+      - name: Capability router tests
+        run: pnpm exec vitest run src/features/product/runtime/sovereignCapabilityRouter.test.ts
+
+      - name: Tool capability tests
+        run: pnpm exec vitest run src/features/product/runtime/sovereignToolCapabilityRuntime.test.ts
+
+      - name: Executor runtime tests
+        run: pnpm exec vitest run src/features/product/runtime/sovereignExecutorRuntime.test.ts
+
+      - name: Internal operator tests
+        run: pnpm exec vitest run src/runtime/sovereignInternalOperatorRuntime.test.ts
 
       - name: Truth card tests
         run: pnpm exec vitest run src/features/product/components/SovereignAgentJobTruthCard.test.tsx
