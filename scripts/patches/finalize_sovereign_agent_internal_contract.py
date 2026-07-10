@@ -52,6 +52,20 @@ def main() -> None:
     test_content = test_content.replace("expect(decision.executor).toBe('sovereign-agent');", "expect(decision.executor).toBe('sovereign-local-runner');")
     test_target.write_text(test_content, encoding='utf-8')
 
+    for relative in [
+        'src/features/product/components/WorkerBlockerCard.tsx',
+        'src/features/product/components/WorkerBlockerCard.test.tsx',
+    ]:
+        target = ROOT / relative
+        content = target.read_text(encoding='utf-8')
+        for old, new in [
+            ('onSovereign AgentInstead', 'onAgentInstead'),
+            ('handleSovereign Agent', 'handleAgent'),
+            ('canSovereign Agent', 'canAgent'),
+        ]:
+            content = content.replace(old, new)
+        target.write_text(content, encoding='utf-8')
+
     for relative in ['backend/agent_runtime/routes.py', 'scripts/sovereign-backend/agent_runtime/routes.py']:
         target = ROOT / relative
         content = target.read_text(encoding='utf-8')
