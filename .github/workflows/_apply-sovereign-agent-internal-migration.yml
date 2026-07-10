@@ -51,6 +51,16 @@ jobs:
           set +e
           {
             set -euo pipefail
+            python - <<'PY'
+          from pathlib import Path
+          migration = Path('scripts/patches/apply_sovereign_agent_internal_migration.py')
+          content = migration.read_text(encoding='utf-8')
+          old = "anchor = 'COPY agent_runtime ./agent_runtime\\n'"
+          new = "anchor = 'COPY agent_runtime/ ./agent_runtime/\\n'"
+          if content.count(old) != 1:
+              raise SystemExit(f'Dockerfile anchor patch expected once, found {content.count(old)}')
+          migration.write_text(content.replace(old, new, 1), encoding='utf-8')
+          PY
             python -m py_compile scripts/patches/apply_sovereign_agent_internal_migration.py
             python scripts/patches/apply_sovereign_agent_internal_migration.py
             git diff --check
