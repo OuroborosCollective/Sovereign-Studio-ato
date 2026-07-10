@@ -26,6 +26,7 @@ export function WorkbenchStatusChips({
     <div
       role="tablist"
       aria-label="Werkbank Status"
+      title="Werkbank Status"
       style={{
         display: "flex",
         alignItems: "center",
@@ -43,6 +44,7 @@ export function WorkbenchStatusChips({
             type="button"
             onClick={() => onSlotClick(slot.id)}
             aria-label={`${slot.label}: ${slot.value}`}
+            title={`${slot.label}: ${slot.value}`}
             style={{
               display: "flex",
               alignItems: "center",
