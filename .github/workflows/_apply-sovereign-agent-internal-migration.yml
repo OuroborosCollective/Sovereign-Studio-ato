@@ -184,8 +184,34 @@ jobs:
       - name: Canonical backend tests
         run: pytest backend/tests -q
 
-      - name: Deployed backend tests
-        run: pytest scripts/sovereign-backend/tests -q
+      - name: Run deployed backend tests
+        id: deployed_backend_tests
+        shell: bash
+        run: |
+          set +e
+          pytest scripts/sovereign-backend/tests -q \
+            --junitxml=/tmp/deployed-backend-junit.xml
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload deployed backend test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-backend-junit
+          path: /tmp/deployed-backend-junit.xml
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Enforce deployed backend gate
+        if: steps.deployed_backend_tests.outputs.passed != 'true'
+        run: exit 1
 
       - name: Runtime mirror contract
         run: diff -qr backend/agent_runtime scripts/sovereign-backend/agent_runtime --exclude='__pycache__' --exclude='*.pyc'
