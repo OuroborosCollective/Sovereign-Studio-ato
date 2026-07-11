@@ -25,4 +25,23 @@ describe('SovereignAgentClient', () => {
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
     await expect(client.startJob({ repoUrl: 'https://github.com/acme/repo', mission: 'Fix tests' })).rejects.toThrow('workspace unavailable');
   });
+  it('runs the deterministic janitor only through the owned job tool route', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      ok: true,
+      jobId: 'job-1',
+      tool: {
+        status: 'done',
+        stdout: 'Janitor scan completed: 1 finding(s). No files were changed.',
+        changedFiles: [],
+        metadata: { findings: [{ ruleId: 'PY-UNSAFE-SHELL' }], writeAction: false },
+      },
+    }), { status: 200 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+    const response = await client.runJanitor('job-1', { mode: 'scan', maxFindings: 10 });
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://agent.example.test/api/user/agent/jobs/job-1/tools/janitor',
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    );
+    expect(response).toMatchObject({ ok: true, jobId: 'job-1', tool: { status: 'done', changedFiles: [] } });
+  });
 });

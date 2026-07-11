@@ -49,9 +49,8 @@ class FakeCursor:
         elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_EVENTS"):
             self.conn.events.append(params)
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "SET EVENTS" in normalized:
-            job_id = params[1]
-            # events come as JSON string, need to parse and extend
             import json
+            job_id = params[1]
             new_events = json.loads(params[0])
             current = self.conn.jobs[job_id].get("events", [])
             if isinstance(current, str):
@@ -286,3 +285,37 @@ def test_cleanup_terminal_job_sets_cleaned(tmp_path, monkeypatch):
     assert response.get_json()["status"] == "cleaned"
     assert conn.jobs["agent-1"]["status"] == "cleaned"
     assert not (tmp_path / "agent-1").exists()
+
+
+def test_janitor_scan_is_user_scoped_read_only_and_keeps_job_running(tmp_path, monkeypatch):
+    conn = FakeConnection()
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    seed_job(conn, "user-1", "agent-janitor", status="running")
+    repo = tmp_path / "agent-janitor" / "repo"
+    repo.mkdir(parents=True)
+    source = "import subprocess\nsubprocess.run('echo unsafe', shell=True)\n"
+    target = repo / "worker.py"
+    target.write_text(source, encoding="utf-8")
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-janitor/tools/janitor",
+        headers={"X-Test-User": "user-1"},
+        json={"mode": "scan", "maxFindings": 10},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["tool"]["metadata"]["mode"] == "scan"
+    assert any(item["ruleId"] == "PY-UNSAFE-SHELL" for item in payload["tool"]["metadata"]["findings"])
+    assert payload["tool"]["changedFiles"] == []
+    assert conn.jobs["agent-janitor"]["status"] == "running"
+    assert target.read_text(encoding="utf-8") == source
+
+    other_user = app.test_client().post(
+        "/api/user/agent/jobs/agent-janitor/tools/janitor",
+        headers={"X-Test-User": "user-2"},
+        json={"mode": "scan"},
+    )
+    assert other_user.status_code == 404
