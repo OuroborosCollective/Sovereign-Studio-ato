@@ -6,8 +6,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from broker_client import HostBrokerClient
 from database import DatabaseRuntime
-from operations import OperationsRuntime
 from runtime import OperatorRuntime
 
 
@@ -20,7 +20,7 @@ def _host() -> str:
 
 runtime = OperatorRuntime()
 database = DatabaseRuntime(runtime._repo)
-operations = OperationsRuntime()
+broker = HostBrokerClient()
 
 mcp = FastMCP(
     "Sovereign ChatGPT Operator",
@@ -85,14 +85,14 @@ def repository_diff(workspace_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=SAFE_WRITE)
 def repository_install_dependencies(workspace_id: str) -> dict[str, Any]:
-    """Install the repository dependencies with pnpm and the committed lockfile; no loose install or ignored failure."""
+    """Install repository dependencies with pnpm and the committed lockfile; no loose install or ignored failure."""
     repo = runtime._repo(workspace_id)
     return runtime._run(["pnpm", "install", "--frozen-lockfile"], cwd=repo, timeout=1800)
 
 
 @mcp.tool(annotations=SAFE_WRITE)
 def repository_run_check(workspace_id: str, check: str, target: str = "") -> dict[str, Any]:
-    """Run an allowlisted verification: git_diff_check, backend_compile, typecheck, audit, build_web or vitest."""
+    """Run an allowlisted verification: git_diff_check, backend_compile, pytest, typecheck, audit, build_web or vitest."""
     return runtime.run_check(workspace_id, check, target)
 
 
@@ -109,14 +109,14 @@ def repository_create_draft_pr(
 
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]:
-    """Inspect the real state of one allowlisted Docker container."""
-    return runtime.container_status(container)
+    """Inspect the real state of one allowlisted Docker container through the local fixed-action broker."""
+    return broker.call("container_status", {"container": container})
 
 
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) -> dict[str, Any]:
-    """Read bounded logs from one allowlisted Docker container."""
-    return runtime.container_logs(container, tail)
+    """Read bounded logs from one allowlisted Docker container through the local fixed-action broker."""
+    return broker.call("container_logs", {"container": container, "tail": tail})
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -139,24 +139,35 @@ def postgres_migration_preview(workspace_id: str, path: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def postgres_migration_apply(workspace_id: str, path: str, confirmation_sha256: str) -> dict[str, Any]:
-    """Apply a previously previewable migration only when DB writes are enabled and the exact SHA is confirmed."""
+    """Apply a previewed migration only when DB writes are enabled and the exact SHA is confirmed."""
     return database.apply_migration(workspace_id, path, confirmation_sha256)
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def deploy_verified_backend_release(image_digest: str, expected_revision: str, confirmation_revision: str) -> dict[str, Any]:
-    """Call the fixed deployment gate for a verified immutable image digest; no arbitrary shell is accepted."""
-    return operations.deploy_verified_release(
-        image_digest=image_digest,
-        expected_revision=expected_revision,
-        confirmation_revision=confirmation_revision,
+    """Use the local fixed-action broker to deploy an immutable image digest; no arbitrary shell is accepted."""
+    return broker.call(
+        "deploy_verified_release",
+        {
+            "image_digest": image_digest,
+            "expected_revision": expected_revision,
+            "confirmation_revision": confirmation_revision,
+        },
+        timeout=960,
     )
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def rollback_backend_release(target_image_digest: str, confirmation_digest: str) -> dict[str, Any]:
-    """Call the fixed rollback gate for one explicitly confirmed immutable image digest."""
-    return operations.rollback_release(target_image_digest=target_image_digest, confirmation_digest=confirmation_digest)
+    """Use the local fixed-action broker to roll back to one explicitly confirmed immutable image digest."""
+    return broker.call(
+        "rollback_release",
+        {
+            "target_image_digest": target_image_digest,
+            "confirmation_digest": confirmation_digest,
+        },
+        timeout=960,
+    )
 
 
 if __name__ == "__main__":
