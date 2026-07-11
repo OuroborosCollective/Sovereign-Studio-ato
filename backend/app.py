@@ -40,6 +40,7 @@ from flask_cors import CORS
 import requests
 
 from agent_runtime.routes import register_sovereign_agent_routes
+from are_inference import register_are_inference_routes
 from knowledge_library import register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 
@@ -5361,6 +5362,11 @@ register_security_routes(
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
     set_session_cookie=_set_session_cookie,
+)
+register_are_inference_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
 )
 
 # ── Universal Toolchain Proxy ─────────────────────────────────────────────────

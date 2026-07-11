@@ -9,7 +9,7 @@
   "packageManager": "pnpm@9.12.2",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build:web": "pnpm run type-check && vite build && node scripts/release-html-runtime-fix.mjs && node scripts/copy-dist-to-android.mjs && node scripts/sovereign-static-audit.mjs",
+    "build:web": "pnpm run type-check && node --max-old-space-size=384 node_modules/vite/bin/vite.js build && node scripts/release-html-runtime-fix.mjs && node scripts/copy-dist-to-android.mjs && node scripts/sovereign-static-audit.mjs",
     "build": "pnpm run build:web && cap sync android",
     "build:android": "pnpm run build",
     "android:sync": "pnpm run build:web && pnpm exec cap sync android",

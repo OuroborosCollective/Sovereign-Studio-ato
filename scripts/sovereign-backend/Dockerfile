@@ -22,6 +22,7 @@ COPY security_oauth.py .
 COPY security_runtime.py .
 COPY vector_embedding.py .
 COPY knowledge_library.py .
+COPY are_inference.py .
 COPY agent_runtime/ ./agent_runtime/
 COPY migrations ./migrations
 COPY auto-migrate.sh /docker-entrypoint.d/auto-migrate.sh
