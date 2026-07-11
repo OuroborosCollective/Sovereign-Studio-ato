@@ -4,7 +4,6 @@ set -Eeuo pipefail
 INSTALL_ROOT="/opt/sovereign-chatgpt-tools"
 TUNNEL_ENV="${TUNNEL_ENV:-$INSTALL_ROOT/tunnel.env}"
 TUNNEL_HOME="$INSTALL_ROOT/tunnel-home"
-SERVICE_FILE="/etc/systemd/system/sovereign-openai-tunnel.service"
 BINARY="/usr/local/bin/tunnel-client"
 
 fail() {
@@ -15,6 +14,13 @@ fail() {
 read_value() {
   local key="$1"
   sed -n "s/^${key}=//p" "$TUNNEL_ENV" | tail -n 1
+}
+
+run_as_tunnel_user() {
+  runuser -u sovereign-tunnel -- env \
+    HOME="$TUNNEL_HOME" \
+    CONTROL_PLANE_API_KEY="$CONTROL_PLANE_API_KEY" \
+    "$@"
 }
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root"
@@ -33,9 +39,9 @@ TUNNEL_MCP_SERVER_URL="${TUNNEL_MCP_SERVER_URL:-http://127.0.0.1:8090/mcp}"
 [[ "$TUNNEL_PROFILE" =~ ^[A-Za-z0-9._-]+$ ]] || fail "TUNNEL_PROFILE is invalid"
 [[ "$TUNNEL_MCP_SERVER_URL" == "http://127.0.0.1:8090/mcp" ]] || fail "only the loopback MCP endpoint is permitted"
 
-command -v curl >/dev/null 2>&1 || fail "curl is required"
-command -v python3 >/dev/null 2>&1 || fail "python3 is required"
-command -v systemctl >/dev/null 2>&1 || fail "systemd is required"
+for command in curl python3 runuser systemctl sha256sum; do
+  command -v "$command" >/dev/null 2>&1 || fail "$command is required"
+done
 
 if [[ ! -x "$BINARY" ]]; then
   TMP_DIR="$(mktemp -d)"
@@ -43,9 +49,7 @@ if [[ ! -x "$BINARY" ]]; then
   python3 - "$TMP_DIR" <<'PY'
 import hashlib
 import json
-import os
 import platform
-import re
 import stat
 import sys
 import urllib.request
@@ -53,9 +57,11 @@ import zipfile
 from pathlib import Path
 
 out = Path(sys.argv[1])
-api = "https://api.github.com/repos/openai/tunnel-client/releases/latest"
-req = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json", "User-Agent": "sovereign-installer"})
-with urllib.request.urlopen(req, timeout=30) as response:
+request = urllib.request.Request(
+    "https://api.github.com/repos/openai/tunnel-client/releases/latest",
+    headers={"Accept": "application/vnd.github+json", "User-Agent": "sovereign-installer"},
+)
+with urllib.request.urlopen(request, timeout=30) as response:
     release = json.load(response)
 assets = release.get("assets") or []
 machine = platform.machine().lower()
@@ -64,18 +70,15 @@ if not arch_tokens:
     raise SystemExit(f"unsupported architecture: {machine}")
 
 def pick(predicate):
-    for asset in assets:
-        name = str(asset.get("name") or "")
-        if predicate(name.lower()):
-            return asset
-    return None
+    return next((asset for asset in assets if predicate(str(asset.get("name") or "").lower())), None)
 
 archive = pick(lambda name: name.endswith(".zip") and "linux" in name and any(token in name for token in arch_tokens) and "source" not in name)
 checksums = pick(lambda name: name == "sha256sums.txt")
 if not archive or not checksums:
     raise SystemExit("latest tunnel-client release has no supported Linux archive or SHA256SUMS.txt")
 
-for asset, target in ((archive, out / archive["name"]), (checksums, out / checksums["name"])):
+for asset in (archive, checksums):
+    target = out / asset["name"]
     request = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "sovereign-installer"})
     with urllib.request.urlopen(request, timeout=120) as response, target.open("wb") as handle:
         handle.write(response.read())
@@ -89,8 +92,7 @@ for line in (out / checksums["name"]).read_text("utf-8").splitlines():
         break
 if not expected:
     raise SystemExit("archive checksum is missing")
-actual = hashlib.sha256(archive_path.read_bytes()).hexdigest()
-if actual != expected:
+if hashlib.sha256(archive_path.read_bytes()).hexdigest() != expected:
     raise SystemExit("tunnel-client checksum mismatch")
 
 extract_dir = out / "extract"
@@ -103,7 +105,6 @@ if len(candidates) != 1:
 binary = out / "tunnel-client"
 binary.write_bytes(candidates[0].read_bytes())
 binary.chmod(binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-print(binary)
 PY
   install -m 0755 "$TMP_DIR/tunnel-client" "$BINARY"
 fi
@@ -116,23 +117,16 @@ CURRENT_FINGERPRINT="$(cat "$TUNNEL_HOME/.profile-fingerprint" 2>/dev/null || tr
 if [[ "$CURRENT_FINGERPRINT" != "$FINGERPRINT" ]]; then
   find "$TUNNEL_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
   install -d -m 0750 -o sovereign-tunnel -g sovereign-tunnel "$TUNNEL_HOME"
-  sudo -u sovereign-tunnel env \
-    HOME="$TUNNEL_HOME" \
-    CONTROL_PLANE_API_KEY="$CONTROL_PLANE_API_KEY" \
-    "$BINARY" init \
-      --profile "$TUNNEL_PROFILE" \
-      --tunnel-id "$OPENAI_TUNNEL_ID" \
-      --mcp-server-url "$TUNNEL_MCP_SERVER_URL"
+  run_as_tunnel_user "$BINARY" init \
+    --profile "$TUNNEL_PROFILE" \
+    --tunnel-id "$OPENAI_TUNNEL_ID" \
+    --mcp-server-url "$TUNNEL_MCP_SERVER_URL"
   printf '%s\n' "$FINGERPRINT" > "$TUNNEL_HOME/.profile-fingerprint"
   chown sovereign-tunnel:sovereign-tunnel "$TUNNEL_HOME/.profile-fingerprint"
   chmod 0600 "$TUNNEL_HOME/.profile-fingerprint"
 fi
 
-sudo -u sovereign-tunnel env \
-  HOME="$TUNNEL_HOME" \
-  CONTROL_PLANE_API_KEY="$CONTROL_PLANE_API_KEY" \
-  "$BINARY" doctor --profile "$TUNNEL_PROFILE" --explain
-
+run_as_tunnel_user "$BINARY" doctor --profile "$TUNNEL_PROFILE" --explain
 systemctl daemon-reload
 systemctl enable --now sovereign-openai-tunnel.service
 systemctl is-active --quiet sovereign-openai-tunnel.service || {
