@@ -158,6 +158,11 @@ class BrokerRuntime:
             "container_status": self.container_status,
             "container_logs": self.container_logs,
             "resolve_backend_image": self.resolve_backend_image,
+            "apply_verified_migration": lambda values: self.operations.apply_verified_migration(
+                workspace_id=str(values.get("workspace_id") or ""),
+                path=str(values.get("path") or ""),
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+            ),
             "deploy_verified_release": lambda values: self.operations.deploy_verified_release(
                 image_digest=str(values.get("image_digest") or ""),
                 expected_revision=str(values.get("expected_revision") or ""),
