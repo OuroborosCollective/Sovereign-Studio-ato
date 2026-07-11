@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Iterable
 
 SUPPORTED_EXTENSIONS = {
     ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs",
@@ -46,7 +47,6 @@ _SECRET_TYPE_NAMES = {
     "str", "string", "number", "boolean", "bool", "unknown", "any", "object",
     "none", "null", "true", "false", "githubissuehub",
 }
-
 
 _DANGEROUS_REPLACEMENT_PATTERNS = (
     re.compile(r"git\s+push\s+origin\s+main", re.IGNORECASE),
@@ -110,26 +110,15 @@ def _line_text(content: str, lineno: int) -> str:
 
 
 def _finding(
-    *,
-    rule_id: str,
-    severity: str,
-    path: str,
-    line: int,
-    message: str,
-    evidence: str,
-    content_sha256: str,
-    suggested_search: str | None = None,
+    *, rule_id: str, severity: str, path: str, line: int, message: str,
+    evidence: str, content_sha256: str, suggested_search: str | None = None,
     suggested_replacement: str | None = None,
 ) -> dict[str, Any]:
     stable = f"{rule_id}:{path}:{line}:{evidence}"
     return {
         "id": hashlib.sha256(stable.encode("utf-8")).hexdigest()[:16],
-        "ruleId": rule_id,
-        "severity": severity,
-        "path": path,
-        "line": line,
-        "message": message,
-        "evidence": _mask_sensitive(evidence),
+        "ruleId": rule_id, "severity": severity, "path": path, "line": line,
+        "message": message, "evidence": _mask_sensitive(evidence),
         "contentSha256": content_sha256,
         "fixAvailable": bool(suggested_search is not None and suggested_replacement is not None),
         "suggestedSearchText": suggested_search,
@@ -159,182 +148,208 @@ def _scan_python(path: str, content: str, content_sha256: str) -> list[dict[str,
         tree = ast.parse(content, filename=path)
     except SyntaxError as exc:
         findings.append(_finding(
-            rule_id="PY-SYNTAX-ERROR",
-            severity="critical",
-            path=path,
-            line=int(exc.lineno or 1),
-            message="Python source cannot be parsed.",
-            evidence=str(exc.msg),
-            content_sha256=content_sha256,
+            rule_id="PY-SYNTAX-ERROR", severity="critical", path=path,
+            line=int(exc.lineno or 1), message="Python source cannot be parsed.",
+            evidence=str(exc.msg), content_sha256=content_sha256,
         ))
         return findings
-
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             call_name = _python_call_name(node)
             if call_name in {"eval", "exec", "builtins.eval", "builtins.exec"}:
                 findings.append(_finding(
-                    rule_id="PY-DYNAMIC-EVAL",
-                    severity="high",
-                    path=path,
-                    line=node.lineno,
+                    rule_id="PY-DYNAMIC-EVAL", severity="high", path=path, line=node.lineno,
                     message="Dynamic eval/exec can turn data into executable code.",
-                    evidence=_line_text(content, node.lineno),
-                    content_sha256=content_sha256,
+                    evidence=_line_text(content, node.lineno), content_sha256=content_sha256,
                 ))
             if call_name in {"os.system", "subprocess.call", "subprocess.Popen", "subprocess.run"}:
                 shell_true = any(
-                    keyword.arg == "shell"
-                    and isinstance(keyword.value, ast.Constant)
-                    and keyword.value.value is True
-                    for keyword in node.keywords
+                    keyword.arg == "shell" and isinstance(keyword.value, ast.Constant)
+                    and keyword.value.value is True for keyword in node.keywords
                 )
                 if call_name == "os.system" or shell_true:
                     findings.append(_finding(
-                        rule_id="PY-UNSAFE-SHELL",
-                        severity="critical",
-                        path=path,
-                        line=node.lineno,
+                        rule_id="PY-UNSAFE-SHELL", severity="critical", path=path, line=node.lineno,
                         message="Shell execution bypasses the structured command policy.",
-                        evidence=_line_text(content, node.lineno),
-                        content_sha256=content_sha256,
+                        evidence=_line_text(content, node.lineno), content_sha256=content_sha256,
                     ))
             if call_name in {"os.getenv", "os.environ.get"} and len(node.args) >= 2:
-                key = node.args[0]
-                default = node.args[1]
+                key, default = node.args[0], node.args[1]
                 if (
-                    isinstance(key, ast.Constant)
-                    and isinstance(key.value, str)
+                    isinstance(key, ast.Constant) and isinstance(key.value, str)
                     and re.search(r"SECRET|TOKEN|PASSWORD|API[_-]?KEY", key.value, re.IGNORECASE)
-                    and isinstance(default, ast.Constant)
-                    and isinstance(default.value, str)
+                    and isinstance(default, ast.Constant) and isinstance(default.value, str)
                     and default.value.strip()
                 ):
                     findings.append(_finding(
-                        rule_id="PY-HARDCODED-SECRET-DEFAULT",
-                        severity="critical",
-                        path=path,
+                        rule_id="PY-HARDCODED-SECRET-DEFAULT", severity="critical", path=path,
                         line=node.lineno,
                         message="Secret-like environment variable has a non-empty source-code default.",
-                        evidence=f"{key.value}=[redacted]",
-                        content_sha256=content_sha256,
+                        evidence=f"{key.value}=[redacted]", content_sha256=content_sha256,
                     ))
-
         if isinstance(node, ast.ExceptHandler):
             if node.type is None:
                 findings.append(_finding(
-                    rule_id="PY-BARE-EXCEPT",
-                    severity="medium",
-                    path=path,
-                    line=node.lineno,
+                    rule_id="PY-BARE-EXCEPT", severity="medium", path=path, line=node.lineno,
                     message="Bare except hides unrelated failures and weakens runtime evidence.",
-                    evidence=_line_text(content, node.lineno),
-                    content_sha256=content_sha256,
+                    evidence=_line_text(content, node.lineno), content_sha256=content_sha256,
                 ))
             if len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
                 findings.append(_finding(
-                    rule_id="PY-SILENT-EXCEPT",
-                    severity="high",
-                    path=path,
-                    line=node.lineno,
+                    rule_id="PY-SILENT-EXCEPT", severity="high", path=path, line=node.lineno,
                     message="Exception is swallowed without a blocker, error, or evidence event.",
-                    evidence=_line_text(content, node.lineno),
-                    content_sha256=content_sha256,
+                    evidence=_line_text(content, node.lineno), content_sha256=content_sha256,
                 ))
-
     return findings
 
 
 def _scan_text(path: str, content: str, content_sha256: str) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
-    lines = content.splitlines()
     rules: tuple[tuple[str, str, re.Pattern[str], str], ...] = (
-        (
-            "GIT-DIRECT-MAIN-PUSH",
-            "critical",
-            re.compile(r"git\s+push\s+origin\s+main", re.IGNORECASE),
-            "Direct main push bypasses Draft-PR review and evidence gates.",
-        ),
-        (
-            "JS-EXECSYNC",
-            "high",
-            re.compile(r"\bexecSync\s*\("),
-            "Synchronous process execution can bypass structured tool policy and freeze the runtime.",
-        ),
-        (
-            "JS-CHILD-PROCESS-EXEC",
-            "high",
-            re.compile(r"\b(?:child_process\.)?exec\s*\("),
-            "String-based child-process execution should use an argv allowlist instead.",
-        ),
-        (
-            "PATH-PREFIX-BOUNDARY",
-            "high",
-            re.compile(r"\.resolve\(\).*\.startsWith\(|startswith\s*\(\s*str\s*\("),
-            "String-prefix path checks can accept sibling paths with the same prefix.",
-        ),
-        (
-            "JS-EMPTY-CATCH",
-            "medium",
-            re.compile(r"catch\s*(?:\([^)]*\))?\s*\{\s*\}"),
-            "Empty catch block erases failure evidence.",
-        ),
+        ("GIT-DIRECT-MAIN-PUSH", "critical", re.compile(r"git\s+push\s+origin\s+main", re.IGNORECASE),
+         "Direct main push bypasses Draft-PR review and evidence gates."),
+        ("JS-EXECSYNC", "high", re.compile(r"\bexecSync\s*\("),
+         "Synchronous process execution can bypass structured tool policy and freeze the runtime."),
+        ("JS-CHILD-PROCESS-EXEC", "high", re.compile(r"\b(?:child_process\.)?exec\s*\("),
+         "String-based child-process execution should use an argv allowlist instead."),
+        ("PATH-PREFIX-BOUNDARY", "high", re.compile(r"\.resolve\(\).*\.startsWith\(|startswith\s*\(\s*str\s*\("),
+         "String-prefix path checks can accept sibling paths with the same prefix."),
+        ("JS-EMPTY-CATCH", "medium", re.compile(r"catch\s*(?:\([^)]*\))?\s*\{\s*\}"),
+         "Empty catch block erases failure evidence."),
     )
-
-    for lineno, line in enumerate(lines, 1):
+    for lineno, line in enumerate(content.splitlines(), 1):
         for rule_id, severity, pattern, message in rules:
-            if pattern.search(line):
-                suffix = Path(path).suffix.lower()
-                if (
-                    rule_id == "GIT-DIRECT-MAIN-PUSH"
-                    and suffix in {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
-                    and not re.search(r"\b(exec|execSync|spawn|run|command)\b", line)
-                ):
-                    continue
-                suggested_search = None
-                suggested_replacement = None
-                if rule_id == "GIT-DIRECT-MAIN-PUSH" and line.strip() == "git push origin main":
-                    indent = line[: len(line) - len(line.lstrip())]
-                    suggested_search = line
-                    suggested_replacement = f'{indent}git push --set-upstream origin "$BRANCH"  # then open a Draft PR'
-                findings.append(_finding(
-                    rule_id=rule_id,
-                    severity=severity,
-                    path=path,
-                    line=lineno,
-                    message=message,
-                    evidence=line.strip(),
-                    content_sha256=content_sha256,
-                    suggested_search=suggested_search,
-                    suggested_replacement=suggested_replacement,
-                ))
-
+            if not pattern.search(line):
+                continue
+            suffix = Path(path).suffix.lower()
+            if (
+                rule_id == "GIT-DIRECT-MAIN-PUSH"
+                and suffix in {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+                and not re.search(r"\b(exec|execSync|spawn|run|command)\b", line)
+            ):
+                continue
+            suggested_search = suggested_replacement = None
+            if rule_id == "GIT-DIRECT-MAIN-PUSH" and line.strip() == "git push origin main":
+                indent = line[: len(line) - len(line.lstrip())]
+                suggested_search = line
+                suggested_replacement = f'{indent}git push --set-upstream origin "$BRANCH"  # then open a Draft PR'
+            findings.append(_finding(
+                rule_id=rule_id, severity=severity, path=path, line=lineno,
+                message=message, evidence=line.strip(), content_sha256=content_sha256,
+                suggested_search=suggested_search, suggested_replacement=suggested_replacement,
+            ))
         if "paramiko.AutoAddPolicy()" in line:
             indent = line[: len(line) - len(line.lstrip())]
             findings.append(_finding(
-                rule_id="PY-SSH-AUTOADD-HOSTKEY",
-                severity="high",
-                path=path,
-                line=lineno,
+                rule_id="PY-SSH-AUTOADD-HOSTKEY", severity="high", path=path, line=lineno,
                 message="Automatically trusting unknown SSH host keys enables machine-in-the-middle attacks.",
-                evidence=line.strip(),
-                content_sha256=content_sha256,
-                suggested_search=line,
+                evidence=line.strip(), content_sha256=content_sha256, suggested_search=line,
                 suggested_replacement=(
                     f"{indent}client.load_system_host_keys()\n"
                     f"{indent}client.set_missing_host_key_policy(paramiko.RejectPolicy())"
                 ),
             ))
-
         if _secret_like_match(line):
             findings.append(_finding(
-                rule_id="SOURCE-SECRET-LIKE-VALUE",
-                severity="critical",
-                path=path,
-                line=lineno,
+                rule_id="SOURCE-SECRET-LIKE-VALUE", severity="critical", path=path, line=lineno,
                 message="Secret-like value appears in source text and must be rotated and removed.",
-                evidence="[redacted secret-like value]",
-                content_sha256=content_sha256,
+                evidence="[redacted secret-like value]", content_sha256=content_sha256,
             ))
-
     return findings
+
+
+def _is_skipped_path(path: Path, root: Path) -> bool:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+    return any(part in SKIP_DIRECTORY_NAMES for part in relative.parts)
+
+
+def _safe_target(root: Path, relative_path: str) -> Path | None:
+    candidate_text = str(relative_path or "").strip().replace("\\", "/")
+    if not candidate_text or candidate_text.startswith("/"):
+        return None
+    target = (root / candidate_text).resolve()
+    if target != root and root not in target.parents:
+        return None
+    if _is_skipped_path(target, root):
+        return None
+    if target.name.lower() in FORBIDDEN_FILE_NAMES or target.suffix.lower() in FORBIDDEN_SUFFIXES:
+        return None
+    return target
+
+
+def _iter_source_files(
+    root: Path, paths: Iterable[str], max_files: int, *, include_docs: bool = False,
+) -> Iterable[Path]:
+    requested = [str(value).strip() for value in paths if str(value).strip()]
+    seeds: list[Path] = []
+    if requested:
+        for relative in requested:
+            target = _safe_target(root, relative)
+            if target is not None and target.exists():
+                seeds.append(target)
+    else:
+        seeds.append(root)
+    candidates_by_path: dict[Path, Path] = {}
+    for seed in seeds:
+        candidates = [seed] if seed.is_file() else seed.rglob("*")
+        for candidate in candidates:
+            try:
+                if candidate.is_symlink():
+                    continue
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            if resolved in candidates_by_path or _is_skipped_path(resolved, root):
+                continue
+            suffix = resolved.suffix.lower()
+            if not resolved.is_file() or suffix not in SUPPORTED_EXTENSIONS:
+                continue
+            if suffix == ".md" and not include_docs and not requested:
+                continue
+            candidates_by_path[resolved] = resolved
+    priority = {
+        ".py": 0, ".ts": 0, ".tsx": 0, ".js": 0, ".jsx": 0, ".mjs": 0,
+        ".cjs": 0, ".go": 0, ".rs": 0, ".sh": 1, ".yml": 1, ".yaml": 1,
+        ".json": 1, ".toml": 1, ".md": 2,
+    }
+    ordered = sorted(
+        candidates_by_path.values(),
+        key=lambda item: (priority.get(item.suffix.lower(), 3), item.relative_to(root).as_posix()),
+    )
+    yield from ordered[:max_files]
+
+
+def _detect_test_command(root: Path) -> str | None:
+    package_json = root / "package.json"
+    if package_json.is_file():
+        try:
+            package = json.loads(package_json.read_text(encoding="utf-8"))
+            scripts = package.get("scripts") if isinstance(package, dict) else None
+            if isinstance(scripts, dict):
+                manager = "pnpm" if (root / "pnpm-lock.yaml").exists() else "yarn" if (root / "yarn.lock").exists() else "npm"
+                run = f"{manager} run"
+                if "type-check" in scripts and "test" in scripts:
+                    return f"{run} type-check && {run} test"
+                if "test:all" in scripts:
+                    return f"{run} test:all"
+                if "test" in scripts:
+                    return f"{run} test"
+        except (OSError, ValueError, TypeError):
+            pass
+    if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists():
+        return "python -m pytest"
+    if (root / "go.mod").exists():
+        return "go test ./..."
+    if (root / "Cargo.toml").exists():
+        return "cargo test"
+    return None
+
+
+def _optional_ollama_explanation(
+    _findings: list[dict[str, Any]], _family: str,
+) -> tuple[None, str]:
+    """Keep model output outside the deterministic scan and patch contract."""
+    return None, "Local model explanations are disabled in the repository Janitor runtime."
