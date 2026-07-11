@@ -31,14 +31,20 @@ def test_credit_package_price_contract_is_camel_case_and_reload_verified() -> No
         assert "price_eur: parseFloat(document.getElementById('pp_'+id).value)" not in source
 
 
-def test_admin_loads_are_bounded_and_never_leave_permanent_spinners() -> None:
+def test_admin_loads_are_bounded_while_long_knowledge_jobs_keep_runtime_truth() -> None:
     for path in (BACKEND / "app.py", DEPLOY / "app.py"):
         source = read(path)
-        assert "Backend-Zeitüberschreitung nach 15 Sekunden" in source
-        assert "AbortController" in source
+        assert "boundedFetch(path, options={}, timeoutMs=15000)" in source
+        assert "timeoutMs>0?setTimeout(()=>controller.abort(),timeoutMs):null" in source
+        assert "Backend-Zeitüberschreitung nach '+Math.ceil(timeoutMs/1000)+' Sekunden." in source
         assert "boundedFetch('/api/admin/users" in source
         assert "boundedFetch(url.replace(BASE,''),{headers:hdr()})" in source
         assert "Erneut laden" in source
+        assert "Quelle wird geladen, geparst, gechunkt und eingebettet" in source
+        assert "Datei wird geladen, geparst, gechunkt und eingebettet" in source
+        assert "knowledge/sources/url',{method:'POST',headers:hdr(),body:JSON.stringify({url})},0" in source
+        assert "knowledge/sources/upload',{method:'POST',headers:formHdr(),body:form},0" in source
+        assert "knowledge/search',{method:'POST',headers:hdr(),body:JSON.stringify({query,limit:8})},120000" in source
 
 
 def test_admin_knowledge_and_pdf_live_path_is_registered_and_visible() -> None:

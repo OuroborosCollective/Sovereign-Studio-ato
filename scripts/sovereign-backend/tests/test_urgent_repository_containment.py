@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEPLOY_BACKEND = REPO_ROOT / "scripts" / "sovereign-backend"
+sys.path.insert(0, str(DEPLOY_BACKEND))
 
 from agent_runtime import sovereign_local_runner
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 PASSWORD_CONNECT_RE = re.compile(
     r"client\.connect\([^\n)]*password\s*=\s*['\"][^'\"]+['\"][^\n)]*\)",
     re.IGNORECASE,

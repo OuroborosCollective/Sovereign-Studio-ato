@@ -203,7 +203,9 @@ def test_payment_and_credit_security_are_server_authoritative() -> None:
         assert "_authorize_credit_purchase" in source
         assert '"error": "Account mismatch"' in source
         assert '"error": "unknown_cost_id"' in source
-        assert "SELECT credits FROM admin_users" in source
+        assert "FROM admin_users AS account" in source
+        assert "LEFT JOIN credit_ledger AS ledger" in source
+        assert "cached_balance != ledger_balance" in source
         assert "X-Step-Up-Token" in source
 
 
