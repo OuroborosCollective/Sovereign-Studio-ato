@@ -43,6 +43,18 @@ describe('WorkerBlockerCard', () => {
     expect(screen.getByText('Worker nicht erreichbar')).toBeTruthy();
   });
 
+  it('disables retry when no previous request or retry callback exists', () => {
+    render(
+      <WorkerBlockerCard
+        blocker={mockBlocker}
+        onExplain={() => {}}
+      />
+    );
+    const button = screen.getByRole('button', { name: /Retry unavailable/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText('Retry nicht verfügbar')).toBeTruthy();
+  });
+
   it('calls onRetry when retry button clicked', () => {
     const onRetry = vi.fn();
     render(
@@ -136,6 +148,12 @@ describe('WorkerDegradedBanner', () => {
   it('renders offline message', () => {
     render(<WorkerDegradedBanner blocker={mockBlocker} />);
     expect(screen.getByText('Worker offline')).toBeTruthy();
+  });
+
+  it('shows a non-action state when no retriable request exists', () => {
+    render(<WorkerDegradedBanner blocker={mockBlocker} />);
+    expect(screen.getByTestId('worker-degraded-banner')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Kein Retry-Request')).toBeTruthy();
   });
 
   it('calls onRetry when clicked (legacy)', () => {

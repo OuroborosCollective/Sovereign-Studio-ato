@@ -27,9 +27,9 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { store } from '../../store';
 import { useUserStore } from '../user/useUserStore';
 import {
-  deductCredits,
   openCreditPaywall,
   fetchUserCredits,
+  setBillingError,
 } from './billingSlice';
 import { fetchWithStepUp } from '../security/securityApi';
 import { calculateCredits } from './costConfig';
@@ -85,19 +85,25 @@ export function useCreditGuard(): UseCreditGuardResult {
         const data = await response.json().catch(() => ({})) as {
           available?: number;
           required?: number;
+          error?: string;
         };
-        store.dispatch(openCreditPaywall({
-          required: data.required ?? cost,
-          available: data.available ?? credits,
-        }));
+        if (response.status === 402) {
+          store.dispatch(openCreditPaywall({
+            required: data.required ?? cost,
+            available: data.available ?? credits,
+          }));
+        } else {
+          store.dispatch(setBillingError(data.error || `Credit-Abzug HTTP ${response.status}`));
+        }
         return false;
       }
 
-      const data = await response.json().catch(() => ({})) as { deducted?: number };
-      store.dispatch(deductCredits(data.deducted ?? cost));
+      await store.dispatch(fetchUserCredits());
       return true;
-    } catch {
-      store.dispatch(openCreditPaywall({ required: cost, available: credits }));
+    } catch (error) {
+      store.dispatch(setBillingError(
+        error instanceof Error ? error.message : 'Credit-Abzug konnte nicht bestätigt werden.',
+      ));
       return false;
     }
   }, [credits]);

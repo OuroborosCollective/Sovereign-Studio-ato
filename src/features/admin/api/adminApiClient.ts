@@ -2,7 +2,7 @@
  * adminApiClient — Real HTTP client for sovereign-backend admin API.
  *
  * Base URL resolved from VITE_ADMIN_API_BASE env var (set in CI and .env).
- * Auth: Authorization: Bearer <admin-api-key> stored in localStorage.
+ * Auth: Authorization: Bearer <admin-api-key> kept only in module memory.
  * Flask returns camelCase via SQL AS-aliases — all types here are camelCase.
  *
  * Issue #460
@@ -13,7 +13,7 @@ export const ADMIN_API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
   'https://sovereign-backend.arelorian.de';
 
-export const ADMIN_KEY_STORAGE = 'sovereign_admin_api_key';
+let adminKeyInMemory = '';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,13 +107,13 @@ export interface CreditPackage {
 // ── Key management ────────────────────────────────────────────────────────────
 
 export function getAdminKey(): string {
-  return localStorage.getItem(ADMIN_KEY_STORAGE) ?? '';
+  return adminKeyInMemory;
 }
 export function setAdminKey(key: string): void {
-  localStorage.setItem(ADMIN_KEY_STORAGE, key.trim());
+  adminKeyInMemory = key.trim();
 }
 export function clearAdminKey(): void {
-  localStorage.removeItem(ADMIN_KEY_STORAGE);
+  adminKeyInMemory = '';
 }
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
@@ -132,6 +132,7 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) clearAdminKey();
     const body = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }
@@ -143,7 +144,7 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const adminApiClient = {
 
   ping() {
-    return req<{ ok: boolean; role: string }>('/api/admin/ping');
+    return req<AdminUser & { ok: true; authMode: string }>('/api/admin/ping');
   },
 
   getUsers(p?: { page?: number; search?: string; limit?: number }) {

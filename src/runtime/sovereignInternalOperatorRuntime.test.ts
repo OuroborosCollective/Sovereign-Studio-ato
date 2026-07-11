@@ -94,6 +94,7 @@ describe('sovereignInternalOperatorRuntime', () => {
         agentConfigured: false,
         workspaceConfigured: false,
       }),
+      internalRuntimePatchConfigured: true,
       signals,
       traceIdProvider: () => 'test-learning',
     });

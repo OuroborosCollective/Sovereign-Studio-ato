@@ -105,6 +105,7 @@ describe('sovereignToolShortcutRuntime', () => {
           statusLabel: 'Client-Checks bestanden',
           reason: 'Echte Client-Evidence vorhanden.',
           nextAction: 'CI separat prüfen.',
+          observedAt: Date.now(),
         },
       },
     })).toMatchObject({ state: 'ready', statusLabel: 'Client-Checks bestanden' });
@@ -115,6 +116,7 @@ describe('sovereignToolShortcutRuntime', () => {
           statusLabel: 'Coverage Map fehlt',
           reason: 'HTTP 404',
           nextAction: 'Coverage-Job prüfen.',
+          observedAt: Date.now(),
         },
       },
     })).toMatchObject({ canOpen: true, state: 'evidence_missing', statusLabel: 'Coverage Map fehlt' });
