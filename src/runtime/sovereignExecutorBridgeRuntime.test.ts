@@ -51,7 +51,7 @@ describe('sovereignExecutorBridgeRuntime', () => {
     expect(decision.reason).toContain('Schreib');
   });
 
-  it('uses the internal operator when external executor paths are absent but runtime gates are ready', () => {
+  it('blocks instead of inventing an internal executor when no evidence-backed route exists', () => {
     const decision = decideSovereignExecutorBridgeRoute({
       text: 'Baue internen Operator Fallback mit Tests',
       intent: 'code_execution',
@@ -63,9 +63,27 @@ describe('sovereignExecutorBridgeRuntime', () => {
     });
 
     expect(decision.bridgeRoute).toBe('sovereign_internal_operator');
+    expect(decision.state).toBe('blocked');
+    expect(decision.nextAction).toBe('show_blocker');
+    expect(decision.internalOperatorRoute).toBe('blocked');
+    expect(decision.event.state).toBe('blocked');
+  });
+
+  it('keeps an allowed workspace route queued until runtime start evidence exists', () => {
+    const decision = decideSovereignExecutorBridgeRoute({
+      text: 'Implementiere eine Runtime mit Tests',
+      intent: 'code_execution',
+      capabilities: capabilities({
+        directPatchSupported: false,
+        agentConfigured: false,
+        workspaceConfigured: true,
+      }),
+    });
+
+    expect(decision.bridgeRoute).toBe('executor_runtime');
     expect(decision.state).toBe('allowed');
-    expect(decision.nextAction).toBe('run_internal_operator');
-    expect(decision.internalOperatorRoute).toBe('internal_runtime_patch');
-    expect(decision.internalOperatorStages).toContain('diff_guard');
+    expect(decision.executorRoute).toBe('workspace');
+    expect(decision.event.kind).toBe('route_selected');
+    expect(decision.event.state).toBe('queued');
   });
 });
