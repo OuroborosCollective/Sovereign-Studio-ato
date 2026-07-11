@@ -1,0 +1,29 @@
+services:
+  sovereign-chatgpt-mcp:
+    build:
+      context: .
+    container_name: sovereign-chatgpt-mcp
+    restart: unless-stopped
+    env_file:
+      - /opt/sovereign-chatgpt-tools/.env
+    environment:
+      SOVEREIGN_MCP_HOST: 0.0.0.0
+      SOVEREIGN_MCP_PORT: 8090
+      SOVEREIGN_MCP_ALLOW_PUBLIC: "1"
+      SOVEREIGN_MCP_WORKSPACE_ROOT: /opt/sovereign-chatgpt-tools/workspaces
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - /opt/sovereign-chatgpt-tools/workspaces:/opt/sovereign-chatgpt-tools/workspaces
+      - /opt/sovereign-chatgpt-tools/bin:/opt/sovereign-chatgpt-tools/bin:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - supabase_default
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+networks:
+  supabase_default:
+    external: true
