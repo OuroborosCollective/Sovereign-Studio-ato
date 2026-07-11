@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from policy import safe_repo_path, validate_branch, validate_patch_blocks, validate_workspace_id
+from policy import safe_repo_path, validate_branch, validate_container, validate_patch_blocks, validate_workspace_id
 
 
 def test_workspace_and_branch_accept_only_operator_scope() -> None:
@@ -16,6 +16,16 @@ def test_workspace_and_branch_accept_only_operator_scope() -> None:
         validate_branch("main")
     with pytest.raises(ValueError):
         validate_branch("feature/unrestricted")
+
+
+def test_container_aliases_resolve_only_to_allowlisted_canonical_names() -> None:
+    allowed = ("sovereign-backend", "sovereign-chatgpt-mcp")
+
+    assert validate_container("sovereign-mcp", allowed) == "sovereign-chatgpt-mcp"
+    assert validate_container("mcp", allowed) == "sovereign-chatgpt-mcp"
+    assert validate_container("sovereign-backend", allowed) == "sovereign-backend"
+    with pytest.raises(ValueError):
+        validate_container("unrelated-root-container", allowed)
 
 
 def test_repo_path_blocks_escape_and_secrets(tmp_path: Path) -> None:
