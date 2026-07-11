@@ -231,6 +231,7 @@ def _register_default_tools(registry: ToolRegistry) -> None:
     from .git_tool import GitStatusTool, GitDiffTool, GitAddTool, GitUniversalTool
     from .diff_tool import DiffTool
     from .test_tool import TestTool
+    from .janitor_tool import DynamicJanitorTool
 
     registry.register(FileReadTool())
     registry.register(FileWriteTool())
@@ -241,3 +242,4 @@ def _register_default_tools(registry: ToolRegistry) -> None:
     registry.register(GitUniversalTool())
     registry.register(DiffTool())
     registry.register(TestTool())
+    registry.register(DynamicJanitorTool())
