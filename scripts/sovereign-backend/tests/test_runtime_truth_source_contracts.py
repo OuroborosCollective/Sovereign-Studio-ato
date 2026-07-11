@@ -43,19 +43,23 @@ def test_payment_webhooks_require_verification_and_replay_guards() -> None:
         assert 'PayPal Betrag oder Währung stimmt nicht mit dem Paket überein' in source
         assert 'SKRILL_VERIFICATION_NOT_CONFIGURED' in source
         assert 'hmac.compare_digest(expected_sig, received_sig)' in source
-        assert 'Transaktions-ID wurde bereits gutgeschrieben' in source
+        assert 'CREATE TABLE IF NOT EXISTS credit_receipts' not in source
+        assert 'INSERT INTO credit_receipts' in source
+        assert 'WHERE provider = %s AND provider_tx_id = %s' in source
         assert 'token_fingerprint = hashlib.sha256(purchase_token.encode()).hexdigest()' in source
 
 
 def test_credit_grant_and_transaction_log_share_one_database_transaction() -> None:
     for source in _backend_sources():
-        helper_start = source.index("def _add_credits_and_log")
-        helper_end = source.index("# ── Admin: Payment Methods", helper_start)
+        helper_start = source.index("def _apply_credit_delta")
+        helper_end = source.index("def _add_credits_and_log", helper_start)
         helper = source[helper_start:helper_end]
         assert "pool = get_pool()" in helper
         assert "conn.commit()" in helper
         assert "conn.rollback()" in helper
-        assert "UPDATE admin_users SET credits = credits + %s" in helper
+        assert "FOR UPDATE" in helper
+        assert "INSERT INTO credit_ledger" in helper
+        assert "UPDATE admin_users SET credits = %s" in helper
         assert "INSERT INTO transactions" in helper
 
 
