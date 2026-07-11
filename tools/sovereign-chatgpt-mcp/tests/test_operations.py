@@ -106,8 +106,17 @@ def test_destructive_delete_remains_separately_blocked(tmp_path, monkeypatch) ->
     assert result["destructive_actions"] == ["delete_rows"]
 
 
-def test_verified_backfill_runs_rollback_preview_then_admin_apply(tmp_path, monkeypatch) -> None:
-    sql = "-- additive\nBEGIN;\nUPDATE llm_routes SET model_id = model WHERE model_id IS NULL;\nCOMMIT;\n"
+def test_verified_backfill_runs_policy_repair_preview_then_admin_apply(tmp_path, monkeypatch) -> None:
+    sql = """-- additive
+BEGIN;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1) THEN
+        EXECUTE 'UPDATE llm_routes SET model_id = model WHERE model_id IS NULL';
+    END IF;
+END $$;
+COMMIT;
+"""
     workspace_id, relative_path, checksum = _migration_workspace(tmp_path, sql)
     backend_env = tmp_path / "backend.env"
     backend_env.write_text(
@@ -144,10 +153,14 @@ def test_verified_backfill_runs_rollback_preview_then_admin_apply(tmp_path, monk
     assert result["status"] == "APPLIED"
     assert result["preview"] == {"ok": True, "rolled_back": True}
     assert result["data_backfill_actions"] == ["update_rows"]
+    assert result["policy_repair"]["status"] == "APPLIED"
+    assert result["policy_repair"]["scope"] == "preview_only"
+    assert result["policy_repair"]["source_unchanged"] is True
     assert len(calls) == 2
     assert calls[0]["password"] == "preview-secret"
     assert "ROLLBACK;" in calls[0]["input"]
-    assert "COMMIT;" not in calls[0]["input"]
+    assert calls[0]["input"].count("COMMIT;") == 0
+    assert "DO $$" in calls[0]["input"]
     assert calls[1]["password"] == "admin-secret"
     assert calls[1]["input"] == sql
 
