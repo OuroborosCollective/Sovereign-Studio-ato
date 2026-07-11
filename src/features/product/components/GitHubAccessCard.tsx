@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   type GitHubAccessSnapshot,
   validateGitHubTokenFormat,
@@ -73,6 +73,15 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
       setClipboardClearState(result.available ? 'failed' : 'idle');
     }
   }, []);
+
+  useEffect(() => {
+    if (!showModal) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') handleCloseModal();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [handleCloseModal, showModal]);
 
   const getStateColor = () => {
     switch (snapshot.state) {
@@ -190,11 +199,13 @@ export function GitHubAccessCard({ snapshot, onProvideToken, onDismiss }: GitHub
             </button>
           )}
 
-          {/* Dismiss for invalid */}
-          {snapshot.state === 'invalid' && onDismiss && (
+          {/* Dismiss for user-opened access surfaces; validation itself stays visible */}
+          {snapshot.state !== 'validating' && onDismiss && (
             <button
               type="button"
               onClick={onDismiss}
+              aria-label="GitHub-Zugang schließen"
+              title="GitHub-Zugang schließen"
               style={{
                 padding: '6px 8px',
                 borderRadius: 8,

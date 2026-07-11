@@ -308,6 +308,122 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByLabelText("Menü"));
     expect(screen.getByText("Sovereign Studio")).toBeDefined();
     expect(screen.getByText(/Cloudflare Workers/i)).toBeDefined();
+    expect(screen.getByRole("dialog", { name: "Sovereign Seitenmenü" })).toBeDefined();
+  });
+
+  it("side menu exposes the registered launcher and does not offer an empty chat export", () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByLabelText("Menü"));
+    const sideMenu = screen.getByRole("dialog", { name: "Sovereign Seitenmenü" });
+    expect(screen.getByTestId("sovereign-side-menu-panel")).toHaveStyle({ overflowY: "auto" });
+
+    expect(within(sideMenu).getByRole("button", { name: /Chat teilen/i })).toBeDisabled();
+    expect(within(sideMenu).getByTestId("builder__draft-pr")).toHaveAttribute("data-gate-state", "repo-required");
+
+    fireEvent.click(within(sideMenu).getByRole("button", { name: /Alle Tools/i }));
+    expect(screen.queryByRole("dialog", { name: "Sovereign Seitenmenü" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Sovereign Launcher" })).toBeDefined();
+  });
+
+  it("side menu analysis actions use the real repo gate instead of legacy direct callbacks", () => {
+    const props = baseProps();
+    renderWithProviders(<BuilderContainer {...props} />);
+    fireEvent.click(screen.getByLabelText("Menü"));
+    const sideMenu = screen.getByRole("dialog", { name: "Sovereign Seitenmenü" });
+
+    fireEvent.click(within(sideMenu).getByRole("button", { name: "Auftrag analysieren" }));
+
+    expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined();
+    expect(props.onGenerateIdeas).not.toHaveBeenCalled();
+    expect(screen.getByText(/Das echte Repo-Setup wurde geöffnet/i)).toBeDefined();
+  });
+
+  it("side menu Runtime Logs opens the real evidence sheet without fabricating entries", () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByLabelText("Menü"));
+    const sideMenu = screen.getByRole("dialog", { name: "Sovereign Seitenmenü" });
+    fireEvent.click(within(sideMenu).getByRole("button", { name: /Runtime Logs/i }));
+
+    expect(screen.queryByRole("dialog", { name: "Sovereign Seitenmenü" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Runtime Evidence Logs" })).toBeDefined();
+    expect(screen.getByText("Noch keine Runtime-Ereignisse.")).toBeDefined();
+  });
+
+  it("side menu disables Draft PR when a repo exists but no change evidence exists", async () => {
+    const props = baseProps();
+    mockFetchSequence(jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }));
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+
+    fireEvent.click(screen.getByLabelText("Menü"));
+    const draftButton = within(screen.getByRole("dialog", { name: "Sovereign Seitenmenü" }))
+      .getByTestId("builder__draft-pr");
+    expect(draftButton).toBeDisabled();
+    expect(draftButton).toHaveAttribute("data-gate-state", "evidence-required");
+    expect(props.onPublishDraftPr).not.toHaveBeenCalled();
+  });
+
+  it("side menu records an Agent cancel request without claiming the Agent already stopped", async () => {
+    const onCancelAgent = vi.fn();
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        agentJob={repoScopedJob()}
+        onCancelAgent={onCancelAgent}
+      />,
+    );
+    await loadRepoFromChat();
+
+    fireEvent.click(screen.getByLabelText("Menü"));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Sovereign Seitenmenü" }))
+      .getByRole("button", { name: /Agent stoppen/i }));
+
+    expect(onCancelAgent).toHaveBeenCalledOnce();
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    expect(actionStream).toHaveTextContent("Agent-Abbruch angefragt");
+    expect(actionStream).not.toHaveTextContent("Agent gestoppt");
+  });
+
+  it("side menu routes Draft PR through GitHub access and publishes only when all evidence is ready", async () => {
+    const props = baseProps();
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...props}
+        mission=""
+        repoReady={false}
+        agentJob={repoScopedJob({ status: 'completed', changedFiles: ["README.md"] })}
+      />,
+    );
+    await loadRepoFromChat();
+
+    fireEvent.click(screen.getByLabelText("Menü"));
+    let sideMenu = screen.getByRole("dialog", { name: "Sovereign Seitenmenü" });
+    let draftButton = within(sideMenu).getByTestId("builder__draft-pr");
+    expect(draftButton).toHaveAttribute("data-gate-state", "access-required");
+    fireEvent.click(draftButton);
+    expect(props.onPublishDraftPr).not.toHaveBeenCalled();
+    expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined();
+
+    await validateGitHubAccessFromLauncher();
+    fireEvent.click(screen.getByLabelText("Menü"));
+    sideMenu = screen.getByRole("dialog", { name: "Sovereign Seitenmenü" });
+    draftButton = within(sideMenu).getByTestId("builder__draft-pr");
+    expect(draftButton).toHaveAttribute("data-gate-state", "ready");
+    fireEvent.click(draftButton);
+
+    expect(props.onPublishDraftPr).toHaveBeenCalledOnce();
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Draft-PR-Publisher aufgerufen");
   });
 
   it("opens runtime source sheet with Cloudflare Worker as the standard LLM route", () => {
@@ -769,6 +885,20 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Zugang eingeben")).toBeDefined();
     expect(screen.getByText(/Kein validierter GitHub-Zugang vorhanden/i)).toBeDefined();
     expect(screen.queryByText(/Token im Kanal/i)).toBeNull();
+  });
+
+  it("closes a manually opened GitHub access surface without changing the access state", async () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByLabelText("Menü"));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Sovereign Seitenmenü" }))
+      .getByRole("button", { name: /GitHub Access/i }));
+
+    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "GitHub-Zugang schließen" }));
+
+    expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+      .toHaveTextContent("GitHub-Zugangsfläche geschlossen");
   });
 
   it("compact launcher trusts only a complete runtime repo snapshot, not the repoReady prop", () => {
