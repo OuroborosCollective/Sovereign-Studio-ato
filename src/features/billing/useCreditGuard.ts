@@ -31,6 +31,7 @@ import {
   openCreditPaywall,
   fetchUserCredits,
 } from './billingSlice';
+import { fetchWithStepUp } from '../security/securityApi';
 import { calculateCredits } from './costConfig';
 
 const API_BASE: string =
@@ -63,9 +64,8 @@ export function useCreditGuard(): UseCreditGuardResult {
   const chargeCredits = useCallback(async (costId: string, tokenCount = 0): Promise<boolean> => {
     const cost = calculateCredits(costId, tokenCount);
 
-    // Free operations (unknown cost id or 0-cost) always proceed.
-    if (cost === 0) return true;
-
+    // The server ledger is authoritative. An unknown local cost id must not
+    // silently become free for an authenticated account.
     const sessionUser = useUserStore.getState().user;
     if (!sessionUser) {
       // No authenticated ledger exists yet. Let the chat/worker route proceed as
@@ -74,12 +74,12 @@ export function useCreditGuard(): UseCreditGuardResult {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/billing/deduct`, {
+      const response = await fetchWithStepUp(`${API_BASE}/api/billing/deduct`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ costId, amount: cost, tokenCount }),
-      });
+      }, 'expensive_llm_route');
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({})) as {

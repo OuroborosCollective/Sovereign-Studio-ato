@@ -396,6 +396,7 @@ import {
   selectRepositoryScopedPullRequestUrl,
 } from "../runtime/sovereignRepoEvidenceScopeRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
+import { experienceContext, knowledgeContext, searchExperiencePatterns, searchKnowledge } from '../../knowledge/knowledgeApi';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { useUserStore } from '../../user/useUserStore';
@@ -4260,6 +4261,43 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       });
     }
 
+    let referenceKnowledgeContext = '';
+    let experiencePatternContext = '';
+    if (authUser) {
+      const [knowledgeOutcome, experienceOutcome] = await Promise.allSettled([
+        searchKnowledge(submittedText, 5),
+        searchExperiencePatterns(submittedText, 5),
+      ]);
+      if (knowledgeOutcome.status === 'fulfilled') {
+        referenceKnowledgeContext = knowledgeContext(knowledgeOutcome.value);
+        if (knowledgeOutcome.value.length > 0) {
+          appendActionEvent({
+            kind: 'context_collected',
+            route: 'runtime',
+            label: 'Referenzwissen gefunden',
+            detail: `${knowledgeOutcome.value.length} semantisch passende Wissensblöcke wurden als untrusted reference context beigefügt.`,
+            state: 'done',
+          });
+        }
+      } else {
+        addLog('warn', `Wissenssuche nicht verfügbar: ${knowledgeOutcome.reason instanceof Error ? knowledgeOutcome.reason.message : String(knowledgeOutcome.reason)}`, 'pattern');
+      }
+      if (experienceOutcome.status === 'fulfilled') {
+        experiencePatternContext = experienceContext(experienceOutcome.value);
+        if (experienceOutcome.value.length > 0) {
+          appendActionEvent({
+            kind: 'context_collected',
+            route: 'runtime',
+            label: 'Erfahrungsmuster gefunden',
+            detail: `${experienceOutcome.value.length} evidence-geprüfte Muster wurden für den aktuellen Auftrag gefunden.`,
+            state: 'done',
+          });
+        }
+      } else {
+        addLog('warn', `Erfahrungssuche nicht verfügbar: ${experienceOutcome.reason instanceof Error ? experienceOutcome.reason.message : String(experienceOutcome.reason)}`, 'pattern');
+      }
+    }
+
     const workerMessages = buildWorkerMessages({
       submittedText,
       chatHistory,
@@ -4270,6 +4308,8 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         getToolContext(),
         getActiveSkillContext(),
         autoToolchainContext,
+        referenceKnowledgeContext,
+        experiencePatternContext,
       ].filter(Boolean).join('\n\n'),
     });
 

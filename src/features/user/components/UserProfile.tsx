@@ -3,7 +3,9 @@
  * Issue #459
  */
 
-import React from 'react';
+import React, { useState } from 'react';
+import { KnowledgeLibraryPanel } from '../../knowledge/KnowledgeLibraryPanel';
+import { SecuritySettingsPanel } from '../../security/SecuritySettingsPanel';
 import { useUserStore } from '../useUserStore';
 
 const C = {
@@ -34,6 +36,8 @@ interface Props {
 
 export function UserProfile({ onClose, onBuyCredits }: Props) {
   const { user, logout } = useUserStore();
+  const [showKnowledge, setShowKnowledge] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
   if (!user) return null;
 
   const sub = SUB_LABEL[user.subscriptionStatus] ?? SUB_LABEL.free;
@@ -117,6 +121,30 @@ export function UserProfile({ onClose, onBuyCredits }: Props) {
         )}
 
         <button
+          onClick={() => setShowKnowledge(true)}
+          style={{
+            width: '100%', background: 'transparent',
+            border: `1px solid ${C.border}`, borderRadius: 7,
+            color: C.text, fontSize: 13, padding: '9px 0',
+            cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8,
+          }}
+        >
+          Wissensbibliothek
+        </button>
+
+        <button
+          onClick={() => setShowSecurity(true)}
+          style={{
+            width: '100%', background: 'transparent',
+            border: `1px solid ${C.border}`, borderRadius: 7,
+            color: C.text, fontSize: 13, padding: '9px 0',
+            cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8,
+          }}
+        >
+          Passkeys & Sicherheit
+        </button>
+
+        <button
           onClick={handleLogout}
           style={{
             width: '100%', background: 'transparent',
@@ -130,6 +158,8 @@ export function UserProfile({ onClose, onBuyCredits }: Props) {
           Abmelden
         </button>
       </div>
+      {showKnowledge && <KnowledgeLibraryPanel onClose={() => setShowKnowledge(false)} />}
+      {showSecurity && <SecuritySettingsPanel onClose={() => setShowSecurity(false)} />}
     </div>
   );
 }

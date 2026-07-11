@@ -10,6 +10,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { loginWithAccountKey as securityAccountKeyLogin, loginWithPasskey as securityPasskeyLogin } from '../security/securityApi';
 
 export type UserRole = 'user' | 'admin' | 'superadmin';
 export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing' | 'free';
@@ -102,6 +103,8 @@ interface UserStore {
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   loginWithGitHub: (code: string) => Promise<void>;
+  loginWithPasskey: (email?: string) => Promise<void>;
+  loginWithAccountKey: (key: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -190,6 +193,28 @@ export const useUserStore = create<UserStore>()(
           set({ user, isLoading: false, error: null });
         } catch {
           set({ isLoading: false, error: 'Verbindungsfehler' });
+        }
+      },
+
+      loginWithPasskey: async (email = '') => {
+        set({ isLoading: true, error: null });
+        try {
+          const user = normalizeCurrentUser(await securityPasskeyLogin(email));
+          if (!user) throw new Error('Ungültige User-Antwort vom Server');
+          set({ user, isLoading: false, error: null });
+        } catch (reason) {
+          set({ isLoading: false, error: reason instanceof Error ? reason.message : 'Passkey-Login fehlgeschlagen' });
+        }
+      },
+
+      loginWithAccountKey: async (key) => {
+        set({ isLoading: true, error: null });
+        try {
+          const user = normalizeCurrentUser(await securityAccountKeyLogin(key));
+          if (!user) throw new Error('Ungültige User-Antwort vom Server');
+          set({ user, isLoading: false, error: null });
+        } catch (reason) {
+          set({ isLoading: false, error: reason instanceof Error ? reason.message : 'Account-Key-Login fehlgeschlagen' });
         }
       },
 

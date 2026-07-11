@@ -21,6 +21,7 @@ from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import evaluate_pattern_learning, pattern_input_from_job, pattern_learning_signal, persist_pattern_learning_candidate
+from .pattern_vector_memory import persist_pattern_vector, search_pattern_vectors
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
@@ -138,6 +139,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
     - POST /api/user/agent/jobs/<job_id>/draft-pr/create
     - POST /api/user/agent/jobs/<job_id>/patterns/learn
+    - POST /api/user/agent/patterns/predict
     """
 
     def _connection():
@@ -394,12 +396,44 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             pattern_result = evaluate_pattern_learning(pattern_input_from_job(job))
-            persist_pattern_learning_candidate(conn, user_id=user_id, result=pattern_result)
+            candidate_id = persist_pattern_learning_candidate(conn, user_id=user_id, result=pattern_result)
+            vector_memory = persist_pattern_vector(
+                conn,
+                candidate_id=candidate_id,
+                user_id=user_id,
+                result=pattern_result,
+            )
             return jsonify({
                 "ok": pattern_result.allowed,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
+                "candidateId": candidate_id,
                 "patternLearning": pattern_learning_signal(pattern_result),
+                "vectorMemory": vector_memory,
             }), 200 if pattern_result.allowed else 400
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/patterns/predict", methods=["POST"])
+    @require_session
+    def user_predict_agent_patterns():
+        user_id = _current_session_user_id()
+        body = request.get_json(force=True) or {}
+        query_text = str(body.get("query") or "").strip()
+        if not query_text:
+            return jsonify({"error": "query is required"}), 400
+        try:
+            limit = max(1, min(int(body.get("limit", 8)), 20))
+        except (TypeError, ValueError):
+            limit = 8
+        conn = _connection()
+        try:
+            result = search_pattern_vectors(
+                conn,
+                user_id=user_id,
+                query_text=query_text,
+                limit=limit,
+            )
+            return jsonify({"runtime": "sovereign-agent", **result}), 200 if result.get("ok") else 503
         finally:
             _close(conn)

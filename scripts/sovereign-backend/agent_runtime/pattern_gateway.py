@@ -163,11 +163,12 @@ def pattern_learning_signal(result: PatternLearningResult) -> dict[str, Any]:
     }
 
 
-def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: PatternLearningResult) -> None:
+def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: PatternLearningResult) -> str:
     """Persist a pattern gateway decision locally.
 
     This is a local runtime record only. It is not a Remote Memory write.
     """
+    candidate_id = f"pattern-{uuid.uuid4().hex}"
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -184,7 +185,7 @@ def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: Patte
             ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
             """,
             (
-                f"pattern-{uuid.uuid4().hex}",
+                candidate_id,
                 user_id,
                 result.payload.get("jobId"),
                 result.decision,
@@ -196,3 +197,4 @@ def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: Patte
             ),
         )
     conn.commit()
+    return candidate_id
