@@ -29,7 +29,7 @@ jobs:
       run:
         working-directory: tools/sovereign-chatgpt-mcp
     env:
-      SOVEREIGN_MCP_WORKSPACE_ROOT: ${{ runner.temp }}/sovereign-mcp-workspaces
+      SOVEREIGN_MCP_WORKSPACE_ROOT: /tmp/sovereign-mcp-workspaces
       SOVEREIGN_MCP_HOST: 127.0.0.1
       SOVEREIGN_MCP_PORT: '8090'
       SOVEREIGN_MCP_REPOSITORY: OuroborosCollective/Sovereign-Studio-ato
