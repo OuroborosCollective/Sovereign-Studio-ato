@@ -119,3 +119,7 @@ from .workspace_policy import (  # noqa: F401
     validate_workspace_relative_path,
     workspace_root,
 )
+from .event_mapping_compat import install_event_mapping_compat as _install_event_mapping_compat
+
+_install_event_mapping_compat()
+del _install_event_mapping_compat
