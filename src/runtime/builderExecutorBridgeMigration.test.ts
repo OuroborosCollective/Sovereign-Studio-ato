@@ -11,7 +11,7 @@ describe('builder executor bridge migration contract', () => {
         repoReady: true,
         githubAccessState: 'ready',
         githubTokenPresent: true,
-        directPatchSupported: false,
+        directPatchSupported: true,
         agentConfigured: false,
         workerAvailable: true,
         workspaceConfigured: false,

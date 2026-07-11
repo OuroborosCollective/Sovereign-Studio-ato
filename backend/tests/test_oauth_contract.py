@@ -133,9 +133,10 @@ def require_app_import():
 class TestOAuthContractWithApp:
     """Verifiziert dass OAuth Contract in app.py korrekt implementiert ist."""
 
-    def test_user_row_to_dict_excludes_token(self):
+    def test_user_row_to_dict_excludes_token(self, monkeypatch):
         """CRITICAL CONTRACT: _user_row_to_dict darf KEIN Token zurückgeben."""
         app_module = require_app_import()
+        monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda uid: 500)
         mock_row = {
             "id": "test-uuid",
             "email": "test@example.com",
@@ -158,9 +159,10 @@ class TestOAuthContractWithApp:
         assert "githubAccessToken" not in result
         assert "token" not in result
 
-    def test_user_row_to_dict_includes_safe_github_fields(self):
+    def test_user_row_to_dict_includes_safe_github_fields(self, monkeypatch):
         """GitHub Username und ID dürfen im Response sein, keine Secrets."""
         app_module = require_app_import()
+        monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda uid: 500)
         mock_row = {
             "id": "test-uuid",
             "email": "test@example.com",
@@ -242,6 +244,7 @@ class TestOAuthContractWithApp:
     def test_auth_github_token_exchange_uses_verifier_and_redirect_uri(self, monkeypatch):
         """Callback muss echte App-Logik nutzen und Token verschlüsselt speichern."""
         app_module = require_app_import()
+        monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda uid: 500)
         calls = []
 
         class FakeResponse:
@@ -272,7 +275,11 @@ class TestOAuthContractWithApp:
             normalized_sql = " ".join(sql.upper().split())
 
             if normalized_sql.startswith("SELECT * FROM ADMIN_USERS WHERE GITHUB_ID"):
-                return None
+                return {
+                    "id": "existing-uuid",
+                    "email": "octo@example.test",
+                    "github_id": "12345",
+                }
 
             if write:
                 stored_rows.append((sql, params))

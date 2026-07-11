@@ -52,7 +52,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
     };
   }, [isOpen]);
 
-  const supportedPaymentMethods = paymentMethods.filter(method =>
+  const supportedPaymentMethods = (paymentMethods || []).filter(method =>
     method.type === 'paypal'
     || method.type === 'skrill'
     || method.type.startsWith('crypto_'),
