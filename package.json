@@ -47,6 +47,7 @@
     "hardcode:scan:src": "node scripts/hardcode-scanner.mjs src",
     "smoke:ki-coach": "pnpm run test:e2e",
     "smoke:ki-coach:headed": "pnpm run test:e2e",
+    "evidence:vps": "node scripts/collect-vps-evidence.mjs",
     "apk:clean-release": "pnpm run android:clean && pnpm run build:apk"
   },
   "dependencies": {

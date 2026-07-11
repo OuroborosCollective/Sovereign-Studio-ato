@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DIGEST="${1:-}"
+IMAGE_REPOSITORY="${SOVEREIGN_BACKEND_IMAGE_REPOSITORY:-}"
+ENV_FILE="${SOVEREIGN_BACKEND_ENV_FILE:-/run/secrets/sovereign-backend.env}"
+CONTAINER="sovereign-backend"
+TARGET_IMAGE=""
+
+fail() {
+  printf 'rollback blocked: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid image digest"
+[[ -n "$IMAGE_REPOSITORY" ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is missing"
+[[ -f "$ENV_FILE" ]] || fail "backend env file is missing"
+
+TARGET_IMAGE="${IMAGE_REPOSITORY}@${DIGEST}"
+docker pull "$TARGET_IMAGE" >/dev/null
+ACTUAL_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$TARGET_IMAGE" 2>/dev/null || true)"
+[[ "$ACTUAL_DIGEST" == *"@$DIGEST" ]] || fail "pulled image digest does not match"
+REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$TARGET_IMAGE" 2>/dev/null || true)"
+[[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "target image has no valid revision label"
+
+for network in supabase_default areloria_arelorian-network openhands-enterprise_default; do
+  docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
+done
+
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+docker run -d \
+  --name "$CONTAINER" \
+  --restart unless-stopped \
+  --env-file "$ENV_FILE" \
+  --network supabase_default \
+  --volume /opt/secure:/opt/secure:ro \
+  --label "org.opencontainers.image.revision=$REVISION" \
+  -p 127.0.0.1:8788:8787 \
+  "$TARGET_IMAGE" >/dev/null
+docker network connect areloria_arelorian-network "$CONTAINER"
+docker network connect openhands-enterprise_default "$CONTAINER"
+
+HEALTH=""
+for attempt in $(seq 1 12); do
+  HEALTH="$(curl -fsS http://127.0.0.1:8788/health 2>/dev/null || true)"
+  if printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    break
+  fi
+  sleep 5
+done
+
+if ! printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  docker logs "$CONTAINER" --tail 150 >&2 || true
+  fail "rollback target failed health check"
+fi
+
+printf '{"ok":true,"container":"%s","image":"%s","revision":"%s","health":%s}\n' \
+  "$CONTAINER" "$TARGET_IMAGE" "$REVISION" "$HEALTH"
