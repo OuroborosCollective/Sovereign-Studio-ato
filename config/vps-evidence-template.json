@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "repository": "OuroborosCollective/Sovereign-Studio-ato",
+  "expected_sha": null,
+  "collected_at": null,
+  "collector": "vps-agent",
+  "deployed": {
+    "reported_sha": null,
+    "image": null,
+    "image_id": null,
+    "container": null,
+    "started_at": null,
+    "restart_count": null,
+    "critical_file_hashes": {}
+  },
+  "checks": [
+    { "id": "backend.local.health", "status": "UNKNOWN", "http_status": null, "latency_ms": null, "evidence": "" },
+    { "id": "backend.proxy.health", "status": "UNKNOWN", "http_status": null, "latency_ms": null, "evidence": "" },
+    { "id": "database.select1", "status": "UNKNOWN", "exit_status": null, "evidence": "" },
+    { "id": "database.migrations", "status": "UNKNOWN", "exit_status": null, "evidence": "" },
+    { "id": "pattern.local", "status": "UNKNOWN", "exit_status": null, "evidence": "" },
+    { "id": "vector.database", "status": "UNKNOWN", "exit_status": null, "evidence": "" },
+    { "id": "toolchain.status", "status": "UNKNOWN", "http_status": null, "latency_ms": null, "evidence": "" },
+    { "id": "toolchain.read_canary", "status": "UNKNOWN", "http_status": null, "latency_ms": null, "evidence": "" },
+    { "id": "agent.routes", "status": "UNKNOWN", "exit_status": null, "evidence": "" },
+    { "id": "agent.read_canary", "status": "UNKNOWN", "exit_status": null, "evidence": "" },
+    { "id": "llm.routing", "status": "UNKNOWN", "http_status": null, "latency_ms": null, "evidence": "" },
+    { "id": "llm.model_canary", "status": "UNKNOWN", "http_status": null, "latency_ms": null, "evidence": "" },
+    { "id": "security.secret_scan", "status": "UNKNOWN", "exit_status": null, "evidence": "" }
+  ],
+  "blockers": [],
+  "notes": []
+}
