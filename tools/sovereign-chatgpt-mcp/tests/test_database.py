@@ -4,7 +4,7 @@ import hashlib
 
 import pytest
 
-from database import DatabaseRuntime
+from database import DatabaseRuntime, _preview_body
 
 
 def test_migration_blocks_dangerous_sql(repo_runtime) -> None:
@@ -15,6 +15,24 @@ def test_migration_blocks_dangerous_sql(repo_runtime) -> None:
     database = DatabaseRuntime(runtime._repo)
     with pytest.raises(ValueError, match="gesperrte SQL"):
         database.preview_migration(workspace_id, "migrations/001.sql")
+
+
+def test_migration_blocks_psql_meta_commands(repo_runtime) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    migration = repo / "migrations" / "meta.sql"
+    migration.parent.mkdir()
+    migration.write_text("\\! id\n", "utf-8")
+    database = DatabaseRuntime(runtime._repo)
+    with pytest.raises(ValueError, match="Metabefehle"):
+        database.preview_migration(workspace_id, "migrations/meta.sql")
+
+
+def test_preview_removes_one_outer_transaction_pair() -> None:
+    sql = "-- additive migration\nBEGIN;\nCREATE TABLE example(id integer);\nCOMMIT;\n"
+    preview = _preview_body(sql)
+    assert "CREATE TABLE example" in preview
+    assert not preview.lstrip().upper().startswith("BEGIN;")
+    assert not preview.rstrip().upper().endswith("COMMIT;")
 
 
 def test_productive_migration_is_disabled_by_default(repo_runtime, monkeypatch) -> None:
@@ -57,3 +75,63 @@ def test_destructive_migration_requires_separate_activation(repo_runtime, monkey
     result = database.apply_migration(workspace_id, "migrations/004.sql", checksum)
     assert result["status"] == "BLOCKED"
     assert result["destructive_actions"] == ["drop_column"]
+
+
+def test_update_backfill_has_its_own_persistent_gate(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    migration = repo / "migrations" / "005.sql"
+    migration.parent.mkdir(exist_ok=True)
+    sql = "UPDATE llm_routes SET model_id = model WHERE model_id IS NULL;\n"
+    migration.write_text(sql, "utf-8")
+    checksum = hashlib.sha256(sql.encode()).hexdigest()
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "1")
+    monkeypatch.delenv("SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS", raising=False)
+    database = DatabaseRuntime(runtime._repo)
+    result = database.apply_migration(workspace_id, "migrations/005.sql", checksum)
+    assert result["status"] == "BLOCKED"
+    assert result["blocker"] == "Daten-Backfills sind nicht separat aktiviert"
+    assert result["data_backfill_actions"] == ["update_rows"]
+    assert "destructive_actions" not in result
+
+
+def test_enabled_backfill_uses_fixed_host_broker_after_preview(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    migration = repo / "migrations" / "006.sql"
+    migration.parent.mkdir(exist_ok=True)
+    sql = "UPDATE llm_routes SET model_id = model WHERE model_id IS NULL;\n"
+    migration.write_text(sql, "utf-8")
+    checksum = hashlib.sha256(sql.encode()).hexdigest()
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS", "1")
+    database = DatabaseRuntime(runtime._repo)
+    monkeypatch.setattr(
+        database,
+        "preview_migration",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "rolled_back": True,
+            "sha256": checksum,
+            "data_backfill_actions": ["update_rows"],
+        },
+    )
+    calls = []
+
+    def fake_call(action, arguments, timeout):
+        calls.append((action, arguments, timeout))
+        return {"ok": True, "status": "APPLIED", "sha256": checksum}
+
+    monkeypatch.setattr(database.broker, "call", fake_call)
+    result = database.apply_migration(workspace_id, "migrations/006.sql", checksum)
+    assert result["status"] == "APPLIED"
+    assert result["local_preview"]["rolled_back"] is True
+    assert calls == [
+        (
+            "apply_verified_migration",
+            {
+                "workspace_id": workspace_id,
+                "path": "migrations/006.sql",
+                "confirmation_sha256": checksum,
+            },
+            240,
+        )
+    ]

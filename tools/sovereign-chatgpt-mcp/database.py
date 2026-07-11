@@ -9,6 +9,7 @@ from typing import Any
 import psycopg2
 import psycopg2.extras
 
+from broker_client import HostBrokerClient
 from policy import safe_repo_path
 
 FORBIDDEN_SQL = re.compile(
@@ -20,14 +21,36 @@ DESTRUCTIVE_SQL_PATTERNS = {
     "drop_schema": re.compile(r"\bDROP\s+SCHEMA\b", re.IGNORECASE),
     "drop_column": re.compile(r"\bDROP\s+COLUMN\b", re.IGNORECASE),
     "delete_rows": re.compile(r"\bDELETE\s+FROM\b", re.IGNORECASE),
+}
+DATA_BACKFILL_SQL_PATTERNS = {
     "update_rows": re.compile(r"\bUPDATE\s+[A-Za-z_\"]", re.IGNORECASE),
 }
+PSQL_META_COMMAND = re.compile(r"(?m)^\s*\\")
+TRANSACTION_CONTROL = re.compile(r"(?im)^\s*(BEGIN|START\s+TRANSACTION|COMMIT|ROLLBACK)\b")
 MAX_MIGRATION_BYTES = 500_000
+
+
+def _preview_body(sql: str) -> str:
+    """Remove one outer BEGIN/COMMIT pair so rollback evidence remains truthful."""
+
+    text = sql.strip()
+    begin_match = re.match(
+        r"\A(?P<prefix>(?:(?:\s+)|(?:--[^\n]*(?:\n|\Z))|(?:/\*.*?\*/))*)BEGIN\s*;",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    commit_match = re.search(r"COMMIT\s*;\s*\Z", text, re.IGNORECASE)
+    if begin_match and commit_match and commit_match.start() >= begin_match.end():
+        text = f"{begin_match.group('prefix')}{text[begin_match.end():commit_match.start()]}".strip()
+    if TRANSACTION_CONTROL.search(text):
+        raise ValueError("Migration enthält verschachtelte Transaktionssteuerung")
+    return text
 
 
 class DatabaseRuntime:
     def __init__(self, workspace_resolver) -> None:
         self.workspace_resolver = workspace_resolver
+        self.broker = HostBrokerClient()
 
     @staticmethod
     def _connection(prefix: str = "POSTGRES"):
@@ -74,27 +97,33 @@ class DatabaseRuntime:
         finally:
             conn.close()
 
-    def _migration(self, workspace_id: str, path: str) -> tuple[Path, str, str, tuple[str, ...]]:
+    def _migration(self, workspace_id: str, path: str) -> tuple[Path, str, str, tuple[str, ...], tuple[str, ...]]:
         repo = self.workspace_resolver(workspace_id)
         migration = safe_repo_path(repo, path, must_exist=True)
+        if migration.suffix.lower() != ".sql":
+            raise ValueError("Migration muss eine SQL-Datei sein")
         data = migration.read_bytes()
         if len(data) > MAX_MIGRATION_BYTES:
             raise ValueError("Migration ist zu groß")
         sql = data.decode("utf-8")
+        if PSQL_META_COMMAND.search(sql):
+            raise ValueError("psql-Metabefehle sind in Migrationen gesperrt")
         if FORBIDDEN_SQL.search(sql):
             raise ValueError("Migration enthält eine vollständig gesperrte SQL-Operation")
         destructive = tuple(name for name, pattern in DESTRUCTIVE_SQL_PATTERNS.items() if pattern.search(sql))
-        return migration, sql, hashlib.sha256(data).hexdigest(), destructive
+        data_backfills = tuple(name for name, pattern in DATA_BACKFILL_SQL_PATTERNS.items() if pattern.search(sql))
+        _preview_body(sql)
+        return migration, sql, hashlib.sha256(data).hexdigest(), destructive, data_backfills
 
     def preview_migration(self, workspace_id: str, path: str) -> dict[str, Any]:
-        _, sql, checksum, destructive = self._migration(workspace_id, path)
+        _, sql, checksum, destructive, data_backfills = self._migration(workspace_id, path)
         conn = self._connection("SOVEREIGN_MCP_PREVIEW_POSTGRES")
         try:
             conn.autocommit = False
             with conn.cursor() as cur:
                 cur.execute("SET LOCAL statement_timeout = '60s'")
                 cur.execute("SET LOCAL lock_timeout = '5s'")
-                cur.execute(sql)
+                cur.execute(_preview_body(sql))
             conn.rollback()
             return {
                 "ok": True,
@@ -102,6 +131,7 @@ class DatabaseRuntime:
                 "sha256": checksum,
                 "database_scope": "preview",
                 "destructive_actions": list(destructive),
+                "data_backfill_actions": list(data_backfills),
             }
         except Exception as exc:
             conn.rollback()
@@ -111,6 +141,7 @@ class DatabaseRuntime:
                 "sha256": checksum,
                 "database_scope": "preview",
                 "destructive_actions": list(destructive),
+                "data_backfill_actions": list(data_backfills),
                 "error": str(exc)[:2000],
             }
         finally:
@@ -119,7 +150,7 @@ class DatabaseRuntime:
     def apply_migration(self, workspace_id: str, path: str, confirmation_sha256: str) -> dict[str, Any]:
         if os.getenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "0") != "1":
             return {"ok": False, "status": "BLOCKED", "blocker": "Produktive DB-Writes sind nicht aktiviert"}
-        _, sql, checksum, destructive = self._migration(workspace_id, path)
+        _, _, checksum, destructive, data_backfills = self._migration(workspace_id, path)
         if confirmation_sha256 != checksum:
             return {"ok": False, "status": "BLOCKED", "blocker": "Bestätigungs-Hash stimmt nicht", "sha256": checksum}
         if destructive and os.getenv("SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS", "0") != "1":
@@ -130,27 +161,24 @@ class DatabaseRuntime:
                 "sha256": checksum,
                 "destructive_actions": list(destructive),
             }
+        if data_backfills and os.getenv("SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS", "0") != "1":
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Daten-Backfills sind nicht separat aktiviert",
+                "sha256": checksum,
+                "data_backfill_actions": list(data_backfills),
+            }
         preview = self.preview_migration(workspace_id, path)
         if not preview.get("ok"):
             return {"ok": False, "status": "BLOCKED", "blocker": "Preview-Migration ist fehlgeschlagen", "preview": preview}
-
-        conn = self._connection("POSTGRES")
-        try:
-            conn.autocommit = False
-            with conn.cursor() as cur:
-                cur.execute("SET LOCAL statement_timeout = '120s'")
-                cur.execute("SET LOCAL lock_timeout = '5s'")
-                cur.execute(sql)
-            conn.commit()
-            return {
-                "ok": True,
-                "status": "APPLIED",
-                "sha256": checksum,
-                "destructive_actions": list(destructive),
-                "preview": preview,
-            }
-        except Exception as exc:
-            conn.rollback()
-            return {"ok": False, "status": "FAILED", "sha256": checksum, "error": str(exc)[:2000]}
-        finally:
-            conn.close()
+        result = self.broker.call(
+            "apply_verified_migration",
+            {
+                "workspace_id": workspace_id,
+                "path": path,
+                "confirmation_sha256": confirmation_sha256,
+            },
+            timeout=240,
+        )
+        return {**result, "local_preview": preview}

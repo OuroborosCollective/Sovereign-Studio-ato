@@ -5,12 +5,10 @@ on:
     branches: [main]
     paths:
       - 'scripts/sovereign-backend/**'
+      - 'tools/sovereign-chatgpt-mcp/**'
       - '.github/workflows/sovereign-backend-image.yml'
   push:
     branches: [main]
-    paths:
-      - 'scripts/sovereign-backend/**'
-      - '.github/workflows/sovereign-backend-image.yml'
   workflow_dispatch:
 
 permissions:
