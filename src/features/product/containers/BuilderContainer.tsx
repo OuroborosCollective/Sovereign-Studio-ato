@@ -21,10 +21,7 @@ import {
   type ChatOutcomeHint,
   type IdeaOption,
 } from "../runtime/builderContainerHelpers";
-import {
-  builderPublishLabel,
-  deriveBuilderContainerState,
-} from "../runtime/builderContainerRuntime";
+import { deriveBuilderContainerState } from "../runtime/builderContainerRuntime";
 import { getSovereignContainerContract } from "../runtime/sovereignContainerContracts";
 import { SOVEREIGN_FORM_MISSION } from "../runtime/sovereignFormContracts";
 import {
@@ -390,6 +387,12 @@ import {
   buildSovereignRuntimeEvidenceLog,
   decideSovereignCompactShortcutExecution,
 } from "../runtime/sovereignCompactShortcutExecutionRuntime";
+import {
+  decideSovereignSideMenuDraftPr,
+  decideSovereignSideMenuShare,
+  type SovereignSideMenuDraftPrDecision,
+  type SovereignSideMenuShareDecision,
+} from "../runtime/sovereignSideMenuRuntime";
 import {
   buildRepoEvidenceScopeKey,
   buildRepositoryTargetKey,
@@ -1791,31 +1794,56 @@ function RuntimeSheet({
 // SideDrawer (verbatim v3 + PAL stats block)
 function SideDrawer({
   onClose,
-  onGenerateIdeas,
-  onGenerateErrorWorkflow,
-  onPublishDraftPr,
-  isPublishing,
+  onOpenAllTools,
+  onOpenRepo,
+  onOpenRuntimeLogs,
+  onOpenGithubAccess,
+  onSelectPreset,
+  onDraftPrAction,
+  draftPrDecision,
+  shareDecision,
   chatRepoSnapshot,
+  githubAccessState,
   onCancelAgent,
   agentIsRunning,
   palStats,
-  chatHistory,
   onExportChat,
 }: {
   onClose: () => void;
-  onGenerateIdeas: () => void;
-  onGenerateErrorWorkflow: () => void;
-  onPublishDraftPr: () => void;
-  isPublishing: boolean;
+  onOpenAllTools: () => void;
+  onOpenRepo: () => void;
+  onOpenRuntimeLogs: () => void;
+  onOpenGithubAccess: () => void;
+  onSelectPreset: (id: SovereignPresetActionId) => void;
+  onDraftPrAction: () => void;
+  draftPrDecision: SovereignSideMenuDraftPrDecision;
+  shareDecision: SovereignSideMenuShareDecision;
   chatRepoSnapshot: DevChatRepoSnapshot | null;
+  githubAccessState: GitHubAccessSnapshot['state'];
   onCancelAgent?: () => void;
   agentIsRunning?: boolean;
   palStats: { total: number; savings: number } | null;
-  chatHistory: ChatLine[];
-  onExportChat?: () => void;
+  onExportChat?: () => void | Promise<void>;
 }) {
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  const runAndClose = (action: () => void) => {
+    action();
+    onClose();
+  };
+
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sovereign Seitenmenü"
+      data-testid="sovereign-side-menu"
       style={{ position: "absolute", inset: 0, zIndex: 90, display: "flex" }}
     >
       <div
@@ -1827,13 +1855,19 @@ function SideDrawer({
         }}
       />
       <div
+        data-testid="sovereign-side-menu-panel"
         style={{
-          width: "min(80vw, 300px)",
+          width: "min(86vw, 320px)",
+          maxHeight: "100dvh",
+          overflowY: "auto",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
           background: C.surface,
           borderLeft: `1px solid ${C.border}`,
           display: "flex",
           flexDirection: "column",
           boxShadow: "-8px 0 32px rgba(0,0,0,0.5)",
+          paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
         {/* Header */}
@@ -2021,6 +2055,61 @@ function SideDrawer({
           </div>
         </div>
 
+        {/* Runtime-bound tools — same surfaces as the compact launcher */}
+        <div
+          style={{
+            margin: "8px 12px 0",
+            padding: "10px",
+            borderRadius: 10,
+            background: C.bg,
+            border: `1px solid ${C.border}`,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "monospace",
+              fontSize: 9,
+              color: C.textMuted,
+              marginBottom: 8,
+            }}
+          >
+            Werkzeuge · echte Flächen
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {[
+              { label: "⬡ Alle Tools", status: "Launcher", action: onOpenAllTools },
+              { label: chatRepoSnapshot ? "⎇ Repo öffnen" : "⎇ Repo laden", status: chatRepoSnapshot ? "bereit" : "Setup", action: onOpenRepo },
+              { label: "≡ Runtime Logs", status: "Evidence", action: onOpenRuntimeLogs },
+              {
+                label: "🔑 GitHub Access",
+                status: githubAccessState === 'ready' ? "validiert" : githubAccessState === 'validating' || githubAccessState === 'requested' ? "prüft" : "fehlt",
+                action: onOpenGithubAccess,
+              },
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => runAndClose(item.action)}
+                style={{
+                  minHeight: 48,
+                  padding: "8px 9px",
+                  borderRadius: 9,
+                  background: C.surface,
+                  border: `1px solid ${C.border}`,
+                  color: C.text,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontFamily: "monospace",
+                  fontSize: 10,
+                }}
+              >
+                <span style={{ display: "block" }}>{item.label}</span>
+                <span style={{ display: "block", marginTop: 3, fontSize: 8, color: C.textMuted }}>{item.status}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Actions */}
         <div
           style={{
@@ -2035,8 +2124,16 @@ function SideDrawer({
           {onExportChat && (
             <button
               type="button"
+              disabled={!shareDecision.canShare}
+              data-gate-state={shareDecision.canShare ? 'ready' : 'evidence-missing'}
+              title={shareDecision.reason}
               onClick={() => {
-                onExportChat();
+                if (!shareDecision.canShare) return;
+                const result = onExportChat();
+                if (result && typeof (result as Promise<void>).then === 'function') {
+                  void Promise.resolve(result).catch(() => undefined).finally(onClose);
+                  return;
+                }
                 onClose();
               }}
               style={{
@@ -2049,22 +2146,22 @@ function SideDrawer({
                 fontFamily: "monospace",
                 fontSize: 12,
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: shareDecision.canShare ? "pointer" : "not-allowed",
+                opacity: shareDecision.canShare ? 1 : 0.48,
                 textAlign: "left",
                 display: "flex",
                 alignItems: "center",
+                justifyContent: "space-between",
                 gap: 8,
               }}
             >
-              <span>📤</span> Chat teilen
+              <span><span>📤</span> Chat teilen</span>
+              <span style={{ fontSize: 8, color: C.textMuted }}>{shareDecision.statusLabel}</span>
             </button>
           )}
           <button
             type="button"
-            onClick={() => {
-              onGenerateIdeas();
-              onClose();
-            }}
+            onClick={() => runAndClose(() => onSelectPreset('architecture_feature_suggestions'))}
             data-role={SOVEREIGN_ACTION_ANALYZE_MISSION.dataRole}
             data-testid={SOVEREIGN_ACTION_ANALYZE_MISSION.testId}
             aria-label={SOVEREIGN_ACTION_ANALYZE_MISSION.ariaLabel}
@@ -2086,10 +2183,7 @@ function SideDrawer({
           </button>
           <button
             type="button"
-            onClick={() => {
-              onGenerateErrorWorkflow();
-              onClose();
-            }}
+            onClick={() => runAndClose(() => onSelectPreset('error_fix_plan'))}
             style={{
               width: "100%",
               padding: "12px 14px",
@@ -2134,28 +2228,40 @@ function SideDrawer({
         <div style={{ padding: "12px" }}>
           <button
             type="button"
+            disabled={!draftPrDecision.canAct}
             onClick={() => {
-              onPublishDraftPr();
+              if (!draftPrDecision.canAct) return;
+              onDraftPrAction();
               onClose();
             }}
             data-role={SOVEREIGN_ACTION_DRAFT_PR.dataRole}
             data-testid={SOVEREIGN_ACTION_DRAFT_PR.testId}
+            data-gate-state={draftPrDecision.state}
             aria-label={SOVEREIGN_ACTION_DRAFT_PR.ariaLabel}
+            title={draftPrDecision.reason}
             style={{
               width: "100%",
               padding: "14px",
               borderRadius: 14,
-              background: C.orange,
-              border: "none",
-              color: "#fff",
+              background: draftPrDecision.canAct
+                ? draftPrDecision.action === 'publish-draft-pr'
+                  ? C.orange
+                  : `${C.amber}22`
+                : C.bg,
+              border: draftPrDecision.canAct ? "none" : `1px solid ${C.border}`,
+              color: draftPrDecision.canAct ? "#fff" : C.textMuted,
               fontFamily: "monospace",
               fontSize: 13,
               fontWeight: 700,
-              cursor: "pointer",
-              boxShadow: `0 4px 16px ${C.orange}40`,
+              cursor: draftPrDecision.canAct ? "pointer" : "not-allowed",
+              opacity: draftPrDecision.canAct ? 1 : 0.58,
+              boxShadow: draftPrDecision.action === 'publish-draft-pr' ? `0 4px 16px ${C.orange}40` : "none",
             }}
           >
-            {builderPublishLabel(isPublishing)}
+            <span style={{ display: "block" }}>{draftPrDecision.label}</span>
+            <span style={{ display: "block", marginTop: 4, fontSize: 8, fontWeight: 500, opacity: 0.82 }}>
+              {draftPrDecision.statusLabel}
+            </span>
           </button>
         </div>
       </div>
@@ -4671,6 +4777,152 @@ Das echte Repo-Setup wurde geöffnet.`,
     void _processSubmit(submitted);
   };
 
+  const handleCompactToolSelect = (toolId: ToolId) => {
+    const decision = decideSovereignCompactShortcutExecution({
+      id: toolId,
+      repoSnapshotReady: effectiveRepoReady,
+      repoFileCount: effectiveRepoReady && chatRepoSnapshot
+        ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
+        : 0,
+      changedFiles: scopedAgentJob?.changedFiles ?? [],
+      patchDiffAvailable: Boolean(patchDiffReport),
+      githubAccessState: effectiveGitHubAccessState,
+      executorAvailable: sovereignAgentStartAvailable,
+      executorIntent,
+      runtimeEventCount: runtimeEvidenceLog.length,
+    });
+    if (decision.event) appendActionEvent(decision.event);
+
+    if (decision.surface === 'repo-setup') {
+      setRepoSetupError(null);
+      setShowRepoSetup(true);
+      return;
+    }
+    if (decision.surface === 'repo-explorer' || decision.surface === 'files-explorer') {
+      setShowRepoExplorer(true);
+      return;
+    }
+    if (decision.surface === 'changed-files') {
+      setOpenWorkbenchSlot('files');
+      return;
+    }
+    if (decision.surface === 'patch-diff' && patchDiffReport) {
+      setShowPatchDiffEvidence(true);
+      return;
+    }
+    if (decision.surface === 'github-access') {
+      setShowGitHubAccessOverride(true);
+      appendChatLine({ role: 'assistant', text: `${decision.reason} ${decision.nextAction}` });
+      return;
+    }
+    if (decision.surface === 'github-status') {
+      appendChatLine({
+        role: 'assistant',
+        text: effectiveGitHubAccessState === 'ready'
+          ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
+          : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
+      });
+      return;
+    }
+    if (decision.surface === 'executor-request') {
+      void startAgentFromText(wishText.trim());
+      return;
+    }
+    if (decision.surface === 'runtime-logs') {
+      setShowRuntimeEvidenceLogs(true);
+      return;
+    }
+    if (decision.surface === 'blocked') {
+      appendChatLine({ role: 'assistant', text: `${decision.reason} Nächste Aktion: ${decision.nextAction}` });
+    }
+  };
+
+  const sideMenuShareDecision = useMemo(
+    () => decideSovereignSideMenuShare(chatHistory.length),
+    [chatHistory.length],
+  );
+  const sideMenuDraftPrDecision = useMemo(
+    () => decideSovereignSideMenuDraftPr({
+      repoReady: effectiveRepoReady,
+      hasChangeEvidence: Boolean(
+        patchDiffReport || (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
+      ),
+      githubWriteReady: githubWriteAllowed,
+      isPublishing,
+      draftPrUrl: scopedAgentJob?.draftPrUrl ?? scopedPublishedPrUrl,
+    }),
+    [
+      effectiveRepoReady,
+      githubWriteAllowed,
+      isPublishing,
+      patchDiffReport,
+      scopedAgentJob?.changedFiles?.length,
+      scopedAgentJob?.draftPrUrl,
+      scopedPublishedPrUrl,
+    ],
+  );
+
+  const handleSideMenuCancelAgent = () => {
+    if (!onCancelAgent || !scopedAgentIsRunning) return;
+
+    appendActionEvent({
+      kind: 'route_selected',
+      route: 'agent-job',
+      label: 'Agent-Abbruch angefragt',
+      detail: 'Der Abbruch-Callback wurde aufgerufen. Der Agent gilt erst nach bestätigtem Backend-State als gestoppt.',
+      state: 'queued',
+    });
+    try {
+      onCancelAgent();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendActionEvent({
+        kind: 'failed',
+        route: 'agent-job',
+        label: 'Agent-Abbruch konnte nicht angefragt werden',
+        detail: message,
+        state: 'failed',
+      });
+      appendChatLine({
+        role: 'assistant',
+        text: `Agent-Abbruch konnte nicht angefragt werden. Grund: ${message}`,
+      });
+    }
+  };
+
+  const handleSideMenuDraftPrAction = () => {
+    if (sideMenuDraftPrDecision.action === 'open-repo-setup') {
+      handleCompactToolSelect('repo');
+      return;
+    }
+    if (sideMenuDraftPrDecision.action === 'open-github-access') {
+      handleCompactToolSelect('github_access');
+      return;
+    }
+    if (sideMenuDraftPrDecision.action !== 'publish-draft-pr') return;
+
+    try {
+      onPublishDraftPr();
+      appendActionEvent(buildLocalRuntimeResultEvent({
+        label: 'Draft-PR-Publisher aufgerufen',
+        detail: 'Der bestätigte Publisher-Callback wurde ausgelöst. Ein Draft PR gilt erst mit echter PR-URL als erstellt.',
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendActionEvent({
+        kind: 'failed',
+        route: 'github-patch',
+        label: 'Draft-PR-Publisher fehlgeschlagen',
+        detail: message,
+        state: 'failed',
+      });
+      appendChatLine({
+        role: 'assistant',
+        text: `Draft-PR-Publisher konnte nicht gestartet werden. Grund: ${message}`,
+      });
+    }
+  };
+
   const selectedSlashCommand =
     slashMatches[selectedSlashIndex] ?? slashMatches[0];
   const submitSelectedSlashCommand = (command: SlashCommandDefinition) => {
@@ -5549,7 +5801,13 @@ Das echte Repo-Setup wurde geöffnet.`,
 
                     void startAgentFromText(pendingWriteIntent);
                   }}
-                  onDismiss={() => {}}
+                  onDismiss={() => {
+                    setShowGitHubAccessOverride(false);
+                    appendActionEvent(buildLocalRuntimeResultEvent({
+                      label: 'GitHub-Zugangsfläche geschlossen',
+                      detail: 'Die manuell geöffnete Zugangsfläche wurde geschlossen; kein Zugangsstatus wurde verändert.',
+                    }));
+                  }}
                 />
               )}
 
@@ -5715,65 +5973,7 @@ Das echte Repo-Setup wurde geöffnet.`,
               executorIntent,
               runtimeLogCount: runtimeEvidenceLog.length,
             }}
-            onSelect={(toolId: ToolId) => {
-              const decision = decideSovereignCompactShortcutExecution({
-                id: toolId,
-                repoSnapshotReady: effectiveRepoReady,
-                repoFileCount: effectiveRepoReady && chatRepoSnapshot
-                  ? chatRepoSnapshot.files.filter((entry) => entry.type === 'blob').length
-                  : 0,
-                changedFiles: scopedAgentJob?.changedFiles ?? [],
-                patchDiffAvailable: Boolean(patchDiffReport),
-                githubAccessState: effectiveGitHubAccessState,
-                executorAvailable: sovereignAgentStartAvailable,
-                executorIntent,
-                runtimeEventCount: runtimeEvidenceLog.length,
-              });
-              if (decision.event) appendActionEvent(decision.event);
-
-              if (decision.surface === 'repo-setup') {
-                setRepoSetupError(null);
-                setShowRepoSetup(true);
-                return;
-              }
-              if (decision.surface === 'repo-explorer' || decision.surface === 'files-explorer') {
-                setShowRepoExplorer(true);
-                return;
-              }
-              if (decision.surface === 'changed-files') {
-                setOpenWorkbenchSlot('files');
-                return;
-              }
-              if (decision.surface === 'patch-diff' && patchDiffReport) {
-                setShowPatchDiffEvidence(true);
-                return;
-              }
-              if (decision.surface === 'github-access') {
-                setShowGitHubAccessOverride(true);
-                appendChatLine({ role: 'assistant', text: `${decision.reason} ${decision.nextAction}` });
-                return;
-              }
-              if (decision.surface === 'github-status') {
-                appendChatLine({
-                  role: 'assistant',
-                  text: effectiveGitHubAccessState === 'ready'
-                    ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
-                    : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
-                });
-                return;
-              }
-              if (decision.surface === 'executor-request') {
-                void startAgentFromText(wishText.trim());
-                return;
-              }
-              if (decision.surface === 'runtime-logs') {
-                setShowRuntimeEvidenceLogs(true);
-                return;
-              }
-              if (decision.surface === 'blocked') {
-                appendChatLine({ role: 'assistant', text: `${decision.reason} Nächste Aktion: ${decision.nextAction}` });
-              }
-            }}
+            onSelect={handleCompactToolSelect}
             onOpenLauncher={useLauncherStore.getState().openMenu}
           />
           <ActionSuggestionStrip
@@ -5901,15 +6101,25 @@ Das echte Repo-Setup wurde geöffnet.`,
       {showSideMenu && (
         <SideDrawer
           onClose={() => setShowSide(false)}
-          onGenerateIdeas={onGenerateIdeas}
-          onGenerateErrorWorkflow={onGenerateErrorWorkflow}
-          onPublishDraftPr={onPublishDraftPr}
-          isPublishing={isPublishing}
+          onOpenAllTools={() => {
+            appendActionEvent(buildLocalRuntimeResultEvent({
+              label: 'Tool-Launcher geöffnet',
+              detail: 'Das Seitenmenü hat den registrierten Sovereign Launcher geöffnet.',
+            }));
+            useLauncherStore.getState().openMenu();
+          }}
+          onOpenRepo={() => handleCompactToolSelect('repo')}
+          onOpenRuntimeLogs={() => handleCompactToolSelect('runtime_logs')}
+          onOpenGithubAccess={() => handleCompactToolSelect('github_access')}
+          onSelectPreset={handlePresetActionSelect}
+          onDraftPrAction={handleSideMenuDraftPrAction}
+          draftPrDecision={sideMenuDraftPrDecision}
+          shareDecision={sideMenuShareDecision}
           chatRepoSnapshot={chatRepoSnapshot}
-          onCancelAgent={onCancelAgent}
+          githubAccessState={effectiveGitHubAccessState}
+          onCancelAgent={handleSideMenuCancelAgent}
           agentIsRunning={scopedAgentIsRunning}
           palStats={palStats}
-          chatHistory={chatHistory}
           onExportChat={async () => {
             const exported = exportChatHistory(chatHistory, chatRepoSnapshot);
             const result = await shareChatExport(exported);
