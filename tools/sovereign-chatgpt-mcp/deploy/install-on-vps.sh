@@ -5,14 +5,22 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_ROOT="/opt/sovereign-chatgpt-tools"
 BIN_DIR="$INSTALL_ROOT/bin"
 BROKER_DIR="$INSTALL_ROOT/broker"
+DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 ENV_FILE="$INSTALL_ROOT/.env"
+GHCR_ENV="$INSTALL_ROOT/.ghcr.env"
 BROKER_ENV="$INSTALL_ROOT/broker.env"
 SERVICE_FILE="/etc/systemd/system/sovereign-chatgpt-broker.service"
 
 fail() {
   printf 'install blocked: %s\n' "$*" >&2
   exit 1
+}
+
+read_value() {
+  local file="$1"
+  local key="$2"
+  sed -n "s/^${key}=//p" "$file" | tail -n 1
 }
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
@@ -40,16 +48,36 @@ chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.env.example" "$INSTALL_ROOT/.env.example"
+  install -m 0600 "$SOURCE_DIR/.ghcr.env.example" "$INSTALL_ROOT/.ghcr.env.example"
   fail "create $ENV_FILE from $INSTALL_ROOT/.env.example and fill it only on the VPS"
 fi
 chmod 0600 "$ENV_FILE"
 grep -Eq '^GITHUB_TOKEN=.+$' "$ENV_FILE" || fail "GITHUB_TOKEN is not configured in $ENV_FILE"
+
+# Optional private GHCR login. The token is converted into Docker's host-only config
+# and is never copied into broker.env or the MCP container environment.
+DOCKER_CONFIG_VALUE=""
+if [[ -f "$GHCR_ENV" ]]; then
+  chmod 0600 "$GHCR_ENV"
+  GHCR_USERNAME="$(read_value "$GHCR_ENV" GHCR_USERNAME)"
+  GHCR_TOKEN="$(read_value "$GHCR_ENV" GHCR_TOKEN)"
+  if [[ -n "$GHCR_USERNAME" || -n "$GHCR_TOKEN" ]]; then
+    [[ -n "$GHCR_USERNAME" && -n "$GHCR_TOKEN" ]] || fail "GHCR_USERNAME and GHCR_TOKEN must both be configured"
+    install -d -m 0700 "$DOCKER_AUTH_DIR"
+    printf '%s' "$GHCR_TOKEN" | docker --config "$DOCKER_AUTH_DIR" login ghcr.io --username "$GHCR_USERNAME" --password-stdin >/dev/null
+    chmod 0600 "$DOCKER_AUTH_DIR/config.json"
+    DOCKER_CONFIG_VALUE="$DOCKER_AUTH_DIR"
+  fi
+fi
 
 # The root broker does not receive GitHub or database credentials.
 {
   grep -E '^(SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
+  if [[ -n "$DOCKER_CONFIG_VALUE" ]]; then
+    printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
+  fi
 } > "$BROKER_ENV"
 chmod 0600 "$BROKER_ENV"
 chown root:root "$BROKER_ENV"
