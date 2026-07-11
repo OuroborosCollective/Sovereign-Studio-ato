@@ -1,0 +1,30 @@
+[Unit]
+Description=Sovereign OpenAI Secure MCP Tunnel
+After=network-online.target docker.service sovereign-chatgpt-broker.service
+Wants=network-online.target
+Requires=sovereign-chatgpt-broker.service
+
+[Service]
+Type=simple
+User=sovereign-tunnel
+Group=sovereign-tunnel
+EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env
+Environment=HOME=/opt/sovereign-chatgpt-tools/tunnel-home
+WorkingDirectory=/opt/sovereign-chatgpt-tools/tunnel-home
+ExecStartPre=/usr/bin/test -x /usr/local/bin/tunnel-client
+ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/sovereign-chatgpt-tools/tunnel.env
+ReadWritePaths=/opt/sovereign-chatgpt-tools/tunnel-home
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
