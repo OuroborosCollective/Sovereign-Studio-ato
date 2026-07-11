@@ -5820,24 +5820,35 @@ def admin_panel():
 
 # ── Universal Toolchain Proxy ─────────────────────────────────────────────────
 # Proxies requests to the sovereign-universal-toolchain FastAPI/FastMCP server
-# running at TOOLCHAIN_BASE_URL (default: http://127.0.0.1:8001).
+# at an explicitly configured TOOLCHAIN_BASE_URL. There is intentionally no
+# localhost fallback because port 8001 belongs to a different service.
 # The TOOLCHAIN_API_KEY is injected server-side — never exposed to frontend.
 # ─────────────────────────────────────────────────────────────────────────────
 
 import json as _json
 
-_UTOOLCHAIN_BASE = os.getenv("TOOLCHAIN_BASE_URL", "http://127.0.0.1:8001").rstrip("/")
+_UTOOLCHAIN_BASE = os.getenv("TOOLCHAIN_BASE_URL", "").rstrip("/")
 _UTOOLCHAIN_KEY  = os.getenv("TOOLCHAIN_API_KEY", "")
 
 
 def _utc_request(method: str, path: str, body=None):
-    """HTTP helper for proxying to the universal toolchain server."""
+    """HTTP helper for proxying to the universal toolchain server.
+
+    Raises RuntimeError if toolchain is not configured (fail-closed).
+    """
+    if not _TOOLCHAIN_CONFIGURED or not _UTOOLCHAIN_BASE:
+        raise RuntimeError(
+            "Universal toolchain is not configured. "
+            "Set TOOLCHAIN_BASE_URL environment variable to enable."
+        )
     import urllib.request as _ur
     import urllib.error   as _ue
+    if not _UTOOLCHAIN_BASE:
+        raise RuntimeError("TOOLCHAIN_BASE_URL is not configured")
     url = f"{_UTOOLCHAIN_BASE}{path}"
     headers = {"Content-Type": "application/json"}
-    if _UTOOLCHAIN_KEY:
-        headers["X-Toolchain-Key"] = _UTOOLCHAIN_KEY
+    if _TOOLCHAIN_KEY:
+        headers["X-Toolchain-Key"] = _TOOLCHAIN_KEY
     data = _json.dumps(body, ensure_ascii=False).encode() if body is not None else None
     req = _ur.Request(url, data=data, headers=headers, method=method)
     try:
@@ -5851,7 +5862,16 @@ def _utc_request(method: str, path: str, body=None):
 
 @app.route("/api/toolchain/universal/status")
 def utc_status():
-    """Health check for the universal toolchain server (public)."""
+    """Health check for the universal toolchain server (public).
+
+    Returns 503 if toolchain is not configured.
+    """
+    if not _TOOLCHAIN_CONFIGURED:
+        return jsonify({
+            "ok": False,
+            "error": "Toolchain not configured. Set TOOLCHAIN_BASE_URL environment variable.",
+            "proxy_via": None
+        }), 503
     try:
         data = _utc_request("GET", "/")
         return jsonify({**data, "proxy_via": _UTOOLCHAIN_BASE})
@@ -5861,16 +5881,24 @@ def utc_status():
 
 @app.route("/api/toolchain/universal/manifest")
 def utc_manifest():
-    """Return combined tool manifest: toolchain service + database tools (public)."""
+    """Return combined tool manifest: toolchain service + database tools (public).
+
+    Returns 503 if toolchain is not configured.
+    """
     all_tools = []
 
-    # 1. Get tools from toolchain service
-    try:
-        service_data = _utc_request("GET", "/api/v1/manifest")
-        if service_data and "tools" in service_data:
-            all_tools.extend(service_data["tools"])
-    except Exception:
-        pass  # Service might be unavailable, continue with DB tools
+    # 1. Get tools from toolchain service (if configured)
+    if _TOOLCHAIN_CONFIGURED:
+        try:
+            service_data = _utc_request("GET", "/api/v1/manifest")
+            if service_data and "tools" in service_data:
+                all_tools.extend(service_data["tools"])
+        except RuntimeError:
+            # Toolchain not available - return DB tools only
+            pass
+        except Exception:
+            # Other errors - continue with DB tools
+            pass
 
     # 2. Get enabled custom tools from database
     try:
@@ -5907,10 +5935,17 @@ def utc_manifest():
 
 @app.route("/api/toolchain/universal/briefing")
 def utc_briefing():
-    """Return the toolchain briefing for LLM agents (public)."""
+    """Return the toolchain briefing for LLM agents (public).
+
+    Returns 503 if toolchain is not configured.
+    """
+    if not _TOOLCHAIN_CONFIGURED:
+        return jsonify({"ok": False, "error": "Toolchain not configured. Set TOOLCHAIN_BASE_URL environment variable."}), 503
     try:
         data = _utc_request("GET", "/api/v1/briefing")
         return jsonify(data)
+    except RuntimeError as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 502
 
@@ -5922,7 +5957,10 @@ def utc_invoke():
     Proxy a tool call to the universal toolchain server.
     Body: { "tool": "<tool_name>", "args": { ... } }
     Write tools (write_action=true) require confirm=true in args.
+    Returns 503 if toolchain is not configured.
     """
+    if not _TOOLCHAIN_CONFIGURED:
+        return jsonify({"ok": False, "error": "Toolchain not configured. Set TOOLCHAIN_BASE_URL environment variable."}), 503
     try:
         b        = request.get_json(force=True) or {}
         tool     = (b.get("tool") or "").strip()
@@ -5946,7 +5984,7 @@ def utc_invoke():
     except PermissionError as e:
         return jsonify({"ok": False, "error": str(e)}), 403
     except RuntimeError as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
+        return jsonify({"ok": False, "error": str(e)}), 503
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
