@@ -110,6 +110,17 @@ describe('current Sovereign app shell contract', () => {
     ]);
 
     expectContainsNone(app, REMOVED_VISIBLE_SHELL_TOKENS);
+    expectContainsAll(app, [
+      'repoReady={repoReady}',
+      'repoBusy={repoBusy}',
+      'runtimeBusy={agentIsRunning}',
+      'sovereignSummary={runtimeSummary}',
+      'onPublishDraftPr={publishDraftPr}',
+      "setJanitorPreview('')",
+    ]);
+    expect(app).not.toContain('repoReady={false}');
+    expect(app).not.toContain('runtimeBusy={false}');
+    expect(app).not.toContain("onPublishDraftPr={() => setMission('Draft PR')}");
   });
 
   it('keeps the wrapper free of visible chrome and navigation state', () => {

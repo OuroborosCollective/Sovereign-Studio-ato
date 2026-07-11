@@ -353,8 +353,12 @@ export function evaluateWorkspacePolicy(
 
     if (!result.passed) {
       allowed = false;
-      reason = result.reason;
-      blocker = result.blocker;
+      if (reason === 'All policy checks passed') {
+        reason = result.reason;
+      }
+      if (blocker === undefined && result.blocker !== undefined) {
+        blocker = result.blocker;
+      }
       suggestedPurpose = context.requiresWorkspace ? 'patch' : undefined;
     }
   }

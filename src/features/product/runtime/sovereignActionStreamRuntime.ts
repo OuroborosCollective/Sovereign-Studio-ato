@@ -425,6 +425,19 @@ export function buildAnswerReadyEvent(detail = 'Antwort bereit.'): SovereignActi
   };
 }
 
+export function buildLocalRuntimeResultEvent(args: {
+  readonly label: string;
+  readonly detail: string;
+}): SovereignActionEventInput {
+  return {
+    kind: 'done',
+    route: 'runtime',
+    label: args.label,
+    detail: args.detail,
+    state: 'done',
+  };
+}
+
 export function buildInputReceivedEvent(text: string): SovereignActionEventInput {
   return {
     kind: 'input_received',
