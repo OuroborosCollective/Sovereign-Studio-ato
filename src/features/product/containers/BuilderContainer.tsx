@@ -166,6 +166,7 @@ import {
   appendSovereignActionEvent,
   buildBlockedActionEvent,
   buildInputReceivedEvent,
+  buildLocalRuntimeResultEvent,
   buildRepoLoadedEvent,
   buildRouteSelectionEvent,
   buildWorkerRequestEvent,
@@ -3363,13 +3364,20 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
   };
 
   // Retry submit with a specific message (used by WorkerBlockerCard and Banner)
-  const retrySubmit = async (message: string) => {
+  const retrySubmit = async (
+    message: string,
+    options: { readonly ignoreExistingWorkerBlocker?: boolean } = {},
+  ) => {
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
     setWishText("");
-    void _processSubmit(message);
+    void _processSubmit(message, options);
   };
 
-  const _processSubmit = async (submittedText: string) => {
+  const _processSubmit = async (
+    submittedText: string,
+    options: { readonly ignoreExistingWorkerBlocker?: boolean } = {},
+  ) => {
+    const routingWorkerBlocker = options.ignoreExistingWorkerBlocker ? null : workerBlocker;
     // ── Issue #445: SecureInputGuard — block secrets before any storage or LLM path
     const securePolicy = evaluateInputPolicy(submittedText);
     if (securePolicy.shouldBlock) {
@@ -3487,11 +3495,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         patchPreviewReady,
         patchConfirmed,
         hasWorkerResponse: hasScopedWorkerResponse,
-        workerBlocker,
-        buildWorkerBlockerAnswer: workerBlocker
+        workerBlocker: routingWorkerBlocker,
+        buildWorkerBlockerAnswer: routingWorkerBlocker
           ? () =>
               buildWorkerBlockerAnswer({
-                blocker: workerBlocker,
+                blocker: routingWorkerBlocker,
                 repoReady: effectiveRepoReady,
                 chatRepoSnapshot,
                 agentReady,
@@ -3501,8 +3509,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
       setLastAnswerWasLocal(true);
-      appendActionEvent(buildBlockedActionEvent({
-        route: 'runtime',
+      appendActionEvent(buildLocalRuntimeResultEvent({
         label: 'Status-Frage',
         detail: 'Lokale Antwort aus Runtime-State',
       }));
@@ -3516,13 +3523,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         ? "Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss."
         : !githubWriteAllowed
         ? "Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, läuft der Auftrag automatisch weiter."
-        : workerBlocker
+        : routingWorkerBlocker
         ? "Weil der Worker blockiert ist. Bitte den Fehler prüfen oder den Auftrag präzisieren."
         : "Weil noch kein Auftrag gestartet wurde oder der Auftrag blockiert ist. Bitte Auftrag neu starten.";
       appendChatLine({ role: 'assistant', text: whyAnswer });
       setLastAnswerWasLocal(true);
-      appendActionEvent(buildBlockedActionEvent({
-        route: 'runtime',
+      appendActionEvent(buildLocalRuntimeResultEvent({
         label: 'Warum-Folgefrage',
         detail: 'Lokale Erklärung aus Runtime-State — kein Worker-Call',
       }));
@@ -3532,7 +3538,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
     // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
     // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
-    if (isWorkerRetryIntent(submittedText) && workerBlocker) {
+    if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
       // If user asks status question, answer locally first before retry
               if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
         const statusAnswer = buildLocalStatusAnswer({
@@ -3545,11 +3551,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           patchPreviewReady,
           patchConfirmed,
           hasWorkerResponse: hasScopedWorkerResponse,
-          workerBlocker,
-          buildWorkerBlockerAnswer: workerBlocker
+          workerBlocker: routingWorkerBlocker,
+          buildWorkerBlockerAnswer: routingWorkerBlocker
             ? () =>
                 buildWorkerBlockerAnswer({
-                  blocker: workerBlocker,
+                  blocker: routingWorkerBlocker,
                   repoReady: effectiveRepoReady,
                   chatRepoSnapshot,
                   agentReady,
@@ -3557,8 +3563,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
             : undefined,
         });
         appendChatLine({ role: 'assistant', text: statusAnswer });
-        appendActionEvent(buildBlockedActionEvent({
-          route: 'runtime',
+        appendActionEvent(buildLocalRuntimeResultEvent({
           label: 'Status-Frage beantwortet',
           detail: 'Lokale Antwort aus Runtime-State',
         }));
@@ -3572,13 +3577,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           role: 'assistant',
           text: 'Worker-Blocker zurückgesetzt. Retry wird ausgeführt...',
         });
-        appendActionEvent(buildBlockedActionEvent({
-          route: 'runtime',
+        appendActionEvent(buildLocalRuntimeResultEvent({
           label: 'Retry gestartet',
           detail: 'Worker-Blocker zurückgesetzt; letzter Request wird erneut ausgeführt',
         }));
         addLog('info', 'Issue #522 P2 Fix 2: Retry intent triggers real retry via retrySubmit', 'router');
-        retrySubmit(lastWorkerRequestMessage);
+        retrySubmit(lastWorkerRequestMessage, { ignoreExistingWorkerBlocker: true });
         return;
       } else {
         // Honest state: no prior request to retry
@@ -3586,8 +3590,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           role: 'assistant',
           text: 'Worker-Blocker zurückgesetzt. Es gibt keinen vorherigen Request zum Wiederholen.',
         });
-        appendActionEvent(buildBlockedActionEvent({
-          route: 'runtime',
+        appendActionEvent(buildLocalRuntimeResultEvent({
           label: 'Retry',
           detail: 'Worker-Blocker zurückgesetzt; kein vorheriger Request vorhanden',
         }));
@@ -3601,7 +3604,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
     const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
       (scopedAgentJob != null && scopedAgentJob.status !== 'idle');
-    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !workerBlocker)) {
+    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !routingWorkerBlocker)) {
       const statusAnswer = buildExecutorStatusAnswer({
         agentState: agentWorkSnapshot.state,
         agentStatus: scopedAgentJob?.status,
@@ -3610,8 +3613,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         blockerReason: agentWorkSnapshot.blockerReason,
       });
       appendChatLine({ role: 'assistant', text: statusAnswer });
-      appendActionEvent(buildBlockedActionEvent({
-        route: 'runtime',
+      appendActionEvent(buildLocalRuntimeResultEvent({
         label: 'Diagnose-Frage',
         detail: 'Lokale Antwort aus Runtime-State',
       }));
@@ -3621,23 +3623,22 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
     // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
     if (
-      workerBlocker &&
+      routingWorkerBlocker &&
       !isWorkerRetryIntent(submittedText) &&
       !isSovereignAgentExecutionIntent(submittedText)
     ) {
       appendChatLine({
         role: "assistant",
         text: buildWorkerBlockerAnswer({
-          blocker: workerBlocker,
+          blocker: routingWorkerBlocker,
           repoReady: effectiveRepoReady,
           chatRepoSnapshot,
           agentReady,
         }),
       });
-      appendActionEvent(buildBlockedActionEvent({
-        route: 'runtime',
+      appendActionEvent(buildLocalRuntimeResultEvent({
         label: 'Worker-Diagnose',
-        detail: workerBlocker.diagnostic.scope,
+        detail: routingWorkerBlocker.diagnostic.scope,
       }));
       addLog('info', `Issue #522 P2 Fix 3: Worker diagnostic answered locally - no draft created`, 'router');
       return;
@@ -3682,7 +3683,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       agentReady: agentReady ?? false,
       directGitHubPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
       workspaceReady: false, // Workspace executor not yet integrated
-      hasActiveWorkerBlocker: Boolean(workerBlocker),
+      hasActiveWorkerBlocker: Boolean(routingWorkerBlocker),
       hasPackage: Boolean(scopedAgentJob?.changedFiles?.length),
       hasDraft: Boolean(scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl),
       hasWorkflowReport: Boolean(agentWorkSnapshot.commitSha),
@@ -3710,7 +3711,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // - Legacy fallback: unrecognized intents → Worker handles them
     if (!capabilityDecision.allowed) {
       // P1: Worker retry should bypass blocking - let legacy handle it
-      if (isWorkerRetryIntent(submittedText) && workerBlocker) {
+      if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
         setWorkerBlocker(null);
         addLog("info", "Capability Router: worker retry bypasses blocked decision", "router");
         // Continue to legacy retry flow below
@@ -3760,11 +3761,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           patchPreviewReady,
           patchConfirmed,
           hasWorkerResponse: hasScopedWorkerResponse,
-          workerBlocker,
-          buildWorkerBlockerAnswer: workerBlocker
+          workerBlocker: routingWorkerBlocker,
+          buildWorkerBlockerAnswer: routingWorkerBlocker
             ? () =>
                 buildWorkerBlockerAnswer({
-                  blocker: workerBlocker,
+                  blocker: routingWorkerBlocker,
                   repoReady: effectiveRepoReady,
                   chatRepoSnapshot,
                   agentReady,
@@ -3905,7 +3906,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
             githubTokenPresent: Boolean(githubTokenRef.current),
             directPatchSupported: Boolean(chatRepoSnapshot),
             agentConfigured: sovereignAgentStartAvailable,
-            workerAvailable: !workerBlocker,
+            workerAvailable: !routingWorkerBlocker,
             workspaceConfigured: false,
             draftPrSupported: true,
             activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
@@ -4154,7 +4155,7 @@ Es wurde noch keine Datei geändert.`,
           githubTokenPresent: Boolean(githubTokenRef.current),
           directPatchSupported: Boolean(chatRepoSnapshot),
           agentConfigured: sovereignAgentStartAvailable,
-          workerAvailable: !workerBlocker,
+          workerAvailable: !routingWorkerBlocker,
           workspaceConfigured: false,
           draftPrSupported: true,
           activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
@@ -4865,8 +4866,12 @@ Das echte Repo-Setup wurde geöffnet.`,
           userMessage={lastWorkerRequestMessage ?? undefined}
           onRetryWithMessage={(msg) => {
             setWorkerBlocker(null);
+            appendActionEvent(buildLocalRuntimeResultEvent({
+              label: 'Retry gestartet',
+              detail: 'Worker-Banner hat den letzten Request erneut an die echte Worker-Route übergeben.',
+            }));
             addLog("info", "Worker retry from banner", "router");
-            retrySubmit(msg);
+            retrySubmit(msg, { ignoreExistingWorkerBlocker: true });
           }}
         />
       )}
@@ -5558,12 +5563,16 @@ Das echte Repo-Setup wurde geöffnet.`,
                   }}
                   onRetryWithMessage={(msg) => {
                     setWorkerBlocker(null);
+                    appendActionEvent(buildLocalRuntimeResultEvent({
+                      label: 'Retry gestartet',
+                      detail: 'Worker-Blocker-Karte hat den letzten Request erneut an die echte Worker-Route übergeben.',
+                    }));
                     addLog(
                       "info",
                       "Worker retry with message from card",
                       "router",
                     );
-                    retrySubmit(msg);
+                    retrySubmit(msg, { ignoreExistingWorkerBlocker: true });
                   }}
                   onExplain={() => {
                     const explanation = explainDevChatWorkerDiagnostic(

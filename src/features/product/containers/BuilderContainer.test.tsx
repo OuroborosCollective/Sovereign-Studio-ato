@@ -415,9 +415,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
   });
 
-  // TODO(#pending-review): Retry test is flaky - timing issue with WorkerBlockerCard onRetry handler
-  // The Retry button click doesn't trigger a new fetch in the current implementation
-  it.skip("retries the original Worker request after a diagnostic follow-up", async () => {
+  it("retries the original Worker request after a diagnostic follow-up", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
       jsonResponse({
@@ -458,6 +456,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByText("Retry beantwortet.")).toBeDefined());
     expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
+    const retryEvent = Array.from(actionStream.querySelectorAll('[data-route="runtime"]'))
+      .find((node) => node.textContent?.includes("Retry gestartet"));
+    expect(retryEvent).toHaveAttribute("data-state", "done");
   });
 
   it("keeps scoped Sovereign Agent output as plain hints and not result cards", async () => {
