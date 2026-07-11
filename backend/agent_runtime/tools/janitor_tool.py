@@ -1,8 +1,9 @@
 """Deterministic, user-invoked repository janitor.
 
-The tool scans an isolated repository with deterministic rules. Optional Ollama
-is explanation-only. Writes require explicit confirmation and an exact SHA-bound
-SEARCH/REPLACE; the tool never commits, pushes, opens a PR, or runs tests.
+The tool scans an isolated repository with deterministic rules. Optional model
+output is explanation-only and currently disabled. Writes require explicit
+confirmation and an exact SHA-bound SEARCH/REPLACE; the tool never commits,
+pushes, opens a PR, or runs tests.
 """
 
 from __future__ import annotations
@@ -21,16 +22,14 @@ from .janitor_rules import (
     MAX_PATCH_TEXT,
     MAX_SCAN_FILES,
     SUPPORTED_EXTENSIONS,
-    _scan_python,
-    _scan_text,
-    _secret_like_match,
-    _sha256_text,
-)
-from .janitor_support import (
     _detect_test_command,
     _iter_source_files,
     _optional_ollama_explanation,
     _safe_target,
+    _scan_python,
+    _scan_text,
+    _secret_like_match,
+    _sha256_text,
 )
 
 
@@ -43,56 +42,18 @@ class DynamicJanitorTool(ToolBase):
         "SHA-256-bound SEARCH/REPLACE after user confirmation"
     )
     parameters = {
-        "mode": {
-            "type": "string",
-            "required": False,
-            "default": "scan",
-            "description": "scan or apply",
-        },
-        "family": {
-            "type": "string",
-            "required": False,
-            "description": "User-described error family, used as report context",
-        },
-        "paths": {
-            "type": "array",
-            "required": False,
-            "description": "Optional relative files/directories to scan",
-        },
-        "maxFindings": {
-            "type": "integer",
-            "required": False,
-            "default": 10,
-            "description": "Maximum returned findings (1-50)",
-        },
-        "maxFiles": {
-            "type": "integer",
-            "required": False,
-            "default": 200,
-            "description": "Maximum scanned files (1-500)",
-        },
-        "includeDocs": {
-            "type": "boolean",
-            "required": False,
-            "default": False,
-            "description": "Include Markdown documentation in the scan",
-        },
-        "explainWithLocalModel": {
-            "type": "boolean",
-            "required": False,
-            "default": False,
-            "description": "Optional explanation-only Ollama call; never used for patches",
-        },
+        "mode": {"type": "string", "required": False, "default": "scan", "description": "scan or apply"},
+        "family": {"type": "string", "required": False, "description": "User-described error family"},
+        "paths": {"type": "array", "required": False, "description": "Optional relative scan targets"},
+        "maxFindings": {"type": "integer", "required": False, "default": 10},
+        "maxFiles": {"type": "integer", "required": False, "default": 200},
+        "includeDocs": {"type": "boolean", "required": False, "default": False},
+        "explainWithLocalModel": {"type": "boolean", "required": False, "default": False},
         "path": {"type": "string", "required": False},
         "searchText": {"type": "string", "required": False},
         "replacementText": {"type": "string", "required": False},
         "expectedSha256": {"type": "string", "required": False},
-        "confirm": {
-            "type": "boolean",
-            "required": False,
-            "default": False,
-            "description": "Must be true for apply mode",
-        },
+        "confirm": {"type": "boolean", "required": False, "default": False},
     }
     requires_workspace = True
 
@@ -103,7 +64,9 @@ class DynamicJanitorTool(ToolBase):
             raise ToolPolicyError("Janitor mode must be 'scan' or 'apply'.")
         for key, minimum, maximum in (("maxFindings", 1, 50), ("maxFiles", 1, MAX_SCAN_FILES)):
             value = params.get(key)
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum
+            ):
                 raise ToolPolicyError(f"{key} must be an integer between {minimum} and {maximum}.")
         paths = params.get("paths")
         if paths is not None:
@@ -140,21 +103,14 @@ class DynamicJanitorTool(ToolBase):
         max_files = min(max(int(params.get("maxFiles", 200)), 1), MAX_SCAN_FILES)
         paths = params.get("paths") if isinstance(params.get("paths"), list) else []
         family = str(params.get("family") or "runtime truth and repository defects").strip()[:300]
-
         findings: list[dict[str, Any]] = []
-        scanned_files = 0
-        skipped_large_files = 0
-        parseable_python_files = 0
+        scanned_files = skipped_large_files = parseable_python_files = 0
         for source_path in _iter_source_files(
-            root,
-            paths,
-            max_files,
-            include_docs=params.get("includeDocs") is True,
+            root, paths, max_files, include_docs=params.get("includeDocs") is True,
         ):
             try:
                 relative = source_path.relative_to(root).as_posix()
-                size = source_path.stat().st_size
-                if size > MAX_FILE_BYTES:
+                if source_path.stat().st_size > MAX_FILE_BYTES:
                     skipped_large_files += 1
                     continue
                 content = source_path.read_text(encoding="utf-8", errors="replace")
@@ -168,25 +124,17 @@ class DynamicJanitorTool(ToolBase):
             findings.extend(_scan_text(relative, content, digest))
             if len(findings) >= max_findings:
                 break
-
         findings = findings[:max_findings]
-        explanation = None
-        explanation_blocker = None
+        explanation = explanation_blocker = None
         if params.get("explainWithLocalModel") is True:
             explanation, explanation_blocker = _optional_ollama_explanation(findings, family)
-
         severity_counts: dict[str, int] = {}
         for item in findings:
             severity = str(item["severity"])
             severity_counts[severity] = severity_counts.get(severity, 0) + 1
-        recommended_test = _detect_test_command(root)
-        summary = (
-            f"Janitor scan completed: {len(findings)} finding(s) in {scanned_files} file(s). "
-            "No files were changed."
-        )
         return ToolResult(
             status="done",
-            output=summary,
+            output=f"Janitor scan completed: {len(findings)} finding(s) in {scanned_files} file(s). No files were changed.",
             metadata={
                 "mode": "scan",
                 "family": family,
@@ -196,7 +144,7 @@ class DynamicJanitorTool(ToolBase):
                 "scannedFiles": scanned_files,
                 "pythonAstFiles": parseable_python_files,
                 "skippedLargeFiles": skipped_large_files,
-                "recommendedTestCommand": recommended_test,
+                "recommendedTestCommand": _detect_test_command(root),
                 "localModelExplanation": explanation,
                 "localModelBlocker": explanation_blocker,
                 "writeAction": False,
@@ -206,9 +154,9 @@ class DynamicJanitorTool(ToolBase):
         )
 
     def _apply(self, params: dict[str, Any], root: Path) -> ToolResult:
+        required = ("path", "searchText", "replacementText", "expectedSha256")
         if params.get("confirm") is not True:
             return ToolResult(status="blocked", blocker="Janitor apply requires explicit user confirmation.")
-        required = ("path", "searchText", "replacementText", "expectedSha256")
         if any(not isinstance(params.get(key), str) or not str(params.get(key)).strip() for key in required):
             return ToolResult(status="blocked", blocker="Janitor apply request is incomplete.")
         relative_path = str(params["path"]).strip().replace("\\", "/")
@@ -221,9 +169,8 @@ class DynamicJanitorTool(ToolBase):
             current = target.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             return ToolResult(status="error", error=f"Janitor could not read patch target: {type(exc).__name__}.")
-        expected = str(params["expectedSha256"]).strip().lower()
         current_digest = _sha256_text(current)
-        if current_digest != expected:
+        if current_digest != str(params["expectedSha256"]).strip().lower():
             return ToolResult(
                 status="blocked",
                 blocker="Janitor patch blocked because the file changed after review.",
@@ -238,22 +185,15 @@ class DynamicJanitorTool(ToolBase):
                 blocker=f"Janitor SEARCH must match exactly once; matched {occurrence_count} times.",
             )
         if any(pattern.search(replacement_text) for pattern in _DANGEROUS_REPLACEMENT_PATTERNS):
-            return ToolResult(
-                status="blocked",
-                blocker="Janitor replacement contains a forbidden security or workflow pattern.",
-            )
+            return ToolResult(status="blocked", blocker="Janitor replacement contains a forbidden security or workflow pattern.")
         if _secret_like_match(replacement_text):
             return ToolResult(status="blocked", blocker="Janitor replacement contains secret-like material.")
-
         updated = current.replace(search_text, replacement_text, 1)
         if updated == current:
             return ToolResult(status="blocked", blocker="Janitor replacement produced no change.")
         diff = "".join(difflib.unified_diff(
-            current.splitlines(keepends=True),
-            updated.splitlines(keepends=True),
-            fromfile=f"a/{relative_path}",
-            tofile=f"b/{relative_path}",
-            n=3,
+            current.splitlines(keepends=True), updated.splitlines(keepends=True),
+            fromfile=f"a/{relative_path}", tofile=f"b/{relative_path}", n=3,
         ))
         try:
             temporary = target.with_name(f".{target.name}.janitor-tmp")
@@ -261,8 +201,6 @@ class DynamicJanitorTool(ToolBase):
             os.replace(temporary, target)
         except OSError as exc:
             return ToolResult(status="error", error=f"Janitor patch write failed: {type(exc).__name__}.")
-
-        new_digest = _sha256_text(updated)
         return ToolResult(
             status="done",
             output=f"Applied one confirmed exact replacement to {relative_path}.",
@@ -270,7 +208,7 @@ class DynamicJanitorTool(ToolBase):
                 "mode": "apply",
                 "path": relative_path,
                 "beforeSha256": current_digest,
-                "afterSha256": new_digest,
+                "afterSha256": _sha256_text(updated),
                 "recommendedTestCommand": _detect_test_command(root),
                 "writeAction": True,
                 "requiresConfirm": True,
