@@ -5,7 +5,7 @@ All tools inherit from ToolBase and are registered in the ToolRegistry.
 
 Available tools:
 - file_read: Read files from workspace
-- file_write: Write files from workspace
+- file_write: Write files to workspace
 - file_list: List directory contents
 - shell: Execute shell commands
 - git_status: Get git repository status
