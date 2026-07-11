@@ -47,7 +47,7 @@ describe('sovereignInternalOperatorRuntime', () => {
     expect(decision.stages).toContain('test_selection');
   });
 
-  it('falls back to the internal runtime patch path when Sovereign Agent and workspace are absent', () => {
+  it('blocks when no callable patch, workspace, agent, or internal adapter exists', () => {
     const decision = decideSovereignInternalOperator({
       text: 'Baue den internen Operator ein und teste die Route',
       capabilities: capabilities({
@@ -58,11 +58,10 @@ describe('sovereignInternalOperatorRuntime', () => {
       traceIdProvider: () => 'test-internal',
     });
 
-    expect(decision.state).toBe('allowed');
-    expect(decision.route).toBe('internal_runtime_patch');
-    expect(decision.nextAction).toBe('run_internal_operator');
-    expect(decision.reason).toContain('ohne Sovereign Agent-Pflicht');
-    expect(decision.stages).toContain('draft_pr_gate');
+    expect(decision.state).toBe('blocked');
+    expect(decision.route).toBe('blocked');
+    expect(decision.nextAction).toBe('show_blocker');
+    expect(decision.reason).toContain('Keine sichere interne Operator-Route');
   });
 
   it('blocks hard when repo or write access is not ready', () => {
@@ -93,6 +92,7 @@ describe('sovereignInternalOperatorRuntime', () => {
         agentConfigured: false,
         workspaceConfigured: false,
       }),
+      internalRuntimePatchConfigured: true,
       signals,
       traceIdProvider: () => 'test-learning',
     });

@@ -15,7 +15,7 @@ export interface WorkerBlockerCardProps {
     readonly health?: DevChatWorkerHealthResult;
     readonly createdAt: number;
   };
-  onRetry: () => void;
+  onRetry?: () => void;
   /** Retry with a specific message - cleaner runtime action path */
   onRetryWithMessage?: (message: string) => void;
   onExplain: () => void;
@@ -109,14 +109,15 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   const { diagnostic, health } = blocker;
   const actionMessage = normalizeActionMessage(userMessage);
   const canAgent = Boolean(actionMessage && hasCodeIntent(actionMessage));
+  const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);
   
-  // Prefer retry with message when available (cleaner runtime path)
+  // A visible retry action is enabled only when a real retry callback exists.
   const handleRetry = useCallback(() => {
     if (onRetryWithMessage && actionMessage) {
       onRetryWithMessage(actionMessage);
-    } else {
-      onRetry();
+      return;
     }
+    onRetry?.();
   }, [onRetryWithMessage, onRetry, actionMessage]);
   
   const handleAgent = useCallback(() => {
@@ -166,6 +167,8 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
         <button
           type="button"
           onClick={handleRetry}
+          disabled={!canRetry}
+          aria-disabled={!canRetry}
           style={{
             padding: '8px 16px',
             borderRadius: 8,
@@ -174,11 +177,12 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
             color: C.rose,
             fontSize: 13,
             fontWeight: 500,
-            cursor: 'pointer',
+            cursor: canRetry ? 'pointer' : 'not-allowed',
+            opacity: canRetry ? 1 : 0.55,
           }}
-          aria-label="Retry Worker request"
+          aria-label={canRetry ? 'Retry Worker request' : 'Retry unavailable: no previous worker request'}
         >
-          Retry
+          {canRetry ? 'Retry' : 'Retry nicht verfügbar'}
         </button>
         
         <button
@@ -250,6 +254,7 @@ export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
 }) => {
   const scope = formatScope(blocker.diagnostic);
   const actionMessage = normalizeActionMessage(userMessage);
+  const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);
 
   const handleClick = useCallback(() => {
     if (onRetryWithMessage && actionMessage) {
@@ -264,7 +269,8 @@ export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
       role="status"
       aria-live="polite"
       data-testid="worker-degraded-banner"
-      onClick={handleClick}
+      onClick={canRetry ? handleClick : undefined}
+      aria-disabled={!canRetry}
       style={{
         padding: '6px 16px',
         background: C.rose + '20',
@@ -273,7 +279,8 @@ export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        cursor: 'pointer',
+        cursor: canRetry ? 'pointer' : 'default',
+        opacity: canRetry ? 1 : 0.75,
         fontSize: 12,
         color: C.rose,
       }}
@@ -282,7 +289,7 @@ export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
       <span style={{ color: C.textSub }}>·</span>
       <span>scope={scope}</span>
       <span style={{ color: C.textSub }}>·</span>
-      <span>Retry</span>
+      <span>{canRetry ? 'Retry' : 'Kein Retry-Request'}</span>
     </div>
   );
 };

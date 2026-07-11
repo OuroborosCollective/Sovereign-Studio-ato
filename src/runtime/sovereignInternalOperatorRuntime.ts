@@ -26,6 +26,8 @@ export interface SovereignInternalOperatorInput {
   readonly text: string;
   readonly capabilities: SovereignToolCapabilityRegistry;
   readonly candidatePath?: string;
+  /** True only when a callable internal patch adapter is connected in the current runtime. */
+  readonly internalRuntimePatchConfigured?: boolean;
   readonly signals?: readonly SovereignInternalOperatorSignal[];
   readonly traceIdProvider?: TraceIdProvider;
 }
@@ -125,8 +127,14 @@ export function decideSovereignInternalOperator(input: SovereignInternalOperator
     {
       route: 'internal_runtime_patch',
       score: complex ? 0.78 : 0.58,
-      available: input.capabilities.repo.canStart && input.capabilities.githubWrite.canStart,
-      signals: ['sovereign-owned-runtime'],
+      available: Boolean(
+        input.internalRuntimePatchConfigured
+        && input.capabilities.repo.canStart
+        && input.capabilities.githubWrite.canStart,
+      ),
+      signals: input.internalRuntimePatchConfigured
+        ? ['sovereign-owned-runtime', 'adapter-connected']
+        : ['adapter-not-connected'],
     },
   ];
 

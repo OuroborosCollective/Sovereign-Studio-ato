@@ -51,7 +51,7 @@ describe('sovereignExecutorBridgeRuntime', () => {
     expect(decision.reason).toContain('Schreib');
   });
 
-  it('uses the internal operator when external executor paths are absent but runtime gates are ready', () => {
+  it('does not invent an internal operator execution route when no adapter is connected', () => {
     const decision = decideSovereignExecutorBridgeRoute({
       text: 'Baue internen Operator Fallback mit Tests',
       intent: 'code_execution',
@@ -63,9 +63,9 @@ describe('sovereignExecutorBridgeRuntime', () => {
     });
 
     expect(decision.bridgeRoute).toBe('sovereign_internal_operator');
-    expect(decision.state).toBe('allowed');
-    expect(decision.nextAction).toBe('run_internal_operator');
-    expect(decision.internalOperatorRoute).toBe('internal_runtime_patch');
-    expect(decision.internalOperatorStages).toContain('diff_guard');
+    expect(decision.state).toBe('blocked');
+    expect(decision.nextAction).toBe('show_blocker');
+    expect(decision.internalOperatorRoute).toBe('blocked');
+    expect(decision.reason).toContain('Keine sichere interne Operator-Route');
   });
 });

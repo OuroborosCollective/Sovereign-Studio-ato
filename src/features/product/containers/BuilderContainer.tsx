@@ -4980,11 +4980,12 @@ Das echte Repo-Setup wurde geöffnet.`,
                   githubTokenPresent: Boolean(githubTokenRef.current),
                   directPatchSupported: Boolean(chatRepoSnapshot && githubWriteAllowed && githubTokenRef.current),
                   agentConfigured: sovereignAgentStartAvailable,
-                  workerAvailable: true,
-                  workspaceConfigured: agentReady ?? false,
+                  workerAvailable: !workerBlocker,
+                  workspaceConfigured: false,
                   draftPrSupported: githubWriteAllowed,
                   activeExecutorStatus:
-                    agentWorkSnapshot.state !== 'idle' || (scopedAgentJob && scopedAgentJob.status !== 'idle')
+                    scopedAgentIsRunning ||
+                    ['intent_detected', 'executor_starting', 'executor_running', 'branch_created', 'commit_created'].includes(agentWorkSnapshot.state)
                       ? 'running'
                       : 'idle',
                 });
@@ -5552,10 +5553,6 @@ Das echte Repo-Setup wurde geöffnet.`,
               {workerBlocker && (
                 <WorkerBlockerCard
                   blocker={workerBlocker}
-                  onRetry={() => {
-                    setWorkerBlocker(null);
-                    addLog("info", "Worker retry from card", "router");
-                  }}
                   onRetryWithMessage={(msg) => {
                     setWorkerBlocker(null);
                     addLog(
