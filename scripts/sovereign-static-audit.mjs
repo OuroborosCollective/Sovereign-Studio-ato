@@ -11,7 +11,6 @@ const required = [
   'capacitor.config.ts',
   'android/app/build.gradle',
   'android/app/src/main/AndroidManifest.xml',
-  'android/app/src/main/assets/public/index.html',
 ];
 
 const forbiddenEntrypointDomInstallers = [
@@ -167,10 +166,17 @@ if (existsSync('android/app/src/main/AndroidManifest.xml')) {
   if (!/android:allowBackup="false"/.test(manifest)) fail('release manifest should keep allowBackup=false.');
 }
 
-if (existsSync('android/app/src/main/assets/public/index.html')) {
-  const indexPath = 'android/app/src/main/assets/public/index.html';
+const androidIndexPath = 'android/app/src/main/assets/public/index.html';
+const strictAndroidAssets = process.env.SOVEREIGN_STRICT_ANDROID_ASSETS === '1' || existsSync('dist/index.html');
+
+if (strictAndroidAssets && !existsSync(androidIndexPath)) {
+  fail(`missing generated Android asset: ${androidIndexPath}`);
+}
+
+if (existsSync(androidIndexPath)) {
+  const indexPath = androidIndexPath;
   const html = read(indexPath);
-  const strictAssets = process.env.SOVEREIGN_STRICT_ANDROID_ASSETS === '1' || existsSync('dist/index.html');
+  const strictAssets = strictAndroidAssets;
 
   if (!html.includes('SOVEREIGN_BOOT_FALLBACK_V2')) fail('Android index.html must include the WebView recovery fallback.');
 

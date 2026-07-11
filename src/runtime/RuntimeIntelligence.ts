@@ -146,6 +146,8 @@ export interface RuntimeGuardResult {
   guardName: string;
   reason?: string;
   remediation?: string;
+  riskReduction?: number;
+  properties?: Record<string, unknown>;
   traceId: TraceId;
   durationMs: number;
 }

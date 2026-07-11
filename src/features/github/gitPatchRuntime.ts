@@ -63,6 +63,10 @@ function maskSecrets(text: string): string {
   return out;
 }
 
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0;
   let count = 0;
@@ -129,14 +133,14 @@ export function applyGitPatch(request: GitPatchRequest): GitPatchResult {
       break;
     }
 
-    if (Buffer.byteLength(block.search, 'utf8') > maxSearchBytes) {
+    if (utf8ByteLength(block.search) > maxSearchBytes) {
       const err = `Block ${i}: search string exceeds ${maxSearchBytes} bytes.`;
       blockResults.push({ index: i, matchCount: 0, applied: false, error: err });
       applyErrors.push(err);
       break;
     }
 
-    if (Buffer.byteLength(block.replace, 'utf8') > maxReplaceBytes) {
+    if (utf8ByteLength(block.replace) > maxReplaceBytes) {
       const err = `Block ${i}: replace string exceeds ${maxReplaceBytes} bytes.`;
       blockResults.push({ index: i, matchCount: 0, applied: false, error: err });
       applyErrors.push(err);
@@ -196,10 +200,10 @@ export function validateGitPatchRequest(request: GitPatchRequest): readonly stri
   for (let i = 0; i < request.blocks.length; i++) {
     const b = request.blocks[i];
     if (!b.search) errors.push(`Block ${i}: search string is empty.`);
-    if (Buffer.byteLength(b.search ?? '', 'utf8') > maxSearchBytes) {
+    if (utf8ByteLength(b.search ?? '') > maxSearchBytes) {
       errors.push(`Block ${i}: search string exceeds ${maxSearchBytes} bytes.`);
     }
-    if (Buffer.byteLength(b.replace ?? '', 'utf8') > maxReplaceBytes) {
+    if (utf8ByteLength(b.replace ?? '') > maxReplaceBytes) {
       errors.push(`Block ${i}: replace string exceeds ${maxReplaceBytes} bytes.`);
     }
   }

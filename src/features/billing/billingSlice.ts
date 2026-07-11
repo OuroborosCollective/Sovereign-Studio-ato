@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction, createAsyncThunk } from '@reduxjs/toolkit';
 import type { RootState } from '../../store';
+import { fetchWithStepUp } from '../security/securityApi';
 
 const API_BASE: string =
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
@@ -116,12 +117,12 @@ export const purchasePackage = createAsyncThunk(
     const payload: PurchaseArgs =
       typeof args === 'string' ? { packageId: args } : args;
     try {
-      const response = await fetch(`${API_BASE}/api/billing/purchase`, {
+      const response = await fetchWithStepUp(`${API_BASE}/api/billing/purchase`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      });
+      }, 'credit_purchase');
       if (!response.ok) {
         const err = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error || 'Kauf konnte nicht abgeschlossen werden');

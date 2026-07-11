@@ -39,6 +39,9 @@ from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
+from knowledge_library import register_knowledge_routes
+from security_runtime import consume_step_up_approval, register_security_routes
+
 # ── Worker AI Helper ───────────────────────────────────────────────────────────
 
 WORKER_AI_BASE = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
@@ -123,6 +126,38 @@ def get_connection():
     """Get a database connection from the pool."""
     pool = get_pool()
     return pool.getconn()
+
+
+class _RuntimeModuleConnection:
+    """RealDict pooled connection whose close() returns it to the pool."""
+
+    def __init__(self, pool, connection):
+        self._pool = pool
+        self._connection = connection
+        self._closed = False
+
+    def cursor(self, *args, **kwargs):
+        kwargs.setdefault("cursor_factory", psycopg2.extras.RealDictCursor)
+        return self._connection.cursor(*args, **kwargs)
+
+    def commit(self):
+        return self._connection.commit()
+
+    def rollback(self):
+        return self._connection.rollback()
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            self._pool.putconn(self._connection)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
+def get_runtime_module_connection():
+    pool = get_pool()
+    return _RuntimeModuleConnection(pool, pool.getconn())
 
 
 
@@ -2277,6 +2312,35 @@ def _get_credit_package(pkg_id: str) -> dict | None:
         return None
 
 
+def _credit_purchase_context(pkg: dict) -> dict:
+    return {
+        "packageId": str(pkg.get("id") or ""),
+        "priceEur": float(pkg.get("price_eur") or 0),
+        "credits": int(pkg.get("credits") or 0),
+    }
+
+
+def _authorize_credit_purchase(pkg: dict):
+    user_id = _get_session_user_id()
+    if not user_id:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    result = consume_step_up_approval(
+        get_runtime_module_connection,
+        user_id=user_id,
+        action="credit_purchase",
+        context=_credit_purchase_context(pkg),
+        token=request.headers.get("X-Step-Up-Token", "").strip() or None,
+    )
+    if not result.get("approved"):
+        return user_id, (jsonify({
+            "error": "step_up_required",
+            "action": "credit_purchase",
+            "context": result.get("context"),
+            "reason": result.get("reason"),
+        }), 428)
+    return user_id, None
+
+
 def _get_user_credits(user_id: str) -> int:
     if not user_id:
         return 0
@@ -2603,6 +2667,9 @@ def paypal_create_order():
     pkg = _get_credit_package(package_id)
     if not pkg:
         return jsonify({"error": "Credit-Paket nicht gefunden"}), 404
+    user_id, step_up_response = _authorize_credit_purchase(pkg)
+    if step_up_response:
+        return step_up_response
 
     try:
         token    = _paypal_access_token(client_id, client_secret, mode)
@@ -2750,6 +2817,9 @@ def skrill_init():
     pkg = _get_credit_package(package_id)
     if not pkg:
         return jsonify({"error": "Credit-Paket nicht gefunden"}), 404
+    user_id, step_up_response = _authorize_credit_purchase(pkg)
+    if step_up_response:
+        return step_up_response
 
     price = float(pkg["price_eur"])
     params = {
@@ -2834,6 +2904,9 @@ def crypto_info():
     pkg = _get_credit_package(package_id)
     if not pkg:
         return jsonify({"error": "Paket nicht gefunden"}), 404
+    _user_id, step_up_response = _authorize_credit_purchase(pkg)
+    if step_up_response:
+        return step_up_response
 
     return jsonify({
         "walletAddress": address,
@@ -2852,6 +2925,7 @@ def crypto_info():
 # ── Google Play IAP ────────────────────────────────────────────────────────────
 
 @app.route("/api/billing/purchase/google-play/validate", methods=["POST"])
+@require_session
 def google_play_validate():
     """Validate a Google Play purchase token via Android Developer API."""
     import json as _json
@@ -2859,7 +2933,7 @@ def google_play_validate():
     body           = request.get_json(force=True) or {}
     purchase_token = str(body.get("purchaseToken", ""))
     product_id     = str(body.get("productId", ""))
-    user_id        = request.headers.get("X-User-Id", "").strip()
+    user_id        = request.session_user_id
 
     if not purchase_token or not product_id:
         return jsonify({"error": "purchaseToken und productId erforderlich"}), 400
@@ -2944,6 +3018,15 @@ def google_play_validate():
         credits  = int(pkg["credits"])     if pkg else 0
         price    = float(pkg["price_eur"]) if pkg else 0.0
         pkg_name = pkg["name"]             if pkg else product_id
+        _approved_user_id, step_up_response = _authorize_credit_purchase({
+            "id": str(pkg.get("id") if pkg else product_id),
+            "price_eur": price,
+            "credits": credits,
+        })
+        if step_up_response:
+            return step_up_response
+        if _approved_user_id != user_id:
+            return jsonify({"error": "Account mismatch"}), 403
 
         if user_id and credits > 0:
             _add_credits_and_log(user_id, credits, price, "google_play",
@@ -3074,14 +3157,13 @@ def public_llm_route(route_id):
 # ── User Billing endpoints (Issue #458) ──────────────────────────────────────
 
 @app.route("/api/billing/credits")
+@require_session
 def user_billing_credits():
-    """Return credit balance for the authenticated user (X-User-Id header)."""
-    user_id = request.headers.get("X-User-Id", "").strip()
-    if not user_id:
-        return jsonify({"credits": 0}), 200
+    """Return the authenticated user's server-ledger credit balance."""
+    user_id = request.session_user_id
     try:
         row = query(
-            "SELECT credits FROM users WHERE id::text = %s LIMIT 1",
+            "SELECT credits FROM admin_users WHERE id::text = %s LIMIT 1",
             (user_id,), one=True,
         )
         credits = int(row["credits"]) if row else 0
@@ -3091,21 +3173,53 @@ def user_billing_credits():
 
 
 @app.route("/api/billing/deduct", methods=["POST"])
+@require_session
 def user_billing_deduct():
     """Server-side credit deduction with validation and usage logging."""
     body        = request.get_json(force=True) or {}
-    user_id     = request.headers.get("X-User-Id", "").strip()
+    user_id     = request.session_user_id
     cost_id     = str(body.get("costId",    ""))
     amount      = int(body.get("amount",    0))
     token_count = int(body.get("tokenCount", 0))
 
-    if amount <= 0:
-        return jsonify({"ok": True, "deducted": 0})
-
     try:
+        route = query(
+            """SELECT credits_per_unit::float AS credits_per_unit
+               FROM llm_routes
+               WHERE id::text=%s OR model_id=%s
+               ORDER BY disabled ASC, priority ASC LIMIT 1""",
+            (cost_id, cost_id), one=True,
+        )
+        fixed_costs = {
+            "tool_vps_exec": 5,
+            "tool_github_pr": 10,
+            "tool_repo_load": 3,
+        }
+        if route:
+            amount = max(1, int(((max(1, token_count) / 1000) * float(route["credits_per_unit"])) + 0.999999))
+        elif cost_id in fixed_costs:
+            amount = fixed_costs[cost_id]
+        else:
+            return jsonify({"error": "unknown_cost_id", "costId": cost_id}), 400
+
+        step_up = consume_step_up_approval(
+            get_runtime_module_connection,
+            user_id=user_id,
+            action="expensive_llm_route",
+            context={"costId": cost_id, "credits": amount, "tokenCount": token_count},
+            token=request.headers.get("X-Step-Up-Token", "").strip() or None,
+        )
+        if not step_up.get("approved"):
+            return jsonify({
+                "error": "step_up_required",
+                "action": "expensive_llm_route",
+                "context": step_up.get("context"),
+                "reason": step_up.get("reason"),
+            }), 428
+
         if user_id:
             row = query(
-                "SELECT credits FROM users WHERE id::text = %s LIMIT 1",
+                "SELECT credits FROM admin_users WHERE id::text = %s LIMIT 1",
                 (user_id,), one=True,
             )
             if not row:
@@ -3118,7 +3232,7 @@ def user_billing_deduct():
                     "required":  amount,
                 }), 402
             query(
-                "UPDATE users SET credits = GREATEST(0, credits - %s) WHERE id::text = %s",
+                "UPDATE admin_users SET credits = GREATEST(0, credits - %s) WHERE id::text = %s",
                 (amount, user_id), write=True,
             )
 
@@ -3634,6 +3748,19 @@ def auth_github_init():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
+
+# Reference knowledge and account security are modular runtime contracts.
+register_knowledge_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_runtime_module_connection,
+)
+register_security_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_runtime_module_connection,
+    set_session_cookie=_set_session_cookie,
+)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # SOVEREIGN APP TOOLCHAIN  —  Issue: Toolchain integration

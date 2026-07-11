@@ -136,6 +136,7 @@ export interface DevChatRepoSnapshot {
   readonly repoUrl: string;
   readonly fileCount: number;
   readonly files: readonly DevChatRepoTreeFile[];
+  readonly filePaths: readonly string[];
   readonly dirs: readonly string[];
   readonly lastFile?: string;
   readonly lastPath?: string;
@@ -235,6 +236,7 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
         repoUrl: parsed.repoUrl,
         fileCount: files.length,
         files,
+        filePaths: blobPaths,
         dirs,
         lastFile: lastPath ? lastPath.slice(slash + 1) : undefined,
         lastPath: lastPath && slash >= 0 ? lastPath.slice(0, slash + 1) : undefined,

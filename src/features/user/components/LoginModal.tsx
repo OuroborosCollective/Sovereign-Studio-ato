@@ -72,8 +72,10 @@ export function LoginModal({ onClose }: Props) {
   const [displayName, setDisplayName] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [accountKey, setAccountKey] = useState('');
 
-  const { login, register, loginWithGoogle, loginWithGitHub, isLoading, error, clearError } = useUserStore();
+  const { login, register, loginWithGoogle, loginWithGitHub, loginWithPasskey, loginWithAccountKey, isLoading, error, clearError } = useUserStore();
   const githubConfigured = isGitHubOAuthConfigured();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -120,6 +122,20 @@ export function LoginModal({ onClose }: Props) {
     } finally {
       setGithubLoading(false);
     }
+  }
+
+  async function handlePasskey() {
+    setPasskeyLoading(true);
+    clearError();
+    await loginWithPasskey(email);
+    setPasskeyLoading(false);
+    if (!useUserStore.getState().error) onClose();
+  }
+
+  async function handleAccountKey() {
+    clearError();
+    await loginWithAccountKey(accountKey.trim());
+    if (!useUserStore.getState().error) onClose();
   }
 
   function switchMode() {
@@ -171,6 +187,32 @@ export function LoginModal({ onClose }: Props) {
         </form>
 
         <div style={S.divider}><span style={S.line}/><span>oder</span><span style={S.line}/></div>
+
+        {mode === 'login' && (
+          <>
+            <button
+              style={{ ...S.btn, background: '#21262d', color: C.text, border: `1px solid ${C.accent}` }}
+              onClick={handlePasskey}
+              disabled={passkeyLoading || isLoading}
+            >
+              {passkeyLoading ? 'Prüfe Gerät…' : 'Mit Passkey anmelden'}
+            </button>
+            <input
+              style={S.input}
+              type="password"
+              placeholder="Optional: svk_ Account Key"
+              value={accountKey}
+              onChange={event => setAccountKey(event.target.value)}
+            />
+            <button
+              style={{ ...S.btn, background: '#21262d', color: C.text, border: `1px solid ${C.border}` }}
+              onClick={handleAccountKey}
+              disabled={!accountKey.trim() || isLoading}
+            >
+              Mit Account Key anmelden
+            </button>
+          </>
+        )}
 
         {/* GitHub Login Button — only shown when OAuth is properly configured */}
         {githubConfigured && (
