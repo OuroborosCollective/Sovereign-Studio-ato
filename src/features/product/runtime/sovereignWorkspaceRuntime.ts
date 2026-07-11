@@ -188,13 +188,23 @@ export class SovereignWorkspaceRuntime {
       capability = 'direct_github_patch';
     }
 
+    const nextAction = policyResult.allowed
+      ? 'start_workspace'
+      : route === 'direct-github-patch'
+        ? 'direct_patch'
+        : route === 'snapshot-analysis'
+          ? 'snapshot_only'
+          : policyResult.blocker
+            ? 'block'
+            : 'direct_patch';
+
     return {
       route,
       capability,
       allowed: policyResult.allowed,
       reason: policyResult.reason,
       blocker: policyResult.blocker,
-      nextAction: policyResult.allowed ? 'start_workspace' : policyResult.rules.find((r) => !r.passed)?.id === 'workspace-required' ? 'block' : 'direct_patch',
+      nextAction,
     };
   }
 
@@ -255,24 +265,27 @@ export class SovereignWorkspaceRuntime {
         );
 
         if (!validation.valid) {
-          // Return blocked result with violations
-          return {
+          const blockedResult: SovereignWorkspaceResult = {
             ...result,
             status: 'blocked',
             blocker: `Changed files violate policy: ${validation.violations.join('; ')}`,
             changedFiles: result.changedFiles,
           };
+          this.completedJobs.set(request.jobId, blockedResult);
+          return blockedResult;
         }
       }
 
       // Validate Draft PR creation
       if (result.draftPrUrl && !request.allowDraftPr) {
-        return {
+        const blockedResult: SovereignWorkspaceResult = {
           ...result,
           status: 'blocked',
           blocker: 'Draft PR created without explicit permission (allowDraftPr === false)',
           draftPrUrl: undefined,
         };
+        this.completedJobs.set(request.jobId, blockedResult);
+        return blockedResult;
       }
 
       // Store completed result
