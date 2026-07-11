@@ -37,10 +37,21 @@ export function SecuritySettingsPanel({ onClose }: { onClose: () => void }) {
     finally { setBusy(false); }
   };
 
-  const addPasskey = async () => {
+  const runMutation = async (task: () => Promise<void>) => {
     setBusy(true);
-    try { await registerPasskey('Dieses Gerät'); await load(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); setBusy(false); }
+    setError('');
+    try {
+      await task();
+      setData(await getSecurityOverview());
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addPasskey = async () => {
+    await runMutation(() => registerPasskey('Dieses Gerät'));
   };
 
   const addKey = async () => {
@@ -60,13 +71,13 @@ export function SecuritySettingsPanel({ onClose }: { onClose: () => void }) {
         {newKey && <OneTimeKey value={newKey} onDone={() => setNewKey('')} />}
 
         <Card title="Passkeys" text="Anmeldung und Bestätigung per Fingerabdruck, PIN oder Gerätesperre.">
-          {(data?.passkeys ?? []).map(item => <Row key={item.id} title={item.label} sub={`${item.deviceType || 'WebAuthn-Gerät'}${item.backedUp ? ' · synchronisiert' : ''}`} action="Entfernen" onAction={() => void deletePasskey(item.id).then(load)} />)}
+          {(data?.passkeys ?? []).map(item => <Row key={item.id} title={item.label} sub={`${item.deviceType || 'WebAuthn-Gerät'}${item.backedUp ? ' · synchronisiert' : ''}`} action="Entfernen" onAction={() => void runMutation(() => deletePasskey(item.id))} />)}
           {!busy && !(data?.passkeys.length) && <p style={{ color:C.sub, fontSize:12 }}>Noch kein Passkey registriert.</p>}
           <button type="button" disabled={busy} onClick={() => void addPasskey()} style={{ ...button, width:'100%', background:C.accent, color:C.bg, fontWeight:800 }}>Passkey einrichten</button>
         </Card>
 
         <Card title="Sovereign Account Keys" text="Optionaler Notfallzugang und Ersatz für eine Step-up-Bestätigung.">
-          {(data?.accountKeys ?? []).map(item => <Row key={item.id} title={item.label} sub={item.keyHint} action="Widerrufen" onAction={() => void revokeAccountKey(item.id).then(load)} />)}
+          {(data?.accountKeys ?? []).map(item => <Row key={item.id} title={item.label} sub={item.keyHint} action="Widerrufen" onAction={() => void runMutation(() => revokeAccountKey(item.id))} />)}
           <button type="button" disabled={busy} onClick={() => void addKey()} style={{ ...button, width:'100%' }}>Neuen Account Key erzeugen</button>
         </Card>
 

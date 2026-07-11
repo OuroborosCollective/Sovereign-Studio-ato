@@ -42,8 +42,6 @@ export interface BuildSovereignPackageFromRepoFilesInput {
   };
 }
 
-const USER_API_KEYS_STORAGE_KEY = 'sovereign-user-api-keys';
-
 const EXACT_PLACEHOLDER_MISSIONS = new Set([
   'readme + update history',
   'beschreibe deine idee oder deinen auftrag.',
@@ -154,21 +152,10 @@ function isDocumentationSovereignMission(mission: string): boolean {
   return ['readme', 'documentation', 'dokumentation', 'docs', 'update history', 'changelog'].some((token) => normalized.includes(token));
 }
 
-function readStoredUserKeys(): BuildSovereignPackageFromRepoFilesInput['userKeys'] | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const stored = window.localStorage.getItem(USER_API_KEYS_STORAGE_KEY);
-    if (!stored) return undefined;
-    const parsed = JSON.parse(stored) as BuildSovereignPackageFromRepoFilesInput['userKeys'];
-    return parsed && typeof parsed === 'object' ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function runtimeUserKeys(input: BuildSovereignPackageFromRepoFilesInput): BuildSovereignPackageFromRepoFilesInput['userKeys'] | undefined {
-  if (!input.allowUserKeyRoutes) return undefined;
-  return input.userKeys ?? readStoredUserKeys();
+function runtimeUserKeys(_input: BuildSovereignPackageFromRepoFilesInput): undefined {
+  // Provider credentials are server-owned and must never enter the browser,
+  // WebView, generated package or Draft-PR payload.
+  return undefined;
 }
 
 function decidePackageBuildRoute(

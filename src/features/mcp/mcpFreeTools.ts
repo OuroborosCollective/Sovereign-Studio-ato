@@ -1,9 +1,9 @@
 /**
- * MCP Free Tools - Unrestricted Tool Integration
- * 
- * This module provides MCP tool integration WITHOUT security restrictions.
- * Tools are executed freely with signal emission for predictive learning only.
- * 
+ * MCP Tool Registry
+ *
+ * Only concretely registered executors may run. Missing transports and tools
+ * fail closed; predictive signals report outcomes but never grant permission.
+ *
  * @module features/mcp/mcpFreeTools
  */
 
@@ -69,29 +69,14 @@ export async function executeMCPTool(config: MCPToolConfig): Promise<{
   }
 }
 
-/**
- * Internal MCP tool execution.
- * Replace with actual MCP client implementation.
- */
 async function executeMCPToolInternal(
   serverName: string,
   toolName: string,
-  parameters: Record<string, unknown>
-): Promise<unknown> {
-  // This is a placeholder - integrate with actual MCP client
-  // The key is: NO RESTRICTIONS on tool execution
-  console.log(`[MCP Free] Executing ${serverName}/${toolName}`, parameters);
-  
-  // Simulate execution
-  await new Promise(resolve => setTimeout(resolve, 50));
-  
-  return {
-    server: serverName,
-    tool: toolName,
-    executed: true,
-    params: parameters,
-    timestamp: Date.now(),
-  };
+  _parameters: Record<string, unknown>,
+): Promise<never> {
+  throw new Error(
+    `MCP transport unavailable for ${serverName}/${toolName}. Register a concrete executor before use.`,
+  );
 }
 
 function createToolEvent(
@@ -113,26 +98,14 @@ function createToolEvent(
   };
 }
 
-/**
- * Get available MCP servers and tools.
- * No restrictions - all tools are visible.
- */
 export function getAvailableMCPTools(): {
   servers: string[];
   tools: Array<{ server: string; name: string; description: string }>;
 } {
-  // Return all available tools - no filtering
+  const tools = getMCPToolRegistry().getAllTools();
   return {
-    servers: ['filesystem', 'github', 'database', 'api'],
-    tools: [
-      { server: 'filesystem', name: 'read_file', description: 'Read file contents' },
-      { server: 'filesystem', name: 'write_file', description: 'Write file contents' },
-      { server: 'filesystem', name: 'list_directory', description: 'List directory contents' },
-      { server: 'github', name: 'create_pr', description: 'Create pull request' },
-      { server: 'github', name: 'add_comment', description: 'Add PR comment' },
-      { server: 'database', name: 'query', description: 'Execute database query' },
-      { server: 'api', name: 'http_request', description: 'Make HTTP request' },
-    ],
+    servers: [...new Set(tools.map(tool => tool.server))].sort(),
+    tools,
   };
 }
 
@@ -172,34 +145,38 @@ export class MCPToolRegistry {
     }));
   }
 
-  /**
-   * Execute a tool - no restrictions.
-   */
   async execute(
     server: string,
     name: string,
     params: Record<string, unknown>,
     workspaceId?: string,
-    jobId?: string
+    jobId?: string,
   ): Promise<{ success: boolean; result?: unknown; error?: string; durationMs: number }> {
     const key = `${server}:${name}`;
     const tool = this.tools.get(key);
-
     if (!tool) {
       return {
         success: false,
-        error: `Tool ${server}:${name} not found`,
+        error: `Tool ${server}:${name} is not registered`,
         durationMs: 0,
       };
     }
 
-    return executeMCPTool({
-      serverName: server,
-      toolName: name,
-      parameters: params,
-      workspaceId,
-      jobId,
-    });
+    const startedAt = performance.now();
+    try {
+      const result = await tool.execute(params);
+      const durationMs = performance.now() - startedAt;
+      emitToolSignal(createToolEvent(name, 'success', durationMs, params, workspaceId, jobId));
+      return { success: true, result, durationMs };
+    } catch (error) {
+      const durationMs = performance.now() - startedAt;
+      emitToolSignal(createToolEvent(name, 'error', durationMs, params, workspaceId, jobId));
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs,
+      };
+    }
   }
 }
 
@@ -214,21 +191,6 @@ export function getMCPToolRegistry(): MCPToolRegistry {
   return registry;
 }
 
-function initDefaultTools(reg: MCPToolRegistry): void {
-  // Register default tools freely
-  reg.register('filesystem', 'read_file', 'Read file contents', async (params) => {
-    return { path: params.path, content: 'file content here' };
-  });
-
-  reg.register('filesystem', 'write_file', 'Write file contents', async (params) => {
-    return { path: params.path, written: true };
-  });
-
-  reg.register('github', 'create_pr', 'Create pull request', async (params) => {
-    return { pr_url: `https://github.com/${params.owner}/${params.repo}/pull/1`, id: 1 };
-  });
-
-  reg.register('database', 'query', 'Execute SQL query', async (params) => {
-    return { rows: [], query: params.sql };
-  });
+function initDefaultTools(_reg: MCPToolRegistry): void {
+  // No live-path placeholders. Tools appear only after a real executor registers.
 }
