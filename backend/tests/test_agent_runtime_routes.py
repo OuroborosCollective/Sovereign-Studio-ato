@@ -49,7 +49,13 @@ class FakeCursor:
         elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_EVENTS"):
             self.conn.events.append(params)
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "SET EVENTS" in normalized:
-            self.conn.events.append(params)
+            import json
+            job_id = params[1]
+            new_events = json.loads(params[0])
+            current = self.conn.jobs[job_id].get("events", [])
+            if isinstance(current, str):
+                current = json.loads(current)
+            self.conn.jobs[job_id]["events"] = current + new_events
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS"):
             job_id = params[-1]
             self.conn.jobs[job_id]["status"] = params[0]
