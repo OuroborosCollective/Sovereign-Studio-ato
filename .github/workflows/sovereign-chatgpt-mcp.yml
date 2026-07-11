@@ -55,9 +55,13 @@ jobs:
           set -euo pipefail
           bash -n deploy/deploy-sovereign-backend
           bash -n deploy/rollback-sovereign-backend
+          bash -n deploy/bootstrap-database.sh
+          bash -n deploy/install-secure-tunnel.sh
           bash -n deploy/install-on-vps.sh
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py$' deploy/sovereign-chatgpt-broker.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
+          grep -q '^ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}$' deploy/sovereign-openai-tunnel.service
+          grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env$' deploy/sovereign-openai-tunnel.service
 
       - name: Run policy and runtime tests
         run: python -m pytest -q
@@ -87,7 +91,7 @@ jobs:
       - name: Scan tracked files for forbidden private material
         run: |
           set -euo pipefail
-          if grep -RInE --exclude='.env.example' --exclude='*.pyc' \
+          if grep -RInE --exclude='.env.example' --exclude='.tunnel.env.example' --exclude='*.pyc' \
             '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-proj-[A-Za-z0-9_-]{20,})' .; then
             echo 'Forbidden secret-shaped material found.' >&2
             exit 1
