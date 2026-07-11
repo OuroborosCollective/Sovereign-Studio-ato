@@ -6,6 +6,7 @@ Supports running tests for various test frameworks.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import json
 from pathlib import Path
@@ -172,19 +173,28 @@ class TestTool(ToolBase):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env={"FORCE_COLOR": "0"},
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "FORCE_COLOR": "0",
+                },
             )
 
             output = result.stdout + "\n" + result.stderr if result.stderr else result.stdout
+            normalized_output = output.strip()
+            passed = result.returncode == 0
 
             return ToolResult(
-                status="done",
-                output=output.strip(),
+                status="done" if passed else "error",
+                output=normalized_output,
+                error=None if passed else (
+                    normalized_output or f"Test command failed with exit code {result.returncode}"
+                ),
                 metadata={
                     "exit_code": result.returncode,
-                    "passed": result.returncode == 0,
+                    "passed": passed,
                     "framework": "custom",
                 },
+                exit_code=result.returncode,
             )
 
         except subprocess.TimeoutExpired:
@@ -212,19 +222,28 @@ class TestTool(ToolBase):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env={"FORCE_COLOR": "0"},
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "FORCE_COLOR": "0",
+                },
             )
 
             output = result.stdout + "\n" + result.stderr if result.stderr else result.stdout
+            normalized_output = output.strip()
+            passed = result.returncode == 0
 
             return ToolResult(
-                status="done",
-                output=output.strip(),
+                status="done" if passed else "error",
+                output=normalized_output,
+                error=None if passed else (
+                    normalized_output or f"Tests failed with exit code {result.returncode}"
+                ),
                 metadata={
                     "exit_code": result.returncode,
-                    "passed": result.returncode == 0,
+                    "passed": passed,
                     "command": " ".join(args),
                 },
+                exit_code=result.returncode,
             )
 
         except subprocess.TimeoutExpired:
