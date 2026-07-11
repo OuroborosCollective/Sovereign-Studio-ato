@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import hashlib
 
 import pytest
 
@@ -42,3 +42,18 @@ def test_confirmation_hash_must_match_before_connection(repo_runtime, monkeypatc
     result = database.apply_migration(workspace_id, "migrations/003.sql", "0" * 64)
     assert result["status"] == "BLOCKED"
     assert result["blocker"] == "Bestätigungs-Hash stimmt nicht"
+
+
+def test_destructive_migration_requires_separate_activation(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    migration = repo / "migrations" / "004.sql"
+    migration.parent.mkdir(exist_ok=True)
+    sql = "ALTER TABLE users DROP COLUMN legacy_value;\n"
+    migration.write_text(sql, "utf-8")
+    checksum = hashlib.sha256(sql.encode()).hexdigest()
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "1")
+    monkeypatch.delenv("SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS", raising=False)
+    database = DatabaseRuntime(runtime._repo)
+    result = database.apply_migration(workspace_id, "migrations/004.sql", checksum)
+    assert result["status"] == "BLOCKED"
+    assert result["destructive_actions"] == ["drop_column"]
