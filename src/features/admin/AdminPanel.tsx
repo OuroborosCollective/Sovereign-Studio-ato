@@ -36,11 +36,12 @@ import {
 } from './hooks/useAdminApi';
 import {
   type AdminUser,
+  clearAdminKey,
   getAdminKey,
   setAdminKey,
   adminApiClient,
 } from './api/adminApiClient';
-import { useUserStore, type UserRole } from '../user/useUserStore';
+import { useUserStore } from '../user/useUserStore';
 import type { LauncherToolProps } from '../launcher/launcherRegistry';
 
 const C = {
@@ -62,6 +63,23 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number 
 // ── API Key Setup ─────────────────────────────────────────────────────────────
 // Renders WITHOUT AdminGate — this IS the entry point for first-time admins.
 
+function applyConfirmedAdminSession(result: AdminUser): void {
+  const createdAt = Date.parse(result.createdAt);
+  if (!Number.isFinite(createdAt)) {
+    throw new Error('Admin-Ping lieferte keinen gültigen Erstellzeitpunkt.');
+  }
+  useUserStore.getState().setUser({
+    id: result.id,
+    email: result.email,
+    displayName: result.displayName,
+    role: result.role,
+    credits: result.credits,
+    subscriptionStatus: result.subscriptionStatus,
+    isBanned: result.isBanned,
+    createdAt,
+  });
+}
+
 function ApiKeySetup({ onReady }: { onReady: () => void }) {
   const [input,   setInput]   = useState('');
   const [testing, setTesting] = useState(false);
@@ -74,20 +92,10 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
     setError(null);
     try {
       const result = await adminApiClient.ping();
-      // Provision a store user so AdminGate (wrapping ReadyContent) unlocks.
-      // Issue #459 replaces this with a real JWT session.
-      useUserStore.getState().setUser({
-        id:                 'admin-api-key-session',
-        email:              'admin@sovereign-studio',
-        displayName:        'Admin',
-        role:               (result.role as UserRole) ?? 'admin',
-        credits:            0,
-        subscriptionStatus: 'active',
-        isBanned:           false,
-        createdAt:          Date.now(),
-      });
+      applyConfirmedAdminSession(result);
       onReady();
     } catch (e) {
+      clearAdminKey();
       setError(`Verbindungsfehler: ${String(e)}`);
     } finally {
       setTesting(false);
@@ -100,8 +108,8 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>Admin API-Key</div>
         <div style={{ fontSize: 11, color: C.textSub, maxWidth: 260 }}>
-          Einmalig eingeben — wird in localStorage gespeichert.<br />
-          Wird durch JWT-Auth in Issue #459 ersetzt.
+          Der Key bleibt nur während dieser geöffneten App-Sitzung im Arbeitsspeicher.<br />
+          Nach einem Reload muss er erneut bestätigt werden.
         </div>
       </div>
       <div style={{ width: '100%', maxWidth: 280, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -239,20 +247,12 @@ export function AdminPanel(_props: LauncherToolProps) {
     if (!key) return;
     adminApiClient.ping()
       .then(result => {
-        useUserStore.getState().setUser({
-          id:                 'admin-api-key-session',
-          email:              'admin@sovereign-studio',
-          displayName:        'Admin',
-          role:               (result.role as UserRole) ?? 'admin',
-          credits:            0,
-          subscriptionStatus: 'active',
-          isBanned:           false,
-          createdAt:          Date.now(),
-        });
+        applyConfirmedAdminSession(result);
         setReady(true);
       })
       .catch(() => {
-        // Key present but stale/invalid → show setup screen
+        clearAdminKey();
+        useUserStore.getState().clearUser();
         setReady(false);
       });
   }, []);

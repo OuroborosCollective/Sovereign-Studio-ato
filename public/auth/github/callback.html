@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GitHub-Anmeldung</title>
+</head>
+<body>
+  <p id="status">GitHub-Anmeldung wird geprüft …</p>
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      const error = params.get('error_description') || params.get('error');
+      const targetOrigin = window.location.origin;
+      const message = error
+        ? { type: 'GITHUB_OAUTH_ERROR', error }
+        : code && state
+          ? { type: 'GITHUB_OAUTH_SUCCESS', code, state }
+          : { type: 'GITHUB_OAUTH_ERROR', error: 'OAuth-Callback enthält keinen vollständigen Code/State.' };
+      document.getElementById('status').textContent = error ? `Fehler: ${error}` : 'Anmeldung empfangen. Fenster wird geschlossen …';
+      if (window.opener) window.opener.postMessage(message, targetOrigin);
+      window.setTimeout(() => window.close(), 150);
+    })();
+  </script>
+</body>
+</html>

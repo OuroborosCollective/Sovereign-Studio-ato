@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { getStoredUserKeys, type UserApiKeys } from '../components/UserKeyManager';
+import type { UserApiKeys } from '../components/UserKeyManager';
 import { validateUserApiKeys, getValidatedKeys } from '../runtime/apiKeyValidation';
 import { getProviderRuntimeReport, type ProviderRuntimeReport } from '../runtime/providerRuntimeChecks';
 
@@ -24,8 +24,7 @@ export function useUserApiKeys(): UseUserApiKeysReturn {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = getStoredUserKeys();
-    setUserKeysState(stored);
+    setUserKeysState({});
     setIsLoading(false);
   }, []);
 
@@ -35,23 +34,17 @@ export function useUserApiKeys(): UseUserApiKeysReturn {
 
   const providerReport = useMemo(() => getProviderRuntimeReport(userKeys), [userKeys]);
 
-  const setUserKeys = useCallback((keys: UserApiKeys) => {
-    const validated = getValidatedKeys(keys);
-    setUserKeysState(keys);
-    localStorage.setItem('sovereign-user-api-keys', JSON.stringify(validated));
+  const setUserKeys = useCallback((_keys: UserApiKeys) => {
+    setUserKeysState({});
   }, []);
 
-  const hasKey = useCallback(
-    (providerId: keyof UserApiKeys): boolean => !!userKeys[providerId],
-    [userKeys],
-  );
+  const hasKey = useCallback((_providerId: keyof UserApiKeys): boolean => false, []);
 
-  const hasAnyKey = Object.values(userKeys).some((key) => !!key);
+  const hasAnyKey = false;
   const hasInvalidKeys = validationReport.invalidCount > 0;
 
   const clearAllKeys = useCallback(() => {
     setUserKeysState({});
-    localStorage.removeItem('sovereign-user-api-keys');
   }, []);
 
   return {

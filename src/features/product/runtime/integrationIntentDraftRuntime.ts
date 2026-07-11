@@ -526,9 +526,9 @@ export function buildRouteStartedEvent(route: string): SovereignActionEventInput
   return {
     kind: 'route_selected',
     route: route as SovereignActionEventInput['route'],
-    label: 'Route gestartet',
-    detail: 'Integration Execution',
-    state: 'running',
+    label: 'Route eingeplant',
+    detail: 'Wartet auf bestätigte Runtime-Start-Evidence.',
+    state: 'queued',
   };
 }
 

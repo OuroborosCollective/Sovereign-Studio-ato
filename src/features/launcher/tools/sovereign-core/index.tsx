@@ -106,10 +106,44 @@ function countRelevantMemoryKeys(): number {
   }
 }
 
+function readOnlineStatus(): boolean {
+  return typeof navigator !== 'undefined' ? navigator.onLine : false;
+}
+
+function useOnlineStatus(): boolean {
+  const [online, setOnline] = useState(readOnlineStatus);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const update = () => setOnline(readOnlineStatus());
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  return online;
+}
+
+function useStorageRevision(): number {
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const update = () => setRevision((current) => current + 1);
+    window.addEventListener('storage', update);
+    return () => window.removeEventListener('storage', update);
+  }, []);
+
+  return revision;
+}
+
 export function SovereignSettingsTool(_props: LauncherToolProps) {
   const storageReady = canUseLocalStorage();
   const language = typeof navigator === 'undefined' ? 'unknown' : navigator.language || 'unknown';
-  const online = typeof navigator === 'undefined' ? false : navigator.onLine;
+  const online = useOnlineStatus();
   const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
   const evidence = useMemo(
     () => deriveSettingsInspectionEvidence({ storageReady, online, language }),
@@ -137,7 +171,8 @@ export function SovereignSettingsTool(_props: LauncherToolProps) {
 
 export function SovereignMemoryTool(_props: LauncherToolProps) {
   const storageReady = canUseLocalStorage();
-  const relevantKeyCount = useMemo(() => countRelevantMemoryKeys(), []);
+  const storageRevision = useStorageRevision();
+  const relevantKeyCount = useMemo(() => countRelevantMemoryKeys(), [storageRevision]);
   const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
   const evidence = useMemo(
     () => deriveMemoryInspectionEvidence({ storageReady, relevantKeyCount }),
@@ -164,7 +199,7 @@ export function SovereignMemoryTool(_props: LauncherToolProps) {
 
 export function SovereignHealthTool(_props: LauncherToolProps) {
   const storageReady = canUseLocalStorage();
-  const online = typeof navigator === 'undefined' ? false : navigator.onLine;
+  const online = useOnlineStatus();
   const serviceWorkerAvailable = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
   const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
   const evidence = useMemo(
@@ -194,6 +229,7 @@ export function SovereignHealthTool(_props: LauncherToolProps) {
 export function SovereignCoverageTool(_props: LauncherToolProps) {
   const [evidence, setEvidence] = useState<SovereignToolInspectionEvidence>(() => createCoverageCheckingEvidence());
   const recordEvidence = useSovereignToolInspectionStore((store) => store.recordEvidence);
+  const clearEvidence = useSovereignToolInspectionStore((store) => store.clearEvidence);
 
   useEffect(() => {
     let alive = true;
@@ -236,8 +272,11 @@ export function SovereignCoverageTool(_props: LauncherToolProps) {
     }
 
     void loadCoverage();
-    return () => { alive = false; };
-  }, [recordEvidence]);
+    return () => {
+      alive = false;
+      clearEvidence('coverage');
+    };
+  }, [clearEvidence, recordEvidence]);
 
   return (
     <Shell

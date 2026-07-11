@@ -61,7 +61,7 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   );
   const resolvedTools = useMemo(
     () => deriveSovereignToolShortcutGates(resolvedRuntimeContext),
-    [resolvedRuntimeContext],
+    [open, resolvedRuntimeContext],
   );
 
   const close = useCallback(() => setOpen(false), []);

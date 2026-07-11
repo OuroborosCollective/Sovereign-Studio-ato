@@ -50,7 +50,7 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
     vi.clearAllMocks();
   });
 
-  it('builds package from a valid LLM brain result before local fallback', async () => {
+  it('builds from a valid LLM result while ignoring browser provider keys', async () => {
     vi.mocked(runSovereignLlmRuntime).mockResolvedValue({
       ok: true,
       source: 'llm-revolver',
@@ -76,7 +76,7 @@ describe('sovereignPackageFromRepoFilesWithLlm', () => {
       memoryContext: ['REMOTE PATTERN: use guarded patches'],
       allowExternalNoKey: false,
       allowUserKeyRoutes: true,
-      userKeys: { groq: 'gsk_fake_key_for_test_only' },
+      userKeys: undefined,
     }));
     expect(pkg.brain.perception.intent).toContain('LLM package builder');
     expect(pkg.files.map((file) => file.path)).toContain('src/App.tsx');

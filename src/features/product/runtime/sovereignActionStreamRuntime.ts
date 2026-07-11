@@ -130,7 +130,7 @@ const AGENT_JOB_QUEUED_STATUSES: ReadonlySet<string> = new Set([
 
 const AGENT_JOB_RUNNING_STATUSES: ReadonlySet<string> = new Set([
   'provisioning',
-  'workspace_created',
+  'workspace-created',
   'cloning',
   'running',
   'validating',
@@ -149,6 +149,14 @@ const AGENT_JOB_FAILED_STATUSES: ReadonlySet<string> = new Set([
   'timeout',
 ]);
 
+const AGENT_JOB_DONE_STATUSES: ReadonlySet<string> = new Set([
+  'completed',
+  'finished',
+  'success',
+  'succeeded',
+  'cleaned',
+]);
+
 function normalizeAgentJobStatus(status: string): string {
   return status.trim().toLowerCase().replace(/_/g, '-');
 }
@@ -159,7 +167,8 @@ function stateForAgentJobStatus(status: string): SovereignActionEventState {
   if (AGENT_JOB_RUNNING_STATUSES.has(normalized)) return 'running';
   if (AGENT_JOB_FAILED_STATUSES.has(normalized)) return 'failed';
   if (AGENT_JOB_BLOCKED_STATUSES.has(normalized)) return 'blocked';
-  return 'done';
+  if (AGENT_JOB_DONE_STATUSES.has(normalized)) return 'done';
+  return 'blocked';
 }
 
 function labelForAgentJobStatus(status: string): string {
@@ -169,7 +178,7 @@ function labelForAgentJobStatus(status: string): string {
   if (state === 'failed') return 'Agent Job fehlgeschlagen';
   if (state === 'blocked') return 'Agent Job blockiert';
   if (normalizeAgentJobStatus(status) === 'cleaned') return 'Agent Workspace bereinigt';
-  return 'Agent Job Status geprüft';
+  return 'Agent Job Status unbekannt';
 }
 
 function activeRouteStatusLabel(event: SovereignActionEvent): string {
