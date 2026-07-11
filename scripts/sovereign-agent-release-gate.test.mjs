@@ -89,6 +89,7 @@ function copyFixtureFromRepo(targetDir) {
 
 test('release gate passes on the current repo checkout', () => {
   const result = runGate(repoRoot);
+
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /SOVEREIGN_AGENT_RELEASE_GATE=PASS/);
 });
@@ -97,7 +98,9 @@ test('release gate blocks when a required contract file is missing', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sovereign-agent-release-gate-'));
   copyFixtureFromRepo(tempDir);
   fs.rmSync(path.join(tempDir, 'backend/agent_runtime/draft_pr_create_gate.py'));
+
   const result = runGate(tempDir);
+
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /SOVEREIGN_AGENT_RELEASE_GATE=BLOCKED/);
   assert.match(result.stderr, /missing file: backend\/agent_runtime\/draft_pr_create_gate\.py/);
@@ -110,7 +113,9 @@ test('release gate blocks when release scripts are missing', () => {
   const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
   delete pkg.scripts['release:agent-gate'];
   fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2));
+
   const result = runGate(tempDir);
+
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /missing package script: release:agent-gate/);
 });
@@ -120,7 +125,9 @@ test('release gate blocks secret-like literals in checked runtime files', () => 
   copyFixtureFromRepo(tempDir);
   const target = path.join(tempDir, 'backend/agent_runtime/routes.py');
   fs.appendFileSync(target, `\nLEAK = "${fakeGithubToken()}"\n`);
+
   const result = runGate(tempDir);
+
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /secret-like literal: GitHub token literal in backend\/agent_runtime\/routes\.py/);
 });
