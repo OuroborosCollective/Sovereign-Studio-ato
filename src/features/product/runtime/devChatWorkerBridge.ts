@@ -126,6 +126,7 @@ export interface DevChatRepoTreeFile {
   readonly path: string;
   readonly type: 'blob' | 'tree';
   readonly size?: number;
+  readonly sha?: string;
 }
 
 export interface DevChatRepoSnapshot {
@@ -134,6 +135,7 @@ export interface DevChatRepoSnapshot {
   readonly branch: string;
   readonly name: string;
   readonly repoUrl: string;
+  readonly treeSha?: string;
   readonly fileCount: number;
   readonly files: readonly DevChatRepoTreeFile[];
   readonly filePaths: readonly string[];
@@ -214,10 +216,11 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
     const files = tree
       .filter((entry: { type?: string }) => entry.type === 'blob' || entry.type === 'tree')
       .slice(0, 500)
-      .map((entry: { path: string; type: 'blob' | 'tree'; size?: number }) => ({
+      .map((entry: { path: string; type: 'blob' | 'tree'; size?: number; sha?: string }) => ({
         path: entry.path,
         type: entry.type,
         size: entry.size,
+        sha: typeof entry.sha === 'string' ? entry.sha : undefined,
       }));
 
     const blobPaths = files.filter((file: DevChatRepoTreeFile) => file.type === 'blob').map((file: DevChatRepoTreeFile) => file.path);
@@ -234,6 +237,7 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
         branch: parsed.branch,
         name: parsed.name,
         repoUrl: parsed.repoUrl,
+        treeSha: typeof data.sha === 'string' ? data.sha : undefined,
         fileCount: files.length,
         files,
         filePaths: blobPaths,

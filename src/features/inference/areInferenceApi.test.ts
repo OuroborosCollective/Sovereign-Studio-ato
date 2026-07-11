@@ -22,10 +22,11 @@ describe('ARE inference adapter', () => {
         owner: ' owner ',
         repo: ' repo ',
         branch: ' main ',
-        repositoryHash: 'ABC',
-        changedFiles: [
-          { path: 'z.ts', sha256: 'B' },
-          { path: 'a.ts', sha256: 'A' },
+        repositoryRevision: 'ABC',
+        evidenceComplete: true,
+        files: [
+          { path: 'z.ts', objectId: 'B' },
+          { path: 'a.ts', objectId: 'A' },
         ],
       },
       limit: 99,
@@ -33,8 +34,9 @@ describe('ARE inference adapter', () => {
 
     expect(normalized.prompt).toBe('build adapter');
     expect(normalized.activeCapabilities).toEqual(['alpha', 'zeta']);
-    expect(normalized.repository.changedFiles.map((file) => file.path)).toEqual(['a.ts', 'z.ts']);
-    expect(normalized.repository.repositoryHash).toBe('abc');
+    expect(normalized.repository.files.map((file) => file.path)).toEqual(['a.ts', 'z.ts']);
+    expect(normalized.repository.repositoryRevision).toBe('abc');
+    expect(normalized.repository.evidenceComplete).toBe(true);
     expect(normalized.limit).toBe(8);
   });
 
@@ -43,14 +45,30 @@ describe('ARE inference adapter', () => {
       owner: 'OuroborosCollective',
       repo: 'Sovereign-Studio-ato',
       branch: 'main',
-      repositoryHash: 'scope-hash',
-      filePaths: ['src/z.ts', 'src/a.ts'],
+      repositoryRevision: 'tree-sha',
+      files: [
+        { path: 'src/z.ts', type: 'blob', sha: 'b'.repeat(40) },
+        { path: 'src/a.ts', type: 'blob', sha: 'a'.repeat(40) },
+      ],
     });
 
-    expect(state.changedFiles).toEqual([
-      { path: 'src/a.ts', sha256: '' },
-      { path: 'src/z.ts', sha256: '' },
+    expect(state.files).toEqual([
+      { path: 'src/a.ts', objectId: 'a'.repeat(40) },
+      { path: 'src/z.ts', objectId: 'b'.repeat(40) },
     ]);
+    expect(state.repositoryRevision).toBe('tree-sha');
+    expect(state.evidenceComplete).toBe(true);
+  });
+
+  it('marks repository evidence incomplete when Git object IDs are missing', () => {
+    const state = buildAreRepositoryState({
+      owner: 'owner',
+      repo: 'repo',
+      branch: 'main',
+      repositoryRevision: 'tree-sha',
+      files: [{ path: 'src/a.ts', type: 'blob' }],
+    });
+    expect(state.evidenceComplete).toBe(false);
   });
 
   it('returns an honest blocked result from HTTP 409', async () => {
@@ -119,13 +137,20 @@ describe('ARE inference adapter', () => {
   });
 
   it('stores successful online output only through the quarantine endpoint', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      candidate: { id: 'candidate-1', status: 'pending', contentSha256: 'c'.repeat(64) },
+      quarantined: true,
+      duplicate: false,
+      learningState: 'pending_evidence',
+      promoted: false,
+    }), {
       status: 201,
       headers: { 'Content-Type': 'application/json' },
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await quarantineAreResponse({
+    const result = await quarantineAreResponse({
       prompt: 'task',
       response: 'result',
       stateHash: 'a'.repeat(64),
@@ -133,6 +158,8 @@ describe('ARE inference adapter', () => {
       modelId: 'provider/model',
     });
 
+    expect(result.learningState).toBe('pending_evidence');
+    expect(result.duplicate).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/api/inference/are/quarantine');

@@ -71,11 +71,12 @@ describe('devChatWorkerBridge', () => {
 
   it('fetchDevChatRepoTree loads a bounded GitHub tree snapshot', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      sha: 'tree-sha-123',
       truncated: false,
       tree: [
-        { path: 'README.md', type: 'blob', size: 42 },
-        { path: 'src/App.tsx', type: 'blob', size: 120 },
-        { path: 'src', type: 'tree' },
+        { path: 'README.md', type: 'blob', size: 42, sha: 'blob-readme' },
+        { path: 'src/App.tsx', type: 'blob', size: 120, sha: 'blob-app' },
+        { path: 'src', type: 'tree', sha: 'tree-src' },
       ],
     })));
 
@@ -84,6 +85,8 @@ describe('devChatWorkerBridge', () => {
 
     expect(result.ok).toBe(true);
     expect(result.snapshot?.fileCount).toBe(3);
+    expect(result.snapshot?.treeSha).toBe('tree-sha-123');
+    expect(result.snapshot?.files.find((file) => file.path === 'src/App.tsx')?.sha).toBe('blob-app');
     expect(result.snapshot?.dirs).toContain('src');
     expect(result.snapshot?.lastFile).toBe('App.tsx');
   });

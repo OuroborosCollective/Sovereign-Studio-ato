@@ -2584,6 +2584,9 @@ export function BuilderContainer({
   const githubTokenRef = useRef<string | null>(null);
   const previousRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
   const arePreviousStateRef = useRef<ArePreviousState | null>(null);
+  useEffect(() => {
+    arePreviousStateRef.current = null;
+  }, [authUser?.id, currentRepoScopeKey]);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -4234,17 +4237,17 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     let experiencePatternContext = '';
     if (authUser) {
       try {
+        const workerHealthForInference = await fetchDevChatWorkerHealth();
         areInferenceResult = await evaluateAreInference({
           prompt: submittedText,
           repository: buildAreRepositoryState({
             owner: chatRepoSnapshot?.owner,
             repo: chatRepoSnapshot?.repo,
             branch: chatRepoSnapshot?.branch,
-            repositoryHash: currentRepoScopeKey ?? '',
-            filePaths: chatRepoSnapshot?.filePaths ?? [],
+            repositoryRevision: chatRepoSnapshot?.treeSha,
+            files: chatRepoSnapshot?.files ?? [],
           }),
-          activeCapabilities: [],
-          onlineAvailable: typeof navigator === 'undefined' ? true : navigator.onLine,
+          onlineAvailable: workerHealthForInference.ok,
           limit: 5,
         });
         const transition = emitAreStateTransition(arePreviousStateRef.current, areInferenceResult);
@@ -4257,6 +4260,16 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         }
         referenceKnowledgeContext = areInferenceResult.knowledgeContext;
         experiencePatternContext = areInferenceResult.experienceContext;
+
+        for (const [memoryKind, blocker] of Object.entries(areInferenceResult.blockers)) {
+          if (!blocker) continue;
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: `ARE ${memoryKind}-Evidence unvollständig`,
+            detail: blocker,
+            kind: 'blocked',
+          }));
+        }
 
         if (areInferenceResult.selectedKnowledgeIds.length > 0) {
           appendActionEvent({
@@ -4276,6 +4289,19 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
             state: 'done',
           });
         }
+        if (areInferenceResult.decision === 'local') {
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: 'ARE-Lokalroute noch nicht ausführbar',
+            detail: 'Das Backend meldet lokale Synthese, aber der Builder besitzt noch keinen bestätigten lokalen Ausführungsadapter.',
+            kind: 'blocked',
+          }));
+          appendChatLine({
+            role: 'assistant',
+            text: 'ARE hat eine lokale Route gewählt, aber im Builder ist noch kein bestätigter lokaler Code-Ausführungsadapter verbunden. Es wurde kein Credit abgezogen und kein Online-Call gestartet.',
+          });
+          return;
+        }
         if (areInferenceResult.decision === 'blocked') {
           appendActionEvent(buildBlockedActionEvent({
             route: 'runtime',
@@ -4290,13 +4316,33 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           return;
         }
       } catch (error) {
-        addLog('warn', `ARE-Inferenz nicht verfügbar: ${error instanceof Error ? error.message : String(error)}`, 'pattern');
+        const message = error instanceof Error ? error.message : String(error);
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'runtime',
+          label: 'ARE-Inferenz fehlgeschlagen',
+          detail: message,
+          kind: 'failed',
+        }));
+        appendChatLine({
+          role: 'assistant',
+          text: `ARE-Inferenz ist nicht verfügbar. Der Auftrag wurde vor Credit-Abzug und Online-Call gestoppt.\nGrund: ${message}`,
+        });
+        addLog('warn', `ARE-Inferenz nicht verfügbar: ${message}`, 'pattern');
+        return;
       }
+    } else {
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'ARE-Erinnerung übersprungen',
+        detail: 'Kein bestätigter Benutzer-Session-State; persönliche Knowledge-/Experience-Suche wurde nicht ausgeführt.',
+        kind: 'blocked',
+      }));
     }
 
-    const quarantineOnlineAnswer = (responseText: string, modelId: string) => {
+    const quarantineOnlineAnswer = async (responseText: string, modelId: string) => {
       if (!areInferenceResult || areInferenceResult.decision !== 'online_required') return;
-      void quarantineAreResponse({
+      try {
+        const quarantine = await quarantineAreResponse({
         prompt: submittedText,
         response: responseText,
         stateHash: areInferenceResult.stateHash,
@@ -4307,33 +4353,42 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
           knowledgeIds: areInferenceResult.selectedKnowledgeIds,
           patternIds: areInferenceResult.selectedPatternIds,
         },
-      }).then(() => {
+      });
         appendActionEvent({
           kind: 'context_collected',
           route: 'runtime',
-          label: 'Online-Antwort quarantänisiert',
-          detail: 'Noch kein gelerntes Muster: Promotion erfordert akzeptierte Runtime-Evidence.',
+          label: quarantine.duplicate ? 'Online-Antwort bereits in Quarantäne' : 'Online-Antwort quarantänisiert',
+          detail: quarantine.learningState === 'pending_evidence'
+            ? 'DB bestätigt: Kandidat wartet auf akzeptierte Runtime-Evidence und ist noch kein gelerntes Muster.'
+            : `DB bestätigt bestehenden Zustand: ${quarantine.candidate.status}.`,
           state: 'done',
         });
-      }).catch((error) => {
-        addLog('warn', `ARE-Quarantäne nicht verfügbar: ${error instanceof Error ? error.message : String(error)}`, 'pattern');
-      });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'runtime',
+          label: 'ARE-Quarantäne fehlgeschlagen',
+          detail: message,
+          kind: 'failed',
+        }));
+        addLog('warn', `ARE-Quarantäne nicht verfügbar: ${message}`, 'pattern');
+      }
     };
 
-    // ── #458 Credit guard — only for Worker Chat path (not Sovereign Agent execution) ────────────
-    const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
-    const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
-    if (!_canProceed) {
-      addLog("warn", "Credits nicht ausreichend — Paywall geöffnet", "billing");
-      return;
-    }
-
+    // ── #458 Credit guard — route first, then charge the exact selected model.
     const d = palRoute(
       submittedText,
       chatHistory.length + 1,
       chatRepoSnapshot?.fileCount ?? 0,
       palDecisions,
     );
+    const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
+    const _canProceed = await chargeCredits(d.modelId, _estimatedTokens);
+    if (!_canProceed) {
+      addLog("warn", `Credits nicht ausreichend für ${d.modelId} — Paywall geöffnet`, "billing");
+      return;
+    }
+
     setPalDecisions((prev) => [...prev.slice(-99), d]);
     setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
     addLog("info", `PAL → ${d.tier} · ${d.modelLabel}`, "sys");
@@ -4417,7 +4472,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     setChatResponseBusy(false);
     setStreamingText(null);
 
-    if (fullText) {
+    if (fullText && !streamError && !streamDiagnostic) {
       setWorkerBlocker(null);
       appendActionEvent(buildWorkerResponseEvent());
       // ── Issue #445: chatClaimGuard — verify response against runtime snapshot before display
@@ -4435,7 +4490,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
       }
       appendChatLine({ role: "assistant", text: textToAppend });
-      quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? d.modelId);
+      await quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? d.modelId);
       return;
     }
 
@@ -4465,7 +4520,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }
 
       appendChatLine({ role: "assistant", text: textToAppend });
-      quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? d.modelId);
+      await quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? d.modelId);
       return;
     }
 

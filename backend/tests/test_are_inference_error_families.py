@@ -95,10 +95,11 @@ def _evaluate(
                 "owner": "OuroborosCollective",
                 "repo": "Sovereign-Studio-ato",
                 "branch": "main",
-                "repositoryHash": repository_hash,
-                "changedFiles": [
-                    {"path": "src/z.ts", "sha256": "2" * 64},
-                    {"path": "src/a.ts", "sha256": "1" * 64},
+                "repositoryRevision": repository_hash,
+                "evidenceComplete": True,
+                "files": [
+                    {"path": "src/z.ts", "objectId": "2" * 40},
+                    {"path": "src/a.ts", "objectId": "1" * 40},
                 ],
             },
         },
@@ -118,7 +119,8 @@ def test_same_state_and_reordered_memory_produce_identical_result() -> None:
     assert first["adapter"] == second["adapter"]
     assert first["selectedKnowledgeIds"] == ["block-a", "block-b"]
     assert first["selectedPatternIds"] == ["pattern-a", "pattern-b"]
-    assert first["state"]["repository"]["changedFiles"][0]["path"] == "src/a.ts"
+    assert first["state"]["repository"]["files"][0]["path"] == "src/a.ts"
+    assert first["state"]["repository"]["evidenceComplete"] is True
 
 
 def test_pdf_reference_is_used_but_never_relabelled_as_experience() -> None:
@@ -131,13 +133,14 @@ def test_pdf_reference_is_used_but_never_relabelled_as_experience() -> None:
     assert result["adapter"] == "reference-memory-online"
 
 
-def test_local_decision_requires_explicit_local_synthesis_capability() -> None:
-    without_capability = _evaluate(online=True, capabilities=[])
-    with_capability = _evaluate(online=False, capabilities=["local_code_synthesis"])
+def test_client_cannot_forge_local_synthesis_capability() -> None:
+    online = _evaluate(online=True, capabilities=[])
+    forged_local = _evaluate(online=False, capabilities=["local_code_synthesis"])
 
-    assert without_capability["decision"] == "online_required"
-    assert with_capability["decision"] == "local"
-    assert with_capability["adapter"] == "hybrid-memory-local"
+    assert online["decision"] == "online_required"
+    assert forged_local["decision"] == "blocked"
+    assert forged_local["adapter"] == "none"
+    assert forged_local["state"]["activeCapabilities"] == []
 
 
 def test_offline_without_local_synthesis_fails_closed_before_online_call() -> None:
@@ -263,6 +266,7 @@ class _RepairCursor:
         self.rows: list[dict[str, Any]] = []
         self.row: dict[str, Any] | None = None
         self.updated_ids: list[str] = []
+        self.rowcount = 0
 
     def __enter__(self) -> "_RepairCursor":
         return self
@@ -279,8 +283,12 @@ class _RepairCursor:
             ]
         elif compact.startswith("UPDATE knowledge_blocks"):
             self.updated_ids.append(str(params[2]))
+            self.rowcount = 1
+        elif compact.startswith("UPDATE knowledge_sources"):
+            self.rowcount = 1
         elif compact.startswith("SELECT COUNT(*) AS remaining"):
             self.row = {"remaining": 0}
+            self.rowcount = 1
 
     def fetchall(self) -> list[dict[str, Any]]:
         return self.rows
@@ -317,8 +325,10 @@ def test_event_driven_repair_recomputes_only_selected_missing_vectors() -> None:
         embedding_provider=provider,
     )
 
+    assert result["selected"] == 2
     assert result["repaired"] == 2
     assert result["remaining"] == 0
+    assert result["remainingForUser"] == 0
     assert result["provider"] == "test-provider"
     assert conn.cursor_instance.updated_ids == [
         "00000000-0000-0000-0000-000000000011",
@@ -363,3 +373,34 @@ def test_online_answer_is_quarantined_and_not_auto_promoted() -> None:
     assert first["candidate"]["status"] == "pending"
     assert first["candidate"]["contentSha256"] == second["candidate"]["contentSha256"]
     assert first_conn.commits == 1
+
+
+def test_low_similarity_rows_are_not_reported_as_selected_context() -> None:
+    result = _evaluate(
+        knowledge_rows=[{
+            "blockId": "weak-block",
+            "contentSha256": "c" * 64,
+            "content": "weak match",
+            "similarity": 0.2,
+        }],
+        experience_rows={"ok": True, "results": [{
+            "candidateId": "weak-pattern",
+            "patternText": "weak experience",
+            "similarity": 0.3,
+        }]},
+    )
+    assert result["selectedKnowledgeIds"] == []
+    assert result["selectedPatternIds"] == []
+    assert result["knowledgeContext"] == ""
+    assert result["experienceContext"] == ""
+
+
+def test_online_available_requires_literal_boolean_true() -> None:
+    result = evaluate_are_inference(
+        _NoopConnection(),
+        user_id="00000000-0000-0000-0000-000000000001",
+        payload={"prompt": "hello", "onlineAvailable": "false"},
+        knowledge_search=lambda *_args: [],
+        experience_search=lambda *_args, **_kwargs: {"ok": True, "results": []},
+    )
+    assert result["decision"] == "blocked"
