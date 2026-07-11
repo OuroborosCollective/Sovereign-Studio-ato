@@ -35,7 +35,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   isOpen, 
   onClose 
 }) => {
-  const { purchase, isProcessing, currentPlanId, packages, paymentMethods } = useBilling();
+  const { purchase, isProcessing, currentPlanId, packages, paymentMethods = [] } = useBilling();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');

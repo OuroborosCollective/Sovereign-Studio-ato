@@ -133,6 +133,12 @@ def require_app_import():
 class TestOAuthContractWithApp:
     """Verifiziert dass OAuth Contract in app.py korrekt implementiert ist."""
 
+    @pytest.fixture(autouse=True)
+    def mock_credit_balance(self, monkeypatch):
+        app_module = require_app_import()
+        # Mock _read_verified_credit_balance to avoid DB LookupError in _user_row_to_dict
+        monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda uid: 500)
+
     def test_user_row_to_dict_excludes_token(self):
         """CRITICAL CONTRACT: _user_row_to_dict darf KEIN Token zurückgeben."""
         app_module = require_app_import()
@@ -272,7 +278,7 @@ class TestOAuthContractWithApp:
             normalized_sql = " ".join(sql.upper().split())
 
             if normalized_sql.startswith("SELECT * FROM ADMIN_USERS WHERE GITHUB_ID"):
-                return None
+                return {"id": "existing-uuid", "email": "octo@example.test"}
 
             if write:
                 stored_rows.append((sql, params))
