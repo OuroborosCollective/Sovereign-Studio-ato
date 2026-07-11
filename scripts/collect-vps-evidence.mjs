@@ -10,10 +10,43 @@ const root = process.cwd();
 const templatePath = path.resolve(root, process.env.VPS_EVIDENCE_TEMPLATE ?? 'config/vps-evidence-template.json');
 const outputPath = path.resolve(root, process.env.VPS_EVIDENCE_OUTPUT ?? 'runtime-evidence/vps-evidence.json');
 const timeoutMs = Number(process.env.VPS_EVIDENCE_TIMEOUT_MS ?? 10000);
+const allowedHttpHosts = new Set(
+  String(process.env.VPS_EVIDENCE_ALLOWED_HTTP_HOSTS ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 function clip(value, max = 800) {
   const text = String(value ?? '').trim();
   return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function normalizeHttpUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(String(value ?? '').trim());
+  } catch {
+    throw new Error('invalid URL');
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`unsupported protocol: ${parsed.protocol}`);
+  }
+
+  if (!parsed.hostname) {
+    throw new Error('missing hostname');
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new Error('URL credentials are not allowed');
+  }
+
+  if (allowedHttpHosts.size > 0 && !allowedHttpHosts.has(parsed.hostname.toLowerCase())) {
+    throw new Error(`hostname not allowed: ${parsed.hostname}`);
+  }
+
+  return parsed.toString();
 }
 
 async function run(command, args = [], options = {}) {
@@ -47,8 +80,20 @@ async function gitSha() {
 
 async function httpCheck(url) {
   const started = performance.now();
+  let target;
   try {
-    const response = await fetch(url, {
+    target = normalizeHttpUrl(url);
+  } catch (error) {
+    return {
+      status: 'FAIL',
+      http_status: null,
+      latency_ms: Math.round(performance.now() - started),
+      evidence: `GET ${clip(url)} rejected: ${clip(error?.message)}`,
+    };
+  }
+
+  try {
+    const response = await fetch(target, {
       redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
       headers: { accept: 'application/json,text/plain,*/*' },
@@ -58,14 +103,14 @@ async function httpCheck(url) {
       status: response.ok ? 'PASS' : 'FAIL',
       http_status: response.status,
       latency_ms: Math.round(performance.now() - started),
-      evidence: `GET ${url} -> ${response.status}${body ? `; ${body}` : ''}`,
+      evidence: `GET ${target} -> ${response.status}${body ? `; ${body}` : ''}`,
     };
   } catch (error) {
     return {
       status: 'FAIL',
       http_status: null,
       latency_ms: Math.round(performance.now() - started),
-      evidence: `GET ${url} failed: ${clip(error?.message)}`,
+      evidence: `GET ${target} failed: ${clip(error?.message)}`,
     };
   }
 }
