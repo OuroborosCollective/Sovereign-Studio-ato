@@ -7,11 +7,14 @@ import {
   buildAgentToolFinishedEvent,
   buildBlockedActionEvent,
   buildInputReceivedEvent,
+  buildLocalRuntimeResultEvent,
   buildRepoLoadedEvent,
   buildRouteSelectionEvent,
   buildWorkerRequestEvent,
   buildWorkerResponseEvent,
   createSovereignActionStreamState,
+  deriveBlockerCountsFromEvents,
+  findActiveSovereignActionBlocker,
   latestSovereignActionByRoute,
 } from './sovereignActionStreamRuntime';
 
@@ -88,6 +91,28 @@ describe('sovereignActionStreamRuntime', () => {
     expect(stream.activeRoute).toBeNull();
     expect(stream.lastEvent?.state).toBe('blocked');
     expect(stream.lastEvent?.detail).not.toContain('%');
+  });
+
+  it('stores successful local runtime answers as done without creating a blocker', () => {
+    const stream = appendSovereignActionEvents(createSovereignActionStreamState(), [
+      buildInputReceivedEvent('Ist der Auftrag fertig?'),
+      buildLocalRuntimeResultEvent({
+        label: 'Status-Frage',
+        detail: 'Lokale Antwort aus Runtime-State',
+      }),
+    ]);
+
+    expect(stream.lastEvent).toMatchObject({
+      kind: 'done',
+      route: 'runtime',
+      state: 'done',
+    });
+    expect(findActiveSovereignActionBlocker(stream)).toBeNull();
+    expect(deriveBlockerCountsFromEvents(stream.events)).toMatchObject({
+      activeBlockers: 0,
+      warnings: 0,
+      errors: 0,
+    });
   });
 
   it('stores compact shortcut results under their exact route identities', () => {

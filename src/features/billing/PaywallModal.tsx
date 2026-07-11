@@ -35,9 +35,12 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
   isOpen, 
   onClose 
 }) => {
-  const { purchase, isProcessing, currentPlanId, packages } = useBilling();
+  const { purchase, isProcessing, currentPlanId, packages, paymentMethods } = useBilling();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
+  const [purchaseError, setPurchaseError] = useState('');
+  const [purchaseNotice, setPurchaseNotice] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -49,6 +52,18 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
     };
   }, [isOpen]);
 
+  const supportedPaymentMethods = paymentMethods.filter(method =>
+    method.type === 'paypal'
+    || method.type === 'skrill'
+    || method.type.startsWith('crypto_'),
+  );
+
+  useEffect(() => {
+    if (!supportedPaymentMethods.some(method => method.type === selectedPaymentMethod)) {
+      setSelectedPaymentMethod(supportedPaymentMethods[0]?.type ?? '');
+    }
+  }, [paymentMethods, selectedPaymentMethod]);
+
   if (!isOpen || !mounted) return null;
 
   // Use backend packages if available, otherwise show loading
@@ -58,13 +73,44 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
 
   const handlePurchase = async (packageId: string) => {
     if (packageId === currentPlanId) return;
-    
+    if (!selectedPaymentMethod) {
+      setPurchaseError('Keine bestätigte Zahlungsmethode ist für diesen Checkout verfügbar.');
+      return;
+    }
+
     setLoadingTier(packageId);
+    setPurchaseError('');
+    setPurchaseNotice('');
     try {
-      await purchase(packageId);
-      onClose();
+      const result = await purchase({
+        packageId,
+        paymentMethod: selectedPaymentMethod,
+      });
+      const checkoutUrl = result.approvalUrl || result.redirectUrl;
+      if (checkoutUrl) {
+        setPurchaseNotice('Checkout wurde vom Backend erstellt. Der Kauf ist erst nach bestätigter Zahlung abgeschlossen.');
+        const opened = window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
+        if (!opened) window.location.assign(checkoutUrl);
+        return;
+      }
+      if (result.walletAddress) {
+        setPurchaseNotice([
+          `Zahlungsadresse: ${result.walletAddress}`,
+          result.coinType ? `Netzwerk/Asset: ${result.coinType}` : '',
+          result.note || 'Credits werden erst nach bestätigtem Zahlungseingang gutgeschrieben.',
+        ].filter(Boolean).join(' · '));
+        return;
+      }
+      if (
+        result.ok === true
+        && (typeof result.newBalance === 'number' || typeof result.creditsAdded === 'number')
+      ) {
+        onClose();
+        return;
+      }
+      setPurchaseError('Das Backend hat keinen abgeschlossenen Kauf bestätigt. Es wurde kein Erfolg angezeigt.');
     } catch (error) {
-      console.error('Billing Error:', error);
+      setPurchaseError(error instanceof Error ? error.message : 'Kauf konnte nicht gestartet werden.');
     } finally {
       setLoadingTier(null);
     }
@@ -100,6 +146,24 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 Wähle deinen Plan und schalte sofortige Design-Power frei. 
                 Keine versteckten Gebühren, volle Transparenz.
               </p>
+            </div>
+
+            <div className="mb-8 max-w-xl mx-auto">
+              <label className="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                Bestätigte Zahlungsmethode
+              </label>
+              <select
+                value={selectedPaymentMethod}
+                onChange={event => setSelectedPaymentMethod(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-4 py-3 text-slate-900 dark:text-white"
+              >
+                {!supportedPaymentMethods.length && <option value="">Keine Methode verfügbar</option>}
+                {supportedPaymentMethods.map(method => (
+                  <option key={method.type} value={method.type}>{method.label}</option>
+                ))}
+              </select>
+              {purchaseError && <p className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">{purchaseError}</p>}
+              {purchaseNotice && <p className="mt-3 text-sm font-semibold text-blue-600 dark:text-blue-400 break-words">{purchaseNotice}</p>}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
@@ -171,7 +235,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handlePurchase(pkg.id)}
-                        disabled={isCurrent || isProcessing}
+                        disabled={isCurrent || isProcessing || !selectedPaymentMethod}
                         className={`relative w-full py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.97] ${
                           isCurrent
                             ? 'bg-slate-100 dark:bg-white/5 text-slate-400 cursor-default'
@@ -201,14 +265,14 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sicherheit</div>
                   <div className="text-sm font-bold text-slate-600 dark:text-slate-400 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500" />
-                    AES-256 Verschlüsselt
+                    Serverseitige Zahlungsprüfung
                   </div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Support</div>
                   <div className="text-sm font-bold text-slate-600 dark:text-slate-400 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-blue-500" />
-                    24/7 Priority-Chat
+                    Credits erst nach Bestätigung
                   </div>
                 </div>
               </div>

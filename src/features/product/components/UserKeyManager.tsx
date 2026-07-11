@@ -93,69 +93,23 @@ interface UserKeyManagerProps {
   storedKeys?: UserApiKeys;
 }
 
-export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps) {
-  const [keys, setKeys] = useState<UserApiKeys>(storedKeys || {});
+export function UserKeyManager({ onKeysChange }: UserKeyManagerProps) {
+  const [keys, setKeys] = useState<UserApiKeys>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [invalidKeys, setInvalidKeys] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const saved = localStorage.getItem('sovereign-user-api-keys');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setKeys(parsed);
-        onKeysChange?.(parsed);
-      } catch {
-        // Ignore parse errors
-      }
-    }
+    setKeys({});
+    onKeysChange?.({});
   }, []);
 
-  const validateKey = (providerId: string, value: string): boolean => {
-    if (!value || value.trim() === '') return true; // Empty is OK (will use free tier)
-    
-    const patterns: Record<string, RegExp> = {
-      pollinations: /^pollinations_/,
-      groq: /^gsk_/,
-      huggingface: /^hf_/,
-      together: /^together_/,
-      openrouter: /^sk-or-v1-/,
-      gemini: /^AIza/,
-    };
-    
-    const pattern = patterns[providerId];
-    if (pattern && !pattern.test(value)) {
-      return false;
-    }
-    return true;
-  };
-
   const handleSaveKeys = () => {
-    // Validate all keys before saving
-    const newInvalidKeys: Record<string, string> = {};
-    
-    for (const [providerId, value] of Object.entries(keys)) {
-      if (value && !validateKey(providerId, value)) {
-        newInvalidKeys[providerId] = `Ungültiges Format für ${providerId}`;
-      }
-    }
-    
-    setInvalidKeys(newInvalidKeys);
-    
-    if (Object.keys(newInvalidKeys).length === 0) {
-      // Only save validated keys
-      const validKeys: UserApiKeys = {};
-      for (const [key, value] of Object.entries(keys)) {
-        if (value && value.trim() !== '') {
-          validKeys[key as keyof UserApiKeys] = value;
-        }
-      }
-      localStorage.setItem('sovereign-user-api-keys', JSON.stringify(validKeys));
-      onKeysChange?.(validKeys);
-      setSavedMessage('✅ API-Keys gespeichert!');
-      setTimeout(() => setSavedMessage(null), 3000);
-    }
+    setKeys({});
+    setInvalidKeys({});
+    onKeysChange?.({});
+    setSavedMessage('Provider-Zugangsdaten werden ausschließlich serverseitig verwaltet.');
+    setTimeout(() => setSavedMessage(null), 3000);
   };
 
   const handleKeyChange = (providerId: string, value: string) => {
@@ -230,8 +184,8 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
         <div className="key-manager-header">
           <h3>🔐 API-Keys verwalten</h3>
           <p className="key-manager-description">
-            Falls die kostenlosen Routen an ihr Limit kommen, kannst du hier deine eigenen API-Keys hinterlegen.
-            Deine Keys werden nur lokal gespeichert und nie an externe Server übertragen.
+            Provider-Zugangsdaten werden nicht in Browser, WebView oder APK angenommen.
+            Aktive Routen und Schlüssel werden ausschließlich durch den Backend-Proxy bestätigt.
           </p>
         </div>
 
@@ -259,8 +213,9 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
                   <div className="key-input-row">
                     <input
                       type={showKeys[provider.id] ? 'text' : 'password'}
-                      placeholder={provider.keyPlaceholder}
-                      value={keys[provider.id as keyof UserApiKeys] || ''}
+                      placeholder="Serverseitig verwaltet"
+                      value=""
+                      disabled
                       onChange={(e) => handleKeyChange(provider.id, e.target.value)}
                       className={`key-input ${invalidKeys[provider.id] ? 'key-input-invalid' : ''}`}
                     />
@@ -312,14 +267,14 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
             onClick={handleSaveKeys}
             className="btn-save"
           >
-            💾 Keys speichern
+            🔒 Browser-Key-Speicherung deaktiviert
           </button>
         </div>
 
         <div className="key-manager-warning">
           <p>
-            ⚠️ <strong>Sicherheitshinweis:</strong> API-Keys werden nur in deinem Browser (localStorage) gespeichert.
-            Teile deine Keys niemals mit anderen.
+            🔒 <strong>Sicherheitshinweis:</strong> API-Keys werden weder im Browser noch in der APK gespeichert.
+            Die App nutzt ausschließlich serverseitig freigegebene Provider-Routen.
           </p>
         </div>
       </div>
@@ -328,17 +283,9 @@ export function UserKeyManager({ onKeysChange, storedKeys }: UserKeyManagerProps
 }
 
 export function getStoredUserKeys(): UserApiKeys {
-  try {
-    const saved = localStorage.getItem('sovereign-user-api-keys');
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch {
-    // Ignore
-  }
   return {};
 }
 
 export function clearStoredUserKeys(): void {
-  localStorage.removeItem('sovereign-user-api-keys');
+  // Provider secrets are never persisted in the browser.
 }

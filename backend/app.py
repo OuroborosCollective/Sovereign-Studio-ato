@@ -82,7 +82,7 @@ def fetch_worker_ai(path: str, method: str = "GET", json_data: dict = None) -> t
 app = Flask(__name__)
 
 # JWT Configuration
-JWT_SECRET = os.getenv("JWT_SECRET", "supersecretkey-change-me")
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
 CORS(app,
      origins=[
          "https://chat.arelorian.de",
@@ -318,7 +318,21 @@ def audit(action: str, target_id: str | None, changes: dict):
 @app.route("/api/admin/ping")
 @require_admin
 def admin_ping():
-    return jsonify({"ok": True, "role": "admin"})
+    admin = get_current_admin() or {}
+    admin_id = str(admin.get("id") or "")
+    if not admin_id:
+        return jsonify({"error": "Authentifizierter Admin hat keine persistente ID"}), 500
+    row = query(
+        "SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1",
+        (admin_id,), one=True,
+    )
+    if not row:
+        return jsonify({"error": "Authentifizierter Admin wurde nicht gefunden"}), 404
+    return jsonify({
+        "ok": True,
+        "authMode": admin.get("authMode") or "unknown",
+        **_user_row_to_dict(row),
+    })
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -420,76 +434,62 @@ def admin_update_user(uid):
 @app.route("/api/admin/users/<uid>/credit-adjustment", methods=["POST"])
 @require_admin
 def admin_credit_adjustment(uid):
-    """
-    Credit adjustment via append-only ledger.
-    Amounts are ALWAYS recorded in the ledger with the real value.
-    Balance is computed from ledger entries, not stored directly.
-    """
-    body   = request.get_json(force=True) or {}
-    amount = body.get("amount", 0)
-    reason = body.get("reason", "")
-    
-    if not amount:
+    """Apply one verified admin delta to ledger, cache and audit atomically."""
+    body = request.get_json(force=True) or {}
+    try:
+        amount = int(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount muss eine ganze Zahl sein"}), 400
+    reason = str(body.get("reason") or "").strip()
+    if amount == 0:
         return jsonify({"error": "amount darf nicht 0 sein"}), 400
     if not reason:
         return jsonify({"error": "reason fehlt"}), 400
 
-    # Get user info
-    user = query(
-        "SELECT id, email, credits FROM admin_users WHERE id = %s::uuid",
-        (uid,), one=True,
-    )
-    if not user:
-        return jsonify({"error": "User nicht gefunden"}), 404
-
-    # Create append-only ledger entry with the REAL amount
-    sign_desc = "+" if amount > 0 else ""
-    ledger_type = "manual_adjustment"
-    if amount > 0:
-        ledger_type = "bonus"
-    else:
-        ledger_type = "correction"
-    
-    ledger_desc = f"Admin {sign_desc}{amount}: {reason}"
-    
-    # Insert ledger entry with the ACTUAL amount (not 0!)
-    query(
-        """INSERT INTO credit_ledger
-              (user_id, type, amount, reason, created_by)
-           VALUES (%s::uuid, %s, %s, %s, %s)""",
-        (uid, ledger_type, amount, ledger_desc, get_current_admin()["id"]),
-        write=True,
-    )
-    
-    # Calculate new balance from ledger (append-only principle)
-    balance_row = query(
-        """SELECT COALESCE(SUM(amount), 0) as balance FROM credit_ledger WHERE user_id = %s::uuid""",
-        (uid,), one=True,
-    )
-    new_balance = max(0, int(balance_row["balance"]))
-    
-    # Update admin_users.credits as a CACHED value (for fast reads)
-    # The CACHE MUST be consistent with the ledger
-    query(
-        "UPDATE admin_users SET credits = %s WHERE id = %s::uuid",
-        (new_balance, uid), write=True,
-    )
-    
-    audit("admin_credit_adjustment", uid, {
+    admin = get_current_admin() or {}
+    ledger_type = "bonus" if amount > 0 else "correction"
+    sign = "+" if amount > 0 else ""
+    ledger_reason = f"Admin {sign}{amount}: {reason}"
+    audit_changes = {
         "amount": amount,
         "reason": reason,
         "ledgerType": ledger_type,
-        "newBalance": new_balance,
-    })
-    
+    }
+    try:
+        result = _apply_credit_delta(
+            uid,
+            amount,
+            ledger_type=ledger_type,
+            reason=ledger_reason,
+            created_by=str(admin.get("id") or ""),
+            audit_action="admin_credit_adjustment",
+            audit_admin_email=str(admin.get("email") or ""),
+            audit_changes=audit_changes,
+        )
+    except LookupError:
+        return jsonify({"error": "User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({
+            "error": str(exc),
+            "blocker": "credit_state_verification_failed",
+        }), 409
+    except InsufficientCredits as exc:
+        return jsonify({
+            "error": str(exc),
+            "available": exc.available,
+            "required": exc.required,
+        }), 402
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
     return jsonify({
         "ok": True,
-        "newBalance": new_balance,
+        "newBalance": result["newBalance"],
         "ledgerEntry": {
             "type": ledger_type,
             "amount": amount,
-            "reason": ledger_desc,
-        }
+            "reason": ledger_reason,
+        },
     })
 
 
@@ -1119,7 +1119,7 @@ _CONFIG_FILE = os.getenv("RUNTIME_CONFIG_FILE", "/opt/sovereign/config/runtime.j
 
 # Default runtime config
 _DEFAULT_RUNTIME_CONFIG: dict = {
-    "byok_mode": "user-key",  # system-key, user-key, disabled
+    "byok_mode": "system-key",  # provider credentials remain behind the backend proxy
     "cors_origins": [
         "https://chat.arelorian.de",
         "https://arelorian.de",
@@ -1250,17 +1250,18 @@ def admin_update_runtime_config():
                     "blocker": "cors_auth_in_origin_blocked"
                 }), 400
     
-    # Apply updates to in-memory config
-    _RUNTIME_CONFIG.update(updates)
-    
-    # Persist to file
-    if not _save_runtime_config(_RUNTIME_CONFIG):
+    candidate_config = dict(_RUNTIME_CONFIG)
+    candidate_config.update(updates)
+
+    # Persistence is the commit point. Do not mutate the live runtime first.
+    if not _save_runtime_config(candidate_config):
         return jsonify({
-            "error": "Konfiguration gespeichert, aber Persistenz fehlgeschlagen",
-            "ok": True,
+            "error": "Konfiguration konnte nicht persistent gespeichert werden",
+            "ok": False,
             "config": _mask_secrets(_RUNTIME_CONFIG),
-            "persisted": False,
-        }), 200
+            "persisted": os.path.exists(_CONFIG_FILE),
+        }), 500
+    _RUNTIME_CONFIG = candidate_config
     
     # ACTUALLY update CORS middleware if origins changed
     cors_updated = False
@@ -1363,6 +1364,7 @@ def admin_runtime_health():
     
     # Check config file persistence
     if not os.path.exists(_CONFIG_FILE):
+        health_status = "degraded"
         blockers.append("config_not_persisted")
     
     # Check database connection
@@ -1376,7 +1378,7 @@ def admin_runtime_health():
         blockers.append("db_unavailable")
     
     return jsonify({
-        "ok": True,
+        "ok": health_status == "healthy",
         "health": health_status,
         "byokMode": byok,
         "corsOriginsCount": cors_count,
@@ -1634,7 +1636,7 @@ def admin_tool_healthcheck(tid):
                 start_time = time.time()
                 resp = requests.get(f"{oh_url.rstrip('/')}/api/agents", timeout=10)
                 response_time_ms = int((time.time() - start_time) * 1000)
-                if resp.status_code < 500:
+                if resp.ok:
                     health_status = "healthy"
                 else:
                     health_status = "degraded"
@@ -1666,7 +1668,7 @@ def admin_tool_healthcheck(tid):
                     resp = requests.get(url, timeout=timeout)
                     response_time_ms = int((time.time() - start_time) * 1000)
                     
-                    if resp.status_code < 500:
+                    if resp.ok:
                         health_status = "healthy"
                         break
                 except requests.exceptions.RequestException:
@@ -1679,7 +1681,7 @@ def admin_tool_healthcheck(tid):
                     resp = requests.get(url, timeout=timeout, allow_redirects=True)
                     response_time_ms = int((time.time() - start_time) * 1000)
                     
-                    if resp.status_code < 500:
+                    if resp.ok:
                         health_status = "healthy"
                     else:
                         health_status = "degraded"
@@ -1707,7 +1709,7 @@ def admin_tool_healthcheck(tid):
     })
     
     return jsonify({
-        "ok": True,
+        "ok": health_status == "healthy",
         "toolId": tid,
         "label": label,
         "health": health_status,
@@ -1773,6 +1775,8 @@ def poll_oh_events(job_id, oh_conv_id):
                     msg    = "Status: " + status
                     if status in ("stopped", "finished"):
                         level = "success"
+                    elif status == "failed":
+                        level = "error"
                 runtime_events.append({
                     "at": int(time.time()), "level": level,
                     "stage": "openhands", "message": msg or f"Event: {kind}",
@@ -1781,10 +1785,13 @@ def poll_oh_events(job_id, oh_conv_id):
                 for e in events:
                     if e.get("kind") == "ConversationStatusEvent" and \
                             e.get("status") in ("stopped", "finished", "failed"):
-                        job["status"] = "completed"
+                        terminal_status = e.get("status")
+                        job["status"] = "failed" if terminal_status == "failed" else "completed"
                         runtime_events.append({
-                            "at": int(time.time()), "level": "success",
-                            "stage": "openhands", "message": "OpenHands completed",
+                            "at": int(time.time()),
+                            "level": "error" if terminal_status == "failed" else "success",
+                            "stage": "openhands",
+                            "message": "OpenHands failed" if terminal_status == "failed" else "OpenHands completed",
                         })
                         break
             job["events"] = runtime_events
@@ -1896,45 +1903,253 @@ def _authorize_credit_purchase(pkg: dict):
     return user_id, None
 
 
-def _get_user_credits(user_id: str) -> int:
+def _read_verified_credit_balance(user_id: str) -> int:
+    """Return credits only when cache and append-only ledger agree."""
     if not user_id:
-        return 0
-    try:
-        row = query(
-            "SELECT credits FROM admin_users WHERE id = %s::uuid LIMIT 1",
-            (user_id,), one=True,
-        )
-        return int(row["credits"]) if row else 0
-    except Exception:
-        return 0
-
-
-def _add_credits_and_log(user_id: str, credits: int, amount_eur: float,
-                          method: str, description: str) -> None:
-    """Add credits to user account and write a completed transaction record."""
-    if user_id and credits > 0:
-        query(
-            "UPDATE admin_users SET credits = credits + %s WHERE id = %s::uuid",
-            (credits, user_id), write=True,
-        )
-    user_row = None
-    if user_id:
-        try:
-            user_row = query(
-                "SELECT email FROM admin_users WHERE id = %s::uuid LIMIT 1",
-                (user_id,), one=True,
-            )
-        except Exception:
-            pass
-    query(
-        """INSERT INTO transactions
-               (user_id, user_email, type, amount, currency, status, description)
-           VALUES (%s::uuid, %s, 'credit_purchase', %s, 'EUR', 'completed', %s)""",
-        (user_id or None,
-         user_row["email"] if user_row else "anonymous",
-         amount_eur, description),
-        write=True,
+        raise LookupError("User für Credit-Verifikation fehlt")
+    row = query(
+        """SELECT account.credits::integer AS cached_balance,
+                  COALESCE(SUM(ledger.amount), 0)::integer AS ledger_balance
+           FROM admin_users AS account
+           LEFT JOIN credit_ledger AS ledger ON ledger.user_id = account.id
+           WHERE account.id = %s::uuid
+           GROUP BY account.id, account.credits
+           LIMIT 1""",
+        (user_id,), one=True,
     )
+    if not row:
+        raise LookupError("User für Credit-Verifikation nicht gefunden")
+    cached_balance = int(row["cached_balance"])
+    ledger_balance = int(row["ledger_balance"])
+    if cached_balance != ledger_balance:
+        raise CreditStateConflict(
+            f"Credit-State widersprüchlich: cache={cached_balance}, ledger={ledger_balance}",
+        )
+    return cached_balance
+
+
+class CreditStateConflict(RuntimeError):
+    """Persisted credit cache and append-only ledger disagree."""
+
+
+class InsufficientCredits(ValueError):
+    def __init__(self, required: int, available: int):
+        self.required = required
+        self.available = available
+        super().__init__(f"Nicht genügend Credits: benötigt={required}, verfügbar={available}")
+
+
+def _apply_credit_delta(
+    user_id: str,
+    amount: int,
+    *,
+    ledger_type: str,
+    reason: str,
+    provider: str | None = None,
+    provider_tx_id: str | None = None,
+    created_by: str | None = None,
+    transaction_amount_eur: float | None = None,
+    audit_action: str | None = None,
+    audit_admin_email: str | None = None,
+    audit_changes: dict | None = None,
+) -> dict:
+    """Atomically verify, mutate and evidence one user-credit transition."""
+    if not user_id or not isinstance(amount, int) or amount == 0:
+        raise ValueError("Credit-Änderung benötigt User und einen ganzzahligen Betrag ungleich null")
+    normalized_provider = (provider or "").strip() or None
+    normalized_tx_id = (provider_tx_id or "").strip() or None
+    if transaction_amount_eur is not None and (not normalized_provider or not normalized_tx_id):
+        raise ValueError("Bestätigte Käufe benötigen Provider und eindeutige Transaktions-ID")
+
+    pool = get_pool()
+    conn = pool.getconn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id::text, email, credits FROM admin_users "
+                "WHERE id = %s::uuid LIMIT 1 FOR UPDATE",
+                (user_id,),
+            )
+            user_row = cur.fetchone()
+            if not user_row:
+                raise LookupError("User für Credit-Änderung nicht gefunden")
+
+            cur.execute(
+                "SELECT COALESCE(SUM(amount), 0)::integer AS balance "
+                "FROM credit_ledger WHERE user_id = %s::uuid",
+                (user_id,),
+            )
+            ledger_balance = int(cur.fetchone()["balance"])
+            cached_balance = int(user_row["credits"])
+            if ledger_balance != cached_balance:
+                raise CreditStateConflict(
+                    f"Credit-State widersprüchlich: cache={cached_balance}, ledger={ledger_balance}",
+                )
+
+            if normalized_provider and normalized_tx_id:
+                cur.execute(
+                    "SELECT user_id::text, credits FROM credit_receipts "
+                    "WHERE provider = %s AND provider_tx_id = %s LIMIT 1",
+                    (normalized_provider, normalized_tx_id),
+                )
+                existing_receipt = cur.fetchone()
+                if existing_receipt:
+                    if (
+                        existing_receipt["user_id"] != user_id
+                        or int(existing_receipt["credits"]) != amount
+                    ):
+                        raise CreditStateConflict("Provider-Receipt kollidiert mit anderem User oder Betrag")
+                    conn.rollback()
+                    return {"newBalance": cached_balance, "duplicate": True}
+                cur.execute(
+                    """INSERT INTO credit_receipts
+                           (provider, provider_tx_id, user_id, credits)
+                       VALUES (%s, %s, %s::uuid, %s)""",
+                    (normalized_provider, normalized_tx_id, user_id, amount),
+                )
+
+            new_balance = cached_balance + amount
+            if new_balance < 0:
+                raise InsufficientCredits(abs(amount), cached_balance)
+
+            cur.execute(
+                """INSERT INTO credit_ledger
+                       (user_id, type, amount, reason, provider, provider_tx_id, created_by)
+                   VALUES (%s::uuid, %s, %s, %s, %s, %s, %s::uuid)""",
+                (
+                    user_id,
+                    ledger_type,
+                    amount,
+                    reason,
+                    normalized_provider,
+                    normalized_tx_id,
+                    created_by,
+                ),
+            )
+            cur.execute(
+                "UPDATE admin_users SET credits = %s, last_active_at = NOW() "
+                "WHERE id = %s::uuid",
+                (new_balance, user_id),
+            )
+            if transaction_amount_eur is not None:
+                cur.execute(
+                    """INSERT INTO transactions
+                           (user_id, user_email, type, amount, currency, status,
+                            provider, provider_tx_id, description)
+                       VALUES (%s::uuid, %s, 'credit_purchase', %s, 'EUR', 'completed',
+                               %s, %s, %s)""",
+                    (
+                        user_id,
+                        user_row["email"],
+                        transaction_amount_eur,
+                        normalized_provider,
+                        normalized_tx_id,
+                        reason,
+                    ),
+                )
+            if audit_action:
+                if not created_by or not audit_admin_email:
+                    raise ValueError("Auditierte Credit-Änderung benötigt bestätigten Admin")
+                cur.execute(
+                    """INSERT INTO audit_log
+                           (admin_id, admin_email, action, target_id, changes)
+                       VALUES (%s::uuid, %s, %s, %s, %s::jsonb)""",
+                    (
+                        created_by,
+                        audit_admin_email,
+                        audit_action,
+                        user_id,
+                        psycopg2.extras.Json({
+                            **(audit_changes or {}),
+                            "newBalance": new_balance,
+                        }),
+                    ),
+                )
+        conn.commit()
+        return {"newBalance": new_balance, "duplicate": False}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        pool.putconn(conn)
+
+
+def _add_credits_and_log(
+    user_id: str,
+    credits: int,
+    amount_eur: float,
+    method: str,
+    provider_tx_id: str,
+    description: str,
+) -> dict:
+    return _apply_credit_delta(
+        user_id,
+        credits,
+        ledger_type="credit_purchase",
+        reason=description,
+        provider=method,
+        provider_tx_id=provider_tx_id,
+        transaction_amount_eur=amount_eur,
+    )
+
+
+def _create_user_with_initial_credits(
+    *,
+    user_id: str,
+    email: str,
+    display_name: str,
+    initial_credits: int = 500,
+    password_hash: str | None = None,
+    google_id: str | None = None,
+    github_id: str | None = None,
+    github_username: str | None = None,
+    github_access_token: str | None = None,
+    avatar_url: str | None = None,
+) -> None:
+    """Create account, signup-credit ledger and cache in one transaction."""
+    if initial_credits < 0:
+        raise ValueError("Initial-Credits dürfen nicht negativ sein")
+    pool = get_pool()
+    conn = pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO admin_users
+                       (id, email, display_name, password_hash, google_id, github_id,
+                        github_username, github_access_token, avatar_url, role, credits,
+                        subscription_status, is_banned, created_at, last_active_at)
+                   VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s,
+                           'user', 0, 'free', false, NOW(), NOW())""",
+                (
+                    user_id,
+                    email,
+                    display_name,
+                    password_hash,
+                    google_id,
+                    github_id,
+                    github_username,
+                    github_access_token,
+                    avatar_url,
+                ),
+            )
+            if initial_credits > 0:
+                cur.execute(
+                    """INSERT INTO credit_ledger
+                           (user_id, type, amount, reason, provider, provider_tx_id)
+                       VALUES (%s::uuid, 'signup_bonus', %s,
+                               'Initial account credits', 'system', %s)""",
+                    (user_id, initial_credits, f"account-create:{user_id}"),
+                )
+                cur.execute(
+                    "UPDATE admin_users SET credits = %s WHERE id = %s::uuid",
+                    (initial_credits, user_id),
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        pool.putconn(conn)
 
 
 # ── Admin: Payment Methods ─────────────────────────────────────────────────────
@@ -1950,7 +2165,7 @@ def admin_get_payment_methods():
         )
         return jsonify({"paymentMethods": [dict(r) for r in (rows or [])]})
     except Exception as exc:
-        return jsonify({"paymentMethods": [], "error": str(exc)}), 200
+        return jsonify({"paymentMethods": [], "error": str(exc), "runtimeState": "failed"}), 500
 
 
 @app.route("/api/admin/payment-methods/<mid>", methods=["PATCH"])
@@ -2121,23 +2336,47 @@ def admin_confirm_crypto_payment():
     body       = request.get_json(force=True) or {}
     user_id    = str(body.get("userId", ""))
     package_id = str(body.get("packageId", ""))
-    tx_hash    = str(body.get("txHash", ""))[:80]
+    tx_hash    = str(body.get("txHash", "")).strip()[:160]
 
-    if not user_id or not package_id:
-        return jsonify({"error": "userId und packageId erforderlich"}), 400
+    if not user_id or not package_id or len(tx_hash) < 8:
+        return jsonify({"error": "userId, packageId und eine echte Transaktions-ID erforderlich"}), 400
 
     pkg = _get_credit_package(package_id)
     if not pkg:
         return jsonify({"error": "Paket nicht gefunden"}), 404
 
-    _add_credits_and_log(
-        user_id, int(pkg["credits"]), float(pkg["price_eur"]),
-        "crypto", f"Crypto: {pkg['name']} ({pkg['credits']} Credits) | TX: {tx_hash or 'manuell'}",
-    )
-    audit("admin_confirm_crypto_payment", user_id,
-          {"packageId": package_id, "txHash": tx_hash, "credits": pkg["credits"]})
-    return jsonify({"ok": True, "creditsAdded": pkg["credits"],
-                    "newBalance": _get_user_credits(user_id)})
+    description = f"Crypto {tx_hash}: {pkg['name']} ({pkg['credits']} Credits)"
+    admin = get_current_admin() or {}
+    try:
+        result = _apply_credit_delta(
+            user_id,
+            int(pkg["credits"]),
+            ledger_type="credit_purchase",
+            reason=description,
+            provider="crypto",
+            provider_tx_id=tx_hash,
+            created_by=str(admin.get("id") or ""),
+            transaction_amount_eur=float(pkg["price_eur"]),
+            audit_action="admin_confirm_crypto_payment",
+            audit_admin_email=str(admin.get("email") or ""),
+            audit_changes={
+                "packageId": package_id,
+                "txHash": tx_hash,
+                "credits": int(pkg["credits"]),
+            },
+        )
+    except LookupError:
+        return jsonify({"error": "User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({"error": str(exc), "blocker": "credit_state_verification_failed"}), 409
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({
+        "ok": True,
+        "duplicate": result["duplicate"],
+        "creditsAdded": 0 if result["duplicate"] else int(pkg["credits"]),
+        "newBalance": result["newBalance"],
+    })
 
 
 # ── Public: Billing data ────────────────────────────────────────────────────────
@@ -2145,7 +2384,7 @@ def admin_confirm_crypto_payment():
 @app.route("/api/billing")
 def user_billing_overview():
     """Return available credit packages + current subscription for the user."""
-    user_id = request.headers.get("X-User-Id", "").strip()
+    user_id = _get_session_user_id()
     try:
         pkg_rows = query(
             """SELECT id::text, name, credits,
@@ -2167,8 +2406,15 @@ def user_billing_overview():
                 "tier":     "custom",
                 "credits":  d["credits"],
             })
-    except Exception:
-        packages = []
+    except Exception as exc:
+        return jsonify({
+            "availablePackages": [],
+            "packages": [],
+            "subscription": None,
+            "invoices": [],
+            "error": str(exc),
+            "runtimeState": "failed",
+        }), 500
 
     subscription = None
     if user_id:
@@ -2187,8 +2433,15 @@ def user_billing_overview():
                     "currentPeriodEnd": "",
                     "cancelAtPeriodEnd": False,
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            return jsonify({
+                "availablePackages": packages,
+                "packages": packages,
+                "subscription": None,
+                "invoices": [],
+                "error": str(exc),
+                "runtimeState": "failed",
+            }), 500
 
     return jsonify({
         "availablePackages": packages,
@@ -2216,12 +2469,51 @@ def _paypal_access_token(client_id: str, client_secret: str, mode: str) -> str:
     return resp.json()["access_token"]
 
 
+def _verify_paypal_webhook_signature(raw_body: bytes, webhook_id: str) -> bool:
+    """Verify PayPal's signature against the exact received request body."""
+    transmission_id = request.headers.get("paypal-transmission-id", "").strip()
+    transmission_time = request.headers.get("paypal-transmission-time", "").strip()
+    cert_url = request.headers.get("paypal-cert-url", "").strip()
+    auth_algo = request.headers.get("paypal-auth-algo", "").strip()
+    transmission_sig = request.headers.get("paypal-transmission-sig", "").strip()
+    if not all((raw_body, webhook_id, transmission_id, transmission_time, cert_url, auth_algo, transmission_sig)):
+        return False
+    if auth_algo.upper() != "SHA256WITHRSA":
+        return False
+    parsed_cert_url = urllib.parse.urlparse(cert_url)
+    if parsed_cert_url.scheme != "https" or parsed_cert_url.hostname not in {
+        "api.paypal.com",
+        "api.sandbox.paypal.com",
+    }:
+        return False
+    try:
+        import zlib
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+
+        crc32_value = zlib.crc32(raw_body) & 0xffffffff
+        signed_message = f"{transmission_id}|{transmission_time}|{webhook_id}|{crc32_value}".encode()
+        cert_response = requests.get(cert_url, timeout=15)
+        cert_response.raise_for_status()
+        certificate = x509.load_pem_x509_certificate(cert_response.content)
+        signature = base64.b64decode(transmission_sig, validate=True)
+        certificate.public_key().verify(
+            signature,
+            signed_message,
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+        return True
+    except Exception:
+        return False
+
+
 @app.route("/api/billing/purchase/paypal/create-order", methods=["POST"])
 def paypal_create_order():
     """Create a PayPal checkout order and return the approval URL."""
     body       = request.get_json(force=True) or {}
     package_id = str(body.get("packageId", ""))
-    user_id    = request.headers.get("X-User-Id", "").strip()
     return_url = str(body.get("returnUrl", ""))
     cancel_url = str(body.get("cancelUrl", ""))
 
@@ -2273,6 +2565,8 @@ def paypal_create_order():
             (lnk["href"] for lnk in data.get("links", []) if lnk["rel"] == "approve"),
             None,
         )
+        if not approve_url:
+            return jsonify({"error": "PayPal lieferte keine bestätigte Freigabe-URL"}), 502
         return jsonify({"orderId": order_id, "approvalUrl": approve_url})
     except Exception as exc:
         return jsonify({"error": f"PayPal-Fehler: {str(exc)[:120]}"}), 502
@@ -2280,24 +2574,27 @@ def paypal_create_order():
 
 @app.route("/api/billing/purchase/paypal/capture", methods=["POST"])
 def paypal_capture_order():
-    """Capture a PayPal order after user approval and credit the user."""
-    body     = request.get_json(force=True) or {}
-    order_id = str(body.get("orderId", ""))
-    user_id  = request.headers.get("X-User-Id", "").strip()
+    """Capture an authenticated user's matching PayPal order exactly once."""
+    body = request.get_json(force=True) or {}
+    order_id = str(body.get("orderId", "")).strip()
+    session_user_id = _get_session_user_id()
+    if not session_user_id:
+        return jsonify({"error": "Authentication required"}), 401
     if not order_id:
         return jsonify({"error": "orderId fehlt"}), 400
 
     pm = _get_payment_method("paypal")
     if not pm or not pm.get("enabled"):
         return jsonify({"error": "PayPal nicht aktiviert"}), 503
-
-    cfg           = pm.get("config") or {}
-    client_id     = cfg.get("client_id", "")
+    cfg = pm.get("config") or {}
+    client_id = cfg.get("client_id", "")
     client_secret = cfg.get("client_secret", "")
-    mode          = cfg.get("mode", "live")
+    mode = cfg.get("mode", "live")
+    if not client_id or not client_secret:
+        return jsonify({"error": "PayPal-Zugangsdaten nicht konfiguriert"}), 503
+
     try:
         token = _paypal_access_token(client_id, client_secret, mode)
-        # Fetch order to read back custom_id (user_id|package_id)
         order_resp = requests.get(
             _paypal_base_url(mode) + f"/v2/checkout/orders/{order_id}",
             headers={"Authorization": f"Bearer {token}"},
@@ -2305,61 +2602,121 @@ def paypal_capture_order():
         )
         order_resp.raise_for_status()
         order_data = order_resp.json()
-        custom_id  = (
-            (order_data.get("purchase_units") or [{}])[0].get("custom_id", "")
-        )
-        parts      = (custom_id + "||").split("|")
+        purchase_unit = (order_data.get("purchase_units") or [{}])[0]
+        custom_id = str(purchase_unit.get("custom_id") or "")
+        parts = (custom_id + "||").split("|")
         uid, pkg_id = parts[0].strip(), parts[1].strip()
-        if not uid:
-            uid = user_id
+        if uid != session_user_id:
+            return jsonify({"error": "PayPal-Bestellung gehört nicht zur aktiven Session"}), 403
+        pkg = _get_credit_package(pkg_id)
+        if not pkg:
+            return jsonify({"error": "Credit-Paket der PayPal-Bestellung nicht gefunden"}), 404
+        order_amount = purchase_unit.get("amount") or {}
+        try:
+            order_value = round(float(order_amount.get("value")), 2)
+        except (TypeError, ValueError):
+            order_value = -1
+        if str(order_amount.get("currency_code") or "").upper() != "EUR" or abs(order_value - round(float(pkg["price_eur"]), 2)) > 0.001:
+            return jsonify({"error": "PayPal-Bestellbetrag stimmt nicht mit dem Paket überein"}), 400
 
-        # Capture
         cap_resp = requests.post(
             _paypal_base_url(mode) + f"/v2/checkout/orders/{order_id}/capture",
-            headers={"Authorization": f"Bearer {token}",
-                     "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={},
             timeout=20,
         )
         cap_resp.raise_for_status()
         cap_data = cap_resp.json()
         if cap_data.get("status") != "COMPLETED":
-            return jsonify({
-                "error": f"Zahlung nicht abgeschlossen: {cap_data.get('status')}",
-            }), 402
+            return jsonify({"error": f"Zahlung nicht abgeschlossen: {cap_data.get('status')}"}), 402
 
-        pkg     = _get_credit_package(pkg_id)
-        credits = int(pkg["credits"])    if pkg else 0
-        price   = float(pkg["price_eur"]) if pkg else 0.0
-        label   = pkg["name"]             if pkg else pkg_id
-
-        _add_credits_and_log(uid, credits, price, "paypal",
-                             f"PayPal: {label} ({credits} Credits)")
-        return jsonify({"ok": True, "creditsAdded": credits,
-                        "newBalance": _get_user_credits(uid)})
+        capture = (
+            (((cap_data.get("purchase_units") or [{}])[0].get("payments") or {})
+             .get("captures") or [{}])[0]
+        )
+        capture_id = str(capture.get("id") or "").strip()
+        if not capture_id:
+            return jsonify({"error": "PayPal Capture lieferte keine Transaktions-ID"}), 502
+        credits = int(pkg["credits"])
+        description = f"PayPal Capture {capture_id}: {pkg['name']} ({credits} Credits)"
+        result = _add_credits_and_log(
+            uid,
+            credits,
+            float(pkg["price_eur"]),
+            "paypal",
+            capture_id,
+            description,
+        )
+        return jsonify({
+            "ok": True,
+            "duplicate": result["duplicate"],
+            "creditsAdded": 0 if result["duplicate"] else credits,
+            "newBalance": result["newBalance"],
+        })
+    except LookupError:
+        return jsonify({"error": "PayPal User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({"error": str(exc), "blocker": "credit_state_verification_failed"}), 409
     except Exception as exc:
         return jsonify({"error": f"Capture-Fehler: {str(exc)[:120]}"}), 502
 
 
 @app.route("/api/billing/webhooks/paypal", methods=["POST"])
 def paypal_webhook():
-    """PayPal Webhook IPN — credit user on PAYMENT.CAPTURE.COMPLETED."""
-    body       = request.get_json(force=True) or {}
-    event_type = body.get("event_type", "")
-    if event_type == "PAYMENT.CAPTURE.COMPLETED":
-        resource   = body.get("resource", {})
-        custom_id  = (
-            (resource.get("purchase_units") or [{}])[0].get("custom_id", "")
+    """Credit only a cryptographically verified, matching PayPal capture."""
+    raw_body = request.get_data(cache=True)
+    body = request.get_json(force=True) or {}
+    pm = _get_payment_method("paypal")
+    cfg = (pm or {}).get("config") or {}
+    webhook_id = str(cfg.get("webhook_id") or "").strip()
+    if not pm or not pm.get("enabled") or not webhook_id:
+        return jsonify({"error": "PayPal Webhook-Verifikation ist nicht konfiguriert"}), 503
+    if not _verify_paypal_webhook_signature(raw_body, webhook_id):
+        return jsonify({"error": "Ungültige PayPal Webhook-Signatur"}), 400
+
+    if body.get("event_type") != "PAYMENT.CAPTURE.COMPLETED":
+        return jsonify({"ok": True, "processed": False})
+
+    resource = body.get("resource") or {}
+    capture_id = str(resource.get("id") or "").strip()
+    custom_id = str(resource.get("custom_id") or "")
+    if not custom_id:
+        custom_id = str((resource.get("purchase_units") or [{}])[0].get("custom_id") or "")
+    parts = (custom_id + "||").split("|")
+    uid, pkg_id = parts[0].strip(), parts[1].strip()
+    pkg = _get_credit_package(pkg_id)
+    amount = resource.get("amount") or {}
+    try:
+        paid_value = round(float(amount.get("value")), 2)
+    except (TypeError, ValueError):
+        paid_value = -1
+    paid_currency = str(amount.get("currency_code") or "").upper()
+    if not capture_id or not uid or not pkg:
+        return jsonify({"error": "PayPal Webhook enthält keine zuordenbare Capture-Evidence"}), 400
+    if paid_currency != "EUR" or abs(paid_value - round(float(pkg["price_eur"]), 2)) > 0.001:
+        return jsonify({"error": "PayPal Betrag oder Währung stimmt nicht mit dem Paket überein"}), 400
+
+    description = f"PayPal Capture {capture_id}: {pkg['name']} ({pkg['credits']} Credits)"
+    try:
+        result = _add_credits_and_log(
+            uid,
+            int(pkg["credits"]),
+            float(pkg["price_eur"]),
+            "paypal",
+            capture_id,
+            description,
         )
-        parts      = (custom_id + "||").split("|")
-        uid, pkg_id = parts[0].strip(), parts[1].strip()
-        pkg = _get_credit_package(pkg_id)
-        if uid and pkg:
-            _add_credits_and_log(
-                uid, int(pkg["credits"]), float(pkg["price_eur"]),
-                "paypal_webhook", f"PayPal Webhook: {pkg['name']}",
-            )
-    return jsonify({"ok": True})
+    except LookupError:
+        return jsonify({"error": "PayPal User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({"error": str(exc), "blocker": "credit_state_verification_failed"}), 409
+    return jsonify({
+        "ok": True,
+        "processed": not result["duplicate"],
+        "duplicate": result["duplicate"],
+        "creditsAdded": 0 if result["duplicate"] else int(pkg["credits"]),
+        "newBalance": result["newBalance"],
+    })
 
 
 # ── Skrill ─────────────────────────────────────────────────────────────────────
@@ -2369,7 +2726,6 @@ def skrill_init():
     """Return a Skrill Quick Checkout redirect URL for the selected package."""
     body       = request.get_json(force=True) or {}
     package_id = str(body.get("packageId", ""))
-    user_id    = request.headers.get("X-User-Id", "").strip()
     return_url = str(body.get("returnUrl", ""))
     cancel_url = str(body.get("cancelUrl", ""))
     notify_url = str(body.get(
@@ -2420,38 +2776,61 @@ def skrill_init():
 
 @app.route("/api/billing/webhooks/skrill", methods=["POST"])
 def skrill_webhook():
-    """Skrill IPN status callback — credit user when status == 2 (processed)."""
-    data       = request.form
-    status     = data.get("status", "")
-    user_id    = data.get("user_id", "")
-    package_id = data.get("package_id", "")
+    """Credit only a configured, signed and amount-matching Skrill payment."""
+    data = request.form
+    status = data.get("status", "")
+    user_id = data.get("user_id", "").strip()
+    package_id = data.get("package_id", "").strip()
+    transaction_id = data.get("transaction_id", "").strip()
 
     pm = _get_payment_method("skrill")
-    if pm:
-        cfg         = pm.get("config") or {}
-        secret_word = cfg.get("secret_word", "")
-        if secret_word:
-            merchant_email = cfg.get("merchant_email", "")
-            expected_sig = hashlib.md5(
-                (merchant_email +
-                 data.get("transaction_id", "") +
-                 hashlib.md5(secret_word.upper().encode()).hexdigest() +
-                 data.get("mb_amount", "") +
-                 data.get("mb_currency", "") +
-                 status).encode()
-            ).hexdigest().upper()
-            if expected_sig != data.get("md5sig", "").upper():
-                return "INVALID_SIGNATURE", 400
+    if not pm or not pm.get("enabled"):
+        return "SKRILL_NOT_CONFIGURED", 503
+    cfg = pm.get("config") or {}
+    secret_word = str(cfg.get("secret_word") or "").strip()
+    merchant_email = str(cfg.get("merchant_email") or "").strip()
+    if not secret_word or not merchant_email:
+        return "SKRILL_VERIFICATION_NOT_CONFIGURED", 503
 
-    # status 2 = processed (successful payment)
-    if status == "2" and user_id and package_id:
-        pkg = _get_credit_package(package_id)
-        if pkg:
-            _add_credits_and_log(
-                user_id, int(pkg["credits"]), float(pkg["price_eur"]),
-                "skrill", f"Skrill: {pkg['name']} ({pkg['credits']} Credits)",
-            )
-    return "OK", 200
+    expected_sig = hashlib.md5(
+        (merchant_email +
+         transaction_id +
+         hashlib.md5(secret_word.upper().encode()).hexdigest() +
+         data.get("mb_amount", "") +
+         data.get("mb_currency", "") +
+         status).encode()
+    ).hexdigest().upper()
+    received_sig = data.get("md5sig", "").upper()
+    if not received_sig or not hmac.compare_digest(expected_sig, received_sig):
+        return "INVALID_SIGNATURE", 400
+
+    if status != "2":
+        return "OK_NOT_PROCESSED", 200
+    pkg = _get_credit_package(package_id)
+    if not transaction_id or not user_id or not pkg:
+        return "UNMAPPED_PAYMENT", 400
+    try:
+        paid_value = round(float(data.get("mb_amount", "")), 2)
+    except (TypeError, ValueError):
+        paid_value = -1
+    if data.get("mb_currency", "").upper() != "EUR" or abs(paid_value - round(float(pkg["price_eur"]), 2)) > 0.001:
+        return "AMOUNT_MISMATCH", 400
+
+    description = f"Skrill {transaction_id}: {pkg['name']} ({pkg['credits']} Credits)"
+    try:
+        result = _add_credits_and_log(
+            user_id,
+            int(pkg["credits"]),
+            float(pkg["price_eur"]),
+            "skrill",
+            transaction_id,
+            description,
+        )
+    except LookupError:
+        return "USER_NOT_FOUND", 404
+    except CreditStateConflict:
+        return "CREDIT_STATE_CONFLICT", 409
+    return ("OK_DUPLICATE" if result["duplicate"] else "OK"), 200
 
 
 # ── Crypto Wallets ─────────────────────────────────────────────────────────────
@@ -2461,7 +2840,7 @@ def crypto_info():
     """Return wallet address and EUR amount for a crypto payment."""
     body       = request.get_json(force=True) or {}
     package_id = str(body.get("packageId", ""))
-    coin_type  = str(body.get("coinType", "crypto_btc"))
+    coin_type  = str(body.get("coinType") or body.get("paymentMethod") or "crypto_btc")
 
     pm = _get_payment_method(coin_type)
     if not pm or not pm.get("enabled"):
@@ -2587,11 +2966,13 @@ def google_play_validate():
         except Exception:
             pass
 
-        credits  = int(pkg["credits"])     if pkg else 0
-        price    = float(pkg["price_eur"]) if pkg else 0.0
-        pkg_name = pkg["name"]             if pkg else product_id
+        if not pkg:
+            return jsonify({"error": "Google-Play-Produkt ist keinem aktiven Credit-Paket zugeordnet"}), 404
+        credits = int(pkg["credits"])
+        price = float(pkg["price_eur"])
+        pkg_name = pkg["name"]
         _approved_user_id, step_up_response = _authorize_credit_purchase({
-            "id": str(pkg.get("id") if pkg else product_id),
+            "id": str(pkg["id"]),
             "price_eur": price,
             "credits": credits,
         })
@@ -2600,15 +2981,27 @@ def google_play_validate():
         if _approved_user_id != user_id:
             return jsonify({"error": "Account mismatch"}), 403
 
-        if user_id and credits > 0:
-            _add_credits_and_log(user_id, credits, price, "google_play",
-                                 f"Google Play: {pkg_name} ({credits} Credits)")
+        token_fingerprint = hashlib.sha256(purchase_token.encode()).hexdigest()
+        description = f"Google Play {token_fingerprint}: {pkg_name} ({credits} Credits)"
+        result = _add_credits_and_log(
+            user_id,
+            credits,
+            price,
+            "google_play",
+            token_fingerprint,
+            description,
+        )
         return jsonify({
-            "ok":            True,
-            "creditsAdded":  credits,
+            "ok": True,
+            "duplicate": result["duplicate"],
+            "creditsAdded": 0 if result["duplicate"] else credits,
             "purchaseState": purchase_data.get("purchaseState"),
-            "newBalance":    _get_user_credits(user_id),
+            "newBalance": result["newBalance"],
         })
+    except LookupError:
+        return jsonify({"error": "Google-Play User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({"error": str(exc), "blocker": "credit_state_verification_failed"}), 409
     except Exception as exc:
         return jsonify({"error": f"Google Play Validierung: {str(exc)[:120]}"}), 502
 
@@ -2627,7 +3020,7 @@ def public_payment_methods():
             "methods": [{"type": r["type"], "label": r["label"]} for r in (rows or [])],
         })
     except Exception as exc:
-        return jsonify({"methods": [], "error": str(exc)}), 200
+        return jsonify({"methods": [], "error": str(exc), "runtimeState": "failed"}), 500
 
 
 # ── Generic /api/billing/purchase — routes by paymentMethod ───────────────────
@@ -2688,7 +3081,7 @@ def public_llm_routes():
                 "description":         d["modelName"],
                 "creditsPerKTokens":   float(d["creditsPerUnit"]),
                 "enabled":             not d["disabled"],
-                "userKeyOverride":     True,
+                "userKeyOverride":     False,
                 "maxTokensPerRequest": 32_000,
             })
         return jsonify({"routes": routes})
@@ -2719,7 +3112,7 @@ def public_llm_route(route_id):
             "description":         d["modelName"],
             "creditsPerKTokens":   float(d["creditsPerUnit"]),
             "enabled":             not d["disabled"],
-            "userKeyOverride":     True,
+            "userKeyOverride":     False,
             "maxTokensPerRequest": 32_000,
         })
     except Exception as exc:
@@ -2731,28 +3124,40 @@ def public_llm_route(route_id):
 @app.route("/api/billing/credits")
 @require_session
 def user_billing_credits():
-    """Return the authenticated user's server-ledger credit balance."""
+    """Return credits only after cache/ledger verification."""
     user_id = request.session_user_id
     try:
-        row = query(
-            "SELECT credits FROM admin_users WHERE id::text = %s LIMIT 1",
-            (user_id,), one=True,
-        )
-        credits = int(row["credits"]) if row else 0
-        return jsonify({"credits": credits})
+        credits = _read_verified_credit_balance(user_id)
+        return jsonify({
+            "credits": credits,
+            "creditStateVerified": True,
+        })
+    except LookupError:
+        return jsonify({"error": "User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({
+            "error": str(exc),
+            "blocker": "credit_state_verification_failed",
+            "creditStateVerified": False,
+        }), 409
     except Exception as exc:
-        return jsonify({"credits": 0, "error": str(exc)}), 200
+        return jsonify({"error": str(exc), "runtimeState": "failed"}), 500
 
 
 @app.route("/api/billing/deduct", methods=["POST"])
 @require_session
 def user_billing_deduct():
     """Server-side credit deduction with validation and usage logging."""
-    body        = request.get_json(force=True) or {}
-    user_id     = request.session_user_id
-    cost_id     = str(body.get("costId",    ""))
-    amount      = int(body.get("amount",    0))
-    token_count = int(body.get("tokenCount", 0))
+    body = request.get_json(force=True) or {}
+    user_id = request.session_user_id
+    cost_id = str(body.get("costId") or "").strip()
+    try:
+        amount = int(body.get("amount", 0))
+        token_count = max(0, int(body.get("tokenCount", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount und tokenCount müssen ganze Zahlen sein"}), 400
+    if not cost_id:
+        return jsonify({"error": "costId erforderlich"}), 400
 
     try:
         route = query(
@@ -2789,37 +3194,36 @@ def user_billing_deduct():
                 "reason": step_up.get("reason"),
             }), 428
 
-        if user_id:
-            row = query(
-                "SELECT credits FROM admin_users WHERE id::text = %s LIMIT 1",
-                (user_id,), one=True,
-            )
-            if not row:
-                return jsonify({"error": "User nicht gefunden"}), 404
-            current = int(row["credits"])
-            if current < amount:
-                return jsonify({
-                    "error":     "Nicht genug Credits",
-                    "available": current,
-                    "required":  amount,
-                }), 402
-            query(
-                "UPDATE admin_users SET credits = GREATEST(0, credits - %s) WHERE id::text = %s",
-                (amount, user_id), write=True,
-            )
-
-        # Usage log — graceful if table doesn't exist yet
         try:
-            query(
-                """INSERT INTO credit_usage
-                       (user_id, cost_id, credits_deducted, token_count, created_at)
-                   VALUES (%s, %s, %s, %s, NOW())""",
-                (user_id or None, cost_id, amount, token_count), write=True,
+            result = _apply_credit_delta(
+                user_id,
+                -amount,
+                ledger_type="usage",
+                reason=f"Runtime usage: {cost_id}; tokens={token_count}",
+                provider="runtime",
             )
-        except Exception:
-            pass  # Table may not exist; deduction already applied above
+        except LookupError:
+            return jsonify({"error": "User nicht gefunden"}), 404
+        except InsufficientCredits as exc:
+            return jsonify({
+                "error": "Nicht genug Credits",
+                "available": exc.available,
+                "required": exc.required,
+            }), 402
+        except CreditStateConflict as exc:
+            return jsonify({
+                "error": str(exc),
+                "blocker": "credit_state_verification_failed",
+            }), 409
 
-        return jsonify({"ok": True, "deducted": amount})
+        return jsonify({
+            "ok": True,
+            "deducted": amount,
+            "newBalance": result["newBalance"],
+            "ledgerType": "usage",
+        })
+    except (TypeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -2860,6 +3264,8 @@ def _verify_pw(password: str, stored: str) -> bool:
 
 
 def _make_jwt(user_id: str) -> str:
+    if not JWT_SECRET:
+        raise RuntimeError("JWT_SECRET ist nicht konfiguriert")
     import jwt as pyjwt
     return pyjwt.encode(
         {"sub": str(user_id), "exp": int(time.time()) + _COOKIE_MAX_AGE},
@@ -2868,6 +3274,8 @@ def _make_jwt(user_id: str) -> str:
 
 
 def _decode_jwt(token: str) -> str | None:
+    if not JWT_SECRET:
+        return None
     try:
         import jwt as pyjwt
         data = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
@@ -2881,8 +3289,8 @@ GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_OAUTH_REDIRECT_URI = os.getenv(
     "GITHUB_OAUTH_REDIRECT_URI",
-    "https://sovereign-backend.arelorian.de/api/auth/github",
-)
+    "https://chat.arelorian.de/auth/github/callback.html",
+).strip()
 
 # Initialisiere Token Encryption mit Key aus Environment
 _token_encryption_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", JWT_SECRET)
@@ -2891,13 +3299,16 @@ if _token_encryption_key:
 
 
 def _user_row_to_dict(row) -> dict:
-    """Konvertiert DB-Zeile zu User-Dict für API-Response."""
+    """Konvertiert nur einen cache-/ledger-verifizierten User zur API-Antwort."""
+    user_id = str(row["id"])
+    verified_credits = _read_verified_credit_balance(user_id)
     result = {
-        "id":                 str(row["id"]),
+        "id":                 user_id,
         "email":              row["email"],
         "displayName":        row.get("display_name") or "",
         "role":               row.get("role") or "user",
-        "credits":            int(row.get("credits") or 0),
+        "credits":            verified_credits,
+        "creditStateVerified": True,
         "subscriptionStatus": row.get("subscription_status") or "free",
         "isBanned":           bool(row.get("is_banned")),
         "createdAt":          str(row.get("created_at") or ""),
@@ -2952,13 +3363,11 @@ def auth_register():
 
         pw_hash = _hash_pw(password)
         new_id  = str(uuid.uuid4())
-        query(
-            """INSERT INTO admin_users
-               (id, email, display_name, role, credits, subscription_status,
-                is_banned, password_hash, created_at, last_active_at)
-               VALUES (%s::uuid, %s, %s, 'user', 500, 'free', false, %s, NOW(), NOW())""",
-            (new_id, email, display_name or email.split("@")[0], pw_hash),
-            write=True,
+        _create_user_with_initial_credits(
+            user_id=new_id,
+            email=email,
+            display_name=display_name or email.split("@")[0],
+            password_hash=pw_hash,
         )
         row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (new_id,), one=True)
         resp = make_response(jsonify(_user_row_to_dict(row)))
@@ -3069,14 +3478,12 @@ def auth_google():
             )
         else:
             user_id = str(uuid.uuid4())
-            query(
-                """INSERT INTO admin_users
-                   (id, email, display_name, role, credits, subscription_status,
-                    is_banned, google_id, avatar_url, created_at, last_active_at)
-                   VALUES (%s::uuid, %s, %s, 'user', 500, 'free', false,
-                           %s, %s, NOW(), NOW())""",
-                (user_id, email, display_name, google_id, avatar_url),
-                write=True,
+            _create_user_with_initial_credits(
+                user_id=user_id,
+                email=email,
+                display_name=display_name,
+                google_id=google_id,
+                avatar_url=avatar_url,
             )
 
         row = query("SELECT * FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,), one=True)
@@ -3124,22 +3531,23 @@ def auth_github():
         
         body = request.get_json(force=True) or {}
         code = body.get("code") or ""
-        state = body.get("state")  # Optional
-        code_verifier = body.get("code_verifier")  # Optional
-        
+        state = str(body.get("state") or "").strip()
+        code_verifier = str(body.get("code_verifier") or "").strip()
+
         if not code:
             return jsonify({"error": "Authorization Code fehlt"}), 400
+        if not state or not code_verifier:
+            return jsonify({"error": "GitHub OAuth benötigt State und PKCE-Verifier"}), 400
 
         # 1. State validieren (CSRF-Schutz)
-        if state:
-            stored_state = _get_oauth_state(state)
-            if not stored_state:
-                return jsonify({"error": "Ungültiger oder abgelaufener State"}), 400
-            
-            # 2. PKCE validieren falls verwendet
-            stored_challenge = stored_state.get("code_challenge")
-            if not _validate_pkce(code_verifier, stored_challenge):
-                return jsonify({"error": "PKCE Validierung fehlgeschlagen"}), 400
+        stored_state = _get_oauth_state(state)
+        if not stored_state:
+            return jsonify({"error": "Ungültiger oder abgelaufener State"}), 400
+
+        # 2. PKCE validieren
+        stored_challenge = stored_state.get("code_challenge")
+        if not _validate_pkce(code_verifier, stored_challenge):
+            return jsonify({"error": "PKCE Validierung fehlgeschlagen"}), 400
 
         # 3. Code gegen Access Token tauschen
         token_payload = {
@@ -3149,7 +3557,7 @@ def auth_github():
         }
         if code_verifier:
             token_payload["code_verifier"] = code_verifier
-        if state and stored_state and stored_state.get("redirect_uri"):
+        if stored_state.get("redirect_uri"):
             token_payload["redirect_uri"] = stored_state["redirect_uri"]
 
         token_resp = requests.post(
@@ -3228,15 +3636,14 @@ def auth_github():
             )
         else:
             user_id = str(uuid.uuid4())
-            query(
-                """INSERT INTO admin_users
-                   (id, email, display_name, role, credits, subscription_status,
-                    is_banned, github_id, github_username, github_access_token,
-                    avatar_url, created_at, last_active_at)
-                   VALUES (%s::uuid, %s, %s, 'user', 500, 'free', false,
-                           %s, %s, %s, %s, NOW(), NOW())""",
-                (user_id, email, display_name, github_id, github_username, encrypted_token, avatar_url),
-                write=True,
+            _create_user_with_initial_credits(
+                user_id=user_id,
+                email=email,
+                display_name=display_name,
+                github_id=github_id,
+                github_username=github_username,
+                github_access_token=encrypted_token,
+                avatar_url=avatar_url,
             )
 
         # 8. User zurückgeben (OHNE Token!)
@@ -4534,8 +4941,7 @@ input[type=text],input[type=password]{-webkit-appearance:none}
 
 <script>
 const BASE = '';
-let API_KEY = sessionStorage.getItem('sov_admin_key') || '';
-if (API_KEY) initApp();
+let API_KEY = '';
 
 function hdr(){ return {'Authorization':'Bearer '+API_KEY,'Content-Type':'application/json'}; }
 function formHdr(){ const headers=hdr(); delete headers['Content-Type']; return headers; }
@@ -4548,7 +4954,10 @@ async function boundedFetch(path, options={}){
     const text=await response.text();
     let data={};
     try{ data=text?JSON.parse(text):{}; }catch{ data={error:text||('HTTP '+response.status)}; }
-    if(!response.ok) throw new Error(data.error||('HTTP '+response.status));
+    if(!response.ok){
+      if(response.status===401||response.status===403) resetAdminSession();
+      throw new Error(data.error||('HTTP '+response.status));
+    }
     return data;
   }catch(error){
     if(error&&error.name==='AbortError') throw new Error('Backend-Zeitüberschreitung nach 15 Sekunden.');
@@ -4559,23 +4968,33 @@ async function boundedFetch(path, options={}){
 async function doLogin(){
   const k = document.getElementById('keyInput').value.trim();
   if(!k) return;
-  const r = await fetch(BASE+'/api/admin/payment-methods',{headers:{'Authorization':'Bearer '+k}});
-  if(r.status===401||r.status===403||r.status===503){
-    const e = document.getElementById('loginErr');
-    e.textContent='Ungültiger API-Key.'; e.style.display='block'; return;
+  const e = document.getElementById('loginErr');
+  e.style.display='none';
+  try{
+    const r = await fetch(BASE+'/api/admin/ping',{headers:{'Authorization':'Bearer '+k}});
+    const data = await r.json().catch(()=>({}));
+    if(!r.ok || data.ok!==true || !data.id){
+      throw new Error(data.error||('HTTP '+r.status));
+    }
+    API_KEY = k;
+    initApp();
+  }catch(error){
+    API_KEY='';
+    e.textContent='Admin-Sitzung nicht bestätigt: '+error.message;
+    e.style.display='block';
   }
-  API_KEY = k;
-  sessionStorage.setItem('sov_admin_key', k);
-  initApp();
 }
 
 document.getElementById('keyInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 
-function doLogout(){
-  sessionStorage.removeItem('sov_admin_key');
+function resetAdminSession(){
   API_KEY='';
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
+}
+
+function doLogout(){
+  resetAdminSession();
 }
 
 function initApp(){
@@ -5316,7 +5735,6 @@ function renderRuntime(cfg, hlth){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
         <div><label style="color:var(--muted);font-size:11px;text-transform:uppercase">BYOK Modus</label>
           <select id="rt_byok" style="margin-top:4px" onchange="updateRuntime('byok')">
-            <option value="user-key" ${byokMode==='user-key'?'selected':''}>user-key</option>
             <option value="system-key" ${byokMode==='system-key'?'selected':''}>system-key</option>
             <option value="disabled" ${byokMode==='disabled'?'selected':''}>disabled</option>
           </select>
@@ -5807,6 +6225,7 @@ def admin_llm_gateway_sync():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/llm/auto-route", methods=["POST"])
+@require_session
 def public_llm_auto_route():
     try:
         routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
@@ -5828,6 +6247,7 @@ def public_llm_auto_route():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/llm/chat", methods=["POST"])
+@require_session
 def public_llm_chat():
     try:
         body = request.get_json(force=True) or {}

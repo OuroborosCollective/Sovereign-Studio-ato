@@ -3,7 +3,7 @@
  * 
  * Integrates the Sovereign Agent Tool System with the Predictive Layer.
  * Tool executions are emitted as signals for learning and prediction.
- * Tools and MCP operate freely without restrictions.
+ * Prediction is advisory only and never grants execution permission.
  * 
  * @module predictive/toolPredictiveBridge
  */
@@ -29,12 +29,12 @@ export interface ToolPredictiveConfig {
   confidenceThreshold: number;
 }
 
-// Default configuration - tools operate freely
+// Default configuration for evidence collection only.
 const DEFAULT_CONFIG: ToolPredictiveConfig = {
   enabled: true,
   emitSignals: true,
   learnFromResults: true,
-  confidenceThreshold: 0.1, // Very low threshold - tools work freely
+  confidenceThreshold: 0.5,
 };
 
 let bridgeConfig: ToolPredictiveConfig = { ...DEFAULT_CONFIG };
@@ -75,13 +75,15 @@ export function emitToolSignal(event: ToolExecutionEvent): void {
     // Signal value based on outcome (1 = success, 0 = error/blocked)
     const value = event.status === 'success' ? 1 : 0;
     
-    // Create signal
+    // Create a traceable telemetry signal without a random decision identity.
+    const timestamp = Date.now();
+    const traceId = event.traceId?.trim() || `tool-${event.toolType}-${event.toolName}-${timestamp}`;
     const signal: Signal = {
-      id: `tool-sig-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `${traceId}:${event.status}:${Math.round(event.durationMs)}`,
       node: nodeNamespace,
       value,
-      timestamp: Date.now(),
-      traceId: event.traceId || `tool-${event.toolName}`,
+      timestamp,
+      traceId,
       metadata: {
         toolType: event.toolType,
         toolName: event.toolName,
@@ -124,10 +126,10 @@ export async function getToolPredictions(
   
   if (!layer.isEnabled()) {
     return {
-      predictedSuccessRate: 0.8,
-      avgDurationMs: 1000,
+      predictedSuccessRate: 0,
+      avgDurationMs: 0,
       confidence: 0,
-      recommendations: [],
+      recommendations: ['Predictive Layer ist deaktiviert; keine Runtime-Evidence vorhanden.'],
     };
   }
 
@@ -139,10 +141,10 @@ export async function getToolPredictions(
 
   if (patterns.length === 0) {
     return {
-      predictedSuccessRate: 0.8, // Optimistic default
-      avgDurationMs: 1000,
+      predictedSuccessRate: 0,
+      avgDurationMs: 0,
       confidence: 0,
-      recommendations: [],
+      recommendations: ['Keine bestätigten historischen Tool-Ergebnisse vorhanden.'],
     };
   }
 
@@ -164,7 +166,8 @@ export async function getToolPredictions(
 
   return {
     predictedSuccessRate,
-    avgDurationMs: patterns[0]?.matchCount * 100 || 1000,
+    // PatternEmbedding stores no measured duration. Do not synthesize one.
+    avgDurationMs: 0,
     confidence: avgConfidence,
     recommendations,
   };

@@ -214,10 +214,16 @@ jobs:
                 exit 1
               fi
             done
-            if [ ! -x "$BUILD_DIR/auto-migrate.sh" ]; then
-              echo "Migration entrypoint is missing or not executable: $BUILD_DIR/auto-migrate.sh" >&2
+            if [ ! -f "$BUILD_DIR/auto-migrate.sh" ]; then
+              echo "Migration entrypoint is missing: $BUILD_DIR/auto-migrate.sh" >&2
               exit 1
             fi
+            chmod +x "$BUILD_DIR/auto-migrate.sh"
+            if [ ! -x "$BUILD_DIR/auto-migrate.sh" ]; then
+              echo "Migration entrypoint could not be made executable: $BUILD_DIR/auto-migrate.sh" >&2
+              exit 1
+            fi
+            bash -n "$BUILD_DIR/auto-migrate.sh"
             for required_dir in agent_runtime migrations; do
               if [ ! -d "$BUILD_DIR/$required_dir" ]; then
                 echo "Required build directory is missing: $BUILD_DIR/$required_dir" >&2

@@ -31,15 +31,10 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
   };
   const finishImport = async (result: Awaited<ReturnType<typeof uploadKnowledgeFile>>) => {
     let detail = result.duplicate ? 'Bereits vorhanden.' : `Gespeichert: ${result.source.title}`;
-    if (!result.duplicate && (result.source.status === 'partial' || Boolean(result.blocker))) {
-      try {
-        const repair = await repairMissingKnowledgeEmbeddings(25);
-        detail += repair.repaired > 0
-          ? ` · ${repair.repaired} fehlende Vektoren repariert${repair.remaining > 0 ? `, ${repair.remaining} offen` : ''}.`
-          : ' · Keine fehlenden Vektoren zur Reparatur gefunden.';
-      } catch (reason) {
-        detail += ` · Vektorreparatur blockiert: ${reason instanceof Error ? reason.message : String(reason)}`;
-      }
+    if (!result.duplicate && result.source.status === 'partial') {
+      detail += ` · Teilweise verarbeitet${result.blocker ? `: ${result.blocker}` : '. Fehlende Vektoren können separat repariert werden.'}`;
+    } else if (!result.duplicate && result.blocker) {
+      detail += ` · Blocker: ${result.blocker}`;
     }
     setMessage(detail);
     await load();

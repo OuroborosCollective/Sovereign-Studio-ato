@@ -54,10 +54,6 @@ export interface SovereignLlmRuntimeResult {
   missionId?: string;
 }
 
-function userKeysWhenAllowed(input: SovereignLlmRuntimeInput): SovereignLlmRuntimeInput['userKeys'] {
-  return input.allowUserKeyRoutes ? input.userKeys : undefined;
-}
-
 function lastTryingAttemptIndex(attempts: SovereignLlmRuntimeAttempt[], providerId?: string): number {
   for (let index = attempts.length - 1; index >= 0; index -= 1) {
     const attempt = attempts[index];
@@ -68,7 +64,6 @@ function lastTryingAttemptIndex(attempts: SovereignLlmRuntimeAttempt[], provider
 
 export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): Promise<SovereignLlmRuntimeResult> {
   const attempts: SovereignLlmRuntimeAttempt[] = [];
-  const allowedUserKeys = userKeysWhenAllowed(input);
 
   // Auto-detect consent for this mission
   const { missionId, consentGranted } = detectConsentForCurrentMission(input.mission);
@@ -93,12 +88,13 @@ export async function runSovereignLlmRuntime(input: SovereignLlmRuntimeInput): P
     codeContext: input.previousPreview,
     memoryContext: input.memoryContext,
     runtimeEvents: input.runtimeEvents,
-    pollinationsApiKey: allowedUserKeys?.pollinations,
-    groqApiKey: allowedUserKeys?.groq,
-    huggingfaceApiKey: allowedUserKeys?.huggingface,
-    togetherApiKey: allowedUserKeys?.together,
-    openrouterApiKey: allowedUserKeys?.openrouter,
-    geminiApiKey: allowedUserKeys?.gemini,
+    // Provider credentials are injected only behind the backend proxy.
+    pollinationsApiKey: undefined,
+    groqApiKey: undefined,
+    huggingfaceApiKey: undefined,
+    togetherApiKey: undefined,
+    openrouterApiKey: undefined,
+    geminiApiKey: undefined,
     allowExternalNoKey: effectiveAllowExternal,
     allowOptInRoutes: false,
   }, {
