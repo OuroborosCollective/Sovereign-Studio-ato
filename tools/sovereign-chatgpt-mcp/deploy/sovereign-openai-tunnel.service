@@ -9,19 +9,21 @@ Type=simple
 User=sovereign-tunnel
 Group=sovereign-tunnel
 EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env
-Environment=HOME=/opt/sovereign-chatgpt-tools/tunnel-home
-WorkingDirectory=/opt/sovereign-chatgpt-tools/tunnel-home
+Environment=HOME=/var/lib/sovereign-tunnel
+WorkingDirectory=/var/lib/sovereign-tunnel
 ExecStartPre=/usr/bin/test -x /usr/local/bin/tunnel-client
 ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
+StateDirectory=sovereign-tunnel
+StateDirectoryMode=0750
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadOnlyPaths=/opt/sovereign-chatgpt-tools/tunnel.env
-ReadWritePaths=/opt/sovereign-chatgpt-tools/tunnel-home
+ReadWritePaths=/var/lib/sovereign-tunnel
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 RestrictRealtime=true
