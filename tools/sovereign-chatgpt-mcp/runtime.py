@@ -15,11 +15,11 @@ from typing import Any
 import requests
 
 from policy import (
+    BLOCKED_PARTS,
     MAX_FILE_BYTES,
     safe_repo_path,
     sha256_bytes,
     validate_branch,
-    validate_container,
     validate_patch_blocks,
     validate_workspace_id,
 )
@@ -75,6 +75,16 @@ class OperatorRuntime:
     def _write_metadata(self, workspace_id: str, data: dict[str, Any]) -> None:
         self._metadata_path(workspace_id).write_text(json.dumps(data, indent=2, sort_keys=True), "utf-8")
 
+    def _record_check(self, workspace_id: str, key: str, result: dict[str, Any]) -> None:
+        metadata = self._read_metadata(workspace_id)
+        metadata.setdefault("checks", {})[key] = {
+            "ok": bool(result.get("ok")),
+            "exit_code": result.get("exit_code"),
+            "duration_ms": result.get("duration_ms"),
+            "at": int(time.time()),
+        }
+        self._write_metadata(workspace_id, metadata)
+
     def _askpass(self) -> tuple[str, dict[str, str]]:
         if not self.config.github_token:
             raise RuntimeError("GITHUB_TOKEN ist auf dem MCP-Server nicht konfiguriert")
@@ -91,23 +101,35 @@ class OperatorRuntime:
 
     def _run(self, argv: list[str], *, cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
         started = time.monotonic()
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout or self.config.command_timeout,
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=str(cwd),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout or self.config.command_timeout,
+                check=False,
+            )
+            exit_code = completed.returncode
+            stdout = completed.stdout
+            stderr = completed.stderr
+        except FileNotFoundError as exc:
+            exit_code = 127
+            stdout = ""
+            stderr = str(exc)
+        except subprocess.TimeoutExpired as exc:
+            exit_code = 124
+            stdout = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+            stderr = ((exc.stderr or "") if isinstance(exc.stderr, str) else "") + "\nCommand timed out."
         output_limit = 24_000
         return {
             "argv": argv,
-            "exit_code": completed.returncode,
-            "stdout": completed.stdout[-output_limit:],
-            "stderr": completed.stderr[-output_limit:],
+            "exit_code": exit_code,
+            "stdout": stdout[-output_limit:],
+            "stderr": stderr[-output_limit:],
             "duration_ms": int((time.monotonic() - started) * 1000),
-            "ok": completed.returncode == 0,
+            "ok": exit_code == 0,
         }
 
     def prepare_workspace(self, *, base_branch: str, task_slug: str) -> dict[str, Any]:
@@ -162,23 +184,31 @@ class OperatorRuntime:
             raise ValueError("Suchtext fehlt oder ist zu lang")
         repo = self._repo(workspace_id)
         start = repo if path == "." else safe_repo_path(repo, path)
+        limit = max(1, min(max_results, 200))
         results: list[dict[str, Any]] = []
-        candidates = [start] if start.is_file() else start.rglob("*")
+        if start.is_file():
+            candidates = [start]
+        else:
+            candidates = []
+            for current_root, directories, filenames in os.walk(start):
+                directories[:] = [name for name in directories if name not in BLOCKED_PARTS and not name.startswith(".env")]
+                root_path = Path(current_root)
+                candidates.extend(root_path / filename for filename in filenames)
         for candidate in candidates:
-            if len(results) >= max(1, min(max_results, 200)):
+            if len(results) >= limit:
                 break
-            if not candidate.is_file() or ".git" in candidate.parts or candidate.stat().st_size > MAX_FILE_BYTES:
-                continue
             try:
+                if candidate.stat().st_size > MAX_FILE_BYTES or candidate.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".zip", ".jar"}:
+                    continue
                 text = candidate.read_text("utf-8")
             except (UnicodeDecodeError, OSError):
                 continue
             for line_no, line in enumerate(text.splitlines(), start=1):
                 if query in line:
                     results.append({"path": str(candidate.relative_to(repo)), "line": line_no, "text": line[:500]})
-                    if len(results) >= max_results:
+                    if len(results) >= limit:
                         break
-        return {"query": query, "results": results, "truncated": len(results) >= max_results}
+        return {"query": query, "results": results, "truncated": len(results) >= limit}
 
     def apply_search_replace(self, workspace_id: str, path: str, blocks: list[dict[str, str]], expected_sha256: str = "") -> dict[str, Any]:
         validate_patch_blocks(blocks)
@@ -223,19 +253,18 @@ class OperatorRuntime:
             "audit": ["pnpm", "run", "audit:sovereign"],
             "build_web": ["pnpm", "run", "build:web"],
         }
-        if check == "vitest":
+        key = check
+        if check in {"vitest", "pytest"}:
             test_path = safe_repo_path(repo, target, must_exist=True)
-            command = ["pnpm", "exec", "vitest", "run", str(test_path.relative_to(repo))]
+            relative = str(test_path.relative_to(repo))
+            command = ["pnpm", "exec", "vitest", "run", relative] if check == "vitest" else ["python3", "-m", "pytest", relative, "-q"]
+            key = f"{check}:{relative}"
         elif check in allowed:
             command = allowed[check]
         else:
             raise ValueError("Check ist nicht freigegeben")
         result = self._run(command, cwd=repo)
-        metadata = self._read_metadata(workspace_id)
-        metadata.setdefault("checks", {})[check if check != "vitest" else f"vitest:{target}"] = {
-            "ok": result["ok"], "exit_code": result["exit_code"], "duration_ms": result["duration_ms"], "at": int(time.time())
-        }
-        self._write_metadata(workspace_id, metadata)
+        self._record_check(workspace_id, key, result)
         return result
 
     def _changed_files(self, repo: Path) -> list[str]:
@@ -243,10 +272,19 @@ class OperatorRuntime:
         files: list[str] = []
         for line in result["stdout"].splitlines():
             if len(line) >= 4:
-                files.append(line[3:].strip())
+                path = line[3:].strip()
+                if " -> " in path:
+                    path = path.split(" -> ", 1)[1]
+                files.append(path)
         return list(dict.fromkeys(files))
 
+    @staticmethod
+    def _has_successful_check(checks: dict[str, Any], prefix: str) -> bool:
+        return any(key.startswith(prefix) and bool(value.get("ok")) for key, value in checks.items() if isinstance(value, dict))
+
     def create_draft_pr(self, workspace_id: str, *, title: str, body: str, commit_message: str) -> dict[str, Any]:
+        if not title.strip() or not commit_message.strip():
+            raise ValueError("PR-Titel und Commit-Nachricht dürfen nicht leer sein")
         repo = self._repo(workspace_id)
         metadata = self._read_metadata(workspace_id)
         branch = validate_branch(metadata["branch"])
@@ -257,14 +295,27 @@ class OperatorRuntime:
         diff_check = self.run_check(workspace_id, "git_diff_check")
         if not diff_check["ok"]:
             raise RuntimeError("git diff --check ist fehlgeschlagen")
-        if any(path.endswith(".py") for path in changed):
-            compile_result = self.run_check(workspace_id, "backend_compile")
+
+        python_files = [path for path in changed if path.endswith(".py")]
+        if python_files:
+            compile_paths = [str(safe_repo_path(repo, path, must_exist=True).relative_to(repo)) for path in python_files]
+            compile_result = self._run(["python3", "-m", "py_compile", *compile_paths], cwd=repo)
+            self._record_check(workspace_id, "backend_compile:auto", compile_result)
             if not compile_result["ok"]:
-                raise RuntimeError("Backend-Compile-Check ist fehlgeschlagen")
-        if any(path.endswith((".ts", ".tsx")) for path in changed):
-            typecheck = self.run_check(workspace_id, "typecheck")
-            if not typecheck["ok"]:
-                raise RuntimeError("TypeScript-Typecheck ist fehlgeschlagen")
+                raise RuntimeError("Python-Compile-Check ist fehlgeschlagen")
+            checks = self._read_metadata(workspace_id).get("checks", {})
+            if not self._has_successful_check(checks, "pytest:"):
+                raise RuntimeError("Pythonänderungen benötigen mindestens einen erfolgreichen gezielten Pytest-Lauf")
+
+        frontend_files = [path for path in changed if path.endswith((".ts", ".tsx", ".js", ".jsx", ".css"))]
+        if frontend_files:
+            for required_check in ("typecheck", "audit", "build_web"):
+                result = self.run_check(workspace_id, required_check)
+                if not result["ok"]:
+                    raise RuntimeError(f"Frontend-Gate ist fehlgeschlagen: {required_check}")
+            checks = self._read_metadata(workspace_id).get("checks", {})
+            if not self._has_successful_check(checks, "vitest:"):
+                raise RuntimeError("UI-/TypeScript-Änderungen benötigen mindestens einen erfolgreichen gezielten Vitest-Lauf")
 
         add = self._run(["git", "add", "--all"], cwd=repo)
         commit = self._run(["git", "commit", "-m", commit_message[:200]], cwd=repo)
@@ -289,22 +340,7 @@ class OperatorRuntime:
         if response.status_code not in (200, 201):
             raise RuntimeError(f"Draft-PR konnte nicht erstellt werden: HTTP {response.status_code} {response.text[:1000]}")
         payload = response.json()
+        metadata = self._read_metadata(workspace_id)
         metadata["draft_pr"] = {"number": payload["number"], "url": payload["html_url"], "head_sha": payload["head"]["sha"]}
         self._write_metadata(workspace_id, metadata)
-        return {"draft": True, "number": payload["number"], "url": payload["html_url"], "branch": branch, "changed_files": changed}
-
-    def container_status(self, container: str) -> dict[str, Any]:
-        container = validate_container(container, self.config.allowed_containers)
-        result = self._run(
-            ["docker", "inspect", "--format", "{{json .State}}", container],
-            cwd=self.config.workspace_root,
-            timeout=30,
-        )
-        if not result["ok"]:
-            return {"ok": False, "container": container, "error": result["stderr"]}
-        return {"ok": True, "container": container, "state": json.loads(result["stdout"])}
-
-    def container_logs(self, container: str, tail: int = 200) -> dict[str, Any]:
-        container = validate_container(container, self.config.allowed_containers)
-        result = self._run(["docker", "logs", "--tail", str(max(1, min(tail, 1000))), container], cwd=self.config.workspace_root, timeout=60)
-        return {"ok": result["ok"], "container": container, "stdout": result["stdout"], "stderr": result["stderr"]}
+        return {"draft": True, "number": payload["number"], "url": payload["html_url"], "branch": branch, "changed_files": changed, "checks": metadata.get("checks", {})}
