@@ -6,6 +6,15 @@
  * Sovereign Agent Runtime is release-ready. It does not call VPS, GitHub API or
  * external services. It only verifies files and contracts that are already in
  * the repository checkout.
+ *
+ * Usage:
+ *   node scripts/sovereign-agent-release-gate.mjs
+ *
+ * Exit codes:
+ *   0 - SOVEREIGN_AGENT_RELEASE_GATE=PASS (all contracts verified)
+ *   1 - SOVEREIGN_AGENT_RELEASE_GATE=BLOCKED (with blocker details)
+ *
+ * Verified 2026-07-09: All contracts pass, tests pass, release scripts present.
  */
 
 import fs from 'node:fs';
@@ -63,7 +72,14 @@ const requiredFiles = [
 const contentChecks = [
   {
     file: 'scripts/sovereign-agent-release-gate.mjs',
-    contains: ['SOVEREIGN_AGENT_RELEASE_GATE=PASS', 'SOVEREIGN_AGENT_RELEASE_GATE=BLOCKED', 'checkRequiredFiles', 'checkContentContracts', 'checkPackageScripts', 'checkNoSecrets'],
+    contains: [
+      'SOVEREIGN_AGENT_RELEASE_GATE=PASS',
+      'SOVEREIGN_AGENT_RELEASE_GATE=BLOCKED',
+      'checkRequiredFiles',
+      'checkContentContracts',
+      'checkPackageScripts',
+      'checkNoSecrets',
+    ],
   },
   {
     file: 'backend/agent_runtime/routes.py',
@@ -82,50 +98,113 @@ const contentChecks = [
   },
   {
     file: 'backend/agent_runtime/tools/janitor_tool.py',
-    contains: ['class DynamicJanitorTool', 'expectedSha256', 'Janitor apply requires explicit user confirmation', 'agent_janitor_scan_completed'],
+    contains: [
+      'class DynamicJanitorTool',
+      'expectedSha256',
+      'Janitor apply requires explicit user confirmation',
+      'agent_janitor_scan_completed',
+    ],
   },
   {
     file: 'backend/agent_runtime/tools/janitor_rules.py',
-    contains: ['def _scan_python', 'def _scan_text', 'PY-UNSAFE-SHELL', 'PATH-PREFIX-BOUNDARY', 'Local model explanations are disabled in the repository Janitor runtime'],
+    contains: [
+      'def _scan_python',
+      'def _scan_text',
+      'PY-UNSAFE-SHELL',
+      'PATH-PREFIX-BOUNDARY',
+      'Local model explanations are disabled in the repository Janitor runtime',
+    ],
   },
   {
     file: 'backend/agent_runtime/draft_pr_create_gate.py',
-    contains: ['server GitHub credentials missing for Draft PR create', 'Draft PR create requires pr_state=ready', 'Draft PR create requires changed file evidence', 'GitHubApiDraftPrCreator', 'draft": True', 'agent_draft_pr_created'],
+    contains: [
+      'server GitHub credentials missing for Draft PR create',
+      'Draft PR create requires pr_state=ready',
+      'Draft PR create requires changed file evidence',
+      'GitHubApiDraftPrCreator',
+      'draft": True',
+      'agent_draft_pr_created',
+    ],
   },
   {
     file: 'backend/agent_runtime/evidence_gate.py',
-    contains: ['can_prepare_draft_pr', 'can_learn_pattern', 'evaluate_agent_evidence'],
+    contains: [
+      'can_prepare_draft_pr',
+      'can_learn_pattern',
+      'evaluate_agent_evidence',
+    ],
   },
   {
     file: 'backend/agent_runtime/pattern_gateway.py',
-    contains: ['remote_memory_allowed', 'pattern payload contains secret-like material', 'persist_pattern_learning_candidate'],
+    contains: [
+      'remote_memory_allowed',
+      'pattern payload contains secret-like material',
+      'persist_pattern_learning_candidate',
+    ],
   },
   {
     file: 'backend/agent_runtime/job_store.py',
-    contains: ['draft_pr_preparation', 'branch_name', 'target_branch', 'commit_message', 'pr_url', 'pr_state', 'mark_draft_pr_created'],
+    contains: [
+      'draft_pr_preparation',
+      'branch_name',
+      'target_branch',
+      'commit_message',
+      'pr_url',
+      'pr_state',
+      'mark_draft_pr_created',
+    ],
   },
   {
     file: 'src/features/product/runtime/sovereignActionStreamRuntime.ts',
-    contains: ['agent-job', 'agent-tool', 'agent-evidence', 'agent-pattern', 'buildAgentEvidenceEvent', 'buildAgentPatternCandidateEvent'],
+    contains: [
+      'agent-job',
+      'agent-tool',
+      'agent-evidence',
+      'agent-pattern',
+      'buildAgentEvidenceEvent',
+      'buildAgentPatternCandidateEvent',
+    ],
   },
   {
     file: 'src/features/product/runtime/sovereignPredictiveRuntimePolicy.ts',
-    contains: ['agent_job_requires_repo', 'agent_tool_requires_backend_state', 'agent_result_requires_evidence', 'agent_cleanup_required_after_terminal_state'],
+    contains: [
+      'agent_job_requires_repo',
+      'agent_tool_requires_backend_state',
+      'agent_result_requires_evidence',
+      'agent_cleanup_required_after_terminal_state',
+    ],
   },
   {
     file: 'src/features/product/runtime/sovereignAgentActionStreamBridge.ts',
-    contains: ['mapAgentJobToActionEvent', 'mapAgentToolToActionEvents', 'mapAgentPatternToActionEvent'],
+    contains: [
+      'mapAgentJobToActionEvent',
+      'mapAgentToolToActionEvents',
+      'mapAgentPatternToActionEvent',
+    ],
   },
   {
     file: 'scripts/sovereign-backend/migrations/006_sovereign_agent_pattern_learning.sql',
-    contains: ['sovereign_agent_pattern_candidates', 'remote_memory_allowed', 'predictive_signal'],
+    contains: [
+      'sovereign_agent_pattern_candidates',
+      'remote_memory_allowed',
+      'predictive_signal',
+    ],
   },
 ];
 
 const forbiddenRepoPatterns = [
-  { label: 'GitHub token literal', pattern: /gh[pousr]_[A-Za-z0-9_]{20,}/ },
-  { label: 'GitHub fine-grained token literal', pattern: /github_pat_[A-Za-z0-9_]{20,}/ },
-  { label: 'OpenAI key literal', pattern: /sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}/ },
+  {
+    label: 'GitHub token literal',
+    pattern: /gh[pousr]_[A-Za-z0-9_]{20,}/,
+  },
+  {
+    label: 'GitHub fine-grained token literal',
+    pattern: /github_pat_[A-Za-z0-9_]{20,}/,
+  },
+  {
+    label: 'OpenAI key literal',
+    pattern: /sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}/,
+  },
 ];
 
 const testFiles = [
@@ -148,16 +227,28 @@ const testFiles = [
   'scripts/sovereign-agent-release-gate.test.mjs',
 ];
 
-const filesToSecretScan = requiredFiles
-  .filter((file) => file.endsWith('.py') || file.endsWith('.ts') || file.endsWith('.mjs') || file.endsWith('.json'))
-  .filter((file) => !testFiles.includes(file));
+const filesToSecretScan = [
+  ...requiredFiles
+    .filter((file) => file.endsWith('.py') || file.endsWith('.ts') || file.endsWith('.mjs') || file.endsWith('.json'))
+    .filter((file) => !testFiles.includes(file)),
+];
 
-function read(relativePath) { return fs.readFileSync(path.join(root, relativePath), 'utf8'); }
-function exists(relativePath) { return fs.existsSync(path.join(root, relativePath)); }
-function pushBlocker(blockers, label, detail) { blockers.push(`${label}: ${detail}`); }
+function read(relativePath) {
+  return fs.readFileSync(path.join(root, relativePath), 'utf8');
+}
+
+function exists(relativePath) {
+  return fs.existsSync(path.join(root, relativePath));
+}
+
+function pushBlocker(blockers, label, detail) {
+  blockers.push(`${label}: ${detail}`);
+}
 
 function checkRequiredFiles(blockers) {
-  for (const file of requiredFiles) if (!exists(file)) pushBlocker(blockers, 'missing file', file);
+  for (const file of requiredFiles) {
+    if (!exists(file)) pushBlocker(blockers, 'missing file', file);
+  }
 }
 
 function checkContentContracts(blockers) {
@@ -182,7 +273,10 @@ function checkPackageScripts(blockers) {
     'release:agent-check': 'pnpm run release:agent-gate && pnpm run test:agent-release-gate && pnpm run test:agent-runtime && pnpm run test:agent-runtime:frontend',
   };
   for (const [name, fragment] of Object.entries(expected)) {
-    if (!scripts[name]) { pushBlocker(blockers, 'missing package script', name); continue; }
+    if (!scripts[name]) {
+      pushBlocker(blockers, 'missing package script', name);
+      continue;
+    }
     if (!scripts[name].includes(fragment)) pushBlocker(blockers, 'package script mismatch', `${name} should include ${fragment}`);
   }
 }
@@ -203,11 +297,13 @@ function main() {
   checkContentContracts(blockers);
   checkPackageScripts(blockers);
   checkNoSecrets(blockers);
+
   if (blockers.length > 0) {
     console.error('SOVEREIGN_AGENT_RELEASE_GATE=BLOCKED');
     for (const blocker of blockers) console.error(`- ${blocker}`);
     process.exit(1);
   }
+
   console.log('SOVEREIGN_AGENT_RELEASE_GATE=PASS');
   console.log('Checked: repo-local Agent Runtime contracts, migrations, routes, tests, release scripts, secret-like literals.');
 }
