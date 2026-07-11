@@ -8,7 +8,13 @@ import process from 'node:process';
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
 const templatePath = path.resolve(root, process.env.VPS_EVIDENCE_TEMPLATE ?? 'config/vps-evidence-template.json');
-const outputPath = path.resolve(root, process.env.VPS_EVIDENCE_OUTPUT ?? 'runtime-evidence/vps-evidence.json');
+const outputPathInput = process.env.VPS_EVIDENCE_OUTPUT ?? 'runtime-evidence/vps-evidence.json';
+const resolvedOutputPath = path.resolve(root, outputPathInput);
+const outputPathRelative = path.relative(root, resolvedOutputPath);
+if (outputPathRelative.startsWith('..') || path.isAbsolute(outputPathRelative)) {
+  throw new Error(`VPS_EVIDENCE_OUTPUT must resolve within project root: ${root}`);
+}
+const outputPath = resolvedOutputPath;
 const timeoutMs = Number(process.env.VPS_EVIDENCE_TIMEOUT_MS ?? 10000);
 const allowedHttpHosts = new Set(
   String(process.env.VPS_EVIDENCE_ALLOWED_HTTP_HOSTS ?? '')
