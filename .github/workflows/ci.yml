@@ -183,7 +183,7 @@ jobs:
       with:
         python-version: '3.11'
     - name: Install Dependencies
-      run: pip install pytest flask cryptography pyjwt psycopg2-binary -q
+      run: python -m pip install -r scripts/sovereign-backend/requirements.txt pytest -q
     - name: Compile Check
       run: |
         cd backend

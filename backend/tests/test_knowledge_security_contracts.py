@@ -161,6 +161,7 @@ def test_migration_and_image_build_contain_live_contracts() -> None:
     dockerfile = read(DEPLOY / "Dockerfile")
     requirements = read(DEPLOY / "requirements.txt")
     workflow = read(ROOT / ".github/workflows/sovereign-backend-image.yml")
+    ci_workflow = read(ROOT / ".github/workflows/ci.yml")
 
     assert "knowledge_blocks" in migration
     assert "embedding vector(768)" in migration
@@ -174,8 +175,10 @@ def test_migration_and_image_build_contain_live_contracts() -> None:
     assert "COPY are_inference.py" in dockerfile
     assert "webauthn>=2.7.0,<3" in requirements
     assert "pypdf>=5.0.0,<6" in requirements
+    assert "requests>=2.31.0" in requirements
     assert "security_runtime.py" in workflow
     assert "are_inference.py" in workflow
+    assert "python -m pip install -r scripts/sovereign-backend/requirements.txt pytest -q" in ci_workflow
 
 
 def test_payment_and_credit_security_are_server_authoritative() -> None:
