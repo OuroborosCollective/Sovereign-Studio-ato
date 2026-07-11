@@ -32,6 +32,7 @@ describe('sovereignInternalOperatorRuntime', () => {
     expect(decision.route).toBe('direct_patch');
     expect(decision.nextAction).toBe('run_direct_patch');
     expect(decision.stages).toContain('diff_guard');
+    expect(decision.stages).toContain('draft_pr_gate');
   });
 
   it('prefers the own workspace before the optional Sovereign Agent bridge', () => {
@@ -47,7 +48,7 @@ describe('sovereignInternalOperatorRuntime', () => {
     expect(decision.stages).toContain('test_selection');
   });
 
-  it('falls back to the internal runtime patch path when Sovereign Agent and workspace are absent', () => {
+  it('blocks when no evidence-backed patch executor route exists', () => {
     const decision = decideSovereignInternalOperator({
       text: 'Baue den internen Operator ein und teste die Route',
       capabilities: capabilities({
@@ -58,11 +59,11 @@ describe('sovereignInternalOperatorRuntime', () => {
       traceIdProvider: () => 'test-internal',
     });
 
-    expect(decision.state).toBe('allowed');
-    expect(decision.route).toBe('internal_runtime_patch');
-    expect(decision.nextAction).toBe('run_internal_operator');
-    expect(decision.reason).toContain('ohne Sovereign Agent-Pflicht');
-    expect(decision.stages).toContain('draft_pr_gate');
+    expect(decision.state).toBe('blocked');
+    expect(decision.route).toBe('blocked');
+    expect(decision.nextAction).toBe('show_blocker');
+    expect(decision.reason).toContain('Keine sichere interne Operator-Route');
+    expect(decision.stages).toEqual([]);
   });
 
   it('blocks hard when repo or write access is not ready', () => {
@@ -97,8 +98,9 @@ describe('sovereignInternalOperatorRuntime', () => {
       traceIdProvider: () => 'test-learning',
     });
 
-    expect(decision.route).toBe('internal_runtime_patch');
-    expect(decision.learningDelta).toBeGreaterThan(0);
-    expect(decision.confidence).toBeGreaterThan(0.78);
+    expect(decision.state).toBe('blocked');
+    expect(decision.route).toBe('blocked');
+    expect(decision.learningDelta).toBe(0);
+    expect(decision.confidence).toBe(0);
   });
 });

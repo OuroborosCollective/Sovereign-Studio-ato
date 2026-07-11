@@ -23,11 +23,11 @@ export interface SovereignExecutorBridgeDecision {
   readonly internalOperatorStages?: readonly string[];
 }
 
-function internalOperatorEvent(reason: string, state: 'running' | 'blocked'): SovereignActionEventInput {
+function internalOperatorEvent(reason: string, state: 'queued' | 'blocked'): SovereignActionEventInput {
   return {
     route: 'toolchain',
-    kind: state === 'running' ? 'executor_started' : 'blocked',
-    label: state === 'running' ? 'Interner Sovereign Operator gewählt' : 'Interner Sovereign Operator blockiert',
+    kind: state === 'queued' ? 'route_selected' : 'blocked',
+    label: state === 'queued' ? 'Interner Sovereign Operator eingeplant' : 'Interner Sovereign Operator blockiert',
     detail: reason,
     state,
   };
@@ -93,7 +93,7 @@ export function decideSovereignExecutorBridgeRoute(
     state: 'allowed',
     reason: operatorDecision.reason,
     nextAction: operatorDecision.nextAction,
-    event: internalOperatorEvent(operatorDecision.reason, 'running'),
+    event: internalOperatorEvent(operatorDecision.reason, 'queued'),
     internalOperatorRoute: operatorDecision.route,
     internalOperatorConfidence: operatorDecision.confidence,
     internalOperatorStages: operatorDecision.stages,

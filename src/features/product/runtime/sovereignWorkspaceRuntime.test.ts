@@ -105,8 +105,8 @@ describe('SovereignWorkspaceRuntime', () => {
       const result = await runtime.requestWorkspace(request);
 
       expect(result.status).toBe('blocked');
-      // Without adapter, executor is unavailable
-      expect(result.blocker).toBe('executor_unavailable');
+      // The first causal policy blocker must remain stable.
+      expect(result.blocker).toBe('workspace_required');
     });
 
     it('should execute workspace when executor available and policy allows', async () => {
@@ -145,6 +145,61 @@ describe('SovereignWorkspaceRuntime', () => {
       // Note: Mock adapter doesn't actually create draft PR, so this passes
       // In real adapter, this would be blocked
     });
+
+    it('stores policy-blocked changed-file evidence as the completed runtime result', async () => {
+      const adapter: WorkspaceAdapter = {
+        id: 'violating-adapter',
+        label: 'Violating Adapter',
+        supportedPurposes: ['patch'],
+        isAvailable: async () => true,
+        execute: async (request) => ({
+          jobId: request.jobId,
+          status: 'completed',
+          events: [],
+          changedFiles: ['outside/forbidden.ts'],
+        }),
+        cleanup: async () => undefined,
+      };
+      runtime.registerAdapter(adapter);
+
+      const result = await runtime.requestWorkspace(validRequest);
+      const stored = runtime.getJobStatus(validRequest.jobId);
+
+      expect(result.status).toBe('blocked');
+      expect(stored.completed).toBe(true);
+      expect(stored.result).toEqual(result);
+    });
+
+    it('stores unauthorized Draft-PR evidence as the completed runtime result', async () => {
+      const adapter: WorkspaceAdapter = {
+        id: 'draft-pr-adapter',
+        label: 'Draft PR Adapter',
+        supportedPurposes: ['draft_pr'],
+        isAvailable: async () => true,
+        execute: async (request) => ({
+          jobId: request.jobId,
+          status: 'completed',
+          events: [],
+          changedFiles: [],
+          draftPrUrl: 'https://github.com/test/repo/pull/1',
+        }),
+        cleanup: async () => undefined,
+      };
+      runtime.registerAdapter(adapter);
+
+      const request = {
+        ...validRequest,
+        purpose: 'draft_pr' as WorkspacePurpose,
+        allowDraftPr: false,
+      };
+      const result = await runtime.requestWorkspace(request);
+      const stored = runtime.getJobStatus(request.jobId);
+
+      expect(result.status).toBe('blocked');
+      expect(result.draftPrUrl).toBeUndefined();
+      expect(stored.completed).toBe(true);
+      expect(stored.result).toEqual(result);
+    });
   });
 
   describe('routing decisions', () => {
@@ -158,7 +213,6 @@ describe('SovereignWorkspaceRuntime', () => {
     });
 
     it('should route complex tasks to isolated-workspace', () => {
-      // Without adapter, executor_gate will block with executor_unavailable
       const decision = runtime.makeRoutingDecision({
         repoUrl: 'https://github.com/test/repo',
         baseBranch: 'main',
@@ -166,8 +220,7 @@ describe('SovereignWorkspaceRuntime', () => {
         targetPaths: ['src/auth/login.ts'],
       });
 
-      // Without adapter, executor unavailable
-      expect(decision.blocker).toBe('executor_unavailable');
+      expect(decision.blocker).toBe('workspace_required');
     });
 
     it('should route small doc patches to direct-github-patch', () => {
@@ -191,6 +244,20 @@ describe('SovereignWorkspaceRuntime', () => {
 
       expect(decision.route).toBe('snapshot-analysis');
       expect(decision.capability).toBe('repo_read');
+      expect(decision.nextAction).toBe('snapshot_only');
+    });
+
+    it('keeps a blocking route aligned with a blocking next action', () => {
+      const decision = runtime.makeRoutingDecision({
+        repoUrl: 'https://github.com/test/repo',
+        baseBranch: 'main',
+        mission: 'Implement new feature in src/core',
+        targetPaths: ['src/core/index.ts'],
+      });
+
+      expect(decision.allowed).toBe(false);
+      expect(decision.blocker).toBeDefined();
+      expect(decision.nextAction).toBe('block');
     });
 
     it('should block when no executor for workspace-required task', () => {
@@ -202,8 +269,7 @@ describe('SovereignWorkspaceRuntime', () => {
       });
 
       expect(decision.allowed).toBe(false);
-      // Without adapter, executor unavailable
-      expect(decision.blocker).toBe('executor_unavailable');
+      expect(decision.blocker).toBe('workspace_required');
     });
   });
 
@@ -570,7 +636,7 @@ describe('Acceptance Criteria from Issue #503', () => {
       targetPaths: ['src/core/index.ts'],
     });
     expect(decisionNoAdapter.allowed).toBe(false);
-    expect(decisionNoAdapter.blocker).toBe('executor_unavailable');
+    expect(decisionNoAdapter.blocker).toBe('workspace_required');
 
     // With adapter, workspace should be allowed
     const adapter = createMockWorkspaceAdapter('code-agent', 'Code Agent');
