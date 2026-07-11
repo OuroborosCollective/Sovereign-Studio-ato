@@ -12,6 +12,7 @@ import { createLlmCache } from './llmCache';
 
 export interface LlmWorkerCacheConfig {
   workerUrl?: string;        // Cloudflare Worker URL (e.g., https://llm-cache.yourdomain.workers.dev)
+  apiKey?: string;           // Optional: API key for the Cloudflare Worker
   localCacheTtlMs?: number; // Local cache TTL when worker is unavailable
   maxLocalEntries?: number;  // Max local cache entries
 }
@@ -39,6 +40,14 @@ export function createLlmWorkerCache(
   let lastWorkerCheck = 0;
   const WORKER_CHECK_INTERVAL = 60 * 1000; // 1 minute
 
+  function getWorkerHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (config.apiKey) {
+      headers['Authorization'] = `Bearer ${config.apiKey}`;
+    }
+    return headers;
+  }
+
   async function checkWorkerHealth(): Promise<boolean> {
     if (!config.workerUrl) return false;
     if (Date.now() - lastWorkerCheck < WORKER_CHECK_INTERVAL) return workerAvailable;
@@ -46,6 +55,7 @@ export function createLlmWorkerCache(
     try {
       const response = await fetch(`${config.workerUrl}/health`, {
         method: 'GET',
+        headers: getWorkerHeaders(),
         signal: AbortSignal.timeout(3000),
       });
       workerAvailable = response.ok;
@@ -67,6 +77,7 @@ export function createLlmWorkerCache(
       try {
         const response = await fetch(`${config.workerUrl}/cache/${key}`, {
           method: 'GET',
+          headers: getWorkerHeaders(),
           signal: AbortSignal.timeout(5000),
         });
         if (response.ok) return response;
@@ -84,7 +95,10 @@ export function createLlmWorkerCache(
       try {
         const response = await fetch(`${config.workerUrl}/cache/${key}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            ...getWorkerHeaders(),
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify(value),
           signal: AbortSignal.timeout(5000),
         });
@@ -102,6 +116,7 @@ export function createLlmWorkerCache(
       try {
         const response = await fetch(`${config.workerUrl}/cache/${key}`, {
           method: 'DELETE',
+          headers: getWorkerHeaders(),
           signal: AbortSignal.timeout(5000),
         });
         return response.ok;
