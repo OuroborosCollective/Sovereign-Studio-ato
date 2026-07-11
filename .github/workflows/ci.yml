@@ -45,24 +45,19 @@ jobs:
         node-version: 22
     - name: Install pnpm
       shell: bash
-      run: 'npm install -g pnpm@${PNPM_VERSION}
-
+      run: |
+        npm install -g pnpm@${PNPM_VERSION}
         pnpm --version
-
-        '
     - name: Get pnpm store directory
       shell: bash
-      run: 'echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-        '
+      run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
     - name: Cache pnpm modules
       uses: actions/cache@v4
       with:
         path: ${{ env.STORE_PATH }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: '${{ runner.os }}-pnpm-store-
-
-          '
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
     - name: Install Dependencies
       run: pnpm install
     - name: Type Check
@@ -92,24 +87,15 @@ jobs:
       with:
         python-version: '3.11'
     - name: Install Dependencies
-      run: 'pip install pytest cryptography pyjwt psycopg2-binary flask flask-cors
-        requests -q
-
-        '
+      run: pip install pytest cryptography pyjwt psycopg2-binary flask flask-cors requests -q
     - name: Run Live-Path OAuth Security Tests
-      run: 'cd backend
-
-        # Live-Path Tests (importieren security_oauth.py)
-
+      run: |
+        cd backend
         python -m pytest tests/test_oauth_security.py -v
-
-        '
     - name: Run App OAuth Contract Tests
-      run: 'cd backend
-
+      run: |
+        cd backend
         python -m pytest tests/test_oauth_contract.py -v
-
-        '
   android-build:
     name: Android Build Verification
     needs: quality-gate
@@ -125,24 +111,19 @@ jobs:
         node-version: 22
     - name: Install pnpm
       shell: bash
-      run: 'npm install -g pnpm@${PNPM_VERSION}
-
+      run: |
+        npm install -g pnpm@${PNPM_VERSION}
         pnpm --version
-
-        '
     - name: Get pnpm store directory
       shell: bash
-      run: 'echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-        '
+      run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
     - name: Cache pnpm modules
       uses: actions/cache@v4
       with:
         path: ${{ env.STORE_PATH }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: '${{ runner.os }}-pnpm-store-
-
-          '
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
     - name: Install Dependencies
       run: pnpm install
     - name: Download Web Build Artifact
@@ -159,13 +140,10 @@ jobs:
     - name: Capacitor Sync
       run: npx cap sync android
     - name: Build Android Debug APK
-      run: 'cd android
-
+      run: |
+        cd android
         chmod +x gradlew
-
         ./gradlew assembleDebug --stacktrace
-
-        '
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
@@ -185,17 +163,13 @@ jobs:
         node-version: 22
     - name: Install pnpm
       shell: bash
-      run: 'npm install -g pnpm@${PNPM_VERSION}
-
+      run: |
+        npm install -g pnpm@${PNPM_VERSION}
         pnpm --version
-
-        '
     - name: Run audit
-      run: 'pnpm audit --audit-level=moderate || true
-
+      run: |
+        pnpm audit --audit-level=moderate || true
         echo "Security audit completed (warnings above do not block merging)"
-
-        '
   sovereign-agent-tests:
     name: Sovereign Agent Runtime Tests
     runs-on: ubuntu-latest
@@ -211,18 +185,47 @@ jobs:
     - name: Install Dependencies
       run: pip install pytest flask cryptography pyjwt psycopg2-binary -q
     - name: Compile Check
-      run: "cd backend\npython -m py_compile \\\n  agent_runtime/routes.py \\\n  agent_runtime/tool_runner.py\
-        \ \\\n  agent_runtime/tool_events.py \\\n  agent_runtime/mcp_integration.py\
-        \ \\\n  agent_runtime/agent_tool_creator.py \\\n  agent_runtime/contracts.py\
-        \ \\\n  agent_runtime/job_lifecycle.py \\\n  agent_runtime/job_store.py \\\
-        \n  agent_runtime/workspace.py \\\n  agent_runtime/workspace_policy.py \\\n\
-        \  agent_runtime/tools/base.py \\\n  agent_runtime/tools/file_tool.py \\\n\
-        \  agent_runtime/tools/shell_tool.py \\\n  agent_runtime/tools/git_tool.py\
-        \ \\\n  agent_runtime/tools/diff_tool.py \\\n  agent_runtime/tools/test_tool.py"
+      run: |
+        cd backend
+        python -m py_compile \
+          agent_runtime/routes.py \
+          agent_runtime/tool_runner.py \
+          agent_runtime/tool_events.py \
+          agent_runtime/event_mapping_compat.py \
+          agent_runtime/mcp_integration.py \
+          agent_runtime/agent_tool_creator.py \
+          agent_runtime/contracts.py \
+          agent_runtime/job_lifecycle.py \
+          agent_runtime/job_store.py \
+          agent_runtime/workspace.py \
+          agent_runtime/workspace_policy.py \
+          agent_runtime/tools/base.py \
+          agent_runtime/tools/file_tool.py \
+          agent_runtime/tools/shell_tool.py \
+          agent_runtime/tools/git_tool.py \
+          agent_runtime/tools/diff_tool.py \
+          agent_runtime/tools/test_tool.py
     - name: Run Agent Tests
-      run: "cd backend\npython -m pytest \\\n  tests/test_agent_job_contract.py \\\
-        \n  tests/test_agent_workspace_provisioner.py \\\n  tests/test_agent_job_lifecycle.py\
-        \ \\\n  tests/test_agent_runtime_routes.py \\\n  tests/test_agent_tool_policy.py\
-        \ \\\n  tests/test_agent_internal_tools.py \\\n  tests/test_agent_tool_routes.py\
-        \ \\\n  tests/test_agent_mcp_integration.py \\\n  tests/test_agent_tool_creator.py\
-        \ -v"
+      run: |
+        cd backend
+        python -m pytest \
+          tests/test_agent_job_contract.py \
+          tests/test_agent_workspace_provisioner.py \
+          tests/test_agent_job_lifecycle.py \
+          tests/test_agent_runtime_routes.py \
+          tests/test_agent_tool_policy.py \
+          tests/test_agent_internal_tools.py \
+          tests/test_agent_tool_routes.py \
+          tests/test_agent_mcp_integration.py \
+          tests/test_agent_tool_creator.py \
+          tests/test_agent_event_mapping_compat.py \
+          -v \
+          --junitxml=agent-test-results.xml
+    - name: Upload Agent Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: sovereign-agent-test-results-${{ github.run_attempt }}
+        path: backend/agent-test-results.xml
+        if-no-files-found: error
+        retention-days: 3

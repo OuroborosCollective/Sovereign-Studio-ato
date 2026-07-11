@@ -13,6 +13,8 @@ TUNNEL_ENV="$INSTALL_ROOT/tunnel.env"
 BROKER_ENV="$INSTALL_ROOT/broker.env"
 BROKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-broker.service"
 TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
+MCP_UID="10001"
+MCP_GID="10001"
 
 fail() {
   printf 'install blocked: %s\n' "$*" >&2
@@ -33,7 +35,10 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -S /var/run/docker.sock ]] || fail "docker socket is missing"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$WORKSPACE_DIR"
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR"
+install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
+chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
+chmod 0770 "$WORKSPACE_DIR"
 
 for file in Dockerfile requirements.txt policy.py runtime.py database.py broker_client.py server.py docker-compose.yml; do
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
@@ -114,6 +119,7 @@ docker compose up -d --build
 
 docker inspect sovereign-chatgpt-mcp >/dev/null
 docker exec sovereign-chatgpt-mcp python -c 'import server; assert server.mcp is not None'
+docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
 
 if [[ -f "$TUNNEL_ENV" ]] \
   && grep -Eq '^OPENAI_TUNNEL_ID=tunnel_.+' "$TUNNEL_ENV" \
@@ -123,4 +129,4 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp"}\n'
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true}\n'

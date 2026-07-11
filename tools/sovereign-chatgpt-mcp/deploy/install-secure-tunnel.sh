@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 INSTALL_ROOT="/opt/sovereign-chatgpt-tools"
 TUNNEL_ENV="${TUNNEL_ENV:-$INSTALL_ROOT/tunnel.env}"
-TUNNEL_HOME="$INSTALL_ROOT/tunnel-home"
+TUNNEL_HOME="/var/lib/sovereign-tunnel"
 BINARY="/usr/local/bin/tunnel-client"
 
 fail() {
@@ -26,6 +26,7 @@ run_as_tunnel_user() {
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root"
 [[ -f "$TUNNEL_ENV" ]] || fail "missing $TUNNEL_ENV"
 chmod 0600 "$TUNNEL_ENV"
+chown root:root "$TUNNEL_ENV"
 
 OPENAI_TUNNEL_ID="$(read_value OPENAI_TUNNEL_ID)"
 CONTROL_PLANE_API_KEY="$(read_value CONTROL_PLANE_API_KEY)"
@@ -110,6 +111,7 @@ PY
 fi
 
 getent passwd sovereign-tunnel >/dev/null 2>&1 || useradd --system --home-dir "$TUNNEL_HOME" --shell /usr/sbin/nologin sovereign-tunnel
+usermod --home "$TUNNEL_HOME" sovereign-tunnel
 install -d -m 0750 -o sovereign-tunnel -g sovereign-tunnel "$TUNNEL_HOME"
 
 FINGERPRINT="$(printf '%s|%s|%s' "$OPENAI_TUNNEL_ID" "$TUNNEL_PROFILE" "$TUNNEL_MCP_SERVER_URL" | sha256sum | cut -d' ' -f1)"
@@ -134,5 +136,5 @@ systemctl is-active --quiet sovereign-openai-tunnel.service || {
   fail "tunnel service is not active"
 }
 
-printf '{"ok":true,"tunnel_id":"%s","profile":"%s","mcp_server":"%s"}\n' \
-  "$OPENAI_TUNNEL_ID" "$TUNNEL_PROFILE" "$TUNNEL_MCP_SERVER_URL"
+printf '{"ok":true,"tunnel_id":"%s","profile":"%s","mcp_server":"%s","state_dir":"%s"}\n' \
+  "$OPENAI_TUNNEL_ID" "$TUNNEL_PROFILE" "$TUNNEL_MCP_SERVER_URL" "$TUNNEL_HOME"
