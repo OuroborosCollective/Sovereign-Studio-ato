@@ -7,7 +7,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates \
-       docker.io \
        git \
        python3 \
        python3-pip \
@@ -20,7 +19,7 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY policy.py runtime.py database.py operations.py server.py /app/
+COPY policy.py runtime.py database.py broker_client.py server.py /app/
 
 RUN useradd --create-home --uid 10001 sovereign \
     && mkdir -p /opt/sovereign-chatgpt-tools/workspaces \
