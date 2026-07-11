@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
 from runtime import OperatorRuntime
+from self_heal import REPAIR_ENGINE
 
 
 def _host() -> str:
@@ -28,6 +29,7 @@ mcp = FastMCP(
         "Arbeite ausschließlich im erlaubten Sovereign-Repository. Bereite zuerst einen isolierten Workspace vor. "
         "Nutze exakte Search/Replace-Patches für bestehende Dateien, besonders große Live-Dateien. "
         "Installiere Abhängigkeiten reproduzierbar, führe passende Checks aus und erstelle höchstens einen Draft-PR. "
+        "Nutze die interne Fehlerfamilien-Diagnose und nur policy-erlaubte, begrenzte Reparaturen. "
         "Niemals direkt main ändern, nie mergen, keine Secrets lesen oder ausgeben. Produktions-Deploys und DB-Writes "
         "nur nach aktueller ausdrücklicher Bestätigung."
     ),
@@ -106,6 +108,12 @@ def repository_create_draft_pr(
 ) -> dict[str, Any]:
     """Verify, commit and push workspace changes, then create a Draft PR. Never merges or writes to main."""
     return runtime.create_draft_pr(workspace_id, title=title, body=body, commit_message=commit_message)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
+    """Classify bounded runtime evidence and return only the policy-allowed repair workflow."""
+    return REPAIR_ENGINE.diagnose(evidence)
 
 
 @mcp.tool(annotations=READ_ONLY)
