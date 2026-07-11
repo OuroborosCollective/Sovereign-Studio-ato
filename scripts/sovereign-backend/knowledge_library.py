@@ -730,3 +730,118 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
             })
         finally:
             _close(conn)
+
+
+def register_admin_knowledge_routes(
+    app: Any,
+    *,
+    require_admin: Callable,
+    get_connection: ConnectionFactory,
+    get_admin_user_id: Callable[[], str],
+) -> None:
+    """Expose the persistent knowledge runtime to an authenticated admin."""
+
+    def admin_user_id() -> str:
+        value = str(get_admin_user_id() or "").strip()
+        if not value:
+            raise RuntimeError("Authenticated admin has no persistent user id")
+        return value
+
+    @app.route("/api/admin/knowledge/sources", methods=["GET"])
+    @require_admin
+    def admin_knowledge_sources_list():
+        conn = get_connection()
+        try:
+            return jsonify({"sources": _source_rows(conn, admin_user_id())})
+        finally:
+            _close(conn)
+
+    @app.route("/api/admin/knowledge/sources/url", methods=["POST"])
+    @require_admin
+    def admin_knowledge_source_url():
+        body = request.get_json(force=True) or {}
+        try:
+            document = fetch_url_document(str(body.get("url") or ""))
+            conn = get_connection()
+            try:
+                result = _insert_document(conn, admin_user_id(), document)
+            finally:
+                _close(conn)
+            return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
+        except (ValueError, RuntimeError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+
+    @app.route("/api/admin/knowledge/sources/upload", methods=["POST"])
+    @require_admin
+    def admin_knowledge_source_upload():
+        uploaded = request.files.get("file")
+        if uploaded is None:
+            return jsonify({"ok": False, "error": "file is required"}), 400
+        try:
+            payload = uploaded.stream.read(MAX_UPLOAD_BYTES + 1)
+            document = upload_document(uploaded.filename or "upload.txt", payload)
+            conn = get_connection()
+            try:
+                result = _insert_document(conn, admin_user_id(), document)
+            finally:
+                _close(conn)
+            return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
+        except (ValueError, RuntimeError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+
+    @app.route("/api/admin/knowledge/sources/<source_id>", methods=["DELETE"])
+    @require_admin
+    def admin_knowledge_source_delete(source_id: str):
+        user_id = admin_user_id()
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM knowledge_sources WHERE id=%s::uuid AND user_id=%s::uuid RETURNING id",
+                    (source_id, user_id),
+                )
+                deleted = cur.fetchone()
+                if deleted:
+                    cur.execute(
+                        """DELETE FROM knowledge_blocks b
+                           WHERE b.user_id=%s::uuid
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM knowledge_source_blocks sb WHERE sb.block_id=b.id
+                             )""",
+                        (user_id,),
+                    )
+            conn.commit()
+            if not deleted:
+                return jsonify({"error": "Knowledge source not found"}), 404
+            return jsonify({"ok": True, "deleted": source_id})
+        except Exception:
+            conn.rollback()
+            return jsonify({"error": "Knowledge source could not be deleted"}), 500
+        finally:
+            _close(conn)
+
+    @app.route("/api/admin/knowledge/search", methods=["POST"])
+    @require_admin
+    def admin_knowledge_search():
+        body = request.get_json(force=True) or {}
+        query_text = str(body.get("query") or "").strip()[:4_000]
+        if not query_text:
+            return jsonify({"error": "query is required"}), 400
+        try:
+            limit = max(1, min(int(body.get("limit", 8)), MAX_SEARCH_LIMIT))
+        except (TypeError, ValueError):
+            limit = 8
+        conn = get_connection()
+        try:
+            results = search_knowledge_blocks(conn, admin_user_id(), query_text, limit)
+            return jsonify({"ok": True, "results": results, "count": len(results), "storage": "postgres-pgvector"})
+        except EmbeddingUnavailable as exc:
+            return jsonify({"ok": False, "results": [], "error": str(exc), "blocker": "embedding_unavailable"}), 503
+        except Exception as exc:
+            return jsonify({"ok": False, "results": [], "error": str(exc)[:500]}), 500
+        finally:
+            _close(conn)

@@ -134,9 +134,8 @@ jobs:
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 30m
-          capture_stdout: true
           script: |
-            set -euo pipefail
+            set -eu
             RELEASE_DIR='${{ env.RELEASE_DIR }}'
             case "$RELEASE_DIR" in
               /opt/sovereign-backend/releases/*) ;;
@@ -180,9 +179,8 @@ jobs:
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 30m
-          capture_stdout: true
           script: |
-            set -euo pipefail
+            set -eu
             RELEASE_DIR='${{ env.RELEASE_DIR }}'
             IMAGE_TAG='${{ env.IMAGE_TAG }}'
             ARCHIVE="$RELEASE_DIR/sovereign-backend.tar.gz"
@@ -297,9 +295,8 @@ jobs:
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 30m
-          capture_stdout: true
           script: |
-            set -euo pipefail
+            set -eu
             docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; assert routes, "No agent routes registered"; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
 
   smoke-test:

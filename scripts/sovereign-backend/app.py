@@ -40,7 +40,7 @@ from flask_cors import CORS
 import requests
 
 from are_inference import register_are_inference_routes
-from knowledge_library import register_knowledge_routes
+from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 
 # ── Worker AI Helper ───────────────────────────────────────────────────────────
@@ -168,12 +168,15 @@ def query(sql: str, params=None, *, one=False, write=False):
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
+            if one:
+                result = cur.fetchone()
+            elif cur.description is not None:
+                result = cur.fetchall()
+            else:
+                result = None
             if write:
                 conn.commit()
-                return None
-            if one:
-                return cur.fetchone()
-            return cur.fetchall()
+            return result
     except Exception:
         conn.rollback()
         raise
@@ -271,6 +274,11 @@ def require_admin(f):
 def get_current_admin() -> dict | None:
     """Get the currently authenticated admin from request-local Flask context."""
     return getattr(g, "current_admin", None)
+
+
+def get_current_admin_user_id() -> str:
+    admin = get_current_admin() or {}
+    return str(admin.get("id") or "")
 
 
 # ── Pagination helper ─────────────────────────────────────────────────────────
@@ -2470,7 +2478,7 @@ def admin_get_credit_packages():
         )
         return jsonify({"packages": [dict(r) for r in (rows or [])]})
     except Exception as exc:
-        return jsonify({"packages": [], "error": str(exc)}), 200
+        return jsonify({"packages": [], "error": str(exc), "runtimeState": "failed"}), 500
 
 
 @app.route("/api/admin/credit-packages/init", methods=["POST"])
@@ -2505,6 +2513,20 @@ def admin_init_credit_packages():
 @require_admin
 def admin_update_credit_package(pid):
     body = request.get_json(force=True) or {}
+    if "credits" in body:
+        try:
+            body["credits"] = int(body["credits"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "credits muss eine ganze Zahl sein"}), 400
+        if body["credits"] <= 0:
+            return jsonify({"error": "credits muss größer als 0 sein"}), 400
+    if "priceEur" in body:
+        try:
+            body["priceEur"] = round(float(body["priceEur"]), 2)
+        except (TypeError, ValueError):
+            return jsonify({"error": "priceEur muss eine Zahl sein"}), 400
+        if body["priceEur"] < 0:
+            return jsonify({"error": "priceEur darf nicht negativ sein"}), 400
     col_map = {
         "name":       "name",
         "credits":    "credits",
@@ -2521,12 +2543,17 @@ def admin_update_credit_package(pid):
     if not sets:
         return jsonify({"error": "Keine Felder"}), 400
     vals.append(pid)
-    query(
-        f"UPDATE credit_packages SET {', '.join(sets)} WHERE id = %s::uuid",
-        vals, write=True,
+    package = query(
+        f"""UPDATE credit_packages SET {', '.join(sets)} WHERE id = %s::uuid
+            RETURNING id::text, name, credits, price_eur::float AS "priceEur",
+                      description, enabled, sort_order AS "sortOrder"
+        """,
+        vals, one=True, write=True,
     )
+    if not package:
+        return jsonify({"error": "Credit-Paket nicht gefunden"}), 404
     audit("admin_update_credit_package", pid, body)
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "package": dict(package), "persisted": True})
 
 
 @app.route("/api/admin/credit-packages/<pid>", methods=["DELETE"])
@@ -3756,6 +3783,12 @@ register_knowledge_routes(
     require_session=require_session,
     get_connection=get_runtime_module_connection,
 )
+register_admin_knowledge_routes(
+    app,
+    require_admin=require_admin,
+    get_connection=get_agent_runtime_connection,
+    get_admin_user_id=get_current_admin_user_id,
+)
 register_security_routes(
     app,
     require_session=require_session,
@@ -4830,6 +4863,7 @@ input[type=text],input[type=password]{-webkit-appearance:none}
     <nav>
       <button class="active" onclick="showSection('payments',this)">💳 Zahlungen</button>
       <button onclick="showSection('packages',this)">📦 Credit-Pakete</button>
+      <button onclick="showSection('knowledge',this)">📚 Wissen & PDF</button>
       <button onclick="showSection('users',this)">👥 Users</button>
       <button onclick="showSection('billing',this)">📋 Billing</button>
       <button onclick="showSection('llm',this)">🤖 LLM Routes</button>
@@ -4853,6 +4887,25 @@ input[type=text],input[type=password]{-webkit-appearance:none}
       <h2>Credit-Pakete</h2>
       <div class="subtitle">Verfügbare Käufe für Nutzer.</div>
       <div id="pkgList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
+    </div>
+
+    <!-- KNOWLEDGE -->
+    <div id="s-knowledge" class="section">
+      <h2>Wissensdatenbank & PDF-Einspeisung</h2>
+      <div class="subtitle">Admin-eigene Referenzquellen in PostgreSQL/pgvector. SHA-256 verhindert Duplikate.</div>
+      <div class="card">
+        <div class="form-group"><label>GitHub- oder Wikipedia-URL</label><input type="text" id="knowledgeUrl" placeholder="https://github.com/..."/></div>
+        <button class="btn btn-primary" onclick="importKnowledgeUrlAdmin()">URL importieren</button>
+        <div class="form-group" style="margin-top:14px"><label>PDF, Text oder Code</label><input type="file" id="knowledgeFile" accept=".pdf,.txt,.md,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql"/></div>
+        <button class="btn btn-primary" onclick="uploadKnowledgeFileAdmin()">Datei einspeisen</button>
+        <div class="msg" id="knowledgeMsg"></div>
+      </div>
+      <div class="card">
+        <div class="form-group"><label>Semantische Testsuche</label><input type="text" id="knowledgeQuery" placeholder="Wissensfrage"/></div>
+        <button class="btn btn-ghost" onclick="searchKnowledgeAdmin()">Suchen</button>
+        <div id="knowledgeResults" style="margin-top:12px"></div>
+      </div>
+      <div id="knowledgeList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
     </div>
 
     <!-- USERS -->
@@ -4965,6 +5018,23 @@ let API_KEY = sessionStorage.getItem('sov_admin_key') || '';
 if (API_KEY) initApp();
 
 function hdr(){ return {'Authorization':'Bearer '+API_KEY,'Content-Type':'application/json'}; }
+function formHdr(){ const headers=hdr(); delete headers['Content-Type']; return headers; }
+
+async function boundedFetch(path, options={}){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),15000);
+  try{
+    const response=await fetch(BASE+path,{...options,signal:controller.signal});
+    const text=await response.text();
+    let data={};
+    try{ data=text?JSON.parse(text):{}; }catch{ data={error:text||('HTTP '+response.status)}; }
+    if(!response.ok) throw new Error(data.error||('HTTP '+response.status));
+    return data;
+  }catch(error){
+    if(error&&error.name==='AbortError') throw new Error('Backend-Zeitüberschreitung nach 15 Sekunden.');
+    throw error;
+  }finally{ clearTimeout(timeout); }
+}
 
 async function doLogin(){
   const k = document.getElementById('keyInput').value.trim();
@@ -4993,6 +5063,7 @@ function initApp(){
   document.getElementById('app').style.display='flex';
   loadPaymentMethods();
   loadPackages();
+  loadKnowledge();
   loadUsers();
   loadBilling();
   loadLLMRoutes();
@@ -5121,10 +5192,15 @@ function showMsg(id, ok, text){
 let pkgData = [];
 
 async function loadPackages(){
-  const r = await fetch(BASE+'/api/admin/credit-packages',{headers:hdr()});
-  const d = await r.json();
-  pkgData = d.packages || [];
-  renderPkg();
+  const el=document.getElementById('pkgList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try{
+    const d=await boundedFetch('/api/admin/credit-packages',{headers:hdr()});
+    pkgData=d.packages||[];
+    renderPkg();
+  }catch(error){
+    el.innerHTML='<div style="color:var(--danger)">Fehler: '+esc(error.message)+' <button class="btn btn-ghost" onclick="loadPackages()">Erneut laden</button></div>';
+  }
 }
 
 function renderPkg(){
@@ -5137,7 +5213,7 @@ function pkgCard(p){
   return `<div class="card" id="pkg_${p.id}">
     <div class="card-header" onclick="toggleCard2('${p.id}')">
       <span class="card-title">${esc(p.name)}</span>
-      <span style="color:var(--muted);font-size:13px;margin-right:8px">${p.credits} Credits · €${parseFloat(p.price_eur).toFixed(2)}</span>
+      <span style="color:var(--muted);font-size:13px;margin-right:8px">${p.credits} Credits · €${parseFloat(p.priceEur).toFixed(2)}</span>
       <span class="badge ${p.enabled?'on':'off'}">${p.enabled?'Aktiv':'Inaktiv'}</span>
       <span class="chevron">▼</span>
     </div>
@@ -5151,7 +5227,7 @@ function pkgCard(p){
       </div>
       <div class="form-group"><label>Name</label><input type="text" id="pn_${p.id}" value="${esc(p.name)}"/></div>
       <div class="form-group"><label>Credits</label><input type="text" id="pc_${p.id}" value="${p.credits}"/></div>
-      <div class="form-group"><label>Preis (EUR)</label><input type="text" id="pp_${p.id}" value="${parseFloat(p.price_eur).toFixed(2)}"/></div>
+      <div class="form-group"><label>Preis (EUR)</label><input type="text" id="pp_${p.id}" value="${parseFloat(p.priceEur).toFixed(2)}"/></div>
       <div class="form-group"><label>Beschreibung</label><input type="text" id="pd_${p.id}" value="${esc(p.description||'')}"/></div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="savePkg('${p.id}')">Speichern</button>
@@ -5187,14 +5263,24 @@ async function togglePkg(id, enabled){
 
 async function savePkg(id){
   const body={
-    name: document.getElementById('pn_'+id).value,
-    credits: parseInt(document.getElementById('pc_'+id).value)||0,
-    price_eur: parseFloat(document.getElementById('pp_'+id).value)||0,
+    name: document.getElementById('pn_'+id).value.trim(),
+    credits: parseInt(document.getElementById('pc_'+id).value,10),
+    priceEur: parseFloat(document.getElementById('pp_'+id).value),
     description: document.getElementById('pd_'+id).value,
   };
-  const r = await fetch(BASE+'/api/admin/credit-packages/'+id,{method:'PATCH',headers:hdr(),body:JSON.stringify(body)});
-  const ok = r.ok;
-  showPkgMsg(id, ok, ok?'Gespeichert ✓':'Fehler');
+  if(!body.name||!Number.isInteger(body.credits)||body.credits<=0||!Number.isFinite(body.priceEur)||body.priceEur<0){
+    showPkgMsg(id,false,'Ungültiger Name, Credit-Wert oder Preis.'); return;
+  }
+  try{
+    const result=await boundedFetch('/api/admin/credit-packages/'+id,{method:'PATCH',headers:hdr(),body:JSON.stringify(body)});
+    if(!result.persisted||!result.package) throw new Error('Backend hat Persistenz nicht bestätigt.');
+    const verify=await boundedFetch('/api/admin/credit-packages',{headers:hdr()});
+    const saved=(verify.packages||[]).find(item=>item.id===id);
+    if(!saved||Math.abs(Number(saved.priceEur)-Number(result.package.priceEur))>0.001) throw new Error('Reload-Verifikation fehlgeschlagen.');
+    pkgData=verify.packages;
+    renderPkg();
+    alert('Dauerhaft gespeichert: '+saved.name+' · €'+Number(saved.priceEur).toFixed(2));
+  }catch(error){ showPkgMsg(id,false,error.message); }
 }
 
 function showPkgMsg(id, ok, text){
@@ -5203,6 +5289,36 @@ function showPkgMsg(id, ok, text){
   el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block';
   setTimeout(()=>{ el.style.display='none'; },3000);
 }
+
+/* ────── KNOWLEDGE ────── */
+async function loadKnowledge(){
+  const el=document.getElementById('knowledgeList');
+  el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
+  try{
+    const data=await boundedFetch('/api/admin/knowledge/sources',{headers:hdr()});
+    const sources=data.sources||[];
+    el.innerHTML=sources.length?sources.map(source=>`<div class="card"><div class="card-header"><span class="card-title">${esc(source.title)}</span><span class="badge ${source.status==='ready'?'on':'off'}">${esc(source.status)}</span></div><div style="color:var(--muted);font-size:12px;margin-top:8px">${esc(source.sourceType)} · ${source.chunkCount||0} Blöcke</div>${source.blocker?`<div style="color:var(--warn);font-size:11px">${esc(source.blocker)}</div>`:''}<button class="btn btn-danger" style="margin-top:8px" onclick="deleteKnowledgeAdmin('${source.id}')">Löschen</button></div>`).join(''):'<div style="color:var(--muted)">Noch keine Quellen.</div>';
+  }catch(error){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+esc(error.message)+' <button class="btn btn-ghost" onclick="loadKnowledge()">Erneut laden</button></div>'; }
+}
+function knowledgeMessage(text,ok){ const el=document.getElementById('knowledgeMsg'); el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block'; }
+async function importKnowledgeUrlAdmin(){
+  const url=document.getElementById('knowledgeUrl').value.trim(); if(!url)return;
+  try{ const result=await boundedFetch('/api/admin/knowledge/sources/url',{method:'POST',headers:hdr(),body:JSON.stringify({url})}); knowledgeMessage(result.duplicate?'Quelle bereits vorhanden.':'Quelle gespeichert: '+result.source.title,true); document.getElementById('knowledgeUrl').value=''; await loadKnowledge(); }
+  catch(error){ knowledgeMessage(error.message,false); }
+}
+async function uploadKnowledgeFileAdmin(){
+  const file=document.getElementById('knowledgeFile').files[0]; if(!file){knowledgeMessage('Bitte eine Datei auswählen.',false);return;}
+  const form=new FormData(); form.append('file',file);
+  try{ const result=await boundedFetch('/api/admin/knowledge/sources/upload',{method:'POST',headers:formHdr(),body:form}); knowledgeMessage(result.duplicate?'Datei bereits vorhanden.':'Datei gespeichert: '+result.source.title,true); document.getElementById('knowledgeFile').value=''; await loadKnowledge(); }
+  catch(error){ knowledgeMessage(error.message,false); }
+}
+async function searchKnowledgeAdmin(){
+  const query=document.getElementById('knowledgeQuery').value.trim(); if(!query)return;
+  const el=document.getElementById('knowledgeResults'); el.innerHTML='Suche… <span class="spin"></span>';
+  try{ const data=await boundedFetch('/api/admin/knowledge/search',{method:'POST',headers:hdr(),body:JSON.stringify({query,limit:8})}); el.innerHTML=(data.results||[]).map(item=>`<div style="border-top:1px solid var(--border);padding:8px 0"><strong>${esc(item.sourceTitle)}</strong> · ${Math.round(Number(item.similarity)*100)}%<div style="color:var(--muted);font-size:11px;white-space:pre-wrap">${esc(String(item.content||'').slice(0,700))}</div></div>`).join('')||'<div style="color:var(--muted)">Keine Treffer.</div>'; }
+  catch(error){ el.innerHTML='<div style="color:var(--danger)">'+esc(error.message)+'</div>'; }
+}
+async function deleteKnowledgeAdmin(id){ if(!confirm('Quelle wirklich löschen?'))return; try{await boundedFetch('/api/admin/knowledge/sources/'+id,{method:'DELETE',headers:hdr()});await loadKnowledge();}catch(error){knowledgeMessage(error.message,false);} }
 
 /* ────── USERS ────── */
 let userPage = 1;
@@ -5213,10 +5329,9 @@ async function loadUsers(pg=1){
   const el = document.getElementById('userList');
   el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
   try {
-    const r = await fetch(BASE+'/api/admin/users?page='+pg+'&search='+search,{headers:hdr()});
-    const d = await r.json();
+    const d=await boundedFetch('/api/admin/users?page='+pg+'&search='+search,{headers:hdr()});
     renderUsers(d);
-  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+  }catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+esc(e.message)+' <button class="btn btn-ghost" onclick="loadUsers('+pg+')">Erneut laden</button></div>'; }
 }
 
 function renderUsers(d){
@@ -5311,10 +5426,9 @@ async function loadBilling(pg=1){
     let url = BASE+'/api/admin/transactions?page='+pg;
     if(uid) url += '&user_id='+uid;
     if(ttype) url += '&type='+ttype;
-    const r = await fetch(url,{headers:hdr()});
-    const d = await r.json();
+    const d=await boundedFetch(url.replace(BASE,''),{headers:hdr()});
     renderBilling(d);
-  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+  }catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+esc(e.message)+' <button class="btn btn-ghost" onclick="loadBilling('+pg+')">Erneut laden</button></div>'; }
 }
 
 function renderBilling(d){
