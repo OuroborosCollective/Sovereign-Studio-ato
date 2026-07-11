@@ -1903,17 +1903,29 @@ def _authorize_credit_purchase(pkg: dict):
     return user_id, None
 
 
-def _get_user_credits(user_id: str) -> int:
+def _read_verified_credit_balance(user_id: str) -> int:
+    """Return credits only when cache and append-only ledger agree."""
     if not user_id:
-        return 0
-    try:
-        row = query(
-            "SELECT credits FROM admin_users WHERE id = %s::uuid LIMIT 1",
-            (user_id,), one=True,
+        raise LookupError("User für Credit-Verifikation fehlt")
+    row = query(
+        """SELECT account.credits::integer AS cached_balance,
+                  COALESCE(SUM(ledger.amount), 0)::integer AS ledger_balance
+           FROM admin_users AS account
+           LEFT JOIN credit_ledger AS ledger ON ledger.user_id = account.id
+           WHERE account.id = %s::uuid
+           GROUP BY account.id, account.credits
+           LIMIT 1""",
+        (user_id,), one=True,
+    )
+    if not row:
+        raise LookupError("User für Credit-Verifikation nicht gefunden")
+    cached_balance = int(row["cached_balance"])
+    ledger_balance = int(row["ledger_balance"])
+    if cached_balance != ledger_balance:
+        raise CreditStateConflict(
+            f"Credit-State widersprüchlich: cache={cached_balance}, ledger={ledger_balance}",
         )
-        return int(row["credits"]) if row else 0
-    except Exception:
-        return 0
+    return cached_balance
 
 
 class CreditStateConflict(RuntimeError):
@@ -3112,17 +3124,24 @@ def public_llm_route(route_id):
 @app.route("/api/billing/credits")
 @require_session
 def user_billing_credits():
-    """Return the authenticated user's server-ledger credit balance."""
+    """Return credits only after cache/ledger verification."""
     user_id = request.session_user_id
     try:
-        row = query(
-            "SELECT credits FROM admin_users WHERE id::text = %s LIMIT 1",
-            (user_id,), one=True,
-        )
-        credits = int(row["credits"]) if row else 0
-        return jsonify({"credits": credits})
+        credits = _read_verified_credit_balance(user_id)
+        return jsonify({
+            "credits": credits,
+            "creditStateVerified": True,
+        })
+    except LookupError:
+        return jsonify({"error": "User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({
+            "error": str(exc),
+            "blocker": "credit_state_verification_failed",
+            "creditStateVerified": False,
+        }), 409
     except Exception as exc:
-        return jsonify({"credits": 0, "error": str(exc), "runtimeState": "failed"}), 500
+        return jsonify({"error": str(exc), "runtimeState": "failed"}), 500
 
 
 @app.route("/api/billing/deduct", methods=["POST"])
@@ -3280,13 +3299,16 @@ if _token_encryption_key:
 
 
 def _user_row_to_dict(row) -> dict:
-    """Konvertiert DB-Zeile zu User-Dict für API-Response."""
+    """Konvertiert nur einen cache-/ledger-verifizierten User zur API-Antwort."""
+    user_id = str(row["id"])
+    verified_credits = _read_verified_credit_balance(user_id)
     result = {
-        "id":                 str(row["id"]),
+        "id":                 user_id,
         "email":              row["email"],
         "displayName":        row.get("display_name") or "",
         "role":               row.get("role") or "user",
-        "credits":            int(row.get("credits") or 0),
+        "credits":            verified_credits,
+        "creditStateVerified": True,
         "subscriptionStatus": row.get("subscription_status") or "free",
         "isBanned":           bool(row.get("is_banned")),
         "createdAt":          str(row.get("created_at") or ""),

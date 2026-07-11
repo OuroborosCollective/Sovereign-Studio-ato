@@ -87,3 +87,41 @@ def test_admin_adjustment_audit_shares_credit_transaction() -> None:
         helper = source[helper_start:helper_end]
         assert "INSERT INTO audit_log" in helper
         assert '"newBalance": new_balance' in helper
+
+
+def test_credit_reads_verify_cache_and_ledger_in_one_query() -> None:
+    for source in _sources():
+        start = source.index("def _read_verified_credit_balance")
+        end = source.index("class CreditStateConflict", start)
+        helper = source[start:end]
+        assert "LEFT JOIN credit_ledger" in helper
+        assert "cached_balance" in helper
+        assert "ledger_balance" in helper
+        assert "cached_balance != ledger_balance" in helper
+        assert "return 0" not in helper
+
+
+def test_user_and_billing_responses_require_verified_credit_state() -> None:
+    for source in _sources():
+        user_start = source.index("def _user_row_to_dict")
+        user_end = source.index("def _set_session_cookie", user_start)
+        user_contract = source[user_start:user_end]
+        assert "_read_verified_credit_balance(user_id)" in user_contract
+        assert '"creditStateVerified": True' in user_contract
+
+        route_start = source.index("def user_billing_credits")
+        route_end = source.index("@app.route(\"/api/billing/deduct\"", route_start)
+        route = source[route_start:route_end]
+        assert "_read_verified_credit_balance(user_id)" in route
+        assert '"creditStateVerified": False' in route
+        assert '"blocker": "credit_state_verification_failed"' in route
+
+
+def test_llm_route_selection_uses_verified_credit_state_when_present() -> None:
+    source = BACKEND_COPIES[0].read_text(encoding="utf-8")
+    route_start = source.index("def public_llm_resolve")
+    route_end = source.index("@app.route(\"/api/admin/system/health\"", route_start)
+    route = source[route_start:route_end]
+    assert "_read_verified_credit_balance(user_id)" in route
+    assert '"blocker": "credit_state_verification_failed"' in route
+    assert "SELECT id, credits FROM admin_users" not in route
