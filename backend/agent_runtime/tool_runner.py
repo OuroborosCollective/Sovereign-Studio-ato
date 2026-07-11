@@ -225,6 +225,8 @@ def _normalize_route_tool(action: str, parameters: dict[str, Any]) -> tuple[str,
             "timeout": parameters.get("timeout", 300),
             "verbose": parameters.get("verbose", True),
         }
+    if action == "janitor":
+        return "janitor", dict(parameters)
     return action, parameters
 
 
@@ -263,12 +265,17 @@ def _route_result(action: str, tool_name: str, execution: ToolExecution) -> Tool
         diff_summary = output[:4000]
     elif action == "test":
         test_summary = output[:4000]
+    elif action == "janitor":
+        changed_files = result.changed_files
+        diff_summary = result.diff_summary
+        test_summary = result.test_summary
 
     predictive_signal = {
         "file": "agent_file_tool_completed",
         "git-status": "agent_git_status_completed",
         "diff": "agent_diff_ready",
         "test": "agent_tests_completed",
+        "janitor": result.predictive_signal,
     }.get(action, "agent_tool_result")
     if result.status == "blocked":
         predictive_signal = "agent_tool_blocked"
