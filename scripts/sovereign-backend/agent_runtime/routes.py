@@ -14,12 +14,12 @@ from typing import Any, Callable
 
 from flask import jsonify, request
 
-from .contracts import normalize_agent_job_result
+from .contracts import SovereignAgentEvent, normalize_agent_job_result
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .job_lifecycle import create_sovereign_agent_job
-from .job_store import list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import evaluate_pattern_learning, pattern_input_from_job, pattern_learning_signal, persist_pattern_learning_candidate
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
@@ -133,6 +133,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/tools/git-status
     - POST /api/user/agent/jobs/<job_id>/tools/diff
     - POST /api/user/agent/jobs/<job_id>/tools/test
+    - POST /api/user/agent/jobs/<job_id>/tools/janitor
     - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
     - POST /api/user/agent/jobs/<job_id>/draft-pr/create
     - POST /api/user/agent/jobs/<job_id>/patterns/learn
@@ -158,14 +159,34 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             result = run_agent_job_tool(job, action, body, _workspace_root())
-            evidence_result = _merge_job_evidence(job, result)
+            is_janitor_scan = (
+                action == "janitor"
+                and result.status == "done"
+                and result.metadata.get("mode") == "scan"
+            )
+            if is_janitor_scan:
+                append_agent_event(conn, job_id, SovereignAgentEvent(
+                    stage="agent_janitor_scan_completed",
+                    level="success",
+                    message=str(result.output or "Janitor scan completed.")[:1200],
+                ))
+                return jsonify({
+                    "ok": True,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "tool": _tool_result_to_api(result),
+                }), 200
+
+            evidence_result = result if action == "janitor" else _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, job_id, evidence_result)
+            tool_ok = result.status == "done"
+            response_ok = tool_ok and (action == "janitor" or getattr(gate, "allowed", gate.passed))
             return jsonify({
-                "ok": result.status == "done" and getattr(gate, "allowed", gate.passed),
+                "ok": response_ok,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "tool": _tool_result_to_api(evidence_result, gate),
-            }), 200 if result.status == "done" and getattr(gate, "allowed", gate.passed) else 400
+            }), 200 if response_ok else 400
         finally:
             _close(conn)
 
@@ -306,6 +327,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_run_agent_test_tool(job_id: str):
         return _run_tool_route(job_id, "test")
+
+    @app.route("/api/user/agent/jobs/<job_id>/tools/janitor", methods=["POST"])
+    @require_session
+    def user_run_agent_janitor_tool(job_id: str):
+        return _run_tool_route(job_id, "janitor")
 
     @app.route("/api/user/agent/jobs/<job_id>/draft-pr/prepare", methods=["POST"])
     @require_session
