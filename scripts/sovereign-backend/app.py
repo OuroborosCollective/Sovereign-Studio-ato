@@ -3786,7 +3786,7 @@ register_knowledge_routes(
 register_admin_knowledge_routes(
     app,
     require_admin=require_admin,
-    get_connection=get_agent_runtime_connection,
+    get_connection=get_runtime_module_connection,
     get_admin_user_id=get_current_admin_user_id,
 )
 register_security_routes(
