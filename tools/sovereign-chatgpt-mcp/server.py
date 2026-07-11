@@ -38,6 +38,7 @@ mcp = FastMCP(
 )
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+NETWORK_READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 SAFE_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 EXTERNAL_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True)
 
@@ -117,6 +118,12 @@ def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]
 def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) -> dict[str, Any]:
     """Read bounded logs from one allowlisted Docker container through the local fixed-action broker."""
     return broker.call("container_logs", {"container": container, "tail": tail})
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def backend_image_resolve(revision: str) -> dict[str, Any]:
+    """Pull the backend image tag for a full commit SHA, verify its revision label and return the immutable digest."""
+    return broker.call("resolve_backend_image", {"revision": revision}, timeout=360)
 
 
 @mcp.tool(annotations=READ_ONLY)
