@@ -12,7 +12,6 @@ EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env
 Environment=HOME=/opt/sovereign-chatgpt-tools/tunnel-home
 WorkingDirectory=/opt/sovereign-chatgpt-tools/tunnel-home
 ExecStartPre=/usr/bin/test -x /usr/local/bin/tunnel-client
-ExecStartPre=/usr/bin/curl -fsS --max-time 10 http://127.0.0.1:8090/mcp
 ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}
 Restart=always
 RestartSec=5
