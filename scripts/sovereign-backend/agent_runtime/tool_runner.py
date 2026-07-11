@@ -289,13 +289,17 @@ def _route_result(action: str, tool_name: str, execution: ToolExecution) -> Tool
         blocker=result.blocker,
         metadata=result.metadata,
         tool=action,
-        allowed=result.status != "blocked",
+        allowed=result.status == "done",
         stdout=output,
         stderr=error or None,
         changed_files=changed_files,
         diff_summary=diff_summary,
         test_summary=test_summary,
-        exit_code=0 if result.status == "done" else 1,
+        exit_code=(
+            result.exit_code
+            if result.exit_code is not None
+            else (0 if result.status == "done" else 1)
+        ),
         events=(),
         predictive_signal=predictive_signal,
     )

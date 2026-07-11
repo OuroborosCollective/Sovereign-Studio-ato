@@ -154,14 +154,21 @@ class ShellTool(ToolBase):
             if result.stderr:
                 output = output + "\n" + result.stderr if output else result.stderr
 
+            normalized_output = output.strip() if output else ""
+            succeeded = result.returncode == 0
+
             return ToolResult(
-                status="done",
-                output=output.strip() if output else "",
+                status="done" if succeeded else "error",
+                output=normalized_output,
+                error=None if succeeded else (
+                    normalized_output or f"Command failed with exit code {result.returncode}"
+                ),
                 metadata={
                     "exit_code": result.returncode,
                     "command": command[:200],
                     "timeout": timeout,
                 },
+                exit_code=result.returncode,
             )
 
         except subprocess.TimeoutExpired:
