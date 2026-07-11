@@ -28,6 +28,7 @@ export default function App() {
   const [agentJob, setAgentJob] = useState<SovereignAgentJobSnapshot>(
     () => createSovereignAgentIdleSnapshot(),
   );
+  const [janitorPreview, setJanitorPreview] = useState('');
 
   const startChatOnlyTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
     setMission(nextMission);
@@ -93,6 +94,60 @@ export default function App() {
     }
   };
 
+  const runJanitorScan = async () => {
+    setMission('Fehleranalyse');
+    const jobId = agentJob.jobId;
+    if (!agentConfig.ready || !jobId) {
+      const message = 'Für den Janitor zuerst ein Repository als Sovereign-Agent-Job laden.';
+      setAgentJob((current) => ({
+        ...current,
+        lastError: message,
+        events: [...current.events, { at: Date.now(), level: 'warning', stage: 'janitor-requires-repo', message }],
+      }));
+      return;
+    }
+    setAgentJob((current) => ({
+      ...current,
+      events: [...current.events, { at: Date.now(), level: 'info', stage: 'janitor-scan', message: 'Deterministischer Janitor-Scan gestartet.' }],
+    }));
+    try {
+      const response = await agentClient.runJanitor(jobId, {
+        mode: 'scan',
+        family: 'Runtime-Wahrheit, Zustandswidersprüche, sichere Repo-Automation',
+        maxFindings: 10,
+        maxFiles: 200,
+      });
+      const findings = Array.isArray(response.tool.metadata.findings) ? response.tool.metadata.findings : [];
+      const recommendedTestCommand = typeof response.tool.metadata.recommendedTestCommand === 'string'
+        ? response.tool.metadata.recommendedTestCommand
+        : undefined;
+      setJanitorPreview(JSON.stringify({
+        summary: response.tool.output,
+        findingCount: findings.length,
+        findings,
+        recommendedTestCommand,
+        writeAction: false,
+      }, null, 2));
+      setAgentJob((current) => ({
+        ...current,
+        lastError: undefined,
+        events: [...current.events, {
+          at: Date.now(),
+          level: 'success',
+          stage: 'janitor-scan-completed',
+          message: `${findings.length} Janitor-Befund(e) gefunden. Es wurde keine Datei verändert.`,
+        }],
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Janitor-Scan fehlgeschlagen.';
+      setAgentJob((current) => ({
+        ...current,
+        lastError: message,
+        events: [...current.events, { at: Date.now(), level: 'error', stage: 'janitor-scan-failed', message }],
+      }));
+    }
+  };
+
   const agentIsRunning = agentJob.status === 'queued' || agentJob.status === 'provisioning' || agentJob.status === 'running' || agentJob.status === 'validating';
 
   return (
@@ -106,10 +161,10 @@ export default function App() {
           runtimeBusy={false}
           isPublishing={false}
           sovereignSummary="Sovereign ist bereit. Lade ein Repo per GitHub-URL im Chat oder beschreibe den nächsten Auftrag."
-          sovereignPreview=""
+          sovereignPreview={janitorPreview}
           onMissionChange={setMission}
           onGenerateIdeas={() => setMission('Ideen/Build')}
-          onGenerateErrorWorkflow={() => setMission('Fehleranalyse')}
+          onGenerateErrorWorkflow={() => { void runJanitorScan(); }}
           onPublishDraftPr={() => setMission('Draft PR')}
           agentReady={agentConfig.ready}
           agentConfig={agentConfig}
