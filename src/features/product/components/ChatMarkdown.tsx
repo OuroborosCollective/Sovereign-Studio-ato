@@ -24,6 +24,13 @@ const C = {
   accent:    '#00d9b1',
 };
 
+// Hoisted regex patterns to avoid redundant re-instantiation during high-frequency UI updates.
+const BOLD_REGEX = /\*\*([^*\n]+)\*\*/;
+const CODE_REGEX = /`([^`\n]+)`/;
+const LINK_REGEX = /\[([^\]\n]+)\]\(([^)\n]+)\)/;
+const CODE_BLOCK_START_REGEX = /^```(\w*)$/;
+const CODE_BLOCK_END_REGEX = /^```$/;
+
 /**
  * Sanitizes URLs to prevent XSS (e.g., javascript: protocols)
  */
@@ -51,9 +58,9 @@ function pushInlineSegments(line: string, segments: Segment[]): void {
 
   while (remaining.length > 0) {
     const patterns = [
-      { regex: /\*\*([^*\n]+)\*\*/, type: 'bold' as const },
-      { regex: /`([^`\n]+)`/, type: 'code' as const },
-      { regex: /\[([^\]\n]+)\]\(([^)\n]+)\)/, type: 'link' as const, urlGroup: 2 },
+      { regex: BOLD_REGEX, type: 'bold' as const },
+      { regex: CODE_REGEX, type: 'code' as const },
+      { regex: LINK_REGEX, type: 'link' as const, urlGroup: 2 },
     ];
 
     let earliestMatch: { match: RegExpExecArray; type: string; url?: string } | null = null;
@@ -93,7 +100,7 @@ function tokenizeContent(input: string): Segment[] {
 
   while (i < lines.length) {
     const line = lines[i];
-    const codeBlockMatch = line.match(/^```(\w*)$/);
+    const codeBlockMatch = line.match(CODE_BLOCK_START_REGEX);
 
     if (codeBlockMatch) {
       const language = codeBlockMatch[1] || 'text';
@@ -101,7 +108,7 @@ function tokenizeContent(input: string): Segment[] {
       i += 1;
 
       while (i < lines.length) {
-        if (lines[i].match(/^```$/)) {
+        if (CODE_BLOCK_END_REGEX.test(lines[i])) {
           i += 1;
           break;
         }
@@ -129,7 +136,7 @@ function tokenizeContent(input: string): Segment[] {
 /**
  * Copy code to clipboard with feedback
  */
-function CopyButton({ code }: { code: string }) {
+const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -164,12 +171,12 @@ function CopyButton({ code }: { code: string }) {
       {copied ? '✓ Kopiert' : 'Kopieren'}
     </button>
   );
-}
+});
 
 /**
  * Code block with scroll and copy
  */
-function CodeBlockView({ language, code }: { language: string; code: string }) {
+const CodeBlockView = React.memo(function CodeBlockView({ language, code }: { language: string; code: string }) {
   return (
     <div style={{ margin: '8px 0', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', background: C.codeBg, borderBottom: `1px solid ${C.border}` }}>
@@ -183,40 +190,40 @@ function CodeBlockView({ language, code }: { language: string; code: string }) {
       </pre>
     </div>
   );
-}
+});
 
 /**
  * Render a text segment with inline formatting
  */
-function renderTextSegment(seg: Segment, key: number): React.ReactNode {
+const TextSegmentView = React.memo(function TextSegmentView({ seg }: { seg: Segment }) {
   switch (seg.type) {
     case 'bold':
-      return <strong key={key} style={{ color: C.text, fontWeight: 600 }}>{seg.content}</strong>;
+      return <strong style={{ color: C.text, fontWeight: 600 }}>{seg.content}</strong>;
     case 'code':
       return (
-        <code key={key} style={{ background: C.codeBg, padding: '2px 6px', borderRadius: 4, fontSize: '0.9em', color: C.accent, fontFamily: 'monospace' }}>
+        <code style={{ background: C.codeBg, padding: '2px 6px', borderRadius: 4, fontSize: '0.9em', color: C.accent, fontFamily: 'monospace' }}>
           {seg.content}
         </code>
       );
     case 'link':
       return (
-        <a key={key} href={sanitizeUrl(seg.url)} target="_blank" rel="noopener noreferrer" style={{ color: C.accent, textDecoration: 'underline' }}>
+        <a href={sanitizeUrl(seg.url)} target="_blank" rel="noopener noreferrer" style={{ color: C.accent, textDecoration: 'underline' }}>
           {seg.content}
         </a>
       );
     case 'text':
-      return <span key={key}>{seg.content}</span>;
+      return <span>{seg.content}</span>;
     case 'linebreak':
-      return <br key={key} />;
+      return <br />;
     default:
       return null;
   }
-}
+});
 
 /**
  * ChatMarkdown - main export
  */
-export const ChatMarkdown: React.FC<ChatMarkdownProps> = ({ content }) => {
+export const ChatMarkdown = React.memo(function ChatMarkdown({ content }: ChatMarkdownProps) {
   if (typeof content !== 'string') {
     return <span>{String(content)}</span>;
   }
@@ -229,10 +236,10 @@ export const ChatMarkdown: React.FC<ChatMarkdownProps> = ({ content }) => {
         if (seg.type === 'codeblock') {
           return <CodeBlockView key={index} language={seg.language} code={seg.content} />;
         }
-        return renderTextSegment(seg, index);
+        return <TextSegmentView key={index} seg={seg} />;
       })}
     </div>
   );
-};
+});
 
 export default ChatMarkdown;

@@ -87,8 +87,8 @@ describe('shouldCreateWorkspace', () => {
   it('should not create workspace for chat question without repo', () => {
     const result = shouldCreateWorkspace(undefined, undefined, 'Was ist Sovereign?');
     expect(result.allowed).toBe(false);
-    // Chat questions are blocked because no executor is available
-    expect(result.blocker).toBe('executor_unavailable');
+    // The first evidence-backed blocker is the missing repository.
+    expect(result.blocker).toBe('repo_missing');
   });
 
   it('should not create workspace for readme patch when no executor available', () => {
@@ -113,8 +113,8 @@ describe('shouldCreateWorkspace', () => {
       false
     );
     expect(result.allowed).toBe(false);
-    // The blocking gate is executor_gate, so blocker is executor_unavailable
-    expect(result.blocker).toBe('executor_unavailable');
+    // The workspace requirement gate identifies the precise missing capability first.
+    expect(result.blocker).toBe('workspace_required');
   });
 
   it('should allow workspace when required and executor available', () => {

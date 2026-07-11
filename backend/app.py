@@ -4946,9 +4946,9 @@ let API_KEY = '';
 function hdr(){ return {'Authorization':'Bearer '+API_KEY,'Content-Type':'application/json'}; }
 function formHdr(){ const headers=hdr(); delete headers['Content-Type']; return headers; }
 
-async function boundedFetch(path, options={}){
+async function boundedFetch(path, options={}, timeoutMs=15000){
   const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),15000);
+  const timeout=timeoutMs>0?setTimeout(()=>controller.abort(),timeoutMs):null;
   try{
     const response=await fetch(BASE+path,{...options,signal:controller.signal});
     const text=await response.text();
@@ -4960,9 +4960,9 @@ async function boundedFetch(path, options={}){
     }
     return data;
   }catch(error){
-    if(error&&error.name==='AbortError') throw new Error('Backend-Zeitüberschreitung nach 15 Sekunden.');
+    if(error&&error.name==='AbortError') throw new Error('Backend-Zeitüberschreitung nach '+Math.ceil(timeoutMs/1000)+' Sekunden.');
     throw error;
-  }finally{ clearTimeout(timeout); }
+  }finally{ if(timeout!==null) clearTimeout(timeout); }
 }
 
 async function doLogin(){
@@ -5242,19 +5242,21 @@ async function loadKnowledge(){
 function knowledgeMessage(text,ok){ const el=document.getElementById('knowledgeMsg'); el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block'; }
 async function importKnowledgeUrlAdmin(){
   const url=document.getElementById('knowledgeUrl').value.trim(); if(!url)return;
-  try{ const result=await boundedFetch('/api/admin/knowledge/sources/url',{method:'POST',headers:hdr(),body:JSON.stringify({url})}); knowledgeMessage(result.duplicate?'Quelle bereits vorhanden.':'Quelle gespeichert: '+result.source.title,true); document.getElementById('knowledgeUrl').value=''; await loadKnowledge(); }
+  knowledgeMessage('Quelle wird geladen, geparst, gechunkt und eingebettet. Dieser bestätigte Backend-Lauf kann mehrere Minuten dauern.',true);
+  try{ const result=await boundedFetch('/api/admin/knowledge/sources/url',{method:'POST',headers:hdr(),body:JSON.stringify({url})},0); knowledgeMessage(result.duplicate?'Quelle bereits vorhanden.':'Quelle gespeichert: '+result.source.title,true); document.getElementById('knowledgeUrl').value=''; await loadKnowledge(); }
   catch(error){ knowledgeMessage(error.message,false); }
 }
 async function uploadKnowledgeFileAdmin(){
   const file=document.getElementById('knowledgeFile').files[0]; if(!file){knowledgeMessage('Bitte eine Datei auswählen.',false);return;}
   const form=new FormData(); form.append('file',file);
-  try{ const result=await boundedFetch('/api/admin/knowledge/sources/upload',{method:'POST',headers:formHdr(),body:form}); knowledgeMessage(result.duplicate?'Datei bereits vorhanden.':'Datei gespeichert: '+result.source.title,true); document.getElementById('knowledgeFile').value=''; await loadKnowledge(); }
+  knowledgeMessage('Datei wird geladen, geparst, gechunkt und eingebettet. Dieser bestätigte Backend-Lauf kann mehrere Minuten dauern.',true);
+  try{ const result=await boundedFetch('/api/admin/knowledge/sources/upload',{method:'POST',headers:formHdr(),body:form},0); knowledgeMessage(result.duplicate?'Datei bereits vorhanden.':'Datei gespeichert: '+result.source.title,true); document.getElementById('knowledgeFile').value=''; await loadKnowledge(); }
   catch(error){ knowledgeMessage(error.message,false); }
 }
 async function searchKnowledgeAdmin(){
   const query=document.getElementById('knowledgeQuery').value.trim(); if(!query)return;
   const el=document.getElementById('knowledgeResults'); el.innerHTML='Suche… <span class="spin"></span>';
-  try{ const data=await boundedFetch('/api/admin/knowledge/search',{method:'POST',headers:hdr(),body:JSON.stringify({query,limit:8})}); el.innerHTML=(data.results||[]).map(item=>`<div style="border-top:1px solid var(--border);padding:8px 0"><strong>${esc(item.sourceTitle)}</strong> · ${Math.round(Number(item.similarity)*100)}%<div style="color:var(--muted);font-size:11px;white-space:pre-wrap">${esc(String(item.content||'').slice(0,700))}</div></div>`).join('')||'<div style="color:var(--muted)">Keine Treffer.</div>'; }
+  try{ const data=await boundedFetch('/api/admin/knowledge/search',{method:'POST',headers:hdr(),body:JSON.stringify({query,limit:8})},120000); el.innerHTML=(data.results||[]).map(item=>`<div style="border-top:1px solid var(--border);padding:8px 0"><strong>${esc(item.sourceTitle)}</strong> · ${Math.round(Number(item.similarity)*100)}%<div style="color:var(--muted);font-size:11px;white-space:pre-wrap">${esc(String(item.content||'').slice(0,700))}</div></div>`).join('')||'<div style="color:var(--muted)">Keine Treffer.</div>'; }
   catch(error){ el.innerHTML='<div style="color:var(--danger)">'+esc(error.message)+'</div>'; }
 }
 async function deleteKnowledgeAdmin(id){ if(!confirm('Quelle wirklich löschen?'))return; try{await boundedFetch('/api/admin/knowledge/sources/'+id,{method:'DELETE',headers:hdr()});await loadKnowledge();}catch(error){knowledgeMessage(error.message,false);} }

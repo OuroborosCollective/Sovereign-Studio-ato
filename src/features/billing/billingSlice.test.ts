@@ -11,6 +11,7 @@ describe('billingSlice reducer', () => {
     invoices: [],
     availablePackages: [],
     packages: [],
+    paymentMethods: [],
     loading: false,
     error: null,
     tier: 'free',

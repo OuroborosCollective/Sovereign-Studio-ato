@@ -21,7 +21,10 @@ describe('builder executor bridge migration contract', () => {
     });
 
     expect(decision.bridgeRoute).toBe('sovereign_internal_operator');
-    expect(decision.nextAction).toBe('run_internal_operator');
+    expect(decision.state).toBe('blocked');
+    expect(decision.nextAction).toBe('show_blocker');
+    expect(decision.internalOperatorRoute).toBe('blocked');
     expect(decision.event.route).toBe('toolchain');
+    expect(decision.event.state).toBe('blocked');
   });
 });
