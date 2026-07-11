@@ -19,6 +19,56 @@ export interface SovereignAgentStartJobInput {
   mission: string;
 }
 
+export interface SovereignJanitorFinding {
+  id: string;
+  ruleId: string;
+  severity: 'critical' | 'high' | 'medium' | 'low' | string;
+  path: string;
+  line: number;
+  message: string;
+  evidence: string;
+  contentSha256: string;
+  fixAvailable: boolean;
+  suggestedSearchText?: string | null;
+  suggestedReplacementText?: string | null;
+}
+
+export interface SovereignJanitorScanInput {
+  mode?: 'scan';
+  family?: string;
+  paths?: string[];
+  maxFindings?: number;
+  maxFiles?: number;
+  includeDocs?: boolean;
+  explainWithLocalModel?: boolean;
+}
+
+export interface SovereignJanitorApplyInput {
+  mode: 'apply';
+  path: string;
+  searchText: string;
+  replacementText: string;
+  expectedSha256: string;
+  confirm: true;
+}
+
+export type SovereignJanitorInput = SovereignJanitorScanInput | SovereignJanitorApplyInput;
+
+export interface SovereignJanitorToolResponse {
+  ok: boolean;
+  jobId: string;
+  tool: {
+    status: string;
+    output?: string;
+    blocker?: string;
+    changedFiles: string[];
+    diffSummary?: string;
+    testSummary?: string;
+    metadata: Record<string, unknown>;
+    evidenceGate?: unknown;
+  };
+}
+
 interface RawSovereignAgentJobResponse {
   jobId?: unknown;
   id?: unknown;
@@ -103,6 +153,31 @@ async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: 
   return sanitizeSnapshot(body, args.now);
 }
 
+async function requestJanitorTool(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<SovereignJanitorToolResponse> {
+  const response = await args.fetcher(args.url, args.init);
+  const body = await readJson(response);
+  if (!response.ok) {
+    const message = isObject(body) ? backendErrorMessage(body) : undefined;
+    throw new Error(message || `Sovereign Janitor returned HTTP ${response.status}.`);
+  }
+  if (!isObject(body) || !isObject(body.tool)) throw new Error('Sovereign Janitor returned an invalid response.');
+  const tool = body.tool;
+  return {
+    ok: body.ok === true,
+    jobId: stringValue(body.jobId) || '',
+    tool: {
+      status: stringValue(tool.status) || 'error',
+      output: stringValue(tool.stdout) || stringValue(tool.output),
+      blocker: stringValue(tool.blocker),
+      changedFiles: stringArray(tool.changedFiles),
+      diffSummary: stringValue(tool.diffSummary),
+      testSummary: stringValue(tool.testSummary),
+      metadata: isObject(tool.metadata) ? tool.metadata : {},
+      evidenceGate: tool.evidenceGate,
+    },
+  };
+}
+
 export class SovereignAgentClient {
   private readonly config: SovereignAgentConfig;
   private readonly fetcher: typeof fetch;
@@ -134,6 +209,15 @@ export class SovereignAgentClient {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     return requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/cancel')), init: { method: 'POST', headers: headers(), credentials: 'include' }, fetcher: this.fetcher, now: this.now });
+  }
+  async runJanitor(jobId: string, input: SovereignJanitorInput = {}): Promise<SovereignJanitorToolResponse> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    return requestJanitorTool({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/tools/janitor')),
+      init: { method: 'POST', headers: headers(), credentials: 'include', body: JSON.stringify(input) },
+      fetcher: this.fetcher,
+    });
   }
 }
 export function createSovereignAgentClient(options: SovereignAgentClientOptions = {}): SovereignAgentClient { return new SovereignAgentClient(options); }
