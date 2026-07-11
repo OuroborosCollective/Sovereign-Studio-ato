@@ -133,7 +133,6 @@ jobs:
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
-          script_stop: true
           script: |
             set -euo pipefail
             RELEASE_DIR='${{ env.RELEASE_DIR }}'
@@ -167,7 +166,6 @@ jobs:
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
-          script_stop: true
           script: |
             set -euo pipefail
             RELEASE_DIR='${{ env.RELEASE_DIR }}'
@@ -261,7 +259,6 @@ jobs:
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
-          script_stop: true
           script: |
             set -euo pipefail
             docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; assert routes, "No agent routes registered"; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
