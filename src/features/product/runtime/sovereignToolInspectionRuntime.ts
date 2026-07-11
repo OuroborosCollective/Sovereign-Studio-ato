@@ -14,6 +14,20 @@ export interface SovereignToolInspectionEvidence {
   readonly statusLabel: string;
   readonly reason: string;
   readonly nextAction: string;
+  readonly observedAt: number;
+}
+
+export const SOVEREIGN_TOOL_INSPECTION_EVIDENCE_TTL_MS = 60_000;
+
+export function isSovereignToolInspectionEvidenceFresh(
+  evidence: SovereignToolInspectionEvidence,
+  now = Date.now(),
+  ttlMs = SOVEREIGN_TOOL_INSPECTION_EVIDENCE_TTL_MS,
+): boolean {
+  if (!Number.isFinite(evidence.observedAt) || evidence.observedAt <= 0) return false;
+  if (!Number.isFinite(now) || !Number.isFinite(ttlMs) || ttlMs < 0) return false;
+  const age = now - evidence.observedAt;
+  return age >= 0 && age <= ttlMs;
 }
 
 export type SovereignToolInspectionEvidenceMap = Readonly<
@@ -53,6 +67,7 @@ export interface SettingsInspectionInput {
 
 export function deriveSettingsInspectionEvidence(
   input: SettingsInspectionInput,
+  observedAt = Date.now(),
 ): SovereignToolInspectionEvidence {
   const restrictions = [
     !input.storageReady ? 'Browser-Speicher blockiert' : null,
@@ -65,6 +80,7 @@ export function deriveSettingsInspectionEvidence(
       statusLabel: 'Session eingeschränkt',
       reason: `${restrictions.join(' · ')} · Sprache: ${input.language || 'unknown'}.`,
       nextAction: 'Client- oder Browser-Einstellungen prüfen.',
+      observedAt,
     };
   }
 
@@ -73,6 +89,7 @@ export function deriveSettingsInspectionEvidence(
     statusLabel: 'Session geprüft',
     reason: `Browser-Speicher verfügbar · Client online · Sprache: ${input.language || 'unknown'}.`,
     nextAction: 'Session-Einstellungen anzeigen oder ändern.',
+    observedAt,
   };
 }
 
@@ -83,6 +100,7 @@ export interface MemoryInspectionInput {
 
 export function deriveMemoryInspectionEvidence(
   input: MemoryInspectionInput,
+  observedAt = Date.now(),
 ): SovereignToolInspectionEvidence {
   if (!input.storageReady) {
     return {
@@ -90,6 +108,7 @@ export function deriveMemoryInspectionEvidence(
       statusLabel: 'Storage blockiert',
       reason: 'Lokaler Browser-Speicher konnte nicht gelesen werden.',
       nextAction: 'Browser-Speicher freigeben und Memory erneut öffnen.',
+      observedAt,
     };
   }
 
@@ -103,6 +122,7 @@ export function deriveMemoryInspectionEvidence(
       statusLabel: 'Keine Memory-Evidence',
       reason: 'Im Browser wurden keine relevanten Memory- oder Pattern-Schlüssel gefunden.',
       nextAction: 'Memory nach einer echten gespeicherten Session erneut prüfen.',
+      observedAt,
     };
   }
 
@@ -111,6 +131,7 @@ export function deriveMemoryInspectionEvidence(
     statusLabel: `${keyCount} Memory-Hinweise`,
     reason: `${keyCount} relevante lokale Schlüssel wurden gezählt; Namen und Inhalte bleiben verborgen.`,
     nextAction: 'Memory-Inspektion anzeigen.',
+    observedAt,
   };
 }
 
@@ -122,6 +143,7 @@ export interface HealthInspectionInput {
 
 export function deriveHealthInspectionEvidence(
   input: HealthInspectionInput,
+  observedAt = Date.now(),
 ): SovereignToolInspectionEvidence {
   const restrictions = [
     !input.online ? 'Netzwerk offline' : null,
@@ -135,6 +157,7 @@ export function deriveHealthInspectionEvidence(
       statusLabel: 'Client eingeschränkt',
       reason: `${restrictions.join(' · ')}. Diese Prüfung umfasst nur den aktuellen Client.`,
       nextAction: 'Betroffene Client-Fähigkeit prüfen; CI, Worker und VPS separat prüfen.',
+      observedAt,
     };
   }
 
@@ -143,15 +166,17 @@ export function deriveHealthInspectionEvidence(
     statusLabel: 'Client-Checks bestanden',
     reason: 'Netzwerk, Browser-Speicher und Service-Worker-Fähigkeit sind am aktuellen Client verfügbar.',
     nextAction: 'Für vollständige Gesundheit zusätzlich CI, Worker und VPS prüfen.',
+    observedAt,
   };
 }
 
-export function createCoverageCheckingEvidence(): SovereignToolInspectionEvidence {
+export function createCoverageCheckingEvidence(observedAt = Date.now()): SovereignToolInspectionEvidence {
   return {
     outcome: 'checking',
     statusLabel: 'Coverage wird geprüft',
     reason: 'Die generierte Coverage-Map wird aus dem Deployment-Pfad geladen.',
     nextAction: 'Prüfergebnis abwarten.',
+    observedAt,
   };
 }
 
@@ -159,13 +184,14 @@ export function deriveCoverageInspectionEvidence(input: {
   readonly ok: boolean;
   readonly fileCount?: number;
   readonly detail?: string;
-}): SovereignToolInspectionEvidence {
+}, observedAt = Date.now()): SovereignToolInspectionEvidence {
   if (!input.ok) {
     return {
       outcome: 'failed',
       statusLabel: 'Coverage Map fehlt',
       reason: input.detail?.trim() || 'Die generierte Coverage-Map konnte nicht gelesen werden.',
       nextAction: 'Release- oder Coverage-Job prüfen und Map erneut laden.',
+      observedAt,
     };
   }
 
@@ -179,6 +205,7 @@ export function deriveCoverageInspectionEvidence(input: {
       statusLabel: 'Coverage Map leer',
       reason: 'Die Coverage-Map wurde geladen, enthält aber keine erkannten Einträge.',
       nextAction: 'Coverage-Erzeugung prüfen; keinen Prozentwert behaupten.',
+      observedAt,
     };
   }
 
@@ -187,5 +214,6 @@ export function deriveCoverageInspectionEvidence(input: {
     statusLabel: `${fileCount} Coverage-Einträge`,
     reason: `Die generierte Coverage-Map wurde geladen und enthält ${fileCount} Einträge.`,
     nextAction: 'Coverage-Map anzeigen; Prozentwerte nur aus echten Messdaten berechnen.',
+    observedAt,
   };
 }

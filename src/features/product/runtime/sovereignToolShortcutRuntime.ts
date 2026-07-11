@@ -5,7 +5,10 @@
  * Every shortcut resolves to an explicit gate, reason and next action.
  */
 
-import type { SovereignToolInspectionEvidenceMap } from './sovereignToolInspectionRuntime';
+import {
+  isSovereignToolInspectionEvidenceFresh,
+  type SovereignToolInspectionEvidenceMap,
+} from './sovereignToolInspectionRuntime';
 import type { SovereignExecutorIntentKind } from './sovereignExecutorRuntime';
 
 export type SovereignToolShortcutId =
@@ -105,6 +108,15 @@ function inspectionGate(
 
   const evidence = context.inspectionEvidence?.[definition.id];
   if (!evidence) return gate(definition, fallback);
+  if (!isSovereignToolInspectionEvidenceFresh(evidence)) {
+    return gate(definition, {
+      canOpen: true,
+      state: 'inspection',
+      statusLabel: 'Erneut prüfen',
+      reason: 'Die gespeicherte Tool-Evidence ist veraltet und wird nicht mehr als aktueller Status verwendet.',
+      nextAction: 'Tool öffnen und Runtime-Prüfung erneut ausführen.',
+    });
+  }
 
   const state: SovereignToolShortcutState = evidence.outcome === 'ready'
     ? 'ready'
