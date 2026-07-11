@@ -29,6 +29,9 @@ import {
 } from '../runtime/patternMemoryRuntime';
 import {
   createIdleSnapshot,
+  transitionBranchCreated,
+  transitionChecksRunning,
+  transitionCommitCreated,
   transitionDraftPrReady,
   transitionExecutorStarting,
   transitionExecutorRunning,
@@ -69,13 +72,15 @@ function idleSnap(): AgentWorkSnapshot {
 }
 
 function readySnap(prUrl: string): AgentWorkSnapshot {
-  // Walk the full allowed state machine path to reach draft_pr_ready:
-  // idle → intent_detected → executor_starting → executor_running → draft_pr_ready
+  // Walk the evidence-backed state machine path to reach draft_pr_ready.
   const base = createIdleSnapshot('test-trace');
   const withIntent = transitionIntentDetected(base, 'owner/repo', 'main');
   const starting = transitionExecutorStarting(withIntent, 'sovereign-agent');
   const running = transitionExecutorRunning(starting, 'job-test-123');
-  return transitionDraftPrReady(running, prUrl);
+  const branched = transitionBranchCreated(running, 'sovereign/test-work');
+  const committed = transitionCommitCreated(branched, 'abc1234');
+  const checking = transitionChecksRunning(committed);
+  return transitionDraftPrReady(checking, prUrl);
 }
 
 // ── Options builder ──────────────────────────────────────────────────────────

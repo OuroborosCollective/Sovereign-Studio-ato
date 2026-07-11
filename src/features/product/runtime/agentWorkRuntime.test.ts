@@ -51,6 +51,12 @@ describe('agentWorkRuntime', () => {
     expect(again.events).toHaveLength(1);
   });
 
+  it('does not claim intent detection without repo and base-branch evidence', () => {
+    const idle = createIdleSnapshot(TRACE);
+    expect(transitionIntentDetected(idle, '', 'main')).toBe(idle);
+    expect(transitionIntentDetected(idle, 'owner/repo', '   ')).toBe(idle);
+  });
+
   it('transitions through question_required', () => {
     const snap = transitionIntentDetected(createIdleSnapshot(TRACE), 'o/r', 'main');
     const q = transitionQuestionRequired(snap, 'Was soll passieren?');
@@ -157,20 +163,17 @@ describe('agentWorkRuntime', () => {
     expect(snap.draftPrUrl).toBe('https://github.com/o/r/pull/1');
   });
 
-  it('allows a verified executor result to become draft_pr_ready without inventing branch or commit truth', () => {
+  it('does not finalize a Draft PR from URL evidence alone', () => {
     let snap = createIdleSnapshot(TRACE);
     snap = transitionIntentDetected(snap, 'o/r', 'main');
     snap = transitionExecutorStarting(snap, 'sovereign-agent');
     snap = transitionExecutorRunning(snap, 'job-verified');
 
-    snap = transitionDraftPrReady(snap, 'https://github.com/o/r/pull/7');
+    const result = transitionDraftPrReady(snap, 'https://github.com/o/r/pull/7');
 
-    expect(snap.state).toBe('draft_pr_ready');
-    expect(snap.jobId).toBe('job-verified');
-    expect(snap.branchName).toBeNull();
-    expect(snap.commitSha).toBeNull();
-    expect(snap.draftPrUrl).toBe('https://github.com/o/r/pull/7');
-    expect(snap.events.at(-1)?.label).toBe('Draft PR bereit');
+    expect(result).toBe(snap);
+    expect(result.state).toBe('executor_running');
+    expect(result.draftPrUrl).toBeNull();
   });
 
   it('still blocks draft_pr_ready without a valid URL or active executor truth', () => {
@@ -209,6 +212,15 @@ describe('agentWorkRuntime', () => {
     const snap = transitionFailed(createIdleSnapshot(TRACE), 'Build error');
     expect(snap.state).toBe('failed');
     expect(snap.blockerReason).toBe('Build error');
+  });
+
+  it('keeps terminal truth immutable and rejects empty blocker evidence', () => {
+    const blocked = transitionBlocked(createIdleSnapshot(TRACE), 'No PAT provided');
+    expect(transitionFailed(blocked, 'later failure')).toBe(blocked);
+    expect(transitionBlocked(blocked, '   ')).toBe(blocked);
+
+    const failed = transitionFailed(createIdleSnapshot(TRACE), 'Build error');
+    expect(transitionBlocked(failed, 'later blocker')).toBe(failed);
   });
 
   it('isTerminalState returns correct values', () => {

@@ -405,11 +405,12 @@ describe('integrationIntentDraftRuntime', () => {
       expect(event.state).toBe('blocked');
     });
 
-    it('buildRouteStartedEvent creates running event', () => {
+    it('buildRouteStartedEvent stays queued until runtime start evidence exists', () => {
       const event = buildRouteStartedEvent('sovereign-agent');
 
       expect(event.kind).toBe('route_selected');
-      expect(event.state).toBe('running');
+      expect(event.state).toBe('queued');
+      expect(event.detail).toContain('Runtime-Start-Evidence');
     });
 
     it('buildRouteBlockedEvent creates blocked event', () => {
