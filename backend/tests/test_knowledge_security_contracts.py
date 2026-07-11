@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import re
 import sys
 from types import ModuleType, SimpleNamespace
 
@@ -179,6 +180,19 @@ def test_migration_and_image_build_contain_live_contracts() -> None:
     assert "security_runtime.py" in workflow
     assert "are_inference.py" in workflow
     assert "python -m pip install -r scripts/sovereign-backend/requirements.txt pytest -q" in ci_workflow
+
+
+def test_pnpm_action_setup_uses_package_manager_as_single_version_source() -> None:
+    workflows = sorted((ROOT / ".github/workflows").glob("*.y*ml"))
+    duplicate_version = re.compile(
+        r"uses:\s*pnpm/action-setup@v4\s*\n\s+with:\s*\n(?:\s+[^\n]+\n)*?\s+version:",
+        re.MULTILINE,
+    )
+    for workflow_path in workflows:
+        source = read(workflow_path)
+        assert "PNPM_VERSION: 10" not in source, workflow_path.name
+        assert "PNPM_VERSION: \"10\"" not in source, workflow_path.name
+        assert not duplicate_version.search(source), workflow_path.name
 
 
 def test_payment_and_credit_security_are_server_authoritative() -> None:
