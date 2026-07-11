@@ -104,6 +104,7 @@ describe('SovereignToolLauncher', () => {
       statusLabel: 'Client-Checks bestanden',
       reason: 'Echte Client-Evidence vorhanden.',
       nextAction: 'CI separat prüfen.',
+      observedAt: Date.now(),
     });
     render(<SovereignToolLauncher onSelect={vi.fn()} />);
     fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
@@ -111,6 +112,24 @@ describe('SovereignToolLauncher', () => {
     const health = screen.getByRole('menuitem', { name: 'Health' });
     expect(health).toHaveAttribute('data-gate-state', 'ready');
     expect(screen.getByText('Client-Checks bestanden')).toBeInTheDocument();
+  });
+
+  it('downgrades stale inspection evidence instead of keeping a false ready state', () => {
+    useSovereignToolInspectionStore.getState().recordEvidence('health', {
+      outcome: 'ready',
+      statusLabel: 'Client-Checks bestanden',
+      reason: 'Alte Client-Evidence.',
+      nextAction: 'Nichts tun.',
+      observedAt: 1,
+    });
+
+    render(<SovereignToolLauncher onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+
+    const health = screen.getByRole('menuitem', { name: 'Health' });
+    expect(health).toHaveAttribute('data-gate-state', 'inspection');
+    expect(screen.getByText('Erneut prüfen')).toBeInTheDocument();
+    expect(health.getAttribute('title')).toContain('veraltet');
   });
 
   it('shows inspection status instead of pre-claiming health, memory or coverage', () => {

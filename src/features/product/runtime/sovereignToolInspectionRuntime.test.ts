@@ -5,6 +5,8 @@ import {
   deriveHealthInspectionEvidence,
   deriveMemoryInspectionEvidence,
   deriveSettingsInspectionEvidence,
+  isSovereignToolInspectionEvidenceFresh,
+  SOVEREIGN_TOOL_INSPECTION_EVIDENCE_TTL_MS,
   useSovereignToolInspectionStore,
 } from './sovereignToolInspectionRuntime';
 
@@ -24,6 +26,25 @@ describe('sovereignToolInspectionRuntime', () => {
     expect(useSovereignToolInspectionStore.getState().evidence.health).toEqual(evidence);
     useSovereignToolInspectionStore.getState().clearEvidence('health');
     expect(useSovereignToolInspectionStore.getState().evidence.health).toBeUndefined();
+  });
+
+  it('expires inspection evidence instead of trusting old UI status indefinitely', () => {
+    const observedAt = 10_000;
+    const evidence = deriveHealthInspectionEvidence({
+      online: true,
+      storageReady: true,
+      serviceWorkerAvailable: true,
+    }, observedAt);
+
+    expect(isSovereignToolInspectionEvidenceFresh(
+      evidence,
+      observedAt + SOVEREIGN_TOOL_INSPECTION_EVIDENCE_TTL_MS,
+    )).toBe(true);
+    expect(isSovereignToolInspectionEvidenceFresh(
+      evidence,
+      observedAt + SOVEREIGN_TOOL_INSPECTION_EVIDENCE_TTL_MS + 1,
+    )).toBe(false);
+    expect(isSovereignToolInspectionEvidenceFresh({ ...evidence, observedAt: 0 }, observedAt)).toBe(false);
   });
 
   it('keeps health truth scoped to client checks', () => {
