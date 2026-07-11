@@ -8,6 +8,10 @@ from typing import Iterable
 WORKSPACE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{5,63}$")
 BRANCH_RE = re.compile(r"^sovereign/chatgpt/[a-z0-9][a-z0-9._/-]{5,120}$")
 CONTAINER_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$")
+CONTAINER_ALIASES = {
+    "sovereign-mcp": "sovereign-chatgpt-mcp",
+    "mcp": "sovereign-chatgpt-mcp",
+}
 
 BLOCKED_PARTS = {
     ".git",
@@ -41,11 +45,14 @@ def validate_branch(value: str) -> str:
 
 
 def validate_container(value: str, allowed: Iterable[str]) -> str:
-    value = str(value or "").strip()
-    allowlist = {item.strip() for item in allowed if item.strip()}
-    if not CONTAINER_RE.fullmatch(value) or value not in allowlist:
+    requested = str(value or "").strip()
+    if not CONTAINER_RE.fullmatch(requested):
         raise ValueError("Container ist nicht freigegeben")
-    return value
+    canonical = CONTAINER_ALIASES.get(requested, requested)
+    allowlist = {item.strip() for item in allowed if item.strip()}
+    if canonical not in allowlist:
+        raise ValueError("Container ist nicht freigegeben")
+    return canonical
 
 
 def safe_repo_path(repo_root: Path, relative_path: str, *, must_exist: bool | None = None) -> Path:
