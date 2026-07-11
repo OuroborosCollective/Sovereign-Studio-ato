@@ -6,6 +6,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.12.2",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build:web": "tsc && vite build && node scripts/release-html-runtime-fix.mjs && node scripts/copy-dist-to-android.mjs && node scripts/sovereign-static-audit.mjs",
