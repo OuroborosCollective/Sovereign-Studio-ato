@@ -110,26 +110,15 @@ def _line_text(content: str, lineno: int) -> str:
 
 
 def _finding(
-    *,
-    rule_id: str,
-    severity: str,
-    path: str,
-    line: int,
-    message: str,
-    evidence: str,
-    content_sha256: str,
-    suggested_search: str | None = None,
+    *, rule_id: str, severity: str, path: str, line: int, message: str,
+    evidence: str, content_sha256: str, suggested_search: str | None = None,
     suggested_replacement: str | None = None,
 ) -> dict[str, Any]:
     stable = f"{rule_id}:{path}:{line}:{evidence}"
     return {
         "id": hashlib.sha256(stable.encode("utf-8")).hexdigest()[:16],
-        "ruleId": rule_id,
-        "severity": severity,
-        "path": path,
-        "line": line,
-        "message": message,
-        "evidence": _mask_sensitive(evidence),
+        "ruleId": rule_id, "severity": severity, "path": path, "line": line,
+        "message": message, "evidence": _mask_sensitive(evidence),
         "contentSha256": content_sha256,
         "fixAvailable": bool(suggested_search is not None and suggested_replacement is not None),
         "suggestedSearchText": suggested_search,
@@ -164,7 +153,6 @@ def _scan_python(path: str, content: str, content_sha256: str) -> list[dict[str,
             evidence=str(exc.msg), content_sha256=content_sha256,
         ))
         return findings
-
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             call_name = _python_call_name(node)
