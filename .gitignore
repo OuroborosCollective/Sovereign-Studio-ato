@@ -36,3 +36,6 @@ android/app/*.jks
 android/app/*.keystore
 android/app/*.p12
 backend_app.py
+
+# Generated VPS runtime truth; never commit live evidence or infrastructure details
+runtime-evidence/

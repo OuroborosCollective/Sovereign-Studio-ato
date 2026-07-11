@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DIGEST="${1:-}"
+EXPECTED_REVISION="${2:-}"
+IMAGE_REPOSITORY="${SOVEREIGN_BACKEND_IMAGE_REPOSITORY:-}"
+ENV_FILE="${SOVEREIGN_BACKEND_ENV_FILE:-/run/secrets/sovereign-backend.env}"
+CONTAINER="sovereign-backend"
+CANDIDATE="sovereign-backend-candidate"
+PREVIOUS_IMAGE=""
+NEW_IMAGE=""
+
+fail() {
+  printf 'deploy blocked: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid image digest"
+[[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "invalid expected revision"
+[[ -n "$IMAGE_REPOSITORY" ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is missing"
+[[ -f "$ENV_FILE" ]] || fail "backend env file is missing"
+
+NEW_IMAGE="${IMAGE_REPOSITORY}@${DIGEST}"
+docker pull "$NEW_IMAGE" >/dev/null
+
+ACTUAL_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$NEW_IMAGE" 2>/dev/null || true)"
+[[ "$ACTUAL_DIGEST" == *"@$DIGEST" ]] || fail "pulled image digest does not match"
+
+IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$NEW_IMAGE" 2>/dev/null || true)"
+[[ "$IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "image revision label does not match expected commit"
+
+for network in supabase_default areloria_arelorian-network openhands-enterprise_default; do
+  docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
+done
+
+docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
+docker run -d \
+  --name "$CANDIDATE" \
+  --env-file "$ENV_FILE" \
+  --network supabase_default \
+  --volume /opt/secure:/opt/secure:ro \
+  --label "org.opencontainers.image.revision=$EXPECTED_REVISION" \
+  "$NEW_IMAGE" >/dev/null
+
+docker network connect areloria_arelorian-network "$CANDIDATE"
+docker network connect openhands-enterprise_default "$CANDIDATE"
+
+candidate_cleanup() {
+  docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
+}
+trap candidate_cleanup EXIT
+
+HEALTH=""
+for attempt in $(seq 1 12); do
+  HEALTH="$(docker exec "$CANDIDATE" python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8787/health", timeout=4).read().decode())' 2>/dev/null || true)"
+  if printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    break
+  fi
+  sleep 5
+done
+printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
+  docker logs "$CANDIDATE" --tail 150 >&2 || true
+  fail "candidate health check failed"
+}
+
+PREVIOUS_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$CONTAINER" 2>/dev/null || true)"
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+
+start_production() {
+  local image="$1"
+  local revision="$2"
+  docker run -d \
+    --name "$CONTAINER" \
+    --restart unless-stopped \
+    --env-file "$ENV_FILE" \
+    --network supabase_default \
+    --volume /opt/secure:/opt/secure:ro \
+    --label "org.opencontainers.image.revision=$revision" \
+    -p 127.0.0.1:8788:8787 \
+    "$image" >/dev/null
+  docker network connect areloria_arelorian-network "$CONTAINER"
+  docker network connect openhands-enterprise_default "$CONTAINER"
+}
+
+start_production "$NEW_IMAGE" "$EXPECTED_REVISION"
+
+HOST_HEALTH=""
+for attempt in $(seq 1 12); do
+  HOST_HEALTH="$(curl -fsS http://127.0.0.1:8788/health 2>/dev/null || true)"
+  if printf '%s' "$HOST_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    break
+  fi
+  sleep 5
+done
+
+if ! printf '%s' "$HOST_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  docker logs "$CONTAINER" --tail 150 >&2 || true
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  if [[ -n "$PREVIOUS_IMAGE" ]]; then
+    PREVIOUS_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$PREVIOUS_IMAGE" 2>/dev/null || true)"
+    start_production "$PREVIOUS_IMAGE" "$PREVIOUS_REVISION"
+  fi
+  fail "production health check failed; previous image restoration attempted"
+fi
+
+printf '{"ok":true,"container":"%s","image":"%s","revision":"%s","health":%s}\n' \
+  "$CONTAINER" "$NEW_IMAGE" "$EXPECTED_REVISION" "$HOST_HEALTH"

@@ -1,0 +1,35 @@
+[Unit]
+Description=Sovereign ChatGPT fixed-action host broker
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=sovereign-mcp
+EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=SOVEREIGN_MCP_BROKER_SOCKET=/run/sovereign-chatgpt-broker/operator.sock
+Environment=SOVEREIGN_MCP_BROKER_GROUP=sovereign-mcp
+WorkingDirectory=/opt/sovereign-chatgpt-tools/broker
+ExecStartPre=/usr/bin/test -S /var/run/docker.sock
+ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py
+Restart=on-failure
+RestartSec=3
+UMask=0007
+RuntimeDirectory=sovereign-chatgpt-broker
+RuntimeDirectoryMode=0770
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/sovereign-chatgpt-tools /opt/sovereign-backend /opt/secure
+ReadWritePaths=/run/sovereign-chatgpt-broker
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

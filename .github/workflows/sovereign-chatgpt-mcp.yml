@@ -1,0 +1,94 @@
+name: Sovereign ChatGPT MCP
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/sovereign-chatgpt-mcp/**'
+      - '.github/workflows/sovereign-chatgpt-mcp.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/sovereign-chatgpt-mcp/**'
+      - '.github/workflows/sovereign-chatgpt-mcp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate MCP operator
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/sovereign-chatgpt-mcp
+    env:
+      SOVEREIGN_MCP_WORKSPACE_ROOT: /tmp/sovereign-mcp-workspaces
+      SOVEREIGN_MCP_HOST: 127.0.0.1
+      SOVEREIGN_MCP_PORT: '8090'
+      SOVEREIGN_MCP_REPOSITORY: OuroborosCollective/Sovereign-Studio-ato
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/sovereign-chatgpt-mcp/requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install --requirement requirements.txt
+
+      - name: Compile Python runtime
+        run: python -m py_compile policy.py runtime.py database.py operations.py broker.py broker_client.py server.py tests/*.py
+
+      - name: Validate fixed shell and systemd assets
+        run: |
+          set -euo pipefail
+          bash -n deploy/deploy-sovereign-backend
+          bash -n deploy/rollback-sovereign-backend
+          bash -n deploy/install-on-vps.sh
+          grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py$' deploy/sovereign-chatgpt-broker.service
+          grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
+
+      - name: Run policy and runtime tests
+        run: python -m pytest -q
+
+      - name: Import MCP server and inspect repository contract
+        run: |
+          python - <<'PY'
+          import server
+          assert server.mcp is not None
+          assert server.runtime.config.repository == 'OuroborosCollective/Sovereign-Studio-ato'
+          assert server.broker.socket_path.name == 'operator.sock'
+          print('MCP import, repository and broker contracts passed.')
+          PY
+
+      - name: Build unprivileged MCP container
+        run: docker build --tag sovereign-chatgpt-mcp:${{ github.sha }} .
+
+      - name: Assert Docker socket is absent from MCP container contract
+        run: |
+          set -euo pipefail
+          if grep -RIn '/var/run/docker.sock' Dockerfile docker-compose.yml server.py broker_client.py; then
+            echo 'MCP container must not receive the Docker socket.' >&2
+            exit 1
+          fi
+          grep -q '/run/sovereign-chatgpt-broker' docker-compose.yml
+
+      - name: Scan tracked files for forbidden private material
+        run: |
+          set -euo pipefail
+          if grep -RInE --exclude='.env.example' --exclude='*.pyc' \
+            '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-proj-[A-Za-z0-9_-]{20,})' .; then
+            echo 'Forbidden secret-shaped material found.' >&2
+            exit 1
+          fi
