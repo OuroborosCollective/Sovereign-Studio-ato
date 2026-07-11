@@ -19,8 +19,9 @@ function result(overrides: Partial<AreInferenceResult['state']> = {}): AreInfere
       owner: 'OuroborosCollective',
       repo: 'Sovereign-Studio-ato',
       branch: 'main',
-      repositoryHash: 'b'.repeat(64),
-      changedFiles: [],
+      repositoryRevision: 'b'.repeat(64),
+      files: [],
+      evidenceComplete: true,
     },
     knowledgeRevision: 'c'.repeat(64),
     experienceRevision: 'd'.repeat(64),
@@ -32,7 +33,7 @@ function result(overrides: Partial<AreInferenceResult['state']> = {}): AreInfere
   return {
     ok: true,
     schemaVersion: 1,
-    stateHash: `${state.promptSha256.slice(0, 32)}${state.repository.repositoryHash.slice(0, 32)}`,
+    stateHash: `${state.promptSha256.slice(0, 32)}${state.repository.repositoryRevision.slice(0, 32)}`,
     state,
     decision: 'online_required',
     adapter: 'hybrid-memory-online',
@@ -78,7 +79,7 @@ describe('ARE predictive bridge', () => {
     const previous = result();
     const current = result({
       knowledgeRevision: 'f'.repeat(64),
-      repository: { ...previous.state.repository, repositoryHash: '1'.repeat(64) },
+      repository: { ...previous.state.repository, repositoryRevision: '1'.repeat(64) },
       onlineAvailable: false,
     });
     const transition = compareAreState({ stateHash: previous.stateHash, state: previous.state }, current);
