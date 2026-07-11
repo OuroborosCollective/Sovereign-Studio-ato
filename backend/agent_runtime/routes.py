@@ -104,6 +104,7 @@ def _tool_result_to_api(result: ToolResult, gate: EvidenceGateResult | None = No
         "status": result.status,
         "stdout": result.stdout,
         "stderr": result.stderr,
+        "metadata": result.metadata,
         "changedFiles": list(result.changed_files),
         "diffSummary": result.diff_summary,
         "testSummary": result.test_summary,
