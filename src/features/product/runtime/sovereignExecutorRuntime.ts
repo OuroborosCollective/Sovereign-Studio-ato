@@ -162,7 +162,7 @@ function allowedDecision(args: {
       kind: args.eventKind ?? 'route_selected',
       label: args.eventLabel,
       detail: args.reason,
-      state: 'running',
+      state: args.terminal ? 'done' : 'queued',
     }),
   };
 }

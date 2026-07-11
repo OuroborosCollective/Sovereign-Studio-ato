@@ -77,7 +77,7 @@ function learn(route: SovereignInternalOperatorRoute, signals: readonly Sovereig
 }
 
 function stages(route: SovereignInternalOperatorRoute, complex: boolean): readonly SovereignInternalOperatorStage[] {
-  if (route === 'direct_patch') return ['repo_snapshot', 'intent_plan', 'file_patch', 'diff_guard'];
+  if (route === 'direct_patch') return ['repo_snapshot', 'intent_plan', 'file_patch', 'diff_guard', 'draft_pr_gate'];
   const result: SovereignInternalOperatorStage[] = ['repo_snapshot', 'intent_plan', 'patch_plan', 'file_patch', 'diff_guard'];
   if (complex) result.push('test_selection');
   result.push('draft_pr_gate');
@@ -109,40 +109,38 @@ export function decideSovereignInternalOperator(input: SovereignInternalOperator
     {
       route: 'direct_patch',
       score: simpleDocs ? 0.92 : input.candidatePath ? 0.62 : 0.35,
-      available: input.capabilities.directPatch.canStart,
+      available: input.capabilities.directPatch.canStart && input.capabilities.draftPr.canStart,
       signals: simpleDocs ? ['small-doc-change'] : input.candidatePath ? ['candidate-path'] : [],
     },
     {
       route: 'internal_workspace',
       score: complex ? 0.9 : 0.56,
-      available: input.capabilities.workspace.canStart,
+      available: input.capabilities.workspace.canStart && input.capabilities.draftPr.canStart,
       signals: complex ? ['complex-work', 'own-workspace'] : ['own-workspace'],
     },
     {
       route: 'agent_runtime',
       score: complex ? 0.74 : 0.48,
-      available: input.capabilities.agent.canStart,
+      available: input.capabilities.agent.canStart && input.capabilities.draftPr.canStart,
       signals: input.capabilities.agent.canStart ? ['optional-bridge'] : [],
     },
     {
       route: 'internal_runtime_patch',
       score: complex ? 0.78 : 0.58,
-      available: Boolean(
-        input.internalRuntimePatchConfigured
-        && input.capabilities.repo.canStart
-        && input.capabilities.githubWrite.canStart,
-      ),
-      signals: input.internalRuntimePatchConfigured
-        ? ['sovereign-owned-runtime', 'adapter-connected']
-        : ['adapter-not-connected'],
+      available: input.capabilities.directPatch.canStart && input.capabilities.draftPr.canStart,
+      signals: ['sovereign-owned-runtime'],
     },
   ];
 
-  if (!input.capabilities.repo.canStart || !input.capabilities.githubWrite.canStart) {
+  if (!input.capabilities.repo.canStart || !input.capabilities.githubWrite.canStart || !input.capabilities.draftPr.canStart) {
     return {
       state: 'blocked',
       route: 'blocked',
-      reason: !input.capabilities.repo.canStart ? input.capabilities.repo.reason : input.capabilities.githubWrite.reason,
+      reason: !input.capabilities.repo.canStart
+        ? input.capabilities.repo.reason
+        : !input.capabilities.githubWrite.canStart
+          ? input.capabilities.githubWrite.reason
+          : input.capabilities.draftPr.reason,
       nextAction: 'show_blocker',
       confidence: 0,
       stages: [],
