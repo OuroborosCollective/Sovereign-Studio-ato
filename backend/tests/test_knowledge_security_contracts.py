@@ -220,6 +220,13 @@ def test_frontend_surfaces_and_runtime_consumption_exist() -> None:
     assert "referenceKnowledgeContext = areInferenceResult.knowledgeContext" in builder
     assert "experiencePatternContext = areInferenceResult.experienceContext" in builder
     assert "quarantineOnlineAnswer" in builder
+    assert "const workerHealthForInference = await fetchDevChatWorkerHealth()" in builder
+    assert "repositoryRevision: chatRepoSnapshot?.treeSha" in builder
+    assert "files: chatRepoSnapshot?.files ?? []" in builder
+    assert "const _canProceed = await chargeCredits(d.modelId" in builder
+    assert "if (fullText && !streamError && !streamDiagnostic)" in builder
+    assert "await quarantineOnlineAnswer" in builder
+    assert "Der Auftrag wurde vor Credit-Abzug und Online-Call gestoppt" in builder
     assert "fetchWithStepUp" in billing
     assert "fetchWithStepUp" in guard
     assert "Mit Passkey anmelden" in login

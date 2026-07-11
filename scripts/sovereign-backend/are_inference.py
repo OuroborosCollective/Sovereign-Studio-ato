@@ -104,7 +104,11 @@ def _stable_rows(rows: Iterable[dict[str, Any]], id_reader: Callable[[dict[str, 
 
 def _revision(rows: Iterable[dict[str, Any]], id_reader: Callable[[dict[str, Any]], str]) -> str:
     material = [
-        {"id": id_reader(row), "similarity": round(_similarity(row), 8)}
+        {
+            "id": id_reader(row),
+            "content": str(row.get("contentSha256") or row.get("responseSha256") or ""),
+            "similarity": round(_similarity(row), 8),
+        }
         for row in _stable_rows(rows, id_reader)
     ]
     return deterministic_hash(material)
@@ -112,32 +116,44 @@ def _revision(rows: Iterable[dict[str, Any]], id_reader: Callable[[dict[str, Any
 
 def _normalize_repository(payload: dict[str, Any]) -> dict[str, Any]:
     repository = payload.get("repository") if isinstance(payload.get("repository"), dict) else {}
-    files = repository.get("changedFiles") if isinstance(repository.get("changedFiles"), list) else []
+    files = repository.get("files") if isinstance(repository.get("files"), list) else repository.get("changedFiles")
+    files = files if isinstance(files, list) else []
     normalized_files: list[dict[str, str]] = []
     for item in files:
         if isinstance(item, str):
             path = item.strip()[:1_000]
-            sha256 = ""
+            object_id = ""
         elif isinstance(item, dict):
             path = str(item.get("path") or "").strip()[:1_000]
-            sha256 = str(item.get("sha256") or item.get("sha") or "").strip().lower()[:64]
+            object_id = str(item.get("objectId") or item.get("sha") or item.get("sha256") or "").strip().lower()[:64]
         else:
             continue
         if path:
-            normalized_files.append({"path": path, "sha256": sha256})
-    normalized_files.sort(key=lambda item: (item["path"], item["sha256"]))
+            normalized_files.append({"path": path, "objectId": object_id})
+    normalized_files.sort(key=lambda item: (item["path"], item["objectId"]))
+    repository_revision = str(
+        repository.get("repositoryRevision") or repository.get("repositoryHash") or ""
+    ).strip().lower()[:64]
+    evidence_complete = bool(
+        repository.get("evidenceComplete")
+        and repository_revision
+        and normalized_files
+        and all(item["objectId"] for item in normalized_files)
+    )
     return {
         "owner": str(repository.get("owner") or "").strip()[:240],
         "repo": str(repository.get("repo") or "").strip()[:240],
         "branch": str(repository.get("branch") or "").strip()[:240],
-        "repositoryHash": str(repository.get("repositoryHash") or "").strip().lower()[:64],
-        "changedFiles": normalized_files,
+        "repositoryRevision": repository_revision,
+        "files": normalized_files,
+        "evidenceComplete": evidence_complete,
     }
 
 
-def _normalize_capabilities(payload: dict[str, Any]) -> list[str]:
-    raw = payload.get("activeCapabilities") if isinstance(payload.get("activeCapabilities"), list) else []
-    return sorted({str(item).strip()[:160] for item in raw if str(item).strip()})
+def _runtime_capabilities() -> list[str]:
+    # No local execute endpoint exists in this release. Advertising the capability
+    # before an executable route exists would turn configuration into fake truth.
+    return []
 
 
 def _context_knowledge(rows: list[dict[str, Any]]) -> str:
@@ -187,8 +203,8 @@ def evaluate_are_inference(
         limit = 5
 
     repository = _normalize_repository(payload)
-    capabilities = _normalize_capabilities(payload)
-    online_available = bool(payload.get("onlineAvailable", True))
+    capabilities = _runtime_capabilities()
+    online_available = payload.get("onlineAvailable") is True
 
     knowledge_error = None
     experience_error = None
@@ -215,6 +231,14 @@ def evaluate_are_inference(
         experience_rows = []
         experience_error = str(exc)[:500]
 
+    knowledge_rows = [
+        row for row in knowledge_rows
+        if _knowledge_id(row) and _similarity(row) >= MIN_CONTEXT_SIMILARITY
+    ]
+    experience_rows = [
+        row for row in experience_rows
+        if _experience_id(row) and _similarity(row) >= MIN_CONTEXT_SIMILARITY
+    ]
     knowledge_confidence = max((_similarity(row) for row in knowledge_rows), default=0.0)
     experience_confidence = max((_similarity(row) for row in experience_rows), default=0.0)
     memory_confidence = max(knowledge_confidence, experience_confidence)
@@ -229,6 +253,8 @@ def evaluate_are_inference(
         reasons.append("reference_search_blocked")
     if experience_error:
         reasons.append("experience_search_blocked")
+    if not repository["evidenceComplete"]:
+        reasons.append("repository_evidence_incomplete")
 
     has_reference = knowledge_confidence >= KNOWLEDGE_THRESHOLD
     has_experience = experience_confidence >= EXPERIENCE_THRESHOLD
@@ -290,6 +316,7 @@ def evaluate_are_inference(
         "blockers": {
             "knowledge": knowledge_error,
             "experience": experience_error,
+            "repository": None if repository["evidenceComplete"] else "repository snapshot has no complete Git object evidence",
         },
         "deterministic": True,
     }
@@ -319,7 +346,8 @@ def _quarantine_candidate(conn: Any, *, user_id: str, body: dict[str, Any]) -> d
                VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
                ON CONFLICT (user_id, content_sha256) DO UPDATE SET
                    updated_at=NOW()
-               RETURNING id::text, status, content_sha256 AS "contentSha256""",
+               RETURNING id::text, status, content_sha256 AS "contentSha256",
+                         (id::text <> %s) AS duplicate""",
             (
                 candidate_id,
                 user_id,
@@ -332,11 +360,18 @@ def _quarantine_candidate(conn: Any, *, user_id: str, body: dict[str, Any]) -> d
                 _bounded_text(body.get("adapter"), 160),
                 _bounded_text(body.get("modelId"), 240),
                 json.dumps(metadata, ensure_ascii=False),
+                candidate_id,
             ),
         )
         row = dict(cur.fetchone())
     conn.commit()
-    return {"candidate": row, "quarantined": True, "promoted": False}
+    return {
+        "candidate": row,
+        "quarantined": row.get("status") == "pending",
+        "duplicate": bool(row.get("duplicate")),
+        "learningState": "pending_evidence" if row.get("status") == "pending" else "already_resolved",
+        "promoted": row.get("status") == "promoted",
+    }
 
 
 def _list_quarantine(conn: Any, *, user_id: str) -> list[dict[str, Any]]:
@@ -398,12 +433,20 @@ def repair_missing_knowledge_embeddings(
         rows = [dict(row) for row in cur.fetchall()]
 
     if not rows:
-        return {"action": "recompute_missing_knowledge_embeddings", "repaired": 0, "remaining": 0}
+        return {
+            "action": "recompute_missing_knowledge_embeddings",
+            "selected": 0,
+            "repaired": 0,
+            "remaining": 0,
+            "remainingForUser": 0,
+            "blockIds": [],
+        }
 
     batch = embedding_provider(row["content"] for row in rows)
     if len(batch.vectors) != len(rows):
         raise EmbeddingUnavailable("Embedding repair count did not match selected knowledge blocks")
 
+    updated_ids: list[str] = []
     with conn.cursor() as cur:
         for row, vector in zip(rows, batch.vectors):
             cur.execute(
@@ -412,8 +455,11 @@ def repair_missing_knowledge_embeddings(
                    WHERE id=%s::uuid AND user_id=%s::uuid AND embedding IS NULL""",
                 (vector_literal(vector), EMBEDDING_MODEL, row["id"], user_id),
             )
-        cur.execute(
-            """UPDATE knowledge_sources s
+            if int(getattr(cur, "rowcount", 0) or 0) > 0:
+                updated_ids.append(row["id"])
+        if updated_ids:
+            cur.execute(
+                """UPDATE knowledge_sources s
                SET status=CASE
                      WHEN EXISTS (
                          SELECT 1 FROM knowledge_source_blocks sb
@@ -430,10 +476,15 @@ def repair_missing_knowledge_embeddings(
                    updated_at=NOW()
                WHERE s.user_id=%s::uuid
                  AND EXISTS (
-                     SELECT 1 FROM knowledge_source_blocks sb WHERE sb.source_id=s.id
+                     SELECT 1 FROM knowledge_source_blocks sb
+                     WHERE sb.source_id=s.id AND sb.block_id=ANY(%s::uuid[])
                  )""",
-            (json.dumps({"embeddingModel": EMBEDDING_MODEL, "repairProvider": batch.provider}), user_id),
-        )
+                (
+                    json.dumps({"embeddingModel": EMBEDDING_MODEL, "repairProvider": batch.provider}),
+                    user_id,
+                    updated_ids,
+                ),
+            )
         cur.execute(
             "SELECT COUNT(*) AS remaining FROM knowledge_blocks WHERE user_id=%s::uuid AND embedding IS NULL",
             (user_id,),
@@ -443,11 +494,13 @@ def repair_missing_knowledge_embeddings(
     remaining = int((remaining_row or {}).get("remaining", 0))
     return {
         "action": "recompute_missing_knowledge_embeddings",
-        "repaired": len(rows),
+        "selected": len(rows),
+        "repaired": len(updated_ids),
         "remaining": remaining,
+        "remainingForUser": remaining,
         "embeddingModel": EMBEDDING_MODEL,
         "provider": batch.provider,
-        "blockIds": [row["id"] for row in rows],
+        "blockIds": updated_ids,
     }
 
 

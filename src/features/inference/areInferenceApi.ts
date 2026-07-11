@@ -5,17 +5,18 @@ const API_BASE = (
 
 export type AreInferenceDecision = 'local' | 'online_required' | 'blocked';
 
-export interface AreChangedFile {
+export interface AreRepositoryFile {
   readonly path: string;
-  readonly sha256: string;
+  readonly objectId: string;
 }
 
 export interface AreRepositoryState {
   readonly owner: string;
   readonly repo: string;
   readonly branch: string;
-  readonly repositoryHash: string;
-  readonly changedFiles: readonly AreChangedFile[];
+  readonly repositoryRevision: string;
+  readonly files: readonly AreRepositoryFile[];
+  readonly evidenceComplete: boolean;
 }
 
 export interface AreStateEnvelope {
@@ -67,6 +68,7 @@ export interface AreInferenceResult {
   readonly blockers: {
     readonly knowledge?: string | null;
     readonly experience?: string | null;
+    readonly repository?: string | null;
   };
   readonly deterministic: true;
 }
@@ -89,20 +91,27 @@ export interface QuarantineAreResponseInput {
 }
 
 function normalizeRepository(repository?: Partial<AreRepositoryState>): AreRepositoryState {
-  const changedFiles = [...(repository?.changedFiles ?? [])]
+  const files = [...(repository?.files ?? [])]
     .map((entry) => ({
       path: entry.path.trim(),
-      sha256: entry.sha256.trim().toLowerCase(),
+      objectId: entry.objectId.trim().toLowerCase(),
     }))
     .filter((entry) => entry.path.length > 0)
-    .sort((left, right) => left.path.localeCompare(right.path) || left.sha256.localeCompare(right.sha256));
+    .sort((left, right) => left.path.localeCompare(right.path) || left.objectId.localeCompare(right.objectId));
+  const repositoryRevision = repository?.repositoryRevision?.trim().toLowerCase() ?? '';
+  const evidenceComplete = Boolean(
+    repository?.evidenceComplete
+    && repositoryRevision
+    && files.every((entry) => entry.objectId.length > 0),
+  );
 
   return {
     owner: repository?.owner?.trim() ?? '',
     repo: repository?.repo?.trim() ?? '',
     branch: repository?.branch?.trim() ?? '',
-    repositoryHash: repository?.repositoryHash?.trim().toLowerCase() ?? '',
-    changedFiles,
+    repositoryRevision,
+    files,
+    evidenceComplete,
   };
 }
 
@@ -150,8 +159,10 @@ export async function evaluateAreInference(input: EvaluateAreInferenceInput): Pr
 
 export interface AreKnowledgeRepairResult {
   readonly action: 'recompute_missing_knowledge_embeddings';
+  readonly selected: number;
   readonly repaired: number;
   readonly remaining: number;
+  readonly remainingForUser: number;
   readonly embeddingModel?: string;
   readonly provider?: string;
   readonly blockIds?: readonly string[];
@@ -174,31 +185,48 @@ export async function repairMissingKnowledgeEmbeddings(limit = 25): Promise<AreK
   return payload as AreKnowledgeRepairResult;
 }
 
-export async function quarantineAreResponse(input: QuarantineAreResponseInput): Promise<void> {
+export interface AreQuarantineResult {
+  readonly candidate: {
+    readonly id: string;
+    readonly status: string;
+    readonly contentSha256: string;
+  };
+  readonly quarantined: boolean;
+  readonly duplicate: boolean;
+  readonly learningState: 'pending_evidence' | 'already_resolved';
+  readonly promoted: boolean;
+}
+
+export async function quarantineAreResponse(input: QuarantineAreResponseInput): Promise<AreQuarantineResult> {
   const response = await fetch(`${API_BASE}/api/inference/are/quarantine`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+  const payload = await readJson<AreQuarantineResult>(response);
   if (!response.ok) {
-    const payload = await readJson<Record<string, never>>(response);
     throw new Error(payload.error || `ARE-Quarantäne HTTP ${response.status}`);
   }
+  return payload as AreQuarantineResult;
 }
 
 export function buildAreRepositoryState(input: {
   readonly owner?: string;
   readonly repo?: string;
   readonly branch?: string;
-  readonly repositoryHash?: string;
-  readonly filePaths?: readonly string[];
+  readonly repositoryRevision?: string;
+  readonly files?: readonly { readonly path: string; readonly type?: string; readonly sha?: string }[];
 }): AreRepositoryState {
+  const files = (input.files ?? [])
+    .filter((entry) => entry.type === undefined || entry.type === 'blob')
+    .map((entry) => ({ path: entry.path, objectId: entry.sha ?? '' }));
   return normalizeRepository({
     owner: input.owner ?? '',
     repo: input.repo ?? '',
     branch: input.branch ?? '',
-    repositoryHash: input.repositoryHash ?? '',
-    changedFiles: (input.filePaths ?? []).map((path) => ({ path, sha256: '' })),
+    repositoryRevision: input.repositoryRevision ?? '',
+    files,
+    evidenceComplete: Boolean(input.repositoryRevision && files.every((entry) => entry.objectId)),
   });
 }
