@@ -3,7 +3,7 @@ from __future__ import annotations
 import grp
 import json
 import os
-import socket
+import re
 import socketserver
 import stat
 import subprocess
@@ -15,6 +15,7 @@ from policy import validate_container
 
 MAX_REQUEST_BYTES = 64_000
 MAX_RESPONSE_BYTES = 1_000_000
+COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class BrokerRuntime:
@@ -27,6 +28,10 @@ class BrokerRuntime:
             ).split(",")
             if item.strip()
         )
+        self.image_repository = os.getenv(
+            "SOVEREIGN_BACKEND_IMAGE_REPOSITORY",
+            "ghcr.io/ouroboroscollective/sovereign-backend",
+        ).strip()
         self.operations = OperationsRuntime()
 
     @staticmethod
@@ -89,10 +94,70 @@ class BrokerRuntime:
             "stderr": result["stderr"],
         }
 
+    def resolve_backend_image(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        revision = str(arguments.get("revision") or "").strip()
+        if not COMMIT_SHA_RE.fullmatch(revision):
+            raise ValueError("revision muss ein vollständiger Commit-SHA sein")
+        if not self.image_repository:
+            raise RuntimeError("SOVEREIGN_BACKEND_IMAGE_REPOSITORY fehlt")
+        tagged_image = f"{self.image_repository}:{revision}"
+        pull = self._run(["docker", "pull", tagged_image], timeout=300)
+        if not pull["ok"]:
+            return {
+                "ok": False,
+                "status": "FAILED",
+                "image": tagged_image,
+                "error": pull["stderr"],
+            }
+        label = self._run(
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+                tagged_image,
+            ],
+            timeout=30,
+        )
+        if not label["ok"] or label["stdout"].strip() != revision:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Image-Revision-Label stimmt nicht mit dem angeforderten Commit überein",
+                "image": tagged_image,
+            }
+        digest_result = self._run(
+            ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", tagged_image],
+            timeout=30,
+        )
+        if not digest_result["ok"]:
+            return {"ok": False, "status": "FAILED", "image": tagged_image, "error": digest_result["stderr"]}
+        try:
+            repo_digests = json.loads(digest_result["stdout"])
+        except json.JSONDecodeError as exc:
+            return {"ok": False, "status": "FAILED", "image": tagged_image, "error": str(exc)}
+        prefix = f"{self.image_repository}@"
+        resolved = next((entry for entry in repo_digests if isinstance(entry, str) and entry.startswith(prefix)), "")
+        if not resolved:
+            return {"ok": False, "status": "FAILED", "image": tagged_image, "error": "Kein Repository-Digest gefunden"}
+        digest = resolved.split("@", 1)[1]
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            return {"ok": False, "status": "FAILED", "image": tagged_image, "error": "Ungültiger Repository-Digest"}
+        return {
+            "ok": True,
+            "status": "VERIFIED",
+            "revision": revision,
+            "image": tagged_image,
+            "image_digest": digest,
+            "immutable_reference": resolved,
+        }
+
     def dispatch(self, action: str, arguments: dict[str, Any]) -> dict[str, Any]:
         handlers = {
             "container_status": self.container_status,
             "container_logs": self.container_logs,
+            "resolve_backend_image": self.resolve_backend_image,
             "deploy_verified_release": lambda values: self.operations.deploy_verified_release(
                 image_digest=str(values.get("image_digest") or ""),
                 expected_revision=str(values.get("expected_revision") or ""),
