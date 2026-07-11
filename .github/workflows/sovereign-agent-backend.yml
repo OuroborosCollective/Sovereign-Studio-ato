@@ -127,12 +127,14 @@ jobs:
           tar -tzf sovereign-backend.tar.gz >/dev/null
 
       - name: Prepare remote release directory
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 30m
+          capture_stdout: true
           script: |
             set -euo pipefail
             RELEASE_DIR='${{ env.RELEASE_DIR }}'
@@ -143,13 +145,24 @@ jobs:
                 exit 1
                 ;;
             esac
-            mkdir -p "$RELEASE_DIR"
-            test -d "$RELEASE_DIR"
-            test -w "$RELEASE_DIR"
+            echo "Preparing release directory: $RELEASE_DIR"
+            if ! mkdir -p "$RELEASE_DIR"; then
+              echo "Cannot create release directory: $RELEASE_DIR" >&2
+              exit 1
+            fi
+            if [ ! -d "$RELEASE_DIR" ]; then
+              echo "Release directory was not created: $RELEASE_DIR" >&2
+              exit 1
+            fi
+            if [ ! -w "$RELEASE_DIR" ]; then
+              echo "Release directory is not writable for $(id -un): $RELEASE_DIR" >&2
+              ls -ld "$(dirname "$RELEASE_DIR")" "$RELEASE_DIR" >&2 || true
+              exit 1
+            fi
             rm -f "$RELEASE_DIR/sovereign-backend.tar.gz"
 
       - name: Upload release archive to VPS
-        uses: appleboy/scp-action@master
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
@@ -160,12 +173,14 @@ jobs:
           overwrite: true
 
       - name: Deploy release on VPS
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 30m
+          capture_stdout: true
           script: |
             set -euo pipefail
             RELEASE_DIR='${{ env.RELEASE_DIR }}'
@@ -185,23 +200,45 @@ jobs:
                 ;;
             esac
 
-            test -f "$ARCHIVE"
+            if [ ! -f "$ARCHIVE" ]; then
+              echo "Release archive is missing: $ARCHIVE" >&2
+              exit 1
+            fi
             tar -tzf "$ARCHIVE" >/dev/null
             rm -rf "$WORK_DIR"
             mkdir -p "$WORK_DIR"
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             BUILD_DIR="$WORK_DIR/scripts/sovereign-backend"
-            test -f "$BUILD_DIR/Dockerfile"
-            test -f "$BUILD_DIR/app.py"
-            test -f "$BUILD_DIR/requirements.txt"
-            test -x "$BUILD_DIR/auto-migrate.sh"
-            test -d "$BUILD_DIR/agent_runtime"
-            test -d "$BUILD_DIR/migrations"
-            test -f /opt/sovereign-backend/.env
-            test -d /opt/secure
+            for required_file in Dockerfile app.py requirements.txt; do
+              if [ ! -f "$BUILD_DIR/$required_file" ]; then
+                echo "Required build file is missing: $BUILD_DIR/$required_file" >&2
+                exit 1
+              fi
+            done
+            if [ ! -x "$BUILD_DIR/auto-migrate.sh" ]; then
+              echo "Migration entrypoint is missing or not executable: $BUILD_DIR/auto-migrate.sh" >&2
+              exit 1
+            fi
+            for required_dir in agent_runtime migrations; do
+              if [ ! -d "$BUILD_DIR/$required_dir" ]; then
+                echo "Required build directory is missing: $BUILD_DIR/$required_dir" >&2
+                exit 1
+              fi
+            done
+            if [ ! -f /opt/sovereign-backend/.env ]; then
+              echo "Backend environment file is missing: /opt/sovereign-backend/.env" >&2
+              exit 1
+            fi
+            if [ ! -d /opt/secure ]; then
+              echo "Secure mount source is missing: /opt/secure" >&2
+              exit 1
+            fi
             for network in supabase_default areloria_arelorian-network openhands-enterprise_default; do
-              docker network inspect "$network" >/dev/null
+              if ! docker network inspect "$network" >/dev/null 2>&1; then
+                echo "Required Docker network is missing: $network" >&2
+                exit 1
+              fi
             done
 
             PREVIOUS_IMAGE="$(docker inspect --format='{{.Config.Image}}' sovereign-backend 2>/dev/null || true)"
@@ -253,12 +290,14 @@ jobs:
             echo "Health: $HEALTH"
 
       - name: Verify Routes
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 30m
+          capture_stdout: true
           script: |
             set -euo pipefail
             docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; assert routes, "No agent routes registered"; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
