@@ -39,6 +39,7 @@ from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
+from are_inference import register_are_inference_routes
 from knowledge_library import register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 
@@ -3760,6 +3761,11 @@ register_security_routes(
     require_session=require_session,
     get_connection=get_runtime_module_connection,
     set_session_cookie=_set_session_cookie,
+)
+register_are_inference_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_runtime_module_connection,
 )
 
 # ═════════════════════════════════════════════════════════════════════════════

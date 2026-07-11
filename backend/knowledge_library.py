@@ -553,7 +553,7 @@ def _source_rows(conn: Any, user_id: str) -> list[dict[str, Any]]:
         return [dict(row) for row in cur.fetchall()]
 
 
-def _search(conn: Any, user_id: str, query_text: str, limit: int) -> list[dict[str, Any]]:
+def search_knowledge_blocks(conn: Any, user_id: str, query_text: str, limit: int) -> list[dict[str, Any]]:
     batch = embed_texts([query_text])
     query_vector = vector_literal(batch.vectors[0])
     with conn.cursor() as cur:
@@ -570,7 +570,9 @@ def _search(conn: Any, user_id: str, query_text: str, limit: int) -> list[dict[s
                  AND s.user_id=%s::uuid
                  AND b.embedding IS NOT NULL
                  AND s.status IN ('ready','partial')
-               ORDER BY b.embedding <=> %s::vector
+               ORDER BY b.embedding <=> %s::vector,
+                        b.content_sha256 ASC,
+                        b.id ASC
                LIMIT %s""",
             (query_vector, user_id, user_id, query_vector, limit),
         )
@@ -676,7 +678,7 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
             limit = 8
         conn = get_connection()
         try:
-            results = _search(conn, request.session_user_id, query_text, limit)
+            results = search_knowledge_blocks(conn, request.session_user_id, query_text, limit)
             return jsonify({
                 "ok": True,
                 "query": query_text,

@@ -48,6 +48,7 @@ jobs:
             scripts/sovereign-backend/security_runtime.py \
             scripts/sovereign-backend/vector_embedding.py \
             scripts/sovereign-backend/knowledge_library.py \
+            scripts/sovereign-backend/are_inference.py \
             scripts/sovereign-backend/agent_runtime/*.py \
             scripts/sovereign-backend/agent_runtime/tools/*.py
           bash -n scripts/sovereign-backend/auto-migrate.sh

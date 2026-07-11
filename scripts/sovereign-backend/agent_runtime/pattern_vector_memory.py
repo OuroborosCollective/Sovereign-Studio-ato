@@ -110,7 +110,8 @@ def search_pattern_vectors(
                    JOIN sovereign_agent_pattern_candidates c
                      ON c.candidate_id=v.candidate_id
                    WHERE v.user_id=%s AND c.decision='accepted'
-                   ORDER BY v.embedding <=> %s::vector
+                   ORDER BY v.embedding <=> %s::vector,
+                            v.candidate_id ASC
                    LIMIT %s""",
                 (value, user_id, value, bounded_limit),
             )

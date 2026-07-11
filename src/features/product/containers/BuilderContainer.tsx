@@ -396,7 +396,13 @@ import {
   selectRepositoryScopedPullRequestUrl,
 } from "../runtime/sovereignRepoEvidenceScopeRuntime";
 import { useCreditGuard } from '../../billing/useCreditGuard';
-import { experienceContext, knowledgeContext, searchExperiencePatterns, searchKnowledge } from '../../knowledge/knowledgeApi';
+import {
+  buildAreRepositoryState,
+  evaluateAreInference,
+  quarantineAreResponse,
+  type AreInferenceResult,
+} from '../../inference/areInferenceApi';
+import { emitAreStateTransition, type ArePreviousState } from '../../inference/arePredictiveBridge';
 import { CreditDisplay } from '../../billing/components/CreditDisplay';
 import { PaywallModal } from '../../billing/PaywallModal';
 import { useUserStore } from '../../user/useUserStore';
@@ -2577,6 +2583,7 @@ export function BuilderContainer({
   // SECURITY: Never persisted to sessionStorage/localStorage
   const githubTokenRef = useRef<string | null>(null);
   const previousRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
+  const arePreviousStateRef = useRef<ArePreviousState | null>(null);
 
   // ── Issue #445: AgentWorkTimeline state
   const [agentWorkSnapshot, setAgentWorkSnapshot] = useState<AgentWorkSnapshot>(
@@ -4219,6 +4226,100 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }));
     }
 
+    // ARE is evaluated before credit deduction and before any online call.
+    // Reference knowledge includes uploaded PDFs; experience remains a separate,
+    // evidence-accepted memory. No local synthesis capability is claimed yet.
+    let areInferenceResult: AreInferenceResult | null = null;
+    let referenceKnowledgeContext = '';
+    let experiencePatternContext = '';
+    if (authUser) {
+      try {
+        areInferenceResult = await evaluateAreInference({
+          prompt: submittedText,
+          repository: buildAreRepositoryState({
+            owner: chatRepoSnapshot?.owner,
+            repo: chatRepoSnapshot?.repo,
+            branch: chatRepoSnapshot?.branch,
+            repositoryHash: currentRepoScopeKey ?? '',
+            filePaths: chatRepoSnapshot?.filePaths ?? [],
+          }),
+          activeCapabilities: [],
+          onlineAvailable: typeof navigator === 'undefined' ? true : navigator.onLine,
+          limit: 5,
+        });
+        const transition = emitAreStateTransition(arePreviousStateRef.current, areInferenceResult);
+        arePreviousStateRef.current = {
+          stateHash: areInferenceResult.stateHash,
+          state: areInferenceResult.state,
+        };
+        if (transition.changed) {
+          addLog('info', `ARE-State geändert: ${transition.changeKinds.join(', ')} · ${transition.currentStateHash.slice(0, 12)}`, 'pattern');
+        }
+        referenceKnowledgeContext = areInferenceResult.knowledgeContext;
+        experiencePatternContext = areInferenceResult.experienceContext;
+
+        if (areInferenceResult.selectedKnowledgeIds.length > 0) {
+          appendActionEvent({
+            kind: 'context_collected',
+            route: 'runtime',
+            label: 'ARE Referenzwissen gefunden',
+            detail: `${areInferenceResult.selectedKnowledgeIds.length} semantisch passende Knowledge-/PDF-Blöcke · State ${areInferenceResult.stateHash.slice(0, 12)}.`,
+            state: 'done',
+          });
+        }
+        if (areInferenceResult.selectedPatternIds.length > 0) {
+          appendActionEvent({
+            kind: 'context_collected',
+            route: 'runtime',
+            label: 'ARE Erfahrung gefunden',
+            detail: `${areInferenceResult.selectedPatternIds.length} evidence-geprüfte Muster · Adapter ${areInferenceResult.adapter}.`,
+            state: 'done',
+          });
+        }
+        if (areInferenceResult.decision === 'blocked') {
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: 'ARE-Inferenz blockiert',
+            detail: areInferenceResult.reasons.join(' · '),
+            kind: 'blocked',
+          }));
+          appendChatLine({
+            role: 'assistant',
+            text: 'ARE-Inferenz blockiert: Die App ist offline und es ist noch kein belastbarer lokaler Code-Synthese-Adapter installiert. PDF- und Erfahrungswissen bleiben erhalten; es wurde kein Credit abgezogen und kein Online-Call gestartet.',
+          });
+          return;
+        }
+      } catch (error) {
+        addLog('warn', `ARE-Inferenz nicht verfügbar: ${error instanceof Error ? error.message : String(error)}`, 'pattern');
+      }
+    }
+
+    const quarantineOnlineAnswer = (responseText: string, modelId: string) => {
+      if (!areInferenceResult || areInferenceResult.decision !== 'online_required') return;
+      void quarantineAreResponse({
+        prompt: submittedText,
+        response: responseText,
+        stateHash: areInferenceResult.stateHash,
+        adapter: areInferenceResult.adapter,
+        modelId,
+        metadata: {
+          repository: currentRepositoryTargetKey,
+          knowledgeIds: areInferenceResult.selectedKnowledgeIds,
+          patternIds: areInferenceResult.selectedPatternIds,
+        },
+      }).then(() => {
+        appendActionEvent({
+          kind: 'context_collected',
+          route: 'runtime',
+          label: 'Online-Antwort quarantänisiert',
+          detail: 'Noch kein gelerntes Muster: Promotion erfordert akzeptierte Runtime-Evidence.',
+          state: 'done',
+        });
+      }).catch((error) => {
+        addLog('warn', `ARE-Quarantäne nicht verfügbar: ${error instanceof Error ? error.message : String(error)}`, 'pattern');
+      });
+    };
+
     // ── #458 Credit guard — only for Worker Chat path (not Sovereign Agent execution) ────────────
     const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
     const _canProceed = await chargeCredits('gemini-2.0-flash', _estimatedTokens);
@@ -4259,43 +4360,6 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         detail: 'Read-only Auto-Context bereit.',
         state: 'done',
       });
-    }
-
-    let referenceKnowledgeContext = '';
-    let experiencePatternContext = '';
-    if (authUser) {
-      const [knowledgeOutcome, experienceOutcome] = await Promise.allSettled([
-        searchKnowledge(submittedText, 5),
-        searchExperiencePatterns(submittedText, 5),
-      ]);
-      if (knowledgeOutcome.status === 'fulfilled') {
-        referenceKnowledgeContext = knowledgeContext(knowledgeOutcome.value);
-        if (knowledgeOutcome.value.length > 0) {
-          appendActionEvent({
-            kind: 'context_collected',
-            route: 'runtime',
-            label: 'Referenzwissen gefunden',
-            detail: `${knowledgeOutcome.value.length} semantisch passende Wissensblöcke wurden als untrusted reference context beigefügt.`,
-            state: 'done',
-          });
-        }
-      } else {
-        addLog('warn', `Wissenssuche nicht verfügbar: ${knowledgeOutcome.reason instanceof Error ? knowledgeOutcome.reason.message : String(knowledgeOutcome.reason)}`, 'pattern');
-      }
-      if (experienceOutcome.status === 'fulfilled') {
-        experiencePatternContext = experienceContext(experienceOutcome.value);
-        if (experienceOutcome.value.length > 0) {
-          appendActionEvent({
-            kind: 'context_collected',
-            route: 'runtime',
-            label: 'Erfahrungsmuster gefunden',
-            detail: `${experienceOutcome.value.length} evidence-geprüfte Muster wurden für den aktuellen Auftrag gefunden.`,
-            state: 'done',
-          });
-        }
-      } else {
-        addLog('warn', `Erfahrungssuche nicht verfügbar: ${experienceOutcome.reason instanceof Error ? experienceOutcome.reason.message : String(experienceOutcome.reason)}`, 'pattern');
-      }
     }
 
     const workerMessages = buildWorkerMessages({
@@ -4371,6 +4435,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         addLog("warn", `chatClaimGuard: ${claimCheck.violations.join(", ")}`, "router");
       }
       appendChatLine({ role: "assistant", text: textToAppend });
+      quarantineOnlineAnswer(fullText, streamFallbackMetadata?.actualModel ?? d.modelId);
       return;
     }
 
@@ -4400,6 +4465,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }
 
       appendChatLine({ role: "assistant", text: textToAppend });
+      quarantineOnlineAnswer(fallback.content, fallback.actualModel ?? d.modelId);
       return;
     }
 

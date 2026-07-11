@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { repairMissingKnowledgeEmbeddings } from '../inference/areInferenceApi';
 import {
   deleteKnowledgeSource,
   importKnowledgeUrl,
@@ -28,6 +29,21 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
     catch (reason) { setMessage(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }
   };
+  const finishImport = async (result: Awaited<ReturnType<typeof uploadKnowledgeFile>>) => {
+    let detail = result.duplicate ? 'Bereits vorhanden.' : `Gespeichert: ${result.source.title}`;
+    if (!result.duplicate && (result.source.status === 'partial' || Boolean(result.blocker))) {
+      try {
+        const repair = await repairMissingKnowledgeEmbeddings(25);
+        detail += repair.repaired > 0
+          ? ` · ${repair.repaired} fehlende Vektoren repariert${repair.remaining > 0 ? `, ${repair.remaining} offen` : ''}.`
+          : ' · Keine fehlenden Vektoren zur Reparatur gefunden.';
+      } catch (reason) {
+        detail += ` · Vektorreparatur blockiert: ${reason instanceof Error ? reason.message : String(reason)}`;
+      }
+    }
+    setMessage(detail);
+    await load();
+  };
 
   return <div style={{ position:'fixed', inset:0, zIndex:9800, background:'rgba(0,0,0,.72)', display:'flex', justifyContent:'flex-end' }}>
     <section style={{ width:'min(100%,600px)', overflowY:'auto', background:C.bg, color:C.text, padding:16 }}>
@@ -40,10 +56,10 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
 
       <Box title="URL importieren">
         <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="GitHub- oder Wikipedia-URL" style={{ ...control, width:'100%', boxSizing:'border-box' }}/>
-        <button type="button" disabled={busy||!url.trim()} style={{ ...control, width:'100%', marginTop:8, background:C.accent, color:C.bg }} onClick={()=>void run(async()=>{ const r=await importKnowledgeUrl(url.trim()); setMessage(r.duplicate?'Bereits vorhanden.':`Gespeichert: ${r.source.title}`); setUrl(''); await load(); })}>Importieren</button>
+        <button type="button" disabled={busy||!url.trim()} style={{ ...control, width:'100%', marginTop:8, background:C.accent, color:C.bg }} onClick={()=>void run(async()=>{ const r=await importKnowledgeUrl(url.trim()); setUrl(''); await finishImport(r); })}>Importieren</button>
         <label style={{ ...control, display:'flex', alignItems:'center', justifyContent:'center', marginTop:8 }}>
           PDF, Text oder Code hochladen
-          <input hidden type="file" accept=".pdf,.txt,.md,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql" onChange={e=>{ const f=e.target.files?.[0]; if(f) void run(async()=>{ const r=await uploadKnowledgeFile(f); setMessage(r.duplicate?'Bereits vorhanden.':`Gespeichert: ${r.source.title}`); await load(); }); e.currentTarget.value=''; }}/>
+          <input hidden type="file" accept=".pdf,.txt,.md,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql" onChange={e=>{ const f=e.target.files?.[0]; if(f) void run(async()=>{ const r=await uploadKnowledgeFile(f); await finishImport(r); }); e.currentTarget.value=''; }}/>
         </label>
       </Box>
 
@@ -53,6 +69,7 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
       </Box>
 
       <Box title={`Quellen (${sources.length})`}>
+        {sources.some(source=>source.status==='partial')&&<button type="button" disabled={busy} style={{ ...control, width:'100%', marginBottom:8 }} onClick={()=>void run(async()=>{ const repair=await repairMissingKnowledgeEmbeddings(25); setMessage(`${repair.repaired} Vektoren repariert${repair.remaining>0?`, ${repair.remaining} noch offen`:''}.`); await load(); })}>Fehlende Vektoren reparieren</button>}
         {sources.map(source=><div key={source.id} style={{ display:'flex', justifyContent:'space-between', gap:8, borderTop:`1px solid ${C.border}`, padding:'9px 0' }}><div><strong style={{ fontSize:12 }}>{source.title}</strong><div style={{ color:C.sub, fontSize:10 }}>{source.sourceType} · {source.status} · {source.chunkCount} Blöcke</div>{source.blocker&&<div style={{ color:'#d29922', fontSize:9 }}>{source.blocker}</div>}</div><button type="button" disabled={busy} style={{ ...control, color:C.danger }} onClick={()=>void run(async()=>{ await deleteKnowledgeSource(source.id); await load(); })}>Löschen</button></div>)}
         {!sources.length&&<p style={{ color:C.sub, fontSize:12 }}>Noch keine Quellen.</p>}
       </Box>

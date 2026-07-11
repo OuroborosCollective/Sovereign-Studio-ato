@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import re
 import sys
 from types import ModuleType, SimpleNamespace
 
@@ -46,6 +47,7 @@ def test_backend_live_modules_are_exact_mirrors() -> None:
     for relative in (
         "vector_embedding.py",
         "knowledge_library.py",
+        "are_inference.py",
         "security_runtime.py",
         "agent_runtime/pattern_vector_memory.py",
         "agent_runtime/pattern_gateway.py",
@@ -156,20 +158,41 @@ def test_experience_vector_text_contains_evidence_not_raw_secrets() -> None:
 
 def test_migration_and_image_build_contain_live_contracts() -> None:
     migration = read(DEPLOY / "migrations/008_knowledge_memory_passkeys_stepup.sql")
+    are_migration = read(DEPLOY / "migrations/009_are_inference_quarantine.sql")
     dockerfile = read(DEPLOY / "Dockerfile")
     requirements = read(DEPLOY / "requirements.txt")
     workflow = read(ROOT / ".github/workflows/sovereign-backend-image.yml")
+    ci_workflow = read(ROOT / ".github/workflows/ci.yml")
 
     assert "knowledge_blocks" in migration
     assert "embedding vector(768)" in migration
     assert "user_passkeys" in migration
     assert "step_up_approvals" in migration
     assert "USING hnsw" in migration
+    assert "are_learning_quarantine" in are_migration
+    assert "UNIQUE (user_id, content_sha256)" in are_migration
     assert "COPY security_runtime.py" in dockerfile
     assert "COPY knowledge_library.py" in dockerfile
+    assert "COPY are_inference.py" in dockerfile
     assert "webauthn>=2.7.0,<3" in requirements
     assert "pypdf>=5.0.0,<6" in requirements
+    assert "requests>=2.31.0" in requirements
     assert "security_runtime.py" in workflow
+    assert "are_inference.py" in workflow
+    assert "python -m pip install -r scripts/sovereign-backend/requirements.txt pytest -q" in ci_workflow
+
+
+def test_pnpm_action_setup_uses_package_manager_as_single_version_source() -> None:
+    workflows = sorted((ROOT / ".github/workflows").glob("*.y*ml"))
+    duplicate_version = re.compile(
+        r"uses:\s*pnpm/action-setup@v4\s*\n\s+with:\s*\n(?:\s+[^\n]+\n)*?\s+version:",
+        re.MULTILINE,
+    )
+    for workflow_path in workflows:
+        source = read(workflow_path)
+        assert "PNPM_VERSION: 10" not in source, workflow_path.name
+        assert "PNPM_VERSION: \"10\"" not in source, workflow_path.name
+        assert not duplicate_version.search(source), workflow_path.name
 
 
 def test_payment_and_credit_security_are_server_authoritative() -> None:
@@ -193,8 +216,10 @@ def test_frontend_surfaces_and_runtime_consumption_exist() -> None:
 
     assert "KnowledgeLibraryPanel" in profile
     assert "SecuritySettingsPanel" in profile
-    assert "searchKnowledge(submittedText" in builder
-    assert "untrusted reference context" in builder
+    assert "evaluateAreInference" in builder
+    assert "referenceKnowledgeContext = areInferenceResult.knowledgeContext" in builder
+    assert "experiencePatternContext = areInferenceResult.experienceContext" in builder
+    assert "quarantineOnlineAnswer" in builder
     assert "fetchWithStepUp" in billing
     assert "fetchWithStepUp" in guard
     assert "Mit Passkey anmelden" in login
