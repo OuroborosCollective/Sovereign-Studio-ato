@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app.py .
+COPY runner.py .
 COPY security_oauth.py .
 COPY agent_runtime/ ./agent_runtime/
 COPY migrations ./migrations

@@ -59,17 +59,29 @@ jobs:
           npm run build
           npx cap sync android
 
-      - name: Commit Autonomous Improvements
+      - name: Publish autonomous changes as Draft PR only
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git config --local user.email "ato-bot@sovereign-studio.ai"
           git config --local user.name "Sovereign ATO Bot"
           git add .
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(ato): autonomous optimization cycle [skip ci]"
-            git push origin main
-          else
+          if git diff --cached --quiet; then
             echo "No changes detected in this cycle."
+            exit 0
           fi
+
+          BRANCH="sovereign/ato-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git checkout -b "$BRANCH"
+          git commit -m "chore(ato): autonomous optimization cycle [skip ci]"
+          git push --set-upstream origin "$BRANCH"
+          gh pr create \
+            --draft \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(ato): autonomous optimization cycle" \
+            --body "Automated ATO output. Draft only; requires human review and explicit merge."
 
       - name: Archive ATO Cycle Logs
         if: always()

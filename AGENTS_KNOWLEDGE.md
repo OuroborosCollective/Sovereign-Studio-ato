@@ -87,7 +87,7 @@ git commit -m "fix(scope): short description
 - Detailed point 2
 
 Co-authored-by: openhands <openhands@all-hands.dev>"
-git push origin main
+git push --set-upstream origin "$BRANCH"  # then open a Draft PR
 ```
 
 #### Commit History (Today)
@@ -324,11 +324,18 @@ These bugs caused 12 jobs to hang permanently in "provisioning" status with no t
 
 #### VPS Connection Pattern (SSH via paramiko)
 ```python
+import os
 import paramiko
 
 client = paramiko.SSHClient()
-client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect('46.202.154.25', username='root', password='2N00py123+++', timeout=30)
+client.load_system_host_keys()
+client.set_missing_host_key_policy(paramiko.RejectPolicy())
+client.connect(
+    os.environ['VPS_HOST'],
+    username=os.environ['VPS_USER'],
+    key_filename=os.environ['VPS_SSH_KEY_FILE'],
+    timeout=30,
+)
 
 # Execute commands inside container
 stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend python3 -c "..."')
@@ -461,7 +468,7 @@ git commit -m "fix(agent-runtime): description of fix
 - Detail 2
 
 Co-authored-by: openhands <openhands@all-hands.dev>"
-git push origin main
+git push --set-upstream origin "$BRANCH"  # then open a Draft PR
 ```
 
 ---

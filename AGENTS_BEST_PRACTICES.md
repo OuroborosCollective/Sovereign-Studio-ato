@@ -629,10 +629,10 @@ docker logs sovereign-backend --tail 20
 docker exec sovereign-backend python3 -m py_compile /app/new_file.py
 ```
 
-### ✅ DO: Copy Files Not Rebuild (Python-only fixes)
+### ❌ DON'T: Treat a patched live container as the release source
 
 ```python
-# Fast hotfix: copy to running container
+# Build and deploy from a reviewed commit; do not make the container the source of truth
 sftp.put('/tmp/fixed.py', '/app/fixed.py')
 ssh.exec_command('docker restart sovereign-backend')
 
@@ -664,7 +664,7 @@ WHERE id = %s::uuid
 WHERE id = %s
 ```
 
-### ✅ DO: Single Lock for Gunicorn Workers
+### ❌ DON'T: Use a thread lock as a cross-process worker singleton
 
 When starting background threads in Flask with multiple workers:
 ```python
