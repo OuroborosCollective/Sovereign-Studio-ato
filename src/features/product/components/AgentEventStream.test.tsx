@@ -8,6 +8,9 @@ import {
   transitionAccessRequired,
   transitionAccessValidating,
   transitionBlocked,
+  transitionBranchCreated,
+  transitionChecksRunning,
+  transitionCommitCreated,
   transitionDraftPrReady,
   transitionExecutorRunning,
   transitionExecutorStarting,
@@ -98,8 +101,11 @@ describe('AgentEventStream', () => {
 
     expect(screen.getAllByText(/Executor blockiert/).length).toBeGreaterThanOrEqual(1);
 
-    const draftReady = transitionDraftPrReady(
-      runningSnapshot(),
+    let draftReady = transitionBranchCreated(runningSnapshot(), 'sovereign/agent-work');
+    draftReady = transitionCommitCreated(draftReady, 'abc1234');
+    draftReady = transitionChecksRunning(draftReady);
+    draftReady = transitionDraftPrReady(
+      draftReady,
       'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/488',
     );
     rerender(

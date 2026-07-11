@@ -83,8 +83,11 @@ export function transitionIntentDetected(
   baseBranch: string,
 ): AgentWorkSnapshot {
   if (snapshot.state !== 'idle') return snapshot;
+  const normalizedRepo = repoFullName.trim();
+  const normalizedBaseBranch = baseBranch.trim();
+  if (!normalizedRepo || !normalizedBaseBranch) return snapshot;
   return appendEvent(
-    { ...snapshot, repoFullName, baseBranch },
+    { ...snapshot, repoFullName: normalizedRepo, baseBranch: normalizedBaseBranch },
     'intent_detected',
     'Auftrag erkannt',
     `Repo: ${repoFullName}`,
@@ -180,10 +183,9 @@ export function transitionDraftPrReady(
   snapshot: AgentWorkSnapshot,
   draftPrUrl: string,
 ): AgentWorkSnapshot {
-  const allowed: AgentWorkState[] = ['executor_running', 'branch_created', 'commit_created', 'checks_running'];
-  if (!allowed.includes(snapshot.state)) return snapshot;
-  if (!draftPrUrl || !draftPrUrl.startsWith('http')) return snapshot;
-  if (snapshot.state === 'executor_running' && !snapshot.jobId) return snapshot;
+  if (snapshot.state !== 'checks_running') return snapshot;
+  if (!draftPrUrl || !draftPrUrl.startsWith('https://')) return snapshot;
+  if (!snapshot.jobId || !snapshot.branchName || !snapshot.commitSha) return snapshot;
   return appendEvent(
     { ...snapshot, draftPrUrl, lastVerifiedAt: Date.now() },
     'draft_pr_ready',
@@ -196,11 +198,13 @@ export function transitionBlocked(
   snapshot: AgentWorkSnapshot,
   reason: string,
 ): AgentWorkSnapshot {
+  const normalizedReason = reason.trim();
+  if (isTerminalState(snapshot.state) || !normalizedReason) return snapshot;
   return appendEvent(
-    { ...snapshot, blockerReason: reason },
+    { ...snapshot, blockerReason: normalizedReason },
     'blocked',
     'Blockiert',
-    reason,
+    normalizedReason,
   );
 }
 
@@ -208,11 +212,13 @@ export function transitionFailed(
   snapshot: AgentWorkSnapshot,
   reason: string,
 ): AgentWorkSnapshot {
+  const normalizedReason = reason.trim();
+  if (isTerminalState(snapshot.state) || !normalizedReason) return snapshot;
   return appendEvent(
-    { ...snapshot, blockerReason: reason },
+    { ...snapshot, blockerReason: normalizedReason },
     'failed',
     'Fehlgeschlagen',
-    reason,
+    normalizedReason,
   );
 }
 
