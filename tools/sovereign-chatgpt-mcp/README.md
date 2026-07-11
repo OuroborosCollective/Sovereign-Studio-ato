@@ -14,7 +14,8 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - Änderungen committen und ausschließlich einen Draft-PR öffnen
 - allowlistete Docker-Container inspizieren und begrenzte Logs lesen
 - Postgres- und pgvector-Canaries ausführen
-- Migrationen gegen eine separate Preview-Datenbank ausführen und immer zurückrollen
+- Migrationen gegen eine separate Preview-Datenbank ausführen und garantiert zurückrollen
+- bestätigte Migrationen nach erneuter Host-Broker-Prüfung produktiv anwenden
 - ein Backend-Image anhand des vollständigen Commit-SHA auflösen und dessen unveränderlichen Digest prüfen
 - nach expliziter Aktivierung und exakter Digest-/SHA-Bestätigung deployen oder rollbacken
 
@@ -28,8 +29,9 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - bestehende Dateien nur über exakte, einmalige Search/Replace-Blöcke
 - Pythonänderungen benötigen gezielte Pytest-Evidence
 - UI-/Menüänderungen benötigen gezielte Vitest-Evidence sowie Typecheck, Audit und Build
-- produktive DB-Writes und Deploys standardmäßig deaktiviert
-- destruktive Migrationen besitzen einen zweiten, separat deaktivierten Schalter
+- produktive DB-Writes und Deploys bleiben durch feste Gates, exakte Hashes und Preview-Evidence begrenzt
+- `UPDATE`-Backfills besitzen einen eigenen Schalter
+- `DROP`-, `DELETE`- und andere destruktive Migrationen besitzen einen zweiten, separat deaktivierten Schalter
 - kein OpenAI-API-Key im MCP-Server nötig; der Server ruft selbst kein Modell auf
 
 ## Werkzeugfluss für einen Backendfehler
@@ -55,13 +57,13 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 
 ## Docker- und VPS-Trennung
 
-Der MCP-Container erhält **keinen Docker-Socket**. Dadurch kann ein Fehler im MCP-Prozess nicht unmittelbar beliebige Host-Container starten.
+Der MCP-Container erhält **keinen Docker-Socket**. Dadurch kann ein Fehler im MCP-Prozess nicht unmittelbar beliebige Host-Container starten oder Produktions-Admin-Zugangsdaten lesen.
 
 ```text
 ChatGPT
   -> privater MCP-Container
       -> Unix-Socket /run/sovereign-chatgpt-broker/operator.sock
-          -> root Host-Broker mit exakt vier Docker-Aktionsfamilien
+          -> root Host-Broker mit festen, validierten Aktionen
 ```
 
 Der Broker akzeptiert nur:
@@ -69,13 +71,29 @@ Der Broker akzeptiert nur:
 - Containerstatus
 - begrenzte Containerlogs
 - Auflösen eines revisionsgebundenen Backend-Images
+- verifizierte Migration mit erneuter Pfad-, Hash-, SQL- und Rollback-Preview-Prüfung
 - verifizierter Deploy beziehungsweise Rollback
 
-Ein Action-Name wie `shell` wird geblockt.
+Ein Action-Name wie `shell` oder ein frei formulierter SQL-Auftrag wird geblockt.
+
+## Datenbank-Sicherheitsmodell
+
+Der MCP-Container behält ausschließlich den read-only Produktionsbenutzer `sovereign_mcp_reader`. Produktive Migrationen werden nicht mit dessen Passwort ausgeführt und erhalten auch kein Admin-Passwort im Container.
+
+Stattdessen gilt:
+
+1. Migration stammt aus einem isolierten Workspace.
+2. MCP prüft Pfad, Größe, SQL-Klasse und SHA-256.
+3. MCP führt die Migration ohne äußeres `BEGIN`/`COMMIT` in der Preview-Datenbank aus und rollt die Transaktion zurück.
+4. Der root-separierte Host-Broker liest dieselbe Datei erneut.
+5. Der Broker wiederholt Pfad-, Hash-, SQL- und Preview-Prüfung unabhängig.
+6. Erst danach verwendet der Broker die bestehende root-only Backend-Konfiguration für die produktive Anwendung.
+
+`UPDATE`-Backfills können während der aktiven Wissens-/Vektordatenbankentwicklung dauerhaft erlaubt werden. `DELETE`, `DROP TABLE`, `DROP COLUMN`, `DROP SCHEMA` und vollständig gesperrte SQL-Klassen bleiben davon unberührt.
 
 ## Unveränderliche Backend-Images
 
-`.github/workflows/sovereign-backend-image.yml` baut den echten Backend-Docker-Kontext. Auf `main` wird das Image so veröffentlicht:
+`.github/workflows/sovereign-backend-image.yml` baut den echten Backend-Docker-Kontext. Auf jedem neuen `main`-Commit wird das Image so veröffentlicht:
 
 ```text
 ghcr.io/ouroboroscollective/sovereign-backend:<vollständiger-commit-sha>
@@ -99,13 +117,12 @@ docker build -t sovereign-chatgpt-mcp:local .
 
 ```text
 /opt/sovereign-chatgpt-tools/
-├── .env                 # nur MCP/GitHub/DB
+├── .env                 # MCP/GitHub/Reader/Preview; root-only
 ├── .ghcr.env            # optional, nur root installer
-├── broker.env           # automatisch erzeugt, ohne GitHub-/DB-Secrets
+├── broker.env           # automatisch erzeugt; root-only Preview-/Policy-Werte, kein GitHub- oder Backend-Admin-Passwort
 ├── bin/                 # feste Deploy-/Rollback-Gates
 ├── broker/              # lokaler Host-Broker
 ├── docker-auth/         # optionales root-only Registry-Login
-├── docker-compose.yml
 └── workspaces/
 ```
 
@@ -125,9 +142,11 @@ Diese Werte gehören nur in `/opt/sovereign-chatgpt-tools/.env`:
 - ein feingranularer GitHub-Token nur für dieses Repository mit Contents- und Pull-Request-Rechten
 - ein read-only Postgres-Benutzer
 - ein separater Benutzer und eine separate Datenbank für Migration-Previews
-- optional die Aktivierung produktiver Deploy-/DB-Gates
+- die gewünschten produktiven DB-/Deploy-Gates
 
-Falls das GHCR-Paket privat bleibt, gehören `GHCR_USERNAME` und ein reiner Package-Read-Token ausschließlich in `/opt/sovereign-chatgpt-tools/.ghcr.env`. Der Installer wandelt diese Angaben in eine lokale Docker-Konfiguration um; sie werden nicht in den MCP-Container oder `broker.env` übernommen.
+Das Backend-Admin-Passwort verbleibt ausschließlich in der bestehenden root-only Backend-Konfiguration und wird vom Installer weder in den MCP-Container noch in `broker.env` kopiert.
+
+Falls das GHCR-Paket privat bleibt, gehören `GHCR_USERNAME` und ein reiner Package-Read-Token ausschließlich in `/opt/sovereign-chatgpt-tools/.ghcr.env`. Der Installer wandelt diese Angaben in eine lokale Docker-Konfiguration um; sie werden nicht in den MCP-Container übernommen.
 
 Keine dieser Angaben gehört in Chat, GitHub-Issues, Commits oder Logs.
 
@@ -148,18 +167,30 @@ Erst der daraus entstehende HTTPS-MCP-Endpunkt wird in ChatGPT als App/Connector
 
 ## Produktionsaktionen
 
-Standardzustand:
+Sicherer Standardzustand:
 
 ```dotenv
 SOVEREIGN_MCP_ENABLE_DB_WRITES=0
 SOVEREIGN_MCP_ENABLE_DEPLOY=0
+SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS=0
+SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS=0
+```
+
+Für die dauerhafte Entwicklung einer eigenen Wissens- und Vektordatenbank kann folgender begrenzter Modus verwendet werden:
+
+```dotenv
+SOVEREIGN_MCP_ENABLE_DB_WRITES=1
+SOVEREIGN_MCP_ENABLE_DEPLOY=1
+SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS=1
 SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS=0
 ```
 
 Auch bei Aktivierung gilt:
 
-- Migration: exakter SHA-256 der Migrationsdatei muss bestätigt sein und Preview muss bestehen.
-- Destruktive Migration: benötigt zusätzlich den separaten Destruktiv-Schalter.
+- Migration: exakter SHA-256 der Migrationsdatei muss bestätigt sein.
+- Preview: MCP und Host-Broker führen jeweils eine rollback-fähige Prüfung aus.
+- Daten-Backfill: `UPDATE` benötigt den separaten Backfill-Schalter.
+- Destruktive Migration: benötigt weiterhin den separaten Destruktiv-Schalter.
 - Deploy: vollständiger Image-Digest und vollständiger Git-Commit-SHA müssen übereinstimmen.
 - Rollback: vollständiger Ziel-Digest muss bestätigt sein.
 
