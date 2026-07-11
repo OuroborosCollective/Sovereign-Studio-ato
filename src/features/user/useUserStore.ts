@@ -91,6 +91,12 @@ function normalizeCurrentUser(value: unknown): CurrentUser | null {
   };
 }
 
+export interface GitHubOAuthExchange {
+  code: string;
+  state: string;
+  codeVerifier: string;
+}
+
 interface UserStore {
   user: CurrentUser | null;
   isLoading: boolean;
@@ -102,7 +108,7 @@ interface UserStore {
   // Auth actions (Issue #459)
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
-  loginWithGitHub: (code: string) => Promise<void>;
+  loginWithGitHub: (exchange: GitHubOAuthExchange) => Promise<void>;
   loginWithPasskey: (email?: string) => Promise<void>;
   loginWithAccountKey: (key: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
@@ -173,12 +179,16 @@ export const useUserStore = create<UserStore>()(
         }
       },
 
-      loginWithGitHub: async (code) => {
+      loginWithGitHub: async (exchange) => {
         set({ isLoading: true, error: null });
         try {
           const res = await authFetch('/api/auth/github', {
             method: 'POST',
-            body: JSON.stringify({ code }),
+            body: JSON.stringify({
+              code: exchange.code,
+              state: exchange.state,
+              code_verifier: exchange.codeVerifier,
+            }),
           });
           if (!res.ok) {
             const d = await res.json().catch(() => ({}));
@@ -242,21 +252,40 @@ export const useUserStore = create<UserStore>()(
       },
 
       logout: async () => {
-        await authFetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
-        set({ user: null, error: null });
+        set({ isLoading: true, error: null });
+        try {
+          const response = await authFetch('/api/auth/logout', { method: 'POST' });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({})) as { error?: string };
+            set({ isLoading: false, error: payload.error || `Logout HTTP ${response.status}` });
+            return;
+          }
+          set({ user: null, isLoading: false, error: null });
+        } catch {
+          set({ isLoading: false, error: 'Logout konnte die Backend-Session nicht bestätigen.' });
+        }
       },
 
       refreshUser: async () => {
+        set({ isLoading: true, error: null });
         try {
           const res = await authFetch('/api/auth/me');
-          if (res.ok) {
-            const user = normalizeCurrentUser(await res.json());
-            set({ user });
-          } else {
-            set({ user: null });
+          if (!res.ok) {
+            set({ user: null, isLoading: false, error: `Session nicht bestätigt (HTTP ${res.status}).` });
+            return;
           }
+          const user = normalizeCurrentUser(await res.json());
+          if (!user) {
+            set({ user: null, isLoading: false, error: 'Backend lieferte keine gültige Session-Evidence.' });
+            return;
+          }
+          set({ user, isLoading: false, error: null });
         } catch {
-          // network error — keep existing user state
+          set({
+            user: null,
+            isLoading: false,
+            error: 'Session konnte wegen eines Verbindungsfehlers nicht bestätigt werden.',
+          });
         }
       },
     }),

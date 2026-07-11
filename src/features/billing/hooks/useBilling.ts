@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '../../../store/hooks';
 import {
   fetchBillingData,
+  fetchEnabledPaymentMethods,
   purchasePackage,
   cancelSubscription as cancelSubAction,
   selectSubscription,
@@ -9,6 +10,9 @@ import {
   selectIsLoading,
   selectBillingError,
   selectPackages,
+  selectPaymentMethods,
+  type PurchaseArgs,
+  type PurchaseResult,
 } from '../billingSlice';
 
 export const useBilling = () => {
@@ -18,14 +22,17 @@ export const useBilling = () => {
   const loading = useAppSelector(selectIsLoading);
   const error = useAppSelector(selectBillingError);
   const packages = useAppSelector(selectPackages);
+  const paymentMethods = useAppSelector(selectPaymentMethods);
 
   useEffect(() => {
-    dispatch(fetchBillingData());
+    void dispatch(fetchBillingData());
+    void dispatch(fetchEnabledPaymentMethods());
   }, [dispatch]);
 
-  const purchase = async (planId: string) => {
-    await dispatch(purchasePackage(planId)).unwrap();
+  const purchase = async (args: string | PurchaseArgs): Promise<PurchaseResult> => {
+    const result = await dispatch(purchasePackage(args)).unwrap();
     await dispatch(fetchBillingData()).unwrap();
+    return result;
   };
 
   const updateSubscription = async (planId: string) => {
@@ -49,6 +56,7 @@ export const useBilling = () => {
     isProcessing: loading,
     currentPlanId,
     packages,
+    paymentMethods,
     refresh: () => dispatch(fetchBillingData()),
     purchase,
     updateSubscription,

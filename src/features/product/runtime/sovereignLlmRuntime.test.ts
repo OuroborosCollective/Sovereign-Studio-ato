@@ -91,7 +91,7 @@ describe('sovereignLlmRuntime', () => {
     expect(result.error).toBe('Network error');
   });
 
-  it('passes user keys only when user-key routes are allowed without enabling no-key routes', async () => {
+  it('never forwards browser-provided provider keys to the runtime revolver', async () => {
     vi.mocked(resolveProductWithLlmRevolver).mockResolvedValue({
       ok: true,
       result: {
@@ -118,8 +118,12 @@ describe('sovereignLlmRuntime', () => {
 
     expect(resolveProductWithLlmRevolver).toHaveBeenCalledWith(
       expect.objectContaining({
-        groqApiKey: 'test-groq-key',
-        geminiApiKey: 'test-gemini-key',
+        groqApiKey: undefined,
+        geminiApiKey: undefined,
+        pollinationsApiKey: undefined,
+        huggingfaceApiKey: undefined,
+        togetherApiKey: undefined,
+        openrouterApiKey: undefined,
         allowExternalNoKey: false,
       }),
       expect.any(Object),

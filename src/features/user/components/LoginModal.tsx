@@ -111,11 +111,17 @@ export function LoginModal({ onClose }: Props) {
     clearError();
     try {
       const result = await initiateGitHubOAuth();
-      if (result.success && result.code) {
-        await loginWithGitHub(result.code);
+      if (result.success && result.code && result.state && result.codeVerifier) {
+        await loginWithGitHub({
+          code: result.code,
+          state: result.state,
+          codeVerifier: result.codeVerifier,
+        });
         if (!useUserStore.getState().error) onClose();
       } else {
-        useUserStore.setState({ error: result.error || 'GitHub-Login fehlgeschlagen' });
+        useUserStore.setState({
+          error: result.error || 'GitHub OAuth lieferte keine vollständige State-/PKCE-Evidence.',
+        });
       }
     } catch {
       useUserStore.setState({ error: 'GitHub-Login fehlgeschlagen' });

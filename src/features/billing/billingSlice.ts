@@ -26,6 +26,11 @@ export interface Invoice {
   pdfUrl?: string;
 }
 
+export interface BillingPaymentMethod {
+  type: string;
+  label: string;
+}
+
 export interface BillingPackage {
   id: string;
   name: string;
@@ -44,6 +49,7 @@ export interface BillingState {
   invoices: Invoice[];
   availablePackages: BillingPackage[];
   packages: BillingPackage[];
+  paymentMethods: BillingPaymentMethod[];
   loading: boolean;
   error: string | null;
   // Paywall & Access Logic
@@ -62,6 +68,7 @@ const initialState: BillingState = {
   invoices: [],
   availablePackages: [],
   packages: [],
+  paymentMethods: [],
   loading: false,
   error: null,
   tier: 'free',
@@ -115,7 +122,10 @@ export const purchasePackage = createAsyncThunk(
   'billing/purchasePackage',
   async (args: string | PurchaseArgs, { rejectWithValue }) => {
     const payload: PurchaseArgs =
-      typeof args === 'string' ? { packageId: args } : args;
+      typeof args === 'string' ? { packageId: args } : { ...args };
+    if (payload.paymentMethod?.startsWith('crypto_') && !payload.coinType) {
+      payload.coinType = payload.paymentMethod;
+    }
     try {
       const response = await fetchWithStepUp(`${API_BASE}/api/billing/purchase`, {
         method: 'POST',
@@ -293,9 +303,14 @@ const billingSlice = createSlice({
         state.loading = true;
         state.error = null;
       })
-      .addCase(purchasePackage.fulfilled, (state, action: PayloadAction<any>) => {
+      .addCase(purchasePackage.fulfilled, (state, action: PayloadAction<PurchaseResult>) => {
         state.loading = false;
-        updateAccessState(state, action.payload.subscription);
+        if (Object.prototype.hasOwnProperty.call(action.payload, 'subscription')) {
+          updateAccessState(state, action.payload.subscription ?? null);
+        }
+        if (typeof action.payload.newBalance === 'number' && Number.isFinite(action.payload.newBalance)) {
+          state.credits = Math.max(0, action.payload.newBalance);
+        }
       })
       .addCase(purchasePackage.rejected, (state, action) => {
         state.loading = false;
@@ -324,9 +339,24 @@ const billingSlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       })
+      .addCase(fetchEnabledPaymentMethods.fulfilled, (state, action: PayloadAction<{ methods: BillingPaymentMethod[] }>) => {
+        state.paymentMethods = action.payload.methods ?? [];
+      })
+      .addCase(fetchEnabledPaymentMethods.rejected, (state, action) => {
+        state.paymentMethods = [];
+        state.error = action.payload as string;
+      })
+      .addCase(capturePayPalOrder.fulfilled, (state, action: PayloadAction<PurchaseResult>) => {
+        if (typeof action.payload.newBalance === 'number' && Number.isFinite(action.payload.newBalance)) {
+          state.credits = Math.max(0, action.payload.newBalance);
+        }
+      })
       // Credits — Issue #458
       .addCase(fetchUserCredits.fulfilled, (state, action: PayloadAction<number>) => {
         state.credits = action.payload;
+      })
+      .addCase(fetchUserCredits.rejected, (state, action) => {
+        state.error = action.payload as string;
       });
   },
 });
@@ -352,6 +382,7 @@ export const selectBillingError = (state: RootState) => state.billing.error;
 export const selectAvailablePackages = (state: RootState) => state.billing.availablePackages;
 export const selectInvoices = (state: RootState) => state.billing.invoices;
 export const selectPackages = (state: RootState) => state.billing.packages;
+export const selectPaymentMethods = (state: RootState) => state.billing.paymentMethods;
 export const selectSubscriptionTier = (state: RootState) => state.billing.tier;
 export const selectIsPaywallActive = (state: RootState) => state.billing.isPaywallActive;
 
