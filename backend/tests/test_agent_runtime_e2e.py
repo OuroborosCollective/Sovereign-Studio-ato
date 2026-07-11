@@ -194,11 +194,21 @@ def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_pat
     assert "Runtime E2E proof" in (diff_result.diff_summary or "")
 
     test_result = run_agent_job_tool(lifecycle.result, "test", {
-        "command": "python -c \"print('1 passed, 0 failed')\"",
+        "command": f"{sys.executable} -c \"print('1 passed, 0 failed')\"",
         "timeout": 20,
     }, tmp_path)
     assert test_result.status == "done"
+    assert test_result.allowed is True
+    assert test_result.exit_code == 0
     assert "1 passed" in (test_result.test_summary or "")
+
+    failed_test_result = run_agent_job_tool(lifecycle.result, "test", {
+        "command": f"{sys.executable} -c \"import sys; sys.exit(7)\"",
+        "timeout": 20,
+    }, tmp_path)
+    assert failed_test_result.status == "error"
+    assert failed_test_result.allowed is False
+    assert failed_test_result.exit_code == 7
 
     evidence = evaluate_agent_evidence(EvidenceGateInput(
         job_id="agent-e2e-1",

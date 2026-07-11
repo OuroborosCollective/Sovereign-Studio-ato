@@ -5270,13 +5270,14 @@ def admin_panel():
 
 # ── Universal Toolchain Proxy ─────────────────────────────────────────────────
 # Proxies requests to the sovereign-universal-toolchain FastAPI/FastMCP server
-# running at TOOLCHAIN_BASE_URL (default: http://127.0.0.1:8001).
+# at an explicitly configured TOOLCHAIN_BASE_URL. There is intentionally no
+# localhost fallback because port 8001 belongs to a different service.
 # The TOOLCHAIN_API_KEY is injected server-side — never exposed to frontend.
 # ─────────────────────────────────────────────────────────────────────────────
 
 import json as _json
 
-_UTOOLCHAIN_BASE = os.getenv("TOOLCHAIN_BASE_URL", "http://127.0.0.1:8001").rstrip("/")
+_UTOOLCHAIN_BASE = os.getenv("TOOLCHAIN_BASE_URL", "").rstrip("/")
 _UTOOLCHAIN_KEY  = os.getenv("TOOLCHAIN_API_KEY", "")
 
 
@@ -5284,6 +5285,8 @@ def _utc_request(method: str, path: str, body=None):
     """HTTP helper for proxying to the universal toolchain server."""
     import urllib.request as _ur
     import urllib.error   as _ue
+    if not _UTOOLCHAIN_BASE:
+        raise RuntimeError("TOOLCHAIN_BASE_URL is not configured")
     url = f"{_UTOOLCHAIN_BASE}{path}"
     headers = {"Content-Type": "application/json"}
     if _UTOOLCHAIN_KEY:
