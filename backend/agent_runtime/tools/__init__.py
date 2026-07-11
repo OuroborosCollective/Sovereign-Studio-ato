@@ -16,6 +16,7 @@ Available tools:
 - diff: Compare two files or strings
 - semantic_diff: Analyze code changes semantically
 - test: Run test suites
+- janitor: Deterministic AST/regex scan and confirmed exact patch
 """
 
 from .base import (
@@ -42,6 +43,7 @@ from .git_tool import (
 )
 from .diff_tool import DiffTool, SemanticDiffTool
 from .test_tool import TestTool
+from .janitor_tool import DynamicJanitorTool
 
 __all__ = [
     "ToolBase",
@@ -63,6 +65,7 @@ __all__ = [
     "DiffTool",
     "SemanticDiffTool",
     "TestTool",
+    "DynamicJanitorTool",
     # Convenience result constructors
     "blocked_tool_result",
     "done_tool_result",
