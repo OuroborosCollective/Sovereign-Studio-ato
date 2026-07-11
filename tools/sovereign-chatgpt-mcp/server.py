@@ -27,8 +27,9 @@ mcp = FastMCP(
     instructions=(
         "Arbeite ausschließlich im erlaubten Sovereign-Repository. Bereite zuerst einen isolierten Workspace vor. "
         "Nutze exakte Search/Replace-Patches für bestehende Dateien, besonders große Live-Dateien. "
-        "Führe passende Checks aus und erstelle höchstens einen Draft-PR. Niemals direkt main ändern, nie mergen, "
-        "keine Secrets lesen oder ausgeben. Produktions-Deploys und DB-Writes nur nach aktueller ausdrücklicher Bestätigung."
+        "Installiere Abhängigkeiten reproduzierbar, führe passende Checks aus und erstelle höchstens einen Draft-PR. "
+        "Niemals direkt main ändern, nie mergen, keine Secrets lesen oder ausgeben. Produktions-Deploys und DB-Writes "
+        "nur nach aktueller ausdrücklicher Bestätigung."
     ),
     host=_host(),
     port=int(os.getenv("SOVEREIGN_MCP_PORT", "8090")),
@@ -80,6 +81,13 @@ def repository_write_new_file(workspace_id: str, path: str, content: str) -> dic
 def repository_diff(workspace_id: str) -> dict[str, Any]:
     """Return current git status, diff and diff statistics for the isolated workspace."""
     return runtime.git_diff(workspace_id)
+
+
+@mcp.tool(annotations=SAFE_WRITE)
+def repository_install_dependencies(workspace_id: str) -> dict[str, Any]:
+    """Install the repository dependencies with pnpm and the committed lockfile; no loose install or ignored failure."""
+    repo = runtime._repo(workspace_id)
+    return runtime._run(["pnpm", "install", "--frozen-lockfile"], cwd=repo, timeout=1800)
 
 
 @mcp.tool(annotations=SAFE_WRITE)
