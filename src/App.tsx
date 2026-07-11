@@ -9,6 +9,7 @@ import {
 import {
   createSovereignAgentIdleSnapshot,
   resolveSovereignAgentConfig,
+  summarizeSovereignAgentJob,
   type SovereignAgentJobSnapshot,
 } from './features/product/runtime/sovereignAgentRuntime';
 
@@ -32,6 +33,7 @@ export default function App() {
 
   const startChatOnlyTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
     setMission(nextMission);
+    setJanitorPreview('');
     if (!agentConfig.ready) {
       setAgentJob({
         status: 'blocked',
@@ -149,23 +151,42 @@ export default function App() {
   };
 
   const agentIsRunning = agentJob.status === 'queued' || agentJob.status === 'provisioning' || agentJob.status === 'running' || agentJob.status === 'validating';
+  const repoReady = Boolean(agentJob.repoUrl && agentJob.status !== 'idle');
+  const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
+  const runtimeSummary = summarizeSovereignAgentJob(agentJob);
+
+  const publishDraftPr = () => {
+    if (!agentJob.repoUrl) {
+      const message = 'Draft PR benötigt zuerst ein durch die Runtime belegtes Repository.';
+      setAgentJob((current) => ({
+        ...current,
+        lastError: message,
+        events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-repo', message }],
+      }));
+      return;
+    }
+    void startChatOnlyTask('Draft PR aus den belegten Änderungen erstellen', {
+      repoUrl: agentJob.repoUrl,
+      branch: agentJob.branch,
+    });
+  };
 
   return (
     <LlmAdapterProvider>
       <main data-testid="chat-only-app" data-layout="chat-only-live-entry" aria-label="Sovereign Chat" style={CHAT_ONLY_STYLE}>
         <BuilderContainer
           mission={mission}
-          repoReady={false}
-          repoReason="GitHub-URL direkt im Chat einfügen."
-          repoBusy={false}
-          runtimeBusy={false}
-          isPublishing={false}
-          sovereignSummary="Sovereign ist bereit. Lade ein Repo per GitHub-URL im Chat oder beschreibe den nächsten Auftrag."
+          repoReady={repoReady}
+          repoReason={repoReady ? `Runtime-Repository: ${agentJob.repoUrl}` : 'GitHub-URL direkt im Chat einfügen.'}
+          repoBusy={repoBusy}
+          runtimeBusy={agentIsRunning}
+          isPublishing={agentJob.status === 'validating'}
+          sovereignSummary={runtimeSummary}
           sovereignPreview={janitorPreview}
           onMissionChange={setMission}
           onGenerateIdeas={() => setMission('Ideen/Build')}
           onGenerateErrorWorkflow={() => { void runJanitorScan(); }}
-          onPublishDraftPr={() => setMission('Draft PR')}
+          onPublishDraftPr={publishDraftPr}
           agentReady={agentConfig.ready}
           agentConfig={agentConfig}
           agentJob={agentJob}
