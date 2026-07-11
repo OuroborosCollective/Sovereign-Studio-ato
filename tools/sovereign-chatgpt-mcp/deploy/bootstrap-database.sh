@@ -7,6 +7,8 @@ BACKEND_CONTAINER="${SOVEREIGN_BACKEND_CONTAINER:-sovereign-backend}"
 READER_USER="sovereign_mcp_reader"
 PREVIEW_USER="sovereign_mcp_preview"
 PREVIEW_DB="sovereign_migration_preview"
+PSQL_BIN="/usr/bin/psql"
+CREATEDB_BIN="/usr/bin/createdb"
 
 fail() {
   printf 'database bootstrap blocked: %s\n' "$*" >&2
@@ -53,8 +55,8 @@ PY
 [[ -f "$MCP_ENV_FILE" ]] || fail "MCP environment file is missing"
 [[ -f "$BACKEND_ENV_FILE" ]] || fail "backend environment file is missing"
 docker inspect "$BACKEND_CONTAINER" >/dev/null 2>&1 || fail "backend container is not running"
-docker exec "$BACKEND_CONTAINER" command -v psql >/dev/null 2>&1 || fail "psql is missing in backend container"
-docker exec "$BACKEND_CONTAINER" command -v createdb >/dev/null 2>&1 || fail "createdb is missing in backend container"
+docker exec "$BACKEND_CONTAINER" "$PSQL_BIN" --version >/dev/null 2>&1 || fail "psql is missing in backend container"
+docker exec "$BACKEND_CONTAINER" "$CREATEDB_BIN" --version >/dev/null 2>&1 || fail "createdb is missing in backend container"
 
 ADMIN_HOST="$(read_value "$BACKEND_ENV_FILE" POSTGRES_HOST)"
 ADMIN_PORT="$(read_value "$BACKEND_ENV_FILE" POSTGRES_PORT)"
@@ -80,26 +82,37 @@ psql_admin() {
   docker exec \
     -e PGPASSWORD="$ADMIN_PASSWORD" \
     "$BACKEND_CONTAINER" \
-    psql -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" -d "$ADMIN_DB" "$@"
+    "$PSQL_BIN" -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" -d "$ADMIN_DB" "$@"
+}
+
+psql_admin_stdin() {
+  docker exec -i \
+    -e PGPASSWORD="$ADMIN_PASSWORD" \
+    "$BACKEND_CONTAINER" \
+    "$PSQL_BIN" -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" -d "$ADMIN_DB" "$@"
 }
 
 if [[ "$(psql_admin -tAc "SELECT 1 FROM pg_roles WHERE rolname='$READER_USER'")" != "1" ]]; then
-  psql_admin -c "CREATE ROLE $READER_USER LOGIN PASSWORD '$READER_PASSWORD'"
+  printf "CREATE ROLE %s LOGIN PASSWORD :'role_password';\n" "$READER_USER" \
+    | psql_admin_stdin -v role_password="$READER_PASSWORD"
 else
-  psql_admin -c "ALTER ROLE $READER_USER LOGIN PASSWORD '$READER_PASSWORD'"
+  printf "ALTER ROLE %s LOGIN PASSWORD :'role_password';\n" "$READER_USER" \
+    | psql_admin_stdin -v role_password="$READER_PASSWORD"
 fi
 
 if [[ "$(psql_admin -tAc "SELECT 1 FROM pg_roles WHERE rolname='$PREVIEW_USER'")" != "1" ]]; then
-  psql_admin -c "CREATE ROLE $PREVIEW_USER LOGIN PASSWORD '$PREVIEW_PASSWORD'"
+  printf "CREATE ROLE %s LOGIN PASSWORD :'role_password';\n" "$PREVIEW_USER" \
+    | psql_admin_stdin -v role_password="$PREVIEW_PASSWORD"
 else
-  psql_admin -c "ALTER ROLE $PREVIEW_USER LOGIN PASSWORD '$PREVIEW_PASSWORD'"
+  printf "ALTER ROLE %s LOGIN PASSWORD :'role_password';\n" "$PREVIEW_USER" \
+    | psql_admin_stdin -v role_password="$PREVIEW_PASSWORD"
 fi
 
 psql_admin -c "GRANT CONNECT ON DATABASE $ADMIN_DB TO $READER_USER"
 docker exec \
   -e PGPASSWORD="$ADMIN_PASSWORD" \
   "$BACKEND_CONTAINER" \
-  psql -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" -d "$ADMIN_DB" \
+  "$PSQL_BIN" -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" -d "$ADMIN_DB" \
   -c "GRANT USAGE ON SCHEMA public TO $READER_USER" \
   -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO $READER_USER" \
   -c "GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO $READER_USER" \
@@ -110,8 +123,19 @@ if [[ "$(psql_admin -tAc "SELECT 1 FROM pg_database WHERE datname='$PREVIEW_DB'"
   docker exec \
     -e PGPASSWORD="$ADMIN_PASSWORD" \
     "$BACKEND_CONTAINER" \
-    createdb -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" -O "$PREVIEW_USER" "$PREVIEW_DB"
+    "$CREATEDB_BIN" -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" "$PREVIEW_DB"
 fi
+
+psql_admin -c "GRANT CONNECT, TEMPORARY ON DATABASE $PREVIEW_DB TO $PREVIEW_USER"
+docker exec \
+  -e PGPASSWORD="$ADMIN_PASSWORD" \
+  "$BACKEND_CONTAINER" \
+  "$PSQL_BIN" -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$ADMIN_USER" -d "$PREVIEW_DB" \
+  -c "GRANT USAGE, CREATE ON SCHEMA public TO $PREVIEW_USER" \
+  -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $PREVIEW_USER" \
+  -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $PREVIEW_USER" \
+  -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO $PREVIEW_USER" \
+  -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO $PREVIEW_USER"
 
 set_value "$MCP_ENV_FILE" POSTGRES_HOST "$ADMIN_HOST"
 set_value "$MCP_ENV_FILE" POSTGRES_PORT "$ADMIN_PORT"
@@ -125,5 +149,22 @@ set_value "$MCP_ENV_FILE" SOVEREIGN_MCP_PREVIEW_POSTGRES_USER "$PREVIEW_USER"
 set_value "$MCP_ENV_FILE" SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD "$PREVIEW_PASSWORD"
 chmod 0600 "$MCP_ENV_FILE"
 
-printf '{"ok":true,"reader":"%s","production_database":"%s","preview_owner":"%s","preview_database":"%s"}\n' \
+READER_CANARY="$(docker exec \
+  -e PGPASSWORD="$READER_PASSWORD" \
+  "$BACKEND_CONTAINER" \
+  "$PSQL_BIN" -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$READER_USER" -d "$ADMIN_DB" -tAc 'SELECT 1')"
+[[ "$READER_CANARY" == "1" ]] || fail "production reader authentication canary failed"
+
+printf '%s\n' \
+  'BEGIN;' \
+  'DROP TABLE IF EXISTS public.sovereign_mcp_preview_canary;' \
+  'CREATE TABLE public.sovereign_mcp_preview_canary(id integer);' \
+  'ROLLBACK;' \
+  | docker exec -i \
+      -e PGPASSWORD="$PREVIEW_PASSWORD" \
+      "$BACKEND_CONTAINER" \
+      "$PSQL_BIN" -v ON_ERROR_STOP=1 -h "$ADMIN_HOST" -p "$ADMIN_PORT" -U "$PREVIEW_USER" -d "$PREVIEW_DB" >/dev/null \
+  || fail "preview database authentication or DDL canary failed"
+
+printf '{"ok":true,"reader":"%s","production_database":"%s","reader_canary":true,"preview_user":"%s","preview_database":"%s","preview_canary":true}\n' \
   "$READER_USER" "$ADMIN_DB" "$PREVIEW_USER" "$PREVIEW_DB"
