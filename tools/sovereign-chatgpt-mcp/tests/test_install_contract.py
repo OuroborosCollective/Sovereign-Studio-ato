@@ -21,10 +21,29 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     service = (ROOT / "deploy" / "sovereign-chatgpt-broker.service").read_text("utf-8")
 
     assert 'install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"' in script
     assert "SOVEREIGN_MCP_ENABLE_ADMIN_SQL" in script
     assert "SOVEREIGN_MCP_ENABLE_MAIN_PUSH" in script
+    assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
+    assert "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL" in script
+    assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
+
+
+def test_android_hardening_runtime_and_read_only_sdk_mount_are_installed() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    compose = (ROOT / "docker-compose.yml").read_text("utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+
+    assert 'android_hardening.py' in installer
+    assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
+    assert 'install -d -m 0755 "$ANDROID_SDK_DIR"' in installer
+    assert '/opt/android-sdk:/opt/android-sdk:ro' in compose
+    assert 'ANDROID_SDK_ROOT: /opt/android-sdk' in compose
+    assert 'openjdk-17-jdk-headless' in dockerfile
+    assert 'COPY policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py server.py /app/' in dockerfile
+    assert 'docker exec sovereign-chatgpt-mcp java -version' in installer
 
 
 def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:
