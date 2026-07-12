@@ -10,16 +10,44 @@ NATIVE_PROFILES = {"standard", "release"}
 def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
     """Route native Android profiles to the allowlisted GitHub Actions workflow.
 
-    The public MCP tool keeps its existing name. Fast checks remain local. Standard
-    and release profiles first run the local fast preflight, then dispatch the
-    native workflow against the already-published workspace branch. A workspace
-    without a Draft PR is blocked before any local Gradle/Java command can run.
+    The public MCP tool keeps its existing name. Fast checks remain local. In
+    github_actions mode, standard and release run a secrets-free local preflight
+    and then dispatch the native workflow against an already-published workspace
+    branch. A workspace without a Draft PR is blocked before any Gradle/Java
+    command can run in the lightweight MCP container.
     """
 
     if getattr(android_runtime, "_native_validation_router_installed", False):
         return
 
     local_run_suite: Callable[[str, str], dict[str, Any]] = android_runtime.run_suite
+
+    def dispatch_preflight(workspace_id: str) -> dict[str, Any]:
+        repo = operator_runtime._repo(workspace_id)
+        checks: list[dict[str, Any]] = []
+        for name, argv in (
+            ("git_diff_check", ["git", "diff", "--check"]),
+            ("typecheck", ["pnpm", "run", "type-check"]),
+        ):
+            result = operator_runtime._run(argv, cwd=repo, timeout=1800)
+            operator_runtime._record_check(
+                workspace_id,
+                f"android:dispatch-preflight:{name}",
+                result,
+            )
+            checks.append({"name": name, **result})
+
+        static_scan = android_runtime.scan(workspace_id)
+        ok = all(bool(item.get("ok")) for item in checks) and bool(static_scan.get("ok"))
+        return {
+            "ok": ok,
+            "status": "PASS" if ok else "FAIL",
+            "workspace_id": workspace_id,
+            "profile": "dispatch-preflight",
+            "commands": checks,
+            "static_scan": static_scan,
+            "signing_secrets_required_locally": False,
+        }
 
     def routed_run_suite(workspace_id: str, profile: str = "fast") -> dict[str, Any]:
         selected = str(profile or "fast").strip().lower()
@@ -30,7 +58,7 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         if selected == "fast" or mode != "github_actions":
             return local_run_suite(workspace_id, selected)
 
-        preflight = local_run_suite(workspace_id, "fast")
+        preflight = dispatch_preflight(workspace_id)
         if not bool(preflight.get("ok")):
             return {
                 "ok": False,
