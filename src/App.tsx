@@ -226,9 +226,38 @@ export default function App() {
   const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
   const runtimeSummary = summarizeSovereignAgentJob(agentJob);
 
-  const publishDraftPr = async () => {
-    const jobId = agentJob.jobId;
-    if (!agentJob.repoUrl || !jobId) {
+  const publishDraftPr = async (input?: SovereignDraftPrPublishInput) => {
+    let jobId = agentJob.jobId;
+    let repoUrl = agentJob.repoUrl;
+
+    if (input?.changes && input.changes.length > 0) {
+      try {
+        const snapshot = await agentClient.startToolchainJob({
+          repoUrl: input.repoUrl,
+          branch: input.branch,
+          mission: input.mission,
+          stagedFiles: input.changes,
+          cloneRepo: true,
+          provisionWorkspace: true,
+          draftPrOnly: true,
+          githubAccessToken: input.githubAccessToken,
+        });
+        jobId = snapshot.jobId;
+        repoUrl = snapshot.repoUrl;
+        setAgentJob(snapshot);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Staging der Änderungen fehlgeschlagen.';
+        setAgentJob((current) => ({
+          ...current,
+          status: 'blocked',
+          lastError: message,
+          events: [...current.events, { at: Date.now(), level: 'error', stage: 'draft-pr-staging-failed', message }],
+        }));
+        return;
+      }
+    }
+
+    if (!repoUrl || !jobId) {
       const message = 'Draft PR benötigt zuerst einen belegten Sovereign-Agent-Job mit Repository.';
       setAgentJob((current) => ({
         ...current,
@@ -236,7 +265,7 @@ export default function App() {
         lastError: message,
         events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-job', message }],
       }));
-      throw error;
+      return;
     }
 
     setAgentJob((current) => ({
