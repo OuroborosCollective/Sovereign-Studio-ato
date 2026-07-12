@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuilderContainer } from "./BuilderContainer";
 import { useUserStore } from "../../user/useUserStore";
+import { useSovereignToolInspectionStore } from "../runtime/sovereignToolInspectionRuntime";
 import { store } from "../../../store";
 
 // Mock useBilling to avoid Redux context errors from PaywallModal
@@ -137,6 +138,7 @@ async function validateGitHubAccessFromLauncher(): Promise<void> {
 beforeEach(() => {
   window.localStorage.clear();
   useUserStore.getState().clearUser();
+  useSovereignToolInspectionStore.getState().resetEvidence();
   mockWorkerReply();
 });
 
@@ -1023,6 +1025,20 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(actionStream.querySelector('[data-route="diff"]')).not.toBeNull();
     expect(chatField().value).toBe(before);
+  });
+
+  it("Health shortcut closes its running route only after real inspection evidence is stored", async () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Health" }));
+
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    await waitFor(() => expect(actionStream).toHaveTextContent("health Inspektion abgeschlossen"));
+    fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
+
+    const result = actionStream.querySelector('[data-route="health"]:not([data-state="running"])');
+    expect(result).not.toBeNull();
+    expect(useSovereignToolInspectionStore.getState().evidence.health).toBeTruthy();
   });
 
   it("Runtime Logs shortcut is idempotent and never creates its own evidence", () => {

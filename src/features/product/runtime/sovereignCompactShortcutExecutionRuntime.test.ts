@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSovereignInspectionResultEvent,
   buildSovereignRuntimeEvidenceLog,
   decideSovereignCompactShortcutExecution,
 } from './sovereignCompactShortcutExecutionRuntime';
@@ -88,6 +89,49 @@ describe('sovereignCompactShortcutExecutionRuntime', () => {
       expect(decision.reason, id).toBeTruthy();
       expect(decision.nextAction, id).toBeTruthy();
     }
+  });
+
+  it.each([
+    ['health', 'ready', 'done'],
+    ['memory', 'empty', 'blocked'],
+    ['coverage', 'failed', 'failed'],
+    ['settings', 'warning', 'blocked'],
+  ] as const)(
+    'closes the %s inspection route from its real %s evidence as %s',
+    (id, outcome, expectedState) => {
+      const result = buildSovereignInspectionResultEvent(id, {
+        outcome,
+        statusLabel: `${id} result`,
+        reason: `${id} runtime evidence`,
+        nextAction: `${id} next action`,
+        observedAt: 200,
+      }, 100);
+
+      expect(result).toMatchObject({
+        route: id,
+        state: expectedState,
+        createdAt: 200,
+      });
+      expect(result?.detail).toContain(`${id} runtime evidence`);
+      expect(result?.detail).toContain(`${id} next action`);
+    },
+  );
+
+  it('ignores checking and stale inspection evidence instead of closing a newer route', () => {
+    expect(buildSovereignInspectionResultEvent('coverage', {
+      outcome: 'checking',
+      statusLabel: 'Coverage wird geprüft',
+      reason: 'Laufende Prüfung.',
+      nextAction: 'Abwarten.',
+      observedAt: 200,
+    }, 100)).toBeNull();
+    expect(buildSovereignInspectionResultEvent('health', {
+      outcome: 'ready',
+      statusLabel: 'Alt',
+      reason: 'Stale Evidence.',
+      nextAction: 'Neu prüfen.',
+      observedAt: 90,
+    }, 100)).toBeNull();
   });
 
   it('builds runtime logs only from Action Stream and agent runtime events', () => {

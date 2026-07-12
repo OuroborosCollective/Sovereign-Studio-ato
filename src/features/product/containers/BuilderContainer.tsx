@@ -384,9 +384,14 @@ import {
 import { buildDirectPatchPlanWithContentLoad, detectDirectPatchTarget } from "../runtime/directGithubPatchRuntime";
 import { buildGeneratedFileDiffReport, type GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
 import {
+  buildSovereignInspectionResultEvent,
   buildSovereignRuntimeEvidenceLog,
   decideSovereignCompactShortcutExecution,
 } from "../runtime/sovereignCompactShortcutExecutionRuntime";
+import {
+  useSovereignToolInspectionStore,
+  type SovereignToolInspectionId,
+} from "../runtime/sovereignToolInspectionRuntime";
 import {
   decideSovereignSideMenuDraftPr,
   decideSovereignSideMenuShare,
@@ -2816,12 +2821,36 @@ export function BuilderContainer({
   const appendActionEvent = useCallback((event: SovereignActionEventInput) => {
     setActionStream((current) => appendSovereignActionEvent(current, event));
   }, []);
+  const inspectionEvidence = useSovereignToolInspectionStore((store) => store.evidence);
+  const completedInspectionEvidenceRef = useRef<Partial<Record<SovereignToolInspectionId, number>>>({});
   const sovereignAgentStartAvailable = Boolean(agentReady && onStartAgent);
   const executorIntent = useMemo(() => classifySovereignExecutorIntent(wishText), [wishText]);
   const runtimeEvidenceLog = useMemo(
     () => buildSovereignRuntimeEvidenceLog(actionStream.events, scopedAgentJob?.events ?? []),
     [actionStream.events, scopedAgentJob?.events],
   );
+
+  useEffect(() => {
+    const inspectionIds: readonly SovereignToolInspectionId[] = ['health', 'memory', 'coverage', 'settings'];
+    for (const id of inspectionIds) {
+      const evidence = inspectionEvidence[id];
+      if (!evidence) continue;
+      if (completedInspectionEvidenceRef.current[id] === evidence.observedAt) continue;
+
+      const started = [...actionStream.events].reverse().find(
+        (entry) => entry.route === id
+          && entry.state === 'running'
+          && entry.label === `${id} Inspektion geöffnet`,
+      );
+      if (!started) continue;
+
+      const resultEvent = buildSovereignInspectionResultEvent(id, evidence, started.createdAt);
+      if (!resultEvent) continue;
+      completedInspectionEvidenceRef.current[id] = evidence.observedAt;
+      appendActionEvent(resultEvent);
+    }
+  }, [actionStream.events, appendActionEvent, inspectionEvidence]);
+
   const hasScopedWorkerResponse = useMemo(
     () => actionStream.events.some((event) =>
       event.route === 'worker'
