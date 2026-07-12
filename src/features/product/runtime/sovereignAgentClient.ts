@@ -13,10 +13,48 @@ export interface SovereignAgentClientOptions {
   now?: () => number;
 }
 
+export interface SovereignStagedFile {
+  path: string;
+  content: string;
+  baseContent?: string;
+}
+
 export interface SovereignAgentStartJobInput {
   repoUrl: string;
   branch?: string;
   mission: string;
+  provisionWorkspace?: boolean;
+  cloneRepo?: boolean;
+  stagedFiles?: SovereignStagedFile[];
+  testCommand?: string;
+  githubAccessToken?: string;
+}
+
+export interface SovereignDraftPrPreparationResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrPreparation: {
+    allowed: boolean;
+    decision: string;
+    summary?: string;
+    headBranch?: string;
+    baseBranch?: string;
+    nextAction?: string;
+    canCreateDraftPr?: boolean;
+    blockers: string[];
+  };
+}
+
+export interface SovereignDraftPrCreateResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrCreate: {
+    allowed: boolean;
+    status: string;
+    prUrl?: string;
+    blocker?: string;
+    summary?: string;
+  };
 }
 
 export interface SovereignJanitorFinding {
@@ -110,7 +148,18 @@ function normalizeStatus(value: unknown): SovereignAgentJobSnapshot['status'] {
   return 'idle';
 }
 function backendErrorMessage(raw: RawSovereignAgentJobResponse): string | undefined {
-  return stringValue(raw.error) || stringValue(raw.message) || stringValue(raw.details) || stringValue(raw.blocker) || stringValue(raw.lastError);
+  const value = raw as RawSovereignAgentJobResponse & Record<string, unknown>;
+  const preparation = isObject(value.draftPrPreparation) ? value.draftPrPreparation : undefined;
+  const creation = isObject(value.draftPrCreate) ? value.draftPrCreate : undefined;
+  const preparationBlockers = preparation ? stringArray(preparation.blockers) : [];
+  return stringValue(raw.error)
+    || stringValue(raw.message)
+    || stringValue(raw.details)
+    || stringValue(raw.blocker)
+    || stringValue(raw.lastError)
+    || (preparationBlockers.length ? preparationBlockers.join('; ') : undefined)
+    || (creation ? stringValue(creation.blocker) || stringValue(creation.summary) : undefined)
+    || (preparation ? stringValue(preparation.summary) : undefined);
 }
 function unwrapJobPayload(raw: Record<string, unknown>): RawSovereignAgentJobResponse {
   return isObject(raw.job) ? raw.job as RawSovereignAgentJobResponse : raw as RawSovereignAgentJobResponse;
@@ -151,6 +200,17 @@ async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: 
   }
   if (!isObject(body)) throw new Error('Sovereign Agent backend returned a non-object response.');
   return sanitizeSnapshot(body, args.now);
+}
+
+async function requestObject(args: { url: string; init: RequestInit; fetcher: typeof fetch; fallback: string }): Promise<Record<string, unknown>> {
+  const response = await args.fetcher(args.url, args.init);
+  const body = await readJson(response);
+  if (!response.ok) {
+    const message = isObject(body) ? backendErrorMessage(body) : undefined;
+    throw new Error(message || `${args.fallback} returned HTTP ${response.status}.`);
+  }
+  if (!isObject(body)) throw new Error(`${args.fallback} returned a non-object response.`);
+  return body;
 }
 
 async function requestJanitorTool(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<SovereignJanitorToolResponse> {
@@ -194,11 +254,34 @@ export class SovereignAgentClient {
     const job = this.buildJobRequest(input);
     const snapshot = await requestSnapshot({
       url: endpoint(this.config.agentApiUrl, jobPath()),
-      init: { method: 'POST', headers: headers(), credentials: 'include', body: JSON.stringify(job) },
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify({
+          ...job,
+          provisionWorkspace: input.provisionWorkspace ?? true,
+          cloneRepo: input.cloneRepo ?? true,
+          ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
+          ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
+          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
+        }),
+      },
       fetcher: this.fetcher,
       now: this.now,
     });
     return { ...snapshot, repoUrl: snapshot.repoUrl ?? job.repoUrl, branch: snapshot.branch ?? job.branch };
+  }
+  async listJobs(): Promise<SovereignAgentJobSnapshot[]> {
+    assertReady(this.config);
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath()),
+      init: { method: 'GET', headers: headers(), credentials: 'include' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Agent job list',
+    });
+    const jobs = Array.isArray(body.jobs) ? body.jobs : [];
+    return jobs.filter(isObject).map((job) => sanitizeSnapshot(job, this.now));
   }
   async getJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
@@ -209,6 +292,58 @@ export class SovereignAgentClient {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     return requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/cancel')), init: { method: 'POST', headers: headers(), credentials: 'include' }, fetcher: this.fetcher, now: this.now });
+  }
+  async prepareDraftPr(jobId: string): Promise<SovereignDraftPrPreparationResponse> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/draft-pr/prepare')),
+      init: { method: 'POST', headers: headers(), credentials: 'include', body: '{}' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Draft PR preparation',
+    });
+    const signal = isObject(body.draftPrPreparation) ? body.draftPrPreparation : {};
+    return {
+      ok: body.ok === true,
+      jobId: stringValue(body.jobId) || jobId,
+      draftPrPreparation: {
+        allowed: signal.allowed === true,
+        decision: stringValue(signal.decision) || 'blocked',
+        summary: stringValue(signal.summary),
+        headBranch: stringValue(signal.headBranch),
+        baseBranch: stringValue(signal.baseBranch),
+        nextAction: stringValue(signal.nextAction),
+        canCreateDraftPr: signal.canCreateDraftPr === true,
+        blockers: stringArray(signal.blockers),
+      },
+    };
+  }
+  async createDraftPr(jobId: string, githubAccessToken?: string): Promise<SovereignDraftPrCreateResponse> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/draft-pr/create')),
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify(githubAccessToken?.trim() ? { githubAccessToken: githubAccessToken.trim() } : {}),
+      },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Draft PR create',
+    });
+    const signal = isObject(body.draftPrCreate) ? body.draftPrCreate : {};
+    return {
+      ok: body.ok === true,
+      jobId: stringValue(body.jobId) || jobId,
+      draftPrCreate: {
+        allowed: signal.allowed === true,
+        status: stringValue(signal.status) || 'blocked',
+        prUrl: stringValue(signal.prUrl),
+        blocker: stringValue(signal.blocker),
+        summary: stringValue(signal.summary),
+      },
+    };
   }
   async runJanitor(jobId: string, input: SovereignJanitorInput = {}): Promise<SovereignJanitorToolResponse> {
     assertReady(this.config);

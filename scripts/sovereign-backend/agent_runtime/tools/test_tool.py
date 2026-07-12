@@ -7,6 +7,7 @@ Supports running tests for various test frameworks.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import json
 from pathlib import Path
@@ -138,7 +139,9 @@ class TestTool(ToolBase):
         elif framework == "jest":
             args = ["npx", "jest", "--passWithNoTests"] if verbose else ["npx", "jest"]
         elif framework == "vitest":
-            args = ["npx", "vitest", "run"] if not verbose else ["npx", "vitest"]
+            args = ["npx", "vitest", "run"]
+            if verbose:
+                args.append("--reporter=verbose")
         elif framework == "go test":
             args = ["go", "test", "-v"] if verbose else ["go", "test"]
             args.extend(["./..."])
@@ -161,14 +164,44 @@ class TestTool(ToolBase):
         timeout: int,
         verbose: bool,
     ) -> ToolResult:
-        """Run a custom test command."""
+        """Run one allowlisted test command without a shell."""
+        try:
+            args = shlex.split(command)
+        except ValueError as exc:
+            return ToolResult(status="blocked", blocker=f"Invalid test command: {exc}")
+
+        allowed_prefixes = (
+            ("python", "-m", "pytest"),
+            ("python3", "-m", "pytest"),
+            ("pytest",),
+            ("pnpm", "test"),
+            ("pnpm", "run", "test"),
+            ("pnpm", "exec", "vitest", "run"),
+            ("npm", "test"),
+            ("npm", "run", "test"),
+            ("npx", "vitest", "run"),
+            ("npx", "jest"),
+            ("go", "test"),
+            ("cargo", "test"),
+            ("git", "diff", "--check"),
+        )
+        shell_control_tokens = {"&&", "||", ";", "|", ">", ">>", "<", "<<", "&"}
+        if (
+            not args
+            or any(token in shell_control_tokens for token in args)
+            or not any(tuple(args[: len(prefix)]) == prefix for prefix in allowed_prefixes)
+        ):
+            return ToolResult(
+                status="blocked",
+                blocker="Custom test command is not allowlisted",
+            )
         if verbose:
-            print(f"Running: {command}")
+            print(f"Running: {' '.join(args)}")
 
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 cwd=cwd,
                 capture_output=True,
                 text=True,

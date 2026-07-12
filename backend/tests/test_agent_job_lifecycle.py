@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -165,7 +166,7 @@ def test_valid_request_provisions_workspace_and_updates_state(tmp_path: Path):
 def test_clone_success_moves_job_to_running(monkeypatch, tmp_path: Path):
     conn = FakeConnection()
 
-    def fake_clone(workspace_id, repo_url, branch, workspace_root):
+    def fake_clone(workspace_id, repo_url, branch, workspace_root, token=None):
         assert workspace_id == "agent-clone-1"
         assert repo_url.startswith("https://github.com/")
         assert branch == "main"
@@ -194,10 +195,161 @@ def test_clone_success_moves_job_to_running(monkeypatch, tmp_path: Path):
     assert any(event.stage == "repo_clone_completed" for event in lifecycle.events)
 
 
+def _fake_git_clone_with_readme(workspace_id, repo_url, branch, workspace_root, token=None):
+    repo_path = repo_dir_for_workspace(workspace_id, workspace_root)
+    subprocess.run(["git", "init", "-b", branch], cwd=repo_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test Runtime"], cwd=repo_path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo_path, check=True)
+    (repo_path / "README.md").write_text("# Original\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo_path, check=True)
+    subprocess.run(["git", "commit", "-m", "Initial"], cwd=repo_path, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=repo_path, check=True)
+    return GitWorkspaceResult(
+        status="done",
+        events=(SovereignAgentEvent(stage="repo_clone_completed", level="success", message="Repository snapshot ready."),),
+        exit_code=0,
+    )
+
+
+def test_confirmed_document_change_creates_real_workspace_evidence(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    monkeypatch.setattr("agent_runtime.job_lifecycle.clone_repo_into_workspace", _fake_git_clone_with_readme)
+
+    lifecycle = create_sovereign_agent_job(
+        conn,
+        user_id="user-1",
+        payload=valid_payload(stagedFiles=[{
+            "path": "README.md",
+            "baseContent": "# Original\n",
+            "content": "# Updated\n\nRuntime truth.\n",
+        }]),
+        workspace_root=tmp_path,
+        provision_workspace=True,
+        clone_repo=False,
+        job_id="agent-staged-doc",
+    )
+
+    assert lifecycle.result.status == "running"
+    assert lifecycle.result.changed_files == ("README.md",)
+    assert "README.md" in (lifecycle.result.diff_summary or "")
+    assert lifecycle.result.test_summary == "git diff --check passed for documentation-only staged changes."
+    assert (repo_dir_for_workspace("agent-staged-doc", tmp_path) / "README.md").read_text() == "# Updated\n\nRuntime truth.\n"
+
+
+def test_existing_staged_file_requires_base_content(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    monkeypatch.setattr("agent_runtime.job_lifecycle.clone_repo_into_workspace", _fake_git_clone_with_readme)
+
+    lifecycle = create_sovereign_agent_job(
+        conn,
+        user_id="user-1",
+        payload=valid_payload(stagedFiles=[{
+            "path": "README.md",
+            "content": "# Overwrite without base evidence\n",
+        }]),
+        workspace_root=tmp_path,
+        provision_workspace=True,
+        job_id="agent-staged-no-base",
+    )
+
+    assert lifecycle.result.status == "blocked"
+    assert lifecycle.result.blocker == "baseContent is required for existing staged file: README.md"
+    assert (repo_dir_for_workspace("agent-staged-no-base", tmp_path) / "README.md").read_text() == "# Original\n"
+
+
+def test_staged_change_blocks_when_base_content_drifted(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    monkeypatch.setattr("agent_runtime.job_lifecycle.clone_repo_into_workspace", _fake_git_clone_with_readme)
+
+    lifecycle = create_sovereign_agent_job(
+        conn,
+        user_id="user-1",
+        payload=valid_payload(stagedFiles=[{
+            "path": "README.md",
+            "baseContent": "# Stale base\n",
+            "content": "# Unsafe overwrite\n",
+        }]),
+        workspace_root=tmp_path,
+        provision_workspace=True,
+        job_id="agent-staged-drift",
+    )
+
+    assert lifecycle.result.status == "blocked"
+    assert lifecycle.result.blocker == "staged base content drift detected: README.md"
+    assert (repo_dir_for_workspace("agent-staged-drift", tmp_path) / "README.md").read_text() == "# Original\n"
+
+
+def test_staged_change_rejects_path_escape_before_workspace(tmp_path: Path):
+    conn = FakeConnection()
+
+    lifecycle = create_sovereign_agent_job(
+        conn,
+        user_id="user-1",
+        payload=valid_payload(stagedFiles=[{
+            "path": "../outside.md",
+            "content": "unsafe",
+        }]),
+        workspace_root=tmp_path,
+        provision_workspace=True,
+        job_id="agent-staged-escape",
+    )
+
+    assert lifecycle.result.status == "blocked"
+    assert "unsafe staged file path" in (lifecycle.result.blocker or "")
+    assert not (tmp_path / "agent-staged-escape").exists()
+
+
+def test_ephemeral_github_token_reaches_clone_but_is_not_persisted(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    observed = {}
+    token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+
+    def fake_clone(workspace_id, repo_url, branch, workspace_root, token=None):
+        observed["token"] = token
+        return GitWorkspaceResult(
+            status="done",
+            events=(SovereignAgentEvent(stage="repo_clone_completed", level="success", message="Repository snapshot ready."),),
+            exit_code=0,
+        )
+
+    monkeypatch.setattr("agent_runtime.job_lifecycle.clone_repo_into_workspace", fake_clone)
+    lifecycle = create_sovereign_agent_job(
+        conn,
+        user_id="user-1",
+        payload=valid_payload(githubAccessToken=token),
+        workspace_root=tmp_path,
+        provision_workspace=True,
+        clone_repo=True,
+        job_id="agent-token-ephemeral",
+    )
+
+    assert lifecycle.result.status == "running"
+    assert observed["token"] == token
+    assert token not in repr(conn.jobs)
+    assert token not in repr(conn.events)
+
+
+def test_invalid_ephemeral_github_token_blocks_before_workspace(tmp_path: Path):
+    conn = FakeConnection()
+    lifecycle = create_sovereign_agent_job(
+        conn,
+        user_id="user-1",
+        payload=valid_payload(githubAccessToken="not-a-token"),
+        workspace_root=tmp_path,
+        provision_workspace=True,
+        clone_repo=True,
+        job_id="agent-token-invalid",
+    )
+
+    assert lifecycle.result.status == "blocked"
+    assert lifecycle.result.blocker == "githubAccessToken has an invalid format"
+    assert not (tmp_path / "agent-token-invalid").exists()
+
+
 def test_clone_blocker_moves_job_to_blocked(monkeypatch, tmp_path: Path):
     conn = FakeConnection()
 
-    def fake_clone(workspace_id, repo_url, branch, workspace_root):
+    def fake_clone(workspace_id, repo_url, branch, workspace_root, token=None):
         return GitWorkspaceResult(
             status="blocked",
             events=(SovereignAgentEvent(stage="repo_clone_blocked", level="warning", message="Repo directory is not empty."),),

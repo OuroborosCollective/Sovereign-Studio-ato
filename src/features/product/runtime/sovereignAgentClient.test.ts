@@ -25,6 +25,67 @@ describe('SovereignAgentClient', () => {
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
     await expect(client.startJob({ repoUrl: 'https://github.com/acme/repo', mission: 'Fix tests' })).rejects.toThrow('workspace unavailable');
   });
+  it('sends confirmed staged files through a cloned workspace job', async () => {
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      job: { id: 'job-staged', workspaceId: 'job-staged', status: 'running', changedFiles: ['README.md'], events: [] },
+    }), { status: 201 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    await client.startJob({
+      repoUrl: 'https://github.com/acme/repo',
+      branch: 'main',
+      mission: 'Update README',
+      stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
+      githubAccessToken: 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456',
+    });
+
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({ provisionWorkspace: true, cloneRepo: true });
+    expect(body.stagedFiles).toEqual([{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }]);
+    expect(body.githubAccessToken).toBe('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456');
+  });
+
+  it('lists persisted jobs and continues the same job through prepare and create', async () => {
+    const responses = [
+      new Response(JSON.stringify({ jobs: [{ id: 'job-1', status: 'running', changedFiles: ['README.md'], events: [] }] }), { status: 200 }),
+      new Response(JSON.stringify({ ok: true, jobId: 'job-1', draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] } }), { status: 200 }),
+      new Response(JSON.stringify({ ok: true, jobId: 'job-1', draftPrCreate: { allowed: true, status: 'created', prUrl: 'https://github.com/acme/repo/pull/7' } }), { status: 200 }),
+    ];
+    const fetcher = vi.fn(async () => responses.shift() as Response);
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    const jobs = await client.listJobs();
+    const preparation = await client.prepareDraftPr(jobs[0].jobId || '');
+    const creation = await client.createDraftPr(jobs[0].jobId || '', 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456');
+
+    expect(jobs[0]).toMatchObject({ jobId: 'job-1', changedFiles: ['README.md'] });
+    expect(preparation.draftPrPreparation.allowed).toBe(true);
+    expect(creation.draftPrCreate.prUrl).toBe('https://github.com/acme/repo/pull/7');
+    const createInit = fetcher.mock.calls[2][1] as RequestInit;
+    expect(JSON.parse(String(createInit.body))).toEqual({ githubAccessToken: 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456' });
+    expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual([
+      'https://agent.example.test/api/user/agent/jobs',
+      'https://agent.example.test/api/user/agent/jobs/job-1/draft-pr/prepare',
+      'https://agent.example.test/api/user/agent/jobs/job-1/draft-pr/create',
+    ]);
+  });
+
+  it('surfaces nested Draft-PR blockers from non-2xx responses', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      ok: false,
+      draftPrPreparation: {
+        allowed: false,
+        blockers: ['Draft PR requires test evidence', 'Draft PR requires diff evidence'],
+      },
+    }), { status: 400 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    await expect(client.prepareDraftPr('job-1')).rejects.toThrow(
+      'Draft PR requires test evidence; Draft PR requires diff evidence',
+    );
+  });
+
   it('runs the deterministic janitor only through the owned job tool route', async () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       ok: true,

@@ -208,6 +208,21 @@ import { decideSovereignExecutorBridgeRoute } from "../../../runtime/sovereignEx
 // TYPES  (identical props to BuilderContainer — drop-in swap)
 // ─────────────────────────────────────────────────────────────
 
+export interface SovereignStagedChange {
+  readonly path: string;
+  readonly content: string;
+  readonly baseContent?: string;
+}
+
+export interface SovereignDraftPrPublishInput {
+  readonly repoUrl: string;
+  readonly branch: string;
+  readonly mission: string;
+  readonly changes: readonly SovereignStagedChange[];
+  readonly confirmed: boolean;
+  readonly githubAccessToken?: string;
+}
+
 export interface BuilderContainerProps {
   mission: string;
   repoReady: boolean;
@@ -220,13 +235,13 @@ export interface BuilderContainerProps {
   onMissionChange: (mission: string) => void;
   onGenerateIdeas: () => void;
   onGenerateErrorWorkflow: () => void;
-  onPublishDraftPr: () => void;
+  onPublishDraftPr: (input: SovereignDraftPrPublishInput) => void | Promise<void>;
   agentReady?: boolean;
   agentConfig?: SovereignAgentConfig;
   agentJob?: SovereignAgentJobSnapshot;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
-  onStartAgent?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string }) => void | Promise<void>;
+  onStartAgent?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string; readonly githubAccessToken?: string }) => void | Promise<void>;
   onCancelAgent?: () => void;
   /**
    * Traditional publish path — set by the parent to the PR URL returned by
@@ -2548,6 +2563,7 @@ export function BuilderContainer({
   const [lastWorkerRequestMessage, setLastWorkerRequestMessage] = useState<string | null>(null);
   const [patchPreviewReady, setPatchPreviewReady] = useState(false);
   const [patchConfirmed, setPatchConfirmed] = useState(false);
+  const [stagedChanges, setStagedChanges] = useState<SovereignStagedChange[]>([]);
   const [lastAnswerWasLocal, setLastAnswerWasLocal] = useState(false);
   const [localRepoLoading, setRepoLoading] = useState(false);
   const lastMissionRef = useRef(mission);
@@ -2559,6 +2575,7 @@ export function BuilderContainer({
     setPatchDiffReport(null);
     setPatchPreviewReady(false);
     setPatchConfirmed(false);
+    setStagedChanges([]);
     setShowPatchDiffEvidence(false);
   }, []);
 
@@ -2810,6 +2827,27 @@ export function BuilderContainer({
       second: "2-digit",
     });
     setStatusLogs((prev) => [...prev.slice(-199), { ts, level, msg, tabId }]);
+  }, []);
+
+  const stageGeneratedPatch = useCallback((args: {
+    readonly path: string;
+    readonly proposedContent: string;
+    readonly baseContent: string;
+    readonly summary: string;
+  }) => {
+    const report = buildGeneratedFileDiffReport(
+      [{ path: args.path, content: args.proposedContent, reason: args.summary || 'Direct GitHub Patch generiert' }],
+      [{ path: args.path, content: args.baseContent, found: true }],
+    );
+    setPatchDiffReport(report);
+    setStagedChanges([{
+      path: args.path,
+      content: args.proposedContent,
+      baseContent: args.baseContent,
+    }]);
+    setPatchPreviewReady(true);
+    setPatchConfirmed(false);
+    setShowPatchDiffEvidence(true);
   }, []);
 
   const [actionStream, setActionStream] = useState(() => createSovereignActionStreamState());
@@ -3439,7 +3477,11 @@ export function BuilderContainer({
     });
 
     try {
-      await onStartAgent(clean, { repoUrl: chatRepoSnapshot.repoUrl, branch: chatRepoSnapshot.branch });
+      await onStartAgent(clean, {
+        repoUrl: chatRepoSnapshot.repoUrl,
+        branch: chatRepoSnapshot.branch,
+        githubAccessToken: githubTokenRef.current || undefined,
+      });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sovereign Agent Start fehlgeschlagen.';
@@ -3458,6 +3500,80 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       });
       addLog('error', `Sovereign Agent start failed: ${message}`, 'router');
       return false;
+    }
+  };
+
+  const publishConfirmedDraftPr = async (): Promise<void> => {
+    if (!chatRepoSnapshot || !currentRepoScopeKey) {
+      setShowRepoSetup(true);
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'repo',
+        label: 'Draft-PR-Übergabe blockiert',
+        detail: 'Kein vollständiger Repository-Snapshot vorhanden.',
+        kind: 'blocked',
+      }));
+      return;
+    }
+
+    const hasStagedChanges = stagedChanges.length > 0;
+    const hasAgentEvidence = Boolean(
+      scopedAgentJob?.jobId && (scopedAgentJob.changedFiles?.length ?? 0) > 0,
+    );
+    if (!hasStagedChanges && !hasAgentEvidence) {
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'github-patch',
+        label: 'Draft-PR-Übergabe blockiert',
+        detail: 'Weder bestätigte staged Änderungen noch serverseitige Changed-File-Evidence vorhanden.',
+        kind: 'patch_blocked',
+      }));
+      appendChatLine({
+        role: 'assistant',
+        text: 'Draft PR blockiert: Es gibt noch keine bestätigte Änderung mit Runtime-Evidence.',
+      });
+      return;
+    }
+    if (hasStagedChanges && !patchConfirmed) {
+      setShowPatchDiffEvidence(true);
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'github-patch',
+        label: 'Patch-Bestätigung erforderlich',
+        detail: 'Die lokale Diff-Vorschau muss vor der Backend-Übergabe ausdrücklich bestätigt werden.',
+        kind: 'blocked',
+      }));
+      return;
+    }
+
+    appendActionEvent({
+      kind: 'agent_job_requested',
+      route: 'agent-job',
+      label: 'Bestätigte Änderungen werden übergeben',
+      detail: hasStagedChanges
+        ? `${stagedChanges.length} bestätigte Dateiänderung(en) werden an den isolierten Runtime-Workspace übergeben.`
+        : 'Der vorhandene belegte Agent-Job wird bis zur Draft-PR-Erstellung fortgeführt.',
+      state: 'queued',
+    });
+    try {
+      await onPublishDraftPr({
+        repoUrl: chatRepoSnapshot.repoUrl,
+        branch: chatRepoSnapshot.branch,
+        mission: lastMissionRef.current.trim() || mission.trim() || 'Create a reviewed Draft PR.',
+        changes: stagedChanges,
+        confirmed: !hasStagedChanges || patchConfirmed,
+        githubAccessToken: githubTokenRef.current || undefined,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendActionEvent({
+        kind: 'failed',
+        route: 'github-patch',
+        label: 'Draft-PR-Übergabe fehlgeschlagen',
+        detail: message,
+        state: 'failed',
+      });
+      appendChatLine({
+        role: 'assistant',
+        text: `Draft-PR-Übergabe fehlgeschlagen. Grund: ${message}`,
+      });
     }
   };
 
@@ -3518,7 +3634,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       }
       if (command.action === "pr") {
         triggerHaptic("medium");
-        onPublishDraftPr();
+        void publishConfirmedDraftPr();
         return;
       }
       if (command.action === "repo") {
@@ -4065,11 +4181,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
             if ('result' in directPatchResult && directPatchResult.result.ok) {
               const res = directPatchResult.result;
-              const diffReport = buildGeneratedFileDiffReport(
-                [{ path: res.targetPath, content: res.proposedContent, reason: 'Direct GitHub Patch generiert' }],
-                [{ path: res.targetPath, content: res.baseContent, found: true }]
-              );
-
               appendActionEvent({
                 kind: 'route_selected',
                 route: 'direct-github-patch',
@@ -4097,9 +4208,12 @@ ${res.patchSummary}
 Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
               });
               
-              setPatchDiffReport(diffReport);
-              setPatchPreviewReady(true);
-              setPatchConfirmed(false);
+              stageGeneratedPatch({
+                path: res.targetPath,
+                proposedContent: res.proposedContent,
+                baseContent: res.baseContent,
+                summary: res.patchSummary,
+              });
               setLastAnswerWasLocal(true);
               addLog('info', 'Write intent routed through Direct GitHub Patch Route with diff preview', 'router');
               return;
@@ -4845,7 +4959,8 @@ Das echte Repo-Setup wurde geöffnet.`,
     () => decideSovereignSideMenuDraftPr({
       repoReady: effectiveRepoReady,
       hasChangeEvidence: Boolean(
-        patchDiffReport || (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
+        (patchConfirmed && stagedChanges.length > 0)
+        || (scopedAgentJob?.changedFiles?.length ?? 0) > 0,
       ),
       githubWriteReady: githubWriteAllowed,
       isPublishing,
@@ -4855,7 +4970,8 @@ Das echte Repo-Setup wurde geöffnet.`,
       effectiveRepoReady,
       githubWriteAllowed,
       isPublishing,
-      patchDiffReport,
+      patchConfirmed,
+      stagedChanges.length,
       scopedAgentJob?.changedFiles?.length,
       scopedAgentJob?.draftPrUrl,
       scopedPublishedPrUrl,
@@ -4901,26 +5017,7 @@ Das echte Repo-Setup wurde geöffnet.`,
     }
     if (sideMenuDraftPrDecision.action !== 'publish-draft-pr') return;
 
-    try {
-      onPublishDraftPr();
-      appendActionEvent(buildLocalRuntimeResultEvent({
-        label: 'Draft-PR-Publisher aufgerufen',
-        detail: 'Der bestätigte Publisher-Callback wurde ausgelöst. Ein Draft PR gilt erst mit echter PR-URL als erstellt.',
-      }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      appendActionEvent({
-        kind: 'failed',
-        route: 'github-patch',
-        label: 'Draft-PR-Publisher fehlgeschlagen',
-        detail: message,
-        state: 'failed',
-      });
-      appendChatLine({
-        role: 'assistant',
-        text: `Draft-PR-Publisher konnte nicht gestartet werden. Grund: ${message}`,
-      });
-    }
+    void publishConfirmedDraftPr();
   };
 
   const selectedSlashCommand =
@@ -5395,12 +5492,12 @@ Das echte Repo-Setup wurde geöffnet.`,
                                 role: 'assistant',
                                 text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                               });
-                              setPatchDiffReport(buildGeneratedFileDiffReport(
-                                [{ path: result.result.targetPath, content: result.result.proposedContent, reason: 'Direct GitHub Patch generiert' }],
-                                [{ path: result.result.targetPath, content: result.result.baseContent, found: true }],
-                              ));
-                              setPatchPreviewReady(true);
-                              setPatchConfirmed(false);
+                              stageGeneratedPatch({
+                                path: result.result.targetPath,
+                                proposedContent: result.result.proposedContent,
+                                baseContent: result.result.baseContent,
+                                summary: result.result.patchSummary,
+                              });
                               setLastAnswerWasLocal(true);
                               return;
                             }
@@ -5739,12 +5836,12 @@ Das echte Repo-Setup wurde geöffnet.`,
                             role: 'assistant',
                             text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
                           });
-                          setPatchDiffReport(buildGeneratedFileDiffReport(
-                            [{ path: directPatchResult.result.targetPath, content: directPatchResult.result.proposedContent, reason: 'Direct GitHub Patch generiert' }],
-                            [{ path: directPatchResult.result.targetPath, content: directPatchResult.result.baseContent, found: true }],
-                          ));
-                          setPatchPreviewReady(true);
-                          setPatchConfirmed(false);
+                          stageGeneratedPatch({
+                            path: directPatchResult.result.targetPath,
+                            proposedContent: directPatchResult.result.proposedContent,
+                            baseContent: directPatchResult.result.baseContent,
+                            summary: directPatchResult.result.patchSummary,
+                          });
                           setLastAnswerWasLocal(true);
                           addLog('info', 'Pending write intent resumed through Direct GitHub Patch Route', 'router');
                           return;
@@ -6058,6 +6155,14 @@ Das echte Repo-Setup wurde geöffnet.`,
       {showPatchDiffEvidence && patchDiffReport && (
         <PatchDiffEvidenceSheet
           report={patchDiffReport}
+          confirmed={patchConfirmed}
+          onConfirm={() => {
+            setPatchConfirmed(true);
+            appendActionEvent(buildLocalRuntimeResultEvent({
+              label: 'Patch bestätigt',
+              detail: `${stagedChanges.length} staged Dateiänderung(en) wurden vom Nutzer geprüft und bestätigt.`,
+            }));
+          }}
           onClose={() => setShowPatchDiffEvidence(false)}
         />
       )}

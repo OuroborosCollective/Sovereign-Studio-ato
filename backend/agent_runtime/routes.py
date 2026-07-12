@@ -18,6 +18,7 @@ from .contracts import SovereignAgentEvent, normalize_agent_job_result
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
+from .git_workspace import normalize_ephemeral_github_token
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import evaluate_pattern_learning, pattern_input_from_job, pattern_learning_signal, persist_pattern_learning_candidate
@@ -369,12 +370,17 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_create_agent_draft_pr(job_id: str):
         user_id = _current_session_user_id()
+        body = request.get_json(silent=True) or {}
+        raw_github_token = body.get("githubAccessToken")
+        github_token = normalize_ephemeral_github_token(raw_github_token)
+        if raw_github_token is not None and github_token is None:
+            return jsonify({"error": "githubAccessToken has an invalid format"}), 400
         conn = _connection()
         try:
             job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
-            result = create_draft_pr_for_job(job)
+            result = create_draft_pr_for_job(job, token=github_token)
             if result.allowed and result.pr_url:
                 mark_draft_pr_created(conn, job_id=job_id, pr_url=result.pr_url)
             return jsonify({

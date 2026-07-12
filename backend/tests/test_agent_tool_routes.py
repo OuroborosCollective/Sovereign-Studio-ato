@@ -140,9 +140,10 @@ class TestToolIntegration:
             assert read_result.output == "Hello, Workflow!"
 
     def test_shell_git_workflow(self):
-        """Should support shell + git workflow."""
+        """Should keep shell read-only while dedicated tools own writes."""
         import tempfile
         from agent_runtime.tools.shell_tool import ShellTool
+        from agent_runtime.tools.file_tool import FileWriteTool
         from agent_runtime.tools.git_tool import GitStatusTool
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -157,16 +158,15 @@ class TestToolIntegration:
                 cwd=tmp, check=True
             )
 
+            writer = FileWriteTool()
+            assert writer.execute({"path": "shell_file.txt", "content": "test"}, tmp).is_ok()
+
             shell = ShellTool()
+            inspection = shell.execute({"command": "ls"}, tmp)
+            assert inspection.is_ok()
+            assert "shell_file.txt" in inspection.output
+
             git_status = GitStatusTool()
-
-            # Create file via shell
-            shell.execute(
-                {"command": "echo 'test' > shell_file.txt"},
-                tmp
-            )
-
-            # Check git status
             status = git_status.execute({}, tmp)
             assert status.is_ok()
 
