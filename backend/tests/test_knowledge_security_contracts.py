@@ -243,7 +243,8 @@ def test_migration_and_image_build_contain_live_contracts() -> None:
     assert "requests>=2.31.0" in requirements
     assert "security_runtime.py" in workflow
     assert "are_inference.py" in workflow
-    assert "python -m pip install -r scripts/sovereign-backend/requirements.txt pytest -q" in ci_workflow
+    assert "uses: ./.github/actions/setup-backend-python" in ci_workflow
+    assert "backend/requirements-test.txt" in read(ROOT / ".github/actions/setup-backend-python/action.yml")
 
 
 def test_pnpm_action_setup_uses_package_manager_as_single_version_source() -> None:

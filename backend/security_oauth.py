@@ -113,6 +113,18 @@ def _get_oauth_state(state: str) -> dict | None:
         return data
 
 
+def _peek_oauth_state(state: str) -> dict | None:
+    """Liest nur den sicheren Callback-Kontext, ohne den OAuth-State zu verbrauchen."""
+    with _oauth_lock:
+        data = _oauth_state_store.get(state)
+        if not data:
+            return None
+        if time.time() - data.get("created_at", 0) > 600:
+            _oauth_state_store.pop(state, None)
+            return None
+        return dict(data)
+
+
 def _clear_oauth_state(state: str) -> bool:
     """Löscht einen spezifischen State (ohne retrieval)."""
     with _oauth_lock:
@@ -238,6 +250,7 @@ __all__ = [
     "_decrypt_token",
     "_store_oauth_state",
     "_get_oauth_state",
+    "_peek_oauth_state",
     "_clear_oauth_state",
     "_clear_all_oauth_states",
     "_validate_pkce",

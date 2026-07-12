@@ -26,6 +26,7 @@ from security_oauth import (
     _decrypt_token,
     _store_oauth_state,
     _get_oauth_state,
+    _peek_oauth_state,
     _clear_all_oauth_states,
     _validate_pkce,
     _check_rate_limit,
@@ -130,6 +131,21 @@ class TestOAuthStateStore:
         # Zweite Verwendung - None (bereits verwendet)
         second = _get_oauth_state(state)
         assert second is None
+
+    def test_peek_reads_callback_context_without_consuming_state(self):
+        """Der Callback darf den Rückkanal lesen; nur der Exchange verbraucht den State."""
+        state = _generate_state()
+        _store_oauth_state(state, {"opener_origin": "https://chat.arelorian.de"})
+
+        first_peek = _peek_oauth_state(state)
+        second_peek = _peek_oauth_state(state)
+        consumed = _get_oauth_state(state)
+        after_consume = _peek_oauth_state(state)
+
+        assert first_peek["opener_origin"] == "https://chat.arelorian.de"
+        assert second_peek["opener_origin"] == "https://chat.arelorian.de"
+        assert consumed["opener_origin"] == "https://chat.arelorian.de"
+        assert after_consume is None
 
     def test_invalid_state_returns_none(self):
         """Ungültiger/nicht existenter State gibt None zurück."""
@@ -321,6 +337,7 @@ def test_module_exports_all_functions():
         "_decrypt_token",
         "_store_oauth_state",
         "_get_oauth_state",
+        "_peek_oauth_state",
         "_validate_pkce",
         "_generate_pkce",
         "_generate_state",

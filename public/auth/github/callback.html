@@ -8,20 +8,50 @@
 <body>
   <p id="status">GitHub-Anmeldung wird geprüft …</p>
   <script>
-    (() => {
+    (async () => {
+      const status = document.getElementById('status');
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
       const state = params.get('state');
-      const error = params.get('error_description') || params.get('error');
-      const targetOrigin = window.location.origin;
-      const message = error
-        ? { type: 'GITHUB_OAUTH_ERROR', error }
-        : code && state
-          ? { type: 'GITHUB_OAUTH_SUCCESS', code, state }
-          : { type: 'GITHUB_OAUTH_ERROR', error: 'OAuth-Callback enthält keinen vollständigen Code/State.' };
-      document.getElementById('status').textContent = error ? `Fehler: ${error}` : 'Anmeldung empfangen. Fenster wird geschlossen …';
-      if (window.opener) window.opener.postMessage(message, targetOrigin);
-      window.setTimeout(() => window.close(), 150);
+      const oauthError = params.get('error_description') || params.get('error');
+
+      if (!window.opener) {
+        status.textContent = 'Die öffnende Sovereign-Oberfläche ist nicht mehr verfügbar. Bitte Anmeldung neu starten.';
+        return;
+      }
+      if (!state) {
+        status.textContent = 'Fehler: OAuth-Callback enthält keinen State.';
+        return;
+      }
+
+      try {
+        status.textContent = 'GitHub-Antwort wird dem bestätigten Sovereign-Fenster zugeordnet …';
+        const contextResponse = await fetch(
+          'https://sovereign-backend.arelorian.de/api/auth/github/callback-context?state=' + encodeURIComponent(state),
+          { credentials: 'omit', cache: 'no-store' },
+        );
+        const context = await contextResponse.json().catch(() => ({}));
+        if (!contextResponse.ok || !context.openerOrigin || !context.callbackOrigin) {
+          throw new Error(context.error || ('Callback-Kontext HTTP ' + contextResponse.status));
+        }
+        if (context.callbackOrigin !== window.location.origin) {
+          throw new Error('Backend bestätigte nicht den aktuellen OAuth-Callback-Origin.');
+        }
+
+        const message = oauthError
+          ? { type: 'GITHUB_OAUTH_ERROR', error: oauthError }
+          : code
+            ? { type: 'GITHUB_OAUTH_SUCCESS', code, state }
+            : { type: 'GITHUB_OAUTH_ERROR', error: 'OAuth-Callback enthält keinen vollständigen Code.' };
+
+        window.opener.postMessage(message, context.openerOrigin);
+        status.textContent = oauthError
+          ? 'GitHub hat die Anmeldung abgelehnt. Fehler wurde an Sovereign übermittelt.'
+          : 'GitHub bestätigt. Sovereign erstellt jetzt die Backend-Session …';
+        window.setTimeout(() => window.close(), 600);
+      } catch (reason) {
+        status.textContent = 'Rückkanal fehlgeschlagen: ' + (reason instanceof Error ? reason.message : String(reason));
+      }
     })();
   </script>
 </body>

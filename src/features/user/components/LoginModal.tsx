@@ -50,6 +50,11 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 7, color: C.danger, fontSize: 13,
     padding: '9px 12px', marginBottom: 14,
   },
+  success: {
+    background: '#102a18', border: `1px solid ${C.green}`,
+    borderRadius: 7, color: C.green, fontSize: 13,
+    padding: '9px 12px', marginBottom: 14,
+  },
   link: {
     background: 'none', border: 'none', color: C.accent, cursor: 'pointer',
     fontSize: 13, padding: 0, fontFamily: 'inherit',
@@ -72,6 +77,7 @@ export function LoginModal({ onClose }: Props) {
   const [displayName, setDisplayName] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
+  const [githubStatus, setGithubStatus] = useState('');
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [accountKey, setAccountKey] = useState('');
 
@@ -108,23 +114,35 @@ export function LoginModal({ onClose }: Props) {
 
   async function handleGitHub() {
     setGithubLoading(true);
+    setGithubStatus('GitHub-Fenster wird mit geprüftem State und PKCE geöffnet …');
     clearError();
     try {
       const result = await initiateGitHubOAuth();
       if (result.success && result.code && result.state && result.codeVerifier) {
+        setGithubStatus('GitHub bestätigt. Backend-Session und verschlüsselte Verbindung werden erstellt …');
         await loginWithGitHub({
           code: result.code,
           state: result.state,
           codeVerifier: result.codeVerifier,
         });
-        if (!useUserStore.getState().error) onClose();
+        if (!useUserStore.getState().error) {
+          setGithubStatus('GitHub verbunden. Backend-Session bestätigt.');
+          await new Promise(resolve => window.setTimeout(resolve, 650));
+          onClose();
+        } else {
+          setGithubStatus('');
+        }
       } else {
+        setGithubStatus('');
         useUserStore.setState({
           error: result.error || 'GitHub OAuth lieferte keine vollständige State-/PKCE-Evidence.',
         });
       }
-    } catch {
-      useUserStore.setState({ error: 'GitHub-Login fehlgeschlagen' });
+    } catch (reason) {
+      setGithubStatus('');
+      useUserStore.setState({
+        error: reason instanceof Error ? reason.message : 'GitHub-Login fehlgeschlagen',
+      });
     } finally {
       setGithubLoading(false);
     }
@@ -158,6 +176,7 @@ export function LoginModal({ onClose }: Props) {
         </div>
 
         {error && <div style={S.err}>{error}</div>}
+        {githubStatus && <div style={S.success}>{githubStatus}</div>}
 
         <form onSubmit={handleSubmit}>
           {mode === 'register' && (

@@ -752,7 +752,7 @@ function handleHealth(env: Env): Response {
   return new Response(JSON.stringify({
     status: configured ? 'healthy' : 'not_configured',
     service: 'sovereign-llm-proxy',
-    version: '1.1.0',
+    version: '1.2.0',
     configured,
     providers: {
       cloudflare: configured,
@@ -761,6 +761,7 @@ function handleHealth(env: Env): Response {
     models: Object.keys(MODEL_ROUTES).length,
     embeddingModel: DEFAULT_EMBEDDING_MODEL,
     embeddingDimensions: EMBEDDING_DIMENSIONS,
+    embeddingPath: '/v1/embeddings',
     timestamp: new Date().toISOString(),
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },

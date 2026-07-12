@@ -151,6 +151,27 @@ def _proxy_request(texts: list[str]) -> EmbeddingBatch | None:
         timeout=EMBEDDING_TIMEOUT_SECONDS,
     )
     if not response.ok:
+        if response.status_code == 404:
+            worker_version = "unknown"
+            embedding_path = "missing"
+            try:
+                health_response = requests.get(
+                    f"{base}/health",
+                    headers=headers,
+                    timeout=EMBEDDING_TIMEOUT_SECONDS,
+                )
+                if health_response.ok:
+                    health = health_response.json()
+                    if isinstance(health, dict):
+                        worker_version = str(health.get("version") or "unknown")[:40]
+                        embedding_path = str(health.get("embeddingPath") or "missing")[:80]
+            except (requests.RequestException, ValueError):
+                pass
+            raise EmbeddingUnavailable(
+                "Embedding proxy route /v1/embeddings returned HTTP 404; "
+                f"deployed worker version={worker_version}, embeddingPath={embedding_path}. "
+                "Deploy the verified Worker embedding contract version 1.2.0 or newer."
+            )
         raise EmbeddingUnavailable(f"Embedding proxy returned HTTP {response.status_code}")
     vectors = _extract_vectors(response.json())
     if len(vectors) != len(texts):
