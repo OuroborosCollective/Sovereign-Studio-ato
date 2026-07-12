@@ -30,9 +30,25 @@ if (( ${#migrations[@]} == 0 )); then
   exit 1
 fi
 
+runtime_migration_dir="$(mktemp -d)"
+trap 'rm -rf "${runtime_migration_dir}"' EXIT
+
+read_ledger_columns() {
+  "${psql_base[@]}" -Atc \
+    "SELECT COALESCE(string_agg(column_name, ',' ORDER BY ordinal_position), '') FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'schema_migrations';"
+}
+
+current_ledger_columns="$(read_ledger_columns)"
 for migration in "${migrations[@]}"; do
-  echo "Applying migration: $(basename "${migration}")"
-  "${psql_base[@]}" -f "${migration}"
+  migration_name="$(basename "${migration}")"
+  runtime_migration="${runtime_migration_dir}/${migration_name}"
+  echo "Applying migration: ${migration_name}"
+  python3 /app/migration_ledger_adapter.py \
+    --source "${migration}" \
+    --output "${runtime_migration}" \
+    --ledger-columns "${current_ledger_columns}"
+  "${psql_base[@]}" -f "${runtime_migration}"
+  current_ledger_columns="$(read_ledger_columns)"
 done
 
 ADMIN_API_KEY="${ADMIN_API_KEY:-}"
