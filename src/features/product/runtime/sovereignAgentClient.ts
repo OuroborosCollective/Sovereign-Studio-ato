@@ -30,6 +30,30 @@ export interface SovereignAgentStartJobInput {
   githubAccessToken?: string;
 }
 
+export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
+  evidenceText?: string;
+}
+
+export interface SovereignToolchainFailureFamily {
+  code: string;
+  title: string;
+  severity: string;
+  score: number;
+  checks: string[];
+}
+
+export interface SovereignToolchainFollowup {
+  fromFamily: string;
+  prediction: string;
+  checkNext: string;
+}
+
+export interface SovereignToolchainDiagnosis {
+  evidenceHash?: string;
+  failureFamilies: SovereignToolchainFailureFamily[];
+  nextLogicalFailures: SovereignToolchainFollowup[];
+}
+
 export interface SovereignDraftPrPreparationResponse {
   ok: boolean;
   jobId: string;
@@ -213,6 +237,51 @@ async function requestObject(args: { url: string; init: RequestInit; fetcher: ty
   return body;
 }
 
+function diagnosisValue(value: unknown): SovereignToolchainDiagnosis {
+  const raw = isObject(value) ? value : {};
+  const families = Array.isArray(raw.failureFamilies)
+    ? raw.failureFamilies.filter(isObject).map((item): SovereignToolchainFailureFamily => ({
+        code: stringValue(item.code) || 'unknown',
+        title: stringValue(item.title) || 'Unknown failure family',
+        severity: stringValue(item.severity) || 'unknown',
+        score: typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : 0,
+        checks: stringArray(item.checks),
+      }))
+    : [];
+  const followups = Array.isArray(raw.nextLogicalFailures)
+    ? raw.nextLogicalFailures.filter(isObject).map((item): SovereignToolchainFollowup => ({
+        fromFamily: stringValue(item.fromFamily) || 'runtime_state_neighbour',
+        prediction: stringValue(item.prediction) || 'Unknown neighbouring runtime risk.',
+        checkNext: stringValue(item.checkNext) || 'verify runtime evidence',
+      }))
+    : [];
+  return {
+    evidenceHash: stringValue(raw.evidenceHash),
+    failureFamilies: families,
+    nextLogicalFailures: followups,
+  };
+}
+
+function toolchainEvents(diagnosis: SovereignToolchainDiagnosis, now: () => number): SovereignAgentRuntimeEvent[] {
+  const familySummary = diagnosis.failureFamilies.length
+    ? diagnosis.failureFamilies.map((item) => item.code).join(', ')
+    : 'no known family matched';
+  return [
+    {
+      at: now(),
+      level: 'success',
+      stage: 'toolchain_diagnosis_completed',
+      message: `Universal Toolchain diagnosis: ${familySummary}.`,
+    },
+    ...diagnosis.nextLogicalFailures.slice(0, 4).map((item, index): SovereignAgentRuntimeEvent => ({
+      at: now(),
+      level: 'info',
+      stage: 'toolchain_predictive_handoff',
+      message: `${index + 1}. ${item.prediction} Next check: ${item.checkNext}`,
+    })),
+  ];
+}
+
 async function requestJanitorTool(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<SovereignJanitorToolResponse> {
   const response = await args.fetcher(args.url, args.init);
   const body = await readJson(response);
@@ -271,6 +340,37 @@ export class SovereignAgentClient {
       now: this.now,
     });
     return { ...snapshot, repoUrl: snapshot.repoUrl ?? job.repoUrl, branch: snapshot.branch ?? job.branch };
+  }
+  async startToolchainJob(input: SovereignToolchainStartJobInput): Promise<SovereignAgentJobSnapshot> {
+    assertReady(this.config);
+    const job = this.buildJobRequest(input);
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, '/api/user/agent/toolchain/handoff'),
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify({
+          ...job,
+          evidenceText: input.evidenceText || '',
+          provisionWorkspace: input.provisionWorkspace ?? true,
+          cloneRepo: input.cloneRepo ?? true,
+          ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
+          ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
+          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
+        }),
+      },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Universal Toolchain handoff',
+    });
+    const snapshot = sanitizeSnapshot(isObject(body.job) ? body.job : body, this.now);
+    const diagnosis = diagnosisValue(body.toolchain);
+    return {
+      ...snapshot,
+      repoUrl: snapshot.repoUrl ?? job.repoUrl,
+      branch: snapshot.branch ?? job.branch,
+      events: [...toolchainEvents(diagnosis, this.now), ...snapshot.events],
+    };
   }
   async listJobs(): Promise<SovereignAgentJobSnapshot[]> {
     assertReady(this.config);

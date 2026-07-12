@@ -128,10 +128,11 @@ export default function App() {
       events: [{ at: Date.now(), level: 'info', stage: 'agent-request', message: 'Auftrag an die Sovereign Agent Runtime übergeben.' }],
     });
     try {
-      const snapshot = await agentClient.startJob({
+      const snapshot = await agentClient.startToolchainJob({
         repoUrl: input.repoUrl,
         branch: input.branch,
         mission: nextMission,
+        evidenceText: nextMission,
         provisionWorkspace: input.provisionWorkspace ?? true,
         cloneRepo: input.cloneRepo ?? true,
         stagedFiles: input.stagedFiles,
@@ -256,10 +257,11 @@ export default function App() {
             message: `${input.changes.length} bestätigte Dateiänderung(en) werden in einen isolierten Workspace übertragen.`,
           }],
         });
-        workingJob = await agentClient.startJob({
+        workingJob = await agentClient.startToolchainJob({
           repoUrl: input.repoUrl,
           branch: input.branch,
           mission: input.mission,
+          evidenceText: input.mission,
           provisionWorkspace: true,
           cloneRepo: true,
           stagedFiles: input.changes.map((change) => ({

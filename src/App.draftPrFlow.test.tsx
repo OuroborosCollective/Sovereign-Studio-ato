@@ -8,6 +8,7 @@ import { store } from './store';
 const agent = vi.hoisted(() => ({
   listJobs: vi.fn(),
   startJob: vi.fn(),
+  startToolchainJob: vi.fn(),
   getJob: vi.fn(),
   cancelJob: vi.fn(),
   runJanitor: vi.fn(),
@@ -134,7 +135,7 @@ describe('App Draft-PR runtime flow', () => {
 
   it('stages confirmed content once before prepare, create and final reload', async () => {
     agent.listJobs.mockResolvedValue([]);
-    agent.startJob.mockResolvedValue(snapshot({ jobId: 'job-staged', workspaceId: 'job-staged', runtimeId: 'job-staged' }));
+    agent.startToolchainJob.mockResolvedValue(snapshot({ jobId: 'job-staged', workspaceId: 'job-staged', runtimeId: 'job-staged' }));
     agent.prepareDraftPr.mockResolvedValue({
       ok: true,
       jobId: 'job-staged',
@@ -161,8 +162,8 @@ describe('App Draft-PR runtime flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Publish staged' }));
 
     await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/11'));
-    expect(agent.startJob).toHaveBeenCalledTimes(1);
-    expect(agent.startJob).toHaveBeenCalledWith(expect.objectContaining({
+    expect(agent.startToolchainJob).toHaveBeenCalledTimes(1);
+    expect(agent.startToolchainJob).toHaveBeenCalledWith(expect.objectContaining({
       repoUrl: 'https://github.com/acme/repo',
       cloneRepo: true,
       provisionWorkspace: true,
