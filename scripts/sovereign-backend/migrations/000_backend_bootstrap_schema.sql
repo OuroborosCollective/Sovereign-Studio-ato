@@ -80,7 +80,28 @@ CREATE TABLE IF NOT EXISTS llm_routes (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_llm_routes_enabled ON llm_routes(enabled);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'llm_routes'
+          AND column_name = 'enabled'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_llm_routes_enabled ON llm_routes(enabled)';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'llm_routes'
+          AND column_name = 'disabled'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_llm_routes_disabled ON llm_routes(disabled)';
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_llm_routes_priority ON llm_routes(priority);
 
 CREATE TABLE IF NOT EXISTS launcher_overrides (
