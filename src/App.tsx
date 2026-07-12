@@ -60,10 +60,13 @@ export default function App() {
       events: [{ at: Date.now(), level: 'info', stage: 'agent-request', message: 'Auftrag an die Sovereign Agent Runtime übergeben.' }],
     });
     try {
-      const snapshot = await agentClient.startJob({
+      const snapshot = await agentClient.startToolchainJob({
         repoUrl: input.repoUrl,
         branch: input.branch,
         mission: nextMission,
+        evidenceText: nextMission,
+        provisionWorkspace: true,
+        cloneRepo: false,
       });
       setAgentJob(snapshot);
     } catch (error) {
@@ -155,20 +158,70 @@ export default function App() {
   const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
   const runtimeSummary = summarizeSovereignAgentJob(agentJob);
 
-  const publishDraftPr = () => {
-    if (!agentJob.repoUrl) {
-      const message = 'Draft PR benötigt zuerst ein durch die Runtime belegtes Repository.';
+  const publishDraftPr = async () => {
+    const jobId = agentJob.jobId;
+    if (!agentJob.repoUrl || !jobId) {
+      const message = 'Draft PR benötigt zuerst einen belegten Sovereign-Agent-Job mit Repository.';
       setAgentJob((current) => ({
         ...current,
         lastError: message,
-        events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-repo', message }],
+        events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-job', message }],
       }));
       return;
     }
-    void startChatOnlyTask('Draft PR aus den belegten Änderungen erstellen', {
-      repoUrl: agentJob.repoUrl,
-      branch: agentJob.branch,
-    });
+
+    setAgentJob((current) => ({
+      ...current,
+      status: 'validating',
+      lastError: undefined,
+      events: [...current.events, {
+        at: Date.now(),
+        level: 'info',
+        stage: 'draft-pr-prepare',
+        message: 'Persistierte Changed-File-, Diff- und Test-Evidence wird geprüft.',
+      }],
+    }));
+
+    try {
+      const preparation = await agentClient.prepareDraftPr(jobId);
+      if (!preparation.ok || !preparation.draftPrPreparation.allowed) {
+        throw new Error(
+          preparation.draftPrPreparation.blockers.join('; ')
+          || preparation.draftPrPreparation.summary
+          || 'Draft-PR-Vorbereitung wurde durch die Runtime blockiert.',
+        );
+      }
+
+      const creation = await agentClient.createDraftPr(jobId);
+      if (!creation.ok || !creation.draftPrCreate.allowed || !creation.draftPrCreate.prUrl) {
+        throw new Error(
+          creation.draftPrCreate.blocker
+          || creation.draftPrCreate.summary
+          || 'GitHub hat keinen belegten Draft PR bestätigt.',
+        );
+      }
+
+      const snapshot = await agentClient.getJob(jobId);
+      setAgentJob({
+        ...snapshot,
+        status: 'completed',
+        draftPrUrl: snapshot.draftPrUrl || creation.draftPrCreate.prUrl,
+        events: [...snapshot.events, {
+          at: Date.now(),
+          level: 'success',
+          stage: 'draft-pr-created',
+          message: `GitHub Draft PR erstellt: ${creation.draftPrCreate.prUrl}`,
+        }],
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Draft-PR-Übergabe fehlgeschlagen.';
+      setAgentJob((current) => ({
+        ...current,
+        status: 'blocked',
+        lastError: message,
+        events: [...current.events, { at: Date.now(), level: 'error', stage: 'draft-pr-blocked', message }],
+      }));
+    }
   };
 
   return (

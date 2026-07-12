@@ -14,12 +14,15 @@ import {
   type PatchBlock,
   type PreviewPatchResponse,
   type DraftPrResponse,
+  type UniversalToolchainDiagnosis,
+  type UniversalToolchainManifest,
 } from './toolchainApi';
 
 interface ToolchainState {
   tools: ToolchainTool[];
   allowedRepos: string[];
   rules: ToolchainRules | null;
+  universalManifest: UniversalToolchainManifest | null;
   loaded: boolean;
   loading: boolean;
   error: string | null;
@@ -43,6 +46,7 @@ interface ToolchainState {
 
   // Sandbox-Plan (read-only)
   sandboxPlan: (goal: string) => Promise<string[]>;
+  diagnoseRuntime: (mission: string, evidenceText?: string) => Promise<UniversalToolchainDiagnosis>;
 
   // Für KI-Kontext
   getToolContext: () => string;
@@ -62,6 +66,7 @@ export const useToolchainStore = create<ToolchainState>()((set, get) => ({
   tools: [],
   allowedRepos: [],
   rules: null,
+  universalManifest: null,
   loaded: false,
   loading: false,
   error: null,
@@ -70,11 +75,15 @@ export const useToolchainStore = create<ToolchainState>()((set, get) => ({
     if (get().loading) return;
     set({ loading: true, error: null });
     try {
-      const data = await toolchainApi.getUserTools();
+      const [data, universalManifest] = await Promise.all([
+        toolchainApi.getUserTools(),
+        toolchainApi.getUniversalManifest(),
+      ]);
       set({
         tools: data.tools,
         allowedRepos: data.allowed_repos,
         rules: data.rules,
+        universalManifest,
         loaded: true,
         loading: false,
         error: null,
@@ -84,7 +93,7 @@ export const useToolchainStore = create<ToolchainState>()((set, get) => ({
     }
   },
 
-  reset: () => set({ tools: [], allowedRepos: [], rules: null, loaded: false, loading: false, error: null }),
+  reset: () => set({ tools: [], allowedRepos: [], rules: null, universalManifest: null, loaded: false, loading: false, error: null }),
 
   readFile: async (owner, repo, path, ref) => {
     const data = await toolchainApi.readGithubFile({ owner, repo, path, ref });
@@ -114,8 +123,13 @@ export const useToolchainStore = create<ToolchainState>()((set, get) => ({
     return data.commands;
   },
 
+  diagnoseRuntime: async (mission, evidenceText = '') => {
+    const data = await toolchainApi.diagnoseRuntime({ mission, evidence_text: evidenceText });
+    return data.result;
+  },
+
   getToolContext: () => {
-    const { tools, allowedRepos, rules, loaded } = get();
+    const { tools, allowedRepos, rules, universalManifest, loaded } = get();
     if (!loaded) return '';
     const readTools  = tools.filter(t => !t.write).map(t => `  • ${t.label} (${t.id})`).join('\n');
     const writeTools = tools.filter(t =>  t.write).map(t => `  • ${t.label} [confirm=true erforderlich]`).join('\n');
@@ -124,6 +138,13 @@ export const useToolchainStore = create<ToolchainState>()((set, get) => ({
       `Erlaubte Repos: ${allowedRepos.join(', ') || 'keine'}`,
       `Lese-Tools:\n${readTools || '  (keine)'}`,
       writeTools ? `Schreib-Tools (nur mit User-Bestätigung):\n${writeTools}` : '',
+      universalManifest ? [
+        `Eingebettete Universal Toolchain: ${universalManifest.version} (${universalManifest.runtime})`,
+        `Predictive Tools: ${universalManifest.tools.map(tool => tool.name).join(', ')}`,
+        'Predictive Übergabe: Fehlerfamilie erkennen, genau vier logisch benachbarte Runtime-Risiken prüfen, danach bestehende Sovereign-Agent-Evidence-Gates verwenden.',
+        `Arbitrary Shell aus Chat: ${universalManifest.policy.arbitraryShell ? 'erlaubt' : 'gesperrt'}`,
+        `Direkter Production Runner: ${universalManifest.policy.directProductionRunner ? 'erlaubt' : 'gesperrt'}`,
+      ].join('\n') : '',
       rules ? [
         'Guardrails:',
         `  • GitHub lesen: ${rules.github_read === 'after_login' ? 'Nur nach Login' : 'Nie'}`,

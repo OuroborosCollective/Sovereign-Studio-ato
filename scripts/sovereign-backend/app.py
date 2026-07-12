@@ -6540,8 +6540,15 @@ def admin_panel():
 
 import json as _json
 
-_UTOOLCHAIN_BASE = os.getenv("TOOLCHAIN_BASE_URL", "").rstrip("/")
-_UTOOLCHAIN_KEY  = os.getenv("TOOLCHAIN_API_KEY", "")
+from agent_runtime.universal_toolchain import (
+    dispatch_embedded_tool,
+    toolchain_briefing,
+    toolchain_manifest,
+)
+
+_UTOOLCHAIN_BASE = ""
+_UTOOLCHAIN_KEY = ""
+_TOOLCHAIN_CONFIGURED = False
 
 
 def _utc_request(method: str, path: str, body=None):
@@ -6575,131 +6582,86 @@ def _utc_request(method: str, path: str, body=None):
 
 @app.route("/api/toolchain/universal/status")
 def utc_status():
-    """Health check for the universal toolchain server (public).
-
-    Returns 503 if toolchain is not configured.
-    """
-    if not _TOOLCHAIN_CONFIGURED:
-        return jsonify({
-            "ok": False,
-            "error": "Toolchain not configured. Set TOOLCHAIN_BASE_URL environment variable.",
-            "proxy_via": None
-        }), 503
-    try:
-        data = _utc_request("GET", "/")
-        return jsonify({**data, "proxy_via": _UTOOLCHAIN_BASE})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "proxy_via": _UTOOLCHAIN_BASE}), 502
+    """Public health contract for the embedded policy-guarded toolchain."""
+    manifest = toolchain_manifest()
+    return jsonify({
+        "ok": True,
+        "name": manifest["name"],
+        "version": manifest["version"],
+        "runtime": manifest["runtime"],
+        "toolCount": len(manifest["tools"]),
+        "proxyVia": None,
+        "policy": manifest["policy"],
+    })
 
 
 @app.route("/api/toolchain/universal/manifest")
 def utc_manifest():
-    """Return combined tool manifest: toolchain service + database tools (public).
-
-    Returns 503 if toolchain is not configured.
-    """
-    all_tools = []
-
-    # 1. Get tools from toolchain service (if configured)
-    if _TOOLCHAIN_CONFIGURED:
-        try:
-            service_data = _utc_request("GET", "/api/v1/manifest")
-            if service_data and "tools" in service_data:
-                all_tools.extend(service_data["tools"])
-        except RuntimeError:
-            # Toolchain not available - return DB tools only
-            pass
-        except Exception:
-            # Other errors - continue with DB tools
-            pass
-
-    # 2. Get enabled custom tools from database
+    """Return the embedded manifest plus enabled read-only custom tools."""
+    manifest = toolchain_manifest()
+    all_tools = list(manifest["tools"])
     try:
         db_tools = query(
-            """SELECT name, description, input_schema, enabled,
-                      write_action, requires_confirm
+            """SELECT name, description, input_schema, requires_confirm
                FROM toolchain_tools
-               WHERE enabled = true
+               WHERE enabled = true AND write_action = false
                ORDER BY sort_order ASC"""
         )
-        for t in db_tools:
-            # Check if tool already exists from service
-            exists = any(st.get("name") == t["name"] for st in all_tools)
-            if not exists:
+        known = {str(item.get("name") or "") for item in all_tools}
+        for tool in db_tools or []:
+            if tool["name"] not in known:
                 all_tools.append({
-                    "name": t["name"],
-                    "description": t["description"] or "",
-                    "input_schema": t["input_schema"] or {},
-                    "write_action": t["write_action"],
-                    "requires_confirm": t["requires_confirm"],
+                    "name": tool["name"],
+                    "description": tool["description"] or "",
+                    "input_schema": tool["input_schema"] or {},
+                    "write_action": False,
+                    "requires_confirm": bool(tool["requires_confirm"]),
+                    "runtime": "database-manifest-only",
                 })
     except Exception:
-        pass  # DB might be unavailable
-
+        pass
     return jsonify({
-        "name": "Sovereign Universal Toolchain",
+        **manifest,
         "tools": all_tools,
         "sources": {
-            "service": "sovereign-universal-toolchain",
-            "database": "toolchain_tools"
-        }
+            "embedded": "agent_runtime.universal_toolchain",
+            "database": "read-only toolchain_tools",
+        },
     })
 
 
 @app.route("/api/toolchain/universal/briefing")
 def utc_briefing():
-    """Return the toolchain briefing for LLM agents (public).
-
-    Returns 503 if toolchain is not configured.
-    """
-    if not _TOOLCHAIN_CONFIGURED:
-        return jsonify({"ok": False, "error": "Toolchain not configured. Set TOOLCHAIN_BASE_URL environment variable."}), 503
-    try:
-        data = _utc_request("GET", "/api/v1/briefing")
-        return jsonify(data)
-    except RuntimeError as e:
-        return jsonify({"ok": False, "error": str(e)}), 503
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
+    """Return the embedded toolchain briefing for LLM and no-code clients."""
+    return jsonify(toolchain_briefing())
 
 
 @app.route("/api/toolchain/universal/invoke", methods=["POST"])
 @require_session
 def utc_invoke():
-    """
-    Proxy a tool call to the universal toolchain server.
-    Body: { "tool": "<tool_name>", "args": { ... } }
-    Write tools (write_action=true) require confirm=true in args.
-    Returns 503 if toolchain is not configured.
-    """
-    if not _TOOLCHAIN_CONFIGURED:
-        return jsonify({"ok": False, "error": "Toolchain not configured. Set TOOLCHAIN_BASE_URL environment variable."}), 503
+    """Invoke only embedded read-only tools; execution uses the agent handoff route."""
+    body = request.get_json(force=True) or {}
+    tool = str(body.get("tool") or "").strip()
+    args = body.get("args") if isinstance(body.get("args"), dict) else {}
+    if not tool:
+        return jsonify({"error": "tool name erforderlich"}), 400
     try:
-        b        = request.get_json(force=True) or {}
-        tool     = (b.get("tool") or "").strip()
-        args     = b.get("args") or {}
-        if not tool:
-            return jsonify({"error": "tool name erforderlich"}), 400
-
-        data = _utc_request("POST", f"/api/v1/tools/{tool}", {"args": args})
-
-        # Audit write actions
-        if data.get("ok") and data.get("result", {}) if isinstance(data.get("result"), dict) else False:
-            write_action = isinstance(data.get("result"), dict) and data["result"].get("created")
-            if write_action:
-                _tc_audit(
-                    request.session_user_id,
-                    f"utc_write_{tool}",
-                    {"tool": tool, "args_keys": list(args.keys())},
-                )
-
-        return jsonify(data)
-    except PermissionError as e:
-        return jsonify({"ok": False, "error": str(e)}), 403
-    except RuntimeError as e:
-        return jsonify({"ok": False, "error": str(e)}), 503
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        result = dispatch_embedded_tool(tool, args)
+        _tc_audit(
+            request.session_user_id,
+            f"universal_invoke_{tool}",
+            {"tool": tool, "argsKeys": sorted(args.keys()), "writeAction": False},
+        )
+        return jsonify({"ok": True, "result": result, "runtime": "embedded"})
+    except KeyError as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+            "blocker": "embedded_tool_not_allowed",
+            "hint": "Use /api/user/agent/toolchain/handoff for execution and Draft-PR workflows.",
+        }), 403
+    except (TypeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -6925,8 +6887,7 @@ if True:  # Always execute during module load
             return wrapper
 
         def _get_db_connection():
-            pool = get_pool()
-            return pool.getconn()
+            return get_runtime_module_connection()
 
         _register_routes(
             app,

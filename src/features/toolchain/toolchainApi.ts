@@ -116,9 +116,67 @@ export interface SandboxPlanResponse {
   rules: { push_to_main: boolean; draft_pr: boolean; confirm: boolean };
 }
 
+export interface UniversalToolchainTool {
+  name: string;
+  description: string;
+  write_action: boolean;
+  requires_confirm?: boolean;
+  execution_runtime?: string;
+}
+
+export interface UniversalToolchainManifest {
+  name: string;
+  version: string;
+  runtime: 'embedded' | string;
+  tools: UniversalToolchainTool[];
+  policy: {
+    autoLoad: boolean;
+    pushToMain: boolean;
+    draftPrOnly: boolean;
+    confirmRequired: boolean;
+    arbitraryShell: boolean;
+    directProductionRunner: boolean;
+    directGithubToken: boolean;
+    auditEvidence: boolean;
+  };
+}
+
+export interface UniversalToolchainDiagnosis {
+  ok: boolean;
+  runtime: string;
+  version: string;
+  evidenceHash: string;
+  failureFamilies: Array<{
+    code: string;
+    title: string;
+    severity: string;
+    score: number;
+    checks: string[];
+  }>;
+  nextLogicalFailures: Array<{
+    fromFamily: string;
+    prediction: string;
+    checkNext: string;
+  }>;
+  policy: Record<string, unknown>;
+}
+
 // ── API functions ─────────────────────────────────────────────────────────────
 
 export const toolchainApi = {
+  /** Embedded universal manifest; safe to auto-load without a second service. */
+  getUniversalManifest(): Promise<UniversalToolchainManifest> {
+    return tcFetch('/api/toolchain/universal/manifest');
+  },
+
+  /** Read-only predictive diagnosis. Raw evidence is hashed and not reflected. */
+  diagnoseRuntime(params: { mission?: string; evidence_text?: string }): Promise<{ ok: boolean; result: UniversalToolchainDiagnosis }> {
+    return tcFetch('/api/toolchain/universal/invoke', {
+      method: 'POST',
+      body: JSON.stringify({ tool: 'runtime_failure_diagnose', args: params }),
+    });
+  },
+
   /** Auto-loads after login — lists available tools for the current user. */
   getUserTools(): Promise<UserToolsResponse> {
     return tcFetch('/api/toolchain/user-tools');
