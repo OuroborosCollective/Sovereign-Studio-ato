@@ -27,6 +27,20 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
 
 
+def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    updater = (ROOT / "deploy" / "self-update-chatgpt-mcp.sh").read_text("utf-8")
+    service = (ROOT / "deploy" / "sovereign-chatgpt-mcp-self-update.service").read_text("utf-8")
+
+    assert 'install -m 0640 "$SOURCE_DIR/self_update.py" "$BROKER_DIR/self_update.py"' in installer
+    assert 'install -m 0750 "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh"' in installer
+    assert "SOVEREIGN_MCP_ENABLE_SELF_UPDATE" in installer
+    assert 'git rev-parse origin/main' in updater
+    assert '[[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]]' in updater
+    assert 'git reset --hard "$EXPECTED_REVISION"' in updater
+    assert "StateDirectory=sovereign-chatgpt-self-update" in service
+
+
 def test_database_bootstrap_uses_real_binaries_and_authentication_canaries() -> None:
     script = (ROOT / "deploy" / "bootstrap-database.sh").read_text("utf-8")
 
