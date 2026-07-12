@@ -112,6 +112,11 @@
     "vite": "8.0.16",
     "vitest": "^4.1.8"
   },
+  "vitest": {
+    "setupFiles": [
+      "test/global-test-setup.ts"
+    ]
+  },
   "overrides": {
     "@codetrix-studio/capacitor-google-auth": {
       "@capacitor/core": "^6.0.0"
