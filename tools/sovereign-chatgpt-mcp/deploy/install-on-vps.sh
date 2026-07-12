@@ -7,6 +7,7 @@ BIN_DIR="$INSTALL_ROOT/bin"
 BROKER_DIR="$INSTALL_ROOT/broker"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
+ANDROID_SDK_DIR="/opt/android-sdk"
 ENV_FILE="$INSTALL_ROOT/.env"
 GHCR_ENV="$INSTALL_ROOT/.ghcr.env"
 TUNNEL_ENV="$INSTALL_ROOT/tunnel.env"
@@ -37,17 +38,19 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
 install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR"
+install -d -m 0755 "$ANDROID_SDK_DIR"
 install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
 chmod 0770 "$WORKSPACE_DIR"
 
-for file in Dockerfile requirements.txt policy.py runtime.py database.py broker_client.py self_heal.py server.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py server.py tool_extensions.py launcher.py docker-compose.yml; do
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
 install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"
 install -m 0640 "$SOURCE_DIR/operations.py" "$BROKER_DIR/operations.py"
 install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"
+install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"
 install -m 0640 "$SOURCE_DIR/self_update.py" "$BROKER_DIR/self_update.py"
 install -m 0640 "$SOURCE_DIR/policy.py" "$BROKER_DIR/policy.py"
 install -m 0640 "$SOURCE_DIR/self_heal.py" "$BROKER_DIR/self_heal.py"
@@ -97,7 +100,7 @@ if [[ -f "$GHCR_ENV" ]]; then
 fi
 
 {
-  grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
+  grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
   printf 'SOVEREIGN_MCP_SOURCE_DIR=/opt/sovereign-operator-source\n'
@@ -129,7 +132,8 @@ docker compose config >/dev/null
 docker compose up -d --build
 
 docker inspect sovereign-chatgpt-mcp >/dev/null
-docker exec sovereign-chatgpt-mcp python -c 'import server; import self_heal; assert server.mcp is not None; assert self_heal.REPAIR_ENGINE is not None'
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status)'
+docker exec sovereign-chatgpt-mcp java -version >/dev/null 2>&1
 docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
 
 if [[ -f "$TUNNEL_ENV" ]] \
@@ -140,4 +144,4 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true}\n'
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'
