@@ -7,7 +7,7 @@ from pathlib import Path
 from admin_mode import PrivateAdminRuntime, _adapt_schema_ledger
 
 
-def test_schema_ledger_adapts_id_name_to_legacy_version() -> None:
+def test_schema_ledger_adapts_id_name_to_legacy_version_with_timestamp() -> None:
     sql = """BEGIN;
 CREATE TABLE IF NOT EXISTS example(id integer);
 INSERT INTO schema_migrations (id, name)
@@ -18,9 +18,25 @@ COMMIT;
     result = _adapt_schema_ledger(sql, {"version", "applied_at"})
     assert result["repair"]["status"] == "APPLIED"
     assert result["repair"]["action"] == "id_name_to_legacy_version"
+    assert result["repair"]["used_columns"] == ["version", "applied_at"]
     assert "schema_migrations (version, applied_at)" in result["sql"]
     assert "VALUES ('008', NOW())" in result["sql"]
     assert result["repair"]["source_unchanged"] is True
+
+
+def test_schema_ledger_adapts_id_name_to_version_only() -> None:
+    sql = """BEGIN;
+INSERT INTO schema_migrations (id, name)
+VALUES (8, 'knowledge_memory_passkeys_stepup')
+ON CONFLICT (id) DO NOTHING;
+COMMIT;
+"""
+    result = _adapt_schema_ledger(sql, {"version"})
+    assert result["repair"]["status"] == "APPLIED"
+    assert result["repair"]["used_columns"] == ["version"]
+    assert "schema_migrations (version)" in result["sql"]
+    assert "VALUES ('008')" in result["sql"]
+    assert "applied_at" not in result["sql"]
 
 
 def test_schema_ledger_adapts_legacy_version_to_id_name() -> None:
@@ -36,7 +52,7 @@ ON CONFLICT (version) DO NOTHING;
 
 
 class FakeOperations:
-    def __init__(self, tmp_path: Path, migration_sql: str) -> None:
+    def __init__(self, tmp_path: Path, migration_sql: str, ledger_columns: set[str] | None = None) -> None:
         self.workspace_root = tmp_path / "workspaces"
         self.workspace_root.mkdir()
         self.backend_env_file = tmp_path / "backend.env"
@@ -49,6 +65,7 @@ class FakeOperations:
             "utf-8",
         )
         self.migration_sql = migration_sql
+        self.ledger_columns = ledger_columns or {"version", "applied_at"}
         self.calls: list[str] = []
 
     def _validate_connection(self, *_args, **_kwargs) -> None:
@@ -61,10 +78,11 @@ class FakeOperations:
         assert password == "admin-secret"
         self.calls.append(input_text)
         if "information_schema.columns" in input_text:
+            rows = "\n".join(sorted(self.ledger_columns))
             return {
                 "ok": True,
                 "exit_code": 0,
-                "stdout": " column_name\n-------------\n version\n applied_at\n(2 rows)\n",
+                "stdout": f" column_name\n-------------\n{rows}\n({len(self.ledger_columns)} rows)\n",
                 "stderr": "",
             }
         return {"ok": True, "exit_code": 0, "stdout": "OK\n", "stderr": ""}
@@ -83,14 +101,18 @@ class FakeOperations:
         }
 
 
-def test_failed_migration_repairs_legacy_schema_ledger_and_retries(tmp_path) -> None:
-    sql = """BEGIN;
+def _migration_sql() -> str:
+    return """BEGIN;
 CREATE TABLE IF NOT EXISTS knowledge_blocks(id integer);
 INSERT INTO schema_migrations (id, name)
 VALUES (8, 'knowledge_memory_passkeys_stepup')
 ON CONFLICT (id) DO NOTHING;
 COMMIT;
 """
+
+
+def test_failed_migration_repairs_legacy_schema_ledger_and_retries(tmp_path) -> None:
+    sql = _migration_sql()
     operations = FakeOperations(tmp_path, sql)
     runtime = PrivateAdminRuntime(operations)  # type: ignore[arg-type]
     checksum = hashlib.sha256(sql.encode("utf-8")).hexdigest()
@@ -108,6 +130,25 @@ COMMIT;
     assert len(operations.calls) == 3
     assert "ROLLBACK;" in operations.calls[1]
     assert "schema_migrations (version, applied_at)" in operations.calls[2]
+
+
+def test_failed_migration_retries_against_version_only_ledger(tmp_path) -> None:
+    sql = _migration_sql()
+    operations = FakeOperations(tmp_path, sql, {"version"})
+    runtime = PrivateAdminRuntime(operations)  # type: ignore[arg-type]
+    checksum = hashlib.sha256(sql.encode("utf-8")).hexdigest()
+
+    result = runtime.apply_verified_migration_with_self_heal(
+        workspace_id="job-123456abcdef",
+        path="scripts/sovereign-backend/migrations/008.sql",
+        confirmation_sha256=checksum,
+    )
+
+    assert result["status"] == "APPLIED_AFTER_REPAIR"
+    assert result["schema_repair"]["detected_columns"] == ["version"]
+    assert result["schema_repair"]["used_columns"] == ["version"]
+    assert "schema_migrations (version)" in operations.calls[2]
+    assert "applied_at" not in operations.calls[2]
 
 
 def test_admin_sql_is_disabled_until_private_switch_is_active(tmp_path, monkeypatch) -> None:
