@@ -184,6 +184,14 @@ class BrokerRuntime:
             "github_rerun_failed_workflows": lambda values: self.github.rerun_failed_workflows(
                 pr_number=int(values.get("pr_number") or 0),
             ),
+            "github_workflow_dispatch": lambda values: self.github.dispatch_workflow(
+                workflow=str(values.get("workflow") or ""),
+                ref=str(values.get("ref") or "main"),
+                inputs=values.get("inputs") if isinstance(values.get("inputs"), dict) else {},
+            ),
+            "github_workflow_run_status": lambda values: self.github.workflow_run_status(
+                run_id=int(values.get("run_id") or 0),
+            ),
             "github_merge_pr": lambda values: self.github.merge_pr(
                 pr_number=int(values.get("pr_number") or 0),
                 expected_head_sha=str(values.get("expected_head_sha") or ""),
@@ -214,7 +222,7 @@ class BrokerRuntime:
             }
         try:
             return handler(arguments)
-        except (ValueError, FileNotFoundError, RuntimeError, requests.RequestException, subprocess.TimeoutExpired) as exc:
+        except (ValueError, FileNotFoundError, RuntimeError, subprocess.TimeoutExpired) as exc:
             return {"ok": False, "status": "BLOCKED", "blocker": str(exc)[:2000]}
 
 
