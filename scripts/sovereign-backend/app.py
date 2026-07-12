@@ -37,9 +37,18 @@ from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
+from agent_runtime.routes import register_sovereign_agent_routes
 from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
+
+# GitHub App integration (Marketplace)
+try:
+    from github_app import register_github_app_routes
+    HAS_GITHUB_APP = True
+except ImportError:
+    HAS_GITHUB_APP = False
+    register_github_app_routes = None
 
 # ── Worker AI Helper ───────────────────────────────────────────────────────────
 
@@ -118,46 +127,6 @@ def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
                     password=POSTGRES_PASS,
                 )
     return _pool
-
-
-
-def get_connection():
-    """Get a database connection from the pool."""
-    pool = get_pool()
-    return pool.getconn()
-
-
-class _RuntimeModuleConnection:
-    """RealDict pooled connection whose close() returns it to the pool."""
-
-    def __init__(self, pool, connection):
-        self._pool = pool
-        self._connection = connection
-        self._closed = False
-
-    def cursor(self, *args, **kwargs):
-        kwargs.setdefault("cursor_factory", psycopg2.extras.RealDictCursor)
-        return self._connection.cursor(*args, **kwargs)
-
-    def commit(self):
-        return self._connection.commit()
-
-    def rollback(self):
-        return self._connection.rollback()
-
-    def close(self):
-        if not self._closed:
-            self._closed = True
-            self._pool.putconn(self._connection)
-
-    def __getattr__(self, name):
-        return getattr(self._connection, name)
-
-
-def get_runtime_module_connection():
-    pool = get_pool()
-    return _RuntimeModuleConnection(pool, pool.getconn())
-
 
 
 def query(sql: str, params=None, *, one=False, write=False):
@@ -240,6 +209,37 @@ def _get_oauth_state(state: str) -> dict | None:
         write=True,
     )
     return _oauth_state_payload(row)
+
+
+class PooledAgentConnection:
+    """DB-API compatible connection wrapper for agent_runtime job store.
+
+    The neutral agent runtime owns SQL for sovereign_agent_jobs. This wrapper
+    provides a real pooled connection and returns it to the Flask pool on close.
+    """
+
+    def __init__(self):
+        self._pool = get_pool()
+        self._conn = self._pool.getconn()
+        self._closed = False
+
+    def cursor(self):
+        return self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        if not self._closed:
+            self._pool.putconn(self._conn)
+            self._closed = True
+
+
+def get_agent_runtime_connection() -> PooledAgentConnection:
+    return PooledAgentConnection()
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -861,358 +861,6 @@ def admin_worker_ai_status():
     })
 
 
-# ============================================================
-# FALLBACK LLM ROUTES - Manual fallback routes when Cloudflare fails
-# ============================================================
-
-@app.route("/api/admin/llm/fallback-routes", methods=["GET"])
-@require_admin
-def admin_fallback_routes():
-    """List all fallback LLM routes (non-Cloudflare routes).
-    
-    SECURITY: api_key is masked, only has_api_key flag is shown.
-    """
-    routes = query("""
-        SELECT id, model_id, model_name, provider, base_url, 
-               CASE WHEN api_key IS NOT NULL AND api_key <> '' THEN true ELSE false END AS has_api_key,
-               CASE WHEN api_key IS NOT NULL AND api_key <> '' THEN '****' || RIGHT(api_key, 4) ELSE NULL END AS masked_api_key,
-               credits_per_unit, priority, disabled, fallback_group, created_at
-        FROM llm_routes 
-        WHERE is_fallback = true 
-        ORDER BY priority ASC, credits_per_unit ASC
-    """)
-    return jsonify({
-        "ok": True,
-        "routes": routes or [],
-        "count": len(routes) if routes else 0,
-    })
-
-
-@app.route("/api/admin/llm/fallback-routes", methods=["POST"])
-@require_admin
-def admin_create_fallback_route():
-    """Create a new fallback LLM route.
-    
-    Required fields: model_id, model_name, provider, base_url
-    Optional: api_key, credits_per_unit, priority, fallback_group
-    """
-    body = request.get_json(force=True) or {}
-    
-    # Validate required fields
-    required = ["model_id", "model_name", "provider", "base_url"]
-    missing = [f for f in required if not body.get(f)]
-    if missing:
-        return jsonify({"error": f"Missing required fields: {missing}"}), 400
-    
-    model_id = body["model_id"]
-    
-    # Check for duplicate
-    existing = query(
-        "SELECT id FROM llm_routes WHERE model_id = %s", (model_id,), one=True
-    )
-    if existing:
-        return jsonify({"error": f"Route with model_id '{model_id}' already exists"}), 409
-    
-    route_id = str(uuid.uuid4())
-    model_name = body["model_name"]
-    provider = body["provider"]
-    base_url = body["base_url"]
-    api_key = body.get("api_key", "")
-    credits_per_unit = float(body.get("credits_per_unit", 1.0))
-    priority = int(body.get("priority", 50))
-    fallback_group = body.get("fallback_group", "default")
-    
-    query("""
-        INSERT INTO llm_routes 
-        (id, model_id, model_name, provider, base_url, api_key, 
-         credits_per_unit, priority, disabled, is_fallback, fallback_group)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false, true, %s)
-    """, (route_id, model_id, model_name, provider, base_url, api_key,
-          credits_per_unit, priority, fallback_group), write=True)
-    
-    audit("admin_create_fallback_route", route_id, body)
-    
-    return jsonify({
-        "ok": True,
-        "id": route_id,
-        "message": f"Fallback route '{model_id}' created"
-    }), 201
-
-
-@app.route("/api/admin/llm/fallback-routes/<route_id>", methods=["DELETE"])
-@require_admin
-def admin_delete_fallback_route(route_id):
-    """Delete a fallback LLM route by ID."""
-    route = query(
-        "SELECT id, model_id, is_fallback FROM llm_routes WHERE id = %s", (route_id,), one=True
-    )
-    if not route:
-        return jsonify({"error": "Route not found"}), 404
-    
-    if not route.get("is_fallback"):
-        return jsonify({"error": "Can only delete fallback routes"}), 400
-    
-    query("DELETE FROM llm_routes WHERE id = %s", (route_id,), write=True)
-    audit("admin_delete_fallback_route", route_id, {"model_id": route.get("model_id")})
-    
-    return jsonify({
-        "ok": True,
-        "message": f"Route '{route.get('model_id')}' deleted"
-    })
-
-
-@app.route("/api/admin/llm/fallback-routes/<route_id>", methods=["PATCH"])
-@require_admin
-def admin_update_fallback_route(route_id):
-    """Update a fallback LLM route."""
-    route = query(
-        "SELECT id, is_fallback FROM llm_routes WHERE id = %s", (route_id,), one=True
-    )
-    if not route:
-        return jsonify({"error": "Route not found"}), 404
-    
-    if not route.get("is_fallback"):
-        return jsonify({"error": "Can only update fallback routes"}), 400
-    
-    body = request.get_json(force=True) or {}
-    allowed = ["model_name", "provider", "base_url", "api_key", 
-               "credits_per_unit", "priority", "disabled", "fallback_group"]
-    
-    sets, vals = [], []
-    for k, v in body.items():
-        if k in allowed:
-            sets.append(f"{k} = %s")
-            vals.append(v)
-    
-    if not sets:
-        return jsonify({"error": "No valid fields to update"}), 400
-    
-    vals.append(route_id)
-    query(f"UPDATE llm_routes SET {', '.join(sets)}, updated_at = NOW() WHERE id = %s", 
-          vals, write=True)
-    audit("admin_update_fallback_route", route_id, body)
-    
-    return jsonify({"ok": True, "message": "Route updated"})
-
-
-@app.route("/api/admin/llm/fallback-status", methods=["GET"])
-@require_admin
-def admin_fallback_status():
-    """Get current LLM routing status - shows if Cloudflare is up or fallback is active.
-    
-    Fallback modes:
-    1. cloudflare_down - Cloudflare Worker AI is not reachable
-    2. no_credits - User has no credits remaining
-    3. rate_limited - Cloudflare is rate-limiting requests
-    4. cloudflare - Normal operation
-    """
-    
-    # Check Cloudflare Worker AI health
-    cloudflare_status = "unknown"
-    cloudflare_response_time = None
-    cloudflare_error = None
-    
-    try:
-        start = time.time()
-        resp, err = fetch_worker_ai("health")
-        cloudflare_response_time = int((time.time() - start) * 1000)
-        
-        if err or not resp:
-            cloudflare_status = "down"
-            cloudflare_error = err
-        elif resp.ok:
-            data = resp.json()
-            status = data.get("status", "unknown")
-            if status == "healthy":
-                cloudflare_status = "healthy"
-            elif status == "rate_limited":
-                cloudflare_status = "rate_limited"
-            else:
-                cloudflare_status = "degraded"
-        else:
-            cloudflare_status = "down"
-            cloudflare_error = f"HTTP {resp.status_code}"
-    except Exception as e:
-        cloudflare_status = "down"
-        cloudflare_error = str(e)
-    
-    # Get fallback routes count
-    fallback_result = query(
-        "SELECT COUNT(*) as cnt FROM llm_routes WHERE is_fallback = true AND disabled = false", one=True
-    )
-    fallback_count = fallback_result["cnt"] if fallback_result else 0
-    
-    # Determine active mode
-    if cloudflare_status in ("healthy", "degraded"):
-        active_mode = "cloudflare"
-        reason = "Cloudflare healthy"
-    elif cloudflare_status == "rate_limited":
-        active_mode = "fallback"
-        reason = "FALLBACK: Cloudflare rate-limited"
-    else:
-        active_mode = "fallback"
-        reason = f"FALLBACK: Cloudflare down ({cloudflare_error})"
-    
-    return jsonify({
-        "ok": True,
-        "cloudflare": {
-            "status": cloudflare_status,
-            "responseTimeMs": cloudflare_response_time,
-            "error": cloudflare_error,
-            "url": WORKER_AI_BASE,
-        },
-        "fallback": {
-            "available": fallback_count > 0,
-            "routeCount": fallback_count,
-        },
-        "activeMode": active_mode,
-        "reason": reason,
-        "fallbackTriggers": {
-            "cloudflare_down": cloudflare_status == "down",
-            "rate_limited": cloudflare_status == "rate_limited",
-            "no_credits": False,  # Checked per-request in /api/llm/resolve
-            "fallback_available": fallback_count > 0,
-        },
-    })
-
-
-def _get_session_user_id():
-    """Extract user_id from JWT cookie - same pattern as other endpoints."""
-    token = request.cookies.get("session_token", "")
-    if not token:
-        return None
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        return payload.get("sub")
-    except Exception:
-        return None
-
-
-@app.route("/api/llm/resolve", methods=["POST"])
-def public_llm_resolve():
-    """Resolve the best LLM route for a request.
-    
-    SECURITY: Requires valid session. Never exposes provider API keys.
-    Client must use server-side proxy for fallback routes.
-    
-    Checks:
-    1. Valid session
-    2. User credits available
-    3. Cloudflare health
-    4. Fallback routes available
-    
-    Returns route info WITHOUT sensitive API keys.
-    """
-    # Require session authentication
-    user_id = _get_session_user_id()
-    if not user_id:
-        return jsonify({"error": "Authentication required"}), 401
-    
-    # Check the database-backed credit truth before route selection.
-    try:
-        user_credits = float(_read_verified_credit_balance(user_id))
-    except LookupError:
-        return jsonify({"error": "User not found"}), 404
-    except CreditStateConflict as exc:
-        return jsonify({
-            "error": str(exc),
-            "blocker": "credit_state_verification_failed",
-        }), 409
-    
-    # Check Cloudflare health
-    cloudflare_ok = True
-    cloudflare_status = "healthy"
-    cloudflare_error = None
-    
-    try:
-        resp, err = fetch_worker_ai("health")
-        if err or not resp or not resp.ok:
-            cloudflare_ok = False
-            cloudflare_status = "down"
-            cloudflare_error = err or "HTTP error"
-        else:
-            data = resp.json()
-            if data.get("status") == "rate_limited":
-                cloudflare_ok = False
-                cloudflare_status = "rate_limited"
-    except Exception as e:
-        cloudflare_ok = False
-        cloudflare_status = "down"
-        cloudflare_error = str(e)
-    
-    # Get fallback routes
-    fallback_routes = query("""
-        SELECT id, model_id, model_name, provider, base_url,
-               credits_per_unit, priority, fallback_group
-        FROM llm_routes 
-        WHERE is_fallback = true AND disabled = false
-        ORDER BY priority ASC, credits_per_unit ASC
-    """)
-    
-    fallback_available = len(fallback_routes) > 0 if fallback_routes else False
-    
-    # Determine route to use
-    use_fallback = False
-    fallback_reason = None
-    
-    if user_credits <= 0:
-        # No credits - must use fallback if available
-        if fallback_available:
-            use_fallback = True
-            fallback_reason = "no_credits"
-        else:
-            return jsonify({
-                "error": "No credits remaining",
-                "credits": user_credits,
-                "has_fallback": False,
-            }), 402  # Payment Required
-    
-    elif not cloudflare_ok:
-        # Cloudflare down - use fallback
-        if fallback_available:
-            use_fallback = True
-            fallback_reason = "cloudflare_down"
-        else:
-            return jsonify({
-                "error": "Cloudflare unavailable and no fallback routes configured",
-                "cloudflare_status": cloudflare_status,
-                "cloudflare_error": cloudflare_error,
-                "has_fallback": False,
-            }), 503  # Service Unavailable
-    
-    if use_fallback and fallback_routes:
-        # Return first fallback route - NEVER expose api_key
-        route = fallback_routes[0]
-        return jsonify({
-            "ok": True,
-            "route_type": "fallback",
-            "fallback_reason": fallback_reason,
-            "route": {
-                "model_id": route["model_id"],
-                "model_name": route["model_name"],
-                "provider": route["provider"],
-                "base_url": route["base_url"],
-                "requires_server_proxy": True,  # Client must route through backend
-                "api_key": None,  # NEVER exposed
-                "credits_per_unit": float(route["credits_per_unit"]),
-            },
-            "user_credits": user_credits,
-        })
-    
-    # Use Cloudflare Worker AI (no api_key needed)
-    return jsonify({
-        "ok": True,
-        "route_type": "cloudflare",
-        "route": {
-            "base_url": WORKER_AI_BASE,
-            "provider": "cloudflare",
-            "api_key": None,
-            "requires_server_proxy": False,
-        },
-        "user_credits": user_credits,
-    })
-
-
 @app.route("/api/admin/system/health", methods=["GET"])
 @require_admin
 def admin_system_health():
@@ -1473,6 +1121,14 @@ def require_session(f):
         request.session_user_id = uid
         return f(*args, **kwargs)
     return decorated
+
+
+register_sovereign_agent_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
+)
+
 # ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
 
 
@@ -1491,7 +1147,6 @@ def require_session(f):
 
 # ── Admin: List all user OpenHands jobs ──────────────────────────────────────
 
-# DISABLED_OPENTHANDS: @app.route("/api/admin/openhands/jobs")
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
@@ -2221,113 +1876,10 @@ def health():
     return jsonify({"ok": True})
 
 
-# DISABLED_OPENTHANDS: @app.route("/openhands/jobs", methods=["POST"])
-def create_job():
-    body = request.get_json(force=True) or {}
-    # Accept both legacy contract (mission/repoUrl) and simple task field
-    task = (
-        body.get("task")
-        or body.get("mission")
-        or ""
-    )
-    if not task:
-        return jsonify({"error": "task or mission required"}), 400
-
-    repo_url    = body.get("repoUrl", "")
-    branch      = body.get("branch", "main")
-    draft_only  = body.get("draftPrOnly", True)
-
-    job_id     = str(uuid.uuid4())
-    oh_conv_id = None
-    conv_error  = None
-
-    try:
-        resp = requests.post(
-            f"{OPENHANDS_API_URL}/api/conversations",
-            headers=oh_headers(),
-            json={
-                "initial_message": {"content": task},
-                "runtime_image": "docker.all-hands.ai/all-hands-ai/runtime:0.39-nikolaik",
-            },
-            timeout=30,
-        )
-        if resp.ok:
-            oh_conv_id = resp.json().get("conversation_id")
-        else:
-            conv_error = f"OpenHands HTTP {resp.status_code}"
-    except Exception as exc:
-        conv_error = str(exc)[:120]
-
-    initial_status = "running" if oh_conv_id else "failed"
-    init_event = {
-        "at": int(time.time()),
-        "level": "info" if oh_conv_id else "error",
-        "stage": "init",
-        "message": "Job gestartet" if oh_conv_id else ("OpenHands-Fehler: " + (conv_error or "unbekannt")),
-    }
-
-    job = {
-        "id":         job_id,
-        "jobId":      job_id,
-        "status":     initial_status,
-        "task":       task,
-        "repoUrl":    repo_url,
-        "branch":     branch,
-        "ohConvId":   oh_conv_id,
-        "openHandsId": oh_conv_id,
-        "events":     [init_event],
-        "result":     None,
-        "lastError":  conv_error,
-        "draftPrUrl": None,
-        "changedFiles": [],
-        "createdAt":  int(time.time()),
-    }
-
-    with events_lock:
-        jobs[job_id] = job
-
-    if oh_conv_id:
-        t = threading.Thread(target=poll_oh_events, args=(job_id, oh_conv_id), daemon=True)
-        t.start()
-
-    return jsonify(job), 201
 
 
-# DISABLED_OPENTHANDS: @app.route("/openhands/jobs/<job_id>")
-def get_job(job_id):
-    with events_lock:
-        if job_id not in jobs:
-            return jsonify({"error": "Job not found"}), 404
-        job = jobs[job_id].copy()
-        if job.get("ohConvId") and job["status"] == "running":
-            try:
-                resp = requests.get(
-                    f"{OPENHANDS_API_URL}/api/conversations/{job['ohConvId']}/events/search"
-                    "?limit=10&sort_order=TIMESTAMP_DESC",
-                    headers=oh_headers(), timeout=10,
-                )
-                if resp.ok:
-                    for e in resp.json().get("items", []):
-                        if e.get("kind") == "ConversationStatusEvent" and \
-                                e.get("status") in ("stopped", "finished", "failed"):
-                            job["status"] = "failed" if e.get("status") == "failed" else "completed"
-                            break
-            except Exception:
-                pass
-        return jsonify(job)
 
 
-# DISABLED_OPENTHANDS: @app.route("/openhands/jobs/<job_id>/cancel", methods=["POST"])
-def cancel_job(job_id):
-    with events_lock:
-        if job_id not in jobs:
-            return jsonify({"error": "Job not found"}), 404
-        jobs[job_id]["status"] = "blocked"
-        jobs[job_id]["events"].append({
-            "at": int(time.time()), "level": "warning",
-            "stage": "openhands", "message": "Cancelled by user",
-        })
-        return jsonify(jobs[job_id])
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -2401,7 +1953,7 @@ def _authorize_credit_purchase(pkg: dict):
     if not user_id:
         return None, (jsonify({"error": "Authentication required"}), 401)
     result = consume_step_up_approval(
-        get_runtime_module_connection,
+        get_agent_runtime_connection,
         user_id=user_id,
         action="credit_purchase",
         context=_credit_purchase_context(pkg),
@@ -2759,19 +2311,17 @@ def admin_get_credit_packages():
 @app.route("/api/admin/credit-packages/init", methods=["POST"])
 @require_admin
 def admin_init_credit_packages():
-    """Seed default credit packages (idempotent - uses name+credits as unique key)."""
+    """Seed default credit packages (idempotent)."""
     defaults = [
-        ("Starter",   500,    2.00, "500 Credits – ideal zum Ausprobieren",    1),
-        ("Pro",      2500,   14.00, "2.500 Credits – für regelmäßige Nutzung", 2),
-        ("Power",   10000,   26.00, "10.000 Credits – für Power-User",         3),
-        ("Studio",  50000,   99.00, "50.000 Credits – für Studios und Teams",  4),
+        ("Starter",   500,    1.99, "500 Credits – ideal zum Ausprobieren",    0),
+        ("Pro",      2500,    7.99, "2.500 Credits – für regelmäßige Nutzung", 1),
+        ("Power",   10000,   24.99, "10.000 Credits – für Power-User",         2),
+        ("Studio",  50000,   89.99, "50.000 Credits – für Studios und Teams",  3),
     ]
     inserted = 0
     for name, creds, price, desc, order in defaults:
-        # Check for existing with same name AND credits (true idempotency)
         existing = query(
-            "SELECT id FROM credit_packages WHERE name = %s AND credits = %s LIMIT 1", 
-            (name, creds), one=True,
+            "SELECT id FROM credit_packages WHERE name = %s LIMIT 1", (name,), one=True,
         )
         if not existing:
             query(
@@ -3696,7 +3246,7 @@ def user_billing_deduct():
             return jsonify({"error": "unknown_cost_id", "costId": cost_id}), 400
 
         step_up = consume_step_up_approval(
-            get_runtime_module_connection,
+            get_agent_runtime_connection,
             user_id=user_id,
             action="expensive_llm_route",
             context={"costId": cost_id, "credits": amount, "tokenCount": token_count},
@@ -4346,30 +3896,6 @@ def auth_github_init():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
-
-# Reference knowledge and account security are modular runtime contracts.
-register_knowledge_routes(
-    app,
-    require_session=require_session,
-    get_connection=get_runtime_module_connection,
-)
-register_admin_knowledge_routes(
-    app,
-    require_admin=require_admin,
-    get_connection=get_runtime_module_connection,
-    get_admin_user_id=get_current_admin_user_id,
-)
-register_security_routes(
-    app,
-    require_session=require_session,
-    get_connection=get_runtime_module_connection,
-    set_session_cookie=_set_session_cookie,
-)
-register_are_inference_routes(
-    app,
-    require_session=require_session,
-    get_connection=get_runtime_module_connection,
-)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # SOVEREIGN APP TOOLCHAIN  —  Issue: Toolchain integration
@@ -6531,14 +6057,47 @@ def admin_panel():
 
 
 
-# ── Universal Toolchain Proxy ─────────────────────────────────────────────────
-# Proxies requests to the sovereign-universal-toolchain FastAPI/FastMCP server
-# at an explicitly configured TOOLCHAIN_BASE_URL. There is intentionally no
-# localhost fallback because port 8001 belongs to a different service.
-# The TOOLCHAIN_API_KEY is injected server-side — never exposed to frontend.
-# ─────────────────────────────────────────────────────────────────────────────
+# Register modular knowledge and account-security contracts only after the
+# existing session-cookie and require_session helpers are available.
+register_knowledge_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
+)
+register_admin_knowledge_routes(
+    app,
+    require_admin=require_admin,
+    get_connection=get_agent_runtime_connection,
+    get_admin_user_id=get_current_admin_user_id,
+)
+register_security_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
+    set_session_cookie=_set_session_cookie,
+)
+register_are_inference_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
+)
 
-import json as _json
+# ── GitHub App Marketplace Integration ────────────────────────────────────────
+if HAS_GITHUB_APP and register_github_app_routes:
+    try:
+        register_github_app_routes(
+            app,
+            require_admin=require_admin,
+            get_connection=get_connection,
+        )
+        print("✓ GitHub App routes registered")
+    except Exception as e:
+        print(f"⚠ GitHub App routes registration failed: {e}")
+
+# ── Embedded Sovereign Universal Toolchain ────────────────────────────────────
+# Safe diagnosis runs inside this Flask/PostgreSQL runtime. Execution stays in
+# Sovereign Agent jobs and their Draft-PR evidence gates. No second service.
+# ─────────────────────────────────────────────────────────────────────────────
 
 from agent_runtime.universal_toolchain import (
     dispatch_embedded_tool,
@@ -6546,21 +6105,10 @@ from agent_runtime.universal_toolchain import (
     toolchain_manifest,
 )
 
-_UTOOLCHAIN_BASE = ""
-_UTOOLCHAIN_KEY = ""
-_TOOLCHAIN_CONFIGURED = False
-
 
 def _utc_request(method: str, path: str, body=None):
-    """HTTP helper for proxying to the universal toolchain server.
-
-    Raises RuntimeError if toolchain is not configured (fail-closed).
-    """
-    if not _TOOLCHAIN_CONFIGURED or not _UTOOLCHAIN_BASE:
-        raise RuntimeError(
-            "Universal toolchain is not configured. "
-            "Set TOOLCHAIN_BASE_URL environment variable to enable."
-        )
+    """Removed compatibility shim: the universal toolchain is embedded."""
+    raise RuntimeError("External universal toolchain proxy was removed; use embedded tools")
     import urllib.request as _ur
     import urllib.error   as _ue
     if not _UTOOLCHAIN_BASE:
@@ -6863,64 +6411,6 @@ def public_llm_chat():
         return jsonify({"error": f"Unbekanntes Model: {model}"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-
-# Register Sovereign Agent routes at module load time
-# These routes use sovereign-local-runner as the primary executor (not OpenHands)
-if True:  # Always execute during module load
-    try:
-        from functools import wraps as _wraps
-        from flask import request as _request
-        from agent_runtime.routes import register_sovereign_agent_routes as _register_routes
-
-        # Use the REAL require_session decorator from this module
-        def _require_session(fn):
-            @_wraps(fn)
-            def wrapper(*args, **kwargs):
-                uid = _get_session_user_id()
-                if not uid:
-                    from flask import jsonify
-                    return jsonify({"error": "Nicht eingeloggt"}), 401
-                _request.session_user_id = uid
-                return fn(*args, **kwargs)
-            return wrapper
-
-        def _get_db_connection():
-            return get_runtime_module_connection()
-
-        _register_routes(
-            app,
-            require_session=_require_session,
-            get_connection=_get_db_connection
-        )
-        print("[INFO] Sovereign Agent routes registered (sovereign-local-runner)")
-
-        # ── Register sovereign-local-runner daemon ──────────────────────────
-        try:
-            workspace_root = os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "/opt/sovereign-workspaces")
-            from agent_runtime.sovereign_local_runner import register_sovereign_runner
-            _runner_daemon = register_sovereign_runner(
-                workspace_root=workspace_root,
-            )
-            if _runner_daemon:
-                # Graceful shutdown via Flask 3.x record()
-                import atexit
-                def _stop_runner():
-                    from agent_runtime.sovereign_local_runner import stop_sovereign_runner
-                    stop_sovereign_runner()
-                atexit.register(_stop_runner)
-                print(f"[INFO] sovereign-local-runner daemon started")
-        except Exception as runner_err:
-            import traceback
-            print(f"[WARN] Failed to start sovereign-local-runner: {runner_err}")
-            traceback.print_exc()
-        # ───────────────────────────────────────────────────────────────────
-
-    except Exception as e:
-        import traceback
-        print(f"[WARN] Failed to register Sovereign Agent routes: {e}")
-        traceback.print_exc()
 
 
 if __name__ == "__main__":
