@@ -53,8 +53,8 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
         <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="GitHub- oder Wikipedia-URL" style={{ ...control, width:'100%', boxSizing:'border-box' }}/>
         <button type="button" disabled={busy||!url.trim()} style={{ ...control, width:'100%', marginTop:8, background:C.accent, color:C.bg }} onClick={()=>void run(async()=>{ const r=await importKnowledgeUrl(url.trim()); setUrl(''); await finishImport(r); })}>Importieren</button>
         <label style={{ ...control, display:'flex', alignItems:'center', justifyContent:'center', marginTop:8 }}>
-          PDF, Text oder Code hochladen
-          <input hidden type="file" accept=".pdf,.txt,.md,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql" onChange={e=>{ const f=e.target.files?.[0]; if(f) void run(async()=>{ const r=await uploadKnowledgeFile(f); await finishImport(r); }); e.currentTarget.value=''; }}/>
+          PDF, Markdown, Text oder Code hochladen
+          <input hidden type="file" accept=".pdf,.txt,.md,.markdown,.mdx,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql" onChange={e=>{ const f=e.target.files?.[0]; if(f) void run(async()=>{ const r=await uploadKnowledgeFile(f); await finishImport(r); }); e.currentTarget.value=''; }}/>
         </label>
       </Box>
 
