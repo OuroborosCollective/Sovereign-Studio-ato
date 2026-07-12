@@ -17,6 +17,7 @@ import uuid
 
 from flask import jsonify, request
 
+from agent_runtime.contracts import SECRET_PATTERNS
 from agent_runtime.pattern_vector_memory import search_pattern_vectors
 from knowledge_library import search_knowledge_blocks
 from vector_embedding import EMBEDDING_MODEL, EmbeddingUnavailable, embed_texts, vector_literal
@@ -30,14 +31,6 @@ KNOWLEDGE_THRESHOLD = 0.84
 EXPERIENCE_THRESHOLD = 0.88
 MIN_CONTEXT_SIMILARITY = 0.55
 LOCAL_SYNTHESIS_CAPABILITY = "local_code_synthesis"
-_SECRET_PATTERNS = (
-    re.compile(r"github_pat_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"gh[pousr]_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"sk-proj-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"sk-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"Authorization:\s*(?:Bearer\s+)?[^\s\n]+", re.IGNORECASE),
-    re.compile(r"(?:token|password|secret|api[_-]?key)\s*[=:]\s*[^\s\n]+", re.IGNORECASE),
-)
 
 
 def _close(conn: Any) -> None:
@@ -77,7 +70,7 @@ def _bounded_text(value: Any, limit: int) -> str:
 
 def _contains_secret_like(*values: str) -> bool:
     text = "\n".join(values)
-    return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
+    return any(pattern.search(text) for pattern in SECRET_PATTERNS)
 
 
 def _similarity(row: dict[str, Any]) -> float:

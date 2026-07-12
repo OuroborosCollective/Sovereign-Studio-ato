@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from .contracts import sanitize_agent_text
 from .evidence_gate import EvidenceGateInput, EvidenceGateResult, evaluate_agent_evidence, evaluate_tool_result_evidence, evidence_gate_signal
 
 
@@ -53,25 +54,7 @@ class ToolEvent:
 
 def _sanitize_text(text: str) -> str:
     """Sanitize text by masking secret-like values."""
-    if not text:
-        return ""
-
-    import re
-
-    patterns = [
-        (r'(token["\']?\s*[:=]\s*)["\']?[\w-]{20,}["\']?', r'\1[REDACTED]'),
-        (r'(password["\']?\s*[:=]\s*)["\']?[^\s"\']{8,}["\']?', r'\1[REDACTED]'),
-        (r'(api_?key["\']?\s*[:=]\s*)["\']?[\w-]{20,}["\']?', r'\1[REDACTED]'),
-        (r'(secret["\']?\s*[:=]\s*)["\']?[^\s"\']{8,}["\']?', r'\1[REDACTED]'),
-        (r'(bearer\s+)[\w.-]{20,}', r'\1[REDACTED]'),
-        (r'(gh[pso]_[a-zA-Z0-9]{36,})', r'[GITHUB_TOKEN_REDACTED]'),
-        (r'(sk-[a-zA-Z0-9]{32,})', r'[OPENAI_KEY_REDACTED]'),
-    ]
-
-    for pattern, replacement in patterns:
-        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-
-    return text
+    return sanitize_agent_text(text)
 
 
 class ToolEventLog:

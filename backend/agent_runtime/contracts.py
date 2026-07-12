@@ -54,13 +54,29 @@ AGENT_EXECUTORS: tuple[AgentExecutor, ...] = ("sovereign-local-runner",)
 _SAFE_BRANCH = re.compile(r"^[\w./-]{1,160}$")
 _SAFE_RELATIVE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))(?!.*\0)[\w .@/+~=-]+$")
 _GITHUB_REPO_HOSTS = {"github.com"}
-_SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"github_pat_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"gh[pousr]_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"sk-proj-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"sk-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"(Authorization:\s*)(Bearer\s+)?[^\s\n]+", re.IGNORECASE),
-    re.compile(r"((?:token|password|secret|api[_-]?key)\s*[=:]\s*)[^\s\n]+", re.IGNORECASE),
+SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # GitHub Personal Access Tokens
+    re.compile(r"gh[pousr]_[a-zA-Z0-9_]{8,100}", re.IGNORECASE),
+    re.compile(r"github_pat_[a-zA-Z0-9_]{20,200}", re.IGNORECASE),
+    # Google Cloud / Gemini API keys
+    re.compile(r"AIza[a-zA-Z0-9_-]{26,60}", re.IGNORECASE),
+    # AI provider style keys
+    re.compile(r"sk-or-v1-[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"sk-proj-[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"sk-[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"gsk_[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    # HuggingFace, Together AI and Pollinations AI
+    re.compile(r"hf_[a-zA-Z0-9]{8,100}", re.IGNORECASE),
+    re.compile(r"together_[a-zA-Z0-9]{8,100}", re.IGNORECASE),
+    re.compile(r"pollinations_[a-zA-Z0-9]{8,100}", re.IGNORECASE),
+    # Generic Bearer tokens (preserves the 'Bearer ' prefix)
+    re.compile(r"(Bearer\s+)[a-zA-Z0-9._~+/-]{10,}=*", re.IGNORECASE),
+    # Label-based credentials (supports optional quotes and various separators)
+    re.compile(
+        r"([\"']?)(password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\1(\s*[:=]\s*)[\"']?[a-zA-Z0-9_@#$%^&*.\-~+/=]{4,}[\"']?",
+        re.IGNORECASE,
+    ),
 )
 
 _PLAN_ONLY_FILES = {
@@ -121,8 +137,13 @@ def sanitize_agent_text(value: str, max_length: int = 4000) -> str:
     """Mask secret-like values and cap text before storing events/results."""
 
     text = value or ""
-    for pattern in _SECRET_PATTERNS:
-        text = pattern.sub(lambda match: f"{match.group(1)}[redacted]" if match.groups() else "[redacted]", text)
+    for pattern in SECRET_PATTERNS:
+        if pattern.groups == 3:  # Label-based credential pattern
+            text = pattern.sub(r"\1\2\1\3[redacted]", text)
+        elif pattern.groups == 1:
+            text = pattern.sub(r"\1[redacted]", text)
+        else:
+            text = pattern.sub("[redacted]", text)
     return _trim(text, max_length)
 
 
