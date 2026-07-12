@@ -48,6 +48,29 @@ describe('SovereignToolLauncher', () => {
     expect(onSelect).toHaveBeenCalledWith('files');
   });
 
+  it('routes an explicitly clicked blocked shortcut to its blocker handler without opening a tool', () => {
+    const onSelect = vi.fn();
+    const onBlockedSelect = vi.fn();
+    render(
+      <SovereignToolLauncher
+        onSelect={onSelect}
+        onBlockedSelect={onBlockedSelect}
+        runtimeContext={{ ...createEmptySovereignToolShortcutContext(), repoReady: true, repoFileCount: 4 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
+    const diff = screen.getByRole('menuitem', { name: 'Diff' });
+    expect(diff).not.toBeDisabled();
+    expect(diff).toHaveAttribute('aria-disabled', 'false');
+    expect(diff).toHaveAttribute('data-can-open', 'false');
+    fireEvent.click(diff);
+
+    expect(onBlockedSelect).toHaveBeenCalledWith('diff');
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(useLauncherStore.getState().windows).toEqual([]);
+  });
+
   it('blocks Diff and Executor without their required evidence', () => {
     const onSelect = vi.fn();
     render(

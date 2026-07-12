@@ -14,6 +14,7 @@ function input(overrides: Partial<Parameters<typeof decideSovereignCompactShortc
     patchDiffAvailable: false,
     githubAccessState: 'missing' as const,
     executorAvailable: false,
+    executorActive: false,
     executorIntent: 'unknown' as const,
     runtimeEventCount: 0,
     ...overrides,
@@ -50,6 +51,43 @@ describe('sovereignCompactShortcutExecutionRuntime', () => {
       executorAvailable: true,
       executorIntent: 'draft_pr',
     }))).toMatchObject({ canExecute: true, surface: 'executor-request' });
+  });
+
+  it('shows the active executor status instead of allowing a duplicate start', () => {
+    expect(decideSovereignCompactShortcutExecution(input({
+      id: 'executor',
+      repoSnapshotReady: true,
+      executorActive: true,
+      executorAvailable: true,
+      executorIntent: 'unknown',
+    }))).toMatchObject({
+      canExecute: true,
+      surface: 'executor-status',
+      event: { route: 'agent-job', state: 'running' },
+    });
+  });
+
+  it('stores one exact route event for every compact shortcut execution path', () => {
+    const cases = [
+      ['repo', 'repo', { repoSnapshotReady: false }],
+      ['files', 'files', { repoSnapshotReady: true, repoFileCount: 2 }],
+      ['diff', 'diff', { patchDiffAvailable: true }],
+      ['github_access', 'github-access', {}],
+      ['executor', 'agent-job', { repoSnapshotReady: true, githubAccessState: 'ready', executorAvailable: true, executorIntent: 'code_execution' }],
+      ['runtime_logs', 'runtime-logs', {}],
+      ['health', 'health', {}],
+      ['memory', 'memory', {}],
+      ['coverage', 'coverage', {}],
+      ['settings', 'settings', {}],
+    ] as const;
+
+    for (const [id, route, overrides] of cases) {
+      const decision = decideSovereignCompactShortcutExecution(input({ id, ...overrides }));
+      expect(decision.event, id).toBeTruthy();
+      expect(decision.event?.route, id).toBe(route);
+      expect(decision.reason, id).toBeTruthy();
+      expect(decision.nextAction, id).toBeTruthy();
+    }
   });
 
   it('builds runtime logs only from Action Stream and agent runtime events', () => {
