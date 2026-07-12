@@ -6,13 +6,30 @@ on:
       - main
     paths:
       - 'cloudflare-worker-ai-proxy/**'
+      - '.github/workflows/deploy-worker.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-cloudflare-worker-ai-proxy
+  cancel-in-progress: false
 
 jobs:
   deploy-worker:
-    name: Deploy LLM Proxy
+    name: Deploy and verify LLM proxy
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 20
+    env:
+      WORKER_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
+      EXPECTED_WORKER_VERSION: '1.2.0'
+      CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROXY_API_KEY: ${{ secrets.WORKER_AI_PROXY_KEY || secrets.PROXY_API_KEY }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,28 +37,94 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Install Wrangler
-        run: npm install -g wrangler
-        env:
-          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
-
-      - name: Set Secrets
+      - name: Validate deployment credentials
+        shell: bash
         run: |
-          cd cloudflare-worker-ai-proxy
-          printf '%s' "$CF_AI_TOKEN" | wrangler secret put CF_AI_TOKEN
-          printf '%s' "$CF_ACCOUNT_ID" | wrangler secret put CF_ACCOUNT_ID
-        env:
-          CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          set -euo pipefail
+          missing=()
+          for name in CF_AI_TOKEN CF_ACCOUNT_ID CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required Cloudflare secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Install pinned Wrangler
+        working-directory: cloudflare-worker-ai-proxy
+        run: npm install --no-save --no-audit --no-fund wrangler@3.60.0
+
+      - name: Configure Worker secrets
+        working-directory: cloudflare-worker-ai-proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$CF_AI_TOKEN" | npx wrangler secret put CF_AI_TOKEN
+          printf '%s' "$CF_ACCOUNT_ID" | npx wrangler secret put CF_ACCOUNT_ID
+          if [[ -n "${PROXY_API_KEY:-}" ]]; then
+            printf '%s' "$PROXY_API_KEY" | npx wrangler secret put PROXY_API_KEY
+          fi
 
       - name: Deploy Worker
+        working-directory: cloudflare-worker-ai-proxy
+        run: npx wrangler deploy
+
+      - name: Verify live health and real embedding route
+        shell: bash
         run: |
-          cd cloudflare-worker-ai-proxy
-          wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          set -euo pipefail
+          auth_args=()
+          if [[ -n "${PROXY_API_KEY:-}" ]]; then
+            auth_args=(-H "Authorization: Bearer ${PROXY_API_KEY}")
+          fi
+
+          health=''
+          for attempt in $(seq 1 12); do
+            health="$(curl -fsS "${WORKER_URL}/health" 2>/dev/null || true)"
+            if HEALTH_PAYLOAD="$health" node <<'NODE'
+          const payload = JSON.parse(process.env.HEALTH_PAYLOAD || '{}');
+          const expected = process.env.EXPECTED_WORKER_VERSION;
+          if (
+            payload.version !== expected
+            || payload.configured !== true
+            || payload.providers?.embeddings !== true
+            || payload.embeddingDimensions !== 768
+            || payload.embeddingPath !== '/v1/embeddings'
+          ) process.exit(1);
+          NODE
+            then
+              echo "Worker health contract reached on attempt ${attempt}."
+              break
+            fi
+            health=''
+            sleep 5
+          done
+          if [[ -z "$health" ]]; then
+            echo 'Worker health never reached the expected embedding revision.' >&2
+            exit 1
+          fi
+
+          embedding="$(curl -fsS \
+            "${auth_args[@]}" \
+            -H 'Content-Type: application/json' \
+            -X POST "${WORKER_URL}/v1/embeddings" \
+            --data '{"model":"@cf/google/embeddinggemma-300m","input":["sovereign deployment canary"]}')"
+
+          EMBEDDING_PAYLOAD="$embedding" node <<'NODE'
+          const payload = JSON.parse(process.env.EMBEDDING_PAYLOAD || '{}');
+          const vector = payload.data?.[0]?.embedding;
+          if (
+            payload.object !== 'list'
+            || !Array.isArray(vector)
+            || vector.length !== 768
+            || vector.some(value => !Number.isFinite(Number(value)))
+          ) {
+            console.error('Live embedding response did not contain one finite 768-dimensional vector.');
+            process.exit(1);
+          }
+          console.log(`WORKER_EMBEDDING_RUNTIME=PASS dimensions=${vector.length} model=${payload.model}`);
+          NODE

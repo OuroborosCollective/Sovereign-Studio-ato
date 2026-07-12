@@ -16,6 +16,8 @@ interface GitHubOAuthInitResult {
   authUrl: string;
   state: string;
   codeVerifier: string;
+  callbackOrigin: string;
+  openerOrigin: string;
 }
 
 interface GitHubOAuthCallbackMessage {
@@ -25,17 +27,32 @@ interface GitHubOAuthCallbackMessage {
   error?: string;
 }
 
-async function initializeGitHubOAuth(redirectUri: string): Promise<GitHubOAuthInitResult> {
+async function initializeGitHubOAuth(
+  redirectUri: string,
+  openerOrigin: string,
+): Promise<GitHubOAuthInitResult> {
   const response = await fetch(`${API_BASE}/api/auth/github/init`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ redirect_uri: redirectUri }),
+    body: JSON.stringify({
+      redirect_uri: redirectUri,
+      opener_origin: openerOrigin,
+    }),
   });
   const payload = await response.json().catch(() => ({})) as Partial<GitHubOAuthInitResult> & { error?: string };
   if (!response.ok) throw new Error(payload.error || `GitHub OAuth Init HTTP ${response.status}`);
-  if (!payload.authUrl || !payload.state || !payload.codeVerifier) {
-    throw new Error('GitHub OAuth Init lieferte keine vollständige State-/PKCE-Evidence.');
+  if (
+    !payload.authUrl
+    || !payload.state
+    || !payload.codeVerifier
+    || !payload.callbackOrigin
+    || !payload.openerOrigin
+  ) {
+    throw new Error('GitHub OAuth Init lieferte keine vollständige State-/PKCE-/Rückkanal-Evidence.');
+  }
+  if (payload.openerOrigin !== openerOrigin) {
+    throw new Error('GitHub OAuth Init bestätigte nicht den aktuellen App-Origin.');
   }
   return payload as GitHubOAuthInitResult;
 }
@@ -49,8 +66,9 @@ export async function initiateGitHubOAuth(
   timeout = 5 * 60 * 1000,
 ): Promise<GitHubOAuthResult> {
   try {
-    const callbackUrl = new URL(CALLBACK_PATH, window.location.origin).toString();
-    const initialized = await initializeGitHubOAuth(callbackUrl);
+    const openerOrigin = window.location.origin;
+    const callbackUrl = new URL(CALLBACK_PATH, openerOrigin).toString();
+    const initialized = await initializeGitHubOAuth(callbackUrl, openerOrigin);
     const width = 600;
     const height = 700;
     const left = window.screenX + (window.outerWidth - width) / 2;
@@ -75,7 +93,7 @@ export async function initiateGitHubOAuth(
         onMessage?.(result);
       };
       const handleMessage = (event: MessageEvent<GitHubOAuthCallbackMessage>) => {
-        if (event.origin !== window.location.origin || event.source !== popup) return;
+        if (event.origin !== initialized.callbackOrigin || event.source !== popup) return;
         const data = event.data;
         if (data?.type === 'GITHUB_OAUTH_ERROR') {
           finish({ success: false, error: data.error || 'Autorisierung fehlgeschlagen' });
@@ -98,7 +116,12 @@ export async function initiateGitHubOAuth(
         timeout,
       );
       const closedPoll = window.setInterval(() => {
-        if (popup.closed) finish({ success: false, error: 'Fenster wurde geschlossen' });
+        if (popup.closed) {
+          finish({
+            success: false,
+            error: 'GitHub-Fenster wurde geschlossen, bevor der bestätigte Rückkanal eingetroffen ist.',
+          });
+        }
       }, 500);
       window.addEventListener('message', handleMessage);
     });
