@@ -10,6 +10,9 @@ on:
     - backend/**
     - e2e/**
     - tests/**
+    - scripts/check-backend-python-runtime.py
+    - scripts/sovereign-backend/requirements.txt
+    - .github/actions/setup-backend-python/**
     - .github/workflows/ci.yml
   pull_request:
     branches:
@@ -21,6 +24,9 @@ on:
     - backend/**
     - e2e/**
     - tests/**
+    - scripts/check-backend-python-runtime.py
+    - scripts/sovereign-backend/requirements.txt
+    - .github/actions/setup-backend-python/**
     - .github/workflows/ci.yml
   workflow_dispatch: null
 env:
@@ -82,12 +88,10 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 1
-    - name: Setup Python
-      uses: actions/setup-python@v5
+    - name: Setup verified backend Python runtime
+      uses: ./.github/actions/setup-backend-python
       with:
         python-version: '3.11'
-    - name: Install Dependencies
-      run: pip install pytest cryptography pyjwt psycopg2-binary flask flask-cors requests -q
     - name: Run Live-Path OAuth Security Tests
       run: |
         cd backend
@@ -178,12 +182,10 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 1
-    - name: Setup Python
-      uses: actions/setup-python@v5
+    - name: Setup verified backend Python runtime
+      uses: ./.github/actions/setup-backend-python
       with:
         python-version: '3.11'
-    - name: Install Dependencies
-      run: python -m pip install -r scripts/sovereign-backend/requirements.txt pytest -q
     - name: Compile Check
       run: |
         cd backend
