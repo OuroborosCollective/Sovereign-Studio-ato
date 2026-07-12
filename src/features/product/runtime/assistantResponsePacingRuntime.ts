@@ -20,14 +20,25 @@ export const DEFAULT_ASSISTANT_RESPONSE_PACING: AssistantResponsePacingConfig = 
   wordsPerTick: 1,
 };
 
+// Hoisted regex patterns to avoid redundant re-instantiation and array allocations during high-frequency UI updates.
+const WORD_REGEX = /\S+/g;
+const WORD_WITH_SPACE_REGEX = /\S+\s*/g;
+
 export function countAssistantResponseWords(text: string): number {
-  return text.match(/\S+/g)?.length ?? 0;
+  WORD_REGEX.lastIndex = 0;
+  let count = 0;
+  while (WORD_REGEX.test(text)) {
+    count++;
+  }
+  return count;
 }
 
 export function sliceAssistantResponseWords(text: string, visibleWords: number): string {
   if (visibleWords <= 0) return '';
+  WORD_WITH_SPACE_REGEX.lastIndex = 0;
   let seen = 0;
-  for (const match of text.matchAll(/\S+\s*/g)) {
+  let match: RegExpExecArray | null;
+  while ((match = WORD_WITH_SPACE_REGEX.exec(text)) !== null) {
     seen += 1;
     const end = match.index + match[0].length;
     if (seen >= visibleWords) return text.slice(0, end);
