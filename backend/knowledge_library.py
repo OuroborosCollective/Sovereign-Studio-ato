@@ -23,6 +23,15 @@ from flask import jsonify, request
 import psycopg2.extras
 import requests
 
+from r2_storage import (
+    R2EvidenceMismatch,
+    R2ObjectMissing,
+    R2Storage,
+    R2StorageError,
+    R2StorageUnavailable,
+    knowledge_object_key,
+    validate_knowledge_upload,
+)
 from vector_embedding import EMBEDDING_MODEL, EmbeddingUnavailable, embed_texts, vector_literal
 
 ConnectionFactory = Callable[[], Any]
@@ -402,7 +411,13 @@ def chunk_document(text: str) -> list[KnowledgeChunk]:
     return chunks
 
 
-def _insert_document(conn: Any, user_id: str, document: KnowledgeDocument) -> dict[str, Any]:
+def _insert_document(
+    conn: Any,
+    user_id: str,
+    document: KnowledgeDocument,
+    *,
+    source_id_override: str | None = None,
+) -> dict[str, Any]:
     source_hash = _sha256_text(document.text)
     with conn.cursor() as cur:
         cur.execute(
@@ -422,7 +437,7 @@ def _insert_document(conn: Any, user_id: str, document: KnowledgeDocument) -> di
                 "contentSha256": source_hash,
             }
 
-        source_id = str(uuid.uuid4())
+        source_id = str(uuid.UUID(source_id_override)) if source_id_override else str(uuid.uuid4())
         cur.execute(
             """INSERT INTO knowledge_sources
                (id, user_id, source_type, source_url, title, content_sha256,
@@ -585,6 +600,158 @@ def search_knowledge_blocks(conn: Any, user_id: str, query_text: str, limit: int
         return [dict(row) for row in cur.fetchall()]
 
 
+def _create_r2_upload_ticket(conn: Any, user_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    storage = R2Storage.from_env()
+    spec = validate_knowledge_upload(
+        str(body.get("filename") or ""),
+        str(body.get("contentType") or ""),
+        body.get("sizeBytes"),
+        str(body.get("sha256") or ""),
+    )
+    object_id = str(uuid.uuid4())
+    object_key = knowledge_object_key(user_id, object_id, spec.sha256, spec.filename)
+    ticket = storage.presign_put(
+        bucket=storage.knowledge_bucket,
+        object_key=object_key,
+        content_type=spec.content_type,
+        size_bytes=spec.size_bytes,
+        sha256=spec.sha256,
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO sovereign_objects
+               (id, user_id, bucket_name, object_key, sha256, content_type,
+                size_bytes, status)
+               VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s, 'pending')""",
+            (
+                object_id,
+                user_id,
+                storage.knowledge_bucket,
+                object_key,
+                spec.sha256,
+                spec.content_type,
+                spec.size_bytes,
+            ),
+        )
+    conn.commit()
+    return {
+        "objectId": object_id,
+        "uploadUrl": ticket.url,
+        "headers": ticket.headers,
+        "expiresInSeconds": ticket.expires_in_seconds,
+        "status": "preparing",
+    }
+
+
+def _confirmed_source(conn: Any, user_id: str, object_id: str) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT s.id::text, s.source_type AS "sourceType",
+                      s.source_url AS "sourceUrl", s.title,
+                      s.content_sha256 AS "contentSha256", s.status,
+                      s.content_bytes AS "contentBytes",
+                      s.chunk_count AS "chunkCount", s.metadata, s.blocker,
+                      to_char(s.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "createdAt",
+                      to_char(s.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "updatedAt"
+               FROM sovereign_objects o
+               JOIN knowledge_sources s ON s.id=o.source_id
+               WHERE o.id=%s::uuid AND o.user_id=%s::uuid
+                 AND o.status IN ('completed','deleted')
+               LIMIT 1""",
+            (object_id, user_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def _confirm_r2_upload(conn: Any, user_id: str, object_id: str) -> dict[str, Any]:
+    normalized_id = str(uuid.UUID(str(object_id or "").strip()))
+    existing_source = _confirmed_source(conn, user_id, normalized_id)
+    if existing_source:
+        return {"duplicate": False, "source": existing_source, "idempotent": True}
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id::text, bucket_name, object_key, sha256,
+                      content_type, size_bytes, status
+               FROM sovereign_objects
+               WHERE id=%s::uuid AND user_id=%s::uuid AND deleted_at IS NULL
+               LIMIT 1 FOR UPDATE""",
+            (normalized_id, user_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise LookupError("Upload ticket not found for active user")
+        if row["status"] not in {"pending", "uploaded", "verifying", "blocked"}:
+            raise ValueError(f"Upload cannot be confirmed from status {row['status']}")
+        cur.execute(
+            """UPDATE sovereign_objects
+               SET status='verifying', blocker=NULL
+               WHERE id=%s::uuid AND user_id=%s::uuid""",
+            (normalized_id, user_id),
+        )
+    conn.commit()
+
+    storage = R2Storage.from_env()
+    try:
+        evidence = storage.verify_object(
+            bucket=str(row["bucket_name"]),
+            object_key=str(row["object_key"]),
+            expected_sha256=str(row["sha256"]),
+            expected_content_type=str(row["content_type"]),
+            expected_size_bytes=int(row["size_bytes"]),
+            max_bytes=MAX_UPLOAD_BYTES,
+        )
+        payload = storage.get_object_bytes(
+            bucket=evidence.bucket,
+            object_key=evidence.object_key,
+            max_bytes=MAX_UPLOAD_BYTES,
+        )
+        filename = evidence.object_key.rsplit("/", 1)[-1]
+        document = upload_document(filename, payload)
+        result = _insert_document(
+            conn,
+            user_id,
+            document,
+            source_id_override=normalized_id,
+        )
+        source_id = str(result["source"]["id"])
+        if result["duplicate"]:
+            storage.delete_object(bucket=evidence.bucket, object_key=evidence.object_key)
+            final_status = "deleted"
+        else:
+            final_status = "completed"
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE sovereign_objects
+                   SET source_id=%s::uuid, status=%s, etag=%s,
+                       verified_at=NOW(), blocker=NULL,
+                       deleted_at=CASE WHEN %s='deleted' THEN NOW() ELSE NULL END
+                   WHERE id=%s::uuid AND user_id=%s::uuid""",
+                (
+                    source_id,
+                    final_status,
+                    evidence.etag,
+                    final_status,
+                    normalized_id,
+                    user_id,
+                ),
+            )
+        conn.commit()
+        return {**result, "objectId": normalized_id, "objectVerified": True}
+    except Exception as exc:
+        conn.rollback()
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE sovereign_objects
+                   SET status='blocked', blocker=%s
+                   WHERE id=%s::uuid AND user_id=%s::uuid""",
+                (str(exc)[:500], normalized_id, user_id),
+            )
+        conn.commit()
+        raise
+
+
 def register_knowledge_routes(app: Any, *, require_session: Callable, get_connection: ConnectionFactory) -> None:
     @app.route("/api/knowledge/sources", methods=["GET"])
     @require_session
@@ -619,6 +786,80 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+
+    @app.route("/api/knowledge/sources/upload-ticket", methods=["POST"])
+    @require_session
+    def knowledge_source_upload_ticket():
+        body = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            ticket = _create_r2_upload_ticket(conn, request.session_user_id, body)
+            return jsonify({"ok": True, **ticket}), 201
+        except (ValueError, R2StorageUnavailable) as exc:
+            conn.rollback()
+            return jsonify({"ok": False, "error": str(exc), "blocker": "r2_upload_not_ready"}), 400
+        except R2StorageError as exc:
+            conn.rollback()
+            return jsonify({"ok": False, "error": str(exc), "blocker": "r2_upload_unavailable"}), 503
+        except Exception as exc:
+            conn.rollback()
+            return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+        finally:
+            _close(conn)
+
+    @app.route("/api/knowledge/sources/upload-confirm", methods=["POST"])
+    @require_session
+    def knowledge_source_upload_confirm():
+        body = request.get_json(force=True) or {}
+        object_id = str(body.get("objectId") or "").strip()
+        if not object_id:
+            return jsonify({"ok": False, "error": "objectId is required"}), 400
+        conn = get_connection()
+        try:
+            result = _confirm_r2_upload(conn, request.session_user_id, object_id)
+            return jsonify({"ok": True, **result}), 200 if result.get("duplicate") or result.get("idempotent") else 201
+        except LookupError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 404
+        except (ValueError, R2EvidenceMismatch, R2ObjectMissing) as exc:
+            return jsonify({"ok": False, "error": str(exc), "blocker": "r2_object_verification_failed"}), 409
+        except R2StorageUnavailable as exc:
+            return jsonify({"ok": False, "error": str(exc), "blocker": "r2_upload_not_ready"}), 503
+        except R2StorageError as exc:
+            return jsonify({"ok": False, "error": str(exc), "blocker": "r2_upload_unavailable"}), 503
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+        finally:
+            _close(conn)
+
+    @app.route("/api/knowledge/objects/<object_id>/download", methods=["GET"])
+    @require_session
+    def knowledge_object_download(object_id: str):
+        conn = get_connection()
+        try:
+            normalized_id = str(uuid.UUID(object_id))
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT bucket_name, object_key
+                       FROM sovereign_objects
+                       WHERE id=%s::uuid AND user_id=%s::uuid
+                         AND status='completed' AND deleted_at IS NULL
+                       LIMIT 1""",
+                    (normalized_id, request.session_user_id),
+                )
+                row = cur.fetchone()
+            if not row:
+                return jsonify({"ok": False, "error": "Verified object not found"}), 404
+            storage = R2Storage.from_env()
+            url, expires = storage.presign_get(
+                bucket=str(row["bucket_name"]),
+                object_key=str(row["object_key"]),
+                download_name=str(row["object_key"]).rsplit("/", 1)[-1],
+            )
+            return jsonify({"ok": True, "downloadUrl": url, "expiresInSeconds": expires})
+        except (ValueError, R2StorageError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        finally:
+            _close(conn)
 
     @app.route("/api/knowledge/sources/upload", methods=["POST"])
     @require_session

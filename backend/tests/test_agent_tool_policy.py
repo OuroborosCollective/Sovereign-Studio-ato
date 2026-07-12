@@ -3,9 +3,13 @@
 Verifies that tool policy blocks unsafe operations and allows safe ones.
 """
 
+import os
+import sys
 import pytest
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_runtime.tools.base import (
     ToolBase,
@@ -209,13 +213,18 @@ class TestShellTool:
         with pytest.raises(ToolPolicyError, match="Empty"):
             tool.validate({"command": ""})
 
-    def test_shell_allows_safe_commands(self):
-        """Safe commands should be allowed."""
+    def test_shell_blocks_mutating_and_git_commands(self):
+        """General shell cannot mutate files or bypass dedicated Git tools."""
+        tool = ShellTool()
+        with pytest.raises(ToolPolicyError, match="Forbidden"):
+            tool.validate({"command": "rm README.md"})
+        with pytest.raises(ToolPolicyError, match="blocked"):
+            tool.validate({"command": "git diff --no-index /etc/passwd /etc/hosts"})
+
+    def test_shell_allows_only_read_only_workspace_commands(self):
         tool = ShellTool()
         tool.validate({"command": "ls -la"})
-        tool.validate({"command": "git status"})
-        # Note: python, node, etc. are blocked for security
-        # Use shell tool to run interpreter-based commands
+        tool.validate({"command": "pwd"})
 
 
 class TestToolResult:

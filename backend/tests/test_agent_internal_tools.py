@@ -158,11 +158,15 @@ class TestShellTool:
         assert result.is_ok()
         assert "file.txt" in result.output
 
-    def test_shell_timeout(self, tmp_path):
-        """Should respect timeout parameter."""
+    def test_shell_timeout(self, monkeypatch, tmp_path):
+        """Should report a bounded timeout for an allowed read-only command."""
+        def raise_timeout(*args, **kwargs):
+            raise __import__("subprocess").TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 1))
+
+        monkeypatch.setattr("agent_runtime.tools.shell_tool.subprocess.run", raise_timeout)
         tool = ShellTool()
         result = tool.execute(
-            {"command": "sleep 10", "timeout": 1},
+            {"command": "ls", "timeout": 1},
             str(tmp_path)
         )
 
@@ -172,7 +176,7 @@ class TestShellTool:
     def test_shell_captures_stderr(self, tmp_path):
         """Should capture stderr output."""
         tool = ShellTool()
-        result = tool.execute({"command": "ls /nonexistent"}, str(tmp_path))
+        result = tool.execute({"command": "ls missing-entry"}, str(tmp_path))
 
         assert result.metadata["exit_code"] != 0
         assert "no such file" in result.output.lower()
@@ -265,13 +269,18 @@ class TestToolExecutionIntegration:
         assert read_result.output == "Integration test"
 
     def test_shell_and_file_integration(self, tmp_path):
-        """Should integrate shell and file tools."""
-        shell_tool = ShellTool()
-        shell_result = shell_tool.execute(
-            {"command": "echo 'Shell content' > shell_test.txt"},
-            str(tmp_path)
+        """Writes through FileTool and inspects through the read-only ShellTool."""
+        write_tool = FileWriteTool()
+        write_result = write_tool.execute(
+            {"path": "shell_test.txt", "content": "Shell content"},
+            str(tmp_path),
         )
+        assert write_result.is_ok()
+
+        shell_tool = ShellTool()
+        shell_result = shell_tool.execute({"command": "ls"}, str(tmp_path))
         assert shell_result.is_ok()
+        assert "shell_test.txt" in shell_result.output
 
         read_tool = FileReadTool()
         read_result = read_tool.execute({"path": "shell_test.txt"}, str(tmp_path))

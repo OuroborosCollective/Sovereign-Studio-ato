@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import os
 import re
 from typing import Any, Literal, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from .contracts import sanitize_agent_text
+from .git_workspace import publish_workspace_branch, resolve_server_github_token
 from .job_store import StoredSovereignAgentJob
 
 DraftPrCreateStatus = Literal["created", "blocked"]
@@ -46,6 +46,7 @@ class DraftPrCreateRequest:
     diff_summary: str | None = None
     test_summary: str | None = None
     existing_pr_url: str | None = None
+    workspace_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -89,9 +90,7 @@ def _repo_owner_name(repo_url: str) -> tuple[str, str] | None:
 
 
 def _server_github_token() -> str | None:
-    token = os.getenv("SOVEREIGN_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
-    token = (token or "").strip()
-    return token or None
+    return resolve_server_github_token()
 
 
 def _valid_pr_url(value: str | None) -> bool:
@@ -99,18 +98,61 @@ def _valid_pr_url(value: str | None) -> bool:
 
 
 class GitHubApiDraftPrCreator:
-    """Minimal GitHub REST client for creating Draft PRs.
+    """Publish the verified workspace branch and create or recover one Draft PR."""
 
-    This client assumes the head branch already exists on GitHub. It does not push
-    code and does not create commits. Missing branches or auth failures are
-    returned by GitHub and converted to blockers by the gate.
-    """
+    def _existing_draft_pr(self, request: DraftPrCreateRequest, token: str, owner: str, repo: str) -> str | None:
+        query = urlencode({
+            "state": "open",
+            "head": f"{owner}:{request.head_branch}",
+            "base": request.base_branch or "main",
+            "per_page": "10",
+        })
+        http_request = Request(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls?{query}",
+            method="GET",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "sovereign-agent-runtime",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        with urlopen(http_request, timeout=30) as response:  # nosec B310 - validated GitHub API URL.
+            data = json.loads(response.read().decode("utf-8"))
+        if not isinstance(data, list):
+            raise ValueError("GitHub existing pull request lookup returned an invalid response")
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("html_url") or "")
+            if not _valid_pr_url(url):
+                continue
+            if item.get("draft") is not True:
+                raise ValueError("An open non-draft pull request already exists for the prepared branch")
+            return url
+        return None
 
     def create_draft_pr(self, request: DraftPrCreateRequest, token: str) -> str:
         owner_repo = _repo_owner_name(request.repo_url)
         if not owner_repo:
             raise ValueError("repo_url must be a GitHub HTTPS URL")
+        if not request.workspace_id:
+            raise ValueError("workspace id is required for Draft PR branch publication")
+        publication = publish_workspace_branch(
+            request.workspace_id,
+            repo_url=request.repo_url,
+            base_branch=request.base_branch or "main",
+            head_branch=request.head_branch or "",
+            commit_message=request.title or "Sovereign changes",
+            changed_files=request.changed_files,
+            token=token,
+        )
+        if publication.status != "done" or not publication.commit_sha:
+            raise RuntimeError(publication.blocker or "workspace branch publication failed")
         owner, repo = owner_repo
+        existing = self._existing_draft_pr(request, token, owner, repo)
+        if existing:
+            return existing
         payload = json.dumps({
             "title": request.title,
             "head": request.head_branch,
@@ -132,8 +174,16 @@ class GitHubApiDraftPrCreator:
                 "X-GitHub-Api-Version": "2022-11-28",
             },
         )
-        with urlopen(http_request, timeout=30) as response:  # nosec B310 - GitHub API URL is constructed from validated repo URL.
-            data = json.loads(response.read().decode("utf-8"))
+        try:
+            with urlopen(http_request, timeout=30) as response:  # nosec B310 - GitHub API URL is constructed from validated repo URL.
+                data = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code != 422:
+                raise
+            existing = self._existing_draft_pr(request, token, owner, repo)
+            if not existing:
+                raise
+            return existing
         url = str(data.get("html_url") or "")
         if not _valid_pr_url(url):
             raise ValueError("GitHub did not return a valid pull request URL")
@@ -156,6 +206,7 @@ def draft_pr_create_request_from_job(job: StoredSovereignAgentJob) -> DraftPrCre
         diff_summary=job.diff_summary,
         test_summary=job.test_summary,
         existing_pr_url=job.pr_url or job.draft_pr_url,
+        workspace_id=job.workspace_id,
     )
 
 
@@ -175,6 +226,8 @@ def validate_draft_pr_create_request(request: DraftPrCreateRequest) -> tuple[str
         blockers.append("head branch must differ from base branch")
     if not request.title or len(request.title.strip()) < 3:
         blockers.append("Draft PR title is required")
+    if not request.workspace_id:
+        blockers.append("Draft PR create requires workspace evidence")
     if not request.changed_files:
         blockers.append("Draft PR create requires changed file evidence")
     if not request.diff_summary:

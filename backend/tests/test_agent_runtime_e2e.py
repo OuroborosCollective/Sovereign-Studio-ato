@@ -9,10 +9,16 @@ from pathlib import Path
 # Füge Backend zum Python Path hinzu
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from agent_runtime.draft_pr_create_gate import create_draft_pr_for_job  # noqa: E402
 from agent_runtime.draft_pr_gate import DraftPrPreparationInput, prepare_draft_pr  # noqa: E402
 from agent_runtime.evidence_gate import EvidenceGateInput, evaluate_agent_evidence  # noqa: E402
 from agent_runtime.job_lifecycle import create_sovereign_agent_job  # noqa: E402
-from agent_runtime.job_store import mark_draft_pr_prepared, read_agent_job  # noqa: E402
+from agent_runtime.job_store import (  # noqa: E402
+    mark_draft_pr_created,
+    mark_draft_pr_prepared,
+    read_agent_job,
+    update_agent_job_state,
+)
 from agent_runtime.pattern_gateway import (  # noqa: E402
     PatternLearningInput,
     evaluate_pattern_learning,
@@ -85,6 +91,13 @@ class FakeCursor:
                 "commitMessage": params[2],
             }
             self.conn.jobs[job_id]["blocker"] = None
+        elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS") and "PR_STATE = 'CREATED'" in normalized:
+            job_id = params[-1]
+            self.conn.jobs[job_id]["status"] = "completed"
+            self.conn.jobs[job_id]["pr_state"] = "created"
+            self.conn.jobs[job_id]["pr_url"] = params[0]
+            self.conn.jobs[job_id]["draft_pr_url"] = params[1]
+            self.conn.jobs[job_id]["blocker"] = None
         elif normalized.startswith("UPDATE SOVEREIGN_AGENT_JOBS"):
             job_id = params[-1]
             self.conn.jobs[job_id]["status"] = params[0]
@@ -145,9 +158,12 @@ def _seed_git_repo(repo_dir: Path) -> None:
     _run_git(repo_dir, "init")
     _run_git(repo_dir, "config", "user.email", "sovereign@example.invalid")
     _run_git(repo_dir, "config", "user.name", "Sovereign Runtime Test")
-    (repo_dir / "README.md").write_text("# Sovereign Studio\n\nInitial runtime proof.\n", encoding="utf-8")
-    _run_git(repo_dir, "add", "README.md")
-    _run_git(repo_dir, "commit", "-m", "Initial README")
+    (repo_dir / "calculator.py").write_text(
+        "def add(left: int, right: int) -> int:\n    return left - right\n",
+        encoding="utf-8",
+    )
+    _run_git(repo_dir, "add", "calculator.py")
+    _run_git(repo_dir, "commit", "-m", "Initial calculator")
 
 
 def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_path: Path):
@@ -161,7 +177,7 @@ def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_pat
         payload={
             "repoUrl": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
             "branch": "main",
-            "mission": "README smoke change in draft-pr-only mode",
+            "mission": "Fix calculator addition and prove it with tests in draft-pr-only mode",
             "executor": "sovereign-local-runner",
             "draftPrOnly": True,
             "allowAutoMerge": False,
@@ -179,22 +195,27 @@ def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_pat
 
     file_result = run_agent_job_tool(lifecycle.result, "file", {
         "mode": "write",
-        "path": "README.md",
-        "content": "# Sovereign Studio\n\nRuntime E2E proof generated real evidence.\n",
+        "path": "calculator.py",
+        "content": "def add(left: int, right: int) -> int:\n    return left + right\n",
     }, tmp_path)
     assert file_result.status == "done"
-    assert file_result.changed_files == ("README.md",)
+    assert file_result.changed_files == ("calculator.py",)
 
     status_result = run_agent_job_tool(lifecycle.result, "git-status", {}, tmp_path)
     assert status_result.status == "done"
-    assert "README.md" in status_result.changed_files
+    assert "calculator.py" in status_result.changed_files
 
     diff_result = run_agent_job_tool(lifecycle.result, "diff", {}, tmp_path)
     assert diff_result.status == "done"
-    assert "Runtime E2E proof" in (diff_result.diff_summary or "")
+    assert "return left + right" in (diff_result.diff_summary or "")
 
+    runtime_test = repo_dir / "runtime_e2e_test.py"
+    runtime_test.write_text(
+        "from calculator import add\n\ndef test_runtime_evidence():\n    assert add(2, 3) == 5\n",
+        encoding="utf-8",
+    )
     test_result = run_agent_job_tool(lifecycle.result, "test", {
-        "command": f"{sys.executable} -c \"print('1 passed, 0 failed')\"",
+        "command": "python3 -m pytest runtime_e2e_test.py -q",
         "timeout": 20,
     }, tmp_path)
     assert test_result.status == "done"
@@ -202,13 +223,27 @@ def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_pat
     assert test_result.exit_code == 0
     assert "1 passed" in (test_result.test_summary or "")
 
+    runtime_test.write_text(
+        "from calculator import add\n\ndef test_runtime_evidence():\n    assert add(2, 3) == 600\n",
+        encoding="utf-8",
+    )
     failed_test_result = run_agent_job_tool(lifecycle.result, "test", {
-        "command": f"{sys.executable} -c \"import sys; sys.exit(7)\"",
+        "command": "python3 -m pytest runtime_e2e_test.py -q",
         "timeout": 20,
     }, tmp_path)
     assert failed_test_result.status == "error"
     assert failed_test_result.allowed is False
-    assert failed_test_result.exit_code == 7
+    assert failed_test_result.exit_code == 1
+    runtime_test.unlink()
+
+    update_agent_job_state(
+        conn,
+        job_id="agent-e2e-1",
+        status="validating",
+        changed_files=status_result.changed_files,
+        diff_summary=diff_result.diff_summary,
+        test_summary=test_result.test_summary,
+    )
 
     evidence = evaluate_agent_evidence(EvidenceGateInput(
         job_id="agent-e2e-1",
@@ -224,7 +259,7 @@ def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_pat
         job_id="agent-e2e-1",
         repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
         base_branch="main",
-        mission="README smoke change in draft-pr-only mode",
+        mission="Fix calculator addition and prove it with tests in draft-pr-only mode",
         changed_files=status_result.changed_files,
         diff_summary=diff_result.diff_summary,
         test_summary=test_result.test_summary,
@@ -237,9 +272,9 @@ def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_pat
     mark_draft_pr_prepared(
         conn,
         job_id="agent-e2e-1",
-        head_branch=draft.head_branch or "sovereign/agent-e2e-1-readme",
+        head_branch=draft.head_branch or "sovereign/agent-e2e-1-calculator-fix",
         base_branch=draft.base_branch or "main",
-        title=draft.title or "Draft: README smoke change",
+        title=draft.title or "Draft: calculator addition fix",
         body=draft.body or "",
     )
 
@@ -247,11 +282,35 @@ def test_sovereign_agent_runtime_full_e2e_without_openhands(monkeypatch, tmp_pat
     assert stored is not None
     assert stored.pr_state == "ready"
     assert stored.branch_name is not None
+    assert stored.changed_files == ("calculator.py",)
+    assert "return left + right" in (stored.diff_summary or "")
+    assert "1 passed" in (stored.test_summary or "")
+
+    class FakeDraftPrCreator:
+        def create_draft_pr(self, request, token):
+            assert request.workspace_id == "agent-e2e-1"
+            assert request.changed_files == ("calculator.py",)
+            assert token == "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+            return "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/999"
+
+    created = create_draft_pr_for_job(
+        stored,
+        creator=FakeDraftPrCreator(),
+        token="ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
+    )
+    assert created.allowed is True
+    assert created.pr_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/999"
+    mark_draft_pr_created(conn, job_id="agent-e2e-1", pr_url=created.pr_url or "")
+    completed = read_agent_job(conn, user_id="user-1", job_id="agent-e2e-1")
+    assert completed is not None
+    assert completed.status == "completed"
+    assert completed.pr_state == "created"
+    assert completed.pr_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/999"
 
     pattern = evaluate_pattern_learning(PatternLearningInput(
         job_id="agent-e2e-1",
         source="agent-runtime-e2e",
-        mission="README smoke change in draft-pr-only mode",
+        mission="Fix calculator addition and prove it with tests in draft-pr-only mode",
         changed_files=status_result.changed_files,
         diff_summary=diff_result.diff_summary,
         test_summary=test_result.test_summary,

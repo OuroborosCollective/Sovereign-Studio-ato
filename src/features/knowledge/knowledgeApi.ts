@@ -3,7 +3,8 @@ const API_BASE = (
   || 'https://sovereign-backend.arelorian.de'
 ).replace(/\/$/, '');
 
-export type KnowledgeSourceType = 'github' | 'wikipedia' | 'pdf' | 'text' | 'code';
+export type KnowledgeSourceType = 'github' | 'wikipedia' | 'pdf' | 'markdown' | 'text' | 'code';
+export type KnowledgeUploadStatus = 'preparing' | 'uploading' | 'verifying' | 'processing' | 'completed' | 'blocked';
 export type KnowledgeSourceStatus = 'processing' | 'ready' | 'partial' | 'blocked';
 
 export interface KnowledgeSource {
@@ -83,15 +84,64 @@ export async function importKnowledgeUrl(url: string, title?: string): Promise<{
   return parse(response);
 }
 
-export async function uploadKnowledgeFile(file: File): Promise<{ duplicate: boolean; source: KnowledgeSource; blocker?: string | null }> {
-  const form = new FormData();
-  form.append('file', file);
-  const response = await fetch(`${API_BASE}/api/knowledge/sources/upload`, {
+async function fileSha256(file: File): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('SHA-256 ist in dieser Runtime nicht verfügbar. Upload wurde gestoppt.');
+  }
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function uploadKnowledgeFile(
+  file: File,
+  onStatus?: (status: KnowledgeUploadStatus) => void,
+): Promise<{ duplicate: boolean; source: KnowledgeSource; blocker?: string | null }> {
+  onStatus?.('preparing');
+  const sha256 = await fileSha256(file);
+  const ticketResponse = await fetch(`${API_BASE}/api/knowledge/sources/upload-ticket`, {
     method: 'POST',
     credentials: 'include',
-    body: form,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type || '',
+      sizeBytes: file.size,
+      sha256,
+    }),
   });
-  return parse(response);
+  const ticket = await parse<{
+    objectId: string;
+    uploadUrl: string;
+    headers: Record<string, string>;
+  }>(ticketResponse);
+
+  onStatus?.('uploading');
+  const uploadResponse = await fetch(ticket.uploadUrl, {
+    method: 'PUT',
+    headers: ticket.headers,
+    body: file,
+  });
+  if (!uploadResponse.ok) {
+    onStatus?.('blocked');
+    throw new Error(`R2-Upload fehlgeschlagen: HTTP ${uploadResponse.status}`);
+  }
+
+  onStatus?.('verifying');
+  const confirmResponse = await fetch(`${API_BASE}/api/knowledge/sources/upload-confirm`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectId: ticket.objectId }),
+  });
+  onStatus?.('processing');
+  try {
+    const result = await parse<{ duplicate: boolean; source: KnowledgeSource; blocker?: string | null }>(confirmResponse);
+    onStatus?.('completed');
+    return result;
+  } catch (error) {
+    onStatus?.('blocked');
+    throw error;
+  }
 }
 
 export async function deleteKnowledgeSource(id: string): Promise<void> {

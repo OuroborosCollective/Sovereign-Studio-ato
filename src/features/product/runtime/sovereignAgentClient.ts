@@ -13,10 +13,72 @@ export interface SovereignAgentClientOptions {
   now?: () => number;
 }
 
+export interface SovereignStagedFile {
+  path: string;
+  content: string;
+  baseContent?: string;
+}
+
 export interface SovereignAgentStartJobInput {
   repoUrl: string;
   branch?: string;
   mission: string;
+  provisionWorkspace?: boolean;
+  cloneRepo?: boolean;
+  stagedFiles?: SovereignStagedFile[];
+  testCommand?: string;
+  githubAccessToken?: string;
+}
+
+export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
+  evidenceText?: string;
+}
+
+export interface SovereignToolchainFailureFamily {
+  code: string;
+  title: string;
+  severity: string;
+  score: number;
+  checks: string[];
+}
+
+export interface SovereignToolchainFollowup {
+  fromFamily: string;
+  prediction: string;
+  checkNext: string;
+}
+
+export interface SovereignToolchainDiagnosis {
+  evidenceHash?: string;
+  failureFamilies: SovereignToolchainFailureFamily[];
+  nextLogicalFailures: SovereignToolchainFollowup[];
+}
+
+export interface SovereignDraftPrPreparationResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrPreparation: {
+    allowed: boolean;
+    decision: string;
+    summary?: string;
+    headBranch?: string;
+    baseBranch?: string;
+    nextAction?: string;
+    canCreateDraftPr?: boolean;
+    blockers: string[];
+  };
+}
+
+export interface SovereignDraftPrCreateResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrCreate: {
+    allowed: boolean;
+    status: string;
+    prUrl?: string;
+    blocker?: string;
+    summary?: string;
+  };
 }
 
 export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
@@ -163,7 +225,18 @@ function normalizeStatus(value: unknown): SovereignAgentJobSnapshot['status'] {
   return 'idle';
 }
 function backendErrorMessage(raw: RawSovereignAgentJobResponse): string | undefined {
-  return stringValue(raw.error) || stringValue(raw.message) || stringValue(raw.details) || stringValue(raw.blocker) || stringValue(raw.lastError);
+  const value = raw as RawSovereignAgentJobResponse & Record<string, unknown>;
+  const preparation = isObject(value.draftPrPreparation) ? value.draftPrPreparation : undefined;
+  const creation = isObject(value.draftPrCreate) ? value.draftPrCreate : undefined;
+  const preparationBlockers = preparation ? stringArray(preparation.blockers) : [];
+  return stringValue(raw.error)
+    || stringValue(raw.message)
+    || stringValue(raw.details)
+    || stringValue(raw.blocker)
+    || stringValue(raw.lastError)
+    || (preparationBlockers.length ? preparationBlockers.join('; ') : undefined)
+    || (creation ? stringValue(creation.blocker) || stringValue(creation.summary) : undefined)
+    || (preparation ? stringValue(preparation.summary) : undefined);
 }
 function unwrapJobPayload(raw: Record<string, unknown>): RawSovereignAgentJobResponse {
   return isObject(raw.job) ? raw.job as RawSovereignAgentJobResponse : raw as RawSovereignAgentJobResponse;
@@ -303,7 +376,19 @@ export class SovereignAgentClient {
     const job = this.buildJobRequest(input);
     const snapshot = await requestSnapshot({
       url: endpoint(this.config.agentApiUrl, jobPath()),
-      init: { method: 'POST', headers: headers(), credentials: 'include', body: JSON.stringify(job) },
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify({
+          ...job,
+          provisionWorkspace: input.provisionWorkspace ?? true,
+          cloneRepo: input.cloneRepo ?? true,
+          ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
+          ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
+          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
+        }),
+      },
       fetcher: this.fetcher,
       now: this.now,
     });
