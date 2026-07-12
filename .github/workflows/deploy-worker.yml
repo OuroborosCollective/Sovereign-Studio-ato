@@ -54,9 +54,9 @@ jobs:
             exit 1
           fi
 
-      - name: Install pinned Wrangler
+      - name: Install Wrangler 4
         working-directory: cloudflare-worker-ai-proxy
-        run: npm install --no-save --no-audit --no-fund wrangler@3.60.0
+        run: npm install --no-save --no-audit --no-fund wrangler@4
 
       - name: Configure Worker secrets
         working-directory: cloudflare-worker-ai-proxy
