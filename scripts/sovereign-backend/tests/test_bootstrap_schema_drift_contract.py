@@ -104,10 +104,27 @@ def test_runtime_adapter_maps_id_name_insert_to_legacy_version_layout() -> None:
     assert "INSERT INTO schema_migrations (id, name)" not in result["sql"]
 
 
+def test_migration_005_writes_only_columns_present_in_real_ledger() -> None:
+    sql = _text(MIGRATION_005)
+
+    assert "to_regclass" in sql
+    assert "ledger_columns @> ARRAY['version', 'applied_at']" in sql
+    assert "ledger_columns @> ARRAY['version']" in sql
+    assert "ledger_columns @> ARRAY['id', 'name']" in sql
+    assert "INSERT INTO schema_migrations (version)" in sql
+    assert "INSERT INTO schema_migrations (version, applied_at)" in sql
+    assert "INSERT INTO schema_migrations (id, name)" in sql
+    assert "Unsupported schema_migrations layout" in sql
+
+
 def test_runtime_adapter_maps_legacy_version_insert_to_current_layout() -> None:
     adapter = _load_adapter()
+    legacy_sql = """INSERT INTO schema_migrations (version, applied_at)
+VALUES ('005', NOW())
+ON CONFLICT (version) DO NOTHING;
+"""
     result = adapter.adapt_schema_ledger(
-        _text(MIGRATION_005), {"id", "name", "applied_at"}
+        legacy_sql, {"id", "name", "applied_at"}
     )
 
     assert result["evidence"]["status"] == "APPLIED"

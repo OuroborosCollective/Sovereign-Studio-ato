@@ -53,15 +53,40 @@ BEGIN
     END IF;
 END $$;
 
--- Insert migration record (if schema_migrations table exists)
+-- Insert the migration record using only columns that exist in the real
+-- schema_migrations layout. Historical installations may expose only version,
+-- while newer layouts use id/name and optionally applied_at.
 DO $$
+DECLARE
+    ledger_columns TEXT[];
 BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_name = 'schema_migrations'
-    ) THEN
-        INSERT INTO schema_migrations (version, applied_at)
-        VALUES ('005', NOW())
-        ON CONFLICT (version) DO NOTHING;
+    IF to_regclass(format('%I.schema_migrations', current_schema())) IS NULL THEN
+        RAISE NOTICE 'schema_migrations does not exist; migration ledger write skipped';
+        RETURN;
+    END IF;
+
+    SELECT array_agg(column_name ORDER BY ordinal_position)
+    INTO ledger_columns
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'schema_migrations';
+
+    IF ledger_columns @> ARRAY['version', 'applied_at']::TEXT[] THEN
+        EXECUTE
+            'INSERT INTO schema_migrations (version, applied_at) '
+            'VALUES ($1, NOW()) ON CONFLICT (version) DO NOTHING'
+        USING '005';
+    ELSIF ledger_columns @> ARRAY['version']::TEXT[] THEN
+        EXECUTE
+            'INSERT INTO schema_migrations (version) '
+            'VALUES ($1) ON CONFLICT (version) DO NOTHING'
+        USING '005';
+    ELSIF ledger_columns @> ARRAY['id', 'name']::TEXT[] THEN
+        EXECUTE
+            'INSERT INTO schema_migrations (id, name) '
+            'VALUES ($1, $2) ON CONFLICT (id) DO NOTHING'
+        USING 5, 'migration_005';
+    ELSE
+        RAISE EXCEPTION 'Unsupported schema_migrations layout: %', ledger_columns;
     END IF;
 END $$;
