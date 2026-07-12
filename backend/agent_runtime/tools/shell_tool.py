@@ -8,6 +8,7 @@ if they attempt to access forbidden paths or commands.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 import re
@@ -16,19 +17,9 @@ from typing import Any
 from .base import ToolBase, ToolResult, ToolPolicyError
 
 
-# Forbidden commands that could compromise the runtime
-_FORBIDDEN_COMMANDS = frozenset({
-    "sudo", "su", "passwd", "chpasswd", "adduser", "useradd", "userdel",
-    "curl", "wget", "nc", "netcat", "ncat", "socat",
-    "ssh", "scp", "sftp", "rsync",
-    "mount", "umount", "fdisk", "mkfs", "dd",
-    "shutdown", "reboot", "halt", "poweroff", "init",
-    "kill", "killall", "pkill", "killall5",
-    "chmod", "chown", "chgrp", "setfacl",
-    "iptables", "ip", "ifconfig", "route", "netstat",
-    "docker", "podman", "containerd",
-    "python", "python3", "node", "ruby", "perl", "php",
-})
+# Only read-only inspection commands are allowed. Mutation uses dedicated tools.
+_ALLOWED_COMMANDS = frozenset({"ls", "pwd"})
+_SHELL_CONTROL_TOKENS = frozenset({"&&", "||", ";", "|", ">", ">>", "<", "<<", "&"})
 
 # Forbidden patterns in command arguments
 _FORBIDDEN_PATTERNS = [
@@ -77,32 +68,37 @@ class ShellTool(ToolBase):
         command = params.get("command", "")
         self._validate_command(command)
 
-    def _validate_command(self, command: str) -> None:
-        """Validate command against security policy."""
+    def _parse_command(self, command: str) -> list[str]:
         if not command or not command.strip():
             raise ToolPolicyError("Empty command not allowed")
-
-        tokens = command.strip().split()
+        try:
+            tokens = shlex.split(command)
+        except ValueError as exc:
+            raise ToolPolicyError(f"Invalid command: {exc}") from exc
         if not tokens:
             raise ToolPolicyError("Empty command not allowed")
-
-        first_cmd = tokens[0]
-        if first_cmd in _FORBIDDEN_COMMANDS:
-            raise ToolPolicyError(f"Forbidden command: {first_cmd}")
-
         for pattern, message in _FORBIDDEN_PATTERNS:
             if re.search(pattern, command, re.IGNORECASE):
                 raise ToolPolicyError(message)
-
-        if re.search(r"\|", command):
-            pipe_cmds = command.split("|")
-            for cmd in pipe_cmds:
-                cmd = cmd.strip().split()[0] if cmd.strip() else ""
-                if cmd in _FORBIDDEN_COMMANDS:
-                    raise ToolPolicyError(f"Forbidden command in pipeline: {cmd}")
-
-        if re.search(r"&\s*$", command.strip()):
+        if tokens[-1] == "&":
             raise ToolPolicyError("Background commands (&) not allowed")
+        first_cmd = tokens[0]
+        if first_cmd not in _ALLOWED_COMMANDS:
+            raise ToolPolicyError(f"Forbidden command: {first_cmd}")
+        if any(token in _SHELL_CONTROL_TOKENS for token in tokens):
+            raise ToolPolicyError("Shell control operators are not allowed")
+        if first_cmd == "ls":
+            for token in tokens[1:]:
+                if token.startswith("-"):
+                    continue
+                candidate = Path(token)
+                if candidate.is_absolute() or ".." in candidate.parts:
+                    raise ToolPolicyError("ls path must stay inside workspace")
+        return tokens
+
+    def _validate_command(self, command: str) -> None:
+        """Validate command against the read-only argv policy."""
+        self._parse_command(command)
 
     def execute(self, params: dict[str, Any], workspace_path: str | None = None) -> ToolResult:
         if not workspace_path:
@@ -111,7 +107,10 @@ class ShellTool(ToolBase):
         command = params.get("command", "")
         cwd = params.get("cwd", ".")
         timeout = min(params.get("timeout", 60), 300)
-        extra_env = params.get("env", {})
+        try:
+            args = self._parse_command(command)
+        except ToolPolicyError as exc:
+            return ToolResult(status="blocked", blocker=str(exc))
 
         if not workspace_path:
             return ToolResult(status="blocked", blocker="No workspace provided")
@@ -120,7 +119,7 @@ class ShellTool(ToolBase):
         if cwd and cwd != ".":
             work_dir = work_dir / cwd
             work_dir = work_dir.resolve()
-            if not str(work_dir).startswith(str(Path(workspace_path).resolve())):
+            if not work_dir.is_relative_to(Path(workspace_path).resolve()):
                 return ToolResult(
                     status="blocked",
                     blocker="Working directory outside workspace",
@@ -131,18 +130,18 @@ class ShellTool(ToolBase):
                     error=f"Working directory does not exist: {cwd}",
                 )
 
-        env = os.environ.copy()
-        env["HOME"] = str(work_dir)
-        env["USER"] = "agent"
-        env["PWD"] = str(work_dir)
-        for key, value in extra_env.items():
-            if not _contains_secret(key, value):
-                env[key] = value
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(work_dir),
+            "USER": "agent",
+            "PWD": str(work_dir),
+            "GIT_TERMINAL_PROMPT": "0",
+        }
 
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 cwd=str(work_dir),
                 capture_output=True,
                 text=True,
@@ -165,7 +164,7 @@ class ShellTool(ToolBase):
                 ),
                 metadata={
                     "exit_code": result.returncode,
-                    "command": command[:200],
+                    "command": " ".join(args)[:200],
                     "timeout": timeout,
                 },
                 exit_code=result.returncode,
@@ -181,10 +180,3 @@ class ShellTool(ToolBase):
                 status="error",
                 error=f"Execution failed: {e}",
             )
-
-
-def _contains_secret(key: str, value: str) -> bool:
-    """Check if a key-value pair looks like a secret."""
-    key_lower = key.lower()
-    secret_names = {"token", "key", "secret", "password", "passwd", "credential", "auth"}
-    return any(s in key_lower for s in secret_names)

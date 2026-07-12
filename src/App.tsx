@@ -1,6 +1,9 @@
 import './runtime-adapter';
-import React, { useMemo, useState } from 'react';
-import { BuilderContainer } from './features/product/containers/BuilderContainer';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  BuilderContainer,
+  type SovereignDraftPrPublishInput,
+} from './features/product/containers/BuilderContainer';
 import { LlmAdapterProvider } from './features/product/contexts/LlmAdapterContext';
 import {
   createSovereignAgentClient,
@@ -30,6 +33,71 @@ export default function App() {
     () => createSovereignAgentIdleSnapshot(),
   );
   const [janitorPreview, setJanitorPreview] = useState('');
+
+  useEffect(() => {
+    if (!agentConfig.ready || agentJob.status !== 'idle') return;
+    let cancelled = false;
+    let loading = false;
+    const restoreLatestJob = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const jobs = await agentClient.listJobs();
+        if (cancelled || jobs.length === 0) return;
+        setAgentJob((current) => current.status === 'idle' ? jobs[0] : current);
+      } catch {
+        // The first app render may precede login. Retry while idle so a later
+        // authenticated session can recover its persisted runtime truth.
+      } finally {
+        loading = false;
+      }
+    };
+    void restoreLatestJob();
+    const timer = window.setInterval(() => { void restoreLatestJob(); }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [agentClient, agentConfig.ready, agentJob.status]);
+
+  useEffect(() => {
+    const jobId = agentJob.jobId;
+    const active = ['queued', 'provisioning', 'running', 'validating'].includes(agentJob.status);
+    if (!agentConfig.ready || !jobId || !active) return;
+    let cancelled = false;
+    let polling = false;
+    const refresh = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const snapshot = await agentClient.getJob(jobId);
+        if (!cancelled) {
+          setAgentJob((current) => current.jobId === jobId ? snapshot : current);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Agent-Status konnte nicht aktualisiert werden.';
+        if (!cancelled) {
+          setAgentJob((current) => {
+            if (current.jobId !== jobId) return current;
+            const alreadyReported = current.events.some((event) => event.stage === 'agent-poll-blocked' && event.message === message);
+            return alreadyReported ? current : {
+              ...current,
+              lastError: message,
+              events: [...current.events, { at: Date.now(), level: 'warning', stage: 'agent-poll-blocked', message }],
+            };
+          });
+        }
+      } finally {
+        polling = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [agentClient, agentConfig.ready, agentJob.jobId, agentJob.status]);
 
   const startChatOnlyTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
     setMission(nextMission);
@@ -164,10 +232,11 @@ export default function App() {
       const message = 'Draft PR benötigt zuerst einen belegten Sovereign-Agent-Job mit Repository.';
       setAgentJob((current) => ({
         ...current,
+        status: 'blocked',
         lastError: message,
         events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-job', message }],
       }));
-      return;
+      throw error;
     }
 
     setAgentJob((current) => ({

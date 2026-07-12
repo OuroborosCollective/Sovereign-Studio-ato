@@ -250,7 +250,10 @@ def test_draft_pr_create_blocks_without_server_credentials(monkeypatch):
 def test_draft_pr_create_persists_created_state(monkeypatch):
     import agent_runtime.routes as routes
 
-    def fake_create_draft_pr_for_job(job):
+    observed = {}
+
+    def fake_create_draft_pr_for_job(job, token=None):
+        observed["token"] = token
         return DraftPrCreateResult(
             allowed=True,
             status="created",
@@ -267,14 +270,36 @@ def test_draft_pr_create_persists_created_state(monkeypatch):
     response = app.test_client().post(
         "/api/user/agent/jobs/agent-1/draft-pr/create",
         headers={"X-Test-User": "user-1"},
-        json={},
+        json={"githubAccessToken": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"},
     )
 
     payload = response.get_json()
     assert response.status_code == 200
+    assert observed["token"] == "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
     assert payload["ok"] is True
     assert payload["draftPrCreate"]["prUrl"].endswith("/pull/123")
     assert payload["draftPrCreate"]["signal"] == "agent_draft_pr_created"
     assert conn.jobs["agent-1"]["status"] == "completed"
     assert conn.jobs["agent-1"]["pr_state"] == "created"
     assert conn.jobs["agent-1"]["pr_url"].endswith("/pull/123")
+    assert "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456" not in repr(conn.jobs)
+
+
+def test_draft_pr_create_rejects_invalid_ephemeral_token_before_creator(monkeypatch):
+    import agent_runtime.routes as routes
+
+    creator = monkeypatch.setattr(routes, "create_draft_pr_for_job", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("creator must not run")))
+    assert creator is None
+    conn = FakeConnection()
+    seed_ready_job(conn, user_id="user-1", job_id="agent-1")
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={"githubAccessToken": "invalid"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "githubAccessToken has an invalid format"
+    assert conn.jobs["agent-1"]["pr_state"] == "ready"

@@ -105,6 +105,8 @@ const SECOND_REPO_URL = 'https://github.com/OuroborosCollective/Other-Studio';
 
 function repoScopedJob(overrides: Record<string, unknown> = {}) {
   return {
+    jobId: 'job_scoped',
+    workspaceId: 'job_scoped',
     status: 'running' as const,
     repoUrl: TEST_REPO_URL,
     branch: 'main',
@@ -422,8 +424,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(draftButton).toHaveAttribute("data-gate-state", "ready");
     fireEvent.click(draftButton);
 
-    expect(props.onPublishDraftPr).toHaveBeenCalledOnce();
-    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Draft-PR-Publisher aufgerufen");
+    await waitFor(() => expect(props.onPublishDraftPr).toHaveBeenCalledOnce());
+    expect(props.onPublishDraftPr).toHaveBeenCalledWith(expect.objectContaining({
+      repoUrl: TEST_REPO_URL,
+      branch: 'main',
+      changes: [],
+      confirmed: true,
+    }));
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Bestätigte Änderungen werden übergeben");
   });
 
   it("opens runtime source sheet with Cloudflare Worker as the standard LLM route", () => {
@@ -450,7 +458,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
     expect(props.onStartAgent.mock.calls[0][0]).toContain("Ideenfabrik Auftrag");
-    expect(props.onStartAgent.mock.calls[0][1]).toEqual({ repoUrl: TEST_REPO_URL, branch: "main" });
+    expect(props.onStartAgent.mock.calls[0][1]).toEqual({
+      repoUrl: TEST_REPO_URL,
+      branch: "main",
+      githubAccessToken: fakeGitHubPat(),
+    });
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 

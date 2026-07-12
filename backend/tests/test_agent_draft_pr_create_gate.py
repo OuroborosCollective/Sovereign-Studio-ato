@@ -6,8 +6,10 @@ import sys
 # Füge Backend zum Python Path hinzu
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from agent_runtime import draft_pr_create_gate  # noqa: E402
 from agent_runtime.draft_pr_create_gate import (  # noqa: E402
     DraftPrCreateRequest,
+    GitHubApiDraftPrCreator,
     create_draft_pr_for_job,
     draft_pr_create_request_from_job,
     draft_pr_create_signal,
@@ -39,6 +41,7 @@ def ready_job(**overrides):
         branch="main",
         mission="Update README wording",
         status="validating",
+        workspace_id="agent-1",
         changed_files=("README.md",),
         diff_summary="README.md | 2 ++",
         test_summary="12 passed, 0 failed",
@@ -84,6 +87,7 @@ def test_validate_blocks_missing_evidence():
 
     blockers = validate_draft_pr_create_request(request)
 
+    assert "Draft PR create requires workspace evidence" in blockers
     assert "Draft PR create requires changed file evidence" in blockers
     assert "Draft PR create requires diff summary evidence" in blockers
     assert "Draft PR create requires test summary evidence" in blockers
@@ -150,6 +154,58 @@ def test_existing_created_pr_is_idempotent():
     assert result.allowed is True
     assert result.status == "created"
     assert result.pr_url.endswith("/pull/321")
+
+
+def test_github_creator_reuses_existing_draft_pr(monkeypatch):
+    request = draft_pr_create_request_from_job(ready_job())
+    monkeypatch.setattr(
+        draft_pr_create_gate,
+        "publish_workspace_branch",
+        lambda *args, **kwargs: type("Publication", (), {"status": "done", "commit_sha": "a" * 40, "blocker": None})(),
+    )
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'[{"html_url":"https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/444","draft":true}]'
+
+    monkeypatch.setattr(draft_pr_create_gate, "urlopen", lambda request, timeout=30: FakeResponse())
+
+    url = GitHubApiDraftPrCreator().create_draft_pr(request, "test-token")
+
+    assert url.endswith("/pull/444")
+
+
+def test_github_creator_blocks_existing_non_draft_pr(monkeypatch):
+    request = draft_pr_create_request_from_job(ready_job())
+    monkeypatch.setattr(
+        draft_pr_create_gate,
+        "publish_workspace_branch",
+        lambda *args, **kwargs: type("Publication", (), {"status": "done", "commit_sha": "a" * 40, "blocker": None})(),
+    )
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'[{"html_url":"https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/445","draft":false}]'
+
+    monkeypatch.setattr(draft_pr_create_gate, "urlopen", lambda request, timeout=30: FakeResponse())
+
+    result = create_draft_pr_for_job(ready_job(), creator=GitHubApiDraftPrCreator(), token="test-token")
+
+    assert result.allowed is False
+    assert result.status == "blocked"
+    assert result.blocker == "An open non-draft pull request already exists for the prepared branch"
 
 
 def test_draft_pr_create_signal_is_serializable():

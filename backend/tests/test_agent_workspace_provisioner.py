@@ -8,10 +8,12 @@ from pathlib import Path
 # Füge Backend zum Python Path hinzu
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from agent_runtime import git_workspace  # noqa: E402
 from agent_runtime.git_workspace import (  # noqa: E402
     build_git_clone_command,
     git_diff_summary,
     git_status_changed_files,
+    publish_workspace_branch,
 )
 from agent_runtime.workspace import create_agent_workspace, cleanup_agent_workspace  # noqa: E402
 from agent_runtime.workspace_policy import (  # noqa: E402
@@ -129,7 +131,7 @@ def test_build_git_clone_command_uses_argv_without_shell_string(tmp_path: Path):
 
 
 def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True, text=True)
     subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True, capture_output=True, text=True)
     subprocess.run(["git", "config", "user.name", "Sovereign Test"], cwd=path, check=True, capture_output=True, text=True)
     (path / "README.md").write_text("initial\n", encoding="utf-8")
@@ -151,6 +153,72 @@ def test_git_status_and_diff_collect_real_workspace_evidence(tmp_path: Path):
     assert diff.status == "done"
     assert diff.diff_summary is not None
     assert "README.md" in diff.diff_summary
+
+
+def test_publish_workspace_branch_commits_declared_files_and_hides_token(monkeypatch, tmp_path: Path):
+    create_agent_workspace("job-publish", tmp_path)
+    repo = repo_dir_for_workspace("job-publish", tmp_path)
+    _init_git_repo(repo)
+    repo_url = "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+    subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=repo, check=True)
+    target = repo / "docs" / "Release Notes.md"
+    target.parent.mkdir()
+    target.write_text("verified release notes\n", encoding="utf-8")
+
+    real_run = git_workspace.run_git_command
+    observed = {}
+
+    def fake_run(args, cwd, timeout_seconds=120, env=None):
+        if tuple(args[:2]) == ("git", "push"):
+            observed["args"] = tuple(args)
+            observed["askpass"] = env.get("GIT_ASKPASS") if env else None
+            observed["token_env"] = env.get("SOVEREIGN_GIT_PUSH_TOKEN") if env else None
+            assert observed["askpass"] and Path(observed["askpass"]).exists()
+            return subprocess.CompletedProcess(list(args), 0, stdout="published", stderr="")
+        return real_run(args, cwd, timeout_seconds, env)
+
+    monkeypatch.setattr(git_workspace, "run_git_command", fake_run)
+    result = publish_workspace_branch(
+        "job-publish",
+        repo_url=repo_url,
+        base_branch="main",
+        head_branch="sovereign/agent-job-publish-release-notes",
+        commit_message="Update release notes",
+        changed_files=("docs/Release Notes.md",),
+        token="test-secret-token",
+        root=tmp_path,
+    )
+
+    assert result.status == "done", result.blocker
+    assert result.branch_name == "sovereign/agent-job-publish-release-notes"
+    assert result.commit_sha and len(result.commit_sha) == 40
+    assert "test-secret-token" not in " ".join(observed["args"])
+    assert observed["token_env"] == "test-secret-token"
+    assert not Path(observed["askpass"]).exists()
+
+
+def test_publish_workspace_branch_blocks_undeclared_changes_before_push(monkeypatch, tmp_path: Path):
+    create_agent_workspace("job-undeclared", tmp_path)
+    repo = repo_dir_for_workspace("job-undeclared", tmp_path)
+    _init_git_repo(repo)
+    repo_url = "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+    subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=repo, check=True)
+    (repo / "README.md").write_text("declared\n", encoding="utf-8")
+    (repo / "unexpected.txt").write_text("unexpected\n", encoding="utf-8")
+
+    result = publish_workspace_branch(
+        "job-undeclared",
+        repo_url=repo_url,
+        base_branch="main",
+        head_branch="sovereign/agent-job-undeclared",
+        commit_message="Update README",
+        changed_files=("README.md",),
+        token="test-secret-token",
+        root=tmp_path,
+    )
+
+    assert result.status == "blocked"
+    assert "undeclared changes" in (result.blocker or "")
 
 
 def test_git_status_blocks_when_repo_directory_missing(tmp_path: Path):

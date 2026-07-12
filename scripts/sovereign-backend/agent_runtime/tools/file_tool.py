@@ -49,6 +49,13 @@ class FileReadTool(ToolBase):
         try:
             target = Path(workspace_path) / rel_path
             target = target.resolve()
+            workspace_root = Path(workspace_path).resolve()
+
+            if not target.is_relative_to(workspace_root):
+                return ToolResult(
+                    status="blocked",
+                    blocker="Path escape attempt detected",
+                )
 
             if not target.exists():
                 return ToolResult(status="error", error=f"File not found: {rel_path}")
