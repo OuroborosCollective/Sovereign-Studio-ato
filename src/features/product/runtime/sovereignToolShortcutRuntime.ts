@@ -45,8 +45,9 @@ export interface SovereignToolShortcutContext {
   readonly repoReady: boolean;
   readonly repoFileCount: number;
   readonly hasDiffEvidence: boolean;
-  readonly githubAccessState: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid' | 'failed';
+  readonly githubAccessState: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid';
   readonly executorAvailable: boolean;
+  readonly executorActive: boolean;
   readonly hasExecutorMission: boolean;
   readonly executorIntent: SovereignExecutorIntentKind;
   readonly runtimeLogCount: number;
@@ -155,9 +156,11 @@ export function evaluateSovereignToolShortcutGate(
     case 'github_access':
       if (context.githubAccessState === 'ready') return gate(definition, { canOpen: true, state: 'ready', statusLabel: 'Validiert', reason: 'GitHub-Zugang wurde von der Runtime validiert.', nextAction: 'Zugangsstatus anzeigen.' });
       if (context.githubAccessState === 'validating' || context.githubAccessState === 'requested') return gate(definition, { canOpen: true, state: 'setup_required', statusLabel: 'Prüfung läuft', reason: 'GitHub-Zugang ist noch nicht validiert.', nextAction: 'Validierungsstatus anzeigen.' });
+      if (context.githubAccessState === 'invalid') return gate(definition, { canOpen: true, state: 'evidence_missing', statusLabel: 'Zugang ungültig', reason: 'Die letzte GitHub-Zugangsprüfung hat ein ungültiges Zugangstoken bestätigt.', nextAction: 'Sicheres Zugangsfeld öffnen und gültigen Zugang erneut prüfen.' });
       return gate(definition, { canOpen: true, state: 'setup_required', statusLabel: 'Zugang fehlt', reason: 'Kein validierter GitHub-Zugang vorhanden.', nextAction: 'Sicheres Zugangsfeld öffnen.' });
     case 'executor':
       if (!context.repoReady) return gate(definition, { canOpen: false, state: 'setup_required', statusLabel: 'Repo fehlt', reason: 'Der Executor braucht einen vollständigen Repo-Snapshot.', nextAction: 'Repo laden.' });
+      if (context.executorActive) return gate(definition, { canOpen: true, state: 'inspection', statusLabel: 'Job läuft', reason: 'Für das geladene Repo ist bereits ein bestätigter Executor-Job aktiv.', nextAction: 'Laufenden Job-Status anzeigen; keinen zweiten Job starten.' });
       if (!context.hasExecutorMission || (context.executorIntent !== 'code_execution' && context.executorIntent !== 'draft_pr')) return gate(definition, { canOpen: false, state: 'evidence_missing', statusLabel: 'Ausführungsauftrag fehlt', reason: 'Ein Executor-Start braucht einen bestätigten Code- oder Draft-PR-Auftrag.', nextAction: 'Klaren Ausführungsauftrag in den Chat eingeben.' });
       if (context.githubAccessState !== 'ready') return gate(definition, { canOpen: false, state: 'setup_required', statusLabel: context.githubAccessState === 'requested' || context.githubAccessState === 'validating' ? 'Zugang wird geprüft' : 'GitHub-Zugang fehlt', reason: 'Der Executor-Schreibpfad braucht validierten GitHub-Zugang.', nextAction: 'GitHub-Zugang sicher validieren.' });
       if (!context.executorAvailable) return gate(definition, { canOpen: false, state: 'setup_required', statusLabel: 'Nicht verbunden', reason: 'Die Agent-Runtime oder ihr Start-Callback ist nicht verfügbar.', nextAction: 'Agent-Runtime verbinden.' });
@@ -180,5 +183,5 @@ export function deriveSovereignToolShortcutGates(context: SovereignToolShortcutC
 }
 
 export function createEmptySovereignToolShortcutContext(): SovereignToolShortcutContext {
-  return { repoReady: false, repoFileCount: 0, hasDiffEvidence: false, githubAccessState: 'missing', executorAvailable: false, hasExecutorMission: false, executorIntent: 'unknown', runtimeLogCount: 0, inspectionEvidence: {} };
+  return { repoReady: false, repoFileCount: 0, hasDiffEvidence: false, githubAccessState: 'missing', executorAvailable: false, executorActive: false, hasExecutorMission: false, executorIntent: 'unknown', runtimeLogCount: 0, inspectionEvidence: {} };
 }

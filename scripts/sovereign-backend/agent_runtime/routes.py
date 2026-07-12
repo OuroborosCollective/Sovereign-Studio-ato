@@ -26,6 +26,14 @@ from .pattern_vector_memory import persist_pattern_vector, search_pattern_vector
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
+from .universal_toolchain import (
+    build_agent_handoff_context,
+    persist_toolchain_handoff,
+    persist_toolchain_incident,
+    runtime_failure_diagnose,
+    toolchain_manifest,
+    validate_migration_for_rollback_preview,
+)
 from .workspace import cleanup_agent_workspace
 
 
@@ -141,6 +149,10 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/draft-pr/create
     - POST /api/user/agent/jobs/<job_id>/patterns/learn
     - POST /api/user/agent/patterns/predict
+    - GET  /api/user/agent/toolchain/manifest
+    - POST /api/user/agent/toolchain/diagnose
+    - POST /api/user/agent/toolchain/handoff
+    - POST /api/user/agent/toolchain/rollback-preview
     """
 
     def _connection():
@@ -191,6 +203,126 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "jobId": job_id,
                 "tool": _tool_result_to_api(evidence_result, gate),
             }), 200 if response_ok else 400
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/toolchain/manifest", methods=["GET"])
+    @require_session
+    def user_get_embedded_toolchain_manifest():
+        return jsonify({"ok": True, **toolchain_manifest()})
+
+    @app.route("/api/user/agent/toolchain/diagnose", methods=["POST"])
+    @require_session
+    def user_diagnose_with_embedded_toolchain():
+        user_id = _current_session_user_id()
+        body = request.get_json(force=True) or {}
+        mission = str(body.get("mission") or "").strip()
+        evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
+        diagnosis = runtime_failure_diagnose(evidence_text, mission=mission)
+        conn = _connection()
+        try:
+            incident_id = persist_toolchain_incident(
+                conn,
+                user_id=user_id,
+                mission=mission,
+                diagnosis=diagnosis,
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-universal-toolchain",
+                "incidentId": incident_id,
+                "diagnosis": diagnosis,
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/toolchain/rollback-preview", methods=["POST"])
+    @require_session
+    def user_preview_toolchain_migration_rollback():
+        body = request.get_json(force=True) or {}
+        migration_sql = str(body.get("migrationSql") or "")
+        if not migration_sql:
+            return jsonify({"error": "migrationSql is required"}), 400
+        try:
+            repair_attempt = int(body.get("repairAttempt") or 0)
+        except (TypeError, ValueError):
+            return jsonify({"error": "repairAttempt must be an integer"}), 400
+        result = validate_migration_for_rollback_preview(
+            migration_sql,
+            expected_sha256=str(body.get("expectedSha256") or "") or None,
+            repair_attempt=repair_attempt,
+        )
+        return jsonify(result), 200 if result.get("ok") else 400
+
+    @app.route("/api/user/agent/toolchain/handoff", methods=["POST"])
+    @require_session
+    def user_create_toolchain_agent_handoff():
+        user_id = _current_session_user_id()
+        body = request.get_json(force=True) or {}
+        mission = str(body.get("mission") or "").strip()
+        if not mission:
+            return jsonify({"error": "mission is required"}), 400
+        evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
+        try:
+            handoff = build_agent_handoff_context(mission, evidence_text)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        payload = {
+            **body,
+            "mission": handoff["mission"],
+        }
+        payload.pop("evidenceText", None)
+        payload.pop("logText", None)
+        provision_workspace = bool(payload.get("provisionWorkspace", True))
+        clone_repo = bool(payload.get("cloneRepo", False))
+        conn = _connection()
+        try:
+            incident_id = persist_toolchain_incident(
+                conn,
+                user_id=user_id,
+                mission=mission,
+                diagnosis=handoff["diagnosis"],
+            )
+            lifecycle = create_sovereign_agent_job(
+                conn,
+                user_id=user_id,
+                payload=payload,
+                workspace_root=_workspace_root(),
+                provision_workspace=provision_workspace,
+                clone_repo=clone_repo,
+            )
+            job_id = lifecycle.result.job_id
+            append_agent_event(conn, job_id, SovereignAgentEvent(
+                stage="toolchain_diagnosis_completed",
+                level="success",
+                message=(
+                    f"Universal Toolchain diagnosed {len(handoff['diagnosis']['failureFamilies'])} "
+                    f"failure families and exactly {len(handoff['diagnosis']['nextLogicalFailures'])} "
+                    "logical neighbouring runtime risks."
+                ),
+            ))
+            append_agent_event(conn, job_id, SovereignAgentEvent(
+                stage="toolchain_predictive_handoff",
+                level="info",
+                message=f"Predictive evidence hash: {handoff['diagnosis']['evidenceHash']}",
+            ))
+            persist_toolchain_handoff(
+                conn,
+                incident_id=incident_id,
+                user_id=user_id,
+                job_id=job_id,
+                repo_url=str(body.get("repoUrl") or ""),
+                branch=str(body.get("branch") or "main"),
+            )
+            status_code = 201 if lifecycle.result.status not in ("blocked", "failed") else 400
+            return jsonify({
+                "ok": lifecycle.result.status not in ("blocked", "failed"),
+                "runtime": "sovereign-agent",
+                "incidentId": incident_id,
+                "toolchain": handoff["diagnosis"],
+                "job": _result_to_api(lifecycle.result),
+            }), status_code
         finally:
             _close(conn)
 

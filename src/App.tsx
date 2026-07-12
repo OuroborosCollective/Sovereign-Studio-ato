@@ -133,11 +133,8 @@ export default function App() {
         branch: input.branch,
         mission: nextMission,
         evidenceText: nextMission,
-        provisionWorkspace: input.provisionWorkspace ?? true,
-        cloneRepo: input.cloneRepo ?? true,
-        stagedFiles: input.stagedFiles,
-        testCommand: input.testCommand,
-        githubAccessToken: input.githubAccessToken,
+        provisionWorkspace: true,
+        cloneRepo: false,
       });
       setAgentJob(snapshot);
     } catch (error) {
@@ -229,109 +226,60 @@ export default function App() {
   const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
   const runtimeSummary = summarizeSovereignAgentJob(agentJob);
 
-  const publishDraftPr = async (input: SovereignDraftPrPublishInput): Promise<void> => {
-    if (!agentConfig.ready) throw new Error(agentConfig.reason);
-    if (!input.repoUrl.trim()) throw new Error('Draft PR benötigt ein belegtes Repository.');
-    if (input.changes.length > 0 && !input.confirmed) {
-      throw new Error('Die staged Änderungen wurden noch nicht bestätigt.');
-    }
-
-    let workingJob = agentJob;
-    const sameRepositoryJob = Boolean(
-      workingJob.jobId
-      && workingJob.repoUrl === input.repoUrl
-      && (workingJob.branch || 'main') === (input.branch || 'main'),
-    );
-
-    try {
-      if (input.changes.length > 0) {
-        setAgentJob({
-          status: 'queued',
-          repoUrl: input.repoUrl,
-          branch: input.branch || 'main',
-          changedFiles: [],
-          events: [{
-            at: Date.now(),
-            level: 'info',
-            stage: 'staged-change-handoff',
-            message: `${input.changes.length} bestätigte Dateiänderung(en) werden in einen isolierten Workspace übertragen.`,
-          }],
-        });
-        workingJob = await agentClient.startToolchainJob({
-          repoUrl: input.repoUrl,
-          branch: input.branch,
-          mission: input.mission,
-          evidenceText: input.mission,
-          provisionWorkspace: true,
-          cloneRepo: true,
-          stagedFiles: input.changes.map((change) => ({
-            path: change.path,
-            content: change.content,
-            baseContent: change.baseContent,
-          })),
-          githubAccessToken: input.githubAccessToken,
-        });
-        setAgentJob(workingJob);
-      } else if (!sameRepositoryJob || !workingJob.jobId) {
-        throw new Error('Kein passender belegter Agent-Job für dieses Repository vorhanden.');
-      }
-
-      const jobId = workingJob.jobId;
-      if (!jobId) throw new Error('Backend hat keine Job-ID für die Draft-PR-Übergabe geliefert.');
-      if ((workingJob.changedFiles?.length ?? 0) === 0) {
-        throw new Error(workingJob.lastError || 'Backend hat keine Changed-File-Evidence geliefert.');
-      }
-
+  const publishDraftPr = async () => {
+    const jobId = agentJob.jobId;
+    if (!agentJob.repoUrl || !jobId) {
+      const message = 'Draft PR benötigt zuerst einen belegten Sovereign-Agent-Job mit Repository.';
       setAgentJob((current) => ({
         ...current,
-        status: 'validating',
-        lastError: undefined,
-        events: [...current.events, {
-          at: Date.now(),
-          level: 'info',
-          stage: 'draft-pr-prepare',
-          message: 'Persistierte Changed-File-, Diff- und Test-Evidence wird geprüft.',
-        }],
+        status: 'blocked',
+        lastError: message,
+        events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-job', message }],
       }));
+      throw error;
+    }
 
+    setAgentJob((current) => ({
+      ...current,
+      status: 'validating',
+      lastError: undefined,
+      events: [...current.events, {
+        at: Date.now(),
+        level: 'info',
+        stage: 'draft-pr-prepare',
+        message: 'Persistierte Changed-File-, Diff- und Test-Evidence wird geprüft.',
+      }],
+    }));
+
+    try {
       const preparation = await agentClient.prepareDraftPr(jobId);
       if (!preparation.ok || !preparation.draftPrPreparation.allowed) {
         throw new Error(
           preparation.draftPrPreparation.blockers.join('; ')
           || preparation.draftPrPreparation.summary
-          || 'Draft-PR-Vorbereitung wurde blockiert.',
+          || 'Draft-PR-Vorbereitung wurde durch die Runtime blockiert.',
         );
       }
 
-      const creation = await agentClient.createDraftPr(jobId, input.githubAccessToken);
-      const prUrl = creation.draftPrCreate.prUrl || '';
-      if (
-        !creation.ok
-        || !creation.draftPrCreate.allowed
-        || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/[0-9]+$/.test(prUrl)
-      ) {
+      const creation = await agentClient.createDraftPr(jobId);
+      if (!creation.ok || !creation.draftPrCreate.allowed || !creation.draftPrCreate.prUrl) {
         throw new Error(
           creation.draftPrCreate.blocker
           || creation.draftPrCreate.summary
-          || 'GitHub hat keinen gültigen Draft-PR-Link bestätigt.',
+          || 'GitHub hat keinen belegten Draft PR bestätigt.',
         );
       }
 
-      const persisted = await agentClient.getJob(jobId);
-      const persistedUrl = persisted.draftPrUrl || prUrl;
-      if (!/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/[0-9]+$/.test(persistedUrl)) {
-        throw new Error('Der finale Backend-Job enthält keinen gültigen Draft-PR-Link.');
-      }
+      const snapshot = await agentClient.getJob(jobId);
       setAgentJob({
-        ...persisted,
+        ...snapshot,
         status: 'completed',
-        draftPrUrl: persistedUrl,
-        lastError: undefined,
-        events: [...persisted.events, {
+        draftPrUrl: snapshot.draftPrUrl || creation.draftPrCreate.prUrl,
+        events: [...snapshot.events, {
           at: Date.now(),
           level: 'success',
           stage: 'draft-pr-created',
-          message: `GitHub Draft PR bestätigt: ${persistedUrl}`,
+          message: `GitHub Draft PR erstellt: ${creation.draftPrCreate.prUrl}`,
         }],
       });
     } catch (error) {
@@ -342,7 +290,6 @@ export default function App() {
         lastError: message,
         events: [...current.events, { at: Date.now(), level: 'error', stage: 'draft-pr-blocked', message }],
       }));
-      throw error;
     }
   };
 

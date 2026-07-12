@@ -21,6 +21,7 @@ export type SovereignCompactShortcutSurface =
   | 'github-access'
   | 'github-status'
   | 'executor-request'
+  | 'executor-status'
   | 'runtime-logs'
   | 'inspection-tool'
   | 'blocked';
@@ -33,6 +34,7 @@ export interface SovereignCompactShortcutExecutionInput {
   readonly patchDiffAvailable: boolean;
   readonly githubAccessState: GitHubAccessState;
   readonly executorAvailable: boolean;
+  readonly executorActive: boolean;
   readonly executorIntent: SovereignExecutorIntentKind;
   readonly runtimeEventCount: number;
 }
@@ -147,16 +149,28 @@ export function decideSovereignCompactShortcutExecution(
           event: event({ kind: 'done', route: 'github-access', label: 'GitHub-Zugangsstatus angezeigt', detail: 'Validierter Schreibzugang; Secret-Werte bleiben verborgen.', state: 'done' }),
         };
       }
+      const accessReason = input.githubAccessState === 'invalid'
+        ? 'Die letzte GitHub-Zugangsprüfung hat ein ungültiges Token bestätigt.'
+        : 'Kein validierter GitHub-Zugang vorhanden.';
       return {
         canExecute: true,
         surface: 'github-access',
-        reason: 'Kein validierter GitHub-Zugang vorhanden.',
-        nextAction: 'Sicheres Zugangsfeld öffnen.',
-        event: event({ kind: 'access_required', route: 'github-access', label: 'GitHub-Zugang geöffnet', detail: 'Sicheres Zugangsfeld geöffnet; keine Secrets im Chat.', state: 'blocked' }),
+        reason: accessReason,
+        nextAction: 'Sicheres Zugangsfeld öffnen und Zugang erneut validieren.',
+        event: event({ kind: 'access_required', route: 'github-access', label: 'GitHub-Zugang geöffnet', detail: `${accessReason} Keine Secrets im Chat.`, state: 'blocked' }),
       };
 
     case 'executor':
       if (!input.repoSnapshotReady) return blocked('agent-job', 'Executor blockiert', 'Kein vollständiger Repo-Snapshot vorhanden.', 'Repo laden.');
+      if (input.executorActive) {
+        return {
+          canExecute: true,
+          surface: 'executor-status',
+          reason: 'Für das geladene Repo ist bereits ein bestätigter Executor-Job aktiv.',
+          nextAction: 'Laufenden Job-Status anzeigen; keinen zweiten Job starten.',
+          event: event({ kind: 'route_selected', route: 'agent-job', label: 'Laufender Executor-Job angezeigt', detail: 'Kein zweiter Executor-Start ausgelöst.', state: 'running' }),
+        };
+      }
       if (!isExecutorExecutionIntent(input.executorIntent)) return blocked('agent-job', 'Executor blockiert', 'Der aktuelle Text ist kein bestätigter Code- oder Draft-PR-Ausführungsauftrag.', 'Einen klaren Ausführungsauftrag eingeben.');
       if (input.githubAccessState !== 'ready') {
         return {
@@ -173,6 +187,7 @@ export function decideSovereignCompactShortcutExecution(
         surface: 'executor-request',
         reason: 'Repo, GitHub-Zugang, Executor und Ausführungsintent sind bestätigt.',
         nextAction: 'Agent-Job anfragen und auf Backend-Job-State warten.',
+        event: event({ kind: 'route_selected', route: 'agent-job', label: 'Executor-Shortcut akzeptiert', detail: 'Alle Start-Gates sind bestätigt; Job-Anfrage wird an die Runtime übergeben.', state: 'running' }),
       };
 
     case 'runtime_logs':
@@ -199,6 +214,13 @@ export function decideSovereignCompactShortcutExecution(
         surface: 'inspection-tool',
         reason: 'Inspektions-Tool erzeugt sein Ergebnis aus eigener Runtime-Evidence.',
         nextAction: 'Tool öffnen und Ergebnis abwarten.',
+        event: event({
+          kind: 'route_selected',
+          route: input.id,
+          label: `${input.id} Inspektion geöffnet`,
+          detail: 'Tool-Fenster wird geöffnet; ein Ergebnis gilt erst nach gespeicherter Runtime-Evidence.',
+          state: 'running',
+        }),
       };
   }
 }

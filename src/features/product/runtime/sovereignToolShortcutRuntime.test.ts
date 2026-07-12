@@ -42,9 +42,10 @@ describe('sovereignToolShortcutRuntime', () => {
     expect(gate('diff', { hasDiffEvidence: true })).toMatchObject({ canOpen: true, state: 'ready', statusLabel: 'Diff vorhanden' });
   });
 
-  it('keeps GitHub access setup open while distinguishing validated state', () => {
+  it('keeps GitHub access setup open while preserving missing, invalid and validated state', () => {
     expect(gate('github_access')).toMatchObject({ canOpen: true, state: 'setup_required', statusLabel: 'Zugang fehlt' });
     expect(gate('github_access', { githubAccessState: 'validating' })).toMatchObject({ canOpen: true, state: 'setup_required', statusLabel: 'Prüfung läuft' });
+    expect(gate('github_access', { githubAccessState: 'invalid' })).toMatchObject({ canOpen: true, state: 'evidence_missing', statusLabel: 'Zugang ungültig' });
     expect(gate('github_access', { githubAccessState: 'ready' })).toMatchObject({ canOpen: true, state: 'ready', statusLabel: 'Validiert' });
   });
 
@@ -53,6 +54,14 @@ describe('sovereignToolShortcutRuntime', () => {
       canOpen: false,
       state: 'evidence_missing',
       statusLabel: 'Ausführungsauftrag fehlt',
+    });
+  });
+
+  it('shows a running Executor job instead of exposing another start action', () => {
+    expect(gate('executor', { repoReady: true, executorActive: true })).toMatchObject({
+      canOpen: true,
+      state: 'inspection',
+      statusLabel: 'Job läuft',
     });
   });
 

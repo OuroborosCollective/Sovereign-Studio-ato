@@ -81,6 +81,59 @@ export interface SovereignDraftPrCreateResponse {
   };
 }
 
+export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
+  evidenceText?: string;
+  provisionWorkspace?: boolean;
+  cloneRepo?: boolean;
+}
+
+export interface SovereignToolchainFailureFamily {
+  code: string;
+  title: string;
+  severity: string;
+  score: number;
+  checks: string[];
+}
+
+export interface SovereignToolchainFollowup {
+  fromFamily: string;
+  prediction: string;
+  checkNext: string;
+}
+
+export interface SovereignToolchainDiagnosis {
+  evidenceHash?: string;
+  failureFamilies: SovereignToolchainFailureFamily[];
+  nextLogicalFailures: SovereignToolchainFollowup[];
+}
+
+export interface SovereignDraftPrPreparationResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrPreparation: {
+    allowed: boolean;
+    decision: string;
+    summary?: string;
+    headBranch?: string;
+    baseBranch?: string;
+    nextAction?: string;
+    canCreateDraftPr?: boolean;
+    blockers: string[];
+  };
+}
+
+export interface SovereignDraftPrCreateResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrCreate: {
+    allowed: boolean;
+    status: string;
+    prUrl?: string;
+    blocker?: string;
+    summary?: string;
+  };
+}
+
 export interface SovereignJanitorFinding {
   id: string;
   ruleId: string;
@@ -354,10 +407,7 @@ export class SovereignAgentClient {
           ...job,
           evidenceText: input.evidenceText || '',
           provisionWorkspace: input.provisionWorkspace ?? true,
-          cloneRepo: input.cloneRepo ?? true,
-          ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
-          ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
-          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
+          cloneRepo: input.cloneRepo ?? false,
         }),
       },
       fetcher: this.fetcher,
@@ -372,17 +422,6 @@ export class SovereignAgentClient {
       events: [...toolchainEvents(diagnosis, this.now), ...snapshot.events],
     };
   }
-  async listJobs(): Promise<SovereignAgentJobSnapshot[]> {
-    assertReady(this.config);
-    const body = await requestObject({
-      url: endpoint(this.config.agentApiUrl, jobPath()),
-      init: { method: 'GET', headers: headers(), credentials: 'include' },
-      fetcher: this.fetcher,
-      fallback: 'Sovereign Agent job list',
-    });
-    const jobs = Array.isArray(body.jobs) ? body.jobs : [];
-    return jobs.filter(isObject).map((job) => sanitizeSnapshot(job, this.now));
-  }
   async getJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
@@ -393,12 +432,17 @@ export class SovereignAgentClient {
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     return requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/cancel')), init: { method: 'POST', headers: headers(), credentials: 'include' }, fetcher: this.fetcher, now: this.now });
   }
-  async prepareDraftPr(jobId: string): Promise<SovereignDraftPrPreparationResponse> {
+  async prepareDraftPr(jobId: string, headBranch?: string): Promise<SovereignDraftPrPreparationResponse> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     const body = await requestObject({
       url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/draft-pr/prepare')),
-      init: { method: 'POST', headers: headers(), credentials: 'include', body: '{}' },
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify(headBranch ? { headBranch } : {}),
+      },
       fetcher: this.fetcher,
       fallback: 'Sovereign Draft PR preparation',
     });
@@ -418,17 +462,12 @@ export class SovereignAgentClient {
       },
     };
   }
-  async createDraftPr(jobId: string, githubAccessToken?: string): Promise<SovereignDraftPrCreateResponse> {
+  async createDraftPr(jobId: string): Promise<SovereignDraftPrCreateResponse> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     const body = await requestObject({
       url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/draft-pr/create')),
-      init: {
-        method: 'POST',
-        headers: headers(),
-        credentials: 'include',
-        body: JSON.stringify(githubAccessToken?.trim() ? { githubAccessToken: githubAccessToken.trim() } : {}),
-      },
+      init: { method: 'POST', headers: headers(), credentials: 'include', body: '{}' },
       fetcher: this.fetcher,
       fallback: 'Sovereign Draft PR create',
     });

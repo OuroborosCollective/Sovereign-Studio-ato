@@ -4902,6 +4902,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       patchDiffAvailable: Boolean(patchDiffReport),
       githubAccessState: effectiveGitHubAccessState,
       executorAvailable: sovereignAgentStartAvailable,
+      executorActive: scopedAgentIsRunning,
       executorIntent,
       runtimeEventCount: runtimeEvidenceLog.length,
     });
@@ -4935,6 +4936,13 @@ Das echte Repo-Setup wurde geöffnet.`,
         text: effectiveGitHubAccessState === 'ready'
           ? 'GitHub-Zugang ist validiert. Secret-Werte werden weder angezeigt noch im Chat gespeichert.'
           : 'GitHub-Zugang wird bereits geprüft. Es wurde keine zweite Validierung gestartet.',
+      });
+      return;
+    }
+    if (decision.surface === 'executor-status') {
+      appendChatLine({
+        role: 'assistant',
+        text: `${decision.reason} ${decision.nextAction}`,
       });
       return;
     }
@@ -6063,11 +6071,13 @@ Das echte Repo-Setup wurde geöffnet.`,
               ),
               githubAccessState: effectiveGitHubAccessState,
               executorAvailable: sovereignAgentStartAvailable,
+              executorActive: scopedAgentIsRunning,
               hasExecutorMission: Boolean(wishText.trim()),
               executorIntent,
               runtimeLogCount: runtimeEvidenceLog.length,
             }}
             onSelect={handleCompactToolSelect}
+            onBlockedSelect={handleCompactToolSelect}
             onOpenLauncher={useLauncherStore.getState().openMenu}
           />
           <ActionSuggestionStrip
