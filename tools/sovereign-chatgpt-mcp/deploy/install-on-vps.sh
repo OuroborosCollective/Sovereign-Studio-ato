@@ -43,7 +43,7 @@ install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
 chmod 0770 "$WORKSPACE_DIR"
 
-for file in Dockerfile requirements.txt policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py server.py tool_extensions.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py android_validation_router.py server.py tool_extensions.py launcher.py docker-compose.yml; do
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
@@ -129,11 +129,31 @@ BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
 export BROKER_GID
 cd "$INSTALL_ROOT"
 docker compose config >/dev/null
-docker compose up -d --build
 
-docker inspect sovereign-chatgpt-mcp >/dev/null
-docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status)'
-docker exec sovereign-chatgpt-mcp java -version >/dev/null 2>&1
+# Build first. The running container is not touched when the new image cannot be built.
+docker compose build
+
+# Replace any stale Compose or manually-created container only after a successful image build.
+if docker container inspect sovereign-chatgpt-mcp >/dev/null 2>&1; then
+  docker rm -f sovereign-chatgpt-mcp >/dev/null
+fi
+docker compose up -d --no-build --force-recreate --remove-orphans
+
+CONTAINER_STATE=""
+for attempt in $(seq 1 30); do
+  CONTAINER_STATE="$(docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' 2>/dev/null || true)"
+  if [[ "$CONTAINER_STATE" == "running healthy" || "$CONTAINER_STATE" == "running no-health" ]]; then
+    break
+  fi
+  sleep 2
+done
+if [[ "$CONTAINER_STATE" != "running healthy" && "$CONTAINER_STATE" != "running no-health" ]]; then
+  docker logs --tail 200 sovereign-chatgpt-mcp >&2 || true
+  fail "MCP container did not become healthy: ${CONTAINER_STATE:-missing}"
+fi
+
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status)'
+docker exec sovereign-chatgpt-mcp python -c 'import os; assert os.getenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions") == "github_actions"'
 docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
 
 if [[ -f "$TUNNEL_ENV" ]] \
@@ -144,4 +164,4 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'

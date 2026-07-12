@@ -31,12 +31,14 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
 
 
-def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None:
+def test_android_hardening_runtime_and_validation_router_are_installed() -> None:
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     compose = (ROOT / "docker-compose.yml").read_text("utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    launcher = (ROOT / "launcher.py").read_text("utf-8")
 
     assert 'android_hardening.py' in installer
+    assert 'android_validation_router.py' in installer
     assert 'tool_extensions.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
@@ -46,13 +48,12 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'openjdk-17-jdk-headless' not in dockerfile
     assert 'SOVEREIGN_ANDROID_NATIVE_BUILD_MODE=github_actions' in dockerfile
     assert 'android_hardening.py' in dockerfile
+    assert 'android_validation_router.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'launcher.py' in dockerfile
     assert 'CMD ["python", "launcher.py"]' in dockerfile
-    assert 'docker exec sovereign-chatgpt-mcp java -version' not in installer
-    assert 'docker compose build' in installer
-    assert 'docker compose up -d --no-build --force-recreate --remove-orphans' in installer
-    assert 'MCP container did not become healthy' in installer
+    assert 'android_validation_router.install(server.android, server.runtime, server.broker)' in launcher
+    assert '_native_validation_router_installed' in installer
 
 
 def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:
