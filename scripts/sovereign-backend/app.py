@@ -4235,6 +4235,7 @@ def auth_github():
                 user_id=user_id,
                 email=email,
                 display_name=display_name,
+                initial_credits=500,
                 github_id=github_id,
                 github_username=github_username,
                 github_access_token=encrypted_token,
@@ -5465,7 +5466,7 @@ input[type=text],input[type=password]{-webkit-appearance:none}
       <div class="card">
         <div class="form-group"><label>GitHub- oder Wikipedia-URL</label><input type="text" id="knowledgeUrl" placeholder="https://github.com/..."/></div>
         <button class="btn btn-primary" onclick="importKnowledgeUrlAdmin()">URL importieren</button>
-        <div class="form-group" style="margin-top:14px"><label>PDF, Text oder Code</label><input type="file" id="knowledgeFile" accept=".pdf,.txt,.md,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql"/></div>
+        <div class="form-group" style="margin-top:14px"><label>PDF, Markdown, Text oder Code</label><input type="file" id="knowledgeFile" accept=".pdf,.txt,.md,.markdown,.mdx,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql"/></div>
         <button class="btn btn-primary" onclick="uploadKnowledgeFileAdmin()">Datei einspeisen</button>
         <button class="btn btn-ghost" style="margin-left:8px" onclick="repairKnowledgeEmbeddingsAdmin()">Fehlende Vektoren reparieren</button>
         <div class="msg" id="knowledgeMsg"></div>

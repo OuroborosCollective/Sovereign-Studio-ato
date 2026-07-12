@@ -37,8 +37,9 @@ CHUNK_TARGET_CHARS = 1_800
 CHUNK_OVERLAP_CHARS = 220
 MAX_SEARCH_LIMIT = 20
 
+_MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 _TEXT_EXTENSIONS = {
-    ".md", ".mdx", ".txt", ".rst", ".json", ".yaml", ".yml", ".toml",
+    *_MARKDOWN_EXTENSIONS, ".txt", ".rst", ".json", ".yaml", ".yml", ".toml",
     ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt", ".kts",
     ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx",
     ".rs", ".go", ".cs", ".php", ".rb", ".sh", ".sql", ".html", ".css",
@@ -325,20 +326,25 @@ def upload_document(filename: str, payload: bytes) -> KnowledgeDocument:
     suffix = "." + lower.rsplit(".", 1)[-1] if "." in lower else ""
     if suffix not in _TEXT_EXTENSIONS:
         raise ValueError("Unsupported upload type; use PDF, text, Markdown or source code")
-    text = payload.decode("utf-8", errors="replace").strip()
+    text = payload.decode("utf-8", errors="replace").lstrip("\ufeff").strip()
     if not text:
         raise ValueError("Uploaded file contains no readable text")
-    source_type = "code" if suffix in {
+    if suffix in {
         ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt", ".kts",
         ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx",
         ".rs", ".go", ".cs", ".php", ".rb", ".sh", ".sql",
-    } else "text"
+    }:
+        source_type = "code"
+    elif suffix in _MARKDOWN_EXTENSIONS:
+        source_type = "markdown"
+    else:
+        source_type = "text"
     return KnowledgeDocument(
         source_type=source_type,
         title=_safe_title(filename, "Uploaded document"),
         text=f"# {filename}\n\n{text}"[:MAX_SOURCE_TEXT_CHARS],
         source_url=None,
-        metadata={"filename": filename, "extension": suffix},
+        metadata={"filename": filename, "extension": suffix, "format": source_type},
     )
 
 

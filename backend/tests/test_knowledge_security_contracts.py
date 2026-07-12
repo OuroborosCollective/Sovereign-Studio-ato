@@ -227,6 +227,7 @@ def test_migration_and_image_build_contain_live_contracts() -> None:
     requirements = read(DEPLOY / "requirements.txt")
     workflow = read(ROOT / ".github/workflows/sovereign-backend-image.yml")
     ci_workflow = read(ROOT / ".github/workflows/ci.yml")
+    setup_action = read(ROOT / ".github/actions/setup-backend-python/action.yml")
 
     assert "knowledge_blocks" in migration
     assert "embedding vector(768)" in migration
