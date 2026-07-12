@@ -54,9 +54,18 @@ jobs:
             exit 1
           fi
 
-      - name: Install Wrangler 4
+      - name: Install pinned Worker toolchain
         working-directory: cloudflare-worker-ai-proxy
-        run: npm install --no-save --no-audit --no-fund wrangler@4
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          installed="$(npx wrangler --version)"
+          case "$installed" in
+            *4.110.0*) ;;
+            *) echo "Unexpected Wrangler version: $installed" >&2; exit 1 ;;
+          esac
+          npm run typecheck
 
       - name: Configure Worker secrets
         working-directory: cloudflare-worker-ai-proxy
