@@ -6,6 +6,7 @@
  * 
  * Usage:
  *   POST /v1/chat/completions
+ *   POST /v1/embeddings
  *   Body: { "model": "@cf/meta/llama-3-8b-instruct", "messages": [...] }
  */
 
@@ -25,6 +26,9 @@ interface Env {
   // Optional: Allowed models (comma-separated)
   ALLOWED_MODELS?: string;
 
+  // Optional: Allowed 768-dimensional embedding models (comma-separated)
+  ALLOWED_EMBEDDING_MODELS?: string;
+
   // Optional: Proxy API Key for authentication
   PROXY_API_KEY?: string;
 }
@@ -40,6 +44,25 @@ interface ChatCompletionRequest {
   temperature?: number;
   max_tokens?: number;
   stream?: boolean;
+}
+
+interface EmbeddingRequest {
+  model?: string;
+  input: string | string[];
+}
+
+interface EmbeddingResponse {
+  object: 'list';
+  data: Array<{
+    object: 'embedding';
+    index: number;
+    embedding: number[];
+  }>;
+  model: string;
+  usage: {
+    prompt_tokens: number;
+    total_tokens: number;
+  };
 }
 
 interface ChatCompletionResponse {
@@ -138,6 +161,11 @@ const MODEL_ROUTES: Record<string, { provider: string; actualModel: string }> = 
 /**
  * CORS headers for all responses
  */
+const DEFAULT_EMBEDDING_MODEL = '@cf/google/embeddinggemma-300m';
+const EMBEDDING_DIMENSIONS = 768;
+const MAX_EMBEDDING_INPUTS = 32;
+const MAX_EMBEDDING_TEXT_CHARS = 8_000;
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -355,6 +383,134 @@ async function callCloudflareAI(
   }
   
   return data.result?.response || '';
+}
+
+function allowedEmbeddingModels(env: Env): string[] {
+  const configured = (env.ALLOWED_EMBEDDING_MODELS || '')
+    .split(',')
+    .map(model => model.trim())
+    .filter(Boolean);
+  return configured.length > 0 ? configured : [DEFAULT_EMBEDDING_MODEL];
+}
+
+function validateEmbeddingRequest(body: unknown, env: Env):
+  | { valid: true; model: string; texts: string[] }
+  | { valid: false; error: string } {
+  if (!body || typeof body !== 'object') {
+    return { valid: false, error: 'Request body must be an object' };
+  }
+  const request = body as Partial<EmbeddingRequest>;
+  const rawInputs = typeof request.input === 'string' ? [request.input] : request.input;
+  if (!Array.isArray(rawInputs) || rawInputs.length === 0) {
+    return { valid: false, error: 'input must be a non-empty string or string array' };
+  }
+  if (rawInputs.length > MAX_EMBEDDING_INPUTS) {
+    return { valid: false, error: `At most ${MAX_EMBEDDING_INPUTS} inputs are allowed` };
+  }
+  const texts: string[] = [];
+  for (const value of rawInputs) {
+    if (typeof value !== 'string' || !value.trim()) {
+      return { valid: false, error: 'Every embedding input must be a non-empty string' };
+    }
+    if (value.length > MAX_EMBEDDING_TEXT_CHARS) {
+      return { valid: false, error: `Embedding input exceeds ${MAX_EMBEDDING_TEXT_CHARS} characters` };
+    }
+    texts.push(value.trim());
+  }
+  const model = String(request.model || DEFAULT_EMBEDDING_MODEL).trim();
+  if (!allowedEmbeddingModels(env).includes(model)) {
+    return { valid: false, error: `Embedding model ${model} is not allowed` };
+  }
+  return { valid: true, model, texts };
+}
+
+async function callCloudflareEmbeddings(
+  env: Env,
+  model: string,
+  texts: string[],
+): Promise<number[][]> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/run/${model}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.CF_AI_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text: texts }),
+  });
+  if (!response.ok) {
+    throw new Error(`Cloudflare embedding error ${response.status}: ${await response.text()}`);
+  }
+  const payload = await response.json() as {
+    success?: boolean;
+    result?: { data?: unknown; embeddings?: unknown };
+    errors?: Array<{ message?: string }>;
+  };
+  if (!payload.success) {
+    const reason = payload.errors?.map(item => item.message || 'Unknown error').join(', ') || 'Unknown error';
+    throw new Error(`Cloudflare embedding failed: ${reason}`);
+  }
+  const rawVectors = payload.result?.data ?? payload.result?.embeddings;
+  if (!Array.isArray(rawVectors) || rawVectors.length !== texts.length) {
+    throw new Error('Cloudflare embedding count did not match input count');
+  }
+  return rawVectors.map((rawVector, index) => {
+    if (!Array.isArray(rawVector) || rawVector.length !== EMBEDDING_DIMENSIONS) {
+      throw new Error(`Embedding ${index} did not contain ${EMBEDDING_DIMENSIONS} dimensions`);
+    }
+    const vector = rawVector.map(value => Number(value));
+    if (vector.some(value => !Number.isFinite(value))) {
+      throw new Error(`Embedding ${index} contained a non-finite value`);
+    }
+    return vector;
+  });
+}
+
+async function handleEmbeddings(request: Request, env: Env): Promise<Response> {
+  try {
+    const rateLimit = env.RATE_LIMIT ? parseInt(env.RATE_LIMIT, 10) : 60;
+    if (!checkRateLimit(getClientId(request), rateLimit)) {
+      return new Response(JSON.stringify({
+        error: { message: 'Rate limit exceeded', type: 'rate_limit_error', code: 'rate_limit_exceeded' },
+      }), { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({
+        error: { message: 'Invalid JSON', type: 'invalid_request_error' },
+      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const validation = validateEmbeddingRequest(body, env);
+    if (!validation.valid) {
+      return new Response(JSON.stringify({
+        error: { message: validation.error, type: 'invalid_request_error' },
+      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const vectors = await callCloudflareEmbeddings(env, validation.model, validation.texts);
+    const promptTokens = validation.texts.reduce((sum, text) => sum + estimateTokens(text), 0);
+    const result: EmbeddingResponse = {
+      object: 'list',
+      data: vectors.map((embedding, index) => ({ object: 'embedding', index, embedding })),
+      model: validation.model,
+      usage: { prompt_tokens: promptTokens, total_tokens: promptTokens },
+    };
+    return new Response(JSON.stringify(result), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    console.error('Embedding error:', error);
+    return new Response(JSON.stringify({
+      error: {
+        message: error instanceof Error ? maskSecrets(error.message) : 'Internal server error',
+        type: 'server_error',
+      },
+    }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
 }
 
 /**
@@ -596,12 +752,15 @@ function handleHealth(env: Env): Response {
   return new Response(JSON.stringify({
     status: configured ? 'healthy' : 'not_configured',
     service: 'sovereign-llm-proxy',
-    version: '1.0.0',
+    version: '1.1.0',
     configured,
     providers: {
       cloudflare: configured,
+      embeddings: configured,
     },
     models: Object.keys(MODEL_ROUTES).length,
+    embeddingModel: DEFAULT_EMBEDDING_MODEL,
+    embeddingDimensions: EMBEDDING_DIMENSIONS,
     timestamp: new Date().toISOString(),
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -668,6 +827,15 @@ function handleRoot(): Response {
   </div>
   
   <div class="endpoint">
+    <h3>POST /v1/embeddings</h3>
+    <p>OpenAI-compatible 768-dimensional text embeddings endpoint.</p>
+    <pre><code>{
+  "model": "@cf/google/embeddinggemma-300m",
+  "input": ["Knowledge text"]
+}</code></pre>
+  </div>
+
+  <div class="endpoint">
     <h3>GET /v1/models</h3>
     <p>List available models.</p>
   </div>
@@ -725,6 +893,16 @@ export default {
       return handleModels(env);
     }
     
+    if (url.pathname === '/v1/embeddings' && request.method === 'POST') {
+      if (!validateAuth(request, env)) {
+        return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      return handleEmbeddings(request, env);
+    }
+
     if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
       if (!validateAuth(request, env)) {
         return new Response(JSON.stringify({ error: { message: 'Unauthorized', type: 'invalid_request_error' } }), {

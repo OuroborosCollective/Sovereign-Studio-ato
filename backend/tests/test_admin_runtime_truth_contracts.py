@@ -54,11 +54,17 @@ def test_admin_knowledge_and_pdf_live_path_is_registered_and_visible() -> None:
         assert '"/api/admin/knowledge/sources/upload"' in source
         assert "upload_document(uploaded.filename" in source
         assert '"/api/admin/knowledge/search"' in source
+        assert '"/api/admin/knowledge/repair"' in source
+        assert "repair_missing_knowledge_embeddings" in source
+        assert "max_batches = max(1, min" in source
     for path in (BACKEND / "app.py", DEPLOY / "app.py"):
         source = read(path)
         assert "register_admin_knowledge_routes(" in source
         assert "Wissensdatenbank & PDF-Einspeisung" in source
         assert "uploadKnowledgeFileAdmin" in source
+        assert "repairKnowledgeEmbeddingsAdmin" in source
+        assert "Fehlende Vektoren reparieren" in source
+        assert "'/api/admin/knowledge/repair'" in source
         assert "formHdr()" in source
 
 
