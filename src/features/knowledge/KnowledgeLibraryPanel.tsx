@@ -54,7 +54,7 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
         <button type="button" disabled={busy||!url.trim()} style={{ ...control, width:'100%', marginTop:8, background:C.accent, color:C.bg }} onClick={()=>void run(async()=>{ const r=await importKnowledgeUrl(url.trim()); setUrl(''); await finishImport(r); })}>Importieren</button>
         <label style={{ ...control, display:'flex', alignItems:'center', justifyContent:'center', marginTop:8 }}>
           PDF, Markdown, Text oder Code hochladen
-          <input hidden type="file" accept=".pdf,.txt,.md,.markdown,.mdx,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql" onChange={e=>{ const f=e.target.files?.[0]; if(f) void run(async()=>{ const r=await uploadKnowledgeFile(f); await finishImport(r); }); e.currentTarget.value=''; }}/>
+          <input hidden type="file" accept=".pdf,.txt,.md,.markdown,.mdx,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql" onChange={e=>{ const f=e.target.files?.[0]; if(f) void run(async()=>{ const labels={ preparing:'Upload wird vorbereitet…', uploading:'Datei wird nach R2 übertragen…', verifying:'R2-Objekt, Größe und SHA-256 werden geprüft…', processing:'Inhalt wird verarbeitet und eingebettet…', completed:'Upload vollständig bestätigt.', blocked:'Upload blockiert.' } as const; const r=await uploadKnowledgeFile(f,status=>setMessage(labels[status])); await finishImport(r); }); e.currentTarget.value=''; }}/>
         </label>
       </Box>
 

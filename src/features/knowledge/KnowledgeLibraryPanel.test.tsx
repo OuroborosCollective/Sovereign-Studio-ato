@@ -64,7 +64,7 @@ describe('KnowledgeLibraryPanel Markdown upload', () => {
 
     fireEvent.change(input, { target: { files: [file] } });
 
-    await waitFor(() => expect(api.uploadKnowledgeFile).toHaveBeenCalledWith(file));
+    await waitFor(() => expect(api.uploadKnowledgeFile).toHaveBeenCalledWith(file, expect.any(Function)));
     expect(await screen.findByText('Gespeichert: runtime.markdown')).toBeInTheDocument();
   });
 });
