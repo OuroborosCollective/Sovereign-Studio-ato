@@ -6367,6 +6367,20 @@ def admin_llm_gateway_sync():
 @app.route("/api/llm/auto-route", methods=["POST"])
 @require_session
 def public_llm_auto_route():
+    user_id = request.session_user_id
+    try:
+        _read_verified_credit_balance(user_id)
+    except LookupError:
+        return jsonify({"error": "User nicht gefunden"}), 404
+    except CreditStateConflict as exc:
+        return jsonify({
+            "error": str(exc),
+            "blocker": "credit_state_verification_failed",
+            "creditStateVerified": False,
+        }), 409
+    except Exception as exc:
+        return jsonify({"error": str(exc), "runtimeState": "failed"}), 500
+
     try:
         routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
         if not routes:
