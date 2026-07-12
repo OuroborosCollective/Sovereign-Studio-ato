@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
 from pathlib import Path
 
 from admin_mode import PrivateAdminRuntime, _adapt_schema_ledger
@@ -133,3 +134,45 @@ def test_main_push_is_disabled_until_private_switch_is_active(tmp_path, monkeypa
     monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", raising=False)
     result = runtime.push_workspace_to_main(workspace_id="job-123456abcdef", commit_message="test")
     assert result["status"] == "BLOCKED"
+
+
+def _git(cwd: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+def test_private_main_push_commits_workspace_and_updates_remote_main(tmp_path, monkeypatch) -> None:
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+
+    operations = FakeOperations(tmp_path, "SELECT 1;")
+    workspace_repo = operations.workspace_root / "job-123456abcdef" / "repo"
+    workspace_repo.mkdir(parents=True)
+    _git(workspace_repo, "init")
+    _git(workspace_repo, "config", "user.name", "Test")
+    _git(workspace_repo, "config", "user.email", "test@example.invalid")
+    _git(workspace_repo, "remote", "add", "origin", str(remote))
+    _git(workspace_repo, "checkout", "-b", "sovereign/chatgpt/test")
+    (workspace_repo / "README.md").write_text("initial\n", "utf-8")
+    _git(workspace_repo, "add", "README.md")
+    _git(workspace_repo, "commit", "-m", "initial")
+    _git(workspace_repo, "push", "origin", "HEAD:refs/heads/main")
+
+    (workspace_repo / "README.md").write_text("updated by broker\n", "utf-8")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "1")
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    runtime = PrivateAdminRuntime(operations)  # type: ignore[arg-type]
+
+    result = runtime.push_workspace_to_main(
+        workspace_id="job-123456abcdef",
+        commit_message="broker main update",
+    )
+
+    assert result["status"] == "PUSHED_MAIN"
+    assert _git(remote, "log", "-1", "--format=%s", "refs/heads/main") == "broker main update"
