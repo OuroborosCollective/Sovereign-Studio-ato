@@ -37,12 +37,17 @@ def test_android_hardening_runtime_and_read_only_sdk_mount_are_installed() -> No
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
 
     assert 'android_hardening.py' in installer
+    assert 'tool_extensions.py' in installer
+    assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
     assert 'install -d -m 0755 "$ANDROID_SDK_DIR"' in installer
     assert '/opt/android-sdk:/opt/android-sdk:ro' in compose
     assert 'ANDROID_SDK_ROOT: /opt/android-sdk' in compose
     assert 'openjdk-17-jdk-headless' in dockerfile
-    assert 'COPY policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py server.py /app/' in dockerfile
+    assert 'android_hardening.py' in dockerfile
+    assert 'tool_extensions.py' in dockerfile
+    assert 'launcher.py' in dockerfile
+    assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'docker exec sovereign-chatgpt-mcp java -version' in installer
 
 
