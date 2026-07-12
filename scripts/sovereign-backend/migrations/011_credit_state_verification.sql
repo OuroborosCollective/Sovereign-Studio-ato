@@ -3,6 +3,16 @@
 -- Production application requires separate approval.
 BEGIN;
 
+-- Historical installations may have the original narrow credit_ledger table.
+-- Reconcile only the additive columns used by this migration and current runtime.
+-- Existing append-only rows are never rewritten or deleted.
+ALTER TABLE credit_ledger
+    ADD COLUMN IF NOT EXISTS reason TEXT,
+    ADD COLUMN IF NOT EXISTS provider TEXT,
+    ADD COLUMN IF NOT EXISTS provider_tx_id TEXT,
+    ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES admin_users(id),
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE TABLE IF NOT EXISTS credit_receipts (
     provider        TEXT        NOT NULL,
     provider_tx_id  TEXT        NOT NULL,

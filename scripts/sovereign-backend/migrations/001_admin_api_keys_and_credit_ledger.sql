@@ -46,6 +46,15 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Reconcile older real tables with the columns written by the current runtime.
+-- Existing append-only rows are preserved; only missing nullable/defaulted
+-- columns are added.
+ALTER TABLE credit_ledger
+    ADD COLUMN IF NOT EXISTS reason TEXT,
+    ADD COLUMN IF NOT EXISTS provider TEXT,
+    ADD COLUMN IF NOT EXISTS provider_tx_id TEXT,
+    ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES admin_users(id),
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_id ON credit_ledger(user_id);
 CREATE INDEX IF NOT EXISTS idx_credit_ledger_created_at ON credit_ledger(created_at DESC);
 
