@@ -297,9 +297,9 @@ def deduct_credits(
 def create_credit_account(
     installation_id: int,
     account_login: str,
+    get_connection: Callable,
     plan: str = "free",
     initial_credits: int = 10,
-    get_connection: Callable,
 ) -> bool:
     """Create a credit account for a new installation."""
     conn = get_connection()
