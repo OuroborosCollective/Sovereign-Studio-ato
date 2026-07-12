@@ -130,7 +130,8 @@ fi
 
 run_as_tunnel_user "$BINARY" doctor --profile "$TUNNEL_PROFILE" --explain
 systemctl daemon-reload
-systemctl enable --now sovereign-openai-tunnel.service
+systemctl enable sovereign-openai-tunnel.service
+systemctl restart sovereign-openai-tunnel.service
 systemctl is-active --quiet sovereign-openai-tunnel.service || {
   systemctl status sovereign-openai-tunnel.service --no-pager >&2 || true
   fail "tunnel service is not active"
