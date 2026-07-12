@@ -19,6 +19,15 @@ def _host() -> str:
     return configured
 
 
+def _private_admin_capabilities() -> list[str]:
+    capabilities: list[str] = []
+    if os.getenv("SOVEREIGN_MCP_ENABLE_ADMIN_SQL", "0").strip() == "1":
+        capabilities.append("postgres_admin_sql")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1":
+        capabilities.append("repository_push_main")
+    return capabilities
+
+
 runtime = OperatorRuntime()
 database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
@@ -122,8 +131,19 @@ def repository_push_main(workspace_id: str, commit_message: str) -> dict[str, An
 
 @mcp.tool(annotations=READ_ONLY)
 def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
-    """Classify bounded runtime evidence and return the registered repair workflow."""
-    return REPAIR_ENGINE.diagnose(evidence)
+    """Classify bounded runtime evidence and report currently active private broker capabilities."""
+    result = REPAIR_ENGINE.diagnose(evidence)
+    policy = result.get("policy")
+    if isinstance(policy, dict):
+        blocked = list(policy.get("blocked_capabilities") or [])
+        active = _private_admin_capabilities()
+        if "postgres_admin_sql" in active:
+            blocked = [item for item in blocked if item != "generic_sql"]
+        if "repository_push_main" in active:
+            blocked = [item for item in blocked if item != "direct_main_write"]
+        policy["blocked_capabilities"] = blocked
+        policy["active_private_admin_capabilities"] = active
+    return result
 
 
 @mcp.tool(annotations=READ_ONLY)
