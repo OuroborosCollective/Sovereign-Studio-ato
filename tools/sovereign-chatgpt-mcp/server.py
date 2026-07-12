@@ -25,6 +25,8 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.append("postgres_admin_sql")
     if os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1":
         capabilities.append("repository_push_main")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "0").strip() == "1":
+        capabilities.append("mcp_self_update")
     return capabilities
 
 
@@ -40,7 +42,10 @@ mcp = FastMCP(
         "Installiere Abhängigkeiten reproduzierbar und führe passende Checks aus. "
         "Draft-PR ist der normale Weg; wenn der private Broker-Schalter aktiv ist, darf repository_push_main ausdrücklich direkt committen und nach main pushen. "
         "Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
-        "Nutze die interne Fehlerfamilien-Diagnose und setze bekannte Reparaturen selbst fort. Keine Secrets lesen oder ausgeben."
+        "Wenn eine registrierte Reparatur scheitert oder eine neue Fehlerfamilie sichtbar wird, stoppe nicht nur beim Blocker: untersuche die Engine im isolierten Workspace, "
+        "ergänze eine deterministische Reparatur und Regressionstests, pushe bei aktivem Main-Modus, plane danach mit mcp_self_update_schedule die bestätigte Main-Revision ein, "
+        "prüfe mcp_self_update_status und wiederhole anschließend die ursprüngliche Operation. Maximal zwei Engine-Erweiterungszyklen pro Auftrag. "
+        "Keine Secrets lesen oder ausgeben."
     ),
     host=_host(),
     port=int(os.getenv("SOVEREIGN_MCP_PORT", "8090")),
@@ -127,6 +132,22 @@ def repository_push_main(workspace_id: str, commit_message: str) -> dict[str, An
         {"workspace_id": workspace_id, "commit_message": commit_message},
         timeout=720,
     )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def mcp_self_update_schedule(expected_revision: str, reason: str = "repair_engine_extension") -> dict[str, Any]:
+    """Schedule installation of one exact confirmed main revision of the private ChatGPT MCP and broker."""
+    return broker.call(
+        "mcp_self_update_schedule",
+        {"expected_revision": expected_revision, "reason": reason},
+        timeout=60,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def mcp_self_update_status() -> dict[str, Any]:
+    """Read the last private MCP self-update state so the original operation can be retried after reload."""
+    return broker.call("mcp_self_update_status", {}, timeout=30)
 
 
 @mcp.tool(annotations=READ_ONLY)
