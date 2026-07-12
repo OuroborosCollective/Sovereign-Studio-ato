@@ -118,11 +118,11 @@ def test_user_and_billing_responses_require_verified_credit_state() -> None:
 
 
 def test_llm_route_selection_uses_verified_credit_state_when_present() -> None:
-    source = BACKEND_COPIES[0].read_text(encoding="utf-8")
-    # Find public_llm_routes endpoint
-    route_start = source.index("def public_llm_routes")
-    route_end = source.index("def public_llm_route", route_start + 1)
-    route = source[route_start:route_end]
-    assert "_read_verified_credit_balance(user_id)" in route
-    assert '"blocker": "credit_state_verification_failed"' in route
-    assert "SELECT id, credits FROM admin_users" not in route
+    for source in _sources():
+        route_start = source.index("def public_llm_auto_route")
+        route_end = source.index("def public_llm_chat", route_start)
+        route = source[route_start:route_end]
+        assert "user_id = request.session_user_id" in route
+        assert "_read_verified_credit_balance(user_id)" in route
+        assert '"blocker": "credit_state_verification_failed"' in route
+        assert "SELECT id, credits FROM admin_users" not in route
