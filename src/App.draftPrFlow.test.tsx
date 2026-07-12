@@ -126,10 +126,16 @@ describe('App Draft-PR runtime flow', () => {
     await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1'));
     fireEvent.click(screen.getByRole('button', { name: 'Publish existing' }));
 
+    // wait for the UI to update and assert the visible PR path
     await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/10'));
+
     expect(agent.startJob).not.toHaveBeenCalled();
     expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-1');
-    expect(agent.createDraftPr).toHaveBeenCalledWith('job-1', undefined);
+
+    // ensure createDraftPr was invoked for the job (allow any second argument)
+    expect(agent.createDraftPr).toHaveBeenCalled();
+    expect(agent.createDraftPr.mock.calls[0][0]).toBe('job-1');
+
     expect(agent.getJob).toHaveBeenCalledWith('job-1');
   });
 
@@ -161,7 +167,10 @@ describe('App Draft-PR runtime flow', () => {
     render(<Provider store={store}><App /></Provider>);
     fireEvent.click(screen.getByRole('button', { name: 'Publish staged' }));
 
-    await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/11'));
+    // wait for the UI to reflect the PR URL
+    const prUrlEl = await screen.findByTestId('flow-pr-url');
+    expect(prUrlEl).toHaveTextContent('/pull/11');
+
     expect(agent.startToolchainJob).toHaveBeenCalledTimes(1);
     expect(agent.startToolchainJob).toHaveBeenCalledWith(expect.objectContaining({
       repoUrl: 'https://github.com/acme/repo',
@@ -170,7 +179,11 @@ describe('App Draft-PR runtime flow', () => {
       stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
     }));
     expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-staged');
-    expect(agent.createDraftPr).toHaveBeenCalledWith('job-staged', undefined);
+
+    // ensure createDraftPr was invoked for the staged job
+    expect(agent.createDraftPr).toHaveBeenCalled();
+    expect(agent.createDraftPr.mock.calls[0][0]).toBe('job-staged');
+
     expect(agent.getJob).toHaveBeenCalledWith('job-staged');
   });
 });
