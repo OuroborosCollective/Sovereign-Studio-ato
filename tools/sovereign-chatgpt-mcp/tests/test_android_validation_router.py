@@ -93,7 +93,7 @@ def test_fast_profile_remains_local(monkeypatch) -> None:
 
 def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradle(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions")
-    monkeypatch.setenv("SOVEREIGN_ANDROID_VALIDATION_WORKFLOW", "android-release.yml")
+    monkeypatch.setenv("SOVEREIGN_ANDROID_VALIDATION_WORKFLOW", "android.yml")
     android = FakeAndroidRuntime()
     broker = FakeBroker()
     metadata = {
@@ -118,13 +118,12 @@ def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradl
     assert operator.commands == [
         ["git", "diff", "--check"],
         ["pnpm", "run", "type-check"],
-        ["pnpm", "run", "build:web"],
     ]
     assert broker.calls == [
         (
             "github_workflow_dispatch",
             {
-                "workflow": "android-release.yml",
+                "workflow": "android.yml",
                 "ref": metadata["branch"],
                 "inputs": {"validation_profile": "standard"},
             },
@@ -143,14 +142,45 @@ def test_release_profile_blocks_before_gradle_when_workspace_branch_is_not_publi
     result = android.run_suite("job-test", "release")
 
     assert result["status"] == "REMOTE_REF_REQUIRED"
-    assert result["next_action"] == "repository_create_draft_pr_then_rerun_android_validation_suite"
+    assert result["next_action"] == "publish_remote_ref_then_rerun_android_validation_suite"
     assert android.calls == []
     assert operator.commands == [
         ["git", "diff", "--check"],
         ["pnpm", "run", "type-check"],
-        ["pnpm", "run", "build:web"],
     ]
     assert broker.calls == []
+
+
+def test_release_profile_dispatches_main_when_private_main_mode_is_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "1")
+    monkeypatch.setenv("SOVEREIGN_ANDROID_VALIDATION_WORKFLOW", "android.yml")
+    android = FakeAndroidRuntime()
+    operator = FakeOperatorRuntime({"base_branch": "main", "branch": "sovereign/chatgpt/local-only"})
+    broker = FakeBroker()
+    install(android, operator, broker)
+
+    result = android.run_suite("job-test", "release")
+
+    assert result["status"] == "DISPATCHED"
+    assert result["execution_mode"] == "github_actions"
+    assert result["ref"] == "main"
+    assert result["draft_pr"] is None
+    assert android.calls == []
+    assert operator.commands == [
+        ["git", "diff", "--check"],
+        ["pnpm", "run", "type-check"],
+    ]
+    assert broker.calls == [
+        (
+            "github_workflow_dispatch",
+            {
+                "workflow": "android.yml",
+                "ref": "main",
+                "inputs": {"validation_profile": "release"},
+            },
+            60,
+        )
+    ]
 
 
 def test_native_dispatch_stops_when_secrets_free_preflight_fails(monkeypatch) -> None:

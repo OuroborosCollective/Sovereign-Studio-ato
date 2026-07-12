@@ -40,7 +40,7 @@ class GitHubAdminRuntime:
             item.strip()
             for item in os.getenv(
                 "SOVEREIGN_MCP_ALLOWED_WORKFLOWS",
-                "android-release.yml,sovereign-chatgpt-mcp.yml",
+                "android.yml,android-release.yml,sovereign-chatgpt-mcp.yml",
             ).split(",")
             if item.strip()
         }
