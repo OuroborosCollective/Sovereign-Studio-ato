@@ -12,7 +12,7 @@ on:
         required: false
         default: ""
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - .github/workflows/deploy-primary-llm-bridge.yml
 
@@ -28,9 +28,9 @@ env:
   NODE_VERSION: "22"
   CF_ACCOUNT_ID: "4a82319180f1f1cee60d85a971c3041d"
   CF_GATEWAY_NAME: "gatter"
-  DEFAULT_MODEL: "deepseek-r1"
-  FALLBACK_MODEL: "llama-3.1-8b"
-  DEFAULT_UPSTREAM: "https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions"
+  DEFAULT_MODEL: "@cf/zai-org/glm-4.7-flash"
+  FALLBACK_MODEL: "@cf/qwen/qwen3-30b-a3b-fp8"
+  DEFAULT_UPSTREAM: "https://api.cloudflare.com/client/v4/accounts/4a82319180f1f1cee60d85a971c3041d/ai/v1/chat/completions"
 
 jobs:
   deploy:
@@ -49,11 +49,13 @@ jobs:
 
       - name: Validate required secrets
         run: |
+          set -euo pipefail
           test -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" || (echo "Missing repository secret CLOUDFLARE_API_TOKEN" && exit 1)
           test -n "${{ secrets.CF_AIG_TOKEN }}" || (echo "Missing repository secret CF_AIG_TOKEN" && exit 1)
 
       - name: Generate bridge worker
         run: |
+          set -euo pipefail
           mkdir -p .sovereign-bridge
           cat > .sovereign-bridge/bridge.ts <<'TS'
           export interface Env {
@@ -61,24 +63,30 @@ jobs:
             AIG_URL?: string;
             AIG_MODEL?: string;
             AIG_FALLBACK_MODEL?: string;
+            AIG_GATEWAY_ID?: string;
             ALLOWED_ORIGIN?: string;
+            RELEASE_SHA?: string;
           }
 
-          const DEFAULT_URL = 'https://gateway.ai.cloudflare.com/v1/4a82319180f1f1cee60d85a971c3041d/gatter/compat/chat/completions';
-          const DEFAULT_MODEL = 'deepseek-r1';
-          const FALLBACK_MODEL = 'llama-3.1-8b';
-          const GATEWAY_NAME = 'gatter';
-          const MODEL_ALIASES: Record<string, string> = {
-            'cerebras/gpt-oss-120b': DEFAULT_MODEL,
-            'cerebras/zai-glm-4.7': DEFAULT_MODEL,
-            'llama-3-8b': FALLBACK_MODEL,
-            'gemma-7b': DEFAULT_MODEL,
-            'qwen-14b': DEFAULT_MODEL,
-          };
-          const AUTH_HEADER = 'Authorization';
+          const DEFAULT_URL = 'https://api.cloudflare.com/client/v4/accounts/4a82319180f1f1cee60d85a971c3041d/ai/v1/chat/completions';
+          const DEFAULT_MODEL = '@cf/zai-org/glm-4.7-flash';
+          const FALLBACK_MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
+          const DEFAULT_GATEWAY_ID = 'gatter';
           const MAX_BODY_BYTES = 256000;
           const MAX_MESSAGES = 24;
           const MAX_MESSAGE_CHARS = 18000;
+          const MAX_TOKENS = 8192;
+          const UPSTREAM_TIMEOUT_MS = 45000;
+
+          const MODEL_ALIASES: Record<string, string> = {
+            'deepseek-r1': DEFAULT_MODEL,
+            'llama-3.1-8b': FALLBACK_MODEL,
+            'llama-3-8b': FALLBACK_MODEL,
+            'gemma-7b': DEFAULT_MODEL,
+            'qwen-14b': FALLBACK_MODEL,
+            'cerebras/gpt-oss-120b': DEFAULT_MODEL,
+            'cerebras/zai-glm-4.7': DEFAULT_MODEL,
+          };
 
           function corsHeaders(env: Env, request: Request): HeadersInit {
             const origin = request.headers.get('Origin') || '*';
@@ -87,14 +95,22 @@ jobs:
               'Access-Control-Allow-Origin': allowedOrigin || origin,
               'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
               'Access-Control-Allow-Headers': 'Content-Type, X-Sovereign-Client',
+              'Access-Control-Expose-Headers': 'X-Sovereign-Model, X-Sovereign-Request-Id, X-Sovereign-Release',
               'Access-Control-Max-Age': '86400',
               Vary: 'Origin',
             };
           }
 
-          function json(data: unknown, init: ResponseInit, env: Env, request: Request): Response {
+          function requestId(request: Request): string {
+            return request.headers.get('cf-ray') || crypto.randomUUID();
+          }
+
+          function json(data: unknown, init: ResponseInit, env: Env, request: Request, id = requestId(request)): Response {
             const headers = new Headers(init.headers);
             headers.set('Content-Type', 'application/json');
+            headers.set('Cache-Control', 'no-store');
+            headers.set('X-Sovereign-Request-Id', id);
+            headers.set('X-Sovereign-Release', env.RELEASE_SHA || 'unknown');
             for (const [key, value] of Object.entries(corsHeaders(env, request))) headers.set(key, value);
             return new Response(JSON.stringify(data), { ...init, headers });
           }
@@ -126,67 +142,150 @@ jobs:
           }
 
           function normalizeModel(value: unknown, env: Env): string {
-            const fallback = env.AIG_MODEL || DEFAULT_MODEL;
-            const requested = typeof value === 'string' && value.trim() ? value.trim() : fallback;
-            return MODEL_ALIASES[requested] || requested;
-          }
-
-          function normalizePayload(input: Record<string, unknown>, env: Env, model?: string): Record<string, unknown> {
-            return {
-              model: model || normalizeModel(input.model, env),
-              messages: sanitizeMessages(input.messages),
-              temperature: typeof input.temperature === 'number' ? input.temperature : 0.2,
-              max_tokens: typeof input.max_tokens === 'number' ? input.max_tokens : 4096,
-              reasoning_format: typeof input.reasoning_format === 'string' ? input.reasoning_format : 'parsed',
-            };
+            const configured = env.AIG_MODEL?.trim() || DEFAULT_MODEL;
+            const requested = typeof value === 'string' && value.trim() ? value.trim() : configured;
+            const model = MODEL_ALIASES[requested] || requested;
+            if (!model.startsWith('@cf/')) throw new Error('Only allowlisted Workers AI models are accepted.');
+            return model;
           }
 
           function fallbackModel(env: Env): string {
-            return env.AIG_FALLBACK_MODEL || FALLBACK_MODEL;
+            const model = env.AIG_FALLBACK_MODEL?.trim() || FALLBACK_MODEL;
+            if (!model.startsWith('@cf/')) throw new Error('Fallback model must be a Workers AI model.');
+            return model;
           }
 
-          function shouldTryFallback(status: number): boolean {
-            return status === 429 || status === 502 || status === 503 || status === 504;
-          }
-
-          async function callGateway(env: Env, payload: Record<string, unknown>): Promise<Response> {
-            return fetch(upstreamUrl(env), {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                [AUTH_HEADER]: `Bearer ${env.AIG_TOKEN.trim()}`,
-              },
-              body: JSON.stringify(payload),
-            });
+          function normalizePayload(input: Record<string, unknown>, env: Env, model?: string): Record<string, unknown> {
+            const maxTokens = typeof input.max_tokens === 'number'
+              ? Math.max(1, Math.min(MAX_TOKENS, Math.floor(input.max_tokens)))
+              : 4096;
+            return {
+              model: model || normalizeModel(input.model, env),
+              messages: sanitizeMessages(input.messages),
+              temperature: typeof input.temperature === 'number' ? Math.max(0, Math.min(2, input.temperature)) : 0.2,
+              max_tokens: maxTokens,
+              stream: false,
+            };
           }
 
           function upstreamUrl(env: Env): string {
             const value = (env.AIG_URL || DEFAULT_URL).trim();
-            if (!/^https:\/\//i.test(value)) throw new Error('AIG_URL must use HTTPS.');
+            if (!/^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[^/]+\/ai\/v1\/chat\/completions$/i.test(value)) {
+              throw new Error('AIG_URL must be the Cloudflare AI REST chat completions endpoint.');
+            }
             return value;
+          }
+
+          function shouldTryFallback(status: number): boolean {
+            return status === 408 || status === 409 || status === 429 || status >= 500;
+          }
+
+          async function callGateway(env: Env, payload: Record<string, unknown>): Promise<Response> {
+            const token = env.AIG_TOKEN?.trim();
+            if (!token) throw new Error('AIG_TOKEN secret is not configured.');
+            return fetch(upstreamUrl(env), {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+                'cf-aig-gateway-id': env.AIG_GATEWAY_ID?.trim() || DEFAULT_GATEWAY_ID,
+              },
+              body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+            });
+          }
+
+          function safeUpstreamError(body: string): string {
+            try {
+              const parsed = JSON.parse(body) as Record<string, unknown>;
+              const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
+              const first = errors[0];
+              if (first && typeof first === 'object') {
+                const message = (first as Record<string, unknown>).message;
+                if (typeof message === 'string') return message.slice(0, 500);
+              }
+              const error = parsed.error;
+              if (typeof error === 'string') return error.slice(0, 500);
+              if (error && typeof error === 'object') {
+                const message = (error as Record<string, unknown>).message;
+                if (typeof message === 'string') return message.slice(0, 500);
+              }
+            } catch {
+              // Do not expose arbitrary upstream HTML or internal response bodies.
+            }
+            return 'Upstream rejected the request.';
+          }
+
+          async function performModelCanary(env: Env): Promise<{ ok: boolean; status: number; latencyMs: number; model: string; error?: string }> {
+            const started = Date.now();
+            const model = env.AIG_MODEL?.trim() || DEFAULT_MODEL;
+            try {
+              const response = await callGateway(env, {
+                model,
+                messages: [{ role: 'user', content: 'Reply with exactly: SOVEREIGN_OK' }],
+                temperature: 0,
+                max_tokens: 16,
+                stream: false,
+              });
+              const body = await response.text();
+              if (!response.ok) {
+                return { ok: false, status: response.status, latencyMs: Date.now() - started, model, error: safeUpstreamError(body) };
+              }
+              let content = '';
+              try {
+                const parsed = JSON.parse(body) as { choices?: Array<{ message?: { content?: string } }> };
+                content = parsed.choices?.[0]?.message?.content || '';
+              } catch {
+                return { ok: false, status: 502, latencyMs: Date.now() - started, model, error: 'Upstream returned invalid JSON.' };
+              }
+              return {
+                ok: content.includes('SOVEREIGN_OK'),
+                status: response.status,
+                latencyMs: Date.now() - started,
+                model,
+                error: content.includes('SOVEREIGN_OK') ? undefined : 'Model canary response did not match.',
+              };
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Upstream canary failed.';
+              return { ok: false, status: 502, latencyMs: Date.now() - started, model, error: message.slice(0, 500) };
+            }
           }
 
           export default {
             async fetch(request: Request, env: Env): Promise<Response> {
               if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(env, request) });
 
+              const id = requestId(request);
               const url = new URL(request.url);
+
               if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
                 return json({
                   ok: true,
                   provider: 'sovereign-llm-bridge',
-                  gateway: GATEWAY_NAME,
-                  model: env.AIG_MODEL || DEFAULT_MODEL,
-                  fallbackModel: env.AIG_FALLBACK_MODEL || FALLBACK_MODEL,
+                  gateway: env.AIG_GATEWAY_ID?.trim() || DEFAULT_GATEWAY_ID,
+                  model: env.AIG_MODEL?.trim() || DEFAULT_MODEL,
+                  fallbackModel: env.AIG_FALLBACK_MODEL?.trim() || FALLBACK_MODEL,
                   upstreamConfigured: /^https:\/\//i.test((env.AIG_URL || DEFAULT_URL).trim()),
                   secretConfigured: Boolean(env.AIG_TOKEN?.trim()),
-                }, { status: 200 }, env, request);
+                  release: env.RELEASE_SHA || 'unknown',
+                  note: 'Configuration health only. Use /health/upstream for a live model canary.',
+                }, { status: 200 }, env, request, id);
               }
 
-              if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed.' }, { status: 405 }, env, request);
+              if (request.method === 'GET' && url.pathname === '/health/upstream') {
+                const canary = await performModelCanary(env);
+                return json({
+                  ok: canary.ok,
+                  provider: 'sovereign-llm-bridge',
+                  gateway: env.AIG_GATEWAY_ID?.trim() || DEFAULT_GATEWAY_ID,
+                  upstream: canary,
+                  release: env.RELEASE_SHA || 'unknown',
+                }, { status: canary.ok ? 200 : 502 }, env, request, id);
+              }
+
+              if (request.method !== 'POST') return json({ ok: false, error: 'Method not allowed.' }, { status: 405 }, env, request, id);
 
               try {
-                if (!env.AIG_TOKEN?.trim()) throw new Error('AIG_TOKEN secret is not configured.');
                 const input = await readJsonBody(request);
                 const primaryPayload = normalizePayload(input, env);
                 let upstream = await callGateway(env, primaryPayload);
@@ -202,31 +301,37 @@ jobs:
                     upstream = fallbackUpstream;
                     body = fallbackBody;
                     servedModel = backup;
+                  } else {
+                    upstream = fallbackUpstream;
+                    body = fallbackBody;
+                    servedModel = backup;
                   }
                 }
 
                 if (!upstream.ok) {
                   return json({
                     ok: false,
-                    error: 'AI Gateway upstream blocked the request.',
+                    error: 'Cloudflare AI upstream rejected the request.',
                     upstreamStatus: upstream.status,
-                    upstreamBody: body.slice(0, 1200),
+                    upstreamError: safeUpstreamError(body),
                     model: servedModel,
-                  }, { status: upstream.status >= 500 ? 502 : upstream.status }, env, request);
+                    requestId: id,
+                  }, { status: upstream.status >= 500 ? 502 : upstream.status }, env, request, id);
                 }
+
                 const headers = new Headers({
                   'Content-Type': upstream.headers.get('Content-Type') || 'application/json',
+                  'Cache-Control': 'no-store',
                   ...corsHeaders(env, request),
                 });
                 headers.set('X-Sovereign-Model', servedModel);
-                return new Response(body, {
-                  status: upstream.status,
-                  headers,
-                });
+                headers.set('X-Sovereign-Request-Id', id);
+                headers.set('X-Sovereign-Release', env.RELEASE_SHA || 'unknown');
+                return new Response(body, { status: upstream.status, headers });
               } catch (error) {
                 const message = error instanceof Error ? error.message : 'Bridge request failed.';
-                const configError = /not configured|must use HTTPS|body|messages|invalid|too large/i.test(message);
-                return json({ ok: false, error: message }, { status: configError ? 400 : 502 }, env, request);
+                const configError = /not configured|must be the Cloudflare|body|messages|invalid|too large|allowlisted|Fallback model/i.test(message);
+                return json({ ok: false, error: message, requestId: id }, { status: configError ? 400 : 502 }, env, request, id);
               }
             },
           };
@@ -243,8 +348,15 @@ jobs:
           AIG_URL = "${DEFAULT_UPSTREAM}"
           AIG_MODEL = "${DEFAULT_MODEL}"
           AIG_FALLBACK_MODEL = "${FALLBACK_MODEL}"
+          AIG_GATEWAY_ID = "${CF_GATEWAY_NAME}"
           ALLOWED_ORIGIN = "${{ github.event.inputs.allowed_origin }}"
+          RELEASE_SHA = "${GITHUB_SHA}"
           EOF
+
+          grep -q "api.cloudflare.com/client/v4/accounts" .sovereign-bridge/bridge.ts
+          grep -q "health/upstream" .sovereign-bridge/bridge.ts
+          grep -q "@cf/zai-org/glm-4.7-flash" .sovereign-bridge/bridge.ts
+          ! grep -q "gateway.ai.cloudflare.com.*compat" .sovereign-bridge/bridge.ts
 
       - name: Deploy bridge
         env:
@@ -262,18 +374,41 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
+          set -euo pipefail
           cd .sovereign-bridge
           printf "%s" "${{ secrets.CF_AIG_TOKEN }}" | npx --yes wrangler@latest secret put AIG_TOKEN --name "${{ github.event.inputs.bridge_name || 'sovereign-llm-proxy' }}"
 
-      - name: Smoke test bridge
+      - name: Smoke test configuration health
         run: |
+          set -euo pipefail
           URL=$(cat .worker-url)
-          curl -fsS "$URL/health"
+          BODY=$(curl --fail-with-body --silent --show-error --retry 5 --retry-all-errors --retry-delay 2 "$URL/health")
+          node -e 'const b=JSON.parse(process.argv[1]); if(!b.ok||!b.secretConfigured||!b.upstreamConfigured||!b.release) process.exit(1)' "$BODY"
+
+      - name: Smoke test live upstream model
+        run: |
+          set -euo pipefail
+          URL=$(cat .worker-url)
+          BODY=$(curl --fail-with-body --silent --show-error --max-time 60 --retry 3 --retry-all-errors --retry-delay 3 "$URL/health/upstream")
+          node -e 'const b=JSON.parse(process.argv[1]); if(!b.ok||!b.upstream?.ok||b.upstream.status!==200||!b.upstream.model) process.exit(1)' "$BODY"
+          echo "Live upstream canary succeeded."
+
+      - name: Smoke test public chat route
+        run: |
+          set -euo pipefail
+          URL=$(cat .worker-url)
+          BODY=$(curl --fail-with-body --silent --show-error --max-time 60 \
+            -H 'Content-Type: application/json' \
+            --data '{"messages":[{"role":"user","content":"Reply with exactly: SOVEREIGN_OK"}],"temperature":0,"max_tokens":16}' \
+            "$URL/")
+          node -e 'const b=JSON.parse(process.argv[1]); const c=b.choices?.[0]?.message?.content||""; if(!c.includes("SOVEREIGN_OK")) process.exit(1)' "$BODY"
+          echo "Public chat route succeeded."
 
       - name: Save app runtime URL as repository variable
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           URL=$(cat .worker-url)
           gh api --method PATCH "repos/${GITHUB_REPOSITORY}/actions/variables/VITE_SOVEREIGN_LLM_PROXY_URL" -f name=VITE_SOVEREIGN_LLM_PROXY_URL -f value="$URL" \
             || gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/variables" -f name=VITE_SOVEREIGN_LLM_PROXY_URL -f value="$URL"
