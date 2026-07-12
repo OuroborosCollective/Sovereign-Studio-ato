@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const requiredTarget = 35;
 const requiredCompile = 35;
 const strictCapacitorMajor = process.env.SOVEREIGN_STRICT_CAPACITOR_MAJOR === '1';
+const requireSigningEnv = process.env.SOVEREIGN_REQUIRE_ANDROID_SIGNING === '1';
+const requirePackagedAssets = process.env.SOVEREIGN_REQUIRE_ANDROID_PACKAGED_ASSETS === '1';
+const reportPath = process.env.ANDROID_READINESS_REPORT_PATH || 'runtime-evidence/android-release-readiness.md';
 const checks = [];
 
 function add(name, ok, detail) {
@@ -69,6 +72,14 @@ function envIsSet(parts) {
 
 const packageJson = readJson('package.json');
 const capacitorConfig = read('capacitor.config.ts');
+const releaseHtmlFix = existsSync('scripts/release-html-runtime-fix.mjs') ? read('scripts/release-html-runtime-fix.mjs') : '';
+const copyDistToAndroid = existsSync('scripts/copy-dist-to-android.mjs') ? read('scripts/copy-dist-to-android.mjs') : '';
+const buildWebScript = String(packageJson.scripts?.['build:web'] ?? '');
+const androidAssetPipelineConfigured =
+  buildWebScript.includes('release-html-runtime-fix.mjs')
+  && buildWebScript.includes('copy-dist-to-android.mjs')
+  && releaseHtmlFix.includes('SOVEREIGN_BOOT_FALLBACK_V2')
+  && copyDistToAndroid.includes("android/app/src/main/assets/public");
 const appGradle = read('android/app/build.gradle');
 const variablesGradle = read('android/variables.gradle');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
@@ -104,7 +115,13 @@ add('Capacitor packages are present', missingCapacitor.length === 0, missingCapa
 add('Capacitor major drift reviewed', !strictCapacitorMajor || distinctCapacitorMajors.size === 1, `${capacitorMajorDetail}${distinctCapacitorMajors.size > 1 ? '; non-blocking unless SOVEREIGN_STRICT_CAPACITOR_MAJOR=1' : ''}`);
 add('Capacitor WebView navigation is not wildcard', !/allowNavigation\s*:\s*\[\s*['"]\*['"]\s*\]/.test(capacitorConfig), 'release WebView must not allow every navigation target');
 add('Capacitor GoogleAuth placeholders are absent', !/REPLACE_WITH_VITE_GOOGLE_/.test(capacitorConfig), 'native config should use env-backed values or omit unset IDs');
-add('release signing env is configured', releaseSigningEnvConfigured, 'requires release signing path, store value and alias; key value may fall back to store value');
+add(
+  'release signing env is configured when required',
+  !requireSigningEnv || releaseSigningEnvConfigured,
+  requireSigningEnv
+    ? 'requires release signing path, store value and alias; key value may fall back to store value'
+    : 'secrets-free preflight: signing configuration wiring is checked, secret values are not required locally',
+);
 add('buildTypes.release block detected', buildTypesReleaseBlock.length > 0, `blockLength=${buildTypesReleaseBlock.length}`);
 add('release build type uses signing config', releaseUsesSigningConfig, 'buildTypes.release must use signingConfigs.release when configured');
 add('release cleartext placeholder disabled', releaseCleartextFalse, 'buildTypes.release should set usesCleartextTraffic=false');
@@ -112,9 +129,27 @@ add('Gradle supports web asset rebuild skip', appGradle.includes('android.skipWe
 add('manifest uses cleartext placeholder', manifest.includes('android:usesCleartextTraffic="${usesCleartextTraffic}"'), 'manifest should use release/debug placeholder');
 add('launcher activity exported explicitly', /android:exported="true"/.test(manifest), 'launcher activity exported required on modern Android');
 add('backup disabled for release app', /android:allowBackup="false"/.test(manifest), 'avoid release backup leakage');
-add('Android index exists', androidIndex.length > 0, 'android asset index must exist before packaging');
-add('Android recovery fallback installed', androidIndex.includes('SOVEREIGN_BOOT_FALLBACK_V2'), 'release HTML should contain WebView recovery fallback');
-add('Android index asset references resolve', missingReferencedAssets.length === 0, missingReferencedAssets.length ? missingReferencedAssets.join(', ') : `${referencedAssets.length} referenced asset(s) found`);
+add(
+  'Android packaged index exists when required',
+  !requirePackagedAssets || androidIndex.length > 0,
+  requirePackagedAssets
+    ? 'workflow artifact gate: android asset index must exist before packaging'
+    : `source preflight: generated assets may be absent; generation pipeline configured=${androidAssetPipelineConfigured}`,
+);
+add(
+  'Android recovery fallback is available',
+  requirePackagedAssets
+    ? androidIndex.includes('SOVEREIGN_BOOT_FALLBACK_V2')
+    : androidIndex.includes('SOVEREIGN_BOOT_FALLBACK_V2') || androidAssetPipelineConfigured,
+  requirePackagedAssets
+    ? 'workflow artifact gate: packaged release HTML must contain the WebView fallback'
+    : 'source preflight: fallback injection and Android copy pipeline must both be configured',
+);
+add(
+  'Android index asset references resolve when packaged',
+  androidIndex.length === 0 || missingReferencedAssets.length === 0,
+  missingReferencedAssets.length ? missingReferencedAssets.join(', ') : `${referencedAssets.length} referenced asset(s) found`,
+);
 
 const ok = checks.every((check) => check.ok);
 const lines = [
@@ -128,7 +163,8 @@ const lines = [
   '',
 ];
 
-writeFileSync('android-release-readiness.md', `${lines.join('\n')}\n`, 'utf8');
+mkdirSync(dirname(reportPath), { recursive: true });
+writeFileSync(reportPath, `${lines.join('\n')}\n`, 'utf8');
 console.log(lines.join('\n'));
 
 if (!ok) process.exit(1);

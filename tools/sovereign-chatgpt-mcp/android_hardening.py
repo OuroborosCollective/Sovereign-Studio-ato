@@ -48,10 +48,10 @@ LOG_FAMILIES: tuple[tuple[str, str, str, tuple[str, ...], str], ...] = (
     ("webview_cleartext", "high", "WebView cleartext/network policy failure", ("cleartext communication", "net::err_cleartext_not_permitted"), "Use HTTPS or an explicit debug-only network policy; keep release cleartext disabled."),
     ("tls_network", "high", "TLS or certificate validation failure", ("sslhandshakeexception", "certpathvalidatorexception", "net::err_cert"), "Fix trust chain, hostname or server certificate; never disable certificate validation in release."),
     ("capacitor_bridge", "high", "Capacitor native bridge/plugin failure", ("plugin not implemented", "unable to find implementation", "capacitor/plugin"), "Verify plugin version alignment, cap sync output and native registration."),
-    ("web_assets_missing", "critical", "Packaged WebView assets missing", ("no workspace path", "file not found: readme.md", "android webview assets are missing", "err_file_not_found"), "Rebuild web assets, run cap sync and verify packaged index/assets before release."),
+    ("web_assets_missing", "critical", "Packaged WebView assets missing", ("no workspace path", "file not found: readme.md", "android webview assets are missing", "err_file_not_found", "android index exists.*fail", "recovery fallback installed.*fail", "sovereign_boot_fallback_v2 missing"), "Rebuild web assets, run cap sync and verify packaged index/assets before release."),
     ("android_crash", "critical", "Android process crash", ("fatal exception", "fatal signal", "process: .* pid:"), "Preserve the first causal stack frame, reproduce, patch and add a regression test."),
     ("android_anr", "critical", "Application not responding", ("anr in ", "input dispatching timed out", "executing service"), "Move blocking work off the main thread and validate startup/interaction timing."),
-    ("memory_pressure", "high", "Android memory failure", ("outofmemoryerror", "low memory killer", "failed to allocate"), "Measure allocations, image/WebView memory and lifecycle leaks on the target device."),
+    ("memory_pressure", "high", "Android memory failure", ("outofmemoryerror", "low memory killer", "failed to allocate", "exit code 137", "signal 9", "\\bkilled\\b"), "Distinguish host build-container pressure from app runtime memory, then rerun on the production GitHub Actions runner."),
 )
 
 
@@ -199,6 +199,14 @@ class AndroidHardeningRuntime:
         workflow = self._read(repo / ".github/workflows/android-release.yml")
         package_text = self._read(repo / "package.json")
         proguard = self._read(repo / "android/app/proguard-rules.pro")
+        release_html_fix = self._read(repo / "scripts/release-html-runtime-fix.mjs")
+        copy_dist_to_android = self._read(repo / "scripts/copy-dist-to-android.mjs")
+        android_asset_pipeline_configured = (
+            "release-html-runtime-fix.mjs" in package_text
+            and "copy-dist-to-android.mjs" in package_text
+            and "SOVEREIGN_BOOT_FALLBACK_V2" in release_html_fix
+            and "android/app/src/main/assets/public" in copy_dist_to_android
+        )
 
         if android["compile_sdk"] is None or int(android["compile_sdk"]) < required_target:
             findings.append(self._finding("android_sdk_policy", "high", "compileSdk below configured release baseline", f"compileSdk={android['compile_sdk']}, required>={required_target}", path="android/app/build.gradle", strategy="Align compileSdk and installed Android platform with the release baseline."))
@@ -246,8 +254,11 @@ class AndroidHardeningRuntime:
             findings.append(self._finding("android_artifact_alignment", "medium", "Release workflow does not verify APK alignment", "zipalign -c missing", path=".github/workflows/android-release.yml", release_blocking=False, strategy="Verify the final APK with the installed build-tools zipalign."))
         if "sha256sum" not in workflow:
             findings.append(self._finding("android_artifact_integrity", "high", "Release artifacts have no checksum evidence", "sha256sum missing", path=".github/workflows/android-release.yml", strategy="Generate checksums after signing and verify them before publishing."))
-        if "SOVEREIGN_BOOT_FALLBACK_V2" not in self._read(repo / "android/app/src/main/assets/public/index.html"):
-            findings.append(self._finding("android_webview_boot", "critical", "Packaged Android index lacks recovery fallback", "SOVEREIGN_BOOT_FALLBACK_V2 missing", path="android/app/src/main/assets/public/index.html", strategy="Rebuild/sync the real web bundle and preserve the verified boot fallback."))
+        if (
+            "SOVEREIGN_BOOT_FALLBACK_V2" not in self._read(repo / "android/app/src/main/assets/public/index.html")
+            and not android_asset_pipeline_configured
+        ):
+            findings.append(self._finding("android_webview_boot", "critical", "Packaged Android index lacks recovery fallback", "SOVEREIGN_BOOT_FALLBACK_V2 missing and no verified generation pipeline", path="android/app/src/main/assets/public/index.html", strategy="Rebuild/sync the real web bundle and preserve the verified boot fallback."))
         if "android:debuggable=\"true\"" in manifest or "debuggable true" in app_gradle:
             findings.append(self._finding("android_debug_release", "critical", "Debuggable configuration appears in release sources", "debuggable=true", strategy="Keep debuggable enabled only in the debug build type."))
         if "1.0.0-dev" in app_gradle:
@@ -334,6 +345,7 @@ class AndroidHardeningRuntime:
             "fast": [
                 ("git_diff_check", ["git", "diff", "--check"], repo),
                 ("typecheck", ["pnpm", "run", "type-check"], repo),
+                ("web_build", ["pnpm", "run", "build:web"], repo),
                 ("android_static_readiness", ["node", "scripts/check-android-release-readiness.mjs"], repo),
             ],
             "standard": [
@@ -401,14 +413,45 @@ class AndroidHardeningRuntime:
                 abis = sorted({parts[3] for name in names if name.startswith("base/lib/") and len((parts := name.split("/"))) > 4})
         missing = sorted(required - present)
         verification: list[dict[str, Any]] = []
-        if candidate.suffix.lower() == ".apk" and shutil.which("apksigner"):
-            verification.append({"tool": "apksigner", **self._command_runner(["apksigner", "verify", "--verbose", "--print-certs", str(candidate)], cwd=repo, timeout=120)})
-        if candidate.suffix.lower() == ".apk" and shutil.which("zipalign"):
-            verification.append({"tool": "zipalign", **self._command_runner(["zipalign", "-c", "-P", "16", "4", str(candidate)], cwd=repo, timeout=120)})
-        ok = not missing and all(bool(item.get("ok")) for item in verification)
+        verification_gaps: list[str] = []
+        suffix = candidate.suffix.lower()
+        if suffix == ".apk":
+            apksigner = shutil.which("apksigner")
+            zipalign = shutil.which("zipalign")
+            if apksigner:
+                verification.append({"tool": "apksigner", **self._command_runner([apksigner, "verify", "--verbose", "--print-certs", str(candidate)], cwd=repo, timeout=120)})
+            else:
+                verification_gaps.append("apksigner unavailable: APK signing is not cryptographically verified")
+            if zipalign:
+                verification.append({"tool": "zipalign", **self._command_runner([zipalign, "-c", "-P", "16", "4", str(candidate)], cwd=repo, timeout=120)})
+            else:
+                verification_gaps.append("zipalign unavailable: APK alignment is not verified")
+        else:
+            jarsigner = shutil.which("jarsigner")
+            if jarsigner:
+                verification.append({"tool": "jarsigner", **self._command_runner([jarsigner, "-verify", "-strict", "-certs", str(candidate)], cwd=repo, timeout=120)})
+            else:
+                verification_gaps.append("jarsigner unavailable: AAB signing is not cryptographically verified")
+
+        signature_tools = {"apksigner"} if suffix == ".apk" else {"jarsigner"}
+        signature_verified = any(
+            item.get("tool") in signature_tools and bool(item.get("ok"))
+            for item in verification
+        )
+        alignment_verified = suffix != ".apk" or any(
+            item.get("tool") == "zipalign" and bool(item.get("ok"))
+            for item in verification
+        )
+        ok = (
+            not missing
+            and signature_verified
+            and alignment_verified
+            and all(bool(item.get("ok")) for item in verification)
+        )
+        status = "VERIFIED" if ok else ("INCOMPLETE_EVIDENCE" if not missing and verification_gaps else "FAILED")
         return {
             "ok": ok,
-            "status": "VERIFIED" if ok else "FAILED",
+            "status": status,
             "path": artifact_path,
             "bytes": candidate.stat().st_size,
             "sha256": digest,
@@ -417,5 +460,8 @@ class AndroidHardeningRuntime:
             "archive_entries": len(names),
             "abis": abis,
             "v1_signature_material_present": signed_v1,
+            "signature_verified": signature_verified,
+            "alignment_verified": alignment_verified,
+            "verification_gaps": verification_gaps,
             "tool_verification": verification,
         }

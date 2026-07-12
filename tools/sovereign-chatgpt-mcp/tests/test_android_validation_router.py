@@ -118,6 +118,7 @@ def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradl
     assert operator.commands == [
         ["git", "diff", "--check"],
         ["pnpm", "run", "type-check"],
+        ["pnpm", "run", "build:web"],
     ]
     assert broker.calls == [
         (
@@ -125,7 +126,7 @@ def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradl
             {
                 "workflow": "android-release.yml",
                 "ref": metadata["branch"],
-                "inputs": {},
+                "inputs": {"validation_profile": "standard"},
             },
             60,
         )
@@ -133,7 +134,7 @@ def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradl
 
 
 def test_release_profile_blocks_before_gradle_when_workspace_branch_is_not_published(monkeypatch) -> None:
-    monkeypatch.setenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions")
+    monkeypatch.setenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "local")
     android = FakeAndroidRuntime()
     operator = FakeOperatorRuntime({"branch": "sovereign/chatgpt/unpublished"})
     broker = FakeBroker()
@@ -147,6 +148,7 @@ def test_release_profile_blocks_before_gradle_when_workspace_branch_is_not_publi
     assert operator.commands == [
         ["git", "diff", "--check"],
         ["pnpm", "run", "type-check"],
+        ["pnpm", "run", "build:web"],
     ]
     assert broker.calls == []
 

@@ -4,6 +4,7 @@ import json
 import zipfile
 from pathlib import Path
 
+import android_hardening
 from android_hardening import AndroidHardeningRuntime
 
 
@@ -129,6 +130,43 @@ def test_runtime_evidence_classifies_first_causal_android_families(tmp_path: Pat
     assert len(result["evidence_sha256"]) == 64
 
 
+def test_runtime_evidence_classifies_web_assets_and_exit_137(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    result = _runtime(repo).analyze_evidence(
+        "Android index exists FAIL; SOVEREIGN_BOOT_FALLBACK_V2 missing; Vite process was Killed with exit code 137"
+    )
+    families = [item["family"] for item in result["families"]]
+
+    assert result["status"] == "CLASSIFIED"
+    assert "web_assets_missing" in families
+    assert "memory_pressure" in families
+
+
+def test_scan_accepts_verified_generated_asset_pipeline_without_committed_bundle(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    package = json.loads((repo / "package.json").read_text("utf-8"))
+    package["scripts"]["build:web"] = (
+        "vite build && node scripts/release-html-runtime-fix.mjs "
+        "&& node scripts/copy-dist-to-android.mjs"
+    )
+    (repo / "package.json").write_text(json.dumps(package), "utf-8")
+    _write(
+        repo,
+        "scripts/release-html-runtime-fix.mjs",
+        "const marker = 'SOVEREIGN_BOOT_FALLBACK_V2';\n",
+    )
+    _write(
+        repo,
+        "scripts/copy-dist-to-android.mjs",
+        "const target = 'android/app/src/main/assets/public';\n",
+    )
+
+    result = _runtime(repo).scan("job-test")
+    families = {finding["family"] for finding in result["findings"]}
+
+    assert "android_webview_boot" not in families
+
+
 def test_repair_plan_prioritizes_runtime_evidence_before_static_findings(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     result = _runtime(repo).repair_plan("job-test", "FATAL EXCEPTION: main")
@@ -147,6 +185,7 @@ def test_fast_suite_runs_allowlisted_checks_and_keeps_static_evidence(tmp_path: 
     assert [item["name"] for item in result["commands"]] == [
         "git_diff_check",
         "typecheck",
+        "web_build",
         "android_static_readiness",
     ]
     assert calls[0] == ["git", "diff", "--check"]
@@ -154,8 +193,9 @@ def test_fast_suite_runs_allowlisted_checks_and_keeps_static_evidence(tmp_path: 
     assert result["status"] == "FAIL"
 
 
-def test_apk_artifact_inspection_uses_real_zip_entries_and_checksum(tmp_path: Path) -> None:
+def test_apk_artifact_inspection_uses_real_zip_entries_and_checksum(tmp_path: Path, monkeypatch) -> None:
     repo = _repo(tmp_path)
+    monkeypatch.setattr(android_hardening.shutil, "which", lambda name: f"/usr/bin/{name}")
     artifact = repo / "android/app/build/outputs/apk/release/app-release.apk"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(artifact, "w") as archive:
@@ -172,4 +212,29 @@ def test_apk_artifact_inspection_uses_real_zip_entries_and_checksum(tmp_path: Pa
     assert result["status"] == "VERIFIED"
     assert result["missing_entries"] == []
     assert result["abis"] == ["arm64-v8a"]
+    assert result["signature_verified"] is True
+    assert result["alignment_verified"] is True
+    assert [item["tool"] for item in result["tool_verification"]] == ["apksigner", "zipalign"]
     assert len(result["sha256"]) == 64
+
+
+def test_apk_artifact_inspection_never_claims_verified_without_native_tools(tmp_path: Path, monkeypatch) -> None:
+    repo = _repo(tmp_path)
+    monkeypatch.setattr(android_hardening.shutil, "which", lambda _name: None)
+    artifact = repo / "android/app/build/outputs/apk/release/app-release.apk"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("AndroidManifest.xml", b"manifest")
+        archive.writestr("classes.dex", b"dex")
+        archive.writestr("resources.arsc", b"resources")
+
+    result = _runtime(repo).inspect_artifact(
+        "job-test",
+        "android/app/build/outputs/apk/release/app-release.apk",
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "INCOMPLETE_EVIDENCE"
+    assert result["signature_verified"] is False
+    assert result["alignment_verified"] is False
+    assert len(result["verification_gaps"]) == 2

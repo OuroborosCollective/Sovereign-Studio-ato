@@ -14,6 +14,14 @@ on:
         description: 'Optional: Version Name (e.g., 1.1.1)'
         required: false
         type: string
+      validation_profile:
+        description: 'Native validation profile requested by Sovereign'
+        required: false
+        default: release
+        type: choice
+        options:
+          - standard
+          - release
 
 concurrency:
   group: android-artifact-release-${{ github.ref }}
@@ -120,12 +128,22 @@ jobs:
           echo "version_code=$INPUT_CODE" >> "$GITHUB_OUTPUT"
 
       - name: Install Root Dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Create .env for GitHub OAuth
+        env:
+          VITE_GITHUB_OAUTH_CLIENT_ID_VALUE: ${{ secrets.VITE_GITHUB_OAUTH_CLIENT_ID }}
+        shell: bash
         run: |
-          echo "VITE_GITHUB_OAUTH_CLIENT_ID=${{ secrets.VITE_GITHUB_OAUTH_CLIENT_ID }}" > .env
-          cat .env
+          set -euo pipefail
+          umask 077
+          printf 'VITE_GITHUB_OAUTH_CLIENT_ID=%s\n' "$VITE_GITHUB_OAUTH_CLIENT_ID_VALUE" > .env
+          test -s .env
+          if [ -n "$VITE_GITHUB_OAUTH_CLIENT_ID_VALUE" ]; then
+            echo "GitHub OAuth client id configured: true"
+          else
+            echo "GitHub OAuth client id configured: false"
+          fi
 
       - name: Type Check
         run: pnpm run type-check
@@ -192,6 +210,10 @@ jobs:
           echo "ANDROID_KEY_PASSWORD=$EFFECTIVE_KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Android Release Readiness Check
+        env:
+          SOVEREIGN_REQUIRE_ANDROID_SIGNING: "1"
+          SOVEREIGN_REQUIRE_ANDROID_PACKAGED_ASSETS: "1"
+          ANDROID_READINESS_REPORT_PATH: android-release-readiness.md
         run: node scripts/check-android-release-readiness.mjs
 
       - name: Build Signed Release AAB and APK
@@ -205,6 +227,25 @@ jobs:
           test -s app/build/outputs/bundle/release/app-release.aab
           test -s app/build/outputs/apk/release/app-release.apk
 
+      - name: Verify Signed Android Artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/${ANDROID_BUILD_TOOLS}"
+          export PATH="$BUILD_TOOLS_DIR:$PATH"
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          command -v apksigner >/dev/null
+          command -v zipalign >/dev/null
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose --print-certs "$APK" > android-apk-signature-verification.txt
+          zipalign -c -P 16 4 "$APK" > android-apk-alignment-verification.txt
+          jarsigner -verify -strict -certs "$AAB" > android-aab-signature-verification.txt
+          test -s android-apk-signature-verification.txt
+          test -s android-apk-alignment-verification.txt
+          test -s android-aab-signature-verification.txt
+
       - name: Prepare Release Artifacts
         run: |
           rm -rf release-bundle SovereignStudio-PlayStore-Release.zip
@@ -212,7 +253,11 @@ jobs:
           cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
           cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
           cp android-release-readiness.md release-bundle/android-release-readiness.md
-          (cd release-bundle && sha256sum SovereignStudio-release.aab SovereignStudio-release.apk android-release-readiness.md > CHECKSUMS.txt)
+          cp android-apk-signature-verification.txt release-bundle/android-apk-signature-verification.txt
+          cp android-apk-alignment-verification.txt release-bundle/android-apk-alignment-verification.txt
+          cp android-aab-signature-verification.txt release-bundle/android-aab-signature-verification.txt
+          (cd release-bundle && sha256sum SovereignStudio-release.aab SovereignStudio-release.apk android-release-readiness.md android-apk-signature-verification.txt android-apk-alignment-verification.txt android-aab-signature-verification.txt > CHECKSUMS.txt)
+          (cd release-bundle && sha256sum -c CHECKSUMS.txt)
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
           test -s release-bundle/SovereignStudio-release.aab
           test -s release-bundle/SovereignStudio-release.apk
@@ -263,6 +308,7 @@ jobs:
             echo "| --- | --- |"
             echo "| Version | ${{ steps.vars.outputs.version_name }} |"
             echo "| Version Code | ${{ steps.vars.outputs.version_code }} |"
+            echo "| Validation profile | ${{ github.event.inputs.validation_profile || 'release' }} |"
             echo "| compileSdk / targetSdk | 35 / 35 |"
             echo "| Android SDK packages | platform 35, build-tools 35.0.0 |"
             echo "| Artifacts | signed AAB, signed APK, PlayStore ZIP |"
