@@ -28,7 +28,7 @@ read_value() {
 }
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
-for command in docker systemctl python3; do
+for command in docker systemctl python3 git; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -46,6 +46,7 @@ done
 
 install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"
 install -m 0640 "$SOURCE_DIR/operations.py" "$BROKER_DIR/operations.py"
+install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"
 install -m 0640 "$SOURCE_DIR/policy.py" "$BROKER_DIR/policy.py"
 install -m 0640 "$SOURCE_DIR/self_heal.py" "$BROKER_DIR/self_heal.py"
 install -m 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend"
@@ -92,7 +93,7 @@ if [[ -f "$GHCR_ENV" ]]; then
 fi
 
 {
-  grep -E '^(SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
+  grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
@@ -132,4 +133,4 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true}\n'
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true}\n'
