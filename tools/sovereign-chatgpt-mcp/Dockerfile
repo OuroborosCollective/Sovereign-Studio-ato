@@ -25,7 +25,7 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py android_validation_router.py server.py tool_extensions.py launcher.py /app/
+COPY policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py /app/
 
 RUN useradd --create-home --uid 10001 sovereign \
     && mkdir -p /opt/sovereign-chatgpt-tools/workspaces /opt/android-sdk \
@@ -34,7 +34,7 @@ RUN useradd --create-home --uid 10001 sovereign \
 USER sovereign
 EXPOSE 8090
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -c "import socket; s=socket.create_connection(('127.0.0.1',8090),3); s.close()" || exit 1
+HEALTHCHECK --interval=30s --timeout=8s --start-period=15s --retries=3 \
+  CMD python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5 || exit 1
 
 CMD ["python", "launcher.py"]
