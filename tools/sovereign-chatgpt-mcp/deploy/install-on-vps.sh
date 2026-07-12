@@ -17,6 +17,7 @@ SELF_UPDATE_SERVICE="/etc/systemd/system/sovereign-chatgpt-mcp-self-update.servi
 TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
 MCP_UID="10001"
 MCP_GID="10001"
+MCP_HOST_PORT="8090"
 
 fail() {
   printf 'install blocked: %s\n' "$*" >&2
@@ -29,8 +30,12 @@ read_value() {
   sed -n "s/^${key}=//p" "$file" | tail -n 1
 }
 
+port_listener_evidence() {
+  ss -H -ltnp 2>/dev/null | awk -v suffix=":$MCP_HOST_PORT" '$4 ~ suffix "$" {print}'
+}
+
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
-for command in docker systemctl python3 git; do
+for command in docker systemctl python3 git ss; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -133,10 +138,26 @@ docker compose config >/dev/null
 # Build first. The running container is not touched when the new image cannot be built.
 docker compose build
 
-# Replace any stale Compose or manually-created container only after a successful image build.
+# Stop only the known tunnel and MCP container before claiming the host port.
+# Unknown listeners are never killed: they block deployment with bounded evidence.
+if systemctl is-active --quiet sovereign-openai-tunnel.service; then
+  systemctl stop sovereign-openai-tunnel.service
+fi
 if docker container inspect sovereign-chatgpt-mcp >/dev/null 2>&1; then
   docker rm -f sovereign-chatgpt-mcp >/dev/null
 fi
+
+PORT_EVIDENCE=""
+for attempt in $(seq 1 10); do
+  PORT_EVIDENCE="$(port_listener_evidence)"
+  [[ -z "$PORT_EVIDENCE" ]] && break
+  sleep 1
+done
+if [[ -n "$PORT_EVIDENCE" ]]; then
+  printf '%s\n' "$PORT_EVIDENCE" >&2
+  fail "host port $MCP_HOST_PORT remains occupied after controlled MCP shutdown; refusing to kill an unknown process"
+fi
+
 docker compose up -d --no-build --force-recreate --remove-orphans
 
 CONTAINER_STATE=""
