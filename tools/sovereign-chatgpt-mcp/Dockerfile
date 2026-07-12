@@ -2,8 +2,8 @@ FROM node:22-bookworm-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
     ANDROID_SDK_ROOT=/opt/android-sdk \
+    SOVEREIGN_ANDROID_NATIVE_BUILD_MODE=github_actions \
     PATH=/opt/venv/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/bin:$PATH
 
 RUN apt-get update \
@@ -12,7 +12,6 @@ RUN apt-get update \
        file \
        git \
        jq \
-       openjdk-17-jdk-headless \
        python3 \
        python3-pip \
        python3-venv \
