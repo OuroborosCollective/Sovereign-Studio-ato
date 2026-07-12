@@ -42,6 +42,14 @@ from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 
+# GitHub App integration (Marketplace)
+try:
+    from github_app import register_github_app_routes
+    HAS_GITHUB_APP = True
+except ImportError:
+    HAS_GITHUB_APP = False
+    register_github_app_routes = None
+
 # ── Worker AI Helper ───────────────────────────────────────────────────────────
 
 WORKER_AI_BASE = os.getenv("WORKER_AI_PROXY_URL", "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev")
@@ -6073,6 +6081,18 @@ register_are_inference_routes(
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
 )
+
+# ── GitHub App Marketplace Integration ────────────────────────────────────────
+if HAS_GITHUB_APP and register_github_app_routes:
+    try:
+        register_github_app_routes(
+            app,
+            require_admin=require_admin,
+            get_connection=get_connection,
+        )
+        print("✓ GitHub App routes registered")
+    except Exception as e:
+        print(f"⚠ GitHub App routes registration failed: {e}")
 
 # ── Embedded Sovereign Universal Toolchain ────────────────────────────────────
 # Safe diagnosis runs inside this Flask/PostgreSQL runtime. Execution stays in
