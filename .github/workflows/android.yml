@@ -1,74 +1,332 @@
-name: Android Build
+name: Android Production Validation
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
   pull_request:
-    branches: [ main, master ]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      validation_profile:
+        description: Native Android validation profile
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - release
+      version_code:
+        description: Optional positive Android version code
+        required: false
+        type: string
+      version_name:
+        description: Optional Android version name
+        required: false
+        type: string
+
+concurrency:
+  group: android-production-${{ github.ref }}-${{ inputs.validation_profile || 'standard' }}
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NPM_CONFIG_LEGACY_PEER_DEPS: true
   NODE_VERSION: 22
+  JAVA_VERSION: 21
   PNPM_VERSION: "9.12.2"
+  ANDROID_COMPILE_SDK: 35
+  ANDROID_BUILD_TOOLS: 35.0.0
+  KEYSTORE_FILE: android/app/keystore/release.jks
+  VALIDATION_PROFILE: ${{ inputs.validation_profile || 'standard' }}
   VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
   VITE_SOVEREIGN_LLM_MODEL: deepseek-r1
 
 jobs:
   build:
-    name: Build Android APK
+    name: Android ${{ inputs.validation_profile || 'standard' }} validation
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
           run_install: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Type-check
-        run: pnpm run type-check
-
-      - name: Run release unit tests
-        run: pnpm run test:unit
-
-      - name: Build Web App
-        run: pnpm run build:web
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: ${{ env.JAVA_VERSION }}
           cache: gradle
 
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER=""
+          for candidate in \
+            "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_HOME:-}/cmdline-tools/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager" \
+            "${ANDROID_SDK_ROOT:-}/cmdline-tools/bin/sdkmanager"
+          do
+            if [ -x "$candidate" ]; then
+              SDKMANAGER="$candidate"
+              break
+            fi
+          done
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager || true)"
+          fi
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}"
+
+      - name: Determine versioning
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_NAME="${{ inputs.version_name }}"
+          if [ -z "$VERSION_NAME" ]; then
+            VERSION_NAME="$(node -p "require('./package.json').version")"
+          fi
+          test -n "$VERSION_NAME"
+
+          VERSION_CODE="${{ inputs.version_code }}"
+          if [ -z "$VERSION_CODE" ]; then
+            VERSION_CODE="${{ github.run_number }}"
+          fi
+          case "$VERSION_CODE" in
+            ''|*[!0-9]*)
+              echo "version_code must be a positive integer." >&2
+              exit 1
+              ;;
+          esac
+          test "$VERSION_CODE" -gt 0
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Create private runtime environment
+        env:
+          VITE_GITHUB_OAUTH_CLIENT_ID_VALUE: ${{ secrets.VITE_GITHUB_OAUTH_CLIENT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf 'VITE_GITHUB_OAUTH_CLIENT_ID=%s\n' "$VITE_GITHUB_OAUTH_CLIENT_ID_VALUE" > .env
+          test -s .env
+          echo "GitHub OAuth client id configured: $([ -n "$VITE_GITHUB_OAUTH_CLIENT_ID_VALUE" ] && echo true || echo false)"
+
+      - name: Type-check
+        run: pnpm run type-check
+
+      - name: Run release unit tests
+        env:
+          CI: true
+        run: pnpm run test:unit
+
+      - name: Build Web App
+        run: |
+          pnpm run build:web
+          test -s dist/index.html
+
       - name: Sync Capacitor Android project
-        run: pnpm exec cap sync android
+        run: |
+          pnpm exec cap sync android
+          test -s android/app/src/main/assets/public/index.html
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x android/gradlew
+      - name: Validate packaged Android assets
+        env:
+          SOVEREIGN_REQUIRE_ANDROID_PACKAGED_ASSETS: "1"
+          ANDROID_READINESS_REPORT_PATH: android-standard-readiness.md
+        run: node scripts/check-android-release-readiness.mjs
 
-      - name: Build Debug Android APK
+      - name: Run standard native validation
+        if: env.VALIDATION_PROFILE == 'standard'
+        shell: bash
         run: |
           cd android
-          ./gradlew --no-daemon clean assembleDebug --stacktrace
+          chmod +x gradlew
+          ./gradlew lintDebug testDebugUnitTest assembleDebug --no-daemon --stacktrace
+          test -s app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload debug APK
+      - name: Upload standard APK and evidence
+        if: env.VALIDATION_PROFILE == 'standard'
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: SovereignStudio-standard-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android-standard-readiness.md
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Prepare Android signing key
+        if: env.VALIDATION_PROFILE == 'release'
+        env:
+          ANDROID_KEYSTORE_BASE64_CURRENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD_CURRENT: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS_CURRENT: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD_CURRENT: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEYSTORE_BASE64_LEGACY: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_LEGACY: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS_LEGACY: ${{ secrets.KEYSTORE_ALIAS }}
+          KEY_PASSWORD_LEGACY: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EFFECTIVE_KEYSTORE_BASE64="${ANDROID_KEYSTORE_BASE64_CURRENT:-${KEYSTORE_BASE64_LEGACY:-}}"
+          EFFECTIVE_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD_CURRENT:-${KEYSTORE_PASSWORD_LEGACY:-}}"
+          EFFECTIVE_KEY_ALIAS="${ANDROID_KEY_ALIAS_CURRENT:-${KEYSTORE_ALIAS_LEGACY:-}}"
+          EFFECTIVE_KEY_PASSWORD="${ANDROID_KEY_PASSWORD_CURRENT:-${KEY_PASSWORD_LEGACY:-${EFFECTIVE_KEYSTORE_PASSWORD:-}}}"
+          test -n "$EFFECTIVE_KEYSTORE_BASE64"
+          test -n "$EFFECTIVE_KEYSTORE_PASSWORD"
+          test -n "$EFFECTIVE_KEY_ALIAS"
+          test -n "$EFFECTIVE_KEY_PASSWORD"
+          mkdir -p android/app/keystore
+          printf '%s' "$EFFECTIVE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+          test -s "$KEYSTORE_FILE"
+          keytool -list -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" >/dev/null
+          echo "ANDROID_KEYSTORE_PATH=$PWD/$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$EFFECTIVE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$EFFECTIVE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$EFFECTIVE_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Validate release signing contract
+        if: env.VALIDATION_PROFILE == 'release'
+        env:
+          SOVEREIGN_REQUIRE_ANDROID_SIGNING: "1"
+          SOVEREIGN_REQUIRE_ANDROID_PACKAGED_ASSETS: "1"
+          ANDROID_READINESS_REPORT_PATH: android-release-readiness.md
+        run: node scripts/check-android-release-readiness.mjs
+
+      - name: Build signed release APK and AAB
+        if: env.VALIDATION_PROFILE == 'release'
+        shell: bash
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew lintRelease testReleaseUnitTest bundleRelease assembleRelease \
+            --no-daemon --no-build-cache --rerun-tasks --stacktrace \
+            -Pandroid.skipWebAssetBuild=true \
+            -PversionCode=${{ steps.vars.outputs.version_code }} \
+            -PversionName=${{ steps.vars.outputs.version_name }}
+          test -s app/build/outputs/bundle/release/app-release.aab
+          test -s app/build/outputs/apk/release/app-release.apk
+
+      - name: Verify signed release artifacts
+        if: env.VALIDATION_PROFILE == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/${ANDROID_BUILD_TOOLS}"
+          export PATH="$BUILD_TOOLS_DIR:$PATH"
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          command -v apksigner >/dev/null
+          command -v zipalign >/dev/null
+          apksigner verify --verbose --print-certs "$APK" > android-apk-signature-verification.txt 2>&1
+          zipalign -c -v -P 16 4 "$APK" > android-apk-alignment-verification.txt 2>&1
+          jarsigner -verify -strict -certs "$AAB" > android-aab-signature-verification.txt 2>&1
+          test -s android-apk-signature-verification.txt
+          test -s android-apk-alignment-verification.txt
+          test -s android-aab-signature-verification.txt
+
+      - name: Prepare release bundle
+        if: env.VALIDATION_PROFILE == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf release-bundle SovereignStudio-PlayStore-Release.zip
+          mkdir -p release-bundle
+          cp android/app/build/outputs/bundle/release/app-release.aab release-bundle/SovereignStudio-release.aab
+          cp android/app/build/outputs/apk/release/app-release.apk release-bundle/SovereignStudio-release.apk
+          cp android-release-readiness.md release-bundle/
+          cp android-apk-signature-verification.txt release-bundle/
+          cp android-apk-alignment-verification.txt release-bundle/
+          cp android-aab-signature-verification.txt release-bundle/
+          (cd release-bundle && sha256sum * > CHECKSUMS.txt)
+          (cd release-bundle && sha256sum -c CHECKSUMS.txt)
+          zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
+          test -s SovereignStudio-PlayStore-Release.zip
+
+      - name: Upload signed release APK
+        if: env.VALIDATION_PROFILE == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-release-apk-v${{ steps.vars.outputs.version_name }}
+          path: release-bundle/SovereignStudio-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload signed release AAB
+        if: env.VALIDATION_PROFILE == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-release-aab-v${{ steps.vars.outputs.version_name }}
+          path: release-bundle/SovereignStudio-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload production evidence bundle
+        if: env.VALIDATION_PROFILE == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-production-evidence-v${{ steps.vars.outputs.version_name }}
+          path: SovereignStudio-PlayStore-Release.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create release tag
+        if: env.VALIDATION_PROFILE == 'release' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          VERSION="${{ steps.vars.outputs.version_name }}"
+          TAG="v$VERSION"
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
+            echo "Tag $TAG already exists; no tag mutation required."
+          else
+            git config user.name github-actions
+            git config user.email github-actions@github.com
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Android validation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Android Production Validation"
+            echo ""
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Profile | ${VALIDATION_PROFILE} |"
+            echo "| Version | ${{ steps.vars.outputs.version_name }} |"
+            echo "| Version code | ${{ steps.vars.outputs.version_code }} |"
+            echo "| Commit | ${{ github.sha }} |"
+            echo "| compileSdk / targetSdk | 35 / 35 |"
+          } >> "$GITHUB_STEP_SUMMARY"

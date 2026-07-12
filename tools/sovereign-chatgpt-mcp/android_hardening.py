@@ -196,7 +196,12 @@ class AndroidHardeningRuntime:
         root_gradle = self._read(repo / "android/build.gradle")
         manifest = self._read(repo / "android/app/src/main/AndroidManifest.xml")
         capacitor = self._read(repo / "capacitor.config.ts")
-        workflow = self._read(repo / ".github/workflows/android-release.yml")
+        workflow_path = (
+            ".github/workflows/android.yml"
+            if (repo / ".github/workflows/android.yml").is_file()
+            else ".github/workflows/android-release.yml"
+        )
+        workflow = self._read(repo / workflow_path)
         package_text = self._read(repo / "package.json")
         proguard = self._read(repo / "android/app/proguard-rules.pro")
         release_html_fix = self._read(repo / "scripts/release-html-runtime-fix.mjs")

@@ -78,6 +78,13 @@ fi
 chmod 0600 "$ENV_FILE"
 grep -Eq '^GITHUB_TOKEN=.+$' "$ENV_FILE" || fail "GITHUB_TOKEN is not configured in $ENV_FILE"
 
+CURRENT_ALLOWED_WORKFLOWS="$(read_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_WORKFLOWS)"
+if [[ -z "$CURRENT_ALLOWED_WORKFLOWS" ]]; then
+  printf '\nSOVEREIGN_MCP_ALLOWED_WORKFLOWS=android.yml,android-release.yml,sovereign-chatgpt-mcp.yml\n' >> "$ENV_FILE"
+elif [[ ",$CURRENT_ALLOWED_WORKFLOWS," != *",android.yml,"* ]]; then
+  sed -i "s|^SOVEREIGN_MCP_ALLOWED_WORKFLOWS=.*$|SOVEREIGN_MCP_ALLOWED_WORKFLOWS=android.yml,$CURRENT_ALLOWED_WORKFLOWS|" "$ENV_FILE"
+fi
+
 if [[ "$(read_value "$ENV_FILE" SOVEREIGN_MCP_BOOTSTRAP_DATABASE)" == "1" ]]; then
   command -v openssl >/dev/null 2>&1 || fail "openssl is required for database bootstrap"
   BACKEND_ENV_PATH="$(read_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE)"

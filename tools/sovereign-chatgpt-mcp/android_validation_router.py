@@ -28,7 +28,6 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         for name, argv in (
             ("git_diff_check", ["git", "diff", "--check"]),
             ("typecheck", ["pnpm", "run", "type-check"]),
-            ("web_build", ["pnpm", "run", "build:web"]),
         ):
             result = operator_runtime._run(argv, cwd=repo, timeout=1800)
             operator_runtime._record_check(
@@ -73,7 +72,18 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         metadata = operator_runtime._read_metadata(workspace_id)
         draft_pr = metadata.get("draft_pr")
         branch = str(metadata.get("branch") or "").strip()
-        if not isinstance(draft_pr, dict) or not branch:
+        direct_main_enabled = os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1"
+        if isinstance(draft_pr, dict) and branch:
+            remote_ref = branch
+            draft_pr_evidence: dict[str, Any] | None = {
+                "number": draft_pr.get("number"),
+                "head_sha": draft_pr.get("head_sha"),
+                "url": draft_pr.get("url"),
+            }
+        elif direct_main_enabled and str(metadata.get("base_branch") or "") == "main":
+            remote_ref = "main"
+            draft_pr_evidence = None
+        else:
             return {
                 "ok": False,
                 "status": "REMOTE_REF_REQUIRED",
@@ -82,19 +92,18 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
                 "execution_mode": "github_actions",
                 "local_preflight": preflight,
                 "blocker": (
-                    "Native Android validation requires an already-published workspace branch. "
-                    "Create the Draft PR first, then rerun this validation profile."
+                    "Native Android validation requires a published Draft-PR branch or explicitly enabled direct-main mode."
                 ),
-                "next_action": "repository_create_draft_pr_then_rerun_android_validation_suite",
+                "next_action": "publish_remote_ref_then_rerun_android_validation_suite",
             }
 
         workflow = os.getenv(
             "SOVEREIGN_ANDROID_VALIDATION_WORKFLOW",
-            "android-release.yml",
+            "android.yml",
         ).strip()
         dispatch = broker.call(
             "github_workflow_dispatch",
-            {"workflow": workflow, "ref": branch, "inputs": {"validation_profile": selected}},
+            {"workflow": workflow, "ref": remote_ref, "inputs": {"validation_profile": selected}},
             timeout=60,
         )
         dispatched = bool(dispatch.get("ok"))
@@ -105,12 +114,8 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
             "profile": selected,
             "execution_mode": "github_actions",
             "workflow": workflow,
-            "ref": branch,
-            "draft_pr": {
-                "number": draft_pr.get("number"),
-                "head_sha": draft_pr.get("head_sha"),
-                "url": draft_pr.get("url"),
-            },
+            "ref": remote_ref,
+            "draft_pr": draft_pr_evidence,
             "local_preflight": preflight,
             "dispatch": dispatch,
             "next_action": (
