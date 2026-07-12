@@ -226,9 +226,37 @@ export default function App() {
   const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
   const runtimeSummary = summarizeSovereignAgentJob(agentJob);
 
-  const publishDraftPr = async () => {
-    const jobId = agentJob.jobId;
-    if (!agentJob.repoUrl || !jobId) {
+  const publishDraftPr = async (input?: SovereignDraftPrPublishInput) => {
+    let jobId = agentJob.jobId;
+    let repoUrl = agentJob.repoUrl;
+
+    if (!jobId && input?.changes && input.changes.length > 0) {
+      try {
+        const snapshot = await agentClient.startToolchainJob({
+          repoUrl: input.repoUrl,
+          branch: input.branch,
+          mission: input.mission,
+          evidenceText: input.mission,
+          provisionWorkspace: true,
+          cloneRepo: true,
+          stagedFiles: input.changes,
+        });
+        setAgentJob(snapshot);
+        jobId = snapshot.jobId;
+        repoUrl = snapshot.repoUrl;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Agent Runtime Start (Staged) fehlgeschlagen.';
+        setAgentJob((current) => ({
+          ...current,
+          status: 'failed',
+          lastError: message,
+          events: [...current.events, { at: Date.now(), level: 'error', stage: 'agent-start-staged', message }],
+        }));
+        return;
+      }
+    }
+
+    if (!repoUrl || !jobId) {
       const message = 'Draft PR benötigt zuerst einen belegten Sovereign-Agent-Job mit Repository.';
       setAgentJob((current) => ({
         ...current,
@@ -236,7 +264,7 @@ export default function App() {
         lastError: message,
         events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-job', message }],
       }));
-      throw error;
+      throw new Error(message);
     }
 
     setAgentJob((current) => ({
