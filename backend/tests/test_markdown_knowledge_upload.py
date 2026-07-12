@@ -57,10 +57,17 @@ def test_markdown_upload_contract_is_visible_in_backend_and_both_surfaces() -> N
     user_panel = (ROOT / "src/features/knowledge/KnowledgeLibraryPanel.tsx").read_text(encoding="utf-8")
     backend_admin = (BACKEND / "app.py").read_text(encoding="utf-8")
     deploy_admin = (DEPLOY / "app.py").read_text(encoding="utf-8")
+    markdown_migration = (
+        DEPLOY / "migrations/014_knowledge_source_markdown_type.sql"
+    ).read_text(encoding="utf-8")
 
     assert runtime_module == deploy_module
     assert '_MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}' in runtime_module
     assert 'source_type = "markdown"' in runtime_module
+    assert "knowledge_sources_source_type_check" in markdown_migration
+    assert "'markdown'" in markdown_migration
+    assert "NOT VALID" in markdown_migration
+    assert "VALIDATE CONSTRAINT" in markdown_migration
 
     for surface in (user_panel, backend_admin, deploy_admin):
         assert "Markdown" in surface
