@@ -13,6 +13,7 @@ from typing import Any
 from admin_mode import PrivateAdminRuntime
 from operations import OperationsRuntime
 from policy import validate_container
+from self_update import SelfUpdateRuntime
 
 MAX_REQUEST_BYTES = 1_200_000
 MAX_RESPONSE_BYTES = 1_000_000
@@ -35,6 +36,7 @@ class BrokerRuntime:
         ).strip()
         self.operations = OperationsRuntime()
         self.admin = PrivateAdminRuntime(self.operations)
+        self.self_update = SelfUpdateRuntime()
 
     @staticmethod
     def _run(argv: list[str], timeout: int = 60) -> dict[str, Any]:
@@ -174,6 +176,11 @@ class BrokerRuntime:
                 workspace_id=str(values.get("workspace_id") or ""),
                 commit_message=str(values.get("commit_message") or ""),
             ),
+            "mcp_self_update_schedule": lambda values: self.self_update.schedule(
+                expected_revision=str(values.get("expected_revision") or ""),
+                reason=str(values.get("reason") or ""),
+            ),
+            "mcp_self_update_status": lambda _values: self.self_update.status(),
             "deploy_verified_release": lambda values: self.operations.deploy_verified_release(
                 image_digest=str(values.get("image_digest") or ""),
                 expected_revision=str(values.get("expected_revision") or ""),
