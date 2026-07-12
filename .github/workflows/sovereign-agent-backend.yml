@@ -4,14 +4,20 @@ on:
   push:
     branches: [main, master, develop]
     paths:
+      - 'backend/requirements-test.txt'
+      - 'scripts/check-backend-python-runtime.py'
       - 'scripts/sovereign-backend/**'
       - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
+      - '.github/actions/setup-backend-python/**'
       - '.github/workflows/sovereign-agent-backend.yml'
   pull_request:
     branches: [main, master, develop]
     paths:
+      - 'backend/requirements-test.txt'
+      - 'scripts/check-backend-python-runtime.py'
       - 'scripts/sovereign-backend/**'
       - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
+      - '.github/actions/setup-backend-python/**'
       - '.github/workflows/sovereign-agent-backend.yml'
   workflow_dispatch:
 
@@ -61,13 +67,10 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup verified backend Python runtime
+        uses: ./.github/actions/setup-backend-python
         with:
           python-version: '3.11'
-
-      - name: Install Dependencies
-        run: pip install -r scripts/sovereign-backend/requirements.txt pytest
 
       - name: Run Agent Runtime Tests
         run: pytest scripts/sovereign-backend/tests -q

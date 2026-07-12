@@ -1,0 +1,6 @@
+# Single source of truth for every Sovereign backend test environment.
+# Runtime dependencies stay aligned with the production backend image.
+-r ../scripts/sovereign-backend/requirements.txt
+
+# Test runner contract.
+pytest>=9.1.1,<10
