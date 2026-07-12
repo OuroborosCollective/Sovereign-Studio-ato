@@ -104,7 +104,7 @@ sys.modules["psycopg2.pool"] = psycopg2_pool_module
 
 # ── Environment für app.py Import ─────────────────────────────────────────────
 
-os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing")
+os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing-at-least-32-bytes")
 os.environ.setdefault("GITHUB_CLIENT_ID", "test_client_id")
 os.environ.setdefault("GITHUB_CLIENT_SECRET", "test_client_secret")
 os.environ.setdefault("GITHUB_TOKEN_ENCRYPTION_KEY", "test-token-encryption-key")
@@ -268,7 +268,10 @@ class TestOAuthContractWithApp:
                 "avatar_url": "https://example.test/avatar.png",
             })
 
-        stored_rows = []
+        created_users = []
+
+        def fake_create_user(**kwargs):
+            created_users.append(dict(kwargs))
 
         def fake_query(sql, params=(), one=False, write=False):
             normalized_sql = " ".join(sql.upper().split())
@@ -277,7 +280,6 @@ class TestOAuthContractWithApp:
                 return None
 
             if write:
-                stored_rows.append((sql, params))
                 return None
 
             if normalized_sql.startswith("SELECT * FROM ADMIN_USERS WHERE ID"):
@@ -326,10 +328,13 @@ class TestOAuthContractWithApp:
         token_payload = calls[0][2]
         assert token_payload["code_verifier"] == "verifier_test"
         assert token_payload["redirect_uri"] == server_redirect_uri
-        assert stored_rows, "OAuth flow must write encrypted token to DB"
-        inserted_params = stored_rows[0][1]
-        assert any(value == "encrypted-gho_live_token" for value in inserted_params)
-        assert all(value != "gho_live_token" for value in inserted_params)
+        assert created_users, "OAuth flow must use the atomic user-and-ledger creation path"
+        created_user = created_users[0]
+        assert created_user["github_access_token"] == "encrypted-gho_live_token"
+        assert "gho_live_token" not in created_user.values()
+        assert created_user["github_id"] == "12345"
+        assert created_user["github_username"] == "octo-user"
+        assert created_user["initial_credits"] == 500
         assert "github_access_token" not in response.get_json()
         assert "githubAccessToken" not in response.get_json()
 
