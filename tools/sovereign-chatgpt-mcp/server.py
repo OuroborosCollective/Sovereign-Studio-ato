@@ -19,6 +19,15 @@ def _host() -> str:
     return configured
 
 
+def _private_admin_capabilities() -> list[str]:
+    capabilities: list[str] = []
+    if os.getenv("SOVEREIGN_MCP_ENABLE_ADMIN_SQL", "0").strip() == "1":
+        capabilities.append("postgres_admin_sql")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1":
+        capabilities.append("repository_push_main")
+    return capabilities
+
+
 runtime = OperatorRuntime()
 database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
@@ -26,12 +35,12 @@ broker = HostBrokerClient()
 mcp = FastMCP(
     "Sovereign ChatGPT Operator",
     instructions=(
-        "Arbeite ausschließlich im erlaubten Sovereign-Repository. Bereite zuerst einen isolierten Workspace vor. "
+        "Arbeite ausschließlich im konfigurierten privaten Repository und VPS. Bereite für Codearbeit zuerst einen isolierten Workspace vor. "
         "Nutze exakte Search/Replace-Patches für bestehende Dateien, besonders große Live-Dateien. "
-        "Installiere Abhängigkeiten reproduzierbar, führe passende Checks aus und erstelle höchstens einen Draft-PR. "
-        "Nutze die interne Fehlerfamilien-Diagnose und nur policy-erlaubte, begrenzte Reparaturen. "
-        "Niemals direkt main ändern, nie mergen, keine Secrets lesen oder ausgeben. Produktions-Deploys und DB-Writes "
-        "nur nach aktueller ausdrücklicher Bestätigung."
+        "Installiere Abhängigkeiten reproduzierbar und führe passende Checks aus. "
+        "Draft-PR ist der normale Weg; wenn der private Broker-Schalter aktiv ist, darf repository_push_main ausdrücklich direkt committen und nach main pushen. "
+        "Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
+        "Nutze die interne Fehlerfamilien-Diagnose und setze bekannte Reparaturen selbst fort. Keine Secrets lesen oder ausgeben."
     ),
     host=_host(),
     port=int(os.getenv("SOVEREIGN_MCP_PORT", "8090")),
@@ -47,7 +56,7 @@ EXTERNAL_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idemp
 
 @mcp.tool(annotations=SAFE_WRITE)
 def workspace_prepare(base_branch: str = "main", task_slug: str = "change") -> dict[str, Any]:
-    """Create an isolated clone and a non-main sovereign/chatgpt branch for a code task."""
+    """Create an isolated clone and a sovereign/chatgpt work branch for a code task."""
     return runtime.prepare_workspace(base_branch=base_branch, task_slug=task_slug)
 
 
@@ -88,7 +97,7 @@ def repository_diff(workspace_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=SAFE_WRITE)
 def repository_install_dependencies(workspace_id: str) -> dict[str, Any]:
-    """Install repository dependencies with pnpm and the committed lockfile; no loose install or ignored failure."""
+    """Install repository dependencies with pnpm and the committed lockfile."""
     repo = runtime._repo(workspace_id)
     return runtime._run(["pnpm", "install", "--frozen-lockfile"], cwd=repo, timeout=1800)
 
@@ -106,25 +115,46 @@ def repository_create_draft_pr(
     body: str,
     commit_message: str,
 ) -> dict[str, Any]:
-    """Verify, commit and push workspace changes, then create a Draft PR. Never merges or writes to main."""
+    """Verify, commit and push workspace changes, then create a Draft PR."""
     return runtime.create_draft_pr(workspace_id, title=title, body=body, commit_message=commit_message)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_push_main(workspace_id: str, commit_message: str) -> dict[str, Any]:
+    """Commit the current workspace and push its HEAD directly to main when private main-push mode is enabled."""
+    return broker.call(
+        "git_push_main",
+        {"workspace_id": workspace_id, "commit_message": commit_message},
+        timeout=720,
+    )
 
 
 @mcp.tool(annotations=READ_ONLY)
 def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
-    """Classify bounded runtime evidence and return only the policy-allowed repair workflow."""
-    return REPAIR_ENGINE.diagnose(evidence)
+    """Classify bounded runtime evidence and report currently active private broker capabilities."""
+    result = REPAIR_ENGINE.diagnose(evidence)
+    policy = result.get("policy")
+    if isinstance(policy, dict):
+        blocked = list(policy.get("blocked_capabilities") or [])
+        active = _private_admin_capabilities()
+        if "postgres_admin_sql" in active:
+            blocked = [item for item in blocked if item != "generic_sql"]
+        if "repository_push_main" in active:
+            blocked = [item for item in blocked if item != "direct_main_write"]
+        policy["blocked_capabilities"] = blocked
+        policy["active_private_admin_capabilities"] = active
+    return result
 
 
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]:
-    """Inspect the real state of one allowlisted Docker container through the local fixed-action broker."""
+    """Inspect the real state of one allowlisted Docker container through the local broker."""
     return broker.call("container_status", {"container": container})
 
 
 @mcp.tool(annotations=READ_ONLY)
 def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) -> dict[str, Any]:
-    """Read bounded logs from one allowlisted Docker container through the local fixed-action broker."""
+    """Read bounded logs from one allowlisted Docker container through the local broker."""
     return broker.call("container_logs", {"container": container, "tail": tail})
 
 
@@ -146,6 +176,16 @@ def vector_database_canary() -> dict[str, Any]:
     return database.vector_canary()
 
 
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def postgres_admin_sql(sql: str, database: str = "", timeout_seconds: int = 300) -> dict[str, Any]:
+    """Execute complete PostgreSQL SQL with the private backend admin identity when broker admin-SQL mode is enabled."""
+    return broker.call(
+        "postgres_admin_sql",
+        {"sql": sql, "database": database, "timeout_seconds": timeout_seconds},
+        timeout=max(60, min(int(timeout_seconds) + 30, 3660)),
+    )
+
+
 @mcp.tool(annotations=SAFE_WRITE)
 def postgres_migration_preview(workspace_id: str, path: str) -> dict[str, Any]:
     """Execute a migration in the dedicated preview database transaction and always roll it back."""
@@ -154,13 +194,13 @@ def postgres_migration_preview(workspace_id: str, path: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def postgres_migration_apply(workspace_id: str, path: str, confirmation_sha256: str) -> dict[str, Any]:
-    """Apply a previewed migration only when DB writes are enabled and the exact SHA is confirmed."""
+    """Apply a confirmed migration and automatically retry registered schema-drift repairs through the private broker."""
     return database.apply_migration(workspace_id, path, confirmation_sha256)
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def deploy_verified_backend_release(image_digest: str, expected_revision: str, confirmation_revision: str) -> dict[str, Any]:
-    """Use the local fixed-action broker to deploy an immutable image digest; no arbitrary shell is accepted."""
+    """Use the local broker to deploy an immutable image digest."""
     return broker.call(
         "deploy_verified_release",
         {
@@ -174,7 +214,7 @@ def deploy_verified_backend_release(image_digest: str, expected_revision: str, c
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def rollback_backend_release(target_image_digest: str, confirmation_digest: str) -> dict[str, Any]:
-    """Use the local fixed-action broker to roll back to one explicitly confirmed immutable image digest."""
+    """Use the local broker to roll back to one explicitly confirmed immutable image digest."""
     return broker.call(
         "rollback_release",
         {

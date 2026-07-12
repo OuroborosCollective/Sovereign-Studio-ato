@@ -10,10 +10,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from admin_mode import PrivateAdminRuntime
 from operations import OperationsRuntime
 from policy import validate_container
 
-MAX_REQUEST_BYTES = 64_000
+MAX_REQUEST_BYTES = 1_200_000
 MAX_RESPONSE_BYTES = 1_000_000
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -33,6 +34,7 @@ class BrokerRuntime:
             "ghcr.io/ouroboroscollective/sovereign-backend",
         ).strip()
         self.operations = OperationsRuntime()
+        self.admin = PrivateAdminRuntime(self.operations)
 
     @staticmethod
     def _run(argv: list[str], timeout: int = 60) -> dict[str, Any]:
@@ -158,10 +160,19 @@ class BrokerRuntime:
             "container_status": self.container_status,
             "container_logs": self.container_logs,
             "resolve_backend_image": self.resolve_backend_image,
-            "apply_verified_migration": lambda values: self.operations.apply_verified_migration(
+            "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
                 workspace_id=str(values.get("workspace_id") or ""),
                 path=str(values.get("path") or ""),
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+            ),
+            "postgres_admin_sql": lambda values: self.admin.execute_sql(
+                sql=str(values.get("sql") or ""),
+                database=str(values.get("database") or ""),
+                timeout_seconds=int(values.get("timeout_seconds") or 300),
+            ),
+            "git_push_main": lambda values: self.admin.push_workspace_to_main(
+                workspace_id=str(values.get("workspace_id") or ""),
+                commit_message=str(values.get("commit_message") or ""),
             ),
             "deploy_verified_release": lambda values: self.operations.deploy_verified_release(
                 image_digest=str(values.get("image_digest") or ""),

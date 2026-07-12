@@ -16,6 +16,17 @@ def test_installer_assigns_workspace_to_container_user_and_probes_write_access()
     assert '.permission-probe' in script
 
 
+def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> None:
+    script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    service = (ROOT / "deploy" / "sovereign-chatgpt-broker.service").read_text("utf-8")
+
+    assert 'install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"' in script
+    assert "SOVEREIGN_MCP_ENABLE_ADMIN_SQL" in script
+    assert "SOVEREIGN_MCP_ENABLE_MAIN_PUSH" in script
+    assert "GITHUB_TOKEN" in script
+    assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
+
+
 def test_database_bootstrap_uses_real_binaries_and_authentication_canaries() -> None:
     script = (ROOT / "deploy" / "bootstrap-database.sh").read_text("utf-8")
 
