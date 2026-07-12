@@ -1,5 +1,5 @@
 [Unit]
-Description=Sovereign ChatGPT fixed-action host broker
+Description=Sovereign ChatGPT private host broker
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target
@@ -26,7 +26,7 @@ PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadOnlyPaths=/opt/sovereign-chatgpt-tools /opt/sovereign-backend /opt/secure
-ReadWritePaths=/run/sovereign-chatgpt-broker
+ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 RestrictRealtime=true
