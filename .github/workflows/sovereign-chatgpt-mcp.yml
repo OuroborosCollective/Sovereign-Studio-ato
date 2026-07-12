@@ -49,7 +49,7 @@ jobs:
         run: python -m pip install --requirement requirements.txt
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py self_heal.py android_hardening.py android_validation_router.py tool_extensions.py launcher.py server.py tests/*.py
+        run: python -m py_compile policy.py runtime.py database.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py tool_extensions.py launcher.py server.py tests/*.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -64,6 +64,7 @@ jobs:
           grep -q 'github_admin.py' deploy/install-on-vps.sh
           grep -q 'android_hardening.py' deploy/install-on-vps.sh
           grep -q 'android_validation_router.py' deploy/install-on-vps.sh
+          grep -q 'mcp_protocol_health.py' deploy/install-on-vps.sh
           grep -q 'tool_extensions.py' deploy/install-on-vps.sh
           grep -q 'launcher.py' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_ADMIN_SQL' deploy/install-on-vps.sh
@@ -75,6 +76,7 @@ jobs:
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
+          grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py' deploy/sovereign-openai-tunnel.service
           grep -q '^ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}$' deploy/sovereign-openai-tunnel.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env$' deploy/sovereign-openai-tunnel.service
 
@@ -135,3 +137,166 @@ jobs:
             echo 'Forbidden secret-shaped material found.' >&2
             exit 1
           fi
+
+  deploy-vps:
+    name: Bootstrap MCP on VPS
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      RELEASE_DIR: /opt/sovereign-chatgpt-mcp/releases/${{ github.run_id }}-${{ github.run_attempt }}
+      EXPECTED_REVISION: ${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Validate deploy parameters
+        run: |
+          set -euo pipefail
+          test -n "${VPS_HOST:-}" || { echo 'VPS_HOST/SSH_HOST secret is not configured.' >&2; exit 1; }
+          test -n "${VPS_USER:-}" || { echo 'VPS_USER/SSH_USER secret is not configured.' >&2; exit 1; }
+          test -n "${VPS_PASSWORD:-}" || { echo 'VPS password secret is not configured.' >&2; exit 1; }
+          [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]] || { echo 'VPS SSH port must be numeric.' >&2; exit 1; }
+          [[ "${EXPECTED_REVISION}" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected revision must be a full commit SHA.' >&2; exit 1; }
+          case "${RELEASE_DIR}" in
+            /opt/sovereign-chatgpt-mcp/releases/*) ;;
+            *) echo "Unsafe release directory: ${RELEASE_DIR}" >&2; exit 1 ;;
+          esac
+
+      - name: Create exact MCP release archive
+        run: |
+          set -euo pipefail
+          tar -czf sovereign-chatgpt-mcp.tar.gz tools/sovereign-chatgpt-mcp
+          tar -tzf sovereign-chatgpt-mcp.tar.gz >/dev/null
+          printf '%s\n' "${EXPECTED_REVISION}" > sovereign-chatgpt-mcp.revision
+
+      - name: Prepare remote release directory
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 10m
+          script: |
+            set -eu
+            RELEASE_DIR='${{ env.RELEASE_DIR }}'
+            case "$RELEASE_DIR" in
+              /opt/sovereign-chatgpt-mcp/releases/*) ;;
+              *) echo "Unsafe release directory: $RELEASE_DIR" >&2; exit 1 ;;
+            esac
+            install -d -m 0700 "$RELEASE_DIR"
+            rm -f "$RELEASE_DIR/sovereign-chatgpt-mcp.tar.gz" "$RELEASE_DIR/sovereign-chatgpt-mcp.revision"
+
+      - name: Upload exact MCP release
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          source: 'sovereign-chatgpt-mcp.tar.gz,sovereign-chatgpt-mcp.revision'
+          target: ${{ env.RELEASE_DIR }}
+          overwrite: true
+
+      - name: Install and verify private MCP on VPS
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 35m
+          script: |
+            set -Eeuo pipefail
+            RELEASE_DIR='${{ env.RELEASE_DIR }}'
+            EXPECTED_REVISION='${{ env.EXPECTED_REVISION }}'
+            ARCHIVE="$RELEASE_DIR/sovereign-chatgpt-mcp.tar.gz"
+            REVISION_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.revision"
+            WORK_DIR="$RELEASE_DIR/work"
+            STATUS_DIR=/var/lib/sovereign-chatgpt-self-update
+            STATUS_FILE="$STATUS_DIR/status.json"
+
+            cleanup() {
+              rm -rf "$RELEASE_DIR" || true
+            }
+            trap cleanup EXIT
+
+            case "$RELEASE_DIR" in
+              /opt/sovereign-chatgpt-mcp/releases/*) ;;
+              *) echo "Unsafe release directory: $RELEASE_DIR" >&2; exit 1 ;;
+            esac
+            [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid expected revision.' >&2; exit 1; }
+            test -f "$ARCHIVE"
+            test -f "$REVISION_FILE"
+            test "$(tr -d '\r\n' < "$REVISION_FILE")" = "$EXPECTED_REVISION"
+            tar -tzf "$ARCHIVE" >/dev/null
+            rm -rf "$WORK_DIR"
+            install -d -m 0700 "$WORK_DIR"
+            tar -xzf "$ARCHIVE" -C "$WORK_DIR"
+
+            SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
+            for required in Dockerfile docker-compose.yml launcher.py server.py mcp_protocol_health.py deploy/install-on-vps.sh; do
+              test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
+            done
+            bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
+            bash "$SOURCE_DIR/deploy/install-on-vps.sh"
+
+            CONTAINER_STATE="$(docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}')"
+            test "$CONTAINER_STATE" = 'running healthy'
+            docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
+            docker exec sovereign-chatgpt-mcp python - <<'PY'
+            import server
+            for name in (
+                'mcp_self_update_schedule',
+                'mcp_self_update_status',
+                'repository_pr_status',
+                'repository_merge_pr',
+                'android_run_validation_suite',
+            ):
+                assert callable(getattr(server, name)), name
+            print({'tool_contract': True, 'self_update': True, 'pr_lifecycle': True})
+            PY
+            systemctl is-active --quiet sovereign-chatgpt-broker.service
+            systemctl is-active --quiet sovereign-openai-tunnel.service
+
+            install -d -m 0750 "$STATUS_DIR"
+            python3 - "$STATUS_FILE" "$EXPECTED_REVISION" <<'PY'
+            from pathlib import Path
+            import json
+            import os
+            import sys
+            import time
+
+            path = Path(sys.argv[1])
+            revision = sys.argv[2]
+            payload = {
+                'ok': True,
+                'status': 'UPDATED',
+                'revision': revision,
+                'detail': 'private ChatGPT MCP installed by GitHub Actions bootstrap deploy',
+                'mcp_protocol_ready': True,
+                'broker_active': True,
+                'openai_tunnel_active': True,
+                'updated_at': int(time.time()),
+            }
+            temporary = path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(payload, sort_keys=True) + '\n', 'utf-8')
+            os.chmod(temporary, 0o640)
+            temporary.replace(path)
+            PY
+
+            printf 'MCP revision installed: %s\n' "$EXPECTED_REVISION"
+            printf 'MCP container: %s\n' "$CONTAINER_STATE"
+            printf 'MCP protocol ready: true\n'
+            printf 'Broker active: true\n'
+            printf 'OpenAI tunnel active: true\n'
