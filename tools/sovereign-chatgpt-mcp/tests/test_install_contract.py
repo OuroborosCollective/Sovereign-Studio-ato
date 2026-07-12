@@ -52,7 +52,9 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'docker exec sovereign-chatgpt-mcp java -version' not in installer
     assert 'docker compose build' in installer
     assert 'docker compose up -d --no-build --force-recreate --remove-orphans' in installer
-    assert 'MCP container did not become healthy' in installer
+    assert 'MCP container did not pass protocol health' in installer
+    assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in installer
+    assert '"running no-health"' not in installer
 
 
 def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:
