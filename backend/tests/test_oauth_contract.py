@@ -133,9 +133,10 @@ def require_app_import():
 class TestOAuthContractWithApp:
     """Verifiziert dass OAuth Contract in app.py korrekt implementiert ist."""
 
-    def test_user_row_to_dict_excludes_token(self):
+    def test_user_row_to_dict_excludes_token(self, monkeypatch):
         """CRITICAL CONTRACT: _user_row_to_dict darf KEIN Token zurückgeben."""
         app_module = require_app_import()
+        monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda user_id: 500)
         mock_row = {
             "id": "test-uuid",
             "email": "test@example.com",
@@ -158,9 +159,10 @@ class TestOAuthContractWithApp:
         assert "githubAccessToken" not in result
         assert "token" not in result
 
-    def test_user_row_to_dict_includes_safe_github_fields(self):
+    def test_user_row_to_dict_includes_safe_github_fields(self, monkeypatch):
         """GitHub Username und ID dürfen im Response sein, keine Secrets."""
         app_module = require_app_import()
+        monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda user_id: 500)
         mock_row = {
             "id": "test-uuid",
             "email": "test@example.com",
@@ -305,6 +307,7 @@ class TestOAuthContractWithApp:
         })
         monkeypatch.setattr(app_module, "_validate_pkce", lambda verifier, challenge: True)
         monkeypatch.setattr(app_module, "_encrypt_token", lambda token: f"encrypted-{token}")
+        monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda user_id: 500)
         monkeypatch.setattr(app_module.requests, "post", fake_post)
         monkeypatch.setattr(app_module.requests, "get", fake_get)
         monkeypatch.setattr(app_module, "query", fake_query)

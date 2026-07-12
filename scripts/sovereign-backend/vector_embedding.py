@@ -22,6 +22,9 @@ EMBEDDING_DIMENSIONS = 768
 EMBEDDING_TIMEOUT_SECONDS = 30
 MAX_EMBEDDING_INPUTS = 32
 MAX_EMBEDDING_TEXT_CHARS = 8_000
+DEFAULT_WORKER_AI_PROXY_URL = (
+    "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev"
+)
 
 
 class EmbeddingUnavailable(RuntimeError):
@@ -121,9 +124,17 @@ def _direct_cloudflare_request(texts: list[str]) -> EmbeddingBatch | None:
 
 
 def _proxy_request(texts: list[str]) -> EmbeddingBatch | None:
+    # Use the same organization-controlled Worker that already serves the live
+    # LLM bridge when no deployment-specific embedding URL is configured. An
+    # explicit empty WORKER_AI_PROXY_URL still disables this default fail-closed.
+    configured_worker = os.getenv("WORKER_AI_PROXY_URL")
     base = (
         os.getenv("KNOWLEDGE_EMBEDDING_BASE_URL", "").strip()
-        or os.getenv("WORKER_AI_PROXY_URL", "").strip()
+        or (
+            DEFAULT_WORKER_AI_PROXY_URL
+            if configured_worker is None
+            else configured_worker.strip()
+        )
     ).rstrip("/")
     if not base:
         return None
