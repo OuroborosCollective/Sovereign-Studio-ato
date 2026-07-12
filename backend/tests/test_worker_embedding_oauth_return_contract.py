@@ -34,7 +34,7 @@ def test_worker_deploy_requires_real_live_embedding_evidence():
         "CLOUDFLARE_ACCOUNT_ID",
     ):
         assert secret in workflow
-    assert "wrangler@3.60.0" in workflow
+    assert "wrangler@4" in workflow
     assert 'EXPECTED_WORKER_VERSION: \'1.2.0\'' in workflow
     assert 'POST "${WORKER_URL}/v1/embeddings"' in workflow
     assert "vector.length !== 768" in workflow
