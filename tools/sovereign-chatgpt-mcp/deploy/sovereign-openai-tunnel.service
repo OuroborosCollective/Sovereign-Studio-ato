@@ -12,9 +12,11 @@ EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env
 Environment=HOME=/var/lib/sovereign-tunnel
 WorkingDirectory=/var/lib/sovereign-tunnel
 ExecStartPre=/usr/bin/test -x /usr/local/bin/tunnel-client
+ExecStartPre=/bin/sh -c '/usr/bin/curl --fail --silent --show-error --max-time 8 -H "Accept: application/json, text/event-stream" -H "Content-Type: application/json" -H "MCP-Protocol-Version: 2025-06-18" --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"sovereign-openai-tunnel\",\"version\":\"1.0\"}}}" http://127.0.0.1:8090/mcp | /usr/bin/grep -Eq "serverInfo|event: message"'
 ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}
 Restart=always
 RestartSec=5
+TimeoutStartSec=30
 TimeoutStopSec=30
 StateDirectory=sovereign-tunnel
 StateDirectoryMode=0750
