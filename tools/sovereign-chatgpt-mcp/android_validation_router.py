@@ -28,6 +28,7 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         for name, argv in (
             ("git_diff_check", ["git", "diff", "--check"]),
             ("typecheck", ["pnpm", "run", "type-check"]),
+            ("web_build", ["pnpm", "run", "build:web"]),
         ):
             result = operator_runtime._run(argv, cwd=repo, timeout=1800)
             operator_runtime._record_check(
@@ -54,8 +55,7 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         if selected not in {"fast", *NATIVE_PROFILES}:
             raise ValueError("profile muss fast, standard oder release sein")
 
-        mode = os.getenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "local").strip().lower()
-        if selected == "fast" or mode != "github_actions":
+        if selected == "fast":
             return local_run_suite(workspace_id, selected)
 
         preflight = dispatch_preflight(workspace_id)
@@ -94,7 +94,7 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         ).strip()
         dispatch = broker.call(
             "github_workflow_dispatch",
-            {"workflow": workflow, "ref": branch, "inputs": {}},
+            {"workflow": workflow, "ref": branch, "inputs": {"validation_profile": selected}},
             timeout=60,
         )
         dispatched = bool(dispatch.get("ok"))
