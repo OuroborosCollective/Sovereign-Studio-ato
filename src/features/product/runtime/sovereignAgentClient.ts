@@ -19,6 +19,59 @@ export interface SovereignAgentStartJobInput {
   mission: string;
 }
 
+export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
+  evidenceText?: string;
+  provisionWorkspace?: boolean;
+  cloneRepo?: boolean;
+}
+
+export interface SovereignToolchainFailureFamily {
+  code: string;
+  title: string;
+  severity: string;
+  score: number;
+  checks: string[];
+}
+
+export interface SovereignToolchainFollowup {
+  fromFamily: string;
+  prediction: string;
+  checkNext: string;
+}
+
+export interface SovereignToolchainDiagnosis {
+  evidenceHash?: string;
+  failureFamilies: SovereignToolchainFailureFamily[];
+  nextLogicalFailures: SovereignToolchainFollowup[];
+}
+
+export interface SovereignDraftPrPreparationResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrPreparation: {
+    allowed: boolean;
+    decision: string;
+    summary?: string;
+    headBranch?: string;
+    baseBranch?: string;
+    nextAction?: string;
+    canCreateDraftPr?: boolean;
+    blockers: string[];
+  };
+}
+
+export interface SovereignDraftPrCreateResponse {
+  ok: boolean;
+  jobId: string;
+  draftPrCreate: {
+    allowed: boolean;
+    status: string;
+    prUrl?: string;
+    blocker?: string;
+    summary?: string;
+  };
+}
+
 export interface SovereignJanitorFinding {
   id: string;
   ruleId: string;
@@ -153,6 +206,62 @@ async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: 
   return sanitizeSnapshot(body, args.now);
 }
 
+async function requestObject(args: { url: string; init: RequestInit; fetcher: typeof fetch; fallback: string }): Promise<Record<string, unknown>> {
+  const response = await args.fetcher(args.url, args.init);
+  const body = await readJson(response);
+  if (!response.ok) {
+    const message = isObject(body) ? backendErrorMessage(body) : undefined;
+    throw new Error(message || `${args.fallback} returned HTTP ${response.status}.`);
+  }
+  if (!isObject(body)) throw new Error(`${args.fallback} returned a non-object response.`);
+  return body;
+}
+
+function diagnosisValue(value: unknown): SovereignToolchainDiagnosis {
+  const raw = isObject(value) ? value : {};
+  const families = Array.isArray(raw.failureFamilies)
+    ? raw.failureFamilies.filter(isObject).map((item): SovereignToolchainFailureFamily => ({
+        code: stringValue(item.code) || 'unknown',
+        title: stringValue(item.title) || 'Unknown failure family',
+        severity: stringValue(item.severity) || 'unknown',
+        score: typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : 0,
+        checks: stringArray(item.checks),
+      }))
+    : [];
+  const followups = Array.isArray(raw.nextLogicalFailures)
+    ? raw.nextLogicalFailures.filter(isObject).map((item): SovereignToolchainFollowup => ({
+        fromFamily: stringValue(item.fromFamily) || 'runtime_state_neighbour',
+        prediction: stringValue(item.prediction) || 'Unknown neighbouring runtime risk.',
+        checkNext: stringValue(item.checkNext) || 'verify runtime evidence',
+      }))
+    : [];
+  return {
+    evidenceHash: stringValue(raw.evidenceHash),
+    failureFamilies: families,
+    nextLogicalFailures: followups,
+  };
+}
+
+function toolchainEvents(diagnosis: SovereignToolchainDiagnosis, now: () => number): SovereignAgentRuntimeEvent[] {
+  const familySummary = diagnosis.failureFamilies.length
+    ? diagnosis.failureFamilies.map((item) => item.code).join(', ')
+    : 'no known family matched';
+  return [
+    {
+      at: now(),
+      level: 'success',
+      stage: 'toolchain_diagnosis_completed',
+      message: `Universal Toolchain diagnosis: ${familySummary}.`,
+    },
+    ...diagnosis.nextLogicalFailures.slice(0, 4).map((item, index): SovereignAgentRuntimeEvent => ({
+      at: now(),
+      level: 'info',
+      stage: 'toolchain_predictive_handoff',
+      message: `${index + 1}. ${item.prediction} Next check: ${item.checkNext}`,
+    })),
+  ];
+}
+
 async function requestJanitorTool(args: { url: string; init: RequestInit; fetcher: typeof fetch }): Promise<SovereignJanitorToolResponse> {
   const response = await args.fetcher(args.url, args.init);
   const body = await readJson(response);
@@ -200,6 +309,34 @@ export class SovereignAgentClient {
     });
     return { ...snapshot, repoUrl: snapshot.repoUrl ?? job.repoUrl, branch: snapshot.branch ?? job.branch };
   }
+  async startToolchainJob(input: SovereignToolchainStartJobInput): Promise<SovereignAgentJobSnapshot> {
+    assertReady(this.config);
+    const job = this.buildJobRequest(input);
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, '/api/user/agent/toolchain/handoff'),
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify({
+          ...job,
+          evidenceText: input.evidenceText || '',
+          provisionWorkspace: input.provisionWorkspace ?? true,
+          cloneRepo: input.cloneRepo ?? false,
+        }),
+      },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Universal Toolchain handoff',
+    });
+    const snapshot = sanitizeSnapshot(isObject(body.job) ? body.job : body, this.now);
+    const diagnosis = diagnosisValue(body.toolchain);
+    return {
+      ...snapshot,
+      repoUrl: snapshot.repoUrl ?? job.repoUrl,
+      branch: snapshot.branch ?? job.branch,
+      events: [...toolchainEvents(diagnosis, this.now), ...snapshot.events],
+    };
+  }
   async getJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
@@ -209,6 +346,58 @@ export class SovereignAgentClient {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     return requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/cancel')), init: { method: 'POST', headers: headers(), credentials: 'include' }, fetcher: this.fetcher, now: this.now });
+  }
+  async prepareDraftPr(jobId: string, headBranch?: string): Promise<SovereignDraftPrPreparationResponse> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/draft-pr/prepare')),
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify(headBranch ? { headBranch } : {}),
+      },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Draft PR preparation',
+    });
+    const signal = isObject(body.draftPrPreparation) ? body.draftPrPreparation : {};
+    return {
+      ok: body.ok === true,
+      jobId: stringValue(body.jobId) || jobId,
+      draftPrPreparation: {
+        allowed: signal.allowed === true,
+        decision: stringValue(signal.decision) || 'blocked',
+        summary: stringValue(signal.summary),
+        headBranch: stringValue(signal.headBranch),
+        baseBranch: stringValue(signal.baseBranch),
+        nextAction: stringValue(signal.nextAction),
+        canCreateDraftPr: signal.canCreateDraftPr === true,
+        blockers: stringArray(signal.blockers),
+      },
+    };
+  }
+  async createDraftPr(jobId: string): Promise<SovereignDraftPrCreateResponse> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/draft-pr/create')),
+      init: { method: 'POST', headers: headers(), credentials: 'include', body: '{}' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Draft PR create',
+    });
+    const signal = isObject(body.draftPrCreate) ? body.draftPrCreate : {};
+    return {
+      ok: body.ok === true,
+      jobId: stringValue(body.jobId) || jobId,
+      draftPrCreate: {
+        allowed: signal.allowed === true,
+        status: stringValue(signal.status) || 'blocked',
+        prUrl: stringValue(signal.prUrl),
+        blocker: stringValue(signal.blocker),
+        summary: stringValue(signal.summary),
+      },
+    };
   }
   async runJanitor(jobId: string, input: SovereignJanitorInput = {}): Promise<SovereignJanitorToolResponse> {
     assertReady(this.config);

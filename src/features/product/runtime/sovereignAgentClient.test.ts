@@ -25,6 +25,93 @@ describe('SovereignAgentClient', () => {
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
     await expect(client.startJob({ repoUrl: 'https://github.com/acme/repo', mission: 'Fix tests' })).rejects.toThrow('workspace unavailable');
   });
+  it('carries chat work through predictive handoff and the real Draft-PR route family', async () => {
+    const calls: string[] = [];
+    const responses = [
+      {
+        ok: true,
+        job: {
+          id: 'job-flow',
+          workspaceId: 'ws-flow',
+          status: 'completed',
+          repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+          branch: 'main',
+          changedFiles: ['src/App.tsx'],
+          events: [],
+        },
+        toolchain: {
+          evidenceHash: 'a'.repeat(64),
+          failureFamilies: [{
+            code: 'typescript_contract_mismatch',
+            title: 'TypeScript contract mismatch',
+            severity: 'high',
+            score: 3,
+            checks: ['run targeted typecheck'],
+          }],
+          nextLogicalFailures: [1, 2, 3, 4].map(index => ({
+            fromFamily: 'typescript_contract_mismatch',
+            prediction: `Neighbouring runtime risk ${index}`,
+            checkNext: `check ${index}`,
+          })),
+        },
+      },
+      {
+        ok: true,
+        jobId: 'job-flow',
+        draftPrPreparation: {
+          allowed: true,
+          decision: 'ready',
+          canCreateDraftPr: true,
+          blockers: [],
+        },
+      },
+      {
+        ok: true,
+        jobId: 'job-flow',
+        draftPrCreate: {
+          allowed: true,
+          status: 'created',
+          prUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/999',
+        },
+      },
+      {
+        id: 'job-flow',
+        workspaceId: 'ws-flow',
+        status: 'completed',
+        repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+        branch: 'main',
+        draftPrUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/999',
+        changedFiles: ['src/App.tsx'],
+        events: [],
+      },
+    ];
+    const fetcher = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify(responses.shift()), { status: 200 });
+    });
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch, now: () => 10 });
+
+    const job = await client.startToolchainJob({
+      repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      mission: 'Fix TypeScript and create a Draft PR.',
+      evidenceText: 'TS2339 Property paymentMethods does not exist',
+    });
+    const preparation = await client.prepareDraftPr(job.jobId || '');
+    const creation = await client.createDraftPr(job.jobId || '');
+    const finalJob = await client.getJob(job.jobId || '');
+
+    expect(job.events.filter(event => event.stage === 'toolchain_predictive_handoff')).toHaveLength(4);
+    expect(preparation.draftPrPreparation.allowed).toBe(true);
+    expect(creation.draftPrCreate.prUrl).toContain('/pull/999');
+    expect(finalJob.draftPrUrl).toContain('/pull/999');
+    expect(calls).toEqual([
+      'https://agent.example.test/api/user/agent/toolchain/handoff',
+      'https://agent.example.test/api/user/agent/jobs/job-flow/draft-pr/prepare',
+      'https://agent.example.test/api/user/agent/jobs/job-flow/draft-pr/create',
+      'https://agent.example.test/api/user/agent/jobs/job-flow',
+    ]);
+  });
+
   it('runs the deterministic janitor only through the owned job tool route', async () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       ok: true,
