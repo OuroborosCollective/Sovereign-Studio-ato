@@ -51,6 +51,57 @@ CREATE INDEX IF NOT EXISTS idx_credit_ledger_created_at ON credit_ledger(created
 
 COMMENT ON TABLE credit_ledger IS 'Append-only credit ledger - balance is SUM(amount) per user; admin_users.credits is a cache';
 
+-- Reconcile the real production CHECK constraint with every ledger type used by
+-- current runtime and migrations. Older installations created a narrower
+-- credit_ledger_type_check, so CREATE TABLE IF NOT EXISTS cannot repair it.
+-- Existing append-only rows are preserved; the canonical set is a superset of
+-- all historical values and the current runtime contract.
+DO $$
+DECLARE
+    constraint_definition TEXT;
+BEGIN
+    SELECT pg_get_constraintdef(constraint_row.oid)
+    INTO constraint_definition
+    FROM pg_constraint AS constraint_row
+    JOIN pg_class AS relation_row
+      ON relation_row.oid = constraint_row.conrelid
+    JOIN pg_namespace AS namespace_row
+      ON namespace_row.oid = relation_row.relnamespace
+    WHERE namespace_row.nspname = current_schema()
+      AND relation_row.relname = 'credit_ledger'
+      AND constraint_row.conname = 'credit_ledger_type_check'
+      AND constraint_row.contype = 'c';
+
+    IF constraint_definition IS NULL
+       OR constraint_definition NOT LIKE '%opening_balance%'
+       OR constraint_definition NOT LIKE '%migration_reconciliation%'
+       OR constraint_definition NOT LIKE '%balance_reconciliation%'
+       OR constraint_definition NOT LIKE '%signup_bonus%'
+       OR constraint_definition NOT LIKE '%credit_purchase%'
+       OR constraint_definition NOT LIKE '%usage%'
+    THEN
+        ALTER TABLE credit_ledger
+            DROP CONSTRAINT IF EXISTS credit_ledger_type_check;
+        ALTER TABLE credit_ledger
+            ADD CONSTRAINT credit_ledger_type_check CHECK (type IN (
+                'purchase',
+                'adjustment',
+                'bonus',
+                'manual_adjustment',
+                'correction',
+                'refund',
+                'chargeback',
+                'spend',
+                'opening_balance',
+                'migration_reconciliation',
+                'balance_reconciliation',
+                'signup_bonus',
+                'credit_purchase',
+                'usage'
+            ));
+    END IF;
+END $$;
+
 -- =============================================================================
 -- Preserve existing cached credits as opening ledger balances
 -- =============================================================================
