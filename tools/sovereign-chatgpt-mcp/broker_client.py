@@ -7,6 +7,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+MAX_BROKER_REQUEST_BYTES = 1_200_000
+MAX_BROKER_RESPONSE_BYTES = 1_000_000
+
 
 class HostBrokerClient:
     def __init__(self, socket_path: str | None = None, timeout: float = 30.0) -> None:
@@ -19,8 +22,8 @@ class HostBrokerClient:
             {"request_id": request_id, "action": action, "arguments": arguments or {}},
             separators=(",", ":"),
         ).encode("utf-8") + b"\n"
-        if len(payload) > 64_000:
-            raise ValueError("Broker-Anfrage ist zu groß")
+        if len(payload) > MAX_BROKER_REQUEST_BYTES:
+            raise ValueError("Broker-Anfrage ist größer als 1,2 MB")
         if not self.socket_path.is_socket():
             return {
                 "ok": False,
@@ -40,7 +43,7 @@ class HostBrokerClient:
                     break
                 chunks.append(chunk)
                 size += len(chunk)
-                if size > 1_000_000:
+                if size > MAX_BROKER_RESPONSE_BYTES:
                     raise RuntimeError("Broker-Antwort ist zu groß")
                 if b"\n" in chunk:
                     break
