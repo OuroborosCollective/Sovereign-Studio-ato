@@ -35,6 +35,22 @@ def test_preview_removes_one_outer_transaction_pair() -> None:
     assert not preview.rstrip().upper().endswith("COMMIT;")
 
 
+def test_preview_keeps_plpgsql_begin_inside_dollar_quoted_block() -> None:
+    sql = """BEGIN;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1) THEN
+        EXECUTE 'UPDATE llm_routes SET model_id = model WHERE model_id IS NULL';
+    END IF;
+END $$;
+COMMIT;
+"""
+    preview = _preview_body(sql)
+    assert "DO $$" in preview
+    assert "BEGIN\n    IF EXISTS" in preview
+    assert "END $$;" in preview
+
+
 def test_productive_migration_is_disabled_by_default(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
     migration = repo / "migrations" / "002.sql"
@@ -112,6 +128,7 @@ def test_enabled_backfill_uses_fixed_host_broker_after_preview(repo_runtime, mon
             "rolled_back": True,
             "sha256": checksum,
             "data_backfill_actions": ["update_rows"],
+            "policy_repair": {"status": "NOT_NEEDED"},
         },
     )
     calls = []
@@ -124,6 +141,7 @@ def test_enabled_backfill_uses_fixed_host_broker_after_preview(repo_runtime, mon
     result = database.apply_migration(workspace_id, "migrations/006.sql", checksum)
     assert result["status"] == "APPLIED"
     assert result["local_preview"]["rolled_back"] is True
+    assert result["local_preview"]["policy_repair"]["status"] == "NOT_NEEDED"
     assert calls == [
         (
             "apply_verified_migration",

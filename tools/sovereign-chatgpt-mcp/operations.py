@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from self_heal import REPAIR_ENGINE
+
 IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 WORKSPACE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{5,63}$")
@@ -27,24 +29,8 @@ DATA_BACKFILL_SQL_PATTERNS = {
     "update_rows": re.compile(r"\bUPDATE\s+[A-Za-z_\"]", re.IGNORECASE),
 }
 PSQL_META_COMMAND = re.compile(r"(?m)^\s*\\")
-TRANSACTION_CONTROL = re.compile(r"(?im)^\s*(BEGIN|START\s+TRANSACTION|COMMIT|ROLLBACK)\b")
 MAX_MIGRATION_BYTES = 500_000
 BLOCKED_PATH_PARTS = {".git", ".env", ".ssh", "node_modules", "secrets", "credentials"}
-
-
-def _preview_body(sql: str) -> str:
-    text = sql.strip()
-    begin_match = re.match(
-        r"\A(?P<prefix>(?:(?:\s+)|(?:--[^\n]*(?:\n|\Z))|(?:/\*.*?\*/))*)BEGIN\s*;",
-        text,
-        re.IGNORECASE | re.DOTALL,
-    )
-    commit_match = re.search(r"COMMIT\s*;\s*\Z", text, re.IGNORECASE)
-    if begin_match and commit_match and commit_match.start() >= begin_match.end():
-        text = f"{begin_match.group('prefix')}{text[begin_match.end():commit_match.start()]}".strip()
-    if TRANSACTION_CONTROL.search(text):
-        raise ValueError("Migration enthält verschachtelte Transaktionssteuerung")
-    return text
 
 
 def _read_env_value(path: Path, key: str) -> str:
@@ -133,10 +119,12 @@ class OperationsRuntime:
             raise ValueError("Migration enthält eine vollständig gesperrte SQL-Operation")
         destructive = tuple(name for name, pattern in DESTRUCTIVE_SQL_PATTERNS.items() if pattern.search(sql))
         data_backfills = tuple(name for name, pattern in DATA_BACKFILL_SQL_PATTERNS.items() if pattern.search(sql))
+        normalization = REPAIR_ENGINE.normalize_migration_preview(sql)
         return {
             "path": migration,
             "sql": sql,
-            "preview_sql": _preview_body(sql),
+            "preview_sql": normalization["sql"],
+            "policy_repair": normalization["repair"],
             "sha256": hashlib.sha256(data).hexdigest(),
             "destructive_actions": destructive,
             "data_backfill_actions": data_backfills,
@@ -231,6 +219,7 @@ class OperationsRuntime:
                 "blocker": "Host-Broker-Preview ist fehlgeschlagen",
                 "sha256": checksum,
                 "preview": preview,
+                "policy_repair": migration["policy_repair"],
             }
 
         admin_host = _read_env_value(self.backend_env_file, "POSTGRES_HOST") or "db"
@@ -253,6 +242,7 @@ class OperationsRuntime:
                 "destructive_actions": list(destructive),
                 "data_backfill_actions": list(data_backfills),
                 "preview": {"ok": True, "rolled_back": True},
+                "policy_repair": migration["policy_repair"],
                 "error": applied["stderr"],
             }
         return {
@@ -262,6 +252,7 @@ class OperationsRuntime:
             "destructive_actions": list(destructive),
             "data_backfill_actions": list(data_backfills),
             "preview": {"ok": True, "rolled_back": True},
+            "policy_repair": migration["policy_repair"],
             "production_database": admin_db,
         }
 

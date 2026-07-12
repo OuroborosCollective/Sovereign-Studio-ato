@@ -11,6 +11,7 @@ import psycopg2.extras
 
 from broker_client import HostBrokerClient
 from policy import safe_repo_path
+from self_heal import REPAIR_ENGINE
 
 FORBIDDEN_SQL = re.compile(
     r"\b(DROP\s+DATABASE|ALTER\s+SYSTEM|COPY\s+.+\s+PROGRAM|CREATE\s+EXTENSION\s+plpython|TRUNCATE\b|VACUUM\s+FULL|REINDEX\s+SYSTEM)\b",
@@ -26,25 +27,15 @@ DATA_BACKFILL_SQL_PATTERNS = {
     "update_rows": re.compile(r"\bUPDATE\s+[A-Za-z_\"]", re.IGNORECASE),
 }
 PSQL_META_COMMAND = re.compile(r"(?m)^\s*\\")
-TRANSACTION_CONTROL = re.compile(r"(?im)^\s*(BEGIN|START\s+TRANSACTION|COMMIT|ROLLBACK)\b")
 MAX_MIGRATION_BYTES = 500_000
 
 
-def _preview_body(sql: str) -> str:
-    """Remove one outer BEGIN/COMMIT pair so rollback evidence remains truthful."""
+def _preview_normalization(sql: str) -> dict[str, Any]:
+    return REPAIR_ENGINE.normalize_migration_preview(sql)
 
-    text = sql.strip()
-    begin_match = re.match(
-        r"\A(?P<prefix>(?:(?:\s+)|(?:--[^\n]*(?:\n|\Z))|(?:/\*.*?\*/))*)BEGIN\s*;",
-        text,
-        re.IGNORECASE | re.DOTALL,
-    )
-    commit_match = re.search(r"COMMIT\s*;\s*\Z", text, re.IGNORECASE)
-    if begin_match and commit_match and commit_match.start() >= begin_match.end():
-        text = f"{begin_match.group('prefix')}{text[begin_match.end():commit_match.start()]}".strip()
-    if TRANSACTION_CONTROL.search(text):
-        raise ValueError("Migration enthält verschachtelte Transaktionssteuerung")
-    return text
+
+def _preview_body(sql: str) -> str:
+    return str(_preview_normalization(sql)["sql"])
 
 
 class DatabaseRuntime:
@@ -112,18 +103,19 @@ class DatabaseRuntime:
             raise ValueError("Migration enthält eine vollständig gesperrte SQL-Operation")
         destructive = tuple(name for name, pattern in DESTRUCTIVE_SQL_PATTERNS.items() if pattern.search(sql))
         data_backfills = tuple(name for name, pattern in DATA_BACKFILL_SQL_PATTERNS.items() if pattern.search(sql))
-        _preview_body(sql)
+        _preview_normalization(sql)
         return migration, sql, hashlib.sha256(data).hexdigest(), destructive, data_backfills
 
     def preview_migration(self, workspace_id: str, path: str) -> dict[str, Any]:
         _, sql, checksum, destructive, data_backfills = self._migration(workspace_id, path)
+        normalization = _preview_normalization(sql)
         conn = self._connection("SOVEREIGN_MCP_PREVIEW_POSTGRES")
         try:
             conn.autocommit = False
             with conn.cursor() as cur:
                 cur.execute("SET LOCAL statement_timeout = '60s'")
                 cur.execute("SET LOCAL lock_timeout = '5s'")
-                cur.execute(_preview_body(sql))
+                cur.execute(str(normalization["sql"]))
             conn.rollback()
             return {
                 "ok": True,
@@ -132,6 +124,7 @@ class DatabaseRuntime:
                 "database_scope": "preview",
                 "destructive_actions": list(destructive),
                 "data_backfill_actions": list(data_backfills),
+                "policy_repair": normalization["repair"],
             }
         except Exception as exc:
             conn.rollback()
@@ -142,6 +135,7 @@ class DatabaseRuntime:
                 "database_scope": "preview",
                 "destructive_actions": list(destructive),
                 "data_backfill_actions": list(data_backfills),
+                "policy_repair": normalization["repair"],
                 "error": str(exc)[:2000],
             }
         finally:
