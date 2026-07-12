@@ -76,7 +76,9 @@ jobs:
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
-          grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py' deploy/sovereign-openai-tunnel.service
+          grep -q '^ExecStartPre=/bin/sh -c ' deploy/sovereign-openai-tunnel.service
+          grep -q '"method":"initialize"' deploy/sovereign-openai-tunnel.service
+          grep -q 'http://127.0.0.1:8090/mcp' deploy/sovereign-openai-tunnel.service
           grep -q '^ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}$' deploy/sovereign-openai-tunnel.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env$' deploy/sovereign-openai-tunnel.service
 
