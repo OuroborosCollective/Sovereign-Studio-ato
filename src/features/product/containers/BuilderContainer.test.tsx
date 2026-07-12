@@ -909,7 +909,61 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const filesItem = screen.getByRole("menuitem", { name: "Files" });
     expect(repoItem).toHaveAttribute("data-gate-state", "setup_required");
     expect(repoItem.getAttribute("title")).toContain("Noch kein bestätigter Repo-Snapshot");
-    expect(filesItem).toBeDisabled();
+    expect(filesItem).not.toBeDisabled();
+    expect(filesItem).toHaveAttribute("aria-disabled", "false");
+    expect(filesItem).toHaveAttribute("data-can-open", "false");
+  });
+
+  it("blocked Diff shortcut records its runtime blocker and next action", async () => {
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    const diffItem = screen.getByRole("menuitem", { name: "Diff" });
+    expect(diffItem).not.toBeDisabled();
+    expect(diffItem).toHaveAttribute("aria-disabled", "false");
+    expect(diffItem).toHaveAttribute("data-can-open", "false");
+    fireEvent.click(diffItem);
+
+    expect(screen.getByText(/Keine Changed-Files- oder Patch-Diff-Evidence vorhanden/i)).toBeDefined();
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    expect(actionStream).toHaveTextContent("Diff blockiert");
+    fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
+    expect(actionStream.querySelector('[data-route="diff"][data-state="blocked"]')).not.toBeNull();
+  });
+
+  it("active Executor shortcut shows the running job without requesting a duplicate start", async () => {
+    const onStartAgent = vi.fn();
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentReady
+        onStartAgent={onStartAgent}
+        agentJob={repoScopedJob()}
+      />,
+    );
+    await loadRepoFromChat();
+
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    const executorItem = screen.getByRole("menuitem", { name: "Executor" });
+    expect(executorItem).toHaveAttribute("data-gate-state", "inspection");
+    expect(executorItem.getAttribute("title")).toContain("Job läuft");
+    fireEvent.click(executorItem);
+
+    expect(onStartAgent).not.toHaveBeenCalled();
+    expect(screen.getByText(/bereits ein bestätigter Executor-Job aktiv/i)).toBeDefined();
+    const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
+    expect(actionStream).toHaveTextContent("Laufender Executor-Job angezeigt");
+    fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
+    expect(actionStream.querySelector('[data-route="agent-job"][data-state="running"]')).not.toBeNull();
   });
 
   it("Repo shortcut opens a real setup surface and never an empty inspector", () => {
@@ -1011,7 +1065,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     const diffItem = screen.getByRole("menuitem", { name: "Diff" });
-    expect(diffItem).toBeDisabled();
+    expect(diffItem).not.toBeDisabled();
+    expect(diffItem).toHaveAttribute("aria-disabled", "false");
+    expect(diffItem).toHaveAttribute("data-can-open", "false");
     expect(diffItem.getAttribute("title")).toContain("Kein Diff");
     expect(screen.queryByText("src/Foreign.tsx")).toBeNull();
     expect(screen.queryByText(/Draft PR öffnen/i)).toBeNull();

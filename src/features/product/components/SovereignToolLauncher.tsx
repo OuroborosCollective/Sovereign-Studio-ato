@@ -41,6 +41,7 @@ const DIRECT_LAUNCHER_TOOLS: ReadonlySet<ToolId> = new Set([
 export interface SovereignToolLauncherProps {
   runtimeContext?: SovereignToolShortcutContext;
   onSelect: (id: ToolId) => void;
+  onBlockedSelect?: (id: ToolId) => void;
   activeToolId?: ToolId | null;
   onOpenLauncher?: () => void;
 }
@@ -48,6 +49,7 @@ export interface SovereignToolLauncherProps {
 export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   runtimeContext = createEmptySovereignToolShortcutContext(),
   onSelect,
+  onBlockedSelect,
   activeToolId = null,
   onOpenLauncher,
 }) => {
@@ -83,7 +85,11 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   }, [open, close]);
 
   function handleSelect(tool: ToolEntry) {
-    if (!tool.canOpen) return;
+    if (!tool.canOpen) {
+      onBlockedSelect?.(tool.id);
+      setOpen(false);
+      return;
+    }
     onSelect(tool.id);
     if (DIRECT_LAUNCHER_TOOLS.has(tool.id)) launchTool(tool.id);
     setOpen(false);
@@ -179,13 +185,16 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
           </div>
           {resolvedTools.map((tool) => {
             const isActive = tool.id === activeToolId;
+            const canExplainBlocker = !tool.canOpen && Boolean(onBlockedSelect);
+            const isInteractive = tool.canOpen || canExplainBlocker;
             const tone = tool.canOpen ? (tool.state === 'ready' ? C.accent : C.sky) : C.amber;
             return (
               <button
                 key={tool.id}
                 type="button"
                 role="menuitem"
-                disabled={!tool.canOpen}
+                disabled={!isInteractive}
+                aria-disabled={!isInteractive}
                 onClick={() => handleSelect(tool)}
                 title={`${tool.label}: ${tool.statusLabel}\n${tool.reason}\n${tool.nextAction}`}
                 data-tool-id={tool.id}
@@ -200,8 +209,8 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
                   background: isActive ? `${C.accent}15` : 'transparent',
                   border: 'none',
                   borderLeft: isActive ? `2px solid ${C.accent}` : '2px solid transparent',
-                  cursor: tool.canOpen ? 'pointer' : 'not-allowed',
-                  opacity: tool.canOpen ? 1 : 0.58,
+                  cursor: isInteractive ? 'pointer' : 'not-allowed',
+                  opacity: tool.canOpen ? 1 : 0.68,
                   textAlign: 'left',
                   transition: 'background 0.1s',
                 }}
