@@ -793,6 +793,66 @@ def register_admin_knowledge_routes(
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)[:500]}), 500
 
+    @app.route("/api/admin/knowledge/repair", methods=["POST"])
+    @require_admin
+    def admin_knowledge_repair():
+        body = request.get_json(silent=True) or {}
+        try:
+            max_batches = max(1, min(int(body.get("maxBatches", 8)), 20))
+        except (TypeError, ValueError):
+            max_batches = 8
+        user_id = admin_user_id()
+        conn = get_connection()
+        try:
+            # Imported lazily to avoid the module cycle: are_inference consumes
+            # knowledge_library search helpers, while this admin route reuses its
+            # bounded and tested embedding-repair transaction.
+            from are_inference import repair_missing_knowledge_embeddings
+
+            selected = 0
+            repaired = 0
+            remaining = 0
+            completed_batches = 0
+            provider = None
+            for _ in range(max_batches):
+                result = repair_missing_knowledge_embeddings(
+                    conn,
+                    user_id=user_id,
+                    limit=25,
+                )
+                completed_batches += 1
+                selected += int(result.get("selected") or 0)
+                repaired += int(result.get("repaired") or 0)
+                remaining = int(result.get("remaining") or 0)
+                provider = result.get("provider") or provider
+                if remaining == 0 or int(result.get("selected") or 0) == 0:
+                    break
+                if int(result.get("repaired") or 0) == 0:
+                    break
+            return jsonify({
+                "ok": True,
+                "action": "recompute_missing_knowledge_embeddings",
+                "selected": selected,
+                "repaired": repaired,
+                "remaining": remaining,
+                "remainingForUser": remaining,
+                "batches": completed_batches,
+                "provider": provider,
+                "storage": "postgres-pgvector",
+            })
+        except EmbeddingUnavailable as exc:
+            conn.rollback()
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+                "blocker": "embedding_unavailable",
+            }), 503
+        except Exception as exc:
+            conn.rollback()
+            return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+        finally:
+            _close(conn)
+
     @app.route("/api/admin/knowledge/sources/<source_id>", methods=["DELETE"])
     @require_admin
     def admin_knowledge_source_delete(source_id: str):

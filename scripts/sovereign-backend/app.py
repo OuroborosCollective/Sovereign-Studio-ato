@@ -5307,6 +5307,7 @@ input[type=text],input[type=password]{-webkit-appearance:none}
         <button class="btn btn-primary" onclick="importKnowledgeUrlAdmin()">URL importieren</button>
         <div class="form-group" style="margin-top:14px"><label>PDF, Text oder Code</label><input type="file" id="knowledgeFile" accept=".pdf,.txt,.md,.rst,.json,.yaml,.yml,.toml,.py,.ts,.tsx,.js,.jsx,.java,.kt,.c,.cc,.cpp,.h,.hpp,.rs,.go,.cs,.php,.rb,.sh,.sql"/></div>
         <button class="btn btn-primary" onclick="uploadKnowledgeFileAdmin()">Datei einspeisen</button>
+        <button class="btn btn-ghost" style="margin-left:8px" onclick="repairKnowledgeEmbeddingsAdmin()">Fehlende Vektoren reparieren</button>
         <div class="msg" id="knowledgeMsg"></div>
       </div>
       <div class="card">
@@ -5734,6 +5735,15 @@ async function uploadKnowledgeFileAdmin(){
   knowledgeMessage('Datei wird geladen, geparst, gechunkt und eingebettet. Dieser bestätigte Backend-Lauf kann mehrere Minuten dauern.',true);
   try{ const result=await boundedFetch('/api/admin/knowledge/sources/upload',{method:'POST',headers:formHdr(),body:form},0); knowledgeMessage(result.duplicate?'Datei bereits vorhanden.':'Datei gespeichert: '+result.source.title,true); document.getElementById('knowledgeFile').value=''; await loadKnowledge(); }
   catch(error){ knowledgeMessage(error.message,false); }
+}
+async function repairKnowledgeEmbeddingsAdmin(){
+  knowledgeMessage('Fehlende PDF- und Wissensvektoren werden in begrenzten Batches neu berechnet.',true);
+  try{
+    const result=await boundedFetch('/api/admin/knowledge/repair',{method:'POST',headers:hdr(),body:JSON.stringify({maxBatches:8})},0);
+    const remaining=Number(result.remaining||0);
+    knowledgeMessage(String(result.repaired||0)+' Vektoren repariert'+(remaining>0?', '+remaining+' noch offen. Bitte erneut ausführen.':'. Suche ist bereit.'),remaining===0);
+    await loadKnowledge();
+  }catch(error){ knowledgeMessage(error.message,false); }
 }
 async function searchKnowledgeAdmin(){
   const query=document.getElementById('knowledgeQuery').value.trim(); if(!query)return;

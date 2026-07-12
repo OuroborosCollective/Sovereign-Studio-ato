@@ -71,7 +71,24 @@ def test_embedding_adapter_accepts_cloudflare_and_openai_shapes() -> None:
     assert vector_embedding.vector_literal(cloudflare[0]).startswith("[")
 
 
-def test_embedding_adapter_fails_closed_without_route(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_embedding_adapter_fails_closed_when_default_route_is_explicitly_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "KNOWLEDGE_EMBEDDING_BASE_URL",
+        "WORKER_AI_PROXY_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("WORKER_AI_PROXY_URL", "")
+    with pytest.raises(vector_embedding.EmbeddingUnavailable, match="no embedding route configured"):
+        vector_embedding.embed_texts(["real vector required"])
+
+
+def test_embedding_adapter_uses_sovereign_worker_default_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     for name in (
         "CLOUDFLARE_ACCOUNT_ID",
         "CLOUDFLARE_API_TOKEN",
@@ -80,8 +97,40 @@ def test_embedding_adapter_fails_closed_without_route(monkeypatch: pytest.Monkey
         "WORKER_AI_PROXY_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
-    with pytest.raises(vector_embedding.EmbeddingUnavailable, match="no embedding route configured"):
-        vector_embedding.embed_texts(["real vector required"])
+
+    calls: list[dict[str, object]] = []
+
+    class Response:
+        ok = True
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "data": [
+                    {
+                        "embedding": [0.001] * vector_embedding.EMBEDDING_DIMENSIONS,
+                    }
+                ]
+            }
+
+    def post(url, *, headers, json, timeout):
+        calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout})
+        return Response()
+
+    monkeypatch.setattr(vector_embedding.requests, "post", post)
+    batch = vector_embedding.embed_texts(["real knowledge"])
+
+    assert batch.provider == "embedding-proxy"
+    assert len(batch.vectors) == 1
+    assert len(batch.vectors[0]) == 768
+    assert calls[0]["url"] == (
+        "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev/v1/embeddings"
+    )
+    assert calls[0]["json"] == {
+        "model": "@cf/google/embeddinggemma-300m",
+        "input": ["real knowledge"],
+    }
 
 
 def test_knowledge_chunking_is_stable_and_hash_deduplicable() -> None:
@@ -154,6 +203,21 @@ def test_experience_vector_text_contains_evidence_not_raw_secrets() -> None:
     text = pattern_vector_memory.pattern_text(result)
     assert "Fix compiler error" in text
     assert "ctest passed" in text
+
+
+def test_worker_exposes_real_openai_compatible_embedding_contract() -> None:
+    worker = read(ROOT / "cloudflare-worker-ai-proxy" / "src" / "index.ts")
+    backend_adapter = read(DEPLOY / "vector_embedding.py")
+
+    assert "DEFAULT_WORKER_AI_PROXY_URL" in backend_adapter
+    assert "configured_worker = os.getenv(\"WORKER_AI_PROXY_URL\")" in backend_adapter
+    assert "DEFAULT_EMBEDDING_MODEL = '@cf/google/embeddinggemma-300m'" in worker
+    assert "const EMBEDDING_DIMENSIONS = 768" in worker
+    assert "async function handleEmbeddings" in worker
+    assert "JSON.stringify({ text: texts })" in worker
+    assert "url.pathname === '/v1/embeddings'" in worker
+    assert "return handleEmbeddings(request, env)" in worker
+    assert "Embedding ${index} did not contain ${EMBEDDING_DIMENSIONS} dimensions" in worker
 
 
 def test_migration_and_image_build_contain_live_contracts() -> None:
