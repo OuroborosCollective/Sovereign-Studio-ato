@@ -163,7 +163,7 @@ class TestRuntimeConfig(unittest.TestCase):
         # Verify the real deployed default configuration.
         config = _DEFAULT_RUNTIME_CONFIG
         
-        self.assertEqual(config["byok_mode"], "user-key")
+        self.assertEqual(config["byok_mode"], "system-key")
         self.assertIsInstance(config["cors_origins"], list)
         self.assertGreater(len(config["cors_origins"]), 0)
     

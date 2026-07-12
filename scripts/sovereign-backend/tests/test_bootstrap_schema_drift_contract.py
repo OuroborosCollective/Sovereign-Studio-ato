@@ -46,6 +46,27 @@ def test_bootstrap_indexes_whichever_llm_route_state_column_exists() -> None:
     assert not re.search(r"ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+enabled\b", sql, re.IGNORECASE)
 
 
+def test_bootstrap_repairs_launcher_overrides_to_runtime_contract() -> None:
+    sql = _text(BOOTSTRAP)
+
+    required_columns = (
+        "label",
+        "disabled",
+        "badge",
+        "sort_order",
+        "base_url",
+        "auth_mode",
+        "created_at",
+        "updated_at",
+    )
+    for column in required_columns:
+        assert f"ADD COLUMN IF NOT EXISTS {column}" in sql
+
+    assert "idx_launcher_overrides_sort_order" in sql
+    assert "ON launcher_overrides(sort_order)" in sql
+    assert "ON launcher_overrides(tool_id)" not in sql
+
+
 def test_runtime_adapter_maps_id_name_insert_to_legacy_version_layout() -> None:
     adapter = _load_adapter()
     result = adapter.adapt_schema_ledger(_text(MIGRATION_008), {"version"})
