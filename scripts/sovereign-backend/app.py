@@ -4098,6 +4098,7 @@ def auth_github():
                 user_id=user_id,
                 email=email,
                 display_name=display_name,
+                initial_credits=500,
                 github_id=github_id,
                 github_username=github_username,
                 github_access_token=encrypted_token,
