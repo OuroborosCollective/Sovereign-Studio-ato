@@ -21,13 +21,13 @@ SCHEMA_LEDGER_ID_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 SCHEMA_LEDGER_VERSION_RE = re.compile(
-    r"INSERT\s+INTO\s+schema_migrations\s*\(\s*version\s*,\s*applied_at\s*\)\s*"
-    r"VALUES\s*\(\s*'(?P<version>\d+)'\s*,\s*NOW\(\)\s*\)\s*"
+    r"INSERT\s+INTO\s+schema_migrations\s*\(\s*version(?:\s*,\s*applied_at)?\s*\)\s*"
+    r"VALUES\s*\(\s*'(?P<version>\d+)'(?:\s*,\s*NOW\(\))?\s*\)\s*"
     r"ON\s+CONFLICT\s*\(\s*version\s*\)\s*DO\s+NOTHING\s*;",
     re.IGNORECASE | re.DOTALL,
 )
 SCHEMA_LEDGER_ERROR = re.compile(
-    r"column \"(?:id|name|version)\" of relation \"schema_migrations\" does not exist",
+    r"column \"(?:id|name|version|applied_at)\" of relation \"schema_migrations\" does not exist",
     re.IGNORECASE,
 )
 
@@ -36,21 +36,33 @@ def _enabled(name: str) -> bool:
     return os.getenv(name, "0").strip() == "1"
 
 
-def _adapt_schema_ledger(sql: str, columns: set[str]) -> dict[str, Any]:
-    source = str(sql)
-    adapted = source
-    action = "not_needed"
-
-    id_match = SCHEMA_LEDGER_ID_RE.search(source)
-    if id_match and "version" in columns and not {"id", "name"}.issubset(columns):
-        migration_id = int(id_match.group("id"))
-        replacement = (
+def _legacy_version_insert(migration_id: int, columns: set[str]) -> str:
+    if "applied_at" in columns:
+        return (
             "INSERT INTO schema_migrations (version, applied_at)\n"
             f"VALUES ('{migration_id:03d}', NOW())\n"
             "ON CONFLICT (version) DO NOTHING;"
         )
+    return (
+        "INSERT INTO schema_migrations (version)\n"
+        f"VALUES ('{migration_id:03d}')\n"
+        "ON CONFLICT (version) DO NOTHING;"
+    )
+
+
+def _adapt_schema_ledger(sql: str, columns: set[str]) -> dict[str, Any]:
+    source = str(sql)
+    adapted = source
+    action = "not_needed"
+    used_columns: list[str] = []
+
+    id_match = SCHEMA_LEDGER_ID_RE.search(source)
+    if id_match and "version" in columns and not {"id", "name"}.issubset(columns):
+        migration_id = int(id_match.group("id"))
+        replacement = _legacy_version_insert(migration_id, columns)
         adapted = SCHEMA_LEDGER_ID_RE.sub(replacement, source, count=1)
         action = "id_name_to_legacy_version"
+        used_columns = [name for name in ("version", "applied_at") if name in columns]
 
     version_match = SCHEMA_LEDGER_VERSION_RE.search(source)
     if version_match and {"id", "name"}.issubset(columns) and "version" not in columns:
@@ -62,6 +74,7 @@ def _adapt_schema_ledger(sql: str, columns: set[str]) -> dict[str, Any]:
         )
         adapted = SCHEMA_LEDGER_VERSION_RE.sub(replacement, source, count=1)
         action = "legacy_version_to_id_name"
+        used_columns = ["id", "name"]
 
     return {
         "sql": adapted,
@@ -74,6 +87,7 @@ def _adapt_schema_ledger(sql: str, columns: set[str]) -> dict[str, Any]:
             "source_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
             "runtime_sql_sha256": hashlib.sha256(adapted.encode("utf-8")).hexdigest(),
             "detected_columns": sorted(columns),
+            "used_columns": used_columns,
             "attempts": 1 if adapted != source else 0,
             "max_attempts": 2,
         },
@@ -209,7 +223,14 @@ class PrivateAdminRuntime:
         )
         if not result["ok"]:
             raise RuntimeError(result["stderr"] or "schema_migrations konnte nicht geprüft werden")
-        return {line.strip() for line in result["stdout"].splitlines() if line.strip() and line.strip() != "column_name" and not line.startswith("-") and not line.startswith("(")}
+        return {
+            line.strip()
+            for line in result["stdout"].splitlines()
+            if line.strip()
+            and line.strip() != "column_name"
+            and not line.startswith("-")
+            and not line.startswith("(")
+        }
 
     def apply_verified_migration_with_self_heal(
         self,
