@@ -106,12 +106,29 @@ CREATE INDEX IF NOT EXISTS idx_llm_routes_priority ON llm_routes(priority);
 
 CREATE TABLE IF NOT EXISTS launcher_overrides (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tool_id     TEXT NOT NULL,
-    config      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    label       TEXT NOT NULL,
+    disabled    BOOLEAN NOT NULL DEFAULT false,
+    badge       TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    base_url    TEXT,
+    auth_mode   TEXT NOT NULL DEFAULT 'none',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_launcher_overrides_tool_id ON launcher_overrides(tool_id);
+-- CREATE TABLE IF NOT EXISTS does not reconcile an older real table. Repair only
+-- the additive runtime columns that app.py actually reads; preserve all existing
+-- rows and any legacy columns without manufacturing launcher state.
+ALTER TABLE launcher_overrides
+    ADD COLUMN IF NOT EXISTS label TEXT,
+    ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS badge TEXT,
+    ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS base_url TEXT,
+    ADD COLUMN IF NOT EXISTS auth_mode TEXT NOT NULL DEFAULT 'none',
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+CREATE INDEX IF NOT EXISTS idx_launcher_overrides_sort_order
+    ON launcher_overrides(sort_order);
 
 CREATE TABLE IF NOT EXISTS toolchain_tools (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),

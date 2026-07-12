@@ -67,5 +67,6 @@ def test_backend_error_states_are_not_empty_http_200_successes() -> None:
     for source in _backend_sources():
         assert '"paymentMethods": [], "error": str(exc), "runtimeState": "failed"}), 500' in source
         assert '"methods": [], "error": str(exc), "runtimeState": "failed"}), 500' in source
-        assert '"credits": 0, "error": str(exc), "runtimeState": "failed"}), 500' in source
+        assert 'return jsonify({"error": str(exc), "runtimeState": "failed"}), 500' in source
+        assert 'return jsonify({"credits": 0, "error": str(exc)' not in source
         assert '"ok": health_status == "healthy"' in source
