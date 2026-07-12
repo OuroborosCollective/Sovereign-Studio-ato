@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from admin_mode import PrivateAdminRuntime
+from github_admin import GitHubAdminRuntime
 from operations import OperationsRuntime
 from policy import validate_container
 from self_update import SelfUpdateRuntime
@@ -37,6 +38,7 @@ class BrokerRuntime:
         self.operations = OperationsRuntime()
         self.admin = PrivateAdminRuntime(self.operations)
         self.self_update = SelfUpdateRuntime()
+        self.github = GitHubAdminRuntime(self.self_update)
 
     @staticmethod
     def _run(argv: list[str], timeout: int = 60) -> dict[str, Any]:
@@ -175,6 +177,26 @@ class BrokerRuntime:
             "git_push_main": lambda values: self.admin.push_workspace_to_main(
                 workspace_id=str(values.get("workspace_id") or ""),
                 commit_message=str(values.get("commit_message") or ""),
+            ),
+            "github_pr_status": lambda values: self.github.pr_status(
+                pr_number=int(values.get("pr_number") or 0),
+            ),
+            "github_rerun_failed_workflows": lambda values: self.github.rerun_failed_workflows(
+                pr_number=int(values.get("pr_number") or 0),
+            ),
+            "github_workflow_dispatch": lambda values: self.github.dispatch_workflow(
+                workflow=str(values.get("workflow") or ""),
+                ref=str(values.get("ref") or "main"),
+                inputs=values.get("inputs") if isinstance(values.get("inputs"), dict) else {},
+            ),
+            "github_workflow_run_status": lambda values: self.github.workflow_run_status(
+                run_id=int(values.get("run_id") or 0),
+            ),
+            "github_merge_pr": lambda values: self.github.merge_pr(
+                pr_number=int(values.get("pr_number") or 0),
+                expected_head_sha=str(values.get("expected_head_sha") or ""),
+                merge_method=str(values.get("merge_method") or "squash"),
+                self_update_after_merge=bool(values.get("self_update_after_merge", True)),
             ),
             "mcp_self_update_schedule": lambda values: self.self_update.schedule(
                 expected_revision=str(values.get("expected_revision") or ""),

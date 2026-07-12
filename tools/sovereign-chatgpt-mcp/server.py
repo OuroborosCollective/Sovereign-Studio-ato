@@ -6,6 +6,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
 from runtime import OperatorRuntime
@@ -25,6 +26,10 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.append("postgres_admin_sql")
     if os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1":
         capabilities.append("repository_push_main")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "0").strip() == "1":
+        capabilities.append("repository_merge_pr")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "0").strip() == "1":
+        capabilities.append("repository_rerun_failed_workflows")
     if os.getenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "0").strip() == "1":
         capabilities.append("mcp_self_update")
     return capabilities
@@ -33,19 +38,22 @@ def _private_admin_capabilities() -> list[str]:
 runtime = OperatorRuntime()
 database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
+android = AndroidHardeningRuntime(runtime._repo, runtime._run, runtime._record_check)
 
 mcp = FastMCP(
     "Sovereign ChatGPT Operator",
     instructions=(
         "Arbeite ausschließlich im konfigurierten privaten Repository und VPS. Bereite für Codearbeit zuerst einen isolierten Workspace vor. "
-        "Nutze exakte Search/Replace-Patches für bestehende Dateien, besonders große Live-Dateien. "
-        "Installiere Abhängigkeiten reproduzierbar und führe passende Checks aus. "
-        "Draft-PR ist der normale Weg; wenn der private Broker-Schalter aktiv ist, darf repository_push_main ausdrücklich direkt committen und nach main pushen. "
-        "Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
-        "Wenn eine registrierte Reparatur scheitert oder eine neue Fehlerfamilie sichtbar wird, stoppe nicht nur beim Blocker: untersuche die Engine im isolierten Workspace, "
-        "ergänze eine deterministische Reparatur und Regressionstests, pushe bei aktivem Main-Modus, plane danach mit mcp_self_update_schedule die bestätigte Main-Revision ein, "
-        "prüfe mcp_self_update_status und wiederhole anschließend die ursprüngliche Operation. Maximal zwei Engine-Erweiterungszyklen pro Auftrag. "
-        "Keine Secrets lesen oder ausgeben."
+        "Nutze exakte Search/Replace-Patches für bestehende Dateien, besonders große Live-Dateien. Installiere Abhängigkeiten reproduzierbar und führe passende Checks aus. "
+        "Für Android-Produktionsarbeit beginne mit android_project_inventory, android_failure_family_scan und vorhandener Runtime-Evidence. Korrigiere zuerst die kausale Fehlerfamilie, "
+        "füge Regressionstests hinzu, fahre denselben Check erneut und erweitere danach auf benachbarte Familien. android_run_validation_suite bietet fast, standard und release. "
+        "Eine Release-Bereitschaft erfordert keine kritischen oder hohen Blocker, grüne relevante Tests und geprüfte APK/AAB-Evidence. "
+        "Draft-PR bleibt verfügbar. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, nicht als Draft markierten, "
+        "mergefähigen PR mit exakt bestätigtem Head-SHA und vollständig grünen Checks mergen. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
+        "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
+        "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
+        "Wenn eine registrierte Reparatur scheitert oder eine neue Fehlerfamilie sichtbar wird, untersuche die Engine im isolierten Workspace, ergänze eine deterministische Reparatur und "
+        "Regressionstests, pushe oder merge bei aktivem privaten Modus, lade die bestätigte Revision nach und wiederhole anschließend die ursprüngliche Operation. Keine Secrets lesen oder ausgeben."
     ),
     host=_host(),
     port=int(os.getenv("SOVEREIGN_MCP_PORT", "8090")),
@@ -109,7 +117,7 @@ def repository_install_dependencies(workspace_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=SAFE_WRITE)
 def repository_run_check(workspace_id: str, check: str, target: str = "") -> dict[str, Any]:
-    """Run an allowlisted verification: git_diff_check, backend_compile, pytest, typecheck, audit, build_web or vitest."""
+    """Run an allowlisted repository verification such as typecheck, tests, audit or web build."""
     return runtime.run_check(workspace_id, check, target)
 
 
@@ -127,21 +135,81 @@ def repository_create_draft_pr(
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def repository_push_main(workspace_id: str, commit_message: str) -> dict[str, Any]:
     """Commit the current workspace and push its HEAD directly to main when private main-push mode is enabled."""
+    return broker.call("git_push_main", {"workspace_id": workspace_id, "commit_message": commit_message}, timeout=720)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def repository_pr_status(pr_number: int) -> dict[str, Any]:
+    """Read PR state, exact head SHA, mergeability and all GitHub check evidence."""
+    return broker.call("github_pr_status", {"pr_number": pr_number}, timeout=60)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_rerun_failed_workflows(pr_number: int) -> dict[str, Any]:
+    """Rerun failed, cancelled or timed-out GitHub Actions runs for the current PR head."""
+    return broker.call("github_rerun_failed_workflows", {"pr_number": pr_number}, timeout=120)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_merge_pr(
+    pr_number: int,
+    expected_head_sha: str,
+    merge_method: str = "squash",
+    self_update_after_merge: bool = True,
+) -> dict[str, Any]:
+    """Merge one confirmed non-draft PR only when GitHub reports it mergeable and all checks are green."""
     return broker.call(
-        "git_push_main",
-        {"workspace_id": workspace_id, "commit_message": commit_message},
-        timeout=720,
+        "github_merge_pr",
+        {
+            "pr_number": pr_number,
+            "expected_head_sha": expected_head_sha,
+            "merge_method": merge_method,
+            "self_update_after_merge": self_update_after_merge,
+        },
+        timeout=180,
     )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def android_project_inventory(workspace_id: str) -> dict[str, Any]:
+    """Inventory Capacitor/Android surfaces, SDK levels, Gradle/AGP, dependencies, required files and available toolchain."""
+    return android.inventory(workspace_id)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def android_failure_family_scan(workspace_id: str) -> dict[str, Any]:
+    """Scan Android, Capacitor, Gradle, manifest, release workflow, WebView and artifact contracts for production blockers."""
+    return android.scan(workspace_id)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def android_runtime_evidence_analyze(evidence: str) -> dict[str, Any]:
+    """Classify bounded Gradle, logcat, WebView, crash, ANR, signing, R8 and SDK evidence into Android failure families."""
+    return android.analyze_evidence(evidence)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def android_repair_plan(workspace_id: str, evidence: str = "") -> dict[str, Any]:
+    """Correlate repository findings and runtime evidence into a causal, severity-ordered Android repair plan."""
+    return android.repair_plan(workspace_id, evidence)
+
+
+@mcp.tool(annotations=SAFE_WRITE)
+def android_run_validation_suite(workspace_id: str, profile: str = "fast") -> dict[str, Any]:
+    """Run the fast, standard or release Android validation profile and preserve structured evidence."""
+    return android.run_suite(workspace_id, profile)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def android_artifact_inspect(workspace_id: str, artifact_path: str) -> dict[str, Any]:
+    """Inspect a workspace APK/AAB for required entries, checksum, ABI surface, signing and alignment evidence when tools exist."""
+    return android.inspect_artifact(workspace_id, artifact_path)
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def mcp_self_update_schedule(expected_revision: str, reason: str = "repair_engine_extension") -> dict[str, Any]:
     """Schedule installation of one exact confirmed main revision of the private ChatGPT MCP and broker."""
-    return broker.call(
-        "mcp_self_update_schedule",
-        {"expected_revision": expected_revision, "reason": reason},
-        timeout=60,
-    )
+    return broker.call("mcp_self_update_schedule", {"expected_revision": expected_revision, "reason": reason}, timeout=60)
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -160,7 +228,7 @@ def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
         active = _private_admin_capabilities()
         if "postgres_admin_sql" in active:
             blocked = [item for item in blocked if item != "generic_sql"]
-        if "repository_push_main" in active:
+        if "repository_push_main" in active or "repository_merge_pr" in active:
             blocked = [item for item in blocked if item != "direct_main_write"]
         policy["blocked_capabilities"] = blocked
         policy["active_private_admin_capabilities"] = active
@@ -224,11 +292,7 @@ def deploy_verified_backend_release(image_digest: str, expected_revision: str, c
     """Use the local broker to deploy an immutable image digest."""
     return broker.call(
         "deploy_verified_release",
-        {
-            "image_digest": image_digest,
-            "expected_revision": expected_revision,
-            "confirmation_revision": confirmation_revision,
-        },
+        {"image_digest": image_digest, "expected_revision": expected_revision, "confirmation_revision": confirmation_revision},
         timeout=960,
     )
 
@@ -238,10 +302,7 @@ def rollback_backend_release(target_image_digest: str, confirmation_digest: str)
     """Use the local broker to roll back to one explicitly confirmed immutable image digest."""
     return broker.call(
         "rollback_release",
-        {
-            "target_image_digest": target_image_digest,
-            "confirmation_digest": confirmation_digest,
-        },
+        {"target_image_digest": target_image_digest, "confirmation_digest": confirmation_digest},
         timeout=960,
     )
 
