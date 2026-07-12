@@ -13,8 +13,9 @@ BACKEND_ROOT = REPO_ROOT / "scripts/sovereign-backend"
 BOOTSTRAP = BACKEND_ROOT / "migrations/000_backend_bootstrap_schema.sql"
 MIGRATION_001 = BACKEND_ROOT / "migrations/001_admin_api_keys_and_credit_ledger.sql"
 MIGRATION_005 = BACKEND_ROOT / "migrations/005_sovereign_agent_schema_sync.sql"
-MIGRATION_012 = BACKEND_ROOT / "migrations/012_credit_ledger_type_contract.sql"
 MIGRATION_008 = BACKEND_ROOT / "migrations/008_knowledge_memory_passkeys_stepup.sql"
+MIGRATION_011 = BACKEND_ROOT / "migrations/011_credit_state_verification.sql"
+MIGRATION_012 = BACKEND_ROOT / "migrations/012_credit_ledger_type_contract.sql"
 ADAPTER_PATH = BACKEND_ROOT / "migration_ledger_adapter.py"
 AUTO_MIGRATE = BACKEND_ROOT / "auto-migrate.sh"
 DOCKERFILE = BACKEND_ROOT / "Dockerfile"
@@ -67,6 +68,23 @@ def test_bootstrap_repairs_launcher_overrides_to_runtime_contract() -> None:
     assert "idx_launcher_overrides_sort_order" in sql
     assert "ON launcher_overrides(sort_order)" in sql
     assert "ON launcher_overrides(tool_id)" not in sql
+
+
+def test_credit_ledger_runtime_columns_are_reconciled_additively() -> None:
+    required_columns = (
+        "reason TEXT",
+        "provider TEXT",
+        "provider_tx_id TEXT",
+        "created_by UUID REFERENCES admin_users(id)",
+        "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+    )
+    for migration in (BOOTSTRAP, MIGRATION_001, MIGRATION_011):
+        sql = _text(migration)
+        assert "ALTER TABLE credit_ledger" in sql
+        for column in required_columns:
+            assert f"ADD COLUMN IF NOT EXISTS {column}" in sql
+
+    assert "Existing append-only rows are never rewritten or deleted" in _text(MIGRATION_011)
 
 
 def test_credit_ledger_constraint_is_reconciled_to_runtime_types() -> None:
