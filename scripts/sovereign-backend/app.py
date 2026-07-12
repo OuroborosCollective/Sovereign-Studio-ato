@@ -25,8 +25,6 @@ from security_oauth import (
     init_token_encryption,
     _encrypt_token,
     _decrypt_token,
-    _store_oauth_state,
-    _get_oauth_state,
     _validate_pkce,
     _generate_state,
     _generate_pkce,
@@ -182,6 +180,66 @@ def query(sql: str, params=None, *, one=False, write=False):
         raise
     finally:
         pool.putconn(conn)
+
+
+_OAUTH_STATE_TTL_SECONDS = 600
+
+
+def _oauth_state_hash(state: str) -> str:
+    normalized = str(state or "").strip()
+    if not normalized:
+        raise ValueError("OAuth State fehlt")
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def _oauth_state_payload(row) -> dict | None:
+    if not row:
+        return None
+    payload = row.get("payload")
+    return dict(payload) if isinstance(payload, dict) else None
+
+
+def _store_oauth_state(state: str, data: dict) -> None:
+    """Persist OAuth state for all Gunicorn workers without storing the raw state."""
+    state_hash = _oauth_state_hash(state)
+    payload = dict(data or {})
+    query("DELETE FROM github_oauth_states WHERE expires_at <= NOW()", write=True)
+    query(
+        """INSERT INTO github_oauth_states (state_hash, payload, expires_at)
+           VALUES (%s, %s::jsonb, NOW() + (%s * INTERVAL '1 second'))
+           ON CONFLICT (state_hash) DO UPDATE SET
+               payload = EXCLUDED.payload,
+               expires_at = EXCLUDED.expires_at,
+               created_at = NOW()""",
+        (state_hash, psycopg2.extras.Json(payload), _OAUTH_STATE_TTL_SECONDS),
+        write=True,
+    )
+
+
+def _peek_oauth_state(state: str) -> dict | None:
+    """Read callback routing context without consuming the one-time state."""
+    row = query(
+        """SELECT payload
+           FROM github_oauth_states
+           WHERE state_hash = %s AND expires_at > NOW()
+           LIMIT 1""",
+        (_oauth_state_hash(state),),
+        one=True,
+    )
+    return _oauth_state_payload(row)
+
+
+def _get_oauth_state(state: str) -> dict | None:
+    """Atomically consume one unexpired OAuth state across all backend workers."""
+    row = query(
+        """DELETE FROM github_oauth_states
+           WHERE state_hash = %s AND expires_at > NOW()
+           RETURNING payload""",
+        (_oauth_state_hash(state),),
+        one=True,
+        write=True,
+    )
+    return _oauth_state_payload(row)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -3750,6 +3808,65 @@ GITHUB_OAUTH_REDIRECT_URI = os.getenv(
     "https://chat.arelorian.de/auth/github/callback.html",
 ).strip()
 
+_DEFAULT_GITHUB_OAUTH_OPENER_ORIGINS = {
+    "https://chat.arelorian.de",
+    "https://arelorian.de",
+    "http://localhost",
+    "https://localhost",
+    "capacitor://localhost",
+}
+
+
+def _normalize_oauth_origin(value: str) -> str:
+    """Return one canonical origin without path, credentials, query or fragment."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return ""
+    try:
+        parsed = urllib.parse.urlsplit(candidate)
+    except ValueError:
+        return ""
+    if parsed.scheme not in {"https", "http", "capacitor"} or not parsed.hostname:
+        return ""
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return ""
+    if parsed.path not in {"", "/"}:
+        return ""
+    hostname = parsed.hostname.lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    default_port = (parsed.scheme == "https" and port == 443) or (parsed.scheme == "http" and port == 80)
+    port_suffix = "" if port is None or default_port else f":{port}"
+    return f"{parsed.scheme}://{hostname}{port_suffix}"
+
+
+def _github_oauth_allowed_opener_origins() -> set[str]:
+    configured = {
+        _normalize_oauth_origin(item)
+        for item in os.getenv("GITHUB_OAUTH_ALLOWED_OPENER_ORIGINS", "").split(",")
+        if item.strip()
+    }
+    return _DEFAULT_GITHUB_OAUTH_OPENER_ORIGINS | {item for item in configured if item}
+
+
+def _is_allowed_github_oauth_opener_origin(origin: str) -> bool:
+    normalized = _normalize_oauth_origin(origin)
+    if normalized in _github_oauth_allowed_opener_origins():
+        return True
+    parsed = urllib.parse.urlsplit(normalized) if normalized else None
+    return bool(
+        parsed
+        and parsed.scheme in {"http", "https"}
+        and parsed.hostname in {"localhost", "127.0.0.1"}
+    )
+
+
+def _github_oauth_callback_origin() -> str:
+    parsed = urllib.parse.urlsplit(GITHUB_OAUTH_REDIRECT_URI)
+    return _normalize_oauth_origin(f"{parsed.scheme}://{parsed.netloc}")
+
 # Initialisiere Token Encryption mit Key aus Environment
 _token_encryption_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", JWT_SECRET)
 if _token_encryption_key:
@@ -3951,6 +4068,26 @@ def auth_google():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/auth/github/callback-context", methods=["GET"])
+def auth_github_callback_context():
+    """Expose only the approved opener origin for one still-valid OAuth state."""
+    state = str(request.args.get("state") or "").strip()
+    if not state:
+        return jsonify({"error": "OAuth State fehlt"}), 400
+    stored_state = _peek_oauth_state(state)
+    if not stored_state:
+        return jsonify({"error": "Ungültiger oder abgelaufener State"}), 404
+    opener_origin = _normalize_oauth_origin(str(stored_state.get("opener_origin") or ""))
+    if not opener_origin or not _is_allowed_github_oauth_opener_origin(opener_origin):
+        return jsonify({"error": "OAuth Rückkanal ist nicht erlaubt"}), 403
+    response = make_response(jsonify({
+        "openerOrigin": opener_origin,
+        "callbackOrigin": _github_oauth_callback_origin(),
+    }))
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/api/auth/github", methods=["POST"])
 def auth_github():
     """
@@ -4133,14 +4270,34 @@ def auth_github_init():
             return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
         
         body = request.get_json(force=True) or {}
-        requested_redirect_uri = body.get("redirect_uri", "")
+        requested_redirect_uri = str(body.get("redirect_uri") or "").strip()
+        requested_opener_origin = str(
+            body.get("opener_origin")
+            or request.headers.get("Origin")
+            or ""
+        ).strip()
+        if not requested_opener_origin and requested_redirect_uri:
+            parsed_requested_redirect = urllib.parse.urlsplit(requested_redirect_uri)
+            requested_opener_origin = f"{parsed_requested_redirect.scheme}://{parsed_requested_redirect.netloc}"
+        opener_origin = _normalize_oauth_origin(requested_opener_origin)
+
         # OAuth Redirect URI wird SERVERSEITIG festgelegt.
         # Client-Input wird ignoriert, um Redirect-URI-Mismatch zu vermeiden.
         redirect_uri = GITHUB_OAUTH_REDIRECT_URI
-        # Client-redirect_uri ablehnen, wenn abweichend (Security-Audit)
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
         if "," in client_ip:
             client_ip = client_ip.split(",")[0].strip()
+        if not opener_origin or not _is_allowed_github_oauth_opener_origin(opener_origin):
+            _audit_event(
+                "GITHUB_OAUTH_OPENER_REJECTED",
+                False,
+                f"opener_origin={requested_opener_origin[:160]}",
+                client_ip,
+            )
+            return jsonify({
+                "error": "GitHub OAuth Rückkanal-Origin ist nicht erlaubt",
+                "blocker": "github_oauth_opener_origin_not_allowed",
+            }), 400
         if requested_redirect_uri and requested_redirect_uri != GITHUB_OAUTH_REDIRECT_URI:
             _audit_event(
                 "GITHUB_OAUTH_REDIRECT_IGNORED",
@@ -4164,6 +4321,7 @@ def auth_github_init():
         _store_oauth_state(state, {
             "code_challenge": code_challenge,
             "redirect_uri": redirect_uri,
+            "opener_origin": opener_origin,
         })
         
         # GitHub Auth URL bauen
@@ -4182,6 +4340,8 @@ def auth_github_init():
             "state": state,
             "codeChallenge": code_challenge,
             "codeVerifier": code_verifier,  # Client braucht das für Token-Request
+            "callbackOrigin": _github_oauth_callback_origin(),
+            "openerOrigin": opener_origin,
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

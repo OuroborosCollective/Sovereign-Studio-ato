@@ -184,6 +184,50 @@ class TestOAuthContractWithApp:
         assert result.get("githubId") == "12345"
         assert result.get("githubUsername") == "testuser"
 
+    def test_oauth_state_store_hashes_raw_state_and_persists_payload(self, monkeypatch):
+        """Mehrprozess-State wird nur gehasht und mit Ablaufzeit in PostgreSQL gespeichert."""
+        app_module = require_app_import()
+        calls = []
+
+        def fake_query(sql, params=None, one=False, write=False):
+            calls.append((sql, params, one, write))
+            return None
+
+        monkeypatch.setattr(app_module, "query", fake_query)
+        app_module._store_oauth_state("raw-secret-state", {
+            "code_challenge": "challenge",
+            "opener_origin": "https://chat.arelorian.de",
+        })
+
+        assert len(calls) == 2
+        insert_sql, insert_params, one, write = calls[1]
+        assert "INSERT INTO github_oauth_states" in insert_sql
+        assert insert_params[0] == app_module.hashlib.sha256(b"raw-secret-state").hexdigest()
+        assert "raw-secret-state" not in repr(insert_params)
+        assert insert_params[1].value["opener_origin"] == "https://chat.arelorian.de"
+        assert one is False
+        assert write is True
+
+    def test_oauth_state_exchange_consumes_state_atomically(self, monkeypatch):
+        """Ein State kann workerübergreifend nur einmal per DELETE RETURNING verbraucht werden."""
+        app_module = require_app_import()
+        calls = []
+
+        def fake_query(sql, params=None, one=False, write=False):
+            calls.append((sql, params, one, write))
+            return {"payload": {"code_challenge": "challenge"}}
+
+        monkeypatch.setattr(app_module, "query", fake_query)
+        payload = app_module._get_oauth_state("one-time-state")
+
+        sql, params, one, write = calls[0]
+        assert "DELETE FROM github_oauth_states" in sql
+        assert "RETURNING payload" in sql
+        assert params[0] == app_module.hashlib.sha256(b"one-time-state").hexdigest()
+        assert payload == {"code_challenge": "challenge"}
+        assert one is True
+        assert write is True
+
     def test_auth_github_init_limits_scopes_and_uses_central_pkce(self, monkeypatch):
         """Client-Input darf OAuth nicht auf repo/write-Scope erweitern."""
         app_module = require_app_import()
@@ -209,6 +253,7 @@ class TestOAuthContractWithApp:
             "/api/auth/github/init",
             json={
                 "redirect_uri": "https://example.test/callback",  # Client tries to override
+                "opener_origin": "https://chat.arelorian.de",
                 "scopes": "repo delete_repo admin:org read:user user:email",
             },
         )
@@ -223,9 +268,55 @@ class TestOAuthContractWithApp:
         assert captured_state["data"] == {
             "code_challenge": "challenge_test",
             "redirect_uri": "https://sovereign-backend.arelorian.de/api/auth/github",
+            "opener_origin": "https://chat.arelorian.de",
         }
         assert "code_verifier" not in captured_state["data"]
         assert payload["codeVerifier"] == "verifier_test"
+        assert payload["openerOrigin"] == "https://chat.arelorian.de"
+        assert payload["callbackOrigin"] == "https://sovereign-backend.arelorian.de"
+
+    def test_auth_github_init_rejects_unapproved_opener_origin(self):
+        """OAuth darf keinen Rückkanal an beliebige Origins vorbereiten."""
+        app_module = require_app_import()
+        client = app_module.app.test_client()
+
+        response = client.post(
+            "/api/auth/github/init",
+            json={
+                "redirect_uri": "https://evil.example/callback",
+                "opener_origin": "https://evil.example",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.get_json()["blocker"] == "github_oauth_opener_origin_not_allowed"
+
+    def test_auth_github_callback_context_returns_origin_without_consuming_state(self, monkeypatch):
+        """Callback liest nur den Rückkanal; der Token-Exchange verbraucht den State später."""
+        app_module = require_app_import()
+        calls = []
+
+        def fake_peek(state):
+            calls.append(state)
+            return {"opener_origin": "https://chat.arelorian.de"}
+
+        monkeypatch.setattr(app_module, "_peek_oauth_state", fake_peek)
+        monkeypatch.setattr(
+            app_module,
+            "GITHUB_OAUTH_REDIRECT_URI",
+            "https://chat.arelorian.de/auth/github/callback.html",
+        )
+
+        client = app_module.app.test_client()
+        response = client.get("/api/auth/github/callback-context?state=state_test")
+
+        assert response.status_code == 200
+        assert calls == ["state_test"]
+        assert response.get_json() == {
+            "openerOrigin": "https://chat.arelorian.de",
+            "callbackOrigin": "https://chat.arelorian.de",
+        }
+        assert response.headers["Cache-Control"] == "no-store"
 
     def test_auth_github_rejects_missing_pkce_verifier_when_challenge_exists(self, monkeypatch):
         """Wenn PKCE angefordert wurde, darf fehlender verifier nicht akzeptiert werden."""
