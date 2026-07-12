@@ -10,6 +10,10 @@ import type {
   SovereignExecutorIntentKind,
 } from './sovereignExecutorRuntime';
 import type { GitHubAccessState } from './githubAccessRuntime';
+import type {
+  SovereignToolInspectionEvidence,
+  SovereignToolInspectionId,
+} from './sovereignToolInspectionRuntime';
 import { maskSecrets } from '../../../shared/utils/crypto';
 
 export type SovereignCompactShortcutSurface =
@@ -223,6 +227,36 @@ export function decideSovereignCompactShortcutExecution(
         }),
       };
   }
+}
+
+export function buildSovereignInspectionResultEvent(
+  id: SovereignToolInspectionId,
+  evidence: SovereignToolInspectionEvidence,
+  startedAt: number,
+): SovereignActionEventInput | null {
+  if (evidence.outcome === 'checking') return null;
+  if (!Number.isFinite(startedAt) || startedAt <= 0) return null;
+  if (!Number.isFinite(evidence.observedAt) || evidence.observedAt < startedAt) return null;
+
+  const terminalState = evidence.outcome === 'ready'
+    ? 'done'
+    : evidence.outcome === 'failed'
+      ? 'failed'
+      : 'blocked';
+  const terminalKind = terminalState === 'done'
+    ? 'done'
+    : terminalState === 'failed'
+      ? 'failed'
+      : 'blocked';
+
+  return event({
+    kind: terminalKind,
+    route: id,
+    label: `${id} Inspektion abgeschlossen`,
+    detail: `${evidence.statusLabel} · ${evidence.reason} Nächste Aktion: ${evidence.nextAction}`,
+    state: terminalState,
+    createdAt: evidence.observedAt,
+  });
 }
 
 export type SovereignRuntimeEvidenceSource = 'action-stream' | 'agent-runtime';
