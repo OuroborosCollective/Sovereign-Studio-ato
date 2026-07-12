@@ -310,7 +310,6 @@ class TestOAuthContractWithApp:
         monkeypatch.setattr(app_module, "_validate_pkce", lambda verifier, challenge: True)
         monkeypatch.setattr(app_module, "_encrypt_token", lambda token: f"encrypted-{token}")
         monkeypatch.setattr(app_module, "_read_verified_credit_balance", lambda user_id: 500)
-        monkeypatch.setattr(app_module, "_create_user_with_initial_credits", fake_create_user)
         monkeypatch.setattr(app_module.requests, "post", fake_post)
         monkeypatch.setattr(app_module.requests, "get", fake_get)
         monkeypatch.setattr(app_module, "query", fake_query)
