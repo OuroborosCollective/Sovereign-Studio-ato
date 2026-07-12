@@ -48,7 +48,7 @@ jobs:
         run: python -m pip install --requirement requirements.txt
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py operations.py admin_mode.py broker.py broker_client.py self_heal.py server.py tests/*.py
+        run: python -m py_compile policy.py runtime.py database.py operations.py admin_mode.py self_update.py broker.py broker_client.py self_heal.py server.py tests/*.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -57,12 +57,17 @@ jobs:
           bash -n deploy/rollback-sovereign-backend
           bash -n deploy/bootstrap-database.sh
           bash -n deploy/install-secure-tunnel.sh
+          bash -n deploy/self-update-chatgpt-mcp.sh
           bash -n deploy/install-on-vps.sh
           grep -q 'admin_mode.py' deploy/install-on-vps.sh
+          grep -q 'self_update.py' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_ADMIN_SQL' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_MAIN_PUSH' deploy/install-on-vps.sh
+          grep -q 'SOVEREIGN_MCP_ENABLE_SELF_UPDATE' deploy/install-on-vps.sh
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py$' deploy/sovereign-chatgpt-broker.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
+          grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp$' deploy/sovereign-chatgpt-mcp-self-update.service
+          grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}$' deploy/sovereign-openai-tunnel.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env$' deploy/sovereign-openai-tunnel.service
 
@@ -80,7 +85,9 @@ jobs:
           assert self_heal.REPAIR_ENGINE is not None
           assert callable(server.postgres_admin_sql)
           assert callable(server.repository_push_main)
-          print('MCP import, private broker admin and repair-policy contracts passed.')
+          assert callable(server.mcp_self_update_schedule)
+          assert callable(server.mcp_self_update_status)
+          print('MCP import, private broker admin, self-update and repair-policy contracts passed.')
           PY
 
       - name: Build unprivileged MCP container

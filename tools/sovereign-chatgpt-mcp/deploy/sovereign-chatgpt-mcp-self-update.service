@@ -1,0 +1,24 @@
+[Unit]
+Description=Sovereign private ChatGPT MCP self-update
+After=network-online.target docker.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env
+Environment=SOVEREIGN_MCP_SOURCE_DIR=/opt/sovereign-operator-source
+Environment=SOVEREIGN_MCP_SELF_UPDATE_REQUEST=/run/sovereign-chatgpt-broker/self-update.request.json
+Environment=SOVEREIGN_MCP_SELF_UPDATE_STATE_DIR=/var/lib/sovereign-chatgpt-self-update
+ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp
+StateDirectory=sovereign-chatgpt-self-update
+StateDirectoryMode=0750
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
