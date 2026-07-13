@@ -131,6 +131,7 @@ recover_previous_control_plane() {
   systemctl daemon-reload >/dev/null 2>&1
   systemctl restart sovereign-chatgpt-command-worker.service >/dev/null 2>&1
   systemctl restart sovereign-chatgpt-broker.service >/dev/null 2>&1
+  wait_for_broker_ready >/dev/null 2>&1 || true
   if [[ -f "$INSTALL_ROOT/docker-compose.yml" && -f "$ENV_FILE" ]]; then
     local rollback_gid
     rollback_gid="$(getent group sovereign-mcp | cut -d: -f3)"
@@ -163,6 +164,36 @@ trap on_installer_exit EXIT
 
 port_listener_evidence() {
   ss -H -ltnp 2>/dev/null | awk -v suffix=":$MCP_HOST_PORT" '$4 ~ suffix "$" {print}'
+}
+
+broker_rpc_ready() {
+  python3 - <<'PY'
+import json
+import socket
+
+payload = json.dumps(
+    {"request_id": "broker-readiness-canary", "action": "broker_health", "arguments": {}},
+    separators=(",", ":"),
+).encode("utf-8") + b"\n"
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(2)
+    client.connect("/run/sovereign-chatgpt-broker/operator.sock")
+    client.sendall(payload)
+    response = json.loads(client.recv(65536).split(b"\n", 1)[0].decode("utf-8"))
+result = response.get("result") or {}
+if result.get("status") != "BROKER_READY":
+    raise SystemExit(1)
+PY
+}
+
+wait_for_broker_ready() {
+  for attempt in $(seq 1 30); do
+    if [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] && broker_rpc_ready >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 INSTALL_STAGE="preflight"
@@ -387,13 +418,9 @@ systemctl restart sovereign-chatgpt-command-worker.service
 systemctl is-active --quiet sovereign-chatgpt-command-worker.service || fail "host command worker is not active"
 systemctl enable --now sovereign-chatgpt-broker.service
 systemctl restart sovereign-chatgpt-broker.service
-for attempt in $(seq 1 20); do
-  [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] && break
-  sleep 1
-done
-[[ -S /run/sovereign-chatgpt-broker/operator.sock ]] || {
+wait_for_broker_ready || {
   systemctl status sovereign-chatgpt-broker.service --no-pager >&2 || true
-  fail "host broker socket was not created"
+  fail "host broker socket exists but the broker RPC did not become ready"
 }
 
 # The image is built and dependency-resolved in GitHub Actions. The VPS only
