@@ -135,9 +135,10 @@ class PrivateAdminRuntime:
         }
 
     def _git(self, repo: Path, argv: list[str], *, env: dict[str, str] | None = None, timeout: int = 300) -> dict[str, Any]:
+        resolved_repo = repo.resolve()
         completed = subprocess.run(
-            ["git", *argv],
-            cwd=str(repo),
+            ["git", "-C", str(resolved_repo), *argv],
+            cwd=str(resolved_repo),
             env=env,
             capture_output=True,
             text=True,
@@ -164,6 +165,19 @@ class PrivateAdminRuntime:
         root = self.operations.workspace_root.resolve()
         if root not in repo.parents or not (repo / ".git").is_dir():
             raise FileNotFoundError("Workspace-Repository fehlt")
+
+        top_level = self._git(repo, ["rev-parse", "--show-toplevel"])
+        if not top_level["ok"]:
+            return {**top_level, "status": "FAILED", "blocker": "Workspace-Git-Root konnte nicht bestätigt werden"}
+        actual_top_level = Path(top_level["stdout"].strip()).resolve()
+        if actual_top_level != repo:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Git-Top-Level stimmt nicht mit dem bestätigten Workspace-Repository überein",
+                "workspace_repo": str(repo),
+                "git_top_level": str(actual_top_level),
+            }
 
         token = os.getenv("GITHUB_TOKEN", "").strip()
         if not token:

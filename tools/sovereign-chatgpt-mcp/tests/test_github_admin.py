@@ -31,7 +31,7 @@ class FakeSession:
 
     def request(self, method, url, headers=None, params=None, json=None, timeout=None):
         path = url.removeprefix("https://api.github.com")
-        self.calls.append({"method": method, "path": path, "params": params, "json": json})
+        self.calls.append({"method": method, "path": path, "headers": headers, "params": params, "json": json})
         key = (method, path)
         if key not in self.routes or not self.routes[key]:
             raise AssertionError(f"Unexpected GitHub request: {key}")
@@ -171,7 +171,14 @@ def test_allowlisted_android_workflow_can_be_dispatched_without_secret_inputs(mo
         monkeypatch,
         {
             ("POST", "/repos/OuroborosCollective/Sovereign-Studio-ato/actions/workflows/android-release.yml/dispatches"): [
-                FakeResponse(204)
+                FakeResponse(
+                    200,
+                    {
+                        "workflow_run_id": 1234,
+                        "run_url": "https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/actions/runs/1234",
+                        "html_url": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/actions/runs/1234",
+                    },
+                )
             ]
         },
     )
@@ -183,7 +190,25 @@ def test_allowlisted_android_workflow_can_be_dispatched_without_secret_inputs(mo
     )
 
     assert result["status"] == "DISPATCHED"
+    assert result["run_id"] == 1234
+    assert result["url"].endswith("/actions/runs/1234")
+    assert session.calls[0]["headers"]["X-GitHub-Api-Version"] == "2026-03-10"
     assert session.calls[0]["json"]["inputs"]["version_code"] == "101"
+
+
+def test_workflow_dispatch_blocks_when_github_omits_run_evidence(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("POST", "/repos/OuroborosCollective/Sovereign-Studio-ato/actions/workflows/android-release.yml/dispatches"): [
+                FakeResponse(200, {"workflow_run_id": 0, "run_url": "", "html_url": ""})
+            ]
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="Workflow-Run-Evidence"):
+        runtime.dispatch_workflow(workflow="android-release.yml", ref="main", inputs={})
 
 
 def test_workflow_dispatch_rejects_secret_shaped_inputs(monkeypatch) -> None:

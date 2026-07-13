@@ -51,7 +51,7 @@ class GitHubAdminRuntime:
         return {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
+            "X-GitHub-Api-Version": "2026-03-10",
         }
 
     def _request(
@@ -236,13 +236,29 @@ class GitHubAdminRuntime:
             if len(text) > 500:
                 raise ValueError("Workflow-Input ist zu lang")
             clean_inputs[name] = text
-        self._request(
+        payload = self._request(
             "POST",
             f"/repos/{self.repository}/actions/workflows/{selected}/dispatches",
             json_body={"ref": selected_ref, "inputs": clean_inputs},
-            expected=(204,),
+            expected=(200,),
         )
-        return {"ok": True, "status": "DISPATCHED", "workflow": selected, "ref": selected_ref, "inputs": clean_inputs}
+        if not isinstance(payload, dict):
+            raise RuntimeError("GitHub Workflow-Dispatch-Antwort ist ungültig")
+        run_id = int(payload.get("workflow_run_id") or 0)
+        run_url = str(payload.get("run_url") or "").strip()
+        html_url = str(payload.get("html_url") or "").strip()
+        if run_id < 1 or not run_url or not html_url:
+            raise RuntimeError("GitHub lieferte keine vollständige Workflow-Run-Evidence")
+        return {
+            "ok": True,
+            "status": "DISPATCHED",
+            "workflow": selected,
+            "ref": selected_ref,
+            "inputs": clean_inputs,
+            "run_id": run_id,
+            "run_url": run_url,
+            "url": html_url,
+        }
 
     def workflow_run_status(self, *, run_id: int) -> dict[str, Any]:
         selected = self._run_id(run_id)
