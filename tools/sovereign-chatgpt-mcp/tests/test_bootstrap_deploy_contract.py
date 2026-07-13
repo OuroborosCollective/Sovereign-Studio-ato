@@ -65,14 +65,20 @@ def test_tunnel_is_restarted_after_the_new_mcp_passes_protocol_health() -> None:
     assert 'MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0' in full_installer
 
 
-def test_github_actions_can_bootstrap_the_mcp_without_backend_image_resolution() -> None:
+def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
 
     assert 'name: Bootstrap MCP on VPS' in workflow
     assert "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'" in workflow
     assert 'tar -czf sovereign-chatgpt-mcp.tar.gz tools/sovereign-chatgpt-mcp' in workflow
     assert 'EXPECTED_REVISION: ${{ github.sha }}' in workflow
-    assert 'bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
+    assert 'name: Publish immutable MCP image' in workflow
+    assert 'packages: write' in workflow
+    assert 'docker/build-push-action@v6' in workflow
+    assert 'ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp:${{ github.sha }}' in workflow
+    assert 'org.opencontainers.image.revision=${{ github.sha }}' in workflow
+    assert 'needs: [validate, publish-mcp-image]' in workflow
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
     assert 'mcp_protocol_ready' in workflow
     assert 'systemctl is-active --quiet sovereign-chatgpt-broker.service' in workflow
     assert 'test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
@@ -89,4 +95,4 @@ def test_github_actions_can_bootstrap_the_mcp_without_backend_image_resolution()
     assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in workflow
     assert 'backend_image_resolve' not in workflow
     assert 'resolve_backend_image' not in workflow
-    assert 'docker pull' not in workflow
+    assert "The VPS must not build the MCP image." in workflow

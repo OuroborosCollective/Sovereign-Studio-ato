@@ -247,75 +247,23 @@ class OperatorRuntime:
         return {"status": status["stdout"], "diff": diff["stdout"], "stat": stat["stdout"], "ok": status["ok"] and diff["ok"]}
 
     def install_dependencies(self, workspace_id: str) -> dict[str, Any]:
-        """Install the committed pnpm graph in bounded phases and verify required executables."""
-        repo = self._repo(workspace_id)
-        env = os.environ.copy()
-        env["NODE_OPTIONS"] = env.get("NODE_OPTIONS") or "--max-old-space-size=256"
-        phases: list[dict[str, Any]] = []
-
-        install = self._run(
-            [
-                "pnpm",
-                "install",
-                "--frozen-lockfile",
-                "--ignore-scripts",
-                "--child-concurrency=1",
-                "--network-concurrency=4",
-            ],
-            cwd=repo,
-            timeout=1800,
-            env=env,
-        )
-        phases.append({"name": "lockfile_install", **install})
-        self._record_check(workspace_id, "dependencies:lockfile_install", install)
-        if not install["ok"]:
-            return {
-                "ok": False,
-                "status": "INSTALL_FAILED",
-                "workspace_id": workspace_id,
-                "phases": phases,
-                "next_action": "inspect_lockfile_install_runtime_evidence",
-            }
-
-        postinstall_path = repo / "patch_capacitor.mjs"
-        if postinstall_path.is_file():
-            postinstall = self._run(
-                ["node", "patch_capacitor.mjs"],
-                cwd=repo,
-                timeout=300,
-                env=env,
-            )
-            phases.append({"name": "repository_postinstall", **postinstall})
-            self._record_check(workspace_id, "dependencies:repository_postinstall", postinstall)
-            if not postinstall["ok"]:
-                return {
-                    "ok": False,
-                    "status": "POSTINSTALL_FAILED",
-                    "workspace_id": workspace_id,
-                    "phases": phases,
-                    "next_action": "inspect_repository_postinstall_runtime_evidence",
-                }
-
-        verification_script = (
-            "for (const name of "
-            "['typescript/bin/tsc','vite/bin/vite.js','vitest','@capacitor/cli']) "
-            "console.log(name + '=' + require.resolve(name));"
-        )
-        verify = self._run(
-            ["node", "-e", verification_script],
-            cwd=repo,
-            timeout=120,
-            env=env,
-        )
-        phases.append({"name": "dependency_resolution", **verify})
-        self._record_check(workspace_id, "dependencies:resolution", verify)
-        return {
-            "ok": bool(verify["ok"]),
-            "status": "INSTALLED" if verify["ok"] else "RESOLUTION_FAILED",
+        """Refuse Node dependency installation inside the lightweight MCP runtime."""
+        self._repo(workspace_id)
+        result = {
+            "ok": False,
+            "status": "REMOTE_CI_REQUIRED",
+            "failure_family": "LOCAL_DEPENDENCY_INSTALL_FORBIDDEN",
             "workspace_id": workspace_id,
-            "phases": phases,
-            "next_action": "run_requested_validation" if verify["ok"] else "inspect_missing_dependency_resolution",
+            "execution_mode": "github_actions",
+            "local_process_started": False,
+            "blocker": (
+                "pnpm install is intentionally disabled in the running MCP container; "
+                "dependency resolution and Node builds run only on GitHub Actions runners"
+            ),
+            "next_action": "publish_workspace_branch_then_use_pr_ci_or_android_standard_validation",
         }
+        self._record_check(workspace_id, "dependencies:delegated_to_ci", result)
+        return result
 
     @staticmethod
     def _sha256_file(path: Path) -> str:
@@ -463,19 +411,36 @@ class OperatorRuntime:
 
     def run_check(self, workspace_id: str, check: str, target: str = "") -> dict[str, Any]:
         repo = self._repo(workspace_id)
+        remote_node_checks = {"typecheck", "audit", "build_web", "vitest"}
+        if check in remote_node_checks:
+            if check == "vitest":
+                test_path = safe_repo_path(repo, target, must_exist=True)
+                key = f"vitest:{test_path.relative_to(repo)}"
+            else:
+                key = check
+            result = {
+                "ok": False,
+                "status": "REMOTE_CI_REQUIRED",
+                "failure_family": "LOCAL_NODE_EXECUTION_FORBIDDEN",
+                "check": check,
+                "execution_mode": "github_actions",
+                "local_process_started": False,
+                "blocker": "Node dependency checks are not executed in the running MCP container",
+                "next_action": "publish_workspace_branch_and_read_github_actions_check_evidence",
+            }
+            self._record_check(workspace_id, key, result)
+            return result
+
         allowed: dict[str, list[str]] = {
             "git_diff_check": ["git", "diff", "--check"],
             "backend_compile": ["python3", "-m", "py_compile", "scripts/sovereign-backend/app.py"],
-            "typecheck": ["pnpm", "run", "type-check"],
-            "audit": ["pnpm", "run", "audit:sovereign"],
-            "build_web": ["pnpm", "run", "build:web"],
         }
         key = check
-        if check in {"vitest", "pytest"}:
+        if check == "pytest":
             test_path = safe_repo_path(repo, target, must_exist=True)
             relative = str(test_path.relative_to(repo))
-            command = ["pnpm", "exec", "vitest", "run", relative] if check == "vitest" else ["python3", "-m", "pytest", relative, "-q"]
-            key = f"{check}:{relative}"
+            command = ["python3", "-m", "pytest", relative, "-q"]
+            key = f"pytest:{relative}"
         elif check in allowed:
             command = allowed[check]
         else:
@@ -526,13 +491,15 @@ class OperatorRuntime:
 
         frontend_files = [path for path in changed if path.endswith((".ts", ".tsx", ".js", ".jsx", ".css"))]
         if frontend_files:
-            for required_check in ("typecheck", "audit", "build_web"):
-                result = self.run_check(workspace_id, required_check)
-                if not result["ok"]:
-                    raise RuntimeError(f"Frontend-Gate ist fehlgeschlagen: {required_check}")
-            checks = self._read_metadata(workspace_id).get("checks", {})
-            if not self._has_successful_check(checks, "vitest:"):
-                raise RuntimeError("UI-/TypeScript-Änderungen benötigen mindestens einen erfolgreichen gezielten Vitest-Lauf")
+            metadata = self._read_metadata(workspace_id)
+            metadata["remote_validation"] = {
+                "required": True,
+                "execution_mode": "github_actions",
+                "reason": "frontend_or_node_change",
+                "required_checks": ["typecheck", "unit_tests", "web_build"],
+                "local_dependency_install_allowed": False,
+            }
+            self._write_metadata(workspace_id, metadata)
 
         add = self._run(["git", "add", "--all"], cwd=repo)
         commit = self._run(["git", "commit", "-m", commit_message[:200]], cwd=repo)
@@ -560,4 +527,12 @@ class OperatorRuntime:
         metadata = self._read_metadata(workspace_id)
         metadata["draft_pr"] = {"number": payload["number"], "url": payload["html_url"], "head_sha": payload["head"]["sha"]}
         self._write_metadata(workspace_id, metadata)
-        return {"draft": True, "number": payload["number"], "url": payload["html_url"], "branch": branch, "changed_files": changed, "checks": metadata.get("checks", {})}
+        return {
+            "draft": True,
+            "number": payload["number"],
+            "url": payload["html_url"],
+            "branch": branch,
+            "changed_files": changed,
+            "checks": metadata.get("checks", {}),
+            "remote_validation": metadata.get("remote_validation", {"required": False}),
+        }

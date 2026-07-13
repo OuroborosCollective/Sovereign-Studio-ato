@@ -1,7 +1,6 @@
 services:
   sovereign-chatgpt-mcp:
-    build:
-      context: .
+    image: ${SOVEREIGN_MCP_IMAGE:?SOVEREIGN_MCP_IMAGE must be an immutable GHCR digest}
     container_name: sovereign-chatgpt-mcp
     restart: unless-stopped
     env_file:

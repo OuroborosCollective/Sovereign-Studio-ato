@@ -34,6 +34,17 @@ An MCP installation is successful only when all of the following are true:
 6. The real JSON-RPC initialize handshake returns `MCP_PROTOCOL_READY`.
 7. The tunnel service is active.
 
+## Build and dependency boundary
+
+The running MCP container and the VPS are orchestration surfaces, not Node build workers.
+
+- `pnpm install`, TypeScript checks, Vitest, audits and web builds run only on GitHub Actions runners.
+- The local Android `fast` profile contains only diff and static readiness evidence. `standard` and `release` use the allowlisted Android workflow.
+- Frontend changes may be pushed as a Draft PR without local Node execution; the PR remains unverified until the required remote checks complete successfully.
+- The MCP container image is built and published by GitHub Actions with `org.opencontainers.image.revision` set to the exact commit SHA.
+- The VPS pulls that exact tag, verifies the revision label, resolves an immutable repository digest and persists the digest before replacing the running container.
+- `docker compose build` is forbidden in the VPS installer. A failed image pull or verification leaves the current container untouched.
+
 ## Streamable HTTP evidence
 
 A `400 Bad Request` line alone does not prove that the MCP or tunnel failed. Some client cycles may also contain valid `200 OK` and `202 Accepted` traffic.

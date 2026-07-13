@@ -115,8 +115,8 @@ git reset --hard "$EXPECTED_REVISION"
 [[ -x "$INSTALLER" ]] || chmod 0750 "$INSTALLER"
 
 CURRENT_STAGE="install_control_plane"
-write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and broker"
-bash "$INSTALLER"
+write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and broker from the CI-built immutable image"
+SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$INSTALLER"
 
 CURRENT_STAGE="verify_end_to_end_control_plane"
 systemctl is-active --quiet sovereign-chatgpt-command-worker.service

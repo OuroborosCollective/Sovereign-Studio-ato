@@ -62,6 +62,14 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'android_validation_router.install(server.android, server.runtime, server.broker)' in launcher
     assert '_native_validation_router_installed' in installer
+    assert 'docker compose build' not in installer
+    assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
+    assert 'org.opencontainers.image.revision' in installer
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION' in installer
+    assert "grep -q '^SOVEREIGN_MCP_IMAGE=' \"$ENV_FILE\"" in installer
+    assert 'SOVEREIGN_MCP_IMAGE=$MCP_IMAGE_DIGEST' in installer
+    assert 'image: ${SOVEREIGN_MCP_IMAGE:' in compose
+    assert 'build:' not in compose
     assert 'host broker socket disappeared after MCP recreation' in installer
     assert 'broker socket is not visible inside the recreated MCP container' in installer
     assert 'status=server.broker.status()' in installer
@@ -84,6 +92,7 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'git rev-parse origin/main' in updater
     assert '[[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]]' in updater
     assert 'git reset --hard "$EXPECTED_REVISION"' in updater
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$INSTALLER"' in updater
     assert 'recover_control_plane()' in updater
     assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater

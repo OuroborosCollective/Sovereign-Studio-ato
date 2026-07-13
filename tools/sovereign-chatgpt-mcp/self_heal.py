@@ -132,6 +132,19 @@ _FAILURE_POLICIES = (
         required_post_checks=("mcp_initialize_handshake", "tunnel_service_active"),
     ),
     FailurePolicy(
+        family="external_node_build_boundary",
+        signatures=(
+            "local_dependency_install_forbidden",
+            "local_node_execution_forbidden",
+            "status=remote_ci_required",
+        ),
+        repair_action="publish_remote_ref_and_use_github_actions_without_local_retry",
+        auto_repairable=False,
+        mutation_scope="github_actions_only",
+        requires_confirmation=False,
+        required_post_checks=("remote_typecheck", "remote_unit_tests", "remote_web_build", "workflow_conclusion_success"),
+    ),
+    FailurePolicy(
         family="dependency_install_process_killed",
         signatures=(
             "exit_code\": -9",
