@@ -55,12 +55,28 @@ _SAFE_BRANCH = re.compile(r"^[\w./-]{1,160}$")
 _SAFE_RELATIVE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))(?!.*\0)[\w .@/+~=-]+$")
 _GITHUB_REPO_HOSTS = {"github.com"}
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"github_pat_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"gh[pousr]_[A-Za-z0-9_]{10,}", re.IGNORECASE),
-    re.compile(r"sk-proj-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"sk-[A-Za-z0-9_-]{10,}", re.IGNORECASE),
-    re.compile(r"(Authorization:\s*)(Bearer\s+)?[^\s\n]+", re.IGNORECASE),
-    re.compile(r"((?:token|password|secret|api[_-]?key)\s*[=:]\s*)[^\s\n]+", re.IGNORECASE),
+    # GitHub (classic, fine-grained, app, etc.)
+    re.compile(r"((?:gh[pousr])_)[a-zA-Z0-9_]{8,100}", re.IGNORECASE),
+    re.compile(r"(github_pat_)[a-zA-Z0-9_]{20,200}", re.IGNORECASE),
+    # Google Cloud / Gemini API keys
+    re.compile(r"(AIza)[a-zA-Z0-9_-]{26,60}", re.IGNORECASE),
+    # AI provider style keys
+    re.compile(r"(sk-or-v1-)[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"(sk-proj-)[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"(sk-ant-)[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"(sk-)[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"(gsk_)[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    # HuggingFace, Together AI and Pollinations AI
+    re.compile(r"(hf_)[a-zA-Z0-9]{8,100}", re.IGNORECASE),
+    re.compile(r"(together_)[a-zA-Z0-9]{8,100}", re.IGNORECASE),
+    re.compile(r"(pollinations_)[a-zA-Z0-9]{8,100}", re.IGNORECASE),
+    # Authorization header / Bearer tokens (with optional Authorization: label)
+    re.compile(r"((?:Authorization:\s*)?Bearer\s+)[a-zA-Z0-9._~+/-]+=*", re.IGNORECASE),
+    # Label-based credentials (supports optional quotes and common delimiters)
+    re.compile(
+        r'((["\']?)(?:password|passwd|token|secret|api[_-]?key|access[_-]?token|private[_-]?key)\2\s*[:=]\s*["\']?)[a-zA-Z0-9_@#$%^&*.\-~+/=]+["\']?',
+        re.IGNORECASE,
+    ),
 )
 
 _PLAN_ONLY_FILES = {
@@ -119,10 +135,15 @@ def _trim(value: str, max_length: int) -> str:
 
 def sanitize_agent_text(value: str, max_length: int = 4000) -> str:
     """Mask secret-like values and cap text before storing events/results."""
-
-    text = value or ""
+    if not value:
+        return ""
+    text = str(value)
     for pattern in _SECRET_PATTERNS:
-        text = pattern.sub(lambda match: f"{match.group(1)}[redacted]" if match.groups() else "[redacted]", text)
+        # Preserve the primary prefix/label captured in Group 1
+        text = pattern.sub(
+            lambda m: (m.group(1) or "") + "[redacted]" if m.groups() else "[redacted]",
+            text,
+        )
     return _trim(text, max_length)
 
 

@@ -39,6 +39,7 @@ import requests
 
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
+from agent_runtime.contracts import sanitize_agent_text
 from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
@@ -321,7 +322,7 @@ def require_admin(f):
 
         if not admin:
             return jsonify({
-                "error": "API-Key keinem Admin zugeordnet",
+                "error": sanitize_agent_text("API-Key keinem Admin zugeordnet"),
                 "hint": "Admin-Key in admin_api_keys hinterlegen oder ADMIN_BOOTSTRAP_ADMIN_EMAIL eindeutig setzen",
             }), 401
 
@@ -885,7 +886,7 @@ def admin_system_health():
         health["ok"] = False
         health["components"]["database"] = {
             "status": "unhealthy",
-            "error": str(e)[:100],
+            "error": sanitize_agent_text(str(e))[:100],
         }
     
     # 2. Worker AI check
@@ -916,7 +917,7 @@ def admin_system_health():
         health["ok"] = False
         health["components"]["worker_ai"] = {
             "status": "unhealthy",
-            "error": str(e)[:100],
+            "error": sanitize_agent_text(str(e))[:100],
         }
     
     # 3. LLM Routes check
@@ -931,7 +932,7 @@ def admin_system_health():
     except Exception as e:
         health["components"]["llm_routes"] = {
             "status": "degraded",
-            "error": str(e)[:100],
+            "error": sanitize_agent_text(str(e))[:100],
         }
     
     # 4. Config file check
@@ -1059,7 +1060,7 @@ def admin_worker_ai_sync():
         })
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": sanitize_agent_text(str(e))}), 500
 
 
 @app.route("/api/admin/llm/worker-ai/models", methods=["GET"])
@@ -1110,7 +1111,7 @@ def admin_worker_ai_models():
         return jsonify({"models": result, "total": len(result)})
         
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": sanitize_agent_text(str(e))}), 500
 
 
 def require_session(f):
@@ -1236,15 +1237,19 @@ _RUNTIME_CONFIG: dict = _load_runtime_config()
 
 
 def _mask_secrets(config: dict) -> dict:
-    """Mask sensitive values in config for display."""
-    masked = dict(config)
-    for key in masked:
-        if "secret" in key.lower() or "key" in key.lower() or "token" in key.lower():
-            val = str(masked[key] or "")
-            if len(val) > 4:
-                masked[key] = val[:2] + "*" * (len(val) - 4) + val[-2:]
+    """Mask sensitive values in config for display using defensive pattern recognition."""
+    masked = {}
+    for key, value in config.items():
+        if isinstance(value, str):
+            # Apply both label-based and pattern-based redaction
+            if any(k in key.lower() for k in ("secret", "key", "token", "password", "auth")):
+                masked[key] = sanitize_agent_text(f"{key}: {value}").split(": ", 1)[-1]
             else:
-                masked[key] = "****"
+                masked[key] = sanitize_agent_text(value)
+        elif isinstance(value, dict):
+            masked[key] = _mask_secrets(value)
+        else:
+            masked[key] = value
     return masked
 
 
