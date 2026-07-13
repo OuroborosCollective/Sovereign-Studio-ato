@@ -10,7 +10,7 @@ on:
       validation_profile:
         description: Native Android validation profile
         required: true
-        default: standard
+        default: release
         type: choice
         options:
           - standard
@@ -25,7 +25,7 @@ on:
         type: string
 
 concurrency:
-  group: android-production-${{ github.ref }}-${{ inputs.validation_profile || 'standard' }}
+  group: android-production-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }}
   cancel-in-progress: true
 
 env:
@@ -36,13 +36,13 @@ env:
   ANDROID_COMPILE_SDK: 35
   ANDROID_BUILD_TOOLS: 35.0.0
   KEYSTORE_FILE: android/app/keystore/release.jks
-  VALIDATION_PROFILE: ${{ inputs.validation_profile || 'standard' }}
+  VALIDATION_PROFILE: ${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }}
   VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
   VITE_SOVEREIGN_LLM_MODEL: deepseek-r1
 
 jobs:
   build:
-    name: Android ${{ inputs.validation_profile || 'standard' }} validation
+    name: Android ${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }} validation
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -54,6 +54,13 @@ jobs:
         with:
           fetch-depth: 1
           clean: true
+
+      - name: Enforce signed production profile on main
+        if: github.ref == 'refs/heads/main' && env.VALIDATION_PROFILE != 'release'
+        shell: bash
+        run: |
+          echo "Main production validation must use the release profile so signing, APK and AAB evidence cannot be skipped." >&2
+          exit 1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -341,4 +348,5 @@ jobs:
             echo "| Version code | ${{ steps.vars.outputs.version_code }} |"
             echo "| Commit | ${{ github.sha }} |"
             echo "| compileSdk / targetSdk | 35 / 35 |"
+            echo "| Signed APK/AAB required | ${{ env.VALIDATION_PROFILE == 'release' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
