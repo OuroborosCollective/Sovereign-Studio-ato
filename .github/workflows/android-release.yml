@@ -203,11 +203,18 @@ jobs:
           fi
           test -s "$KEYSTORE_FILE"
           keytool -list -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" >/dev/null
+          KEYSTORE_CERT_SHA256="$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n 1 \
+            | tr '[:upper:]' '[:lower:]' \
+            | tr -d ':[:space:]')"
+          [[ "$KEYSTORE_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
 
           echo "ANDROID_KEYSTORE_PATH=$PWD/$KEYSTORE_FILE" >> "$GITHUB_ENV"
           echo "ANDROID_KEYSTORE_PASSWORD=$EFFECTIVE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_ALIAS=$EFFECTIVE_KEY_ALIAS" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_PASSWORD=$EFFECTIVE_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_EXPECTED_SIGNING_CERT_SHA256=$KEYSTORE_CERT_SHA256" >> "$GITHUB_ENV"
 
       - name: Android Release Readiness Check
         env:
@@ -239,12 +246,38 @@ jobs:
           command -v zipalign >/dev/null
           test -s "$APK"
           test -s "$AAB"
-          apksigner verify --verbose --print-certs "$APK" > android-apk-signature-verification.txt
-          zipalign -c -P 16 4 "$APK" > android-apk-alignment-verification.txt
-          jarsigner -verify -strict -certs "$AAB" > android-aab-signature-verification.txt
+          apksigner verify --verbose --print-certs "$APK" 2>&1 | tee android-apk-signature-verification.txt
+          zipalign -c -P 16 4 "$APK" 2>&1 | tee android-apk-alignment-verification.txt
+          jarsigner -verify -certs "$AAB" 2>&1 | tee android-aab-signature-verification.txt
+          grep -Fq 'jar verified.' android-aab-signature-verification.txt
+
+          APK_CERT_SHA256="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' android-apk-signature-verification.txt \
+            | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          AAB_CERT_SHA256="$(keytool -printcert -jarfile "$AAB" \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          [[ "$APK_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$AAB_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$APK_CERT_SHA256" = "$AAB_CERT_SHA256"
+          test "$APK_CERT_SHA256" = "$ANDROID_EXPECTED_SIGNING_CERT_SHA256"
+          printf 'SHA256=%s\n' "$APK_CERT_SHA256" > android-signing-certificate-sha256.txt
           test -s android-apk-signature-verification.txt
           test -s android-apk-alignment-verification.txt
           test -s android-aab-signature-verification.txt
+          test -s android-signing-certificate-sha256.txt
+
+      - name: Upload Release Signature Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-signature-diagnostics-${{ github.sha }}
+          path: |
+            android-apk-signature-verification.txt
+            android-apk-alignment-verification.txt
+            android-aab-signature-verification.txt
+            android-signing-certificate-sha256.txt
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Prepare Release Artifacts
         run: |
@@ -256,7 +289,8 @@ jobs:
           cp android-apk-signature-verification.txt release-bundle/android-apk-signature-verification.txt
           cp android-apk-alignment-verification.txt release-bundle/android-apk-alignment-verification.txt
           cp android-aab-signature-verification.txt release-bundle/android-aab-signature-verification.txt
-          (cd release-bundle && sha256sum SovereignStudio-release.aab SovereignStudio-release.apk android-release-readiness.md android-apk-signature-verification.txt android-apk-alignment-verification.txt android-aab-signature-verification.txt > CHECKSUMS.txt)
+          cp android-signing-certificate-sha256.txt release-bundle/android-signing-certificate-sha256.txt
+          (cd release-bundle && sha256sum SovereignStudio-release.aab SovereignStudio-release.apk android-release-readiness.md android-apk-signature-verification.txt android-apk-alignment-verification.txt android-aab-signature-verification.txt android-signing-certificate-sha256.txt > CHECKSUMS.txt)
           (cd release-bundle && sha256sum -c CHECKSUMS.txt)
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
           test -s release-bundle/SovereignStudio-release.aab
