@@ -92,7 +92,9 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'git rev-parse origin/main' in updater
     assert '[[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]]' in updater
     assert 'git reset --hard "$EXPECTED_REVISION"' in updater
-    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$INSTALLER"' in updater
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION"' in updater
+    assert 'SOVEREIGN_MCP_REQUIRE_TUNNEL=1' in updater
+    assert 'bash "$INSTALLER"' in updater
     assert 'recover_control_plane()' in updater
     assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
