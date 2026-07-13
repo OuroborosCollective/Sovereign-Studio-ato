@@ -330,7 +330,7 @@ class OperatorRuntime:
             raise RuntimeError(f"Push fehlgeschlagen: {push['stderr']}")
 
         owner = self.config.repository.split("/", 1)[0]
-        headers = {"Authorization": f"Bearer {self.config.github_token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+        headers = {"Authorization": f"Bearer {self.config.github_token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"}
         response = requests.post(
             f"https://api.github.com/repos/{self.config.repository}/pulls",
             headers=headers,

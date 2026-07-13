@@ -107,9 +107,11 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
             timeout=60,
         )
         dispatched = bool(dispatch.get("ok"))
+        run_id = int(dispatch.get("run_id") or 0)
+        dispatch_evidence_complete = dispatched and run_id > 0 and bool(dispatch.get("url"))
         return {
-            "ok": dispatched,
-            "status": "DISPATCHED" if dispatched else str(dispatch.get("status") or "FAILED"),
+            "ok": dispatch_evidence_complete,
+            "status": "DISPATCHED" if dispatch_evidence_complete else str(dispatch.get("status") or "FAILED"),
             "workspace_id": workspace_id,
             "profile": selected,
             "execution_mode": "github_actions",
@@ -118,9 +120,11 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
             "draft_pr": draft_pr_evidence,
             "local_preflight": preflight,
             "dispatch": dispatch,
+            "run_id": run_id if run_id > 0 else None,
+            "url": str(dispatch.get("url") or ""),
             "next_action": (
                 "inspect_dispatched_workflow_run_and_artifacts"
-                if dispatched
+                if dispatch_evidence_complete
                 else "inspect_workflow_dispatch_blocker"
             ),
         }

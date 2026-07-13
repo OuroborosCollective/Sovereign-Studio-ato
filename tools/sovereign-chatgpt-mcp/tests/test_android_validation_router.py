@@ -72,6 +72,9 @@ class FakeBroker:
             "status": "DISPATCHED",
             "workflow": arguments["workflow"],
             "ref": arguments["ref"],
+            "run_id": 4321,
+            "run_url": "https://api.github.com/repos/example/repo/actions/runs/4321",
+            "url": "https://github.com/example/repo/actions/runs/4321",
         }
 
 
@@ -112,6 +115,8 @@ def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradl
     assert result["status"] == "DISPATCHED"
     assert result["execution_mode"] == "github_actions"
     assert result["ref"] == metadata["branch"]
+    assert result["run_id"] == 4321
+    assert result["url"].endswith("/actions/runs/4321")
     assert result["local_preflight"]["signing_secrets_required_locally"] is False
     assert android.calls == []
     assert android.scan_calls == ["job-test"]
@@ -164,6 +169,7 @@ def test_release_profile_dispatches_main_when_private_main_mode_is_enabled(monke
     assert result["status"] == "DISPATCHED"
     assert result["execution_mode"] == "github_actions"
     assert result["ref"] == "main"
+    assert result["run_id"] == 4321
     assert result["draft_pr"] is None
     assert android.calls == []
     assert operator.commands == [

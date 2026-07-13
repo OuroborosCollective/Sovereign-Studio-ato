@@ -188,6 +188,32 @@ def _git(cwd: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+def test_git_commands_pin_the_validated_workspace_with_dash_c(tmp_path, monkeypatch) -> None:
+    operations = FakeOperations(tmp_path, "SELECT 1;")
+    runtime = PrivateAdminRuntime(operations)  # type: ignore[arg-type]
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    calls: list[tuple[list[str], str]] = []
+
+    class Completed:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(argv, *, cwd, **_kwargs):
+        calls.append((list(argv), str(cwd)))
+        return Completed()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = runtime._git(repo, ["status", "--short"])
+
+    assert result["ok"] is True
+    assert calls == [
+        (["git", "-C", str(repo.resolve()), "status", "--short"], str(repo.resolve()))
+    ]
+
+
 def test_private_main_push_commits_workspace_and_updates_remote_main(tmp_path, monkeypatch) -> None:
     remote = tmp_path / "remote.git"
     subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
