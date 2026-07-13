@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
+from owner_input_client import OwnerInputClient
 from runtime import OperatorRuntime
 from self_heal import REPAIR_ENGINE
 
@@ -45,6 +46,9 @@ def _runtime_boundaries() -> dict[str, Any]:
         "direct_broker_socket_mutation_allowed": False,
         "generic_shell_available": False,
         "workspace_changes_end_at_draft_pr": True,
+        "owner_protected_input_execution": "authenticated_owner_ui_only",
+        "llm_can_receive_protected_values": False,
+        "raw_payment_card_input_allowed": False,
         "active_private_admin_capabilities": _private_admin_capabilities(),
     }
 
@@ -53,6 +57,7 @@ runtime = OperatorRuntime()
 database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
 android = AndroidHardeningRuntime(runtime._repo, runtime._run, runtime._record_check)
+owner_input = OwnerInputClient()
 
 mcp = FastMCP(
     "Sovereign ChatGPT Operator",
@@ -66,6 +71,7 @@ mcp = FastMCP(
         "mergefähigen PR mit exakt bestätigtem Head-SHA und vollständig grünen Checks mergen. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
+        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. "
         "Mutierende Host-, GitHub-, Datenbank-, Deploy- und Self-Update-Aktionen dürfen niemals direkt über den eingehenden Broker-Socket ausgeführt werden. Der MCP stellt nur einen validierten Job ein; ein unabhängiger Host-Worker holt ihn von innen ab. Bei IN_PROGRESS lies mcp_host_command_status und reiche den Auftrag nicht erneut ein. "
         "Vor jeder brokerabhängigen Status-, Workflow-, Merge-, Deploy- oder Self-Update-Operation prüfe mcp_control_plane_status. Verwende dessen failure_family unverändert und unterscheide "
         "Socket-Namespace, Pfadtyp, Rechte, Verbindungsverweigerung, Timeout und Protokollantwort. Wiederhole nicht denselben generischen Fix, solange die vorherige Fehlerfamilie nicht durch ihre "
@@ -285,6 +291,28 @@ def mcp_runtime_boundaries() -> dict[str, Any]:
 def mcp_host_command_status(request_id: str) -> dict[str, Any]:
     """Read one queued host-command state/result without resubmitting the mutation."""
     return broker.command_status(request_id)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def owner_approval_request_create(
+    title: str,
+    reason: str,
+    field_label: str = "OpenHands API-Key",
+    expires_in_seconds: int = 900,
+) -> dict[str, Any]:
+    """Create one metadata-only owner request. Never include the protected value in any argument."""
+    return owner_input.create_openhands_request(
+        title=title,
+        reason=reason,
+        field_label=field_label,
+        expires_in_seconds=expires_in_seconds,
+    )
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def owner_approval_request_status(request_id: str) -> dict[str, Any]:
+    """Read only lifecycle metadata for one owner request; protected values are never returned."""
+    return owner_input.status(request_id)
 
 
 @mcp.tool(annotations=READ_ONLY)

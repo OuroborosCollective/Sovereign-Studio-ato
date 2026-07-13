@@ -34,6 +34,36 @@ read_value() {
   sed -n "s/^${key}=//p" "$file" | tail -n 1
 }
 
+set_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  python3 - "$file" "$key" "$value" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+lines = path.read_text("utf-8").splitlines() if path.exists() else []
+out = []
+replaced = False
+for line in lines:
+    if line.startswith(key + "="):
+        out.append(f"{key}={value}")
+        replaced = True
+    else:
+        out.append(line)
+if not replaced:
+    out.append(f"{key}={value}")
+temporary = path.with_suffix(path.suffix + ".tmp")
+temporary.write_text("\n".join(out) + "\n", "utf-8")
+os.chmod(temporary, 0o600)
+temporary.replace(path)
+PY
+}
+
 port_listener_evidence() {
   ss -H -ltnp 2>/dev/null | awk -v suffix=":$MCP_HOST_PORT" '$4 ~ suffix "$" {print}'
 }
@@ -41,7 +71,7 @@ port_listener_evidence() {
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
-for command in docker systemctl python3 git ss; do
+for command in docker systemctl python3 git ss openssl; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -55,7 +85,7 @@ install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
 chmod 0770 "$WORKSPACE_DIR"
 
-for file in Dockerfile requirements.txt policy.py runtime.py database.py command_contract.py command_queue.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py runtime.py database.py command_contract.py command_queue.py broker_client.py owner_input_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py docker-compose.yml; do
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
@@ -95,6 +125,41 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 chmod 0600 "$ENV_FILE"
 grep -Eq '^GITHUB_TOKEN=.+$' "$ENV_FILE" || fail "GITHUB_TOKEN is not configured in $ENV_FILE"
+
+BACKEND_ENV_PATH="$(read_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE)"
+if [[ -z "$BACKEND_ENV_PATH" ]]; then
+  for candidate in /run/secrets/sovereign-backend.env /opt/sovereign-backend/.env; do
+    if [[ -f "$candidate" ]]; then
+      BACKEND_ENV_PATH="$candidate"
+      break
+    fi
+  done
+fi
+[[ -n "$BACKEND_ENV_PATH" && -f "$BACKEND_ENV_PATH" ]] || fail "backend env file is missing for the owner approval bridge"
+chmod 0600 "$BACKEND_ENV_PATH"
+OWNER_REQUEST_KEY="$(read_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY)"
+if [[ -z "$OWNER_REQUEST_KEY" ]]; then
+  OWNER_REQUEST_KEY="$(openssl rand -hex 32)"
+fi
+set_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
+set_value "$ENV_FILE" SOVEREIGN_BACKEND_INTERNAL_URL "http://sovereign-backend:8787"
+set_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE "$BACKEND_ENV_PATH"
+set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
+set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_INPUT_ROOT "/opt/secure/owner-managed"
+OWNER_ADMIN_ID="$(read_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_ID)"
+OWNER_ADMIN_EMAIL="$(read_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_EMAIL)"
+if [[ -z "$OWNER_ADMIN_ID" && -z "$OWNER_ADMIN_EMAIL" ]]; then
+  OWNER_ADMIN_EMAIL="$(read_value "$BACKEND_ENV_PATH" ADMIN_BOOTSTRAP_ADMIN_EMAIL)"
+fi
+if [[ -n "$OWNER_ADMIN_ID" ]]; then
+  [[ "$OWNER_ADMIN_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail "SOVEREIGN_OWNER_ADMIN_ID is invalid"
+  set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_ID "$OWNER_ADMIN_ID"
+elif [[ "$OWNER_ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+  set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"
+else
+  fail "configure SOVEREIGN_OWNER_ADMIN_ID or SOVEREIGN_OWNER_ADMIN_EMAIL for the owner approval surface"
+fi
+unset OWNER_REQUEST_KEY OWNER_ADMIN_ID OWNER_ADMIN_EMAIL
 
 CURRENT_ALLOWED_WORKFLOWS="$(read_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_WORKFLOWS)"
 if [[ -z "$CURRENT_ALLOWED_WORKFLOWS" ]]; then

@@ -41,6 +41,7 @@ from agent_runtime.routes import register_sovereign_agent_routes
 from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
+from owner_input_runtime import register_owner_input_routes
 
 # GitHub App integration (Marketplace)
 try:
@@ -1795,9 +1796,13 @@ events_lock = threading.Lock()
 
 
 def get_oh_key():
-    if os.path.exists("/opt/secure/openhands_api_key.txt"):
-        with open("/opt/secure/openhands_api_key.txt") as f:
-            return f.read().strip()
+    for path in (
+        "/opt/secure/owner-managed/openhands_api_key.txt",
+        "/opt/secure/openhands_api_key.txt",
+    ):
+        if os.path.exists(path):
+            with open(path) as handle:
+                return handle.read().strip()
     return os.getenv("OPENHANDS_API_KEY", "")
 
 
@@ -6075,6 +6080,12 @@ register_security_routes(
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
     set_session_cookie=_set_session_cookie,
+)
+register_owner_input_routes(
+    app,
+    require_admin=require_admin,
+    get_connection=get_agent_runtime_connection,
+    get_current_admin=get_current_admin,
 )
 register_are_inference_routes(
     app,
