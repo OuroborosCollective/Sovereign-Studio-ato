@@ -11,6 +11,12 @@ Group=sovereign-tunnel
 EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env
 Environment=HOME=/var/lib/sovereign-tunnel
 WorkingDirectory=/var/lib/sovereign-tunnel
+# NOTE: do not add a curl-based ExecStartPre health check here. A prior manual
+# edit embedded a JSON body with backslash-escaped quotes inside this directive;
+# systemd's unit-file parser unescapes those backslashes before handing the
+# string to /bin/sh -c, so the inner shell corrupted the JSON on every run,
+# the MCP server rejected it with 400, and tunnel-client never started
+# (thousands of restart-loop iterations, tunnel never reached OpenAI).
 ExecStartPre=/usr/bin/test -x /usr/local/bin/tunnel-client
 ExecStartPre=/bin/sh -c '/usr/bin/curl --fail --silent --show-error --max-time 8 -H "Accept: application/json, text/event-stream" -H "Content-Type: application/json" -H "MCP-Protocol-Version: 2025-06-18" --data-binary "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"sovereign-openai-tunnel\",\"version\":\"1.0\"}}}" http://127.0.0.1:8090/mcp | /usr/bin/grep -Eq "serverInfo|event: message"'
 ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}
@@ -32,3 +38,4 @@ RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target
+
