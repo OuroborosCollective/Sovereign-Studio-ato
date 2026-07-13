@@ -180,7 +180,9 @@ if [[ "$CONTAINER_STATE" != "running healthy" ]]; then
   fail "MCP container did not pass protocol health: ${CONTAINER_STATE:-missing}"
 fi
 
-docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status)'
+[[ -S /run/sovereign-chatgpt-broker/operator.sock ]] || fail "host broker socket disappeared after MCP recreation"
+docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock || fail "broker socket is not visible inside the recreated MCP container"
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
 docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
 docker exec sovereign-chatgpt-mcp python -c 'import os; assert os.getenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions") == "github_actions"'
 docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
@@ -193,4 +195,4 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'

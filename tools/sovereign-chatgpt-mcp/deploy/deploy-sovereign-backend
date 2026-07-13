@@ -86,7 +86,7 @@ start_production "$NEW_IMAGE" "$EXPECTED_REVISION"
 
 HOST_HEALTH=""
 for attempt in $(seq 1 12); do
-  HOST_HEALTH="$(curl -fsS http://127.0.0.1:8788/health 2>/dev/null || true)"
+  HOST_HEALTH="$(python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8788/health", timeout=4).read().decode())' 2>/dev/null || true)"
   if printf '%s' "$HOST_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
     break
   fi

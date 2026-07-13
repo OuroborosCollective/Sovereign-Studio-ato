@@ -34,6 +34,93 @@ class FailurePolicy:
 
 _FAILURE_POLICIES = (
     FailurePolicy(
+        family="broker_socket_namespace_visibility",
+        signatures=(
+            "broker_socket_path_absent",
+            "broker-socket ist in diesem runtime-namespace nicht vorhanden",
+            "host-broker-socket fehlt",
+        ),
+        repair_action="compare_host_and_container_socket_then_recreate_only_stale_mount",
+        auto_repairable=False,
+        mutation_scope="host_runtime_recovery",
+        requires_confirmation=True,
+        required_post_checks=(
+            "host_socket_is_unix_socket",
+            "container_socket_is_unix_socket",
+            "broker_health_rpc",
+            "mcp_initialize_handshake",
+        ),
+    ),
+    FailurePolicy(
+        family="broker_socket_permission_contract",
+        signatures=(
+            "broker_socket_permission_denied",
+            "broker-socket ist sichtbar, aber für den mcp-prozess nicht zugreifbar",
+        ),
+        repair_action="align_host_group_gid_and_container_supplementary_group",
+        auto_repairable=False,
+        mutation_scope="host_runtime_recovery",
+        requires_confirmation=True,
+        required_post_checks=("socket_owner_group_mode", "container_group_membership", "broker_health_rpc"),
+    ),
+    FailurePolicy(
+        family="broker_rpc_liveness",
+        signatures=(
+            "broker_socket_connection_refused",
+            "broker_rpc_timeout",
+            "broker_rpc_unavailable",
+            "broker_rpc_empty_response",
+            "broker_rpc_invalid_response",
+            "broker_rpc_request_mismatch",
+            "broker_rpc_result_missing",
+            "kein broker nimmt verbindungen an",
+        ),
+        repair_action="restart_broker_without_recreating_runtime_directory_then_probe_health",
+        auto_repairable=False,
+        mutation_scope="host_runtime_recovery",
+        requires_confirmation=True,
+        required_post_checks=("broker_service_active", "broker_health_rpc", "mcp_initialize_handshake"),
+    ),
+    FailurePolicy(
+        family="tunnel_mcp_initialize_contract",
+        signatures=(
+            "mcp initialize returned http 400",
+            "execstartpre-prüfung",
+            "tunnel-healthcheck",
+        ),
+        repair_action="use_shared_python_jsonrpc_initialize_probe_without_shell_json",
+        auto_repairable=False,
+        mutation_scope="host_installer",
+        requires_confirmation=True,
+        required_post_checks=("mcp_initialize_handshake", "tunnel_service_active"),
+    ),
+    FailurePolicy(
+        family="dependency_install_process_killed",
+        signatures=(
+            "exit_code\": -9",
+            "returncode -9",
+            "terminated by signal 9",
+        ),
+        repair_action="reduce_install_concurrency_and_memory_then_retry_once",
+        auto_repairable=False,
+        mutation_scope="isolated_workspace",
+        requires_confirmation=False,
+        required_post_checks=("lockfile_install_exit_zero", "dependency_resolver_canary"),
+    ),
+    FailurePolicy(
+        family="dependency_resolution_incomplete",
+        signatures=(
+            "cannot find module 'typescript/bin/tsc'",
+            "cannot find module \"typescript/bin/tsc\"",
+            "status=resolution_failed",
+        ),
+        repair_action="verify_lockfile_install_completion_then_resolve_required_executables",
+        auto_repairable=False,
+        mutation_scope="isolated_workspace",
+        requires_confirmation=False,
+        required_post_checks=("typescript_resolves", "vite_resolves", "vitest_resolves", "capacitor_cli_resolves"),
+    ),
+    FailurePolicy(
         family="migration_preview_transaction_wrapper",
         signatures=(
             "migration enthält verschachtelte transaktionssteuerung",

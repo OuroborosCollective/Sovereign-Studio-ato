@@ -29,7 +29,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
-    assert "RuntimeDirectoryPreserve=restart" in service
+    assert "RuntimeDirectoryPreserve=yes" in service
 
 
 def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None:
@@ -55,6 +55,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'docker compose up -d --no-build --force-recreate --remove-orphans' in installer
     assert 'MCP container did not pass protocol health' in installer
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in installer
+    assert 'host broker socket disappeared after MCP recreation' in installer
+    assert 'broker socket is not visible inside the recreated MCP container' in installer
+    assert 'status=server.broker.status()' in installer
+    assert '"broker_rpc_ready":true' in installer
     assert '"running no-health"' not in installer
 
 
@@ -69,6 +73,13 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'git rev-parse origin/main' in updater
     assert '[[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]]' in updater
     assert 'git reset --hard "$EXPECTED_REVISION"' in updater
+    assert 'recover_control_plane()' in updater
+    assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
+    assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
+    assert 'status=server.broker.status()' in updater
+    assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in updater
+    assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in updater
+    assert 'CURRENT_STAGE="completed"' in updater
     assert "StateDirectory=sovereign-chatgpt-self-update" in service
 
 
