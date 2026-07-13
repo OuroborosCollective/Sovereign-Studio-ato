@@ -50,10 +50,17 @@ def test_installer_releases_only_the_known_mcp_port_and_never_blind_kills() -> N
 
 def test_tunnel_is_restarted_after_the_new_mcp_passes_protocol_health() -> None:
     installer = (MCP_ROOT / "deploy" / "install-secure-tunnel.sh").read_text("utf-8")
+    full_installer = (MCP_ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    service = (MCP_ROOT / "deploy" / "sovereign-openai-tunnel.service").read_text("utf-8")
 
     assert 'systemctl enable sovereign-openai-tunnel.service' in installer
+    assert 'systemctl reset-failed sovereign-openai-tunnel.service' in installer
     assert 'systemctl restart sovereign-openai-tunnel.service' in installer
     assert 'systemctl enable --now sovereign-openai-tunnel.service' not in installer
+    assert 'Restart=on-failure' in service
+    assert 'StartLimitIntervalSec=60' in service
+    assert 'StartLimitBurst=3' in service
+    assert 'repeated malformed MCP requests detected after tunnel start' in full_installer
 
 
 def test_github_actions_can_bootstrap_the_mcp_without_backend_image_resolution() -> None:

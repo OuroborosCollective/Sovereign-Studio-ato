@@ -82,6 +82,23 @@ _FAILURE_POLICIES = (
         required_post_checks=("broker_service_active", "broker_health_rpc", "mcp_initialize_handshake"),
     ),
     FailurePolicy(
+        family="mcp_streamable_http_request_contract",
+        signatures=(
+            "post /mcp http/1.1\" 400 bad request",
+            "terminating session: none",
+        ),
+        repair_action="identify_calling_client_then_replace_malformed_probe_without_touching_node_or_broker",
+        auto_repairable=False,
+        mutation_scope="host_runtime_recovery",
+        requires_confirmation=True,
+        required_post_checks=(
+            "calling_process_identified",
+            "valid_initialize_handshake",
+            "no_repeated_400_window",
+            "tunnel_service_active",
+        ),
+    ),
+    FailurePolicy(
         family="tunnel_mcp_initialize_contract",
         signatures=(
             "mcp initialize returned http 400",

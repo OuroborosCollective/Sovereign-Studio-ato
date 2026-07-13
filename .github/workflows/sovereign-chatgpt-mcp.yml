@@ -82,6 +82,9 @@ jobs:
           grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' deploy/sovereign-openai-tunnel.service
+          grep -q '^Restart=on-failure$' deploy/sovereign-openai-tunnel.service
+          grep -q '^StartLimitIntervalSec=60$' deploy/sovereign-openai-tunnel.service
+          grep -q '^StartLimitBurst=3$' deploy/sovereign-openai-tunnel.service
           grep -q 'http://127.0.0.1:8090/mcp' deploy/sovereign-openai-tunnel.service
           if grep -q 'curl ' deploy/sovereign-openai-tunnel.service; then
             echo 'Tunnel health check must not use curl.' >&2

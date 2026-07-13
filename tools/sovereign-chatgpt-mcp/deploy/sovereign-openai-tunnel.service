@@ -3,6 +3,8 @@ Description=Sovereign OpenAI Secure MCP Tunnel
 After=network-online.target docker.service sovereign-chatgpt-broker.service
 Wants=network-online.target
 Requires=sovereign-chatgpt-broker.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -17,7 +19,7 @@ WorkingDirectory=/var/lib/sovereign-tunnel
 ExecStartPre=/usr/bin/test -x /usr/local/bin/tunnel-client
 ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --wait-seconds 20 --timeout-seconds 5
 ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}
-Restart=always
+Restart=on-failure
 RestartSec=5
 TimeoutStartSec=30
 TimeoutStopSec=30

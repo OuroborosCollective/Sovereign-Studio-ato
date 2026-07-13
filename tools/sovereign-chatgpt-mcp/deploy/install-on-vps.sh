@@ -67,6 +67,13 @@ install -m 0750 "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" "$BIN_DIR/self-u
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-broker.service" "$BROKER_SERVICE"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-mcp-self-update.service" "$SELF_UPDATE_SERVICE"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-openai-tunnel.service" "$TUNNEL_SERVICE"
+grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' "$TUNNEL_SERVICE" \
+  || fail "installed tunnel unit does not use the shared MCP protocol checker"
+grep -q '^Restart=on-failure$' "$TUNNEL_SERVICE" || fail "installed tunnel unit has an unsafe restart policy"
+grep -q '^StartLimitBurst=3$' "$TUNNEL_SERVICE" || fail "installed tunnel unit has no bounded restart limit"
+if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
+  fail "installed tunnel unit still contains a curl-based MCP probe"
+fi
 chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR"
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -191,6 +198,14 @@ if [[ -f "$TUNNEL_ENV" ]] \
   && grep -Eq '^OPENAI_TUNNEL_ID=tunnel_.+' "$TUNNEL_ENV" \
   && grep -Eq '^CONTROL_PLANE_API_KEY=.+$' "$TUNNEL_ENV"; then
   "$BIN_DIR/install-secure-tunnel"
+  sleep 11
+  MALFORMED_MCP_REQUESTS="$(docker logs --since 20s sovereign-chatgpt-mcp 2>&1 \
+    | grep -Ec 'POST /mcp HTTP/1\.1" 400 Bad Request' || true)"
+  [[ "$MALFORMED_MCP_REQUESTS" =~ ^[0-9]+$ ]] || fail "could not count malformed MCP requests"
+  if (( MALFORMED_MCP_REQUESTS >= 2 )); then
+    docker logs --since 20s sovereign-chatgpt-mcp 2>&1 | tail -n 80 >&2 || true
+    fail "repeated malformed MCP requests detected after tunnel start"
+  fi
 else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi

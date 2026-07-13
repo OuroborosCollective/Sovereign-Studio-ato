@@ -100,12 +100,20 @@ def test_tunnel_state_is_outside_root_only_install_directory() -> None:
     service = (ROOT / "deploy" / "sovereign-openai-tunnel.service").read_text("utf-8")
 
     assert 'TUNNEL_HOME="/var/lib/sovereign-tunnel"' in installer
+    assert 'TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"' in installer
     assert 'for command in python3 runuser systemctl sha256sum; do' in installer
     assert 'for command in curl ' not in installer
+    assert 'installed tunnel service still contains a curl-based MCP probe' in installer
+    assert 'systemctl reset-failed sovereign-openai-tunnel.service' in installer
+    assert 'TUNNEL_STATE="$(systemctl is-active sovereign-openai-tunnel.service' in installer
     assert 'WorkingDirectory=/var/lib/sovereign-tunnel' in service
     assert 'StateDirectory=sovereign-tunnel' in service
     assert 'ReadWritePaths=/var/lib/sovereign-tunnel' in service
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in service
+    assert 'Restart=on-failure' in service
+    assert 'StartLimitIntervalSec=60' in service
+    assert 'StartLimitBurst=3' in service
     assert 'curl ' not in service
+    assert 'repeated malformed MCP requests detected after tunnel start' in (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     assert '/opt/sovereign-chatgpt-tools/tunnel-home' not in installer
     assert '/opt/sovereign-chatgpt-tools/tunnel-home' not in service

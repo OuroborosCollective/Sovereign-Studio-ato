@@ -111,6 +111,19 @@ def test_failure_diagnosis_distinguishes_incomplete_dependency_resolution() -> N
     assert result["policy"]["repair_action"] == "verify_lockfile_install_completion_then_resolve_required_executables"
 
 
+def test_failure_diagnosis_routes_exact_repeated_mcp_400_logs_without_node_repair() -> None:
+    result = REPAIR_ENGINE.diagnose(
+        'INFO: 172.16.1.1:50424 - "POST /mcp HTTP/1.1" 400 Bad Request\nTerminating session: None'
+    )
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "mcp_streamable_http_request_contract"
+    assert result["policy"]["repair_action"] == (
+        "identify_calling_client_then_replace_malformed_probe_without_touching_node_or_broker"
+    )
+    assert "no_repeated_400_window" in result["policy"]["required_post_checks"]
+
+
 def test_failure_diagnosis_routes_tunnel_400_to_protocol_probe_repair() -> None:
     result = REPAIR_ENGINE.diagnose("MCP initialize returned HTTP 400 during tunnel-healthcheck")
 

@@ -5,6 +5,7 @@ INSTALL_ROOT="/opt/sovereign-chatgpt-tools"
 TUNNEL_ENV="${TUNNEL_ENV:-$INSTALL_ROOT/tunnel.env}"
 TUNNEL_HOME="/var/lib/sovereign-tunnel"
 BINARY="/usr/local/bin/tunnel-client"
+TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
 
 fail() {
   printf 'tunnel install blocked: %s\n' "$*" >&2
@@ -43,6 +44,12 @@ TUNNEL_MCP_SERVER_URL="${TUNNEL_MCP_SERVER_URL:-http://127.0.0.1:8090/mcp}"
 for command in python3 runuser systemctl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is required"
 done
+[[ -f "$TUNNEL_SERVICE" ]] || fail "missing $TUNNEL_SERVICE"
+grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' "$TUNNEL_SERVICE" \
+  || fail "installed tunnel service does not use the shared MCP protocol checker"
+if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
+  fail "installed tunnel service still contains a curl-based MCP probe"
+fi
 
 if [[ ! -x "$BINARY" ]]; then
   TMP_DIR="$(mktemp -d)"
@@ -131,11 +138,20 @@ fi
 run_as_tunnel_user "$BINARY" doctor --profile "$TUNNEL_PROFILE" --explain
 systemctl daemon-reload
 systemctl enable sovereign-openai-tunnel.service
+systemctl reset-failed sovereign-openai-tunnel.service || true
 systemctl restart sovereign-openai-tunnel.service
-systemctl is-active --quiet sovereign-openai-tunnel.service || {
+TUNNEL_STATE=""
+for attempt in $(seq 1 15); do
+  TUNNEL_STATE="$(systemctl is-active sovereign-openai-tunnel.service 2>/dev/null || true)"
+  [[ "$TUNNEL_STATE" == "active" ]] && break
+  [[ "$TUNNEL_STATE" == "failed" ]] && break
+  sleep 1
+done
+if [[ "$TUNNEL_STATE" != "active" ]]; then
   systemctl status sovereign-openai-tunnel.service --no-pager >&2 || true
-  fail "tunnel service is not active"
-}
+  journalctl -u sovereign-openai-tunnel.service -n 80 --no-pager >&2 || true
+  fail "tunnel service is not active: ${TUNNEL_STATE:-unknown}"
+fi
 
 printf '{"ok":true,"tunnel_id":"%s","profile":"%s","mcp_server":"%s","state_dir":"%s"}\n' \
   "$OPENAI_TUNNEL_ID" "$TUNNEL_PROFILE" "$TUNNEL_MCP_SERVER_URL" "$TUNNEL_HOME"
