@@ -88,8 +88,12 @@ def test_tunnel_state_is_outside_root_only_install_directory() -> None:
     service = (ROOT / "deploy" / "sovereign-openai-tunnel.service").read_text("utf-8")
 
     assert 'TUNNEL_HOME="/var/lib/sovereign-tunnel"' in installer
+    assert 'for command in python3 runuser systemctl sha256sum; do' in installer
+    assert 'for command in curl ' not in installer
     assert 'WorkingDirectory=/var/lib/sovereign-tunnel' in service
     assert 'StateDirectory=sovereign-tunnel' in service
     assert 'ReadWritePaths=/var/lib/sovereign-tunnel' in service
+    assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in service
+    assert 'curl ' not in service
     assert '/opt/sovereign-chatgpt-tools/tunnel-home' not in installer
     assert '/opt/sovereign-chatgpt-tools/tunnel-home' not in service

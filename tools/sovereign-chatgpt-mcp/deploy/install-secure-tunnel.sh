@@ -40,7 +40,7 @@ TUNNEL_MCP_SERVER_URL="${TUNNEL_MCP_SERVER_URL:-http://127.0.0.1:8090/mcp}"
 [[ "$TUNNEL_PROFILE" =~ ^[A-Za-z0-9._-]+$ ]] || fail "TUNNEL_PROFILE is invalid"
 [[ "$TUNNEL_MCP_SERVER_URL" == "http://127.0.0.1:8090/mcp" ]] || fail "only the loopback MCP endpoint is permitted"
 
-for command in curl python3 runuser systemctl sha256sum; do
+for command in python3 runuser systemctl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is required"
 done
 
