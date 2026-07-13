@@ -64,6 +64,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'SOVEREIGN_MCP_EXPECTED_REVISION' in installer
     assert "grep -q '^SOVEREIGN_MCP_IMAGE=' \"$ENV_FILE\"" in installer
     assert 'SOVEREIGN_MCP_IMAGE=$MCP_IMAGE_DIGEST' in installer
+    assert 'resolve_running_mcp_image_digest' in installer
+    assert 'PREVIOUS_MCP_IMAGE_DIGEST' in installer
+    assert 'INSTALL_STAGE="ensure_recovery_image_digest"' in installer
+    assert 'the running MCP container has no immutable GHCR digest' in installer
     assert 'image: ${SOVEREIGN_MCP_IMAGE:' in compose
     assert 'build:' not in compose
     assert 'docker compose up -d --no-build --force-recreate --remove-orphans' in installer
@@ -92,7 +96,9 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'git rev-parse origin/main' in updater
     assert '[[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]]' in updater
     assert 'git reset --hard "$EXPECTED_REVISION"' in updater
-    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$INSTALLER"' in updater
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION"' in updater
+    assert 'SOVEREIGN_MCP_REQUIRE_TUNNEL=1' in updater
+    assert 'bash "$INSTALLER"' in updater
     assert 'recover_control_plane()' in updater
     assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
@@ -136,6 +142,10 @@ def test_tunnel_state_is_outside_root_only_install_directory() -> None:
     assert 'curl ' not in service
     full_installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     assert 'repeated malformed MCP requests detected after tunnel start' in full_installer
+    assert 'SOVEREIGN_MCP_REQUIRE_TUNNEL' in full_installer
+    assert 'INSTALL_STAGE="verify_tunnel_configuration"' in full_installer
+    assert 'the self-update requires a valid tunnel.env' in full_installer
+    assert 'tunnel installer returned without an active service' in full_installer
     assert 'SUCCESSFUL_MCP_REQUESTS' in full_installer
     assert 'MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0' in full_installer
     assert '/opt/sovereign-chatgpt-tools/tunnel-home' not in installer
