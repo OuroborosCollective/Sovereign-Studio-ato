@@ -134,6 +134,8 @@ const TerminalChatLayout: React.FC<{
         <button
           type="submit"
           disabled={!canSubmit}
+          aria-label="Senden"
+          title="Senden"
           className="text-cyan-400 disabled:opacity-30"
         >
           <Send size={16} />
@@ -205,6 +207,10 @@ const FloatingChatLayout: React.FC<{
               <button
                 type="button"
                 onClick={() => setShowModelPicker(!showModelPicker)}
+                aria-expanded={showModelPicker}
+                aria-haspopup="true"
+                aria-label="Modell auswählen"
+                title="Modell auswählen"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-cyan-500/20 hover:border-cyan-500/40 transition-colors text-xs"
               >
                 <Globe size={12} className="text-cyan-400" />
@@ -324,6 +330,8 @@ const FloatingChatLayout: React.FC<{
               <button
                 type="button"
                 onClick={() => onInputChange('')}
+                aria-label="Eingabe löschen"
+                title="Eingabe löschen"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
               >
                 <CircleX size={16} />
@@ -333,6 +341,8 @@ const FloatingChatLayout: React.FC<{
           <button
             type="submit"
             disabled={!canSubmit}
+            aria-label="Senden"
+            title="Senden"
             className="px-4 py-3 bg-cyan-500/20 border border-cyan-500/30 rounded-2xl text-cyan-400 hover:bg-cyan-500/30 disabled:opacity-30"
           >
             <Send size={18} />
@@ -395,7 +405,13 @@ const SplitViewLayout: React.FC<{
               className="flex-1 px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-lg text-sm text-slate-200 outline-none focus:border-cyan-500/50"
               placeholder="Type a message..."
             />
-            <button type="submit" disabled={!canSubmit} className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30">
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              aria-label="Senden"
+              title="Senden"
+              className="px-3 py-2 bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-cyan-400 disabled:opacity-30"
+            >
               <Send size={16} />
             </button>
           </div>
@@ -505,6 +521,7 @@ export const ChatLayoutTemplates: React.FC<ChatLayoutTemplatesProps> = ({
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                 : 'bg-slate-800/50 text-slate-400 border border-transparent hover:bg-slate-700/50'
             }`}
+            aria-label={`${l.label}: ${l.description}`}
             title={l.description}
           >
             {l.icon}

@@ -228,8 +228,9 @@ export default function App() {
 
   const publishDraftPr = async (input?: SovereignDraftPrPublishInput) => {
     let jobId = agentJob.jobId;
+    let repoUrl = agentJob.repoUrl;
 
-    if (input?.changes && input.changes.length > 0) {
+    if (!jobId && input?.changes && input.changes.length > 0) {
       try {
         const snapshot = await agentClient.startToolchainJob({
           repoUrl: input.repoUrl,
@@ -238,27 +239,24 @@ export default function App() {
           evidenceText: input.mission,
           provisionWorkspace: true,
           cloneRepo: true,
-          stagedFiles: input.changes.map((c) => ({
-            path: c.path,
-            content: c.content,
-            baseContent: c.baseContent,
-          })),
+          stagedFiles: input.changes,
         });
-        jobId = snapshot.jobId;
         setAgentJob(snapshot);
+        jobId = snapshot.jobId;
+        repoUrl = snapshot.repoUrl;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Draft-PR-Start mit Änderungen fehlgeschlagen.';
+        const message = err instanceof Error ? err.message : 'Agent Runtime Start (Staged) fehlgeschlagen.';
         setAgentJob((current) => ({
           ...current,
           status: 'failed',
           lastError: message,
-          events: [...current.events, { at: Date.now(), level: 'error', stage: 'draft-pr-staged-failed', message }],
+          events: [...current.events, { at: Date.now(), level: 'error', stage: 'agent-start-staged', message }],
         }));
         return;
       }
     }
 
-    if (!jobId) {
+    if (!repoUrl || !jobId) {
       const message = 'Draft PR benötigt zuerst einen belegten Sovereign-Agent-Job mit Repository.';
       setAgentJob((current) => ({
         ...current,
@@ -266,7 +264,7 @@ export default function App() {
         lastError: message,
         events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-job', message }],
       }));
-      return;
+      throw new Error(message);
     }
 
     setAgentJob((current) => ({
