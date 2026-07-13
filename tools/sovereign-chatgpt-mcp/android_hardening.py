@@ -394,6 +394,11 @@ class AndroidHardeningRuntime:
             "execution_mode": "local_static_only" if selected == "fast" else "local",
             "node_dependency_execution_local": False if selected == "fast" else True,
             "remote_ci_required": selected == "fast",
+            "remote_checks_required": (
+                ["typecheck", "unit_tests", "web_build", "capacitor_sync", "gradle_lint_test"]
+                if selected == "fast"
+                else []
+            ),
             "next_action": (
                 "publish_remote_ref_then_run_standard_validation_in_github_actions"
                 if ok and selected == "fast"
