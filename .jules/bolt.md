@@ -13,3 +13,11 @@
 ## 2026-07-02 - [Regex Hoisting in High-Frequency Components]
 **Learning:** Components used in high-frequency update paths (like 'ChatMarkdown' inside 'PacedChatText' which updates every 55ms) incur significant overhead if they instantiate/compile regex patterns on every render. Hoisting regex constants to module scope and using '.test()' instead of '.match()' for boolean checks provides a measurable performance boost.
 **Action:** Always hoist regex patterns to module-level constants in components that re-render frequently. Use '.test()' for performance-critical boolean checks.
+
+## 2026-07-02 - [Leaky Memoization & Callback Stabilization]
+**Learning:** Wrapping a component in 'React.memo' is ineffective if even one prop is an inline arrow function or a non-stabilized object. In 'BuilderContainer.tsx', failing to stabilize the 'onWorkbenchSlotClick' callback initially negated the 'React.memo(TopBar)' optimization.
+**Action:** Always audit ALL props of a memoized component to ensure they are stabilized via 'useCallback', 'useMemo', or hoisted constants.
+
+## 2026-07-02 - [1-Slot Memoization for High-Frequency State]
+**Learning:** In pacing runtimes like 'assistantResponsePacingRuntime.ts' that are called every 55ms, redundant O(N) regex scans for word counts can be avoided by implementing a simple 1-slot memoization (caching the last input string and its result).
+**Action:** Use 1-slot memoization for pure computational helpers that are frequently called with identical inputs during UI animation/pacing cycles.

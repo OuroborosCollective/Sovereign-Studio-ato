@@ -531,7 +531,7 @@ function ModuleLamps({
 
 
 // TopBar — v3 verbatim + Workbench status chips + panel toggle + PAL badge
-function TopBar({
+const TopBar = React.memo(function TopBar({
   status,
   repoReady,
   chatRepoSnapshot,
@@ -826,7 +826,7 @@ function TopBar({
       )}
     </div>
   );
-}
+});
 
 // Collapsible status/log panel
 function StatusPanel({
@@ -1001,7 +1001,7 @@ function StatusPanel({
 }
 
 // Bubble (verbatim v3 + Issue #427 markdown + Issue #429 long-press)
-function Bubble({
+const Bubble = React.memo(function Bubble({
   msg,
   now,
   onLongPress,
@@ -1188,7 +1188,7 @@ function Bubble({
       </div>
     </div>
   );
-}
+});
 
 // WelcomeScreen (verbatim v3)
 function WelcomeScreen({ onIdea }: { onIdea: (opt: IdeaOption) => void }) {
@@ -2616,6 +2616,35 @@ export function BuilderContainer({
   const [showProfile, setShowProfile] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   useEffect(() => { refreshUser(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Stabilized callbacks for TopBar/Bubble memoization
+  const handleMenuOpen = useCallback(() => setShowSide(true), []);
+  const handleSourceClick = useCallback(() => setShowRuntime(true), []);
+  const handleUserClick = useCallback(() => {
+    if (authUser) {
+      setShowProfile(true);
+    } else {
+      setShowLogin(true);
+    }
+  }, [authUser]);
+  const handleLongPress = useCallback((draft: string) => setWishText(draft), []);
+  const handleWorkbenchSlotClick = useCallback((id: WorkbenchStatusSlotId) => {
+    if (id === "logs") {
+      setPanelOpen((v) => !v);
+      return;
+    }
+    setOpenWorkbenchSlot(id);
+  }, []);
+
+  const userInitials = useMemo(() => {
+    if (!authUser) return undefined;
+    return (authUser.displayName || authUser.email)
+      .split(' ')
+      .map((w: string) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  }, [authUser]);
 
   // ── Sovereign App Toolchain — auto-load after login
   const { loadTools: loadToolchain, getToolContext, loaded: toolchainLoaded } = useToolchainStore();
@@ -5196,9 +5225,9 @@ Das echte Repo-Setup wurde geöffnet.`,
         repoReady={effectiveRepoReady}
         chatRepoSnapshot={chatRepoSnapshot}
         repoReason={effectiveRepoReason}
-        onMenuOpen={() => setShowSide(true)}
+        onMenuOpen={handleMenuOpen}
         onRepoClick={openRepoExplorer}
-        onSourceClick={() => setShowRuntime(true)}
+        onSourceClick={handleSourceClick}
         source={runtimeSource}
         modules={MODULES}
         signals={signals}
@@ -5211,19 +5240,10 @@ Das echte Repo-Setup wurde geöffnet.`,
         credits={credits}
         userLoggedIn={!!authUser}
         userAvatar={authUser?.avatarUrl ?? null}
-        userInitials={authUser
-          ? (authUser.displayName || authUser.email)
-              .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
-          : undefined}
-        onUserClick={() => authUser ? setShowProfile(true) : setShowLogin(true)}
+        userInitials={userInitials}
+        onUserClick={handleUserClick}
         workbenchStatusSlots={workbenchStatusSlots}
-        onWorkbenchSlotClick={(id) => {
-          if (id === "logs") {
-            setPanelOpen((v) => !v);
-            return;
-          }
-          setOpenWorkbenchSlot(id);
-        }}
+        onWorkbenchSlotClick={handleWorkbenchSlotClick}
         showInspector={showInspector}
       />
 
@@ -5339,7 +5359,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                   key={line.id}
                   msg={line}
                   now={nowRef.current}
-                  onLongPress={(draft) => setWishText(draft)}
+                  onLongPress={handleLongPress}
                   onOpenFile={openRepoExplorerFromFileBadge}
                 />
               ))}

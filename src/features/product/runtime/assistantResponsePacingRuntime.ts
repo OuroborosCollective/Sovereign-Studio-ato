@@ -24,12 +24,24 @@ export const DEFAULT_ASSISTANT_RESPONSE_PACING: AssistantResponsePacingConfig = 
 const WORD_REGEX = /\S+/g;
 const WORD_WITH_SPACE_REGEX = /\S+\s*/g;
 
+let lastCountedText = '';
+let lastWordCount = 0;
+
+/**
+ * Optimized word count with 1-slot memoization to avoid O(N) scans
+ * during high-frequency pacing updates (55ms).
+ */
 export function countAssistantResponseWords(text: string): number {
+  if (text === lastCountedText) return lastWordCount;
+
   WORD_REGEX.lastIndex = 0;
   let count = 0;
   while (WORD_REGEX.test(text)) {
     count++;
   }
+
+  lastCountedText = text;
+  lastWordCount = count;
   return count;
 }
 
