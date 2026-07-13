@@ -128,8 +128,9 @@ on_installer_exit() {
     [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
     exit 0
   fi
+  [[ "$exit_code" -ne 0 ]] || exit_code=1
   recover_previous_control_plane
-  printf 'install blocked: stage=%s exit=%s reason=%s previous_control_plane_restored=%s\n' \
+  printf 'install blocked: stage=%s exit=%s reason=%s rollback_attempted=%s\n' \
     "$INSTALL_STAGE" "$exit_code" "${INSTALL_FAILURE_REASON:-unexpected command failure}" "$ROLLBACK_ARMED" >&2
   [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
   exit "${exit_code:-1}"

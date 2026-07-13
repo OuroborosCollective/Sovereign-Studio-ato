@@ -39,7 +39,8 @@ def test_failed_install_restores_previous_files_services_container_and_tunnel() 
     assert "restore_control_plane_files()" in script
     assert "recover_previous_control_plane()" in script
     assert 'ROLLBACK_ARMED=1' in script
-    assert 'previous_control_plane_restored=%s' in script
+    assert 'rollback_attempted=%s' in script
+    assert '[[ "$exit_code" -ne 0 ]] || exit_code=1' in script
     assert 'docker compose \\\n        --project-directory "$INSTALL_ROOT"' in script
     assert 'up -d --no-build --force-recreate sovereign-chatgpt-mcp' in script
     assert 'systemctl restart sovereign-openai-tunnel.service' in script
