@@ -52,8 +52,12 @@ mcp = FastMCP(
         "mergefähigen PR mit exakt bestätigtem Head-SHA und vollständig grünen Checks mergen. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
+        "Vor jeder brokerabhängigen Status-, Workflow-, Merge-, Deploy- oder Self-Update-Operation prüfe mcp_control_plane_status. Verwende dessen failure_family unverändert und unterscheide "
+        "Socket-Namespace, Pfadtyp, Rechte, Verbindungsverweigerung, Timeout und Protokollantwort. Wiederhole nicht denselben generischen Fix, solange die vorherige Fehlerfamilie nicht durch ihre "
+        "Post-Checks als behoben belegt ist. Ein fehlendes typescript/bin/tsc ist eine unvollständige Dependency-Auflösung; erst Exit -9 oder Signal 9 belegt einen getöteten Installationsprozess. "
         "Wenn eine registrierte Reparatur scheitert oder eine neue Fehlerfamilie sichtbar wird, untersuche die Engine im isolierten Workspace, ergänze eine deterministische Reparatur und "
-        "Regressionstests, pushe oder merge bei aktivem privaten Modus, lade die bestätigte Revision nach und wiederhole anschließend die ursprüngliche Operation. Keine Secrets lesen oder ausgeben."
+        "Regressionstests, pushe oder merge bei aktivem privaten Modus, lade die bestätigte Revision nach und wiederhole anschließend die ursprüngliche Operation. Ein Self-Update ist nur mit "
+        "Host-Socket, Container-Socket, BROKER_READY-RPC, echtem MCP-Initialize-Handshake und aktivem Tunnel erfolgreich. Keine Secrets lesen oder ausgeben."
     ),
     host=_host(),
     port=int(os.getenv("SOVEREIGN_MCP_PORT", "8090")),
@@ -248,6 +252,12 @@ def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
         policy["blocked_capabilities"] = blocked
         policy["active_private_admin_capabilities"] = active
     return result
+
+
+@mcp.tool(annotations=READ_ONLY)
+def mcp_control_plane_status() -> dict[str, Any]:
+    """Probe the host broker with precise socket, permission, connection and timeout evidence."""
+    return broker.status()
 
 
 @mcp.tool(annotations=READ_ONLY)

@@ -1,16 +1,99 @@
 from __future__ import annotations
 
 from pathlib import Path
+import socket as stdlib_socket
 
 from broker import BrokerRuntime
+import broker_client
 from broker_client import HostBrokerClient
 
 
-def test_missing_broker_socket_is_a_real_blocker(tmp_path: Path) -> None:
+def test_missing_broker_socket_is_a_precise_namespace_blocker(tmp_path: Path) -> None:
     client = HostBrokerClient(str(tmp_path / "missing.sock"))
     result = client.call("container_status", {"container": "sovereign-backend"})
     assert result["status"] == "BLOCKED"
-    assert "Socket fehlt" in result["blocker"]
+    assert result["failure_family"] == "BROKER_SOCKET_PATH_ABSENT"
+    assert result["next_action"] == "compare_host_and_container_socket_visibility_then_recreate_mount_if_needed"
+
+
+def test_non_socket_broker_path_is_not_reported_as_missing(tmp_path: Path) -> None:
+    path = tmp_path / "operator.sock"
+    path.write_text("not a socket", "utf-8")
+    result = HostBrokerClient(str(path)).status()
+    assert result["status"] == "BLOCKED"
+    assert result["failure_family"] == "BROKER_SOCKET_PATH_INVALID"
+
+
+def test_empty_broker_response_is_classified_without_tool_crash(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "operator.sock"
+    bound = stdlib_socket.socket(stdlib_socket.AF_UNIX, stdlib_socket.SOCK_STREAM)
+    bound.bind(str(path))
+    bound.close()
+
+    class FakeSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def settimeout(self, timeout):
+            return None
+
+        def connect(self, target):
+            return None
+
+        def sendall(self, payload):
+            return None
+
+        def recv(self, size):
+            return b""
+
+    monkeypatch.setattr(broker_client.socket, "socket", lambda *args, **kwargs: FakeSocket())
+    result = HostBrokerClient(str(path)).status()
+    assert result["failure_family"] == "BROKER_RPC_EMPTY_RESPONSE"
+
+
+def test_invalid_broker_json_is_classified_without_tool_crash(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "operator.sock"
+    bound = stdlib_socket.socket(stdlib_socket.AF_UNIX, stdlib_socket.SOCK_STREAM)
+    bound.bind(str(path))
+    bound.close()
+
+    class FakeSocket:
+        delivered = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def settimeout(self, timeout):
+            return None
+
+        def connect(self, target):
+            return None
+
+        def sendall(self, payload):
+            return None
+
+        def recv(self, size):
+            if self.delivered:
+                return b""
+            self.delivered = True
+            return b"not-json\n"
+
+    monkeypatch.setattr(broker_client.socket, "socket", lambda *args, **kwargs: FakeSocket())
+    result = HostBrokerClient(str(path)).status()
+    assert result["failure_family"] == "BROKER_RPC_INVALID_RESPONSE"
+
+
+def test_broker_health_action_reports_real_process_liveness() -> None:
+    result = BrokerRuntime().dispatch("broker_health", {})
+    assert result["ok"] is True
+    assert result["status"] == "BROKER_READY"
+    assert isinstance(result["pid"], int)
 
 
 def test_unknown_broker_action_is_blocked() -> None:

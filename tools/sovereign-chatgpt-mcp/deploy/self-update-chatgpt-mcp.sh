@@ -38,7 +38,32 @@ temporary.replace(path)
 PY
 }
 
-trap 'write_status FAILED "${EXPECTED_REVISION:-}" "self-update command failed"' ERR
+CURRENT_STAGE="initializing"
+
+recover_control_plane() {
+  set +e
+  systemctl restart sovereign-chatgpt-broker.service
+  if [[ -f /opt/sovereign-chatgpt-tools/docker-compose.yml ]]; then
+    BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
+    if [[ "$BROKER_GID" =~ ^[0-9]+$ ]]; then
+      BROKER_GID="$BROKER_GID" docker compose \
+        --project-directory /opt/sovereign-chatgpt-tools \
+        --file /opt/sovereign-chatgpt-tools/docker-compose.yml \
+        up -d --no-build --force-recreate sovereign-chatgpt-mcp
+    fi
+  fi
+  systemctl restart sovereign-openai-tunnel.service
+  set -e
+}
+
+on_error() {
+  local exit_code="$?"
+  trap - ERR
+  recover_control_plane
+  write_status FAILED "${EXPECTED_REVISION:-}" "stage=${CURRENT_STAGE}; self-update command failed; recovery attempted"
+  exit "$exit_code"
+}
+trap on_error ERR
 
 [[ -f "$REQUEST_FILE" ]] || { write_status FAILED "" "request file missing"; exit 1; }
 [[ -d "$SOURCE_DIR/.git" ]] || { write_status FAILED "" "source repository missing"; exit 1; }
@@ -73,6 +98,7 @@ export GITHUB_TOKEN="$TOKEN"
 export GIT_ASKPASS="$ASKPASS_DIR/askpass.sh"
 export GIT_TERMINAL_PROMPT=0
 
+CURRENT_STAGE="fetch_confirmed_revision"
 write_status RUNNING "$EXPECTED_REVISION" "fetching confirmed main revision"
 cd "$SOURCE_DIR"
 git fetch origin main
@@ -82,16 +108,24 @@ ACTUAL_REVISION="$(git rev-parse origin/main)"
   exit 1
 }
 
+CURRENT_STAGE="checkout_confirmed_revision"
 git checkout main
 git reset --hard "$EXPECTED_REVISION"
 [[ -x "$INSTALLER" ]] || chmod 0750 "$INSTALLER"
 
+CURRENT_STAGE="install_control_plane"
 write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and broker"
 bash "$INSTALLER"
 
-systemctl is-active --quiet sovereign-chatgpt-broker
-systemctl is-active --quiet sovereign-openai-tunnel
-docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}}' | grep -qx running
+CURRENT_STAGE="verify_end_to_end_control_plane"
+systemctl is-active --quiet sovereign-chatgpt-broker.service
+[[ -S /run/sovereign-chatgpt-broker/operator.sock ]]
+docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' | grep -qx 'running healthy'
+docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock
+docker exec sovereign-chatgpt-mcp python -c 'import server; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
+systemctl is-active --quiet sovereign-openai-tunnel.service
 
-write_status UPDATED "$EXPECTED_REVISION" "private ChatGPT MCP and broker updated successfully"
+CURRENT_STAGE="completed"
+write_status UPDATED "$EXPECTED_REVISION" "private ChatGPT MCP, broker RPC, protocol handshake and tunnel verified"
 rm -f "$REQUEST_FILE"

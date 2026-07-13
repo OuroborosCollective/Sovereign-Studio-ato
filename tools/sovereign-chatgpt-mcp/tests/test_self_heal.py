@@ -82,6 +82,56 @@ def test_failure_diagnosis_allows_only_preview_scoped_transaction_repair() -> No
     assert result["max_automatic_attempts"] == 2
 
 
+def test_failure_diagnosis_distinguishes_broker_namespace_visibility() -> None:
+    result = REPAIR_ENGINE.diagnose(
+        "failure_family=BROKER_SOCKET_PATH_ABSENT Broker-Socket ist in diesem Runtime-Namespace nicht vorhanden"
+    )
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "broker_socket_namespace_visibility"
+    assert result["policy"]["repair_action"] == "compare_host_and_container_socket_then_recreate_only_stale_mount"
+    assert "container_socket_is_unix_socket" in result["policy"]["required_post_checks"]
+
+
+def test_failure_diagnosis_distinguishes_dependency_process_kill() -> None:
+    result = REPAIR_ENGINE.diagnose(
+        'pnpm install --frozen-lockfile returned {"exit_code": -9}; Cannot find module typescript/bin/tsc'
+    )
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "dependency_install_process_killed"
+    assert result["policy"]["mutation_scope"] == "isolated_workspace"
+
+
+def test_failure_diagnosis_distinguishes_incomplete_dependency_resolution() -> None:
+    result = REPAIR_ENGINE.diagnose("Cannot find module 'typescript/bin/tsc'")
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "dependency_resolution_incomplete"
+    assert result["policy"]["repair_action"] == "verify_lockfile_install_completion_then_resolve_required_executables"
+
+
+def test_failure_diagnosis_routes_exact_repeated_mcp_400_logs_without_node_repair() -> None:
+    result = REPAIR_ENGINE.diagnose(
+        'INFO: 172.16.1.1:50424 - "POST /mcp HTTP/1.1" 400 Bad Request\nTerminating session: None'
+    )
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "mcp_streamable_http_request_contract"
+    assert result["policy"]["repair_action"] == (
+        "identify_calling_client_then_replace_malformed_probe_without_touching_node_or_broker"
+    )
+    assert "no_repeated_400_window" in result["policy"]["required_post_checks"]
+
+
+def test_failure_diagnosis_routes_tunnel_400_to_protocol_probe_repair() -> None:
+    result = REPAIR_ENGINE.diagnose("MCP initialize returned HTTP 400 during tunnel-healthcheck")
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "tunnel_mcp_initialize_contract"
+    assert "mcp_initialize_handshake" in result["policy"]["required_post_checks"]
+
+
 def test_unknown_failure_remains_fail_closed() -> None:
     result = REPAIR_ENGINE.diagnose("completely new failure signature")
 

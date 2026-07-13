@@ -64,6 +64,18 @@ class BrokerRuntime:
             "stderr": completed.stderr[-limit:],
         }
 
+    def health(self, _arguments: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "status": "BROKER_READY",
+            "failure_family": None,
+            "pid": os.getpid(),
+            "socket_path": os.getenv(
+                "SOVEREIGN_MCP_BROKER_SOCKET",
+                "/run/sovereign-chatgpt-broker/operator.sock",
+            ),
+        }
+
     def container_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
         container = validate_container(str(arguments.get("container") or ""), self.allowed_containers)
         result = self._run(
@@ -161,6 +173,7 @@ class BrokerRuntime:
 
     def dispatch(self, action: str, arguments: dict[str, Any]) -> dict[str, Any]:
         handlers = {
+            "broker_health": self.health,
             "container_status": self.container_status,
             "container_logs": self.container_logs,
             "resolve_backend_image": self.resolve_backend_image,
