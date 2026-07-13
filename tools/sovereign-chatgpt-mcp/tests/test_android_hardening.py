@@ -194,6 +194,13 @@ def test_fast_suite_runs_static_checks_without_node_dependencies(tmp_path: Path)
     assert result["execution_mode"] == "local_static_only"
     assert result["node_dependency_execution_local"] is False
     assert result["remote_ci_required"] is True
+    assert result["remote_checks_required"] == [
+        "typecheck",
+        "unit_tests",
+        "web_build",
+        "capacitor_sync",
+        "gradle_lint_test",
+    ]
     assert result["static_scan"]["release_blockers"] > 0
     assert result["status"] == "FAIL"
 
