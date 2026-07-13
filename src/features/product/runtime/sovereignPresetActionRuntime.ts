@@ -91,7 +91,7 @@ export const SOVEREIGN_PRESET_ACTIONS: readonly SovereignPresetAction[] = [
     risk: 'reviewable_patch',
     prompt: [
       'Aktualisiere README und docs anhand der aktuellen echten Architektur.',
-      'Nur prüfbaren Diff/Draft PR vorbereiten. Kein Auto-Merge.',
+      'Erzeuge zuerst einen prüfbaren Direct-Patch-Diff. Veröffentlichung erst nach bestätigtem Diff; kein Auto-Merge.',
       'Keine erfundenen Features dokumentieren.',
     ].join('\n'),
   },
