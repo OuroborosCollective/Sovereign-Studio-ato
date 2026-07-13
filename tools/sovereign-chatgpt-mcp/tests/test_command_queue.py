@@ -25,6 +25,14 @@ class _FakeRuntime:
         }
 
 
+def _process_until_claimed(worker: HostCommandWorker, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if worker.process_once():
+            return
+        time.sleep(0.01)
+
+
 def test_direct_inbound_mutation_is_blocked_but_host_worker_origin_is_allowed() -> None:
     runtime = BrokerRuntime()
 
@@ -43,15 +51,7 @@ def test_mutation_roundtrip_is_claimed_and_executed_by_host_worker(tmp_path: Pat
     worker = HostCommandWorker(str(tmp_path), runtime=runtime)
     client = HostCommandQueueClient(str(tmp_path))
 
-    def process() -> None:
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
-            if worker.process_once():
-                return
-            time.sleep(0.01)
-        raise AssertionError("worker did not receive queued command")
-
-    thread = threading.Thread(target=process)
+    thread = threading.Thread(target=_process_until_claimed, args=(worker,))
     thread.start()
     result = client.submit("host_worker_canary", {}, timeout=2)
     thread.join(timeout=2)
@@ -71,7 +71,7 @@ def test_broker_client_routes_mutation_to_queue_without_using_socket(tmp_path: P
         timeout=2,
     )
 
-    thread = threading.Thread(target=lambda: (time.sleep(0.05), worker.process_once()))
+    thread = threading.Thread(target=_process_until_claimed, args=(worker,))
     thread.start()
     mutation = client.call("host_worker_canary", {}, timeout=2)
     thread.join(timeout=2)
