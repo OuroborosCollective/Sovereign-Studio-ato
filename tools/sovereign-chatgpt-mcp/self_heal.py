@@ -137,6 +137,8 @@ _FAILURE_POLICIES = (
             "local_dependency_install_forbidden",
             "local_node_execution_forbidden",
             "status=remote_ci_required",
+            "local package.json exists, but node_modules missing",
+            "node_modules missing, did you mean to install",
         ),
         repair_action="publish_remote_ref_and_use_github_actions_without_local_retry",
         auto_repairable=False,
