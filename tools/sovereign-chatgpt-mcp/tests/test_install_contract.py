@@ -29,6 +29,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
+    assert "RuntimeDirectoryPreserve=restart" in service
 
 
 def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None:
