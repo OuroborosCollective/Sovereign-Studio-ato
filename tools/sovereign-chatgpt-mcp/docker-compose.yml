@@ -12,12 +12,14 @@ services:
       SOVEREIGN_MCP_ALLOW_PUBLIC: "1"
       SOVEREIGN_MCP_WORKSPACE_ROOT: /opt/sovereign-chatgpt-tools/workspaces
       SOVEREIGN_MCP_BROKER_SOCKET: /run/sovereign-chatgpt-broker/operator.sock
+      SOVEREIGN_MCP_COMMAND_QUEUE: /opt/sovereign-chatgpt-tools/command-queue
       ANDROID_SDK_ROOT: /opt/android-sdk
       ANDROID_HOME: /opt/android-sdk
     ports:
       - "127.0.0.1:8090:8090"
     volumes:
       - /opt/sovereign-chatgpt-tools/workspaces:/opt/sovereign-chatgpt-tools/workspaces
+      - /opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue
       - /opt/android-sdk:/opt/android-sdk:ro
       - /run/sovereign-chatgpt-broker:/run/sovereign-chatgpt-broker
     group_add:

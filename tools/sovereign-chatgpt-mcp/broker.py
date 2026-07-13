@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from admin_mode import PrivateAdminRuntime
+from command_contract import is_mutating_action
 from github_admin import GitHubAdminRuntime
 from operations import OperationsRuntime
 from policy import validate_container
@@ -171,9 +172,28 @@ class BrokerRuntime:
             "immutable_reference": resolved,
         }
 
-    def dispatch(self, action: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    def dispatch(
+        self,
+        action: str,
+        arguments: dict[str, Any],
+        *,
+        execution_origin: str = "socket",
+    ) -> dict[str, Any]:
+        if is_mutating_action(action) and execution_origin != "host_worker":
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "failure_family": "INBOUND_MUTATION_FORBIDDEN",
+                "blocker": "Mutierende Befehle dürfen nicht direkt von außen über den Broker-Socket ausgeführt werden",
+                "next_action": "submit_validated_intent_to_host_command_queue",
+            }
         handlers = {
             "broker_health": self.health,
+            "host_worker_canary": lambda _values: {
+                "ok": True,
+                "status": "HOST_WORKER_READY",
+                "execution_origin": execution_origin,
+            },
             "container_status": self.container_status,
             "container_logs": self.container_logs,
             "resolve_backend_image": self.resolve_backend_image,

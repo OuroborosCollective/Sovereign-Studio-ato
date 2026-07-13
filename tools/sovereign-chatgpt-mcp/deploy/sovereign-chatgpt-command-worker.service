@@ -1,0 +1,34 @@
+[Unit]
+Description=Sovereign host-initiated command worker
+After=network-online.target docker.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=sovereign-mcp
+EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=SOVEREIGN_MCP_COMMAND_QUEUE=/opt/sovereign-chatgpt-tools/command-queue
+Environment=SOVEREIGN_MCP_COMMAND_WORKER_LOCK=/run/sovereign-chatgpt-command-worker/worker.lock
+WorkingDirectory=/opt/sovereign-chatgpt-tools/broker
+ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py
+Restart=always
+RestartSec=2
+UMask=0007
+RuntimeDirectory=sovereign-chatgpt-command-worker
+RuntimeDirectoryMode=0770
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/sovereign-chatgpt-tools /opt/sovereign-backend /opt/secure
+ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue /opt/sovereign-chatgpt-tools/workspaces /run/sovereign-chatgpt-broker /run/sovereign-chatgpt-command-worker
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

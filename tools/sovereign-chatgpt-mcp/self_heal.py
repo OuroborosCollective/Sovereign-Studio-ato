@@ -34,6 +34,26 @@ class FailurePolicy:
 
 _FAILURE_POLICIES = (
     FailurePolicy(
+        family="host_command_queue_contract",
+        signatures=(
+            "inbound_mutation_forbidden",
+            "host_command_queue_timeout",
+            "host_command_still_running",
+            "host_command_outcome_unknown",
+            "host_command_outcome_uncertain_after_worker_restart",
+        ),
+        repair_action="read_existing_job_status_and_inspect_host_worker_without_resubmitting",
+        auto_repairable=False,
+        mutation_scope="host_runtime_recovery",
+        requires_confirmation=False,
+        required_post_checks=(
+            "host_command_worker_active",
+            "queue_canary_roundtrip",
+            "direct_socket_mutation_blocked",
+            "target_state_verified_before_retry",
+        ),
+    ),
+    FailurePolicy(
         family="broker_socket_namespace_visibility",
         signatures=(
             "broker_socket_path_absent",

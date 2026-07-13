@@ -42,6 +42,7 @@ CURRENT_STAGE="initializing"
 
 recover_control_plane() {
   set +e
+  systemctl restart sovereign-chatgpt-command-worker.service
   systemctl restart sovereign-chatgpt-broker.service
   if [[ -f /opt/sovereign-chatgpt-tools/docker-compose.yml ]]; then
     BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
@@ -118,6 +119,7 @@ write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and
 bash "$INSTALLER"
 
 CURRENT_STAGE="verify_end_to_end_control_plane"
+systemctl is-active --quiet sovereign-chatgpt-command-worker.service
 systemctl is-active --quiet sovereign-chatgpt-broker.service
 [[ -S /run/sovereign-chatgpt-broker/operator.sock ]]
 docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' | grep -qx 'running healthy'
@@ -127,5 +129,5 @@ docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http:
 systemctl is-active --quiet sovereign-openai-tunnel.service
 
 CURRENT_STAGE="completed"
-write_status UPDATED "$EXPECTED_REVISION" "private ChatGPT MCP, broker RPC, protocol handshake and tunnel verified"
+write_status UPDATED "$EXPECTED_REVISION" "private ChatGPT MCP, host command worker, broker RPC, protocol handshake and tunnel verified"
 rm -f "$REQUEST_FILE"

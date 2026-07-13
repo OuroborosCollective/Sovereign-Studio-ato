@@ -7,14 +7,23 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from command_contract import is_mutating_action
+from command_queue import HostCommandQueueClient
+
 MAX_BROKER_REQUEST_BYTES = 1_200_000
 MAX_BROKER_RESPONSE_BYTES = 1_000_000
 
 
 class HostBrokerClient:
-    def __init__(self, socket_path: str | None = None, timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        socket_path: str | None = None,
+        timeout: float = 30.0,
+        queue_root: str | None = None,
+    ) -> None:
         self.socket_path = Path(socket_path or os.getenv("SOVEREIGN_MCP_BROKER_SOCKET", "/run/sovereign-chatgpt-broker/operator.sock"))
         self.timeout = timeout
+        self.command_queue = HostCommandQueueClient(queue_root)
 
     def _socket_contract_failure(self) -> dict[str, Any] | None:
         if not self.socket_path.exists() and not self.socket_path.is_symlink():
@@ -41,7 +50,17 @@ class HostBrokerClient:
         """Probe the broker control plane while preserving precise failure-family evidence."""
         return self.call("broker_health", {}, timeout=min(self.timeout, 5.0))
 
+    def command_status(self, request_id: str) -> dict[str, Any]:
+        """Read one queued host-command result without resubmitting the mutation."""
+        return self.command_queue.status(request_id)
+
     def call(self, action: str, arguments: dict[str, Any] | None = None, *, timeout: float | None = None) -> dict[str, Any]:
+        if is_mutating_action(action):
+            return self.command_queue.submit(
+                action,
+                arguments,
+                timeout=float(timeout or self.timeout),
+            )
         request_id = uuid.uuid4().hex
         payload = json.dumps(
             {"request_id": request_id, "action": action, "arguments": arguments or {}},

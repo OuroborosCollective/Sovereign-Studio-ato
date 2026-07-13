@@ -25,7 +25,7 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py /app/
+COPY policy.py runtime.py database.py command_contract.py command_queue.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py /app/
 
 RUN useradd --create-home --uid 10001 sovereign \
     && mkdir -p /opt/sovereign-chatgpt-tools/workspaces /opt/android-sdk \

@@ -49,7 +49,7 @@ jobs:
         run: python -m pip install --requirement requirements.txt
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -69,6 +69,10 @@ jobs:
           grep -q 'android_hardening.py' deploy/install-on-vps.sh
           grep -q 'android_validation_router.py' deploy/install-on-vps.sh
           grep -q 'mcp_protocol_health.py' deploy/install-on-vps.sh
+          grep -q 'command_contract.py' deploy/install-on-vps.sh
+          grep -q 'command_queue.py' deploy/install-on-vps.sh
+          grep -q 'command_worker.py' deploy/install-on-vps.sh
+          grep -q 'sovereign-chatgpt-command-worker.service' deploy/install-on-vps.sh
           grep -q 'tool_extensions.py' deploy/install-on-vps.sh
           grep -q 'launcher.py' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_ADMIN_SQL' deploy/install-on-vps.sh
@@ -78,6 +82,8 @@ jobs:
           grep -q 'SOVEREIGN_MCP_ENABLE_SELF_UPDATE' deploy/install-on-vps.sh
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py$' deploy/sovereign-chatgpt-broker.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
+          grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py$' deploy/sovereign-chatgpt-command-worker.service
+          grep -q '^Environment=SOVEREIGN_MCP_COMMAND_QUEUE=/opt/sovereign-chatgpt-tools/command-queue$' deploy/sovereign-chatgpt-command-worker.service
           grep -q '^RuntimeDirectoryPreserve=yes$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
@@ -127,6 +133,7 @@ jobs:
               'mcp_self_update_schedule',
               'mcp_self_update_status',
               'mcp_control_plane_status',
+              'mcp_host_command_status',
           ):
               assert callable(getattr(server, name)), name
           assert callable(tool_extensions.repository_dispatch_workflow)
@@ -140,11 +147,12 @@ jobs:
       - name: Assert Docker socket is absent from MCP container contract
         run: |
           set -euo pipefail
-          if grep -RIn '/var/run/docker.sock' Dockerfile docker-compose.yml server.py launcher.py tool_extensions.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py; then
+          if grep -RIn '/var/run/docker.sock' Dockerfile docker-compose.yml server.py launcher.py tool_extensions.py command_contract.py command_queue.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py; then
             echo 'MCP container must not receive the Docker socket.' >&2
             exit 1
           fi
           grep -q '/run/sovereign-chatgpt-broker' docker-compose.yml
+          grep -q '/opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue' docker-compose.yml
           grep -q '/opt/android-sdk:/opt/android-sdk:ro' docker-compose.yml
 
       - name: Scan tracked files for forbidden private material
@@ -263,7 +271,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-            for required in Dockerfile docker-compose.yml launcher.py server.py mcp_protocol_health.py deploy/install-on-vps.sh; do
+            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py launcher.py server.py mcp_protocol_health.py deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
@@ -287,6 +295,7 @@ jobs:
                 assert callable(getattr(server, name)), name
             print({'tool_contract': True, 'self_update': True, 'pr_lifecycle': True})
             PY
+            systemctl is-active --quiet sovereign-chatgpt-command-worker.service
             systemctl is-active --quiet sovereign-chatgpt-broker.service
             systemctl is-active --quiet sovereign-openai-tunnel.service
 
@@ -310,6 +319,8 @@ jobs:
                 'broker_rpc_ready': True,
                 'broker_socket_host_visible': True,
                 'broker_socket_container_visible': True,
+                'host_command_worker_active': True,
+                'inbound_mutation_forbidden': True,
                 'openai_tunnel_active': True,
                 'updated_at': int(time.time()),
             }
@@ -326,4 +337,6 @@ jobs:
             printf 'Broker RPC ready: true\n'
             printf 'Broker socket host visible: true\n'
             printf 'Broker socket container visible: true\n'
+            printf 'Host command worker active: true\n'
+            printf 'Inbound mutation forbidden: true\n'
             printf 'OpenAI tunnel active: true\n'
