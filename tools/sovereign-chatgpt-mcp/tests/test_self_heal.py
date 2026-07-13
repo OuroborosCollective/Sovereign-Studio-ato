@@ -82,6 +82,17 @@ def test_failure_diagnosis_allows_only_preview_scoped_transaction_repair() -> No
     assert result["max_automatic_attempts"] == 2
 
 
+def test_failure_diagnosis_routes_queue_timeout_to_status_without_resubmit() -> None:
+    result = REPAIR_ENGINE.diagnose("failure_family=HOST_COMMAND_STILL_RUNNING")
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "host_command_queue_contract"
+    assert result["policy"]["repair_action"] == (
+        "read_existing_job_status_and_inspect_host_worker_without_resubmitting"
+    )
+    assert "target_state_verified_before_retry" in result["policy"]["required_post_checks"]
+
+
 def test_failure_diagnosis_distinguishes_broker_namespace_visibility() -> None:
     result = REPAIR_ENGINE.diagnose(
         "failure_family=BROKER_SOCKET_PATH_ABSENT Broker-Socket ist in diesem Runtime-Namespace nicht vorhanden"

@@ -61,6 +61,8 @@ def test_tunnel_is_restarted_after_the_new_mcp_passes_protocol_health() -> None:
     assert 'StartLimitIntervalSec=60' in service
     assert 'StartLimitBurst=3' in service
     assert 'repeated malformed MCP requests detected after tunnel start' in full_installer
+    assert 'SUCCESSFUL_MCP_REQUESTS' in full_installer
+    assert 'MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0' in full_installer
 
 
 def test_github_actions_can_bootstrap_the_mcp_without_backend_image_resolution() -> None:
@@ -76,9 +78,14 @@ def test_github_actions_can_bootstrap_the_mcp_without_backend_image_resolution()
     assert 'test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
     assert 'status=server.broker.status()' in workflow
+    assert 'systemctl is-active --quiet sovereign-chatgpt-command-worker.service' in workflow
+    assert 'command_contract.py command_queue.py command_worker.py' in workflow
+    assert 'sovereign-chatgpt-command-worker.service' in workflow
     assert "'broker_rpc_ready': True" in workflow
     assert "'broker_socket_host_visible': True" in workflow
     assert "'broker_socket_container_visible': True" in workflow
+    assert "'host_command_worker_active': True" in workflow
+    assert "'inbound_mutation_forbidden': True" in workflow
     assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in workflow
     assert 'backend_image_resolve' not in workflow
     assert 'resolve_backend_image' not in workflow

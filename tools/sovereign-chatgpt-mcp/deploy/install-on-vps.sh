@@ -7,12 +7,14 @@ BIN_DIR="$INSTALL_ROOT/bin"
 BROKER_DIR="$INSTALL_ROOT/broker"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
+COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
 ANDROID_SDK_DIR="/opt/android-sdk"
 ENV_FILE="$INSTALL_ROOT/.env"
 GHCR_ENV="$INSTALL_ROOT/.ghcr.env"
 TUNNEL_ENV="$INSTALL_ROOT/tunnel.env"
 BROKER_ENV="$INSTALL_ROOT/broker.env"
 BROKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-broker.service"
+COMMAND_WORKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-command-worker.service"
 SELF_UPDATE_SERVICE="/etc/systemd/system/sovereign-chatgpt-mcp-self-update.service"
 TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
 MCP_UID="10001"
@@ -44,15 +46,19 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
 install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR"
 install -d -m 0755 "$ANDROID_SDK_DIR"
+install -d -m 0770 -o root -g sovereign-mcp "$COMMAND_QUEUE_DIR" "$COMMAND_QUEUE_DIR/inbox" "$COMMAND_QUEUE_DIR/processing" "$COMMAND_QUEUE_DIR/outbox"
 install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
 chmod 0770 "$WORKSPACE_DIR"
 
-for file in Dockerfile requirements.txt policy.py runtime.py database.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py runtime.py database.py command_contract.py command_queue.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py docker-compose.yml; do
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
 install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"
+install -m 0640 "$SOURCE_DIR/command_contract.py" "$BROKER_DIR/command_contract.py"
+install -m 0640 "$SOURCE_DIR/command_queue.py" "$BROKER_DIR/command_queue.py"
+install -m 0640 "$SOURCE_DIR/command_worker.py" "$BROKER_DIR/command_worker.py"
 install -m 0640 "$SOURCE_DIR/operations.py" "$BROKER_DIR/operations.py"
 install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"
 install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"
@@ -65,6 +71,7 @@ install -m 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-d
 install -m 0750 "$SOURCE_DIR/deploy/install-secure-tunnel.sh" "$BIN_DIR/install-secure-tunnel"
 install -m 0750 "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" "$BIN_DIR/self-update-chatgpt-mcp"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-broker.service" "$BROKER_SERVICE"
+install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-mcp-self-update.service" "$SELF_UPDATE_SERVICE"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-openai-tunnel.service" "$TUNNEL_SERVICE"
 grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' "$TUNNEL_SERVICE" \
@@ -125,6 +132,7 @@ fi
   printf 'SOVEREIGN_MCP_SOURCE_DIR=/opt/sovereign-operator-source\n'
   printf 'SOVEREIGN_MCP_SELF_UPDATE_SERVICE=sovereign-chatgpt-mcp-self-update.service\n'
   printf 'SOVEREIGN_MCP_SELF_UPDATE_STATUS=/var/lib/sovereign-chatgpt-self-update/status.json\n'
+  printf 'SOVEREIGN_MCP_COMMAND_QUEUE=%s\n' "$COMMAND_QUEUE_DIR"
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
 } > "$BROKER_ENV"
@@ -132,6 +140,9 @@ chmod 0600 "$BROKER_ENV"
 chown root:root "$BROKER_ENV"
 
 systemctl daemon-reload
+systemctl enable --now sovereign-chatgpt-command-worker.service
+systemctl restart sovereign-chatgpt-command-worker.service
+systemctl is-active --quiet sovereign-chatgpt-command-worker.service || fail "host command worker is not active"
 systemctl enable --now sovereign-chatgpt-broker.service
 systemctl restart sovereign-chatgpt-broker.service
 for attempt in $(seq 1 20); do
@@ -189,7 +200,25 @@ fi
 
 [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] || fail "host broker socket disappeared after MCP recreation"
 docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock || fail "broker socket is not visible inside the recreated MCP container"
-docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+docker exec sovereign-chatgpt-mcp python - <<'PY'
+import json
+import socket
+import uuid
+
+request_id = uuid.uuid4().hex
+payload = json.dumps(
+    {"request_id": request_id, "action": "host_worker_canary", "arguments": {}},
+    separators=(",", ":"),
+).encode("utf-8") + b"\n"
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(5)
+    client.connect("/run/sovereign-chatgpt-broker/operator.sock")
+    client.sendall(payload)
+    response = json.loads(client.recv(65536).split(b"\n", 1)[0].decode("utf-8"))
+result = response["result"]
+assert result.get("failure_family") == "INBOUND_MUTATION_FORBIDDEN", result
+PY
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); status=server.broker.status(); assert status.get("status") == "BROKER_READY", status; worker=server.broker.call("host_worker_canary", {}, timeout=10); assert worker.get("status") == "HOST_WORKER_READY", worker; assert worker.get("execution_origin") == "host_worker", worker'
 docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
 docker exec sovereign-chatgpt-mcp python -c 'import os; assert os.getenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions") == "github_actions"'
 docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
@@ -201,8 +230,11 @@ if [[ -f "$TUNNEL_ENV" ]] \
   sleep 11
   MALFORMED_MCP_REQUESTS="$(docker logs --since 20s sovereign-chatgpt-mcp 2>&1 \
     | grep -Ec 'POST /mcp HTTP/1\.1" 400 Bad Request' || true)"
+  SUCCESSFUL_MCP_REQUESTS="$(docker logs --since 20s sovereign-chatgpt-mcp 2>&1 \
+    | grep -Ec 'POST /mcp HTTP/1\.1" (200 OK|202 Accepted)' || true)"
   [[ "$MALFORMED_MCP_REQUESTS" =~ ^[0-9]+$ ]] || fail "could not count malformed MCP requests"
-  if (( MALFORMED_MCP_REQUESTS >= 2 )); then
+  [[ "$SUCCESSFUL_MCP_REQUESTS" =~ ^[0-9]+$ ]] || fail "could not count successful MCP requests"
+  if (( MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0 )); then
     docker logs --since 20s sovereign-chatgpt-mcp 2>&1 | tail -n 80 >&2 || true
     fail "repeated malformed MCP requests detected after tunnel start"
   fi
@@ -210,4 +242,4 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'

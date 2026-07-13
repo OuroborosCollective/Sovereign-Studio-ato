@@ -19,6 +19,7 @@ def test_installer_assigns_workspace_to_container_user_and_probes_write_access()
 def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> None:
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     service = (ROOT / "deploy" / "sovereign-chatgpt-broker.service").read_text("utf-8")
+    worker_service = (ROOT / "deploy" / "sovereign-chatgpt-command-worker.service").read_text("utf-8")
 
     assert 'install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"' in script
@@ -30,6 +31,12 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
+    assert 'install -m 0640 "$SOURCE_DIR/command_worker.py" "$BROKER_DIR/command_worker.py"' in script
+    assert 'install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service"' in script
+    assert 'systemctl enable --now sovereign-chatgpt-command-worker.service' in script
+    assert 'SOVEREIGN_MCP_COMMAND_QUEUE=' in script
+    assert 'ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py' in worker_service
+    assert 'ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue' in worker_service
 
 
 def test_android_hardening_runtime_and_validation_router_are_installed() -> None:
@@ -59,6 +66,11 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'broker socket is not visible inside the recreated MCP container' in installer
     assert 'status=server.broker.status()' in installer
     assert '"broker_rpc_ready":true' in installer
+    assert '"host_command_worker_active":true' in installer
+    assert '"inbound_mutation_forbidden":true' in installer
+    assert 'host_worker_canary' in installer
+    assert '/opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue' in compose
+    assert 'command_contract.py command_queue.py broker_client.py' in dockerfile
 
 
 def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:
@@ -113,6 +125,9 @@ def test_tunnel_state_is_outside_root_only_install_directory() -> None:
     assert 'StartLimitIntervalSec=60' in service
     assert 'StartLimitBurst=3' in service
     assert 'curl ' not in service
-    assert 'repeated malformed MCP requests detected after tunnel start' in (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    full_installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    assert 'repeated malformed MCP requests detected after tunnel start' in full_installer
+    assert 'SUCCESSFUL_MCP_REQUESTS' in full_installer
+    assert 'MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0' in full_installer
     assert '/opt/sovereign-chatgpt-tools/tunnel-home' not in installer
     assert '/opt/sovereign-chatgpt-tools/tunnel-home' not in service
