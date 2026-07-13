@@ -206,15 +206,21 @@ READER_PRIVILEGE_CANARY="$(psql_admin -tAc \
           FROM pg_class AS c
           JOIN pg_namespace AS n ON n.oid = c.relnamespace
          WHERE n.nspname = 'public'
-           AND c.relkind IN ('r','p','v','m','f')
-           AND NOT has_table_privilege('$READER_USER', c.oid, 'SELECT')
+           AND CASE
+             WHEN c.relkind IN ('r','p','v','m','f')
+               THEN NOT has_table_privilege('$READER_USER', c.oid, 'SELECT')
+             ELSE FALSE
+           END
       ) OR EXISTS (
         SELECT 1
           FROM pg_class AS c
           JOIN pg_namespace AS n ON n.oid = c.relnamespace
          WHERE n.nspname = 'public'
-           AND c.relkind = 'S'
-           AND NOT has_sequence_privilege('$READER_USER', c.oid, 'SELECT')
+           AND CASE
+             WHEN c.relkind = 'S'
+               THEN NOT has_sequence_privilege('$READER_USER', c.oid, 'SELECT')
+             ELSE FALSE
+           END
       )
       THEN 0 ELSE 1 END;")"
 [[ "$READER_PRIVILEGE_CANARY" == "1" ]] || fail "production reader object privilege canary failed"

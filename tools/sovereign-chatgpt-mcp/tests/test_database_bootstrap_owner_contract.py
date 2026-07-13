@@ -54,3 +54,14 @@ def test_owner_evidence_is_bounded_to_public_runtime_objects() -> None:
     assert "string_agg(owner_name, ', ' ORDER BY owner_name)" in script
     assert "ALTER TABLE" not in script
     assert "OWNER TO" not in script
+
+
+def test_privilege_canary_guards_relation_specific_functions_with_case() -> None:
+    script = SCRIPT.read_text("utf-8")
+
+    assert "WHEN c.relkind IN ('r','p','v','m','f')" in script
+    assert "THEN NOT has_table_privilege('$READER_USER', c.oid, 'SELECT')" in script
+    assert "WHEN c.relkind = 'S'" in script
+    assert "THEN NOT has_sequence_privilege('$READER_USER', c.oid, 'SELECT')" in script
+    assert script.count("ELSE FALSE") >= 2
+    assert "AND c.relkind = 'S'\n           AND NOT has_sequence_privilege" not in script
