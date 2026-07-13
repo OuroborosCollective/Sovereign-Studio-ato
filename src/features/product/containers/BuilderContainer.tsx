@@ -4458,7 +4458,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       return;
     }
 
-    if (isCodeGenerationIntent(submittedText)) {
+    if (!isSafeAnalysisPreset && isCodeGenerationIntent(submittedText)) {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',
@@ -4471,7 +4471,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     // "done" — the result gate (sovereignActionStreamRuntime) requires a
     // patch/diff, Draft PR, or an explicit blocked/access_required state
     // before the write intent can be considered resolved.
-    if (isWriteIntent(submittedText) && !isCodeGenerationIntent(submittedText)) {
+    if (!isSafeAnalysisPreset && isWriteIntent(submittedText) && !isCodeGenerationIntent(submittedText)) {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Schreibauftrag erkannt; Ergebnis gilt erst mit Patch/Diff, Draft PR oder explizitem Blocker als abgeschlossen.',

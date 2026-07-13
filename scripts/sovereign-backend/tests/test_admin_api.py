@@ -12,7 +12,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app import _DEFAULT_RUNTIME_CONFIG
+from app import _DEFAULT_RUNTIME_CONFIG, _effective_cors_origins, app
 
 # These tests verify the actual function signatures and logic
 # by importing from app.py (which will fail if imports are broken)
@@ -139,6 +139,27 @@ class TestCORSValidation(unittest.TestCase):
         
         self.assertEqual(len(errors), 0)
     
+    def test_android_webview_origins_are_explicitly_allowed_with_credentials(self):
+        client = app.test_client()
+        for origin in ("https://localhost", "capacitor://localhost"):
+            response = client.options(
+                "/api/auth/register",
+                headers={
+                    "Origin": origin,
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "content-type",
+                },
+            )
+            self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), origin)
+            self.assertEqual(response.headers.get("Access-Control-Allow-Credentials"), "true")
+
+    def test_native_origins_survive_runtime_cors_updates(self):
+        origins = _effective_cors_origins(["https://example.com", "https://localhost"])
+
+        self.assertEqual(origins.count("https://localhost"), 1)
+        self.assertIn("capacitor://localhost", origins)
+        self.assertNotIn("*", origins)
+
     def test_warns_about_http_origins(self):
         """HTTP origins should trigger warnings."""
         origins = ["http://example.com"]
@@ -166,6 +187,8 @@ class TestRuntimeConfig(unittest.TestCase):
         self.assertEqual(config["byok_mode"], "system-key")
         self.assertIsInstance(config["cors_origins"], list)
         self.assertGreater(len(config["cors_origins"]), 0)
+        self.assertIn("https://localhost", config["cors_origins"])
+        self.assertIn("capacitor://localhost", config["cors_origins"])
     
     def test_byok_mode_valid_values(self):
         """BYOK mode should accept only valid values."""

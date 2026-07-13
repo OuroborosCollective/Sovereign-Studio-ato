@@ -88,15 +88,30 @@ def fetch_worker_ai(path: str, method: str = "GET", json_data: dict = None) -> t
 
 app = Flask(__name__)
 
+_REQUIRED_NATIVE_CORS_ORIGINS: tuple[str, ...] = (
+    "https://localhost",
+    "capacitor://localhost",
+)
+_DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
+    "https://chat.arelorian.de",
+    "https://arelorian.de",
+    "https://sovereign-backend.arelorian.de",
+    *_REQUIRED_NATIVE_CORS_ORIGINS,
+)
+
+
+def _effective_cors_origins(configured: list[str] | tuple[str, ...] | None) -> list[str]:
+    """Return explicit credential-safe origins while preserving native app access."""
+    values = [str(origin or "").strip() for origin in (configured or ())]
+    return list(dict.fromkeys([
+        *[origin for origin in values if origin],
+        *_REQUIRED_NATIVE_CORS_ORIGINS,
+    ]))
+
+
 # JWT Configuration
 JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
-CORS(app,
-     origins=[
-         "https://chat.arelorian.de",
-         "https://arelorian.de",
-         "https://sovereign-backend.arelorian.de",
-     ],
-     supports_credentials=True)
+CORS(app, origins=list(_DEFAULT_CORS_ORIGINS), supports_credentials=True)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -1187,11 +1202,7 @@ _CONFIG_FILE = os.getenv("RUNTIME_CONFIG_FILE", "/opt/sovereign/config/runtime.j
 # Default runtime config
 _DEFAULT_RUNTIME_CONFIG: dict = {
     "byok_mode": "system-key",  # provider credentials remain behind the backend proxy
-    "cors_origins": [
-        "https://chat.arelorian.de",
-        "https://arelorian.de",
-        "https://sovereign-backend.arelorian.de",
-    ],
+    "cors_origins": list(_DEFAULT_CORS_ORIGINS),
     "worker_health": "healthy",
     "last_deploy_at": None,
     "version": "1.0",
@@ -1250,7 +1261,7 @@ def _update_cors_from_config():
     try:
         from flask import Flask
         # Rebuild CORS with current origins
-        origins = _RUNTIME_CONFIG.get("cors_origins", [])
+        origins = _effective_cors_origins(_RUNTIME_CONFIG.get("cors_origins", []))
         if origins:
             # Create new CORS instance with updated origins
             from flask_cors import CORS
@@ -1316,6 +1327,7 @@ def admin_update_runtime_config():
                     "error": "Origin darf keine Auth-Parameter enthalten.",
                     "blocker": "cors_auth_in_origin_blocked"
                 }), 400
+        updates["cors_origins"] = _effective_cors_origins(origins)
     
     candidate_config = dict(_RUNTIME_CONFIG)
     candidate_config.update(updates)

@@ -1181,6 +1181,23 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByRole('menuitem', { name: 'GitHub Access' }).getAttribute('title')).toContain('Zugang fehlt');
   });
 
+  it("error repair preset opens the secure GitHub gate instead of falling back to read-only advice", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} />);
+    await loadRepoFromChat();
+    const callsBeforePreset = nonAuthFetchCalls(fetchMock).length;
+
+    fireEvent.click(screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i }));
+
+    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforePreset);
+    expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
+      .not.toHaveTextContent("Code-Auftrag braucht Ergebnis-Gate");
+    expect(screen.queryByText(/Was ist die sichere Analyse für dieses Repo/i)).toBeNull();
+  });
+
   it("README & Docs preset opens real repo setup before GitHub access when repo evidence is missing", async () => {
     renderWithProviders(<BuilderContainer {...baseProps()} agentReady={false} />);
     fireEvent.click(screen.getByRole("button", { name: /README & Docs aktualisieren/i }));

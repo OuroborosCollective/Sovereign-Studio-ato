@@ -66,7 +66,7 @@ describe('sovereignPresetActionRuntime', () => {
   });
 
   it('keeps safe-analysis preset submissions out of write and executor routing', () => {
-    for (const actionId of ['architecture_feature_suggestions', 'error_fix_plan', 'runtime_hardening', 'open_pr_review'] as const) {
+    for (const actionId of ['architecture_feature_suggestions', 'runtime_hardening', 'open_pr_review'] as const) {
       const action = getSovereignPresetAction(actionId);
       const submitted = buildSovereignPresetActionSubmission(action, {
         repoReady: true,
@@ -81,5 +81,30 @@ describe('sovereignPresetActionRuntime', () => {
       expect(isWriteIntent(submitted)).toBe(false);
       expect(isSovereignAgentExecutionIntent(submitted)).toBe(false);
     }
+  });
+
+  it('routes error hunting through a confirmed Draft-PR repair gate', () => {
+    const action = getSovereignPresetAction('error_fix_plan');
+    const blocked = evaluateSovereignPresetActionGate(action, {
+      repoReady: true,
+      githubWriteReady: false,
+    });
+    const submitted = buildSovereignPresetActionSubmission(action, {
+      repoReady: true,
+      repoFullName: 'OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      githubWriteReady: true,
+      agentReady: true,
+    });
+
+    expect(action.label).toContain('Draft PR');
+    expect(action.route).toBe('direct_patch_or_agent');
+    expect(action.risk).toBe('reviewable_patch');
+    expect(action.requiresGithubWrite).toBe(true);
+    expect(blocked.canStart).toBe(false);
+    expect(blocked.reason).toMatch(/GitHub-Schreibzugang fehlt/);
+    expect(submitted).toContain('ausschließlich einen Draft PR');
+    expect(submitted).not.toContain('Preset-Ausführungsmodus: safe_analysis');
+    expect(isWriteIntent(submitted)).toBe(true);
   });
 });
