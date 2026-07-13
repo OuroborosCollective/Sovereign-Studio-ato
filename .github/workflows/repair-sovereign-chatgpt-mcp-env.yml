@@ -1,0 +1,66 @@
+name: Repair Sovereign MCP env scope
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-sovereign-chatgpt-mcp-env.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-sovereign-chatgpt-mcp-env
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Repair invalid Kappa env expression
+    if: github.repository == 'OuroborosCollective/Sovereign-Studio-ato'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply exact deterministic repair
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/sovereign-chatgpt-mcp.yml')
+          content = path.read_text('utf-8')
+          expression = '$' + '{{ env.KAPPA_POS }}'
+          old = f"      SOVEREIGN_KAPPA_POS: {expression}\n"
+          new = "      SOVEREIGN_KAPPA_POS: '1000000'\n"
+          count = content.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one invalid Kappa env assignment, found {count}')
+          repaired = content.replace(old, new, 1)
+          if old in repaired:
+              raise SystemExit('invalid Kappa env assignment remains after repair')
+          if repaired.count(new) != 1:
+              raise SystemExit('repaired Kappa assignment is not unique')
+          path.write_text(repaired, 'utf-8')
+          PY
+          git diff --check
+          grep -Fq "      SOVEREIGN_KAPPA_POS: '1000000'" .github/workflows/sovereign-chatgpt-mcp.yml
+          ! grep -Fq 'SOVEREIGN_KAPPA_POS: ${{ env.KAPPA_POS }}' .github/workflows/sovereign-chatgpt-mcp.yml
+
+      - name: Commit exact repair and remove one-time workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm .github/workflows/repair-sovereign-chatgpt-mcp-env.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/sovereign-chatgpt-mcp.yml .github/workflows/repair-sovereign-chatgpt-mcp-env.yml
+          git diff --cached --check
+          git commit -m 'fix(actions): resolve Kappa env at valid scope'
+          git push origin HEAD:main
