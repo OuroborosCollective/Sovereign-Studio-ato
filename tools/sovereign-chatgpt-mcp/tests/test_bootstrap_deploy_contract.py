@@ -72,6 +72,12 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'" in workflow
     assert 'tar -czf sovereign-chatgpt-mcp.tar.gz tools/sovereign-chatgpt-mcp' in workflow
     assert 'EXPECTED_REVISION: ${{ github.sha }}' in workflow
+    assert 'RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}' in workflow
+    assert '/opt/sovereign-chatgpt-mcp/releases/' not in workflow
+    assert 'envs: SUDO_PASSWORD' in workflow
+    assert 'run_root env SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
+    assert 'run_root docker inspect sovereign-chatgpt-mcp' in workflow
+    assert 'run_root systemctl is-active --quiet sovereign-chatgpt-broker.service' in workflow
     assert 'name: Publish immutable MCP image' in workflow
     assert 'packages: write' in workflow
     assert 'docker/build-push-action@v6' in workflow
