@@ -115,6 +115,19 @@ def test_failure_diagnosis_routes_local_node_work_to_github_actions() -> None:
     )
 
 
+def test_failure_diagnosis_routes_missing_local_node_modules_to_ci() -> None:
+    result = REPAIR_ENGINE.diagnose(
+        "WARN Local package.json exists, but node_modules missing, did you mean to install?"
+    )
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "external_node_build_boundary"
+    assert result["policy"]["mutation_scope"] == "github_actions_only"
+    assert result["policy"]["repair_action"] == (
+        "publish_remote_ref_and_use_github_actions_without_local_retry"
+    )
+
+
 def test_failure_diagnosis_distinguishes_dependency_process_kill() -> None:
     result = REPAIR_ENGINE.diagnose(
         'pnpm install --frozen-lockfile returned {"exit_code": -9}; Cannot find module typescript/bin/tsc'
