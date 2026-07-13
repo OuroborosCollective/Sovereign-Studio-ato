@@ -110,9 +110,8 @@ def repository_diff(workspace_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=SAFE_WRITE)
 def repository_install_dependencies(workspace_id: str) -> dict[str, Any]:
-    """Install repository dependencies with pnpm and the committed lockfile."""
-    repo = runtime._repo(workspace_id)
-    return runtime._run(["pnpm", "install", "--frozen-lockfile"], cwd=repo, timeout=1800)
+    """Install repository dependencies with bounded pnpm phases and real resolution evidence."""
+    return runtime.install_dependencies(workspace_id)
 
 
 @mcp.tool(annotations=SAFE_WRITE)
@@ -198,6 +197,22 @@ def android_repair_plan(workspace_id: str, evidence: str = "") -> dict[str, Any]
 def android_run_validation_suite(workspace_id: str, profile: str = "fast") -> dict[str, Any]:
     """Run the fast, standard or release Android validation profile and preserve structured evidence."""
     return android.run_suite(workspace_id, profile)
+
+
+@mcp.tool(annotations=SAFE_WRITE)
+def android_workflow_artifact_import(
+    workspace_id: str,
+    run_id: int,
+    artifact_id: int,
+    destination: str = ".sovereign-artifacts/android",
+) -> dict[str, Any]:
+    """Import one confirmed GitHub Actions artifact into the workspace for APK/AAB inspection."""
+    return runtime.import_workflow_artifact(
+        workspace_id,
+        run_id,
+        artifact_id,
+        destination,
+    )
 
 
 @mcp.tool(annotations=READ_ONLY)

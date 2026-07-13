@@ -233,10 +233,18 @@ def test_workflow_run_status_returns_failed_step_evidence(monkeypatch) -> None:
             ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/actions/runs/99/jobs"): [
                 FakeResponse(200, {"jobs": [{"id": 5, "name": "build", "status": "completed", "conclusion": "failure", "steps": [{"name": "Compile", "conclusion": "failure"}]}]})
             ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/actions/runs/99/artifacts"): [
+                FakeResponse(200, {"artifacts": [{"id": 501, "name": "failed-evidence", "size_in_bytes": 42, "expired": False, "created_at": "2026-07-13T00:00:00Z", "updated_at": "2026-07-13T00:00:01Z"}]})
+            ],
         },
     )
 
     result = runtime.workflow_run_status(run_id=99)
 
+    assert result["ok"] is False
+    assert result["status"] == "FAIL"
+    assert result["validation_complete"] is True
+    assert result["passed"] is False
     assert result["conclusion"] == "failure"
     assert result["jobs"][0]["failed_steps"] == ["Compile"]
+    assert result["artifacts"][0]["id"] == 501

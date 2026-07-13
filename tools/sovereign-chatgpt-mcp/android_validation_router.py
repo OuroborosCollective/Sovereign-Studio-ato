@@ -27,7 +27,6 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         checks: list[dict[str, Any]] = []
         for name, argv in (
             ("git_diff_check", ["git", "diff", "--check"]),
-            ("typecheck", ["pnpm", "run", "type-check"]),
         ):
             result = operator_runtime._run(argv, cwd=repo, timeout=1800)
             operator_runtime._record_check(
@@ -47,6 +46,7 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
             "commands": checks,
             "static_scan": static_scan,
             "signing_secrets_required_locally": False,
+            "frontend_dependencies_required_locally": False,
         }
 
     def routed_run_suite(workspace_id: str, profile: str = "fast") -> dict[str, Any]:
@@ -110,7 +110,10 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
         run_id = int(dispatch.get("run_id") or 0)
         dispatch_evidence_complete = dispatched and run_id > 0 and bool(dispatch.get("url"))
         return {
-            "ok": dispatch_evidence_complete,
+            "ok": False,
+            "dispatch_ok": dispatch_evidence_complete,
+            "validation_complete": False,
+            "passed": False,
             "status": "DISPATCHED" if dispatch_evidence_complete else str(dispatch.get("status") or "FAILED"),
             "workspace_id": workspace_id,
             "profile": selected,

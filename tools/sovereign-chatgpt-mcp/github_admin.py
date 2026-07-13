@@ -268,6 +268,11 @@ class GitHubAdminRuntime:
             f"/repos/{self.repository}/actions/runs/{selected}/jobs",
             params={"per_page": 100},
         )
+        artifacts_payload = self._request(
+            "GET",
+            f"/repos/{self.repository}/actions/runs/{selected}/artifacts",
+            params={"per_page": 100},
+        )
         jobs: list[dict[str, Any]] = []
         for job in jobs_payload.get("jobs", []) if isinstance(jobs_payload, dict) else []:
             if not isinstance(job, dict):
@@ -286,16 +291,43 @@ class GitHubAdminRuntime:
                     "failed_steps": failed_steps,
                 }
             )
+        artifacts: list[dict[str, Any]] = []
+        for artifact in artifacts_payload.get("artifacts", []) if isinstance(artifacts_payload, dict) else []:
+            if not isinstance(artifact, dict):
+                continue
+            artifacts.append(
+                {
+                    "id": int(artifact.get("id") or 0),
+                    "name": str(artifact.get("name") or ""),
+                    "size_in_bytes": int(artifact.get("size_in_bytes") or 0),
+                    "expired": bool(artifact.get("expired")),
+                    "created_at": str(artifact.get("created_at") or ""),
+                    "updated_at": str(artifact.get("updated_at") or ""),
+                }
+            )
+        run_status = str(run.get("status") or "") if isinstance(run, dict) else ""
+        conclusion = run.get("conclusion") if isinstance(run, dict) else None
+        completed = run_status == "completed"
+        passed = completed and conclusion == "success"
         return {
-            "ok": True,
-            "status": "VERIFIED",
+            "ok": passed,
+            "evidence_read": True,
+            "validation_complete": completed,
+            "passed": passed,
+            "status": "PASS" if passed else ("RUNNING" if not completed else "FAIL"),
             "run_id": selected,
             "workflow": str(run.get("name") or "") if isinstance(run, dict) else "",
             "head_sha": str(run.get("head_sha") or "") if isinstance(run, dict) else "",
-            "run_status": str(run.get("status") or "") if isinstance(run, dict) else "",
-            "conclusion": run.get("conclusion") if isinstance(run, dict) else None,
+            "run_status": run_status,
+            "conclusion": conclusion,
             "url": str(run.get("html_url") or "") if isinstance(run, dict) else "",
             "jobs": jobs,
+            "artifacts": artifacts,
+            "next_action": (
+                "import_and_inspect_android_artifacts"
+                if passed and artifacts
+                else ("recheck_workflow_run_status" if not completed else "analyze_failed_workflow_steps")
+            ),
         }
 
     def _changed_files(self, pr_number: int) -> list[str]:
