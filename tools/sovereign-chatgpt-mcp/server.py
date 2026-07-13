@@ -12,6 +12,7 @@ from database import DatabaseRuntime
 from owner_input_client import OwnerInputClient
 from runtime import OperatorRuntime
 from self_heal import REPAIR_ENGINE
+from sovereign_cognitive_widget import register_sovereign_cognitive_widget
 
 
 def _host() -> str:
@@ -58,6 +59,33 @@ database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
 android = AndroidHardeningRuntime(runtime._repo, runtime._run, runtime._record_check)
 owner_input = OwnerInputClient()
+
+
+def _cognitive_architecture_status() -> dict[str, Any]:
+    try:
+        control_plane = broker.status()
+    except Exception as exc:
+        control_plane = {
+            "ok": False,
+            "status": "CONTROL_PLANE_UNAVAILABLE",
+            "error": type(exc).__name__,
+        }
+    control_ready = control_plane.get("status") == "BROKER_READY"
+    backend_configured = bool(os.getenv("SOVEREIGN_BACKEND_INTERNAL_URL", "").strip())
+    return {
+        "ok": control_ready,
+        "status": "RUNTIME_READY" if control_ready else "DEGRADED",
+        "summary": (
+            "Eight-role cognitive architecture is registered; control plane is ready."
+            if control_ready
+            else "Eight-role cognitive architecture is registered, but control-plane evidence is not ready."
+        ),
+        "controlPlane": control_plane,
+        "agentsSdkState": "backend_endpoint_configured" if backend_configured else "backend_endpoint_not_configured",
+        "draftPr": {"ready": False},
+        "secretsExposed": False,
+    }
+
 
 mcp = FastMCP(
     "Sovereign ChatGPT Operator",
@@ -385,6 +413,13 @@ def rollback_backend_release(target_image_digest: str, confirmation_digest: str)
         {"target_image_digest": target_image_digest, "confirmation_digest": confirmation_digest},
         timeout=960,
     )
+
+
+register_sovereign_cognitive_widget(
+    mcp,
+    read_only_annotations=READ_ONLY,
+    status_provider=_cognitive_architecture_status,
+)
 
 
 if __name__ == "__main__":

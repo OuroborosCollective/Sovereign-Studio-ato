@@ -22,6 +22,7 @@ REQUIRED_IMPORTS = {
     "PyJWT": "jwt",
     "pypdf": "pypdf",
     "webauthn": "webauthn",
+    "openai-agents": "agents",
     "pytest": "pytest",
 }
 

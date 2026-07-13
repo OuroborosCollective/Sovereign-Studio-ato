@@ -13,6 +13,7 @@ def test_backend_test_requirements_extend_production_runtime() -> None:
     requirements = read("backend/requirements-test.txt")
     assert "-r ../scripts/sovereign-backend/requirements.txt" in requirements
     assert "pytest>=9.1.1,<10" in requirements
+    assert "openai-agents==0.18.2" in read("scripts/sovereign-backend/requirements.txt")
 
 
 def test_shared_backend_python_action_installs_and_verifies_one_contract() -> None:
@@ -52,6 +53,7 @@ def test_runtime_canary_checks_flask_live_path_and_security_dependencies() -> No
         '"PyJWT": "jwt"',
         '"pypdf": "pypdf"',
         '"webauthn": "webauthn"',
+        '"openai-agents": "agents"',
         '"pytest": "pytest"',
     ):
         assert dependency in canary
