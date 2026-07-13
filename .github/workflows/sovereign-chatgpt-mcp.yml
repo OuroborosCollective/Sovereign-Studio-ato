@@ -38,7 +38,7 @@ jobs:
       SOVEREIGN_MCP_PORT: '8090'
       SOVEREIGN_MCP_REPOSITORY: OuroborosCollective/Sovereign-Studio-ato
       SOVEREIGN_ANDROID_NATIVE_BUILD_MODE: github_actions
-      SOVEREIGN_KAPPA_POS: ${{ env.KAPPA_POS }}
+      SOVEREIGN_KAPPA_POS: '1000000'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
