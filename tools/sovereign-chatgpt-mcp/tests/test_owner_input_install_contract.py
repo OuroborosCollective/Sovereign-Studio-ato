@@ -26,13 +26,17 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'set_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
     assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
     assert 'set_value "$ENV_FILE" SOVEREIGN_BACKEND_INTERNAL_URL "http://sovereign-backend:8787"' in installer
+    assert 'OWNER_REFERENCE_ID="26487"' in installer
+    assert 'OWNER_ADMIN_EMAIL="rastamanweeste@gmail.com"' in installer
+    assert "SOVEREIGN_OWNER_REFERENCE_ID" in installer
     assert "SOVEREIGN_OWNER_ADMIN_ID" in installer
     assert "SOVEREIGN_OWNER_ADMIN_EMAIL" in installer
-    assert "ADMIN_BOOTSTRAP_ADMIN_EMAIL" in installer
-    assert "configure SOVEREIGN_OWNER_ADMIN_ID or SOVEREIGN_OWNER_ADMIN_EMAIL" in installer
-    assert "unset OWNER_REQUEST_KEY OWNER_ADMIN_ID OWNER_ADMIN_EMAIL" in installer
+    assert "configure a valid SOVEREIGN_OWNER_ADMIN_ID or SOVEREIGN_OWNER_ADMIN_EMAIL" in installer
+    assert "unset OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL" in installer
     assert "echo $OWNER_REQUEST_KEY" not in installer
     assert "printf '%s' \"$OWNER_REQUEST_KEY\"" not in installer
+    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
+    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
 
 
 def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> None:
