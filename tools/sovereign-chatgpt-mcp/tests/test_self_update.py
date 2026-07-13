@@ -26,11 +26,28 @@ def test_self_update_schedules_exact_revision(tmp_path: Path, monkeypatch) -> No
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr("self_update.subprocess.run", lambda *args, **kwargs: Completed())
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append((list(args), dict(kwargs)))
+        return Completed()
+
+    monkeypatch.setattr("self_update.subprocess.run", fake_run)
     runtime = SelfUpdateRuntime()
     result = runtime.schedule(expected_revision="b" * 40, reason="repair extension")
 
     assert result["status"] == "SCHEDULED"
+    assert calls == [
+        (
+            ["systemctl", "start", "--no-block", "test-self-update.service"],
+            {
+                "capture_output": True,
+                "text": True,
+                "timeout": 30,
+                "check": False,
+            },
+        )
+    ]
     payload = json.loads(request.read_text("utf-8"))
     assert payload["expected_revision"] == "b" * 40
     assert payload["reason"] == "repair extension"

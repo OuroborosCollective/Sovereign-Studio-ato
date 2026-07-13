@@ -55,7 +55,7 @@ class SelfUpdateRuntime:
         temporary.replace(self.request_path)
 
         completed = subprocess.run(
-            ["systemctl", "start", self.service_name],
+            ["systemctl", "start", "--no-block", self.service_name],
             capture_output=True,
             text=True,
             timeout=30,
