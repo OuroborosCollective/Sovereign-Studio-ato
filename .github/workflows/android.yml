@@ -10,7 +10,7 @@ on:
       validation_profile:
         description: Native Android validation profile
         required: true
-        default: standard
+        default: release
         type: choice
         options:
           - standard
@@ -25,7 +25,7 @@ on:
         type: string
 
 concurrency:
-  group: android-production-${{ github.ref }}-${{ inputs.validation_profile || 'standard' }}
+  group: android-production-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }}
   cancel-in-progress: true
 
 env:
@@ -36,13 +36,13 @@ env:
   ANDROID_COMPILE_SDK: 35
   ANDROID_BUILD_TOOLS: 35.0.0
   KEYSTORE_FILE: android/app/keystore/release.jks
-  VALIDATION_PROFILE: ${{ inputs.validation_profile || 'standard' }}
+  VALIDATION_PROFILE: ${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }}
   VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
   VITE_SOVEREIGN_LLM_MODEL: deepseek-r1
 
 jobs:
   build:
-    name: Android ${{ inputs.validation_profile || 'standard' }} validation
+    name: Android ${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }} validation
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -54,6 +54,13 @@ jobs:
         with:
           fetch-depth: 1
           clean: true
+
+      - name: Enforce signed production profile on main
+        if: github.ref == 'refs/heads/main' && env.VALIDATION_PROFILE != 'release'
+        shell: bash
+        run: |
+          echo "Main production validation must use the release profile so signing, APK and AAB evidence cannot be skipped." >&2
+          exit 1
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -222,10 +229,17 @@ jobs:
           printf '%s' "$EFFECTIVE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
           test -s "$KEYSTORE_FILE"
           keytool -list -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" >/dev/null
+          KEYSTORE_CERT_SHA256="$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n 1 \
+            | tr '[:upper:]' '[:lower:]' \
+            | tr -d ':[:space:]')"
+          [[ "$KEYSTORE_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
           echo "ANDROID_KEYSTORE_PATH=$PWD/$KEYSTORE_FILE" >> "$GITHUB_ENV"
           echo "ANDROID_KEYSTORE_PASSWORD=$EFFECTIVE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_ALIAS=$EFFECTIVE_KEY_ALIAS" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_PASSWORD=$EFFECTIVE_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_EXPECTED_SIGNING_CERT_SHA256=$KEYSTORE_CERT_SHA256" >> "$GITHUB_ENV"
 
       - name: Validate release signing contract
         if: env.VALIDATION_PROFILE == 'release'
@@ -260,12 +274,38 @@ jobs:
           AAB="android/app/build/outputs/bundle/release/app-release.aab"
           command -v apksigner >/dev/null
           command -v zipalign >/dev/null
-          apksigner verify --verbose --print-certs "$APK" > android-apk-signature-verification.txt 2>&1
-          zipalign -c -v -P 16 4 "$APK" > android-apk-alignment-verification.txt 2>&1
-          jarsigner -verify -strict -certs "$AAB" > android-aab-signature-verification.txt 2>&1
+          apksigner verify --verbose --print-certs "$APK" 2>&1 | tee android-apk-signature-verification.txt
+          zipalign -c -v -P 16 4 "$APK" 2>&1 | tee android-apk-alignment-verification.txt
+          jarsigner -verify -certs "$AAB" 2>&1 | tee android-aab-signature-verification.txt
+          grep -Fq 'jar verified.' android-aab-signature-verification.txt
+
+          APK_CERT_SHA256="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' android-apk-signature-verification.txt \
+            | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          AAB_CERT_SHA256="$(keytool -printcert -jarfile "$AAB" \
+            | sed -n 's/^[[:space:]]*SHA256: //p' \
+            | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')"
+          [[ "$APK_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$AAB_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$APK_CERT_SHA256" = "$AAB_CERT_SHA256"
+          test "$APK_CERT_SHA256" = "$ANDROID_EXPECTED_SIGNING_CERT_SHA256"
+          printf 'SHA256=%s\n' "$APK_CERT_SHA256" > android-signing-certificate-sha256.txt
           test -s android-apk-signature-verification.txt
           test -s android-apk-alignment-verification.txt
           test -s android-aab-signature-verification.txt
+          test -s android-signing-certificate-sha256.txt
+
+      - name: Upload release signature diagnostics
+        if: always() && env.VALIDATION_PROFILE == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SovereignStudio-signature-diagnostics-${{ github.sha }}
+          path: |
+            android-apk-signature-verification.txt
+            android-apk-alignment-verification.txt
+            android-aab-signature-verification.txt
+            android-signing-certificate-sha256.txt
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Prepare release bundle
         if: env.VALIDATION_PROFILE == 'release'
@@ -280,6 +320,7 @@ jobs:
           cp android-apk-signature-verification.txt release-bundle/
           cp android-apk-alignment-verification.txt release-bundle/
           cp android-aab-signature-verification.txt release-bundle/
+          cp android-signing-certificate-sha256.txt release-bundle/
           (cd release-bundle && sha256sum * > CHECKSUMS.txt)
           (cd release-bundle && sha256sum -c CHECKSUMS.txt)
           zip -r SovereignStudio-PlayStore-Release.zip release-bundle/
@@ -341,4 +382,5 @@ jobs:
             echo "| Version code | ${{ steps.vars.outputs.version_code }} |"
             echo "| Commit | ${{ github.sha }} |"
             echo "| compileSdk / targetSdk | 35 / 35 |"
+            echo "| Signed APK/AAB required | ${{ env.VALIDATION_PROFILE == 'release' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
