@@ -39,7 +39,7 @@ def test_backend_registers_owner_routes_and_prefers_owner_managed_openhands_path
 def test_backend_deploy_keeps_global_secure_mount_read_only_and_only_owner_subdir_writable() -> None:
     deploy = (ROOT.parent.parent / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
 
-    assert "install -d -m 0700 /opt/secure/owner-managed" in deploy
+    assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' in deploy
     assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
-    assert deploy.count("--volume /opt/secure/owner-managed:/opt/secure/owner-managed:rw") == 2
+    assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
