@@ -117,7 +117,9 @@ git reset --hard "$EXPECTED_REVISION"
 CURRENT_STAGE="install_control_plane"
 write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and broker from the CI-built immutable image"
 INSTALL_LOG="$(mktemp)"
-if ! SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$INSTALLER" >"$INSTALL_LOG" 2>&1; then
+if ! SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" \
+  SOVEREIGN_MCP_REQUIRE_TUNNEL=1 \
+  bash "$INSTALLER" >"$INSTALL_LOG" 2>&1; then
   INSTALL_DETAIL="$(grep -E '^install blocked: stage=' "$INSTALL_LOG" | tail -n 1 | tr -d '\r\n' | cut -c1-1200 || true)"
   recover_control_plane
   write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; ${INSTALL_DETAIL:-installer failed without bounded stage evidence}; recovery attempted"
