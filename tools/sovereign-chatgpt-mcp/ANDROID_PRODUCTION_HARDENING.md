@@ -28,13 +28,14 @@ The operator must distinguish:
 9. Scan adjacent families that can be exposed by the fix.
 10. Run `android_run_validation_suite`:
     - `fast` while iterating;
-    - `standard` before PR/main write;
-    - `release` before a release claim.
-11. Inspect produced APK/AAB files with `android_artifact_inspect`.
-12. Verify GitHub checks with `repository_pr_status`.
-13. Rerun failed workflows only through `repository_rerun_failed_workflows`.
-14. Merge only with an exact confirmed PR head and green evidence.
-15. If private MCP code changed, reload the exact merge revision and retry the original operation.
+    - publish the reviewed workspace branch as a Draft PR;
+    - `standard` and `release` only through the allowlisted GitHub Actions workflow on that exact remote branch.
+11. Treat `DISPATCHED` as pending evidence, never as a passed validation. Read the exact run with `repository_workflow_run_status` until it reports `PASS`.
+12. Import the confirmed workflow artifact with `android_workflow_artifact_import`, then inspect every produced APK/AAB with `android_artifact_inspect`.
+13. Verify GitHub checks with `repository_pr_status`.
+14. Rerun failed workflows only through `repository_rerun_failed_workflows`.
+15. Merge only with an exact confirmed PR head and green evidence.
+16. If private MCP code changed, reload the exact merge revision and retry the original operation.
 
 ## Failure-family coverage
 

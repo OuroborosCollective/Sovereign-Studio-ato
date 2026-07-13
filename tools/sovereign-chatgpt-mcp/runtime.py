@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -8,8 +9,9 @@ import subprocess
 import tempfile
 import time
 import uuid
+import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import requests
@@ -243,6 +245,221 @@ class OperatorRuntime:
         diff = self._run(["git", "diff", "--", "."], cwd=repo)
         stat = self._run(["git", "diff", "--stat", "--", "."], cwd=repo)
         return {"status": status["stdout"], "diff": diff["stdout"], "stat": stat["stdout"], "ok": status["ok"] and diff["ok"]}
+
+    def install_dependencies(self, workspace_id: str) -> dict[str, Any]:
+        """Install the committed pnpm graph in bounded phases and verify required executables."""
+        repo = self._repo(workspace_id)
+        env = os.environ.copy()
+        env["NODE_OPTIONS"] = env.get("NODE_OPTIONS") or "--max-old-space-size=256"
+        phases: list[dict[str, Any]] = []
+
+        install = self._run(
+            [
+                "pnpm",
+                "install",
+                "--frozen-lockfile",
+                "--ignore-scripts",
+                "--child-concurrency=1",
+                "--network-concurrency=4",
+            ],
+            cwd=repo,
+            timeout=1800,
+            env=env,
+        )
+        phases.append({"name": "lockfile_install", **install})
+        self._record_check(workspace_id, "dependencies:lockfile_install", install)
+        if not install["ok"]:
+            return {
+                "ok": False,
+                "status": "INSTALL_FAILED",
+                "workspace_id": workspace_id,
+                "phases": phases,
+                "next_action": "inspect_lockfile_install_runtime_evidence",
+            }
+
+        postinstall_path = repo / "patch_capacitor.mjs"
+        if postinstall_path.is_file():
+            postinstall = self._run(
+                ["node", "patch_capacitor.mjs"],
+                cwd=repo,
+                timeout=300,
+                env=env,
+            )
+            phases.append({"name": "repository_postinstall", **postinstall})
+            self._record_check(workspace_id, "dependencies:repository_postinstall", postinstall)
+            if not postinstall["ok"]:
+                return {
+                    "ok": False,
+                    "status": "POSTINSTALL_FAILED",
+                    "workspace_id": workspace_id,
+                    "phases": phases,
+                    "next_action": "inspect_repository_postinstall_runtime_evidence",
+                }
+
+        verification_script = (
+            "for (const name of "
+            "['typescript/bin/tsc','vite/bin/vite.js','vitest','@capacitor/cli']) "
+            "console.log(name + '=' + require.resolve(name));"
+        )
+        verify = self._run(
+            ["node", "-e", verification_script],
+            cwd=repo,
+            timeout=120,
+            env=env,
+        )
+        phases.append({"name": "dependency_resolution", **verify})
+        self._record_check(workspace_id, "dependencies:resolution", verify)
+        return {
+            "ok": bool(verify["ok"]),
+            "status": "INSTALLED" if verify["ok"] else "RESOLUTION_FAILED",
+            "workspace_id": workspace_id,
+            "phases": phases,
+            "next_action": "run_requested_validation" if verify["ok"] else "inspect_missing_dependency_resolution",
+        }
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def import_workflow_artifact(
+        self,
+        workspace_id: str,
+        run_id: int,
+        artifact_id: int,
+        destination: str = ".sovereign-artifacts/android",
+    ) -> dict[str, Any]:
+        """Download one GitHub Actions artifact into the workspace without exposing credentials."""
+        run_number = int(run_id)
+        artifact_number = int(artifact_id)
+        if run_number < 1 or artifact_number < 1:
+            raise ValueError("run_id und artifact_id müssen positiv sein")
+        repo = self._repo(workspace_id)
+        destination_path = Path(destination)
+        if not destination_path.parts or destination_path.parts[0] != ".sovereign-artifacts":
+            raise ValueError("Artifact-Ziel muss unter .sovereign-artifacts liegen")
+        final_relative = str(destination_path / f"run-{run_number}-artifact-{artifact_number}")
+        final_root = safe_repo_path(repo, final_relative, must_exist=False)
+        exclude_path = repo / ".git" / "info" / "exclude"
+        exclude_marker = "/.sovereign-artifacts/"
+        exclude_text = exclude_path.read_text("utf-8") if exclude_path.is_file() else ""
+        if exclude_marker not in exclude_text.splitlines():
+            exclude_path.parent.mkdir(parents=True, exist_ok=True)
+            with exclude_path.open("a", encoding="utf-8") as exclude_file:
+                if exclude_text and not exclude_text.endswith("\n"):
+                    exclude_file.write("\n")
+                exclude_file.write(exclude_marker + "\n")
+        headers = {
+            "Authorization": f"Bearer {self.config.github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
+        }
+        metadata_url = (
+            f"https://api.github.com/repos/{self.config.repository}/actions/artifacts/{artifact_number}"
+        )
+        metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
+        if metadata_response.status_code != 200:
+            raise RuntimeError(
+                f"Artifact-Metadaten konnten nicht gelesen werden: HTTP {metadata_response.status_code}"
+            )
+        metadata = metadata_response.json()
+        workflow_run = metadata.get("workflow_run") if isinstance(metadata, dict) else None
+        actual_run_id = int((workflow_run or {}).get("id") or 0)
+        if actual_run_id != run_number:
+            raise ValueError("Artifact gehört nicht zum bestätigten Workflow-Run")
+        if bool(metadata.get("expired")):
+            raise RuntimeError("GitHub-Artefakt ist abgelaufen")
+        archive_url = str(metadata.get("archive_download_url") or "").strip()
+        if not archive_url:
+            raise RuntimeError("GitHub lieferte keine Artifact-Download-URL")
+
+        archive_limit = 600 * 1024 * 1024
+        extract_limit = 1_200 * 1024 * 1024
+        workspace = self._workspace(workspace_id)
+        archive_path = workspace / f"artifact-{artifact_number}.zip.part"
+        response = requests.get(
+            archive_url,
+            headers=headers,
+            stream=True,
+            allow_redirects=True,
+            timeout=120,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"Artifact-Download fehlgeschlagen: HTTP {response.status_code}")
+        downloaded = 0
+        try:
+            with archive_path.open("wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    downloaded += len(chunk)
+                    if downloaded > archive_limit:
+                        raise ValueError("Artifact-Archiv überschreitet das Größenlimit")
+                    handle.write(chunk)
+
+            extracted: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            total_uncompressed = 0
+            final_root.mkdir(parents=True, exist_ok=False)
+            with zipfile.ZipFile(archive_path) as archive:
+                for info in archive.infolist():
+                    member = PurePosixPath(info.filename)
+                    if info.is_dir():
+                        continue
+                    if member.is_absolute() or not member.parts or ".." in member.parts:
+                        raise ValueError("Artifact enthält einen unsicheren Pfad")
+                    if info.flag_bits & 0x1:
+                        raise ValueError("Verschlüsselte Artifact-Dateien sind nicht zulässig")
+                    mode = (info.external_attr >> 16) & 0o170000
+                    if mode == 0o120000:
+                        raise ValueError("Symlinks in Workflow-Artefakten sind nicht zulässig")
+                    member_name = member.as_posix()
+                    if member_name in seen:
+                        raise ValueError("Artifact enthält doppelte Dateipfade")
+                    seen.add(member_name)
+                    total_uncompressed += int(info.file_size)
+                    if total_uncompressed > extract_limit:
+                        raise ValueError("Entpacktes Artifact überschreitet das Größenlimit")
+                    relative_target = str(Path(final_relative) / Path(*member.parts))
+                    target = safe_repo_path(repo, relative_target)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(info) as source, target.open("wb") as output:
+                        shutil.copyfileobj(source, output, length=1024 * 1024)
+                    extracted.append(
+                        {
+                            "path": str(target.relative_to(repo)),
+                            "bytes": target.stat().st_size,
+                            "sha256": self._sha256_file(target),
+                        }
+                    )
+        except Exception:
+            shutil.rmtree(final_root, ignore_errors=True)
+            raise
+        finally:
+            archive_path.unlink(missing_ok=True)
+
+        inspectable = [
+            item for item in extracted if Path(str(item["path"])).suffix.lower() in {".apk", ".aab"}
+        ]
+        return {
+            "ok": bool(inspectable),
+            "status": "IMPORTED" if inspectable else "INCOMPLETE_EVIDENCE",
+            "workspace_id": workspace_id,
+            "run_id": run_number,
+            "artifact_id": artifact_number,
+            "artifact_name": str(metadata.get("name") or ""),
+            "downloaded_bytes": downloaded,
+            "files": extracted,
+            "inspectable_artifacts": inspectable,
+            "next_action": (
+                "run_android_artifact_inspect_for_each_inspectable_path"
+                if inspectable
+                else "select_an_artifact_containing_apk_or_aab"
+            ),
+        }
 
     def run_check(self, workspace_id: str, check: str, target: str = "") -> dict[str, Any]:
         repo = self._repo(workspace_id)

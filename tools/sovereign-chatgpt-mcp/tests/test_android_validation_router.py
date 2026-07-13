@@ -113,6 +113,10 @@ def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradl
     result = android.run_suite("job-test", "standard")
 
     assert result["status"] == "DISPATCHED"
+    assert result["ok"] is False
+    assert result["dispatch_ok"] is True
+    assert result["validation_complete"] is False
+    assert result["passed"] is False
     assert result["execution_mode"] == "github_actions"
     assert result["ref"] == metadata["branch"]
     assert result["run_id"] == 4321
@@ -122,7 +126,6 @@ def test_standard_profile_dispatches_published_branch_and_never_runs_local_gradl
     assert android.scan_calls == ["job-test"]
     assert operator.commands == [
         ["git", "diff", "--check"],
-        ["pnpm", "run", "type-check"],
     ]
     assert broker.calls == [
         (
@@ -151,7 +154,6 @@ def test_release_profile_blocks_before_gradle_when_workspace_branch_is_not_publi
     assert android.calls == []
     assert operator.commands == [
         ["git", "diff", "--check"],
-        ["pnpm", "run", "type-check"],
     ]
     assert broker.calls == []
 
@@ -167,6 +169,10 @@ def test_release_profile_dispatches_main_when_private_main_mode_is_enabled(monke
     result = android.run_suite("job-test", "release")
 
     assert result["status"] == "DISPATCHED"
+    assert result["ok"] is False
+    assert result["dispatch_ok"] is True
+    assert result["validation_complete"] is False
+    assert result["passed"] is False
     assert result["execution_mode"] == "github_actions"
     assert result["ref"] == "main"
     assert result["run_id"] == 4321
@@ -174,7 +180,6 @@ def test_release_profile_dispatches_main_when_private_main_mode_is_enabled(monke
     assert android.calls == []
     assert operator.commands == [
         ["git", "diff", "--check"],
-        ["pnpm", "run", "type-check"],
     ]
     assert broker.calls == [
         (
