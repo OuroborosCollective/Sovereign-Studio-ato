@@ -70,35 +70,59 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
 
     assert 'name: Bootstrap MCP on VPS' in workflow
     assert "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'" in workflow
-    assert 'tar -czf sovereign-chatgpt-mcp.tar.gz tools/sovereign-chatgpt-mcp' in workflow
+    assert "KAPPA_POS: '1000000'" in workflow
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
+    assert '--sort=name' in workflow
+    assert '--mtime="@${COMMIT_EPOCH}"' in workflow
+    assert '| gzip -n > sovereign-chatgpt-mcp.tar.gz' in workflow
+    assert 'sha256sum --check sovereign-chatgpt-mcp.sha256' in workflow
     assert 'EXPECTED_REVISION: ${{ github.sha }}' in workflow
+    assert 'EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}' in workflow
     assert 'RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}' in workflow
     assert '/opt/sovereign-chatgpt-mcp/releases/' not in workflow
     assert 'envs: SUDO_PASSWORD' in workflow
     assert 'run_root env SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
     assert 'run_root docker inspect sovereign-chatgpt-mcp' in workflow
-    assert 'run_root systemctl is-active --quiet sovereign-chatgpt-broker.service' in workflow
     assert 'name: Publish immutable MCP image' in workflow
+    assert 'digest: ${{ steps.publish.outputs.digest }}' in workflow
     assert 'packages: write' in workflow
     assert 'docker/build-push-action@v6' in workflow
-    assert 'ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp:${{ github.sha }}' in workflow
+    assert 'id: publish' in workflow
+    assert 'tags: ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}' in workflow
     assert 'org.opencontainers.image.revision=${{ github.sha }}' in workflow
-    assert 'needs: [validate, publish-mcp-image]' in workflow
-    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
-    assert 'mcp_protocol_ready' in workflow
-    assert 'systemctl is-active --quiet sovereign-chatgpt-broker.service' in workflow
+    assert 'io.ouroboros.sovereign.kappa-pos=${{ env.KAPPA_POS }}' in workflow
+    assert 'provenance: true' in workflow
+    assert 'sbom: true' in workflow
+    assert 'name: Verify published MCP digest' in workflow
+    assert 'EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}' in workflow
+    assert 'docker pull "$IMAGE_REFERENCE"' in workflow
+    assert 'test "$REVISION_LABEL" = "$GITHUB_SHA"' in workflow
+    assert 'test "$KAPPA_LABEL" = "$KAPPA_POS"' in workflow
+    assert 'needs: [validate, publish-mcp-image, verify-published-mcp-image]' in workflow
+    assert 'test "$CONTAINER_IMAGE_REFERENCE" = "$EXPECTED_IMAGE_REFERENCE"' in workflow
+    assert 'test "$INSTALLED_REVISION" = "$EXPECTED_REVISION"' in workflow
+    assert 'test "$INSTALLED_KAPPA_POS" = "$KAPPA_POS"' in workflow
+    assert 'test "$CONTAINER_REPO_DIGEST" = "$EXPECTED_IMAGE_REFERENCE"' in workflow
     assert 'test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
     assert 'status=server.broker.status()' in workflow
-    assert 'systemctl is-active --quiet sovereign-chatgpt-command-worker.service' in workflow
-    assert 'command_contract.py command_queue.py command_worker.py' in workflow
-    assert 'sovereign-chatgpt-command-worker.service' in workflow
-    assert "'broker_rpc_ready': True" in workflow
-    assert "'broker_socket_host_visible': True" in workflow
-    assert "'broker_socket_container_visible': True" in workflow
-    assert "'host_command_worker_active': True" in workflow
-    assert "'inbound_mutation_forbidden': True" in workflow
-    assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in workflow
+    assert "canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN'" in workflow
+    assert 'COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"' in workflow
+    assert 'BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"' in workflow
+    assert 'TUNNEL_SERVICE_STATE="$(run_root systemctl is-active sovereign-openai-tunnel.service)"' in workflow
+    assert "'mcp_protocol_ready': mcp_protocol_state == 'ready'" in workflow
+    assert "'broker_rpc_ready': broker_rpc_state == 'ready'" in workflow
+    assert "'broker_socket_host_visible': broker_socket_host_state == 'visible'" in workflow
+    assert "'broker_socket_container_visible': broker_socket_container_state == 'visible'" in workflow
+    assert "'host_command_worker_active': command_worker_state == 'active'" in workflow
+    assert "'inbound_mutation_forbidden': inbound_mutation_state == 'forbidden'" in workflow
+    assert "'openai_tunnel_active': tunnel_service_state == 'active'" in workflow
+    assert "'ok': all(checks.values())" in workflow
+    assert "'evidence_sha256': hashlib.sha256(canonical).hexdigest()" in workflow
+    assert 'name: Reverify deployed evidence in fresh SSH session' in workflow
+    assert "'fresh_session_runtime_evidence': True" in workflow
+    assert "'mcp_protocol_ready': True" not in workflow
+    assert "'broker_rpc_ready': True" not in workflow
     assert 'backend_image_resolve' not in workflow
     assert 'resolve_backend_image' not in workflow
     assert "The VPS must not build the MCP image." in workflow
