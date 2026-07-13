@@ -60,7 +60,7 @@ def test_github_actions_can_bootstrap_the_mcp_without_backend_image_resolution()
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
 
     assert 'name: Bootstrap MCP on VPS' in workflow
-    assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in workflow
+    assert "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'" in workflow
     assert 'tar -czf sovereign-chatgpt-mcp.tar.gz tools/sovereign-chatgpt-mcp' in workflow
     assert 'EXPECTED_REVISION: ${{ github.sha }}' in workflow
     assert 'bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
