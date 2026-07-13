@@ -4,7 +4,9 @@ from pathlib import Path
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = BACKEND_ROOT.parents[1]
 APP = BACKEND_ROOT / "app.py"
+MAIN_ACTIVITY = REPOSITORY_ROOT / "android/app/src/main/java/com/arestudio/nocode/aab/MainActivity.java"
 
 
 def test_native_android_origins_are_part_of_the_backend_cors_contract() -> None:
@@ -34,3 +36,14 @@ def test_auth_routes_remain_cookie_based_without_client_token_storage() -> None:
     assert '@app.route("/api/auth/google", methods=["POST"])' in source
     assert "httponly=True, secure=True, samesite=\"None\"" in source
     assert "localStorage" not in source[source.index("def _set_session_cookie"):source.index("def _get_session_user_id")]
+
+
+def test_capacitor_webview_accepts_the_backend_session_cookie() -> None:
+    source = MAIN_ACTIVITY.read_text("utf-8")
+
+    assert "WebView webView = getBridge().getWebView();" in source
+    assert "CookieManager cookieManager = CookieManager.getInstance();" in source
+    assert "cookieManager.setAcceptCookie(true);" in source
+    assert "cookieManager.setAcceptThirdPartyCookies(webView, true);" in source
+    assert "cookieManager.flush();" in source
+    assert "setAcceptFileSchemeCookies" not in source
