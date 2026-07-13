@@ -16,9 +16,13 @@ on:
 permissions:
   contents: read
 
+env:
+  IMAGE_REPOSITORY: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp
+  KAPPA_POS: '1000000'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -34,6 +38,7 @@ jobs:
       SOVEREIGN_MCP_PORT: '8090'
       SOVEREIGN_MCP_REPOSITORY: OuroborosCollective/Sovereign-Studio-ato
       SOVEREIGN_ANDROID_NATIVE_BUILD_MODE: github_actions
+      SOVEREIGN_KAPPA_POS: ${{ env.KAPPA_POS }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -47,6 +52,20 @@ jobs:
 
       - name: Install Python dependencies
         run: python -m pip install --requirement requirements.txt
+
+      - name: Validate deterministic constants
+        run: |
+          set -euo pipefail
+          test "${KAPPA_POS}" = '1000000'
+          [[ "${KAPPA_POS}" =~ ^[1-9][0-9]*$ ]]
+          python - <<'PY'
+          import os
+
+          kappa_pos = int(os.environ['KAPPA_POS'])
+          assert kappa_pos == 1_000_000
+          assert str(kappa_pos) == os.environ['SOVEREIGN_KAPPA_POS']
+          print({'kappa_pos': kappa_pos, 'deterministic_constant': True})
+          PY
 
       - name: Compile Python runtime
         run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py
@@ -157,8 +176,18 @@ jobs:
           print('MCP launcher, Android validation routing, PR lifecycle, workflow control, admin and self-update contracts passed.')
           PY
 
-      - name: Build unprivileged MCP container
-        run: docker build --tag sovereign-chatgpt-mcp:${{ github.sha }} .
+      - name: Build and inspect unprivileged MCP container
+        run: |
+          set -euo pipefail
+          docker build \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "io.ouroboros.sovereign.kappa-pos=${KAPPA_POS}" \
+            --tag "sovereign-chatgpt-mcp:${GITHUB_SHA}" \
+            .
+          REVISION_LABEL="$(docker image inspect "sovereign-chatgpt-mcp:${GITHUB_SHA}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          KAPPA_LABEL="$(docker image inspect "sovereign-chatgpt-mcp:${GITHUB_SHA}" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')"
+          test "$REVISION_LABEL" = "$GITHUB_SHA"
+          test "$KAPPA_LABEL" = "$KAPPA_POS"
 
       - name: Assert Docker socket is absent from MCP container contract
         run: |
@@ -183,6 +212,8 @@ jobs:
   publish-mcp-image:
     name: Publish immutable MCP image
     needs: validate
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -204,20 +235,57 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish exact MCP revision
+        id: publish
         uses: docker/build-push-action@v6
         with:
           context: tools/sovereign-chatgpt-mcp
           push: true
-          tags: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp:${{ github.sha }}
+          tags: ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            io.ouroboros.sovereign.kappa-pos=${{ env.KAPPA_POS }}
           provenance: true
           sbom: true
 
+  verify-published-mcp-image:
+    name: Verify published MCP digest
+    needs: publish-mcp-image
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    env:
+      EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}
+    steps:
+      - name: Validate published digest
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "${KAPPA_POS}" = '1000000'
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and inspect exact published image
+        run: |
+          set -euo pipefail
+          IMAGE_REFERENCE="${IMAGE_REPOSITORY}@${EXPECTED_IMAGE_DIGEST}"
+          docker pull "$IMAGE_REFERENCE"
+          REVISION_LABEL="$(docker image inspect "$IMAGE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          KAPPA_LABEL="$(docker image inspect "$IMAGE_REFERENCE" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')"
+          test "$REVISION_LABEL" = "$GITHUB_SHA"
+          test "$KAPPA_LABEL" = "$KAPPA_POS"
+
   deploy-vps:
     name: Bootstrap MCP on VPS
-    needs: [validate, publish-mcp-image]
+    needs: [validate, publish-mcp-image, verify-published-mcp-image]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -230,6 +298,7 @@ jobs:
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
       RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}
       EXPECTED_REVISION: ${{ github.sha }}
+      EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -244,17 +313,39 @@ jobs:
           test -n "${VPS_PASSWORD:-}" || { echo 'VPS password secret is not configured.' >&2; exit 1; }
           [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]] || { echo 'VPS SSH port must be numeric.' >&2; exit 1; }
           [[ "${EXPECTED_REVISION}" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected revision must be a full commit SHA.' >&2; exit 1; }
+          [[ "${EXPECTED_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Published image digest is missing or invalid.' >&2; exit 1; }
+          test "${KAPPA_POS}" = '1000000' || { echo 'KAPPA_POS invariant mismatch.' >&2; exit 1; }
           case "${RELEASE_DIR}" in
             /tmp/sovereign-chatgpt-mcp-*) ;;
             *) echo "Unsafe release directory: ${RELEASE_DIR}" >&2; exit 1 ;;
           esac
 
-      - name: Create exact MCP release archive
+      - name: Create deterministic MCP release archive
         run: |
           set -euo pipefail
-          tar -czf sovereign-chatgpt-mcp.tar.gz tools/sovereign-chatgpt-mcp
+          COMMIT_EPOCH="$(git show -s --format=%ct "${EXPECTED_REVISION}")"
+          [[ "$COMMIT_EPOCH" =~ ^[0-9]+$ ]]
+          tar \
+            --sort=name \
+            --mtime="@${COMMIT_EPOCH}" \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            --format=posix \
+            --pax-option=delete=atime,delete=ctime \
+            -cf - tools/sovereign-chatgpt-mcp \
+            | gzip -n > sovereign-chatgpt-mcp.tar.gz
           tar -tzf sovereign-chatgpt-mcp.tar.gz >/dev/null
           printf '%s\n' "${EXPECTED_REVISION}" > sovereign-chatgpt-mcp.revision
+          printf '%s\n' "${EXPECTED_IMAGE_DIGEST}" > sovereign-chatgpt-mcp.image-digest
+          printf '%s\n' "${KAPPA_POS}" > sovereign-chatgpt-mcp.kappa-pos
+          sha256sum \
+            sovereign-chatgpt-mcp.tar.gz \
+            sovereign-chatgpt-mcp.revision \
+            sovereign-chatgpt-mcp.image-digest \
+            sovereign-chatgpt-mcp.kappa-pos \
+            > sovereign-chatgpt-mcp.sha256
+          sha256sum --check sovereign-chatgpt-mcp.sha256
 
       - name: Prepare remote release directory
         uses: appleboy/ssh-action@v1.2.5
@@ -272,7 +363,12 @@ jobs:
               *) echo "Unsafe release directory: $RELEASE_DIR" >&2; exit 1 ;;
             esac
             install -d -m 0700 "$RELEASE_DIR"
-            rm -f "$RELEASE_DIR/sovereign-chatgpt-mcp.tar.gz" "$RELEASE_DIR/sovereign-chatgpt-mcp.revision"
+            rm -f \
+              "$RELEASE_DIR/sovereign-chatgpt-mcp.tar.gz" \
+              "$RELEASE_DIR/sovereign-chatgpt-mcp.revision" \
+              "$RELEASE_DIR/sovereign-chatgpt-mcp.image-digest" \
+              "$RELEASE_DIR/sovereign-chatgpt-mcp.kappa-pos" \
+              "$RELEASE_DIR/sovereign-chatgpt-mcp.sha256"
 
       - name: Upload exact MCP release
         uses: appleboy/scp-action@v1.0.0
@@ -281,7 +377,7 @@ jobs:
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
-          source: 'sovereign-chatgpt-mcp.tar.gz,sovereign-chatgpt-mcp.revision'
+          source: 'sovereign-chatgpt-mcp.tar.gz,sovereign-chatgpt-mcp.revision,sovereign-chatgpt-mcp.image-digest,sovereign-chatgpt-mcp.kappa-pos,sovereign-chatgpt-mcp.sha256'
           target: ${{ env.RELEASE_DIR }}
           overwrite: true
 
@@ -312,8 +408,15 @@ jobs:
             }
             RELEASE_DIR='${{ env.RELEASE_DIR }}'
             EXPECTED_REVISION='${{ env.EXPECTED_REVISION }}'
+            EXPECTED_IMAGE_DIGEST='${{ env.EXPECTED_IMAGE_DIGEST }}'
+            IMAGE_REPOSITORY='${{ env.IMAGE_REPOSITORY }}'
+            KAPPA_POS='${{ env.KAPPA_POS }}'
+            EXPECTED_IMAGE_REFERENCE="${IMAGE_REPOSITORY}@${EXPECTED_IMAGE_DIGEST}"
             ARCHIVE="$RELEASE_DIR/sovereign-chatgpt-mcp.tar.gz"
             REVISION_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.revision"
+            IMAGE_DIGEST_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.image-digest"
+            KAPPA_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.kappa-pos"
+            CHECKSUM_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.sha256"
             WORK_DIR="$RELEASE_DIR/work"
             STATUS_DIR=/var/lib/sovereign-chatgpt-self-update
             STATUS_FILE="$STATUS_DIR/status.json"
@@ -328,9 +431,37 @@ jobs:
               *) echo "Unsafe release directory: $RELEASE_DIR" >&2; exit 1 ;;
             esac
             [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid expected revision.' >&2; exit 1; }
-            test -f "$ARCHIVE"
-            test -f "$REVISION_FILE"
+            [[ "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Invalid expected image digest.' >&2; exit 1; }
+            test "$KAPPA_POS" = '1000000' || { echo 'Invalid KAPPA_POS invariant.' >&2; exit 1; }
+            for release_file in "$ARCHIVE" "$REVISION_FILE" "$IMAGE_DIGEST_FILE" "$KAPPA_FILE" "$CHECKSUM_FILE"; do
+              test -f "$release_file" || { echo "Release evidence file missing: $release_file" >&2; exit 1; }
+            done
+            (
+              cd "$RELEASE_DIR"
+              sha256sum --check "$(basename "$CHECKSUM_FILE")"
+            )
             test "$(tr -d '\r\n' < "$REVISION_FILE")" = "$EXPECTED_REVISION"
+            test "$(tr -d '\r\n' < "$IMAGE_DIGEST_FILE")" = "$EXPECTED_IMAGE_DIGEST"
+            test "$(tr -d '\r\n' < "$KAPPA_FILE")" = "$KAPPA_POS"
+            ARCHIVE_SHA256="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+            [[ "$ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            python3 - "$ARCHIVE" <<'PY'
+            from pathlib import PurePosixPath
+            import sys
+            import tarfile
+
+            archive = sys.argv[1]
+            with tarfile.open(archive, 'r:gz') as bundle:
+                members = bundle.getmembers()
+                if not members:
+                    raise SystemExit('release archive is empty')
+                for member in members:
+                    path = PurePosixPath(member.name)
+                    if path.is_absolute() or '..' in path.parts:
+                        raise SystemExit(f'unsafe archive path: {member.name}')
+                    if member.issym() or member.islnk() or member.isdev():
+                        raise SystemExit(f'unsupported archive entry: {member.name}')
+            PY
             tar -tzf "$ARCHIVE" >/dev/null
             rm -rf "$WORK_DIR"
             install -d -m 0700 "$WORK_DIR"
@@ -345,56 +476,208 @@ jobs:
 
             CONTAINER_STATE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}')"
             test "$CONTAINER_STATE" = 'running healthy'
+            CONTAINER_IMAGE_REFERENCE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Config.Image}}')"
+            CONTAINER_IMAGE_ID="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Image}}')"
+            test "$CONTAINER_IMAGE_REFERENCE" = "$EXPECTED_IMAGE_REFERENCE"
+            [[ "$CONTAINER_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+            INSTALLED_REVISION="$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            INSTALLED_KAPPA_POS="$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')"
+            test "$INSTALLED_REVISION" = "$EXPECTED_REVISION"
+            test "$INSTALLED_KAPPA_POS" = "$KAPPA_POS"
+            CONTAINER_REPO_DIGEST="$(
+              run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{json .RepoDigests}}' \
+                | python3 -c 'import json,sys; expected=sys.argv[1]; values=json.load(sys.stdin); print(expected if expected in values else "")' "$EXPECTED_IMAGE_REFERENCE"
+            )"
+            test "$CONTAINER_REPO_DIGEST" = "$EXPECTED_IMAGE_REFERENCE"
+
             run_root test -S /run/sovereign-chatgpt-broker/operator.sock
+            BROKER_SOCKET_HOST_STATE=visible
             run_root docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock
+            BROKER_SOCKET_CONTAINER_STATE=visible
             run_root docker exec sovereign-chatgpt-mcp python -c 'import server; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+            BROKER_RPC_STATE=ready
             run_root docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
-            run_root docker exec sovereign-chatgpt-mcp python -c "import server; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; print({'tool_contract': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True})"
-            run_root systemctl is-active --quiet sovereign-chatgpt-command-worker.service
-            run_root systemctl is-active --quiet sovereign-chatgpt-broker.service
-            run_root systemctl is-active --quiet sovereign-openai-tunnel.service
+            MCP_PROTOCOL_STATE=ready
+            run_root docker exec sovereign-chatgpt-mcp python -c "import server; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; canary=server.broker.call('host_worker_canary', {}, timeout=10); assert canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN', canary; print({'tool_contract': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True, 'inbound_mutation_forbidden': True})"
+            INBOUND_MUTATION_STATE=forbidden
+            COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"
+            BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"
+            TUNNEL_SERVICE_STATE="$(run_root systemctl is-active sovereign-openai-tunnel.service)"
+            test "$COMMAND_WORKER_STATE" = active
+            test "$BROKER_SERVICE_STATE" = active
+            test "$TUNNEL_SERVICE_STATE" = active
 
             run_root install -d -m 0750 "$STATUS_DIR"
             STATUS_WRITER="$RELEASE_DIR/write-mcp-status.py"
             cat > "$STATUS_WRITER" <<'PY'
             from pathlib import Path
+            import hashlib
             import json
             import os
+            import re
             import sys
             import time
 
-            path = Path(sys.argv[1])
-            revision = sys.argv[2]
-            payload = {
-                'ok': True,
-                'status': 'UPDATED',
+            (
+                status_path,
+                revision,
+                image_reference,
+                image_id,
+                kappa_pos,
+                archive_sha256,
+                container_state,
+                mcp_protocol_state,
+                broker_service_state,
+                broker_rpc_state,
+                broker_socket_host_state,
+                broker_socket_container_state,
+                command_worker_state,
+                inbound_mutation_state,
+                tunnel_service_state,
+            ) = sys.argv[1:]
+
+            checks = {
+                'revision_verified': bool(re.fullmatch(r'[0-9a-f]{40}', revision)),
+                'image_digest_verified': bool(re.fullmatch(r'ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[0-9a-f]{64}', image_reference)),
+                'image_id_verified': bool(re.fullmatch(r'sha256:[0-9a-f]{64}', image_id)),
+                'kappa_pos_verified': kappa_pos == '1000000',
+                'archive_sha256_verified': bool(re.fullmatch(r'[0-9a-f]{64}', archive_sha256)),
+                'container_healthy': container_state == 'running healthy',
+                'mcp_protocol_ready': mcp_protocol_state == 'ready',
+                'broker_active': broker_service_state == 'active',
+                'broker_rpc_ready': broker_rpc_state == 'ready',
+                'broker_socket_host_visible': broker_socket_host_state == 'visible',
+                'broker_socket_container_visible': broker_socket_container_state == 'visible',
+                'host_command_worker_active': command_worker_state == 'active',
+                'inbound_mutation_forbidden': inbound_mutation_state == 'forbidden',
+                'openai_tunnel_active': tunnel_service_state == 'active',
+            }
+            evidence = {
                 'revision': revision,
-                'detail': 'private ChatGPT MCP installed by GitHub Actions bootstrap deploy',
-                'mcp_protocol_ready': True,
-                'broker_active': True,
-                'broker_rpc_ready': True,
-                'broker_socket_host_visible': True,
-                'broker_socket_container_visible': True,
-                'host_command_worker_active': True,
-                'inbound_mutation_forbidden': True,
-                'openai_tunnel_active': True,
+                'image': image_reference,
+                'image_id': image_id,
+                'kappa_pos': int(kappa_pos),
+                'archive_sha256': archive_sha256,
+                **checks,
+            }
+            canonical = json.dumps(evidence, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            payload = {
+                'ok': all(checks.values()),
+                'status': 'UPDATED' if all(checks.values()) else 'FAILED',
+                'detail': 'private ChatGPT MCP installed from measured GitHub Actions and VPS evidence',
+                **evidence,
+                'evidence_sha256': hashlib.sha256(canonical).hexdigest(),
                 'updated_at': int(time.time()),
             }
+            if not payload['ok']:
+                raise SystemExit(f'incomplete runtime evidence: {checks}')
+            path = Path(status_path)
             temporary = path.with_suffix('.tmp')
-            temporary.write_text(json.dumps(payload, sort_keys=True) + '\n', 'utf-8')
+            temporary.write_text(json.dumps(payload, sort_keys=True, separators=(',', ':')) + '\n', 'utf-8')
             os.chmod(temporary, 0o640)
             temporary.replace(path)
             PY
             chmod 0700 "$STATUS_WRITER"
-            run_root python3 "$STATUS_WRITER" "$STATUS_FILE" "$EXPECTED_REVISION"
+            run_root python3 "$STATUS_WRITER" \
+              "$STATUS_FILE" \
+              "$INSTALLED_REVISION" \
+              "$CONTAINER_REPO_DIGEST" \
+              "$CONTAINER_IMAGE_ID" \
+              "$INSTALLED_KAPPA_POS" \
+              "$ARCHIVE_SHA256" \
+              "$CONTAINER_STATE" \
+              "$MCP_PROTOCOL_STATE" \
+              "$BROKER_SERVICE_STATE" \
+              "$BROKER_RPC_STATE" \
+              "$BROKER_SOCKET_HOST_STATE" \
+              "$BROKER_SOCKET_CONTAINER_STATE" \
+              "$COMMAND_WORKER_STATE" \
+              "$INBOUND_MUTATION_STATE" \
+              "$TUNNEL_SERVICE_STATE"
 
-            printf 'MCP revision installed: %s\n' "$EXPECTED_REVISION"
+            run_root python3 - "$STATUS_FILE" "$EXPECTED_REVISION" "$EXPECTED_IMAGE_REFERENCE" "$KAPPA_POS" <<'PY'
+            from pathlib import Path
+            import json
+            import re
+            import sys
+
+            payload = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+            assert payload.get('ok') is True, payload
+            assert payload.get('status') == 'UPDATED', payload
+            assert payload.get('revision') == sys.argv[2], payload
+            assert payload.get('image') == sys.argv[3], payload
+            assert payload.get('kappa_pos') == int(sys.argv[4]), payload
+            assert re.fullmatch(r'[0-9a-f]{64}', str(payload.get('evidence_sha256', ''))), payload
+            PY
+
+            printf 'MCP revision installed: %s\n' "$INSTALLED_REVISION"
+            printf 'MCP image digest: %s\n' "$CONTAINER_REPO_DIGEST"
+            printf 'MCP image id: %s\n' "$CONTAINER_IMAGE_ID"
+            printf 'KappaPos: %s\n' "$INSTALLED_KAPPA_POS"
+            printf 'Release archive SHA-256: %s\n' "$ARCHIVE_SHA256"
             printf 'MCP container: %s\n' "$CONTAINER_STATE"
-            printf 'MCP protocol ready: true\n'
-            printf 'Broker active: true\n'
-            printf 'Broker RPC ready: true\n'
-            printf 'Broker socket host visible: true\n'
-            printf 'Broker socket container visible: true\n'
-            printf 'Host command worker active: true\n'
-            printf 'Inbound mutation forbidden: true\n'
-            printf 'OpenAI tunnel active: true\n'
+            printf 'MCP protocol ready: %s\n' "$MCP_PROTOCOL_STATE"
+            printf 'Broker service: %s\n' "$BROKER_SERVICE_STATE"
+            printf 'Broker RPC: %s\n' "$BROKER_RPC_STATE"
+            printf 'Host command worker: %s\n' "$COMMAND_WORKER_STATE"
+            printf 'Inbound mutation: %s\n' "$INBOUND_MUTATION_STATE"
+            printf 'OpenAI tunnel service: %s\n' "$TUNNEL_SERVICE_STATE"
+
+      - name: Reverify deployed evidence in fresh SSH session
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 10m
+          envs: SUDO_PASSWORD
+          script: |
+            set -Eeuo pipefail
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then
+                "$@"
+                return
+              fi
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+                return
+              fi
+              test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password is unavailable for VPS verification.' >&2; exit 1; }
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+            EXPECTED_REVISION='${{ env.EXPECTED_REVISION }}'
+            EXPECTED_IMAGE_REFERENCE='${{ env.IMAGE_REPOSITORY }}@${{ env.EXPECTED_IMAGE_DIGEST }}'
+            KAPPA_POS='${{ env.KAPPA_POS }}'
+            STATUS_FILE=/var/lib/sovereign-chatgpt-self-update/status.json
+            CONTAINER_STATE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}')"
+            CONTAINER_IMAGE_REFERENCE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Config.Image}}')"
+            CONTAINER_IMAGE_ID="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Image}}')"
+            test "$CONTAINER_STATE" = 'running healthy'
+            test "$CONTAINER_IMAGE_REFERENCE" = "$EXPECTED_IMAGE_REFERENCE"
+            test "$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$EXPECTED_REVISION"
+            test "$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')" = "$KAPPA_POS"
+            test "$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)" = active
+            test "$(run_root systemctl is-active sovereign-chatgpt-broker.service)" = active
+            test "$(run_root systemctl is-active sovereign-openai-tunnel.service)" = active
+            run_root docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
+            run_root python3 - "$STATUS_FILE" "$EXPECTED_REVISION" "$EXPECTED_IMAGE_REFERENCE" "$KAPPA_POS" <<'PY'
+            from pathlib import Path
+            import json
+            import re
+            import sys
+
+            payload = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+            assert payload.get('ok') is True, payload
+            assert payload.get('revision') == sys.argv[2], payload
+            assert payload.get('image') == sys.argv[3], payload
+            assert payload.get('kappa_pos') == int(sys.argv[4]), payload
+            assert payload.get('container_healthy') is True, payload
+            assert payload.get('mcp_protocol_ready') is True, payload
+            assert payload.get('broker_rpc_ready') is True, payload
+            assert payload.get('openai_tunnel_active') is True, payload
+            assert re.fullmatch(r'[0-9a-f]{64}', str(payload.get('evidence_sha256', ''))), payload
+            print({'fresh_session_runtime_evidence': True, 'revision': payload['revision'], 'image': payload['image'], 'kappa_pos': payload['kappa_pos']})
+            PY
