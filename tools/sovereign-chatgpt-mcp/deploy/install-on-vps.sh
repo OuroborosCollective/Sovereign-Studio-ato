@@ -22,9 +22,15 @@ MCP_GID="10001"
 MCP_HOST_PORT="8090"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
+INSTALL_STAGE="initializing"
+INSTALL_FAILURE_REASON=""
+INSTALL_COMPLETED=0
+ROLLBACK_ARMED=0
+ROLLBACK_DIR=""
+ROLLBACK_MANIFEST=""
 
 fail() {
-  printf 'install blocked: %s\n' "$*" >&2
+  INSTALL_FAILURE_REASON="$*"
   exit 1
 }
 
@@ -64,14 +70,81 @@ temporary.replace(path)
 PY
 }
 
+backup_control_plane_file() {
+  local target="$1"
+  local key
+  [[ -n "$ROLLBACK_DIR" && -n "$ROLLBACK_MANIFEST" ]] || fail "rollback storage is not initialized"
+  if grep -Fqx "$target" "$ROLLBACK_MANIFEST.paths" 2>/dev/null; then
+    return 0
+  fi
+  printf '%s\n' "$target" >> "$ROLLBACK_MANIFEST.paths"
+  key="$(printf '%s' "$target" | sha256sum | awk '{print $1}')"
+  if [[ -e "$target" || -L "$target" ]]; then
+    cp -a "$target" "$ROLLBACK_DIR/$key"
+    printf '%s\t%s\n' "$target" "$key" >> "$ROLLBACK_MANIFEST"
+  else
+    printf '%s\t%s\n' "$target" "__MISSING__" >> "$ROLLBACK_MANIFEST"
+  fi
+}
+
+restore_control_plane_files() {
+  [[ "$ROLLBACK_ARMED" == "1" && -f "$ROLLBACK_MANIFEST" ]] || return 0
+  while IFS=$'\t' read -r target key; do
+    [[ -n "$target" && -n "$key" ]] || continue
+    if [[ "$key" == "__MISSING__" ]]; then
+      rm -f "$target"
+      continue
+    fi
+    mkdir -p "$(dirname "$target")"
+    rm -f "$target"
+    cp -a "$ROLLBACK_DIR/$key" "$target"
+  done < "$ROLLBACK_MANIFEST"
+}
+
+recover_previous_control_plane() {
+  set +e
+  restore_control_plane_files
+  systemctl daemon-reload >/dev/null 2>&1
+  systemctl restart sovereign-chatgpt-command-worker.service >/dev/null 2>&1
+  systemctl restart sovereign-chatgpt-broker.service >/dev/null 2>&1
+  if [[ -f "$INSTALL_ROOT/docker-compose.yml" && -f "$ENV_FILE" ]]; then
+    local rollback_gid
+    rollback_gid="$(getent group sovereign-mcp | cut -d: -f3)"
+    if [[ "$rollback_gid" =~ ^[0-9]+$ ]]; then
+      BROKER_GID="$rollback_gid" docker compose \
+        --project-directory "$INSTALL_ROOT" \
+        --file "$INSTALL_ROOT/docker-compose.yml" \
+        up -d --no-build --force-recreate sovereign-chatgpt-mcp >/dev/null 2>&1
+    fi
+  fi
+  systemctl restart sovereign-openai-tunnel.service >/dev/null 2>&1
+  set -e
+}
+
+on_installer_exit() {
+  local exit_code="$?"
+  trap - EXIT
+  if [[ "$exit_code" -eq 0 && "$INSTALL_COMPLETED" == "1" ]]; then
+    [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
+    exit 0
+  fi
+  recover_previous_control_plane
+  printf 'install blocked: stage=%s exit=%s reason=%s previous_control_plane_restored=%s\n' \
+    "$INSTALL_STAGE" "$exit_code" "${INSTALL_FAILURE_REASON:-unexpected command failure}" "$ROLLBACK_ARMED" >&2
+  [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
+  exit "${exit_code:-1}"
+}
+trap on_installer_exit EXIT
+
 port_listener_evidence() {
   ss -H -ltnp 2>/dev/null | awk -v suffix=":$MCP_HOST_PORT" '$4 ~ suffix "$" {print}'
 }
 
+INSTALL_STAGE="preflight"
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
-for command in docker systemctl python3 git ss openssl; do
+for command in docker systemctl python3 git ss openssl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -85,8 +158,31 @@ install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
 chmod 0770 "$WORKSPACE_DIR"
 
+INSTALL_STAGE="backup_existing_control_plane"
+ROLLBACK_DIR="$(mktemp -d "$INSTALL_ROOT/.control-plane-backup.XXXXXX")"
+chmod 0700 "$ROLLBACK_DIR"
+ROLLBACK_MANIFEST="$ROLLBACK_DIR/manifest.tsv"
+: > "$ROLLBACK_MANIFEST"
+: > "$ROLLBACK_MANIFEST.paths"
+backup_control_plane_file "$ENV_FILE"
+backup_control_plane_file "$BROKER_ENV"
+backup_control_plane_file "$BROKER_SERVICE"
+backup_control_plane_file "$COMMAND_WORKER_SERVICE"
+backup_control_plane_file "$SELF_UPDATE_SERVICE"
+backup_control_plane_file "$TUNNEL_SERVICE"
+ROLLBACK_ARMED=1
+
+INSTALL_STAGE="copy_control_plane_files"
 for file in Dockerfile requirements.txt policy.py runtime.py database.py command_contract.py command_queue.py broker_client.py owner_input_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py server.py tool_extensions.py launcher.py docker-compose.yml; do
+  backup_control_plane_file "$INSTALL_ROOT/$file"
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
+done
+
+for file in broker.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py; do
+  backup_control_plane_file "$BROKER_DIR/$file"
+done
+for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel self-update-chatgpt-mcp; do
+  backup_control_plane_file "$BIN_DIR/$file"
 done
 
 install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"
@@ -126,6 +222,7 @@ fi
 chmod 0600 "$ENV_FILE"
 grep -Eq '^GITHUB_TOKEN=.+$' "$ENV_FILE" || fail "GITHUB_TOKEN is not configured in $ENV_FILE"
 
+INSTALL_STAGE="configure_owner_bridge"
 BACKEND_ENV_PATH="$(read_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE)"
 if [[ -z "$BACKEND_ENV_PATH" ]]; then
   for candidate in /run/secrets/sovereign-backend.env /opt/sovereign-backend/.env; do
@@ -136,6 +233,7 @@ if [[ -z "$BACKEND_ENV_PATH" ]]; then
   done
 fi
 [[ -n "$BACKEND_ENV_PATH" && -f "$BACKEND_ENV_PATH" ]] || fail "backend env file is missing for the owner approval bridge"
+backup_control_plane_file "$BACKEND_ENV_PATH"
 chmod 0600 "$BACKEND_ENV_PATH"
 OWNER_REQUEST_KEY="$(read_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY)"
 if [[ -z "$OWNER_REQUEST_KEY" ]]; then
@@ -194,6 +292,7 @@ if [[ -f "$GHCR_ENV" ]]; then
   fi
 fi
 
+INSTALL_STAGE="pull_immutable_image"
 MCP_TAGGED_IMAGE="$MCP_IMAGE_REPOSITORY:$EXPECTED_REVISION"
 if [[ -n "$DOCKER_CONFIG_VALUE" ]]; then
   docker --config "$DOCKER_CONFIG_VALUE" pull "$MCP_TAGGED_IMAGE"
@@ -213,6 +312,7 @@ else
 fi
 export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 
+INSTALL_STAGE="write_broker_environment"
 {
   grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
@@ -227,6 +327,14 @@ export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 chmod 0600 "$BROKER_ENV"
 chown root:root "$BROKER_ENV"
 
+INSTALL_STAGE="compose_preflight"
+BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
+[[ "$BROKER_GID" =~ ^[0-9]+$ ]] || fail "could not resolve sovereign-mcp group id"
+export BROKER_GID
+cd "$INSTALL_ROOT"
+docker compose config >/dev/null
+
+INSTALL_STAGE="start_host_control_plane"
 systemctl daemon-reload
 systemctl enable --now sovereign-chatgpt-command-worker.service
 systemctl restart sovereign-chatgpt-command-worker.service
@@ -242,15 +350,10 @@ done
   fail "host broker socket was not created"
 }
 
-BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
-[[ "$BROKER_GID" =~ ^[0-9]+$ ]] || fail "could not resolve sovereign-mcp group id"
-export BROKER_GID
-cd "$INSTALL_ROOT"
-docker compose config >/dev/null
-
 # The image is built and dependency-resolved in GitHub Actions. The VPS only
 # pulls and verifies the immutable revision before touching the running container.
 
+INSTALL_STAGE="replace_mcp_container"
 # Stop only the known tunnel and MCP container before claiming the host port.
 # Unknown listeners are never killed: they block deployment with bounded evidence.
 if systemctl is-active --quiet sovereign-openai-tunnel.service; then
@@ -273,6 +376,7 @@ fi
 
 docker compose up -d --no-build --force-recreate --remove-orphans
 
+INSTALL_STAGE="verify_mcp_container"
 CONTAINER_STATE=""
 for attempt in $(seq 1 30); do
   CONTAINER_STATE="$(docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' 2>/dev/null || true)"
@@ -311,6 +415,7 @@ docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http:
 docker exec sovereign-chatgpt-mcp python -c 'import os; assert os.getenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions") == "github_actions"'
 docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
 
+INSTALL_STAGE="verify_tunnel"
 if [[ -f "$TUNNEL_ENV" ]] \
   && grep -Eq '^OPENAI_TUNNEL_ID=tunnel_.+' "$TUNNEL_ENV" \
   && grep -Eq '^CONTROL_PLANE_API_KEY=.+$' "$TUNNEL_ENV"; then
@@ -330,4 +435,7 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
+INSTALL_STAGE="completed"
+INSTALL_COMPLETED=1
+ROLLBACK_ARMED=0
 printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION"
