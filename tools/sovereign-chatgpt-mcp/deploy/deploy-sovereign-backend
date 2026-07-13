@@ -9,6 +9,8 @@ CONTAINER="sovereign-backend"
 CANDIDATE="sovereign-backend-candidate"
 PREVIOUS_IMAGE=""
 NEW_IMAGE=""
+OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
+OWNER_INPUT_CONTAINER_ROOT="/opt/secure/owner-managed"
 
 fail() {
   printf 'deploy blocked: %s\n' "$*" >&2
@@ -19,7 +21,8 @@ fail() {
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "invalid expected revision"
 [[ -n "$IMAGE_REPOSITORY" ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is missing"
 [[ -f "$ENV_FILE" ]] || fail "backend env file is missing"
-install -d -m 0700 /opt/secure/owner-managed
+install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"
+[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]] || fail "owner input host root is not a regular directory"
 
 NEW_IMAGE="${IMAGE_REPOSITORY}@${DIGEST}"
 docker pull "$NEW_IMAGE" >/dev/null
@@ -40,7 +43,7 @@ docker run -d \
   --env-file "$ENV_FILE" \
   --network supabase_default \
   --volume /opt/secure:/opt/secure:ro \
-  --volume /opt/secure/owner-managed:/opt/secure/owner-managed:rw \
+  --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
   --label "org.opencontainers.image.revision=$EXPECTED_REVISION" \
   "$NEW_IMAGE" >/dev/null
 
@@ -77,7 +80,7 @@ start_production() {
     --env-file "$ENV_FILE" \
     --network supabase_default \
     --volume /opt/secure:/opt/secure:ro \
-    --volume /opt/secure/owner-managed:/opt/secure/owner-managed:rw \
+    --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
     --label "org.opencontainers.image.revision=$revision" \
     -p 127.0.0.1:8788:8787 \
     "$image" >/dev/null

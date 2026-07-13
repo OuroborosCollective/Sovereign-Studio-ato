@@ -42,8 +42,13 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
 def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> None:
     deploy = (ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
 
+    assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in deploy
+    assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/secure/owner-managed"' in deploy
+    assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' in deploy
+    assert '[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
-    assert deploy.count("--volume /opt/secure/owner-managed:/opt/secure/owner-managed:rw") == 2
+    assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
+    assert "install -d -m 0700 /opt/secure/owner-managed" not in deploy
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
 
 
