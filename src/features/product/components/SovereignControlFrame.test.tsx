@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { SovereignControlFrame } from './SovereignControlFrame';
 import type { SovereignControlFrameState } from '../runtime/sovereignControlFrameRuntime';
@@ -36,5 +36,38 @@ describe('SovereignControlFrame', () => {
     expect(screen.getByTestId('control-frame-center-chat-workbench')).toContainElement(screen.getByTestId('chat-workbench-child'));
     expect(screen.getByTestId('control-frame-bottom-nav')).toBeDefined();
     expect(screen.getByText('Sovereign Control')).toBeDefined();
+  });
+
+  describe('Palette Accessibility Enhancements', () => {
+    it('Runtime panel toggle button has title and aria-label', () => {
+      render(
+        <SovereignControlFrame state={state}>
+          <div>Content</div>
+        </SovereignControlFrame>
+      );
+
+      // Default state: open
+      const toggleButton = screen.getByRole('button', { name: /Close runtime panel/i });
+      expect(toggleButton).toHaveAttribute('aria-label', 'Close runtime panel');
+      expect(toggleButton).toHaveAttribute('title', 'Close runtime panel');
+
+      fireEvent.click(toggleButton);
+      expect(toggleButton).toHaveAttribute('aria-label', 'Open runtime panel');
+      expect(toggleButton).toHaveAttribute('title', 'Open runtime panel');
+    });
+
+    it('Module navigation buttons have title and aria-label', () => {
+      render(
+        <SovereignControlFrame state={state}>
+          <div>Content</div>
+        </SovereignControlFrame>
+      );
+
+      state.modules.forEach(module => {
+        const moduleButton = screen.getByRole('button', { name: module.id.toUpperCase() });
+        expect(moduleButton).toHaveAttribute('aria-label', module.id.toUpperCase());
+        expect(moduleButton).toHaveAttribute('title', module.id.toUpperCase());
+      });
+    });
   });
 });
