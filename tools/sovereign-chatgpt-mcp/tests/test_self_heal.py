@@ -104,6 +104,17 @@ def test_failure_diagnosis_distinguishes_broker_namespace_visibility() -> None:
     assert "container_socket_is_unix_socket" in result["policy"]["required_post_checks"]
 
 
+def test_failure_diagnosis_routes_local_node_work_to_github_actions() -> None:
+    result = REPAIR_ENGINE.diagnose("status=REMOTE_CI_REQUIRED failure_family=LOCAL_DEPENDENCY_INSTALL_FORBIDDEN")
+
+    assert result["status"] == "DETECTED"
+    assert result["policy"]["family"] == "external_node_build_boundary"
+    assert result["policy"]["mutation_scope"] == "github_actions_only"
+    assert result["policy"]["repair_action"] == (
+        "publish_remote_ref_and_use_github_actions_without_local_retry"
+    )
+
+
 def test_failure_diagnosis_distinguishes_dependency_process_kill() -> None:
     result = REPAIR_ENGINE.diagnose(
         'pnpm install --frozen-lockfile returned {"exit_code": -9}; Cannot find module typescript/bin/tsc'

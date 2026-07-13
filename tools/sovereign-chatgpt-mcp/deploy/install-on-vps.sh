@@ -20,6 +20,8 @@ TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
 MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
+MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
+EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 
 fail() {
   printf 'install blocked: %s\n' "$*" >&2
@@ -37,6 +39,8 @@ port_listener_evidence() {
 }
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
+[[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
+[[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
 for command in docker systemctl python3 git ss; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
@@ -125,6 +129,25 @@ if [[ -f "$GHCR_ENV" ]]; then
   fi
 fi
 
+MCP_TAGGED_IMAGE="$MCP_IMAGE_REPOSITORY:$EXPECTED_REVISION"
+if [[ -n "$DOCKER_CONFIG_VALUE" ]]; then
+  docker --config "$DOCKER_CONFIG_VALUE" pull "$MCP_TAGGED_IMAGE"
+else
+  docker pull "$MCP_TAGGED_IMAGE"
+fi
+MCP_IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$MCP_TAGGED_IMAGE")"
+[[ "$MCP_IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "MCP image revision label does not match expected revision"
+MCP_IMAGE_DIGEST="$(docker image inspect --format '{{json .RepoDigests}}' "$MCP_TAGGED_IMAGE" \
+  | python3 -c 'import json,sys; repo=sys.argv[1]+"@"; values=json.load(sys.stdin); print(next((item for item in values if isinstance(item,str) and item.startswith(repo)), ""))' "$MCP_IMAGE_REPOSITORY")"
+[[ "$MCP_IMAGE_DIGEST" == "$MCP_IMAGE_REPOSITORY"@sha256:* ]] || fail "MCP image digest repository does not match"
+[[ "${MCP_IMAGE_DIGEST#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "MCP image has no immutable repository digest"
+if grep -q '^SOVEREIGN_MCP_IMAGE=' "$ENV_FILE"; then
+  sed -i "s|^SOVEREIGN_MCP_IMAGE=.*$|SOVEREIGN_MCP_IMAGE=$MCP_IMAGE_DIGEST|" "$ENV_FILE"
+else
+  printf '\nSOVEREIGN_MCP_IMAGE=%s\n' "$MCP_IMAGE_DIGEST" >> "$ENV_FILE"
+fi
+export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
+
 {
   grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
@@ -160,8 +183,8 @@ export BROKER_GID
 cd "$INSTALL_ROOT"
 docker compose config >/dev/null
 
-# Build first. The running container is not touched when the new image cannot be built.
-docker compose build
+# The image is built and dependency-resolved in GitHub Actions. The VPS only
+# pulls and verifies the immutable revision before touching the running container.
 
 # Stop only the known tunnel and MCP container before claiming the host port.
 # Unknown listeners are never killed: they block deployment with bounded evidence.
@@ -242,4 +265,4 @@ else
   printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
 fi
 
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n'
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION"

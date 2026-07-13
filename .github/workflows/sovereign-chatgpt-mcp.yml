@@ -102,6 +102,17 @@ jobs:
           fi
           grep -q '^ExecStart=/usr/local/bin/tunnel-client run --profile ${TUNNEL_PROFILE}$' deploy/sovereign-openai-tunnel.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/tunnel.env$' deploy/sovereign-openai-tunnel.service
+          grep -q '^    image: ${SOVEREIGN_MCP_IMAGE:' docker-compose.yml
+          grep -q 'docker pull "$MCP_TAGGED_IMAGE"' deploy/install-on-vps.sh
+          grep -q 'org.opencontainers.image.revision' deploy/install-on-vps.sh
+          if grep -q 'docker compose build' deploy/install-on-vps.sh; then
+            echo 'The VPS must not build the MCP image.' >&2
+            exit 1
+          fi
+          if grep -q '"pnpm", "install"' runtime.py; then
+            echo 'The running MCP must not install Node dependencies.' >&2
+            exit 1
+          fi
 
       - name: Run policy and runtime tests
         run: python -m pytest -q
@@ -164,9 +175,44 @@ jobs:
             exit 1
           fi
 
+  publish-mcp-image:
+    name: Publish immutable MCP image
+    needs: validate
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish exact MCP revision
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/sovereign-chatgpt-mcp
+          push: true
+          tags: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: true
+          sbom: true
+
   deploy-vps:
     name: Bootstrap MCP on VPS
-    needs: validate
+    needs: [validate, publish-mcp-image]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -275,7 +321,7 @@ jobs:
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
-            bash "$SOURCE_DIR/deploy/install-on-vps.sh"
+            SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"
 
             CONTAINER_STATE="$(docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}')"
             test "$CONTAINER_STATE" = 'running healthy'

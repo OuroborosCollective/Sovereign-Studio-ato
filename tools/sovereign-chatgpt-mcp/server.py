@@ -44,7 +44,7 @@ mcp = FastMCP(
     "Sovereign ChatGPT Operator",
     instructions=(
         "Arbeite ausschließlich im konfigurierten privaten Repository und VPS. Bereite für Codearbeit zuerst einen isolierten Workspace vor. "
-        "Nutze exakte Search/Replace-Patches für bestehende Dateien, besonders große Live-Dateien. Installiere Abhängigkeiten reproduzierbar und führe passende Checks aus. "
+        "Nutze exakte Search/Replace-Patches für bestehende Dateien, besonders große Live-Dateien. Node-Abhängigkeiten, Typecheck, Vitest, Audit, Web- und Container-Builds laufen ausschließlich in GitHub Actions; starte dafür keinen pnpm-Installationsprozess im MCP oder auf dem VPS. "
         "Für Android-Produktionsarbeit beginne mit android_project_inventory, android_failure_family_scan und vorhandener Runtime-Evidence. Korrigiere zuerst die kausale Fehlerfamilie, "
         "füge Regressionstests hinzu, fahre denselben Check erneut und erweitere danach auf benachbarte Familien. android_run_validation_suite bietet fast, standard und release. "
         "Eine Release-Bereitschaft erfordert keine kritischen oder hohen Blocker, grüne relevante Tests und geprüfte APK/AAB-Evidence. "
@@ -115,13 +115,13 @@ def repository_diff(workspace_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=SAFE_WRITE)
 def repository_install_dependencies(workspace_id: str) -> dict[str, Any]:
-    """Install repository dependencies with bounded pnpm phases and real resolution evidence."""
+    """Report the mandatory GitHub Actions dependency-build boundary without starting pnpm locally."""
     return runtime.install_dependencies(workspace_id)
 
 
 @mcp.tool(annotations=SAFE_WRITE)
 def repository_run_check(workspace_id: str, check: str, target: str = "") -> dict[str, Any]:
-    """Run an allowlisted repository verification such as typecheck, tests, audit or web build."""
+    """Run local Python/diff checks or delegate Node-dependent checks to GitHub Actions."""
     return runtime.run_check(workspace_id, check, target)
 
 

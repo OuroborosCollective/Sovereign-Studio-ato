@@ -349,8 +349,6 @@ class AndroidHardeningRuntime:
         commands: dict[str, list[tuple[str, list[str], Path]]] = {
             "fast": [
                 ("git_diff_check", ["git", "diff", "--check"], repo),
-                ("typecheck", ["pnpm", "run", "type-check"], repo),
-                ("web_build", ["pnpm", "run", "build:web"], repo),
                 ("android_static_readiness", ["node", "scripts/check-android-release-readiness.mjs"], repo),
             ],
             "standard": [
@@ -393,7 +391,16 @@ class AndroidHardeningRuntime:
             "profile": selected,
             "commands": results,
             "static_scan": static_scan,
-            "next_action": "inspect_first_failed_command_and_highest_severity_family" if not ok else "inspect_signed_artifacts",
+            "execution_mode": "local_static_only" if selected == "fast" else "local",
+            "node_dependency_execution_local": False if selected == "fast" else True,
+            "remote_ci_required": selected == "fast",
+            "next_action": (
+                "publish_remote_ref_then_run_standard_validation_in_github_actions"
+                if ok and selected == "fast"
+                else "inspect_first_failed_command_and_highest_severity_family"
+                if not ok
+                else "inspect_signed_artifacts"
+            ),
         }
 
     def inspect_artifact(self, workspace_id: str, artifact_path: str) -> dict[str, Any]:

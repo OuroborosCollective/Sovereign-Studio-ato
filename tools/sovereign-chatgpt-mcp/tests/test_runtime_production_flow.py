@@ -32,56 +32,93 @@ def command_result(argv: list[str], *, ok: bool = True, exit_code: int = 0) -> d
     }
 
 
-def test_dependency_install_uses_bounded_phases_and_real_resolution(repo_runtime, monkeypatch) -> None:
-    runtime, workspace_id, repo = repo_runtime
-    (repo / "patch_capacitor.mjs").write_text("console.log('postinstall');\n", "utf-8")
-    calls: list[list[str]] = []
-
-    def fake_run(argv, *, cwd, timeout=None, env=None):
-        assert cwd == repo
-        calls.append(list(argv))
-        return command_result(list(argv))
-
-    monkeypatch.setattr(runtime, "_run", fake_run)
-
-    result = runtime.install_dependencies(workspace_id)
-
-    assert result["ok"] is True
-    assert result["status"] == "INSTALLED"
-    assert calls[0] == [
-        "pnpm",
-        "install",
-        "--frozen-lockfile",
-        "--ignore-scripts",
-        "--child-concurrency=1",
-        "--network-concurrency=4",
-    ]
-    assert calls[1] == ["node", "patch_capacitor.mjs"]
-    assert calls[2][0:2] == ["node", "-e"]
-    assert [phase["name"] for phase in result["phases"]] == [
-        "lockfile_install",
-        "repository_postinstall",
-        "dependency_resolution",
-    ]
-
-
-def test_dependency_install_never_claims_success_after_signal_kill(repo_runtime, monkeypatch) -> None:
+def test_dependency_install_is_delegated_without_starting_pnpm(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
     calls: list[list[str]] = []
 
     def fake_run(argv, *, cwd, timeout=None, env=None):
-        assert cwd == repo
         calls.append(list(argv))
-        return command_result(list(argv), ok=False, exit_code=-9)
+        raise AssertionError("local dependency process must not start")
 
     monkeypatch.setattr(runtime, "_run", fake_run)
 
     result = runtime.install_dependencies(workspace_id)
 
     assert result["ok"] is False
-    assert result["status"] == "INSTALL_FAILED"
-    assert result["phases"][0]["exit_code"] == -9
-    assert len(calls) == 1
+    assert result["status"] == "REMOTE_CI_REQUIRED"
+    assert result["failure_family"] == "LOCAL_DEPENDENCY_INSTALL_FORBIDDEN"
+    assert result["execution_mode"] == "github_actions"
+    assert result["local_process_started"] is False
+    assert calls == []
+
+
+def test_node_checks_are_delegated_without_local_execution(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    target = repo / "src/example.test.ts"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("export {};\n", "utf-8")
+    calls: list[list[str]] = []
+
+    def fake_run(argv, *, cwd, timeout=None, env=None):
+        calls.append(list(argv))
+        raise AssertionError("local Node check must not start")
+
+    monkeypatch.setattr(runtime, "_run", fake_run)
+
+    for check, check_target in (
+        ("typecheck", ""),
+        ("audit", ""),
+        ("build_web", ""),
+        ("vitest", "src/example.test.ts"),
+    ):
+        result = runtime.run_check(workspace_id, check, check_target)
+        assert result["ok"] is False
+        assert result["status"] == "REMOTE_CI_REQUIRED"
+        assert result["failure_family"] == "LOCAL_NODE_EXECUTION_FORBIDDEN"
+        assert result["local_process_started"] is False
+    assert calls == []
+
+
+def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    (repo / "src/menu.tsx").write_text("export const label = 'New';\n", "utf-8")
+    original_run = runtime._run
+    calls: list[list[str]] = []
+
+    def guarded_run(argv, *, cwd, timeout=None, env=None):
+        calls.append(list(argv))
+        if argv[:2] == ["git", "push"]:
+            return command_result(list(argv))
+        assert argv[0] != "pnpm"
+        return original_run(argv, cwd=cwd, timeout=timeout, env=env)
+
+    monkeypatch.setattr(runtime, "_run", guarded_run)
+    monkeypatch.setattr(
+        runtime_module.requests,
+        "post",
+        lambda *args, **kwargs: FakeResponse(
+            201,
+            payload={
+                "number": 999,
+                "html_url": "https://github.test/example/pull/999",
+                "head": {"sha": "a" * 40},
+            },
+        ),
+    )
+
+    result = runtime.create_draft_pr(
+        workspace_id,
+        title="Delegate frontend validation",
+        body="CI owns Node dependency resolution.",
+        commit_message="Delegate frontend validation",
+    )
+
+    assert result["draft"] is True
+    assert result["number"] == 999
+    assert result["remote_validation"]["required"] is True
+    assert result["remote_validation"]["execution_mode"] == "github_actions"
+    assert result["remote_validation"]["local_dependency_install_allowed"] is False
+    assert not any(call and call[0] == "pnpm" for call in calls)
 
 
 def test_workflow_artifact_import_binds_artifact_to_confirmed_run(repo_runtime, monkeypatch) -> None:

@@ -177,18 +177,23 @@ def test_repair_plan_prioritizes_runtime_evidence_before_static_findings(tmp_pat
     assert result["rules"]["rerun_same_family_after_fix"] is True
 
 
-def test_fast_suite_runs_allowlisted_checks_and_keeps_static_evidence(tmp_path: Path) -> None:
+def test_fast_suite_runs_static_checks_without_node_dependencies(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     calls: list[list[str]] = []
     result = _runtime(repo, calls).run_suite("job-test", "fast")
 
     assert [item["name"] for item in result["commands"]] == [
         "git_diff_check",
-        "typecheck",
-        "web_build",
         "android_static_readiness",
     ]
-    assert calls[0] == ["git", "diff", "--check"]
+    assert calls == [
+        ["git", "diff", "--check"],
+        ["node", "scripts/check-android-release-readiness.mjs"],
+    ]
+    assert not any("pnpm" in argv for call in calls for argv in call)
+    assert result["execution_mode"] == "local_static_only"
+    assert result["node_dependency_execution_local"] is False
+    assert result["remote_ci_required"] is True
     assert result["static_scan"]["release_blockers"] > 0
     assert result["status"] == "FAIL"
 

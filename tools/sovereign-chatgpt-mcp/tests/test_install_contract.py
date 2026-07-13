@@ -58,7 +58,14 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'launcher.py' in dockerfile
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'docker exec sovereign-chatgpt-mcp java -version' not in installer
-    assert 'docker compose build' in installer
+    assert 'docker compose build' not in installer
+    assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
+    assert 'org.opencontainers.image.revision' in installer
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION' in installer
+    assert "grep -q '^SOVEREIGN_MCP_IMAGE=' \"$ENV_FILE\"" in installer
+    assert 'SOVEREIGN_MCP_IMAGE=$MCP_IMAGE_DIGEST' in installer
+    assert 'image: ${SOVEREIGN_MCP_IMAGE:' in compose
+    assert 'build:' not in compose
     assert 'docker compose up -d --no-build --force-recreate --remove-orphans' in installer
     assert 'MCP container did not pass protocol health' in installer
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in installer
@@ -85,6 +92,7 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'git rev-parse origin/main' in updater
     assert '[[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]]' in updater
     assert 'git reset --hard "$EXPECTED_REVISION"' in updater
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$INSTALLER"' in updater
     assert 'recover_control_plane()' in updater
     assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
