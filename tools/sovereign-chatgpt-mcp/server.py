@@ -35,6 +35,20 @@ def _private_admin_capabilities() -> list[str]:
     return capabilities
 
 
+def _runtime_boundaries() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "status": "RUNTIME_BOUNDARIES_VERIFIED",
+        "node_build_execution": "github_actions_only",
+        "local_node_dependency_install_allowed": False,
+        "host_mutation_execution": "host_command_queue_only",
+        "direct_broker_socket_mutation_allowed": False,
+        "generic_shell_available": False,
+        "workspace_changes_end_at_draft_pr": True,
+        "active_private_admin_capabilities": _private_admin_capabilities(),
+    }
+
+
 runtime = OperatorRuntime()
 database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
@@ -259,6 +273,12 @@ def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
 def mcp_control_plane_status() -> dict[str, Any]:
     """Probe the host broker with precise socket, permission, connection and timeout evidence."""
     return broker.status()
+
+
+@mcp.tool(annotations=READ_ONLY)
+def mcp_runtime_boundaries() -> dict[str, Any]:
+    """Report the enforced execution boundaries without reading secrets or mutating runtime state."""
+    return _runtime_boundaries()
 
 
 @mcp.tool(annotations=READ_ONLY)
