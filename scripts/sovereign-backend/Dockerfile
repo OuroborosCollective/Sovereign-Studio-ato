@@ -20,6 +20,7 @@ COPY app.py .
 COPY runner.py .
 COPY security_oauth.py .
 COPY security_runtime.py .
+COPY owner_input_runtime.py .
 COPY vector_embedding.py .
 COPY r2_storage.py .
 COPY knowledge_library.py .

@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = ROOT.parents[1]
+
+
+def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+
+    assert "owner_input_client.py" in dockerfile
+    assert "owner_input_client.py" in installer
+    assert "owner_input_client.py" in workflow
+    assert "owner_approval_request_create" in workflow
+    assert "owner_approval_request_status" in workflow
+
+
+def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+
+    assert 'OWNER_REQUEST_KEY="$(openssl rand -hex 32)"' in installer
+    assert 'set_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
+    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
+    assert 'set_value "$ENV_FILE" SOVEREIGN_BACKEND_INTERNAL_URL "http://sovereign-backend:8787"' in installer
+    assert "SOVEREIGN_OWNER_ADMIN_ID" in installer
+    assert "SOVEREIGN_OWNER_ADMIN_EMAIL" in installer
+    assert "ADMIN_BOOTSTRAP_ADMIN_EMAIL" in installer
+    assert "configure SOVEREIGN_OWNER_ADMIN_ID or SOVEREIGN_OWNER_ADMIN_EMAIL" in installer
+    assert "unset OWNER_REQUEST_KEY OWNER_ADMIN_ID OWNER_ADMIN_EMAIL" in installer
+    assert "echo $OWNER_REQUEST_KEY" not in installer
+    assert "printf '%s' \"$OWNER_REQUEST_KEY\"" not in installer
+
+
+def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> None:
+    deploy = (ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+
+    assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
+    assert deploy.count("--volume /opt/secure/owner-managed:/opt/secure/owner-managed:rw") == 2
+    assert "--volume /opt/secure:/opt/secure:rw" not in deploy
+
+
+def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
+    server = (ROOT / "server.py").read_text("utf-8")
+    client = (ROOT / "owner_input_client.py").read_text("utf-8")
+
+    signature = server.split("def owner_approval_request_create(", 1)[1].split(") ->", 1)[0]
+    assert "protected" not in signature.lower()
+    assert "secret" not in signature.lower()
+    assert '"targetId": "openhands_api_key"' in client
+    assert '"llm_can_receive_protected_value": False' in client
