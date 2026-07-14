@@ -18,6 +18,22 @@ RERUN_ALL_CONCLUSIONS = {"cancelled", "timed_out", "action_required", "stale"}
 MCP_PATH_PREFIX = "tools/sovereign-chatgpt-mcp/"
 MCP_WORKFLOW_PATH = ".github/workflows/sovereign-chatgpt-mcp.yml"
 SENSITIVE_INPUT_PARTS = {"secret", "token", "password", "passwd", "private", "keystore", "credential"}
+OWNER_SCOPED_IGNORABLE_PENDING_CHECKS = frozenset({
+    "Android Build Verification",
+    "Android standard validation",
+})
+ANDROID_SURFACE_PREFIXES = (
+    "android/",
+    ".github/workflows/android",
+    "gradle/",
+)
+ANDROID_SURFACE_FILES = frozenset({
+    "capacitor.config.ts",
+    "capacitor.config.json",
+    "build.gradle",
+    "settings.gradle",
+    "gradle.properties",
+})
 
 
 def _enabled(name: str) -> bool:
@@ -345,6 +361,46 @@ class GitHubAdminRuntime:
                 break
         return files
 
+    @staticmethod
+    def _touches_android_surface(changed_files: list[str]) -> bool:
+        for raw_path in changed_files:
+            path = str(raw_path or "").strip().lower()
+            if not path:
+                continue
+            if path in ANDROID_SURFACE_FILES:
+                return True
+            if any(path.startswith(prefix) for prefix in ANDROID_SURFACE_PREFIXES):
+                return True
+        return False
+
+    def _mark_ready_for_review(self, *, pull: dict[str, Any], expected_head_sha: str) -> dict[str, Any]:
+        node_id = str(pull.get("node_id") or "").strip()
+        actual_head = str((pull.get("head") or {}).get("sha") or "").strip().lower()
+        if not node_id:
+            raise RuntimeError("GitHub lieferte keine Pull-Request-Node-ID für Ready-for-Review")
+        if actual_head != expected_head_sha:
+            raise RuntimeError("PR-Head änderte sich vor Ready-for-Review")
+        payload = self._request(
+            "POST",
+            "/graphql",
+            json_body={
+                "query": (
+                    "mutation MarkReady($pullRequestId: ID!) { "
+                    "markPullRequestReadyForReview(input: {pullRequestId: $pullRequestId}) { "
+                    "pullRequest { id isDraft } } }"
+                ),
+                "variables": {"pullRequestId": node_id},
+            },
+            expected=(200,),
+        )
+        if not isinstance(payload, dict) or payload.get("errors"):
+            raise RuntimeError("GitHub Ready-for-Review-Mutation ist fehlgeschlagen")
+        mutation = (payload.get("data") or {}).get("markPullRequestReadyForReview") or {}
+        updated = mutation.get("pullRequest") if isinstance(mutation, dict) else None
+        if not isinstance(updated, dict) or updated.get("isDraft") is not False:
+            raise RuntimeError("GitHub bestätigte den Draft-Übergang nicht")
+        return {"ok": True, "status": "READY_FOR_REVIEW", "node_id": node_id}
+
     def merge_pr(
         self,
         *,
@@ -352,6 +408,9 @@ class GitHubAdminRuntime:
         expected_head_sha: str,
         merge_method: str = "squash",
         self_update_after_merge: bool = True,
+        owner_approved: bool = False,
+        mark_ready_if_draft: bool = False,
+        allow_unrelated_android_pending: bool = False,
     ) -> dict[str, Any]:
         if not _enabled("SOVEREIGN_MCP_ENABLE_PR_MERGE"):
             return {"ok": False, "status": "BLOCKED", "blocker": "PR-Merge ist nicht aktiviert"}
@@ -366,8 +425,15 @@ class GitHubAdminRuntime:
         status = self.pr_status(pr_number=number)
         if status["state"] != "open":
             return {"ok": False, "status": "BLOCKED", "blocker": "PR ist nicht offen", "pr": status}
+        ready_transition: dict[str, Any] = {"ok": True, "status": "NOT_NEEDED"}
         if status["draft"]:
-            return {"ok": False, "status": "BLOCKED", "blocker": "Draft-PR muss zuerst bereit sein", "pr": status}
+            if not owner_approved or not mark_ready_if_draft:
+                return {"ok": False, "status": "BLOCKED", "blocker": "Draft-PR muss zuerst bereit sein", "pr": status}
+            pull = self._pull(number)
+            ready_transition = self._mark_ready_for_review(pull=pull, expected_head_sha=expected)
+            status = self.pr_status(pr_number=number)
+            if status["draft"]:
+                return {"ok": False, "status": "BLOCKED", "blocker": "GitHub führt den PR weiterhin als Draft", "pr": status}
         if status["base_ref"] != "main":
             return {"ok": False, "status": "BLOCKED", "blocker": "PR zielt nicht auf main", "pr": status}
         if status["head_sha"] != expected:
@@ -380,10 +446,42 @@ class GitHubAdminRuntime:
             }
         if status["mergeable"] is not True:
             return {"ok": False, "status": "BLOCKED", "blocker": "GitHub bestätigt den PR noch nicht als mergefähig", "pr": status}
-        if not status["checks"]["ok"]:
-            return {"ok": False, "status": "BLOCKED", "blocker": "PR-Checks sind nicht vollständig grün", "pr": status}
 
         changed_files = self._changed_files(number)
+        checks = status["checks"]
+        ignored_pending_checks: list[str] = []
+        if not checks["ok"]:
+            failed = list(checks.get("failed") or [])
+            pending = list(checks.get("pending") or [])
+            if failed:
+                return {"ok": False, "status": "BLOCKED", "blocker": "PR-Checks enthalten Fehler", "pr": status}
+            scoped_override = owner_approved and allow_unrelated_android_pending
+            if not scoped_override:
+                return {"ok": False, "status": "BLOCKED", "blocker": "PR-Checks sind nicht vollständig grün", "pr": status}
+            if self._touches_android_surface(changed_files):
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "blocker": "Android-Pending-Gates dürfen bei Android-relevanten Änderungen nicht ignoriert werden",
+                    "pr": status,
+                }
+            remaining_pending = [
+                name for name in pending if name not in OWNER_SCOPED_IGNORABLE_PENDING_CHECKS
+            ]
+            if remaining_pending:
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "blocker": "Nicht freigegebene Pending-Gates verhindern den Merge",
+                    "remaining_pending": remaining_pending,
+                    "pr": status,
+                }
+            ignored_pending_checks = [
+                name for name in pending if name in OWNER_SCOPED_IGNORABLE_PENDING_CHECKS
+            ]
+            if not ignored_pending_checks:
+                return {"ok": False, "status": "BLOCKED", "blocker": "Keine fachfremden Android-Pending-Gates belegt", "pr": status}
+
         payload = self._request(
             "PUT",
             f"/repos/{self.repository}/pulls/{number}/merge",
@@ -410,5 +508,8 @@ class GitHubAdminRuntime:
             "merge_commit_sha": merge_sha,
             "changed_files": changed_files,
             "touches_private_mcp": touches_mcp,
+            "owner_approved": bool(owner_approved),
+            "ready_transition": ready_transition,
+            "ignored_pending_checks": ignored_pending_checks,
             "self_update": update_result,
         }

@@ -50,6 +50,7 @@ class FakeSelfUpdate:
 def _pull(head: str, *, draft: bool = False, mergeable: bool = True, base: str = "main") -> dict[str, Any]:
     return {
         "number": 7,
+        "node_id": "PR_node_7",
         "title": "Test PR",
         "state": "open",
         "draft": draft,
@@ -66,6 +67,17 @@ def _green_checks() -> tuple[FakeResponse, FakeResponse]:
         FakeResponse(200, {"check_runs": [{"name": "tests", "status": "completed", "conclusion": "success"}]}),
         FakeResponse(200, {"state": "success", "statuses": []}),
     )
+
+
+def _android_pending_checks(extra_pending: str = "") -> tuple[FakeResponse, FakeResponse]:
+    check_runs = [
+        {"name": "Agent Runtime Tests", "status": "completed", "conclusion": "success"},
+        {"name": "Android Build Verification", "status": "in_progress", "conclusion": None},
+        {"name": "Android standard validation", "status": "in_progress", "conclusion": None},
+    ]
+    if extra_pending:
+        check_runs.append({"name": extra_pending, "status": "queued", "conclusion": None})
+    return FakeResponse(200, {"check_runs": check_runs}), FakeResponse(200, {"state": "success", "statuses": []})
 
 
 def _runtime(monkeypatch, routes):
@@ -140,6 +152,114 @@ def test_merge_blocks_draft_even_when_checks_are_green(monkeypatch) -> None:
 
     assert result["status"] == "BLOCKED"
     assert "Draft" in result["blocker"]
+
+
+def test_owner_approved_merge_marks_draft_ready_and_ignores_only_unrelated_android_pending(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    head = "e" * 40
+    merge_sha = "f" * 40
+    first_checks, first_legacy = _android_pending_checks()
+    second_checks, second_legacy = _android_pending_checks()
+    runtime, update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, draft=True)),
+                FakeResponse(200, _pull(head, draft=True)),
+                FakeResponse(200, _pull(head, draft=False)),
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [
+                first_checks,
+                second_checks,
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [
+                first_legacy,
+                second_legacy,
+            ],
+            ("POST", "/graphql"): [
+                FakeResponse(200, {"data": {"markPullRequestReadyForReview": {"pullRequest": {"id": "PR_node_7", "isDraft": False}}}})
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
+                FakeResponse(200, [{"filename": "backend/agent_runtime/cognitive_run_store.py"}])
+            ],
+            ("PUT", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/merge"): [
+                FakeResponse(200, {"merged": True, "sha": merge_sha, "message": "merged"})
+            ],
+        },
+    )
+
+    result = runtime.merge_pr(
+        pr_number=7,
+        expected_head_sha=head,
+        owner_approved=True,
+        mark_ready_if_draft=True,
+        allow_unrelated_android_pending=True,
+        self_update_after_merge=False,
+    )
+
+    assert result["status"] == "MERGED"
+    assert result["ready_transition"]["status"] == "READY_FOR_REVIEW"
+    assert set(result["ignored_pending_checks"]) == {
+        "Android Build Verification",
+        "Android standard validation",
+    }
+    assert result["owner_approved"] is True
+    assert update.calls == []
+    assert any(call["path"] == "/graphql" for call in session.calls)
+
+
+def test_owner_override_blocks_when_pr_touches_android_surface(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    head = "1" * 40
+    checks, legacy = _android_pending_checks()
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [FakeResponse(200, _pull(head))],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [checks],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [legacy],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
+                FakeResponse(200, [{"filename": "android/app/build.gradle"}])
+            ],
+        },
+    )
+
+    result = runtime.merge_pr(
+        pr_number=7,
+        expected_head_sha=head,
+        owner_approved=True,
+        allow_unrelated_android_pending=True,
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert "Android-relevanten" in result["blocker"]
+
+
+def test_owner_override_blocks_non_android_pending_gate(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    head = "2" * 40
+    checks, legacy = _android_pending_checks("Backend Contract Tests")
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [FakeResponse(200, _pull(head))],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [checks],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [legacy],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
+                FakeResponse(200, [{"filename": "backend/agent_runtime/cognitive_run_store.py"}])
+            ],
+        },
+    )
+
+    result = runtime.merge_pr(
+        pr_number=7,
+        expected_head_sha=head,
+        owner_approved=True,
+        allow_unrelated_android_pending=True,
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["remaining_pending"] == ["Backend Contract Tests"]
 
 
 def test_failed_workflow_rerun_uses_failed_jobs_endpoint(monkeypatch) -> None:

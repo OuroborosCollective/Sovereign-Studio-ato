@@ -137,7 +137,7 @@ class PrivateAdminRuntime:
     def _git(self, repo: Path, argv: list[str], *, env: dict[str, str] | None = None, timeout: int = 300) -> dict[str, Any]:
         resolved_repo = repo.resolve()
         completed = subprocess.run(
-            ["git", "-C", str(resolved_repo), *argv],
+            ["git", "-c", f"safe.directory={resolved_repo}", "-C", str(resolved_repo), *argv],
             cwd=str(resolved_repo),
             env=env,
             capture_output=True,
