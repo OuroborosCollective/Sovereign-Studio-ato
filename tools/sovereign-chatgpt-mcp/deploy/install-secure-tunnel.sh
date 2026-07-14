@@ -6,6 +6,7 @@ TUNNEL_ENV="${TUNNEL_ENV:-$INSTALL_ROOT/tunnel.env}"
 TUNNEL_HOME="/var/lib/sovereign-tunnel"
 BINARY="/usr/local/bin/tunnel-client"
 TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
+TUNNEL_PROFILE_SAMPLE="sample_mcp_remote_no_auth"
 
 fail() {
   printf 'tunnel install blocked: %s\n' "$*" >&2
@@ -33,13 +34,19 @@ OPENAI_TUNNEL_ID="$(read_value OPENAI_TUNNEL_ID)"
 CONTROL_PLANE_API_KEY="$(read_value CONTROL_PLANE_API_KEY)"
 TUNNEL_PROFILE="$(read_value TUNNEL_PROFILE)"
 TUNNEL_MCP_SERVER_URL="$(read_value TUNNEL_MCP_SERVER_URL)"
+TUNNEL_HEALTH_LISTEN_ADDR="$(read_value TUNNEL_HEALTH_LISTEN_ADDR)"
 TUNNEL_PROFILE="${TUNNEL_PROFILE:-sovereign-chatgpt}"
 TUNNEL_MCP_SERVER_URL="${TUNNEL_MCP_SERVER_URL:-http://127.0.0.1:8090/mcp}"
+TUNNEL_HEALTH_LISTEN_ADDR="${TUNNEL_HEALTH_LISTEN_ADDR:-127.0.0.1:9080}"
 
 [[ "$OPENAI_TUNNEL_ID" =~ ^tunnel_[A-Za-z0-9_-]+$ ]] || fail "OPENAI_TUNNEL_ID is missing or invalid"
 [[ -n "$CONTROL_PLANE_API_KEY" ]] || fail "CONTROL_PLANE_API_KEY is missing"
 [[ "$TUNNEL_PROFILE" =~ ^[A-Za-z0-9._-]+$ ]] || fail "TUNNEL_PROFILE is invalid"
 [[ "$TUNNEL_MCP_SERVER_URL" == "http://127.0.0.1:8090/mcp" ]] || fail "only the loopback MCP endpoint is permitted"
+[[ "$TUNNEL_HEALTH_LISTEN_ADDR" =~ ^127\.0\.0\.1:[1-9][0-9]{0,4}$ ]] || fail "TUNNEL_HEALTH_LISTEN_ADDR must be a loopback TCP address"
+TUNNEL_HEALTH_PORT="${TUNNEL_HEALTH_LISTEN_ADDR##*:}"
+(( TUNNEL_HEALTH_PORT <= 65535 )) || fail "TUNNEL_HEALTH_LISTEN_ADDR port is out of range"
+unset TUNNEL_HEALTH_PORT
 
 for command in python3 runuser systemctl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is required"
@@ -121,21 +128,36 @@ getent passwd sovereign-tunnel >/dev/null 2>&1 || useradd --system --home-dir "$
 usermod --home "$TUNNEL_HOME" sovereign-tunnel
 install -d -m 0750 -o sovereign-tunnel -g sovereign-tunnel "$TUNNEL_HOME"
 
-FINGERPRINT="$(printf '%s|%s|%s' "$OPENAI_TUNNEL_ID" "$TUNNEL_PROFILE" "$TUNNEL_MCP_SERVER_URL" | sha256sum | cut -d' ' -f1)"
+FINGERPRINT="$(printf '%s|%s|%s|%s|%s' "$OPENAI_TUNNEL_ID" "$TUNNEL_PROFILE" "$TUNNEL_MCP_SERVER_URL" "$TUNNEL_PROFILE_SAMPLE" "$TUNNEL_HEALTH_LISTEN_ADDR" | sha256sum | cut -d' ' -f1)"
 CURRENT_FINGERPRINT="$(cat "$TUNNEL_HOME/.profile-fingerprint" 2>/dev/null || true)"
 if [[ "$CURRENT_FINGERPRINT" != "$FINGERPRINT" ]]; then
   find "$TUNNEL_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
   install -d -m 0750 -o sovereign-tunnel -g sovereign-tunnel "$TUNNEL_HOME"
   run_as_tunnel_user "$BINARY" init \
+    --sample "$TUNNEL_PROFILE_SAMPLE" \
     --profile "$TUNNEL_PROFILE" \
     --tunnel-id "$OPENAI_TUNNEL_ID" \
-    --mcp-server-url "$TUNNEL_MCP_SERVER_URL"
+    --mcp-server-url "$TUNNEL_MCP_SERVER_URL" \
+    --health-listen-addr "$TUNNEL_HEALTH_LISTEN_ADDR"
   printf '%s\n' "$FINGERPRINT" > "$TUNNEL_HOME/.profile-fingerprint"
   chown sovereign-tunnel:sovereign-tunnel "$TUNNEL_HOME/.profile-fingerprint"
   chmod 0600 "$TUNNEL_HOME/.profile-fingerprint"
 fi
 
-run_as_tunnel_user "$BINARY" doctor --profile "$TUNNEL_PROFILE" --explain
+# The installer also supports standalone repair. Stop only its managed service
+# before doctor so the previous daemon cannot retain the configured health port.
+if systemctl is-active --quiet sovereign-openai-tunnel.service; then
+  systemctl stop sovereign-openai-tunnel.service
+fi
+if systemctl is-active --quiet sovereign-openai-tunnel.service; then
+  fail "managed tunnel service did not stop before doctor"
+fi
+# Doctor gets an ephemeral loopback listener. The real service still starts with
+# the profile's fixed loopback port below, so runtime port conflicts remain fatal.
+run_as_tunnel_user "$BINARY" doctor \
+  --profile "$TUNNEL_PROFILE" \
+  --health.listen-addr 127.0.0.1:0 \
+  --explain
 systemctl daemon-reload
 systemctl enable sovereign-openai-tunnel.service
 systemctl reset-failed sovereign-openai-tunnel.service || true
