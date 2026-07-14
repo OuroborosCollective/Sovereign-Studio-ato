@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuilderContainer } from "./BuilderContainer";
 import * as areInferenceApi from "../../inference/areInferenceApi";
+import { useToolchainStore } from "../../toolchain/useToolchainStore";
 import { useUserStore } from "../../user/useUserStore";
 import { useSovereignToolInspectionStore } from "../runtime/sovereignToolInspectionRuntime";
 import { store } from "../../../store";
@@ -141,12 +142,14 @@ async function validateGitHubAccessFromLauncher(): Promise<void> {
 beforeEach(() => {
   window.localStorage.clear();
   useUserStore.getState().clearUser();
+  useToolchainStore.getState().reset();
   useSovereignToolInspectionStore.getState().resetEvidence();
   mockWorkerReply();
 });
 
 afterEach(() => {
   useUserStore.getState().clearUser();
+  useToolchainStore.getState().reset();
   window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -485,7 +488,24 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       if (url.includes('/api/toolchain/user-tools')) {
         return jsonResponse({ tools: [], allowed_repos: [], rules: {} });
       }
-      if (url.includes('/api/toolchain/universal/manifest')) return jsonResponse({});
+      if (url.includes('/api/toolchain/universal/manifest')) {
+        return jsonResponse({
+          name: 'test-universal-toolchain',
+          version: 'test',
+          runtime: 'embedded',
+          tools: [],
+          policy: {
+            autoLoad: true,
+            pushToMain: false,
+            draftPrOnly: true,
+            confirmRequired: true,
+            arbitraryShell: false,
+            directProductionRunner: false,
+            directGithubToken: false,
+            auditEvidence: true,
+          },
+        });
+      }
       if (url.includes('/api/toolchain/skills/list')) return jsonResponse({ skills: [] });
       return jsonResponse({ choices: [{ message: { content: 'Worker response must remain pending.' } }] });
     });
