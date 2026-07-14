@@ -14,7 +14,13 @@ from typing import Any, Final
 
 from pydantic import BaseModel, Field
 
-from .cognitive_swarm_manifest import AGENTS, WORKER_ROLES, manifest_payload
+from .cognitive_swarm_manifest import (
+    AGENTS,
+    SPECIALIST_ROLES,
+    WORKER_ROLES,
+    manifest_payload,
+    max_active_specialists,
+)
 
 
 DEFAULT_MODEL: Final[str] = "gpt-5.6"
@@ -87,16 +93,26 @@ class JudgeVerdict(BaseModel):
 
 
 class CognitiveSwarm:
-    def __init__(self, *, dispatcher: Any, workers: tuple[Any, ...], judge: Any) -> None:
+    def __init__(
+        self,
+        *,
+        dispatcher: Any,
+        workers: tuple[Any, ...],
+        specialists: tuple[Any, ...],
+        judge: Any,
+    ) -> None:
         if len(workers) != 6:
-            raise ValueError("The Sovereign cognitive swarm requires exactly six worker agents.")
+            raise ValueError("The Sovereign orchestrator requires exactly six bounded core worker agents.")
+        if len(specialists) > max_active_specialists():
+            raise ValueError("Active specialist agents exceed SOVEREIGN_MAX_ACTIVE_AGENTS.")
         self.dispatcher = dispatcher
         self.workers = workers
+        self.specialists = specialists
         self.judge = judge
 
     @property
     def agent_count(self) -> int:
-        return 2 + len(self.workers)
+        return 2 + len(self.workers) + len(self.specialists)
 
 
 def _load_skill_instructions() -> str:
@@ -126,19 +142,43 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
     skill = _load_skill_instructions()
     base = _base_instructions(skill)
 
+    specialists: list[Any] = []
+    specialist_tools: list[Any] = []
+    for role in SPECIALIST_ROLES[:max_active_specialists()]:
+        specialist = agent_class(
+            name=f"Sovereign {role.replace('_', ' ').title()} Specialist",
+            model=selected_model,
+            instructions=(
+                f"{base}\n\n"
+                f"You are the bounded {role} specialist. Work on exactly one assigned package. "
+                "Never spawn agents, merge, deploy, read secrets, change global state, or write outside assigned files. "
+                "Return evidence-backed findings and required actions only."
+            ),
+            output_type=WorkerReport,
+        )
+        specialists.append(specialist)
+        specialist_tools.append(
+            specialist.as_tool(
+                tool_name=f"specialist_{role}",
+                tool_description=f"Analyze one bounded {role} work package and return evidence-backed findings.",
+                max_turns=6,
+            )
+        )
+
     dispatcher = agent_class(
         name=AGENTS[0].name,
         model=selected_model,
         instructions=(
             f"{base}\n\n"
-            "Create one ordered six-item plan, one item for each worker role in manifest order. "
-            "Do not perform worker tasks yourself. Identify required evidence and initial blockers."
+            "Create one ordered six-item plan, one item for each fixed core worker role in manifest order. "
+            "Do not perform worker tasks yourself. Identify required evidence, initial blockers, and specialists needed."
         ),
         output_type=DispatchPlan,
     )
 
-    workers: list[Agent] = []
+    workers: list[Any] = []
     for contract in AGENTS[1:7]:
+        worker_tools = specialist_tools if contract.role == "chat_cognitive" else []
         workers.append(agent_class(
             name=contract.name,
             model=selected_model,
@@ -147,9 +187,11 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
                 f"Your fixed role is {contract.role}. Responsibility: {contract.responsibility} "
                 f"Allowed zones: {', '.join(contract.allowed_zones)}. "
                 "Analyze only your bounded domain. Return a WorkerReport. "
+                "Use a specialist tool only for a clearly bounded package and keep orchestration ownership. "
                 "Set blocked=true whenever evidence needed for a claim is absent. "
                 "You may recommend exact changes, but you may not claim they were applied."
             ),
+            tools=worker_tools,
             output_type=WorkerReport,
         ))
 
@@ -166,9 +208,14 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
         output_type=JudgeVerdict,
     )
 
-    swarm = CognitiveSwarm(dispatcher=dispatcher, workers=tuple(workers), judge=judge)
-    if swarm.agent_count != 8:
-        raise RuntimeError("Cognitive swarm topology drifted from exactly eight agents.")
+    swarm = CognitiveSwarm(
+        dispatcher=dispatcher,
+        workers=tuple(workers),
+        specialists=tuple(specialists),
+        judge=judge,
+    )
+    if swarm.agent_count < 8:
+        raise RuntimeError("Sovereign core topology dropped below eight agents.")
     return swarm
 
 
@@ -297,6 +344,7 @@ async def run_cognitive_swarm(
         "plan": plan.model_dump(),
         "loops": loop_payloads,
         "finalVerdict": final_verdict.model_dump(),
+        "activeSpecialists": len(swarm.specialists),
         "approvalRequired": True,
         "autoMerge": False,
     }
