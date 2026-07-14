@@ -367,7 +367,11 @@ jobs:
               /tmp/sovereign-chatgpt-mcp-*) ;;
               *) echo "Unsafe release directory: $RELEASE_DIR" >&2; exit 1 ;;
             esac
-            install -d -m 0700 "$RELEASE_DIR"
+            umask 077
+            mkdir -p "$RELEASE_DIR"
+            chmod 0700 "$RELEASE_DIR"
+            test -d "$RELEASE_DIR" && test ! -L "$RELEASE_DIR"
+            test -w "$RELEASE_DIR" && test -x "$RELEASE_DIR"
             rm -f \
               "$RELEASE_DIR/sovereign-chatgpt-mcp.tar.gz" \
               "$RELEASE_DIR/sovereign-chatgpt-mcp.revision" \
