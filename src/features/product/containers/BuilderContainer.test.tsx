@@ -1382,6 +1382,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await loadRepoFromChat();
     const callsBeforePreset = nonAuthFetchCalls(fetchMock).length;
     const presetButton = screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i });
+    await waitFor(() => expect(presetButton).not.toBeDisabled());
 
     fireEvent.click(presetButton);
     fireEvent.click(presetButton);
@@ -1399,8 +1400,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} />);
     await loadRepoFromChat();
     const callsBeforePreset = nonAuthFetchCalls(fetchMock).length;
+    const presetButton = screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i });
+    await waitFor(() => expect(presetButton).not.toBeDisabled());
 
-    fireEvent.click(screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i }));
+    fireEvent.click(presetButton);
 
     await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforePreset);
