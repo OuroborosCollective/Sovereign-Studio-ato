@@ -2566,6 +2566,8 @@ export function BuilderContainer({
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] =
     useState<WorkerRuntimeBlocker | null>(null);
+  const [workerHealthEvidence, setWorkerHealthEvidence] =
+    useState<DevChatWorkerHealthResult | null>(null);
   const [lastWorkerRequestMessage, setLastWorkerRequestMessage] = useState<string | null>(null);
   const [patchPreviewReady, setPatchPreviewReady] = useState(false);
   const [patchConfirmed, setPatchConfirmed] = useState(false);
@@ -3117,7 +3119,7 @@ export function BuilderContainer({
           localRepoLoading,
           localRepoError: Boolean(chatRepoError),
         });
-  const workerHealthReady = workerBlocker?.health?.ok === true;
+  const workerHealthReady = workerHealthEvidence?.ok === true;
   const workerResponseReady = hasScopedWorkerResponse;
   const workerSourceTier: RuntimeTier = workerBlocker
     ? "blocked"
@@ -3139,7 +3141,7 @@ export function BuilderContainer({
       : workerSourceTier === "unknown"
         ? "Noch keine Health- oder Response-Evidence für diese Sitzung."
         : SOVEREIGN_WORKER_CHAT,
-    available: workerHealthReady || workerResponseReady,
+    available: !workerBlocker && (workerHealthReady || workerResponseReady),
   };
   const runtimeSources = [
     runtimeSource,
@@ -4542,6 +4544,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (authUser) {
       try {
         const workerHealthForInference = await fetchDevChatWorkerHealth();
+        if (workerHealthForInference.ok) setWorkerHealthEvidence(workerHealthForInference);
         areInferenceResult = await evaluateAreInference({
           prompt: submittedText,
           repository: buildAreRepositoryState({
@@ -4829,6 +4832,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     }
 
     const health = await fetchDevChatWorkerHealth();
+    if (health.ok) setWorkerHealthEvidence(health);
     const diagnostic = streamDiagnostic ??
       fallback?.diagnostic ?? {
         route: SOVEREIGN_WORKER_CHAT,
