@@ -124,6 +124,9 @@ async function loadRepoUrlFromChat(repoUrl: string): Promise<void> {
   fireEvent.change(chatField(), { target: { value: repoUrl } });
   fireEvent.click(sendButton());
   await waitFor(() => expect(screen.getAllByText(/Repo geladen/).length).toBeGreaterThan(0));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i })).not.toBeDisabled(),
+  );
 }
 
 async function loadRepoFromChat(): Promise<void> {
