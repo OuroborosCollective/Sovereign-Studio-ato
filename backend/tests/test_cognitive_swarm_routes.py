@@ -30,12 +30,14 @@ class FakeCursor:
         self.factory.calls.append((self.last_sql, params))
 
     def fetchone(self):
+        if self.factory.fetchone_rows:
+            return self.factory.fetchone_rows.pop(0)
         if "RETURNING run_id" in self.last_sql:
             return {"run_id": "run-persisted"}
         return None
 
     def fetchall(self):
-        return []
+        return list(self.factory.fetchall_rows)
 
 
 class FakeConnection:
@@ -61,6 +63,8 @@ class FakeConnectionFactory:
         self.fail = fail
         self.calls: list[tuple[str, Any]] = []
         self.connections: list[FakeConnection] = []
+        self.fetchone_rows: list[dict[str, Any]] = []
+        self.fetchall_rows: list[dict[str, Any]] = []
         self.commits = 0
         self.rollbacks = 0
 
@@ -70,6 +74,29 @@ class FakeConnectionFactory:
         connection = FakeConnection(self)
         self.connections.append(connection)
         return connection
+
+
+def _stored_run_row(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "run_id": "run-resumable",
+        "user_id": USER_ID,
+        "session_key": "session-resumable",
+        "status": "FAILED_RECOVERABLE",
+        "source": "agents-sdk",
+        "evidence_id": "evidence-resumable",
+        "trace_id": "trace-resumable",
+        "reason": "Previous SDK execution failed recoverably.",
+        "next_action": "RETRY_FROM_PERSISTED_RUN_STATE",
+        "mission_summary": "Resume the persisted SDK run from its next action.",
+        "mission_digest": "b" * 64,
+        "max_active_specialists": 4,
+        "max_iterations": 12,
+        "iteration_count": 3,
+        "lease_active": False,
+        "resume_task_id": None,
+    }
+    row.update(overrides)
+    return row
 
 
 def _require_session(handler):
@@ -133,6 +160,67 @@ def test_swarm_rejects_secret_shaped_input() -> None:
         "/api/user/agent/swarm/run",
         json={"mission": "Use github_pat_example in the workflow."},
     )
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "secret-shaped material is forbidden in swarm input"
+    assert factory.calls == []
+
+
+def test_swarm_resume_claims_run_reconstructs_task_and_finishes_with_same_lease(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    factory = FakeConnectionFactory()
+    factory.fetchone_rows = [_stored_run_row()]
+    client = _app(factory).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/runs/run-resumable/resume",
+        json={"evidence": "Fresh runtime evidence for the persisted next action."},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 503
+    assert payload["status"] == "BLOCKED"
+    assert payload["resumed"] is True
+    assert payload["sessionKey"] == "session-resumable"
+    assert payload["resumeClaimEvidenceId"].startswith("evidence-")
+    assert payload["recoveryTask"]["taskId"].startswith("task-resume-")
+    assert payload["recoveryTask"]["workPackage"] == "RETRY_FROM_PERSISTED_RUN_STATE"
+    assert payload["recoveryTask"]["leaseSeconds"] == 900
+    assert factory.commits == 2
+    assert sum("UPDATE agent_runs" in sql for sql, _ in factory.calls) == 2
+    assert any("UPDATE agent_tasks" in sql for sql, _ in factory.calls)
+    assert any("lease_token = %s" in sql for sql, _ in factory.calls)
+
+
+def test_swarm_resume_rejects_active_lease_without_starting_second_run(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    factory = FakeConnectionFactory()
+    factory.fetchone_rows = [_stored_run_row(status="RUNNING", lease_active=True, resume_task_id="task-active")]
+    client = _app(factory).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/runs/run-resumable/resume",
+        json={"evidence": "Evidence must not start a duplicate run."},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 409
+    assert payload["status"] == "RUNNING"
+    assert payload["blocker"] == "RUN_ALREADY_CLAIMED"
+    assert factory.commits == 0
+    assert factory.rollbacks == 1
+    assert len(factory.calls) == 1
+    assert "FOR UPDATE" in factory.calls[0][0]
+
+
+def test_swarm_resume_rejects_secret_shaped_evidence_before_database_access() -> None:
+    factory = FakeConnectionFactory()
+    client = _app(factory).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/runs/run-resumable/resume",
+        json={"evidence": "github_pat_example"},
+    )
+
     assert response.status_code == 400
     assert response.get_json()["error"] == "secret-shaped material is forbidden in swarm input"
     assert factory.calls == []
