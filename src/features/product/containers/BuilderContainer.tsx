@@ -2735,7 +2735,10 @@ export function BuilderContainer({
 
     clearPatchEvidence();
     setOpenWorkbenchSlot(null);
-    setShowRepoExplorer(false);
+    // On the first complete repo load there is no stale explorer to close.
+    // Closing unconditionally races file-badge clicks that become available in
+    // the same commit. Only an actual previous repo scope can own a stale dialog.
+    if (previousScopeKey) setShowRepoExplorer(false);
     setAgentWorkSnapshot(createIdleSnapshot(`sovereign-${Date.now()}`));
 
     const accessMatchesCurrentRepo = Boolean(
