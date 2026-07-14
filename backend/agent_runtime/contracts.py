@@ -161,6 +161,16 @@ def normalize_agent_paths(paths: Sequence[str] | None) -> tuple[str, ...]:
     return _unique([path for path in normalized if path])
 
 
+def is_safe_branch(branch: str | None) -> bool:
+    """Validate if a branch name is safe (matches _SAFE_BRANCH and no traversal)."""
+    if not branch:
+        return True
+    val = str(branch)
+    if ".." in val or val.startswith("/") or val.startswith("."):
+        return False
+    return bool(_SAFE_BRANCH.fullmatch(val))
+
+
 def is_valid_github_repo_url(repo_url: str) -> bool:
     parsed = urlparse(repo_url.strip())
     if parsed.scheme != "https" or parsed.netloc.lower() not in _GITHUB_REPO_HOSTS:
