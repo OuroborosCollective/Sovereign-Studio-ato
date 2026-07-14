@@ -84,6 +84,15 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"host_command_worker_active":true' in installer
     assert '"inbound_mutation_forbidden":true' in installer
     assert 'host_worker_canary' in installer
+    assert 'docker exec -i sovereign-chatgpt-mcp python -' in installer
+    assert 'INSTALL_STAGE="verify_broker_socket_visibility"' in installer
+    assert 'INSTALL_STAGE="verify_inbound_mutation_boundary"' in installer
+    assert 'INSTALL_STAGE="verify_runtime_import_contracts"' in installer
+    assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer
+    assert 'INSTALL_STAGE="verify_mcp_protocol_handshake"' in installer
+    assert 'INSTALL_STAGE="verify_android_native_boundary"' in installer
+    assert 'INSTALL_STAGE="verify_workspace_write_boundary"' in installer
+    assert 'sovereign_cognitive_widget.WIDGET_MANIFEST.get("agentCount") == 8' not in installer
     assert '/opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue' in compose
     assert 'command_contract.py command_queue.py broker_client.py' in dockerfile
     assert '"running no-health"' not in installer
