@@ -8,6 +8,7 @@ mandatory double-loop lifecycle.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import PurePosixPath
 from typing import Final, Literal
 
@@ -21,6 +22,21 @@ AgentRole = Literal[
     "ui_accessibility",
     "predictive_qa",
     "judge",
+]
+
+SpecialistRole = Literal[
+    "frontend",
+    "ux_accessibility",
+    "backend",
+    "mcp_broker",
+    "android",
+    "database",
+    "browser_qa",
+    "document",
+    "report",
+    "security",
+    "dependency",
+    "performance",
 ]
 
 ZoneName = Literal["workspace", "repository", "offline_cache", "external_assets"]
@@ -94,6 +110,33 @@ WORKER_ROLES: Final[tuple[AgentRole, ...]] = (
     "predictive_qa",
 )
 
+SPECIALIST_ROLES: Final[tuple[SpecialistRole, ...]] = (
+    "frontend",
+    "ux_accessibility",
+    "backend",
+    "mcp_broker",
+    "android",
+    "database",
+    "browser_qa",
+    "document",
+    "report",
+    "security",
+    "dependency",
+    "performance",
+)
+
+DEFAULT_MAX_ACTIVE_SPECIALISTS: Final[int] = 4
+HARD_MAX_ACTIVE_SPECIALISTS: Final[int] = 8
+
+
+def max_active_specialists() -> int:
+    raw = os.getenv("SOVEREIGN_MAX_ACTIVE_AGENTS", str(DEFAULT_MAX_ACTIVE_SPECIALISTS)).strip()
+    try:
+        requested = int(raw)
+    except ValueError:
+        requested = DEFAULT_MAX_ACTIVE_SPECIALISTS
+    return max(1, min(requested, HARD_MAX_ACTIVE_SPECIALISTS, len(SPECIALIST_ROLES)))
+
 DOUBLE_LOOP_PHASES: Final[tuple[str, ...]] = (
     "dispatcher_plan",
     "worker_pass_one",
@@ -113,7 +156,7 @@ FORBIDDEN_RELEASE_STATES: Final[frozenset[str]] = frozenset({
 
 def validate_manifest() -> None:
     if len(AGENTS) != 8:
-        raise ValueError("The cognitive swarm must contain exactly eight agents.")
+        raise ValueError("The orchestrator must contain exactly eight fixed core agents.")
     if tuple(agent.index for agent in AGENTS) != tuple(range(8)):
         raise ValueError("Agent indexes must be contiguous and ordered from zero through seven.")
     if len({agent.role for agent in AGENTS}) != len(AGENTS):
@@ -143,8 +186,12 @@ def validate_manifest() -> None:
 def manifest_payload() -> dict[str, object]:
     validate_manifest()
     return {
-        "schema": 1,
-        "agentCount": len(AGENTS),
+        "schema": 2,
+        "agentCount": len(AGENTS) + len(SPECIALIST_ROLES),
+        "coreAgentCount": len(AGENTS),
+        "specialistAgentCount": len(SPECIALIST_ROLES),
+        "maxActiveSpecialists": max_active_specialists(),
+        "specialistRoles": list(SPECIALIST_ROLES),
         "agents": [
             {
                 "index": agent.index,
@@ -170,6 +217,7 @@ def manifest_payload() -> dict[str, object]:
         "releaseMode": "draft_pr_only",
         "autoMerge": False,
         "runtimeTruthRequired": True,
+        "specialistsMaySpawnAgents": False,
     }
 
 
