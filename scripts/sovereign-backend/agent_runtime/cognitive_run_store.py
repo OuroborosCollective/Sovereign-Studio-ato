@@ -53,6 +53,11 @@ TERMINAL_RUN_STATUSES: Final[frozenset[str]] = frozenset({
     "COMPLETED",
 })
 
+NON_RESUMABLE_RUN_STATUSES: Final[frozenset[str]] = frozenset({
+    *TERMINAL_RUN_STATUSES,
+    "READY_FOR_DRAFT_PR",
+})
+
 _ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 
 
@@ -72,6 +77,35 @@ class StoredAgentRun:
     max_active_specialists: int
     max_iterations: int
     iteration_count: int
+    lease_active: bool
+    resume_task_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class AgentRunResumeClaim:
+    run: StoredAgentRun
+    task_id: str
+    work_package: str
+    evidence_id: str
+    trace_id: str
+    lease_token: str
+    lease_seconds: int
+
+
+class AgentRunResumeConflict(RuntimeError):
+    """Another live worker currently owns the resume lease."""
+
+
+class AgentRunNotResumable(ValueError):
+    """The persisted run is terminal or has no valid next action."""
+
+
+class AgentRunIterationLimit(RuntimeError):
+    """The persisted run exhausted its bounded iteration budget."""
+
+    def __init__(self, message: str, resume_task_id: str | None = None) -> None:
+        super().__init__(message)
+        self.resume_task_id = resume_task_id
 
 
 def _bounded(value: object, limit: int) -> str:
@@ -284,6 +318,7 @@ def transition_agent_run(
     evidence_payload: Mapping[str, object],
     agent_id: str = "orchestrator",
     task_id: str | None = None,
+    expected_lease_token: str | None = None,
 ) -> dict[str, str]:
     """Persist evidence, state and event in one transaction."""
 
@@ -302,6 +337,12 @@ def transition_agent_run(
     payload_json = _json(safe_payload)
     evidence_id = _new_id("evidence")
     event_id = _new_id("event")
+    if expected_lease_token:
+        lease_clause = "AND lease_token = %s AND lease_expires_at > NOW()"
+        lease_params: tuple[object, ...] = (_digest_text(expected_lease_token),)
+    else:
+        lease_clause = "AND (lease_token IS NULL OR lease_expires_at <= NOW())"
+        lease_params = ()
 
     try:
         with conn.cursor() as cur:
@@ -325,7 +366,7 @@ def transition_agent_run(
                 ),
             )
             cur.execute(
-                """
+                f"""
                 UPDATE agent_runs
                 SET status = %s,
                     source = %s,
@@ -334,8 +375,12 @@ def transition_agent_run(
                     reason = %s,
                     next_action = %s,
                     iteration_count = LEAST(iteration_count + 1, max_iterations),
-                    resumed_at = CASE WHEN %s IN ('RUNNING', 'VERIFYING') THEN NOW() ELSE resumed_at END
+                    resumed_at = CASE WHEN %s IN ('RUNNING', 'VERIFYING') THEN NOW() ELSE resumed_at END,
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    resume_task_id = NULL
                 WHERE run_id = %s AND user_id = %s::uuid
+                  {lease_clause}
                 RETURNING run_id
                 """,
                 (
@@ -348,10 +393,37 @@ def transition_agent_run(
                     normalized_status,
                     normalized_run_id,
                     str(user_id),
+                    *lease_params,
                 ),
             )
             if not cur.fetchone():
-                raise LookupError("agent run not found for authenticated user")
+                raise LookupError("agent run not found or active resume lease is not held")
+            if task_id:
+                cur.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET status = %s,
+                        source = %s,
+                        evidence_id = %s,
+                        reason = %s,
+                        next_action = %s,
+                        completed_at = CASE
+                            WHEN %s IN ('COMPLETED', 'FAILED_FINAL', 'DRAFT_PR_CREATED') THEN NOW()
+                            ELSE completed_at
+                        END
+                    WHERE task_id = %s AND run_id = %s
+                    """,
+                    (
+                        normalized_status,
+                        normalized_source,
+                        evidence_id,
+                        normalized_reason,
+                        normalized_next_action,
+                        normalized_status,
+                        task_id,
+                        normalized_run_id,
+                    ),
+                )
             cur.execute(
                 """
                 INSERT INTO agent_events (
@@ -389,6 +461,202 @@ def transition_agent_run(
         "reason": normalized_reason,
         "nextAction": normalized_next_action,
     }
+
+
+def claim_agent_run_for_resume(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    supplied_evidence: str,
+    trace_id: str,
+    lease_seconds: int = 900,
+) -> AgentRunResumeClaim:
+    """Atomically claim one resumable run and reconstruct its bounded next task."""
+
+    normalized_run_id = _validated_id(run_id, "run_id")
+    normalized_trace_id = _validated_id(trace_id, "trace_id")
+    bounded_lease_seconds = max(30, min(int(lease_seconds), 3600))
+    raw_lease_token = uuid.uuid4().hex
+    lease_digest = _digest_text(raw_lease_token)
+    evidence_id = _new_id("evidence")
+    task_id = _new_id("task-resume")
+    event_id = _new_id("event")
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT *,
+                       (lease_token IS NOT NULL AND lease_expires_at > NOW()) AS lease_active
+                FROM agent_runs
+                WHERE run_id = %s AND user_id = %s::uuid
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (normalized_run_id, str(user_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise LookupError("agent run not found for authenticated user")
+            run = stored_run_from_row(row)
+            if run.status in NON_RESUMABLE_RUN_STATUSES:
+                raise AgentRunNotResumable("agent run is not eligible for resume execution")
+            if run.lease_active:
+                raise AgentRunResumeConflict("agent run already has an active resume lease")
+            if run.iteration_count >= run.max_iterations:
+                raise AgentRunIterationLimit(
+                    "agent run iteration limit is exhausted",
+                    run.resume_task_id,
+                )
+            work_package = _bounded(run.next_action, 1000)
+            if not work_package:
+                raise AgentRunNotResumable("agent run has no persisted next action")
+
+            resume_payload = {
+                "previousStatus": run.status,
+                "previousEvidenceId": run.evidence_id,
+                "previousNextAction": work_package,
+                "suppliedEvidenceDigest": _digest_text(supplied_evidence),
+                "rawSecretsPersisted": False,
+                "leaseSeconds": bounded_lease_seconds,
+            }
+            payload_json = _json(resume_payload)
+            reason = "Persisted run was atomically claimed for one bounded resume attempt."
+
+            if run.resume_task_id:
+                cur.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET status = 'FAILED_RECOVERABLE',
+                        source = 'agents-sdk',
+                        reason = 'Previous resume lease expired before a validated final state was persisted.',
+                        next_action = %s,
+                        retry_count = LEAST(retry_count + 1, max_retries),
+                        completed_at = NULL
+                    WHERE task_id = %s AND run_id = %s AND status = 'RUNNING'
+                    """,
+                    (work_package, run.resume_task_id, normalized_run_id),
+                )
+
+            cur.execute(
+                """
+                INSERT INTO agent_tasks (
+                    task_id, run_id, agent_id, specialist_role, work_package,
+                    status, source, evidence_id, reason, next_action,
+                    allowed_files, allowed_tools, acceptance_criteria, forbidden_actions,
+                    timeout_seconds, max_tool_calls, max_retries
+                ) VALUES (
+                    %s, %s, 'orchestrator', 'recovery', %s,
+                    'RUNNING', 'agents-sdk', %s, %s, %s,
+                    '[]'::jsonb, '[]'::jsonb, %s::jsonb, %s::jsonb,
+                    %s, 20, 2
+                )
+                """,
+                (
+                    task_id,
+                    normalized_run_id,
+                    work_package,
+                    evidence_id,
+                    reason,
+                    work_package,
+                    _json([
+                        "Produce a new evidence-backed run state.",
+                        "Preserve Draft-PR-only and no-auto-merge policy.",
+                    ]),
+                    _json([
+                        "read or persist secrets",
+                        "merge a pull request",
+                        "deploy to production",
+                        "claim success without runtime evidence",
+                    ]),
+                    bounded_lease_seconds,
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO agent_evidence (
+                    evidence_id, run_id, task_id, agent_id, source, kind,
+                    summary, sha256, payload
+                ) VALUES (%s, %s, %s, 'orchestrator', 'agents-sdk', 'resume_claim', %s, %s, %s::jsonb)
+                """,
+                (
+                    evidence_id,
+                    normalized_run_id,
+                    task_id,
+                    reason,
+                    _digest_text(payload_json),
+                    payload_json,
+                ),
+            )
+            cur.execute(
+                """
+                UPDATE agent_runs
+                SET status = 'RUNNING',
+                    source = 'agents-sdk',
+                    evidence_id = %s,
+                    trace_id = %s,
+                    reason = %s,
+                    next_action = %s,
+                    resumed_at = NOW(),
+                    lease_token = %s,
+                    lease_expires_at = NOW() + (%s * INTERVAL '1 second'),
+                    resume_task_id = %s
+                WHERE run_id = %s AND user_id = %s::uuid
+                  AND (lease_token IS NULL OR lease_expires_at <= NOW())
+                RETURNING run_id
+                """,
+                (
+                    evidence_id,
+                    normalized_trace_id,
+                    reason,
+                    work_package,
+                    lease_digest,
+                    bounded_lease_seconds,
+                    task_id,
+                    normalized_run_id,
+                    str(user_id),
+                ),
+            )
+            if not cur.fetchone():
+                raise AgentRunResumeConflict("agent run was claimed by another worker")
+            cur.execute(
+                """
+                INSERT INTO agent_events (
+                    event_id, run_id, task_id, agent_id, type, status, source,
+                    summary, evidence_id, trace_id, next_action
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                _event_payload(
+                    event_id=event_id,
+                    run_id=normalized_run_id,
+                    task_id=task_id,
+                    agent_id="orchestrator",
+                    event_type="run_resumed",
+                    status="RUNNING",
+                    source="agents-sdk",
+                    summary=reason,
+                    evidence_id=evidence_id,
+                    trace_id=normalized_trace_id,
+                    next_action=work_package,
+                ),
+            )
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+
+    return AgentRunResumeClaim(
+        run=run,
+        task_id=task_id,
+        work_package=work_package,
+        evidence_id=evidence_id,
+        trace_id=normalized_trace_id,
+        lease_token=raw_lease_token,
+        lease_seconds=bounded_lease_seconds,
+    )
 
 
 def create_agent_task(
@@ -519,6 +787,8 @@ def stored_run_from_row(row: Mapping[str, Any]) -> StoredAgentRun:
         max_active_specialists=int(row.get("max_active_specialists") or 0),
         max_iterations=int(row.get("max_iterations") or 0),
         iteration_count=int(row.get("iteration_count") or 0),
+        lease_active=bool(row.get("lease_active")),
+        resume_task_id=str(row.get("resume_task_id") or "") or None,
     )
 
 
@@ -526,7 +796,9 @@ def read_agent_run(conn: Any, *, user_id: str, run_id: str) -> StoredAgentRun | 
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT * FROM agent_runs
+            SELECT *,
+                   (lease_token IS NOT NULL AND lease_expires_at > NOW()) AS lease_active
+            FROM agent_runs
             WHERE user_id = %s::uuid AND run_id = %s
             LIMIT 1
             """,
@@ -543,13 +815,14 @@ def list_resumable_agent_runs(
     limit: int = 50,
 ) -> tuple[StoredAgentRun, ...]:
     safe_limit = max(1, min(int(limit), 100))
-    terminal = tuple(sorted(TERMINAL_RUN_STATUSES))
+    terminal = tuple(sorted(NON_RESUMABLE_RUN_STATUSES))
     with conn.cursor() as cur:
         if user_id:
             cur.execute(
                 """
-                SELECT * FROM agent_runs
+                SELECT *, false AS lease_active FROM agent_runs
                 WHERE user_id = %s::uuid AND status <> ALL(%s)
+                  AND (lease_token IS NULL OR lease_expires_at <= NOW())
                 ORDER BY updated_at ASC
                 LIMIT %s
                 """,
@@ -558,8 +831,9 @@ def list_resumable_agent_runs(
         else:
             cur.execute(
                 """
-                SELECT * FROM agent_runs
+                SELECT *, false AS lease_active FROM agent_runs
                 WHERE status <> ALL(%s)
+                  AND (lease_token IS NULL OR lease_expires_at <= NOW())
                 ORDER BY updated_at ASC
                 LIMIT %s
                 """,
