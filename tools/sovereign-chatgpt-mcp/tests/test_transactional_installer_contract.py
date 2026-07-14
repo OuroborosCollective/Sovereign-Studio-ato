@@ -69,3 +69,14 @@ def test_self_update_persists_only_bounded_installer_stage_evidence() -> None:
     assert 'write_status FAILED "$EXPECTED_REVISION"' in updater
     assert "cat \"$INSTALL_LOG\"" not in updater
     assert "tail -n 200 \"$INSTALL_LOG\"" not in updater
+
+
+def test_validated_self_update_wrapper_survives_wider_installer_rollback() -> None:
+    installer = INSTALLER.read_text("utf-8")
+
+    assert 'SELF_UPDATE_BIN="$BIN_DIR/self-update-chatgpt-mcp"' in installer
+    assert 'bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh"' in installer
+    assert 'SELF_UPDATE_NEXT="$(mktemp "$BIN_DIR/.self-update-chatgpt-mcp.XXXXXX")"' in installer
+    assert 'mv -f "$SELF_UPDATE_NEXT" "$SELF_UPDATE_BIN"' in installer
+    assert 'backup_control_plane_file "$BIN_DIR/self-update-chatgpt-mcp"' not in installer
+    assert 'install -m 0750 "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" "$BIN_DIR/self-update-chatgpt-mcp"' not in installer
