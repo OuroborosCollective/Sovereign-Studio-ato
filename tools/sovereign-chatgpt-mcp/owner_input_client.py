@@ -15,6 +15,10 @@ import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 MAX_TEXT = 1000
+ALLOWED_TARGETS = {
+    "openai_api_key": "OpenAI API-Key",
+    "openhands_api_key": "OpenHands API-Key",
+}
 
 
 class OwnerInputClient:
@@ -60,17 +64,21 @@ class OwnerInputClient:
             raise RuntimeError("Owner-Freigabe-Backend lieferte keine gültige Antwort")
         return payload
 
-    def create_openhands_request(
+    def create_request(
         self,
         *,
+        target_id: str,
         title: str,
         reason: str,
-        field_label: str = "OpenHands API-Key",
+        field_label: str = "",
         expires_in_seconds: int = 900,
     ) -> dict[str, Any]:
+        selected_target = str(target_id or "").strip()
+        if selected_target not in ALLOWED_TARGETS:
+            raise ValueError("Owner-Ziel ist nicht allowlistet")
         clean_title = str(title or "").strip()[:160]
         clean_reason = str(reason or "").strip()[:MAX_TEXT]
-        clean_label = str(field_label or "").strip()[:120]
+        clean_label = str(field_label or ALLOWED_TARGETS[selected_target]).strip()[:120]
         if not clean_title or not clean_reason or not clean_label:
             raise ValueError("Titel, Begründung und Feldbezeichnung sind erforderlich")
         ttl = max(60, min(int(expires_in_seconds), 3600))
@@ -78,7 +86,7 @@ class OwnerInputClient:
             "POST",
             "/api/internal/owner-input/requests",
             json_body={
-                "targetId": "openhands_api_key",
+                "targetId": selected_target,
                 "title": clean_title,
                 "reason": clean_reason,
                 "fieldLabel": clean_label,
@@ -97,6 +105,22 @@ class OwnerInputClient:
             "protected_value_transport": "owner_ui_only",
             "llm_can_receive_protected_value": False,
         }
+
+    def create_openhands_request(
+        self,
+        *,
+        title: str,
+        reason: str,
+        field_label: str = "OpenHands API-Key",
+        expires_in_seconds: int = 900,
+    ) -> dict[str, Any]:
+        return self.create_request(
+            target_id="openhands_api_key",
+            title=title,
+            reason=reason,
+            field_label=field_label,
+            expires_in_seconds=expires_in_seconds,
+        )
 
     def status(self, request_id: str) -> dict[str, Any]:
         selected = str(request_id or "").strip()

@@ -332,11 +332,13 @@ def mcp_host_command_status(request_id: str) -> dict[str, Any]:
 def owner_approval_request_create(
     title: str,
     reason: str,
-    field_label: str = "OpenHands API-Key",
+    target_id: str = "openai_api_key",
+    field_label: str = "OpenAI API-Key",
     expires_in_seconds: int = 900,
 ) -> dict[str, Any]:
-    """Create one metadata-only owner request. Never include the protected value in any argument."""
-    return owner_input.create_openhands_request(
+    """Create one metadata-only request for an allowlisted owner-controlled target."""
+    return owner_input.create_request(
+        target_id=target_id,
         title=title,
         reason=reason,
         field_label=field_label,

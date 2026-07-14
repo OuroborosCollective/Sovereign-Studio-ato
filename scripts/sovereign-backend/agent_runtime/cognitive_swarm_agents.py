@@ -29,6 +29,38 @@ SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitiv
 _AGENT_CLASS: Any | None = None
 _RUNNER_CLASS: Any | None = None
 _AGENTS_SDK_ERROR = ""
+_OPENAI_KEY_FILENAME: Final[str] = "openai_api_key.txt"
+_OPENAI_KEY_MAX_BYTES: Final[int] = 8192
+
+
+def ensure_openai_runtime_key() -> bool:
+    """Load the owner-managed OpenAI key into this backend process without logging it."""
+
+    if os.getenv("OPENAI_API_KEY", "").strip():
+        return True
+    root = Path(os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")).resolve()
+    candidate_path = root / _OPENAI_KEY_FILENAME
+    if candidate_path.is_symlink():
+        return False
+    candidate = candidate_path.resolve()
+    if candidate.parent != root or not candidate.is_file():
+        return False
+    try:
+        if candidate.stat().st_mode & 0o077:
+            return False
+        raw = candidate.read_bytes()
+    except OSError:
+        return False
+    if not raw or len(raw) > _OPENAI_KEY_MAX_BYTES:
+        return False
+    try:
+        value = raw.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return False
+    if not value:
+        return False
+    os.environ["OPENAI_API_KEY"] = value
+    return True
 
 try:
     _AGENTS_SDK_VERSION = importlib.metadata.version("openai-agents")
@@ -265,7 +297,7 @@ async def run_cognitive_swarm(
     normalized_mission = mission.strip()
     if not normalized_mission:
         raise ValueError("mission is required")
-    if not os.getenv("OPENAI_API_KEY", "").strip():
+    if not ensure_openai_runtime_key():
         return {
             "ok": False,
             "status": "BLOCKED",

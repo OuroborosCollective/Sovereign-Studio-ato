@@ -67,5 +67,10 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     signature = server.split("def owner_approval_request_create(", 1)[1].split(") ->", 1)[0]
     assert "protected" not in signature.lower()
     assert "secret" not in signature.lower()
-    assert '"targetId": "openhands_api_key"' in client
+    assert 'target_id: str = "openai_api_key"' in signature
+    assert '"openai_api_key": "OpenAI API-Key"' in client
+    assert '"openhands_api_key": "OpenHands API-Key"' in client
+    assert '"targetId": selected_target' in client
+    assert "if selected_target not in ALLOWED_TARGETS" in client
+    assert "owner_input.create_request(" in server
     assert '"llm_can_receive_protected_value": False' in client

@@ -22,7 +22,7 @@ def test_migration_is_metadata_only_and_has_bounded_lifecycle() -> None:
     assert "credential_value" not in lowered
 
 
-def test_backend_registers_owner_routes_and_prefers_owner_managed_openhands_path() -> None:
+def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys() -> None:
     app = (ROOT / "app.py").read_text("utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
 
@@ -32,8 +32,17 @@ def test_backend_registers_owner_routes_and_prefers_owner_managed_openhands_path
     assert app.index('"/opt/secure/owner-managed/openhands_api_key.txt"') < app.index('"/opt/secure/openhands_api_key.txt"')
     assert "COPY owner_input_runtime.py ." in dockerfile
     owner_runtime = (ROOT / "owner_input_runtime.py").read_text("utf-8")
+    swarm_agents = (ROOT / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
+    swarm_routes = (ROOT / "agent_runtime" / "cognitive_swarm_routes.py").read_text("utf-8")
+    assert '"openai_api_key"' in owner_runtime
+    assert '"openai_api_key.txt"' in owner_runtime
+    assert "SET status='expired', resolved_at=NOW(), result_code='expired'" in owner_runtime
     assert "ON CONFLICT (target_id) WHERE status IN ('pending','processing') DO NOTHING" in owner_runtime
     assert "content_length > int(target[\"maxBytes\"])" in owner_runtime
+    assert "def ensure_openai_runtime_key()" in swarm_agents
+    assert 'os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")' in swarm_agents
+    assert 'if not ensure_openai_runtime_key()' in swarm_agents
+    assert '"configured": ensure_openai_runtime_key()' in swarm_routes
 
 
 def test_backend_deploy_keeps_global_secure_mount_read_only_and_only_owner_subdir_writable() -> None:

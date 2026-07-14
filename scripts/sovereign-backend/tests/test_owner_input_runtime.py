@@ -17,6 +17,7 @@ flask_stub.request = types.SimpleNamespace(headers={}, remote_addr=None)
 sys.modules.setdefault("flask", flask_stub)
 
 import owner_input_runtime as runtime
+from agent_runtime import cognitive_swarm_agents as swarm_runtime
 
 
 def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_path: Path) -> None:
@@ -27,6 +28,11 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     target = targets["openhands_api_key"]
     assert target["path"] == (tmp_path / "openhands_api_key.txt").resolve()
     assert target["maxBytes"] == 8192
+
+    openai_target = targets["openai_api_key"]
+    assert openai_target["path"] == (tmp_path / "openai_api_key.txt").resolve()
+    assert openai_target["fieldLabel"] == "OpenAI API-Key"
+    assert openai_target["maxBytes"] == 8192
 
 
 def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypatch, tmp_path: Path) -> None:
@@ -49,6 +55,38 @@ def test_atomic_write_rejects_empty_and_oversized_values(monkeypatch, tmp_path: 
         runtime._atomic_write(target, "")
     with pytest.raises(ValueError, match="überschreitet"):
         runtime._atomic_write({**target, "maxBytes": 3}, "four")
+
+
+def test_openai_agents_key_loads_only_from_owner_managed_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    target = runtime._target_map()["openai_api_key"]
+    runtime._atomic_write(target, "test-runtime-key-value")
+
+    assert swarm_runtime.ensure_openai_runtime_key() is True
+    assert os.environ["OPENAI_API_KEY"] == "test-runtime-key-value"
+
+
+def test_openai_agents_key_rejects_symlink_escape(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-openai-value.txt"
+    outside.write_text("test-runtime-key-value", "utf-8")
+    (tmp_path / "openai_api_key.txt").symlink_to(outside)
+
+    assert swarm_runtime.ensure_openai_runtime_key() is False
+    assert "OPENAI_API_KEY" not in os.environ
+
+
+def test_openai_agents_key_rejects_group_or_world_readable_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    path = tmp_path / "openai_api_key.txt"
+    path.write_text("test-runtime-key-value", "utf-8")
+    path.chmod(0o644)
+
+    assert swarm_runtime.ensure_openai_runtime_key() is False
+    assert "OPENAI_API_KEY" not in os.environ
 
 
 def test_raw_payment_card_numbers_are_rejected_but_provider_tokens_are_not() -> None:
