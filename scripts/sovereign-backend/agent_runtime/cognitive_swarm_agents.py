@@ -339,7 +339,7 @@ async def run_cognitive_swarm(
 
     return {
         "ok": final_verdict.draft_pr_ready and not final_verdict.blockers,
-        "status": "DRAFT_PR_READY" if final_verdict.draft_pr_ready and not final_verdict.blockers else "BLOCKED",
+        "status": "READY_FOR_DRAFT_PR" if final_verdict.draft_pr_ready and not final_verdict.blockers else "BLOCKED",
         "manifest": manifest_payload(),
         "plan": plan.model_dump(),
         "loops": loop_payloads,

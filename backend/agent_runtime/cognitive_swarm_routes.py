@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
-from typing import Any
+from typing import Any, Callable
+import uuid
 
 from flask import jsonify, request
 
+from .cognitive_run_store import (
+    create_agent_run,
+    list_resumable_agent_runs,
+    read_agent_run,
+    record_agent_failure,
+    transition_agent_run,
+)
 from .cognitive_swarm_agents import run_cognitive_swarm
 from .cognitive_swarm_manifest import manifest_payload
+
+
+ConnectionFactory = Callable[[], Any]
 
 
 _SECRET_MARKERS = (
@@ -33,7 +46,53 @@ def _allowed_models() -> frozenset[str]:
     return values or frozenset({"gpt-5.6"})
 
 
-def register_cognitive_swarm_routes(app, *, require_session) -> None:
+def _current_session_user_id() -> str:
+    return str(getattr(request, "session_user_id", None) or "")
+
+
+def _close_connection(conn: Any) -> None:
+    close = getattr(conn, "close", None)
+    if callable(close):
+        close()
+
+
+def _max_iterations() -> int:
+    try:
+        configured = int(os.getenv("SOVEREIGN_AGENTS_MAX_ITERATIONS", "12"))
+    except ValueError:
+        configured = 12
+    return max(1, min(configured, 100))
+
+
+def _digest_json(value: object) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _stored_run_to_api(run: Any) -> dict[str, object]:
+    return {
+        "runId": run.run_id,
+        "sessionKey": run.session_key,
+        "status": run.status,
+        "source": run.source,
+        "evidenceId": run.evidence_id,
+        "traceId": run.trace_id,
+        "reason": run.reason,
+        "nextAction": run.next_action,
+        "missionSummary": run.mission_summary,
+        "missionDigest": run.mission_digest,
+        "maxActiveSpecialists": run.max_active_specialists,
+        "maxIterations": run.max_iterations,
+        "iterationCount": run.iteration_count,
+    }
+
+
+def register_cognitive_swarm_routes(
+    app,
+    *,
+    require_session,
+    get_connection: ConnectionFactory,
+) -> None:
     @app.route("/api/user/agent/swarm/manifest", methods=["GET"])
     @require_session
     def user_get_cognitive_swarm_manifest():
@@ -44,6 +103,37 @@ def register_cognitive_swarm_routes(app, *, require_session) -> None:
             "allowedModels": sorted(_allowed_models()),
             "manifest": manifest_payload(),
         })
+
+    @app.route("/api/user/agent/swarm/runs/resumable", methods=["GET"])
+    @require_session
+    def user_list_resumable_cognitive_runs():
+        user_id = _current_session_user_id()
+        conn = get_connection()
+        try:
+            runs = list_resumable_agent_runs(conn, user_id=user_id, limit=50)
+            return jsonify({
+                "runtime": "openai-agents-sdk",
+                "runs": [_stored_run_to_api(run) for run in runs],
+                "total": len(runs),
+            })
+        finally:
+            _close_connection(conn)
+
+    @app.route("/api/user/agent/swarm/runs/<run_id>", methods=["GET"])
+    @require_session
+    def user_get_cognitive_run(run_id: str):
+        user_id = _current_session_user_id()
+        conn = get_connection()
+        try:
+            run = read_agent_run(conn, user_id=user_id, run_id=run_id)
+            if not run:
+                return jsonify({"error": "run not found"}), 404
+            return jsonify({
+                "runtime": "openai-agents-sdk",
+                "run": _stored_run_to_api(run),
+            })
+        finally:
+            _close_connection(conn)
 
     @app.route("/api/user/agent/swarm/run", methods=["POST"])
     @require_session
@@ -64,6 +154,40 @@ def register_cognitive_swarm_routes(app, *, require_session) -> None:
         if model and model not in _allowed_models():
             return jsonify({"error": "model is not allowlisted"}), 400
 
+        user_id = _current_session_user_id()
+        if not user_id:
+            return jsonify({"error": "authenticated user id is required"}), 401
+
+        manifest = manifest_payload()
+        run_id = f"run-{uuid.uuid4().hex}"
+        session_key = f"session-{uuid.uuid4().hex}"
+        trace_id = f"trace-{uuid.uuid4().hex}"
+
+        try:
+            conn = get_connection()
+            try:
+                received_state = create_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=run_id,
+                    session_key=session_key,
+                    mission=mission,
+                    supplied_evidence=evidence,
+                    trace_id=trace_id,
+                    max_active_specialists=int(manifest["maxActiveSpecialists"]),
+                    max_iterations=_max_iterations(),
+                )
+            finally:
+                _close_connection(conn)
+        except Exception as exc:
+            return jsonify({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "error": "agent run persistence unavailable",
+                "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(exc).__name__,
+            }), 503
+
         try:
             result = asyncio.run(
                 run_cognitive_swarm(
@@ -72,15 +196,109 @@ def register_cognitive_swarm_routes(app, *, require_session) -> None:
                     model=model,
                 )
             )
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            final_status = str(result.get("status") or "BLOCKED")
+            if final_status not in {"BLOCKED", "READY_FOR_DRAFT_PR"}:
+                final_status = "BLOCKED"
+            ready = final_status == "READY_FOR_DRAFT_PR" and bool(result.get("ok"))
+            reason = (
+                "Judge accepted the supplied evidence for Draft PR readiness."
+                if ready
+                else str(result.get("blocker") or "Required runtime evidence or protected configuration is missing.")
+            )
+            next_action = (
+                "CREATE_DRAFT_PR_AFTER_OWNER_APPROVAL"
+                if ready
+                else "PROVIDE_MISSING_EVIDENCE_OR_PROTECTED_CONFIGURATION"
+            )
+            final_verdict = result.get("finalVerdict") if isinstance(result.get("finalVerdict"), dict) else {}
+            evidence_payload = {
+                "resultStatus": final_status,
+                "ok": ready,
+                "activeSpecialists": int(result.get("activeSpecialists") or 0),
+                "manifestSchema": int((result.get("manifest") or manifest).get("schema") or 0),
+                "finalVerdictDigest": _digest_json(final_verdict),
+                "autoMerge": False,
+            }
+            conn = get_connection()
+            try:
+                final_state = transition_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=run_id,
+                    status=final_status,
+                    source="agents-sdk",
+                    trace_id=trace_id,
+                    reason=reason,
+                    next_action=next_action,
+                    evidence_kind="judge_verdict",
+                    evidence_summary=reason,
+                    evidence_payload=evidence_payload,
+                    agent_id="judge",
+                )
+            finally:
+                _close_connection(conn)
         except Exception as exc:
+            try:
+                conn = get_connection()
+                try:
+                    failed_state = transition_agent_run(
+                        conn,
+                        user_id=user_id,
+                        run_id=run_id,
+                        status="FAILED_RECOVERABLE",
+                        source="agents-sdk",
+                        trace_id=trace_id,
+                        reason="Agents SDK execution failed without a validated final verdict.",
+                        next_action="RETRY_FROM_PERSISTED_RUN_STATE",
+                        evidence_kind="runtime_failure",
+                        evidence_summary="Agents SDK execution raised a bounded runtime failure.",
+                        evidence_payload={"errorType": type(exc).__name__},
+                    )
+                    record_agent_failure(
+                        conn,
+                        run_id=run_id,
+                        agent_id="orchestrator",
+                        family="AGENTS_SDK_EXECUTION_FAILED",
+                        summary="Agents SDK execution failed; the persisted run remains resumable.",
+                        evidence_id=failed_state["evidenceId"],
+                        recoverable=True,
+                    )
+                finally:
+                    _close_connection(conn)
+            except Exception as persistence_exc:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "openai-agents-sdk",
+                    "runId": run_id,
+                    "traceId": trace_id,
+                    "error": type(exc).__name__,
+                    "blocker": "AGENT_RUN_FAILURE_PERSISTENCE_UNAVAILABLE",
+                    "persistenceErrorType": type(persistence_exc).__name__,
+                }), 502
             return jsonify({
                 "ok": False,
-                "status": "FAILED",
                 "runtime": "openai-agents-sdk",
+                "runId": run_id,
+                "traceId": trace_id,
+                "status": failed_state["status"],
+                "source": failed_state["source"],
+                "evidenceId": failed_state["evidenceId"],
+                "reason": failed_state["reason"],
+                "nextAction": failed_state["nextAction"],
                 "error": type(exc).__name__,
             }), 502
 
-        status_code = 200 if result.get("ok") else 503
-        return jsonify({"runtime": "openai-agents-sdk", **result}), status_code
+        status_code = 200 if final_state["status"] == "READY_FOR_DRAFT_PR" else 503
+        return jsonify({
+            "runtime": "openai-agents-sdk",
+            **result,
+            "runId": run_id,
+            "sessionKey": session_key,
+            "traceId": trace_id,
+            "status": final_state["status"],
+            "source": final_state["source"],
+            "evidenceId": final_state["evidenceId"],
+            "reason": final_state["reason"],
+            "nextAction": final_state["nextAction"],
+            "receivedEvidenceId": received_state["evidenceId"],
+        }), status_code

@@ -37,6 +37,7 @@ from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
+from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.routes import register_sovereign_agent_routes
 from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
@@ -1140,6 +1141,11 @@ def require_session(f):
 
 
 register_sovereign_agent_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
+)
+register_cognitive_swarm_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,

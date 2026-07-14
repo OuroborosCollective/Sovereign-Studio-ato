@@ -1133,6 +1133,7 @@ register_sovereign_agent_routes(
 register_cognitive_swarm_routes(
     app,
     require_session=require_session,
+    get_connection=get_agent_runtime_connection,
 )
 
 # ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
