@@ -130,6 +130,14 @@ def test_tunnel_state_is_outside_root_only_install_directory() -> None:
 
     assert 'TUNNEL_HOME="/var/lib/sovereign-tunnel"' in installer
     assert 'TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"' in installer
+    assert 'TUNNEL_PROFILE_SAMPLE="sample_mcp_remote_no_auth"' in installer
+    assert 'TUNNEL_HEALTH_LISTEN_ADDR="${TUNNEL_HEALTH_LISTEN_ADDR:-127.0.0.1:9080}"' in installer
+    assert 'TUNNEL_HEALTH_PORT <= 65535' in installer
+    assert '--sample "$TUNNEL_PROFILE_SAMPLE"' in installer
+    assert '--health-listen-addr "$TUNNEL_HEALTH_LISTEN_ADDR"' in installer
+    assert 'systemctl stop sovereign-openai-tunnel.service' in installer
+    assert '--health.listen-addr 127.0.0.1:0' in installer
+    assert 'managed tunnel service did not stop before doctor' in installer
     assert 'for command in python3 runuser systemctl sha256sum; do' in installer
     assert 'for command in curl ' not in installer
     assert 'installed tunnel service still contains a curl-based MCP probe' in installer
