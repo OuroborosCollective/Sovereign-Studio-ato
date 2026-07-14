@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { UserApiKeys } from '../components/UserKeyManager';
+import type { UserApiKeys } from '../runtime/userApiKeysContract';
 import { validateUserApiKeys, getValidatedKeys } from '../runtime/apiKeyValidation';
 import { getProviderRuntimeReport, type ProviderRuntimeReport } from '../runtime/providerRuntimeChecks';
 

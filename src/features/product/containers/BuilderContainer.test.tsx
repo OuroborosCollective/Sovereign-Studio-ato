@@ -436,13 +436,16 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Bestätigte Änderungen werden übergeben");
   });
 
-  it("opens runtime source sheet with Cloudflare Worker as the standard LLM route", () => {
+  it("keeps Worker runtime sources unknown until health or response evidence exists", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} agentReady onStartAgent={vi.fn()} />);
     const rtButton = screen.getByRole("button", { name: /RT.*Runtime Quelle/i });
     expect(rtButton).toHaveAttribute("title", "Runtime Quelle");
     fireEvent.click(rtButton);
     expect(screen.getByText("Runtime Quelle")).toBeDefined();
-    expect(screen.getByText("Cloudflare Worker")).toBeDefined();
+    expect(screen.getByText("Cloudflare Worker nicht geprüft")).toBeDefined();
+    expect(screen.getByText("Noch keine Health- oder Response-Evidence für diese Sitzung.")).toBeDefined();
+    expect(screen.getByText("Worker KV konfiguriert")).toBeDefined();
+    expect(screen.getByText("Modellkatalog konfiguriert")).toBeDefined();
     expect(screen.getByText("Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge")).toBeDefined();
   });
 
@@ -468,6 +471,101 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
 
+  it("keeps a README content question on the advisory Worker route", async () => {
+    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ choices: [{ message: { content: "README-Inhalt erklärt." } }] }),
+    );
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+
+    fireEvent.change(chatField(), { target: { value: "Was ist der Inhalt der README?" } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() => expect(screen.getByText("README-Inhalt erklärt.")).toBeDefined());
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+    expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
+  });
+
+  it("keeps a Pull Request question advisory despite executor keywords", async () => {
+    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ choices: [{ message: { content: "Ein Pull Request ist eine prüfbare Änderung." } }] }),
+    );
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+
+    fireEvent.change(chatField(), { target: { value: "Was ist ein Pull Request?" } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() =>
+      expect(screen.getByText("Ein Pull Request ist eine prüfbare Änderung.")).toBeDefined(),
+    );
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+    expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
+  });
+
+  it("resumes one blocked Sovereign Agent request after GitHub access becomes ready", async () => {
+    const originalText = "Sovereign Agent soll Feature X implementieren";
+    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+    );
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+
+    fireEvent.change(chatField(), { target: { value: originalText } });
+    fireEvent.click(sendButton());
+    await waitFor(() =>
+      expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(2),
+    );
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByText("Zugang eingeben")[0]);
+    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+    fireEvent.click(screen.getByText("Übernehmen"));
+
+    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+    expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
+    expect(screen.getAllByText(originalText)).toHaveLength(1);
+  });
+
+  it("resumes one repo-blocked Agent request through repo load and GitHub validation", async () => {
+    const originalText = "Sovereign Agent soll Feature X implementieren";
+    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+    );
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+
+    fireEvent.change(chatField(), { target: { value: originalText } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined());
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("GitHub Repository URL"), { target: { value: TEST_REPO_URL } });
+    fireEvent.click(screen.getByRole("button", { name: "Repo-Snapshot laden" }));
+    await waitFor(() =>
+      expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(2),
+    );
+
+    fireEvent.click(screen.getAllByText("Zugang eingeben")[0]);
+    fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+    fireEvent.click(screen.getByText("Übernehmen"));
+
+    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+    expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
+    expect(screen.getAllByText(originalText)).toHaveLength(1);
+  });
+
   it("shows repo status when not ready but does not block normal chat", async () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} repoReady={false} agentReady />);
@@ -478,6 +576,22 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe("");
     await waitFor(() => expect(screen.getByText("Worker Antwort aus Cloudflare Route.")).toBeDefined());
     expect(props.onMissionChange).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for unknown intents without calling the Worker", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: "must not be used" } }] }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+
+    fireEvent.change(chatField(), { target: { value: "Unklarer Kontext ohne Auftrag" } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() =>
+      expect(screen.getByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeDefined(),
+    );
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
+    expect(screen.queryByText("must not be used")).toBeNull();
   });
 
   it("loads a GitHub repo as runtime context without writing analysis into the composer", async () => {

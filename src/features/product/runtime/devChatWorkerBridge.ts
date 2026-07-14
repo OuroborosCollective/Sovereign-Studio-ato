@@ -287,6 +287,12 @@ function readWorkerContent(payload: unknown): string | undefined {
   return undefined;
 }
 
+function readOptionalStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === 'string' && field.trim() ? field.trim() : undefined;
+}
+
 function bodySnippet(text: string): string | undefined {
   const clean = text.replace(/\s+/g, ' ').trim();
   return clean ? clean.slice(0, 420) : undefined;
@@ -589,15 +595,15 @@ export async function fetchDevChatWorkerReply(
         return { ok: false, error: 'Worker Chat lieferte keine auswertbare Antwort.', route: SOVEREIGN_WORKER_CHAT, diagnostic };
       }
 
-      const actualModel = (payload as any)?.model || model;
+      const actualModel = readOptionalStringField(payload, 'model') || model;
       return { 
         ok: true, 
         content, 
         route: SOVEREIGN_WORKER_CHAT,
         fallbackUsed: actualModel !== model,
         preferredModel: model,
-        actualModel: actualModel,
-        fallbackReason: (payload as any)?.fallback_reason
+        actualModel,
+        fallbackReason: readOptionalStringField(payload, 'fallback_reason'),
       };
     } catch (error) {
       clearTimeout(timeoutId);
@@ -784,13 +790,13 @@ export async function* streamDevChatWorkerReply(
           const payload = JSON.parse(data) as Record<string, unknown>;
           
           // Check for model metadata in the first chunk or specific metadata chunks
-          const actualModel = (payload as any)?.model;
+          const actualModel = readOptionalStringField(payload, 'model');
           if (actualModel && actualModel !== model && onMetadata) {
             onMetadata({
               fallbackUsed: true,
               preferredModel: model,
-              actualModel: actualModel,
-              fallbackReason: (payload as any)?.fallback_reason,
+              actualModel,
+              fallbackReason: readOptionalStringField(payload, 'fallback_reason'),
             });
           }
 

@@ -8,7 +8,7 @@ import type {
 } from "./devChatWorkerBridge";
 
 export type ChatRole = "system" | "thought" | "user" | "assistant";
-export type RuntimeTier = "ready" | "active" | "blocked";
+export type RuntimeTier = "ready" | "active" | "blocked" | "unknown";
 export type ModuleId =
   | "chat"
   | "init"

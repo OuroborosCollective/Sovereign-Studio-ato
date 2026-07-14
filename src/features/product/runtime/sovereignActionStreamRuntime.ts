@@ -37,6 +37,7 @@ export type SovereignActionKind =
   | 'intent_detected'
   | 'route_selected'
   | 'context_collected'
+  | 'capability_checked'
   | 'llm_request_started'
   | 'llm_response_received'
   | 'answer_ready'

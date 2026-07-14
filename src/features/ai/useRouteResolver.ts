@@ -8,7 +8,7 @@
  * Issue #461
  */
 
-import type { UserApiKeys } from '../product/components/UserKeyManager';
+import type { UserApiKeys } from '../product/runtime/userApiKeysContract';
 import { DEFAULT_ROUTES, getDefaultRoute, type LlmRoute } from './routingConfig';
 
 // ── 5-minute in-memory cache ──────────────────────────────────────────────────
@@ -88,5 +88,5 @@ export async function resolveAllRoutes(): Promise<LlmRoute[]> {
 export function hasUserKeyOverride(routeId: string, userKeys: UserApiKeys): boolean {
   const route = cacheGet(routeId) ?? getDefaultRoute(routeId);
   if (!route?.userKeyOverride) return false;
-  return !!(userKeys as Record<string, string | undefined>)['geminiKey'];
+  return Boolean(userKeys.gemini?.trim());
 }

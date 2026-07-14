@@ -2,15 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Trash2 } from 'lucide-react';
 import '../styles/UserKeyManager.css';
 import { SettingsErrorBoundary } from './SettingsErrorBoundary';
+import type { UserApiKeys } from '../runtime/userApiKeysContract';
 
-export interface UserApiKeys {
-  pollinations?: string;
-  groq?: string;
-  huggingface?: string;
-  together?: string;
-  openrouter?: string;
-  gemini?: string;
-}
+export type { UserApiKeys } from '../runtime/userApiKeysContract';
 
 export interface LlmProviderInfo {
   id: string;
