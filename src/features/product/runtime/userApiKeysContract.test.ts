@@ -11,11 +11,24 @@ describe('User API key runtime contract', () => {
   it('keeps provider runtime modules independent from React component types', () => {
     const validationSource = source('src/features/product/runtime/apiKeyValidation.ts');
     const providerSource = source('src/features/product/runtime/providerRuntimeChecks.ts');
+    const routeResolverSource = source('src/features/ai/useRouteResolver.ts');
+    const hookSource = source('src/features/product/hooks/useUserApiKeys.ts');
+    const contextSource = source('src/features/product/contexts/LlmAdapterContext.tsx');
 
-    expect(validationSource).not.toContain('../components/');
-    expect(providerSource).not.toContain('../components/');
+    for (const runtimeConsumer of [
+      validationSource,
+      providerSource,
+      routeResolverSource,
+      hookSource,
+      contextSource,
+    ]) {
+      expect(runtimeConsumer).not.toContain('components/UserKeyManager');
+    }
     expect(validationSource).toContain("from './userApiKeysContract'");
     expect(providerSource).toContain("from './userApiKeysContract'");
+    expect(routeResolverSource).toContain('runtime/userApiKeysContract');
+    expect(hookSource).toContain('runtime/userApiKeysContract');
+    expect(contextSource).toContain('runtime/userApiKeysContract');
   });
 
   it('supports only the neutral provider-key shape', () => {

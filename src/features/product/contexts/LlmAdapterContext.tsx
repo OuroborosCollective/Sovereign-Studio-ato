@@ -10,7 +10,7 @@ import type { LlmAdapter } from '../llm/llmAdapter';
 import { buildSovereignLlmAdapters } from '../llm/sovereignLlmAdapters';
 import { useUserApiKeys } from '../hooks/useUserApiKeys';
 import type { Card, ProjectSettings } from '../types';
-import type { UserApiKeys } from '../components/UserKeyManager';
+import type { UserApiKeys } from '../runtime/userApiKeysContract';
 
 export interface LlmAdapterContextValue {
   adapters: LlmAdapter[];
