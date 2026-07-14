@@ -7,6 +7,7 @@ TUNNEL_HOME="/var/lib/sovereign-tunnel"
 BINARY="/usr/local/bin/tunnel-client"
 TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
 TUNNEL_PROFILE_SAMPLE="sample_mcp_remote_no_auth"
+DOCTOR_VALIDATOR="$INSTALL_ROOT/bin/validate-tunnel-doctor-report"
 
 fail() {
   printf 'tunnel install blocked: %s\n' "$*" >&2
@@ -52,6 +53,7 @@ for command in python3 runuser systemctl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is required"
 done
 [[ -f "$TUNNEL_SERVICE" ]] || fail "missing $TUNNEL_SERVICE"
+[[ -x "$DOCTOR_VALIDATOR" ]] || fail "missing tunnel doctor validator"
 grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' "$TUNNEL_SERVICE" \
   || fail "installed tunnel service does not use the shared MCP protocol checker"
 if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
@@ -154,10 +156,27 @@ if systemctl is-active --quiet sovereign-openai-tunnel.service; then
 fi
 # Doctor gets an ephemeral loopback listener. The real service still starts with
 # the profile's fixed loopback port below, so runtime port conflicts remain fatal.
-run_as_tunnel_user "$BINARY" doctor \
+# The selected no-auth sample intentionally has no PRMD endpoint. Accept only the
+# exact metadata 404 reported by that profile; every other failed check remains fatal.
+DOCTOR_REPORT="$(mktemp "$TUNNEL_HOME/.doctor-report.XXXXXX")"
+chmod 0600 "$DOCTOR_REPORT"
+if run_as_tunnel_user "$BINARY" doctor \
   --profile "$TUNNEL_PROFILE" \
   --health.listen-addr 127.0.0.1:0 \
-  --explain
+  --json > "$DOCTOR_REPORT"; then
+  DOCTOR_EXIT=0
+else
+  DOCTOR_EXIT=$?
+fi
+if ! "$DOCTOR_VALIDATOR" \
+  "$DOCTOR_REPORT" \
+  "$DOCTOR_EXIT" \
+  "$TUNNEL_PROFILE_SAMPLE"; then
+  rm -f "$DOCTOR_REPORT"
+  fail "tunnel doctor contract validation failed"
+fi
+rm -f "$DOCTOR_REPORT"
+unset DOCTOR_EXIT DOCTOR_REPORT
 systemctl daemon-reload
 systemctl enable sovereign-openai-tunnel.service
 systemctl reset-failed sovereign-openai-tunnel.service || true
