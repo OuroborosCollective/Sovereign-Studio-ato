@@ -21,8 +21,18 @@ fail() {
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "invalid expected revision"
 [[ -n "$IMAGE_REPOSITORY" ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is missing"
 [[ -f "$ENV_FILE" ]] || fail "backend env file is missing"
-install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"
-[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]] || fail "owner input host root is not a regular directory"
+umask 077
+if [[ -e "$OWNER_INPUT_HOST_ROOT" || -L "$OWNER_INPUT_HOST_ROOT" ]]; then
+  [[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]] \
+    || fail "owner input host root is not a regular directory"
+else
+  mkdir -p "$OWNER_INPUT_HOST_ROOT"
+fi
+[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]] \
+  || fail "owner input host root is not a regular directory"
+chmod 0700 "$OWNER_INPUT_HOST_ROOT"
+[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]] \
+  || fail "owner input host root is not writable and searchable"
 
 NEW_IMAGE="${IMAGE_REPOSITORY}@${DIGEST}"
 docker pull "$NEW_IMAGE" >/dev/null
