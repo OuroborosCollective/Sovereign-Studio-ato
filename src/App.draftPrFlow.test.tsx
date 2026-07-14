@@ -37,6 +37,8 @@ vi.mock('./features/product/containers/BuilderContainer', () => ({
       <div data-testid="flow-job-id">{props.agentJob?.jobId || 'none'}</div>
       <div data-testid="flow-job-status">{props.agentJob?.status || 'none'}</div>
       <div data-testid="flow-pr-url">{props.agentJob?.draftPrUrl || 'none'}</div>
+      <div data-testid="flow-repo-ready">{String(props.repoReady)}</div>
+      <div data-testid="flow-repo-reason">{props.repoReason}</div>
       <button
         type="button"
         onClick={() => {
@@ -99,6 +101,48 @@ describe('App Draft-PR runtime flow', () => {
 
     expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1');
     expect(agent.listJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mark a failed persisted job as repository-ready', async () => {
+    agent.listJobs.mockResolvedValue([snapshot({
+      status: 'failed',
+      lastError: 'Clone fehlgeschlagen',
+    })]);
+
+    render(<Provider store={store}><App /></Provider>);
+
+    await waitFor(() => expect(screen.getByTestId('flow-job-status')).toHaveTextContent('failed'));
+    expect(screen.getByTestId('flow-repo-ready')).toHaveTextContent('false');
+    expect(screen.getByTestId('flow-repo-reason')).toHaveTextContent('GitHub-URL direkt im Chat einfügen.');
+  });
+
+  it('preserves the final runtime snapshot status instead of inventing completed state', async () => {
+    agent.listJobs.mockResolvedValue([snapshot()]);
+    agent.prepareDraftPr.mockResolvedValue({
+      ok: true,
+      jobId: 'job-1',
+      draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] },
+    });
+    agent.createDraftPr.mockResolvedValue({
+      ok: true,
+      jobId: 'job-1',
+      draftPrCreate: {
+        allowed: true,
+        status: 'created',
+        prUrl: 'https://github.com/acme/repo/pull/10',
+      },
+    });
+    agent.getJob.mockResolvedValue(snapshot({
+      status: 'validating',
+      draftPrUrl: 'https://github.com/acme/repo/pull/10',
+    }));
+
+    render(<Provider store={store}><App /></Provider>);
+    await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1'));
+    fireEvent.click(screen.getByRole('button', { name: 'Publish existing' }));
+
+    await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/10'));
+    expect(screen.getByTestId('flow-job-status')).toHaveTextContent('validating');
   });
 
   it('restores a persisted job and continues the same job to the confirmed PR URL', async () => {

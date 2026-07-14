@@ -222,7 +222,11 @@ export default function App() {
   };
 
   const agentIsRunning = agentJob.status === 'queued' || agentJob.status === 'provisioning' || agentJob.status === 'running' || agentJob.status === 'validating';
-  const repoReady = Boolean(agentJob.repoUrl && agentJob.status !== 'idle');
+  const repoReady = Boolean(
+    agentJob.repoUrl
+    && agentJob.workspaceId
+    && ['running', 'waiting-for-user', 'validating', 'completed'].includes(agentJob.status),
+  );
   const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
   const runtimeSummary = summarizeSovereignAgentJob(agentJob);
 
@@ -301,14 +305,7 @@ export default function App() {
       const snapshot = await agentClient.getJob(jobId);
       setAgentJob({
         ...snapshot,
-        status: 'completed',
         draftPrUrl: snapshot.draftPrUrl || creation.draftPrCreate.prUrl,
-        events: [...snapshot.events, {
-          at: Date.now(),
-          level: 'success',
-          stage: 'draft-pr-created',
-          message: `GitHub Draft PR erstellt: ${creation.draftPrCreate.prUrl}`,
-        }],
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft-PR-Übergabe fehlgeschlagen.';
