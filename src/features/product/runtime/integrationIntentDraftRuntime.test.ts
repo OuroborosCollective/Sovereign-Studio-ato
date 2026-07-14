@@ -451,6 +451,23 @@ describe('integrationIntentDraftRuntime', () => {
       expect(draft?.title.length).toBeLessThanOrEqual(80);
     });
 
+    it('generates deterministic IDs without Math.random in the live path', () => {
+      const originalRandom = Math.random;
+      Math.random = () => { throw new Error('Math.random must not be called'); };
+
+      try {
+        const first = createIntegrationIntentDraft('Task 1', undefined, { now: 1700000000000 });
+        const second = createIntegrationIntentDraft('Task 1', undefined, { now: 1700000000000 });
+        const different = createIntegrationIntentDraft('Task 2', undefined, { now: 1700000000000 });
+
+        if (!first || !second || !different) throw new Error('Drafts should not be null');
+        expect(first.id).toBe(second.id);
+        expect(first.id).not.toBe(different.id);
+      } finally {
+        Math.random = originalRandom;
+      }
+    });
+
     it('generates deterministic IDs when seed provided', () => {
       const draft1 = createIntegrationIntentDraft('Task 1', undefined, { now: 1700000000000, idSeed: 'det-1' });
       const draft2 = createIntegrationIntentDraft('Task 2', undefined, { now: 1700000000000, idSeed: 'det-2' });
