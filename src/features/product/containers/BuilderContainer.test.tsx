@@ -699,7 +699,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       });
 
-      fireEvent.change(chatField(), { target: { value: 'Erkläre mir die Runtime-Evidence.' } });
+      fireEvent.change(chatField(), { target: { value: 'Can you show me the README?' } });
       fireEvent.click(sendButton());
       await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
 
