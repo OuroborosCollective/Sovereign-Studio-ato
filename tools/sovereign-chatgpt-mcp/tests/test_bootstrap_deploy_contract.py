@@ -59,9 +59,15 @@ def test_tunnel_is_restarted_after_the_new_mcp_passes_protocol_health() -> None:
     assert 'systemctl restart sovereign-openai-tunnel.service' in installer
     assert 'systemctl enable --now sovereign-openai-tunnel.service' not in installer
     assert 'TUNNEL_PROFILE_SAMPLE="sample_mcp_remote_no_auth"' in installer
+    assert 'DOCTOR_VALIDATOR="$INSTALL_ROOT/bin/validate-tunnel-doctor-report"' in installer
     assert '--sample "$TUNNEL_PROFILE_SAMPLE"' in installer
     assert '--health.listen-addr 127.0.0.1:0' in installer
     assert '--health-listen-addr "$TUNNEL_HEALTH_LISTEN_ADDR"' in installer
+    assert '--json > "$DOCTOR_REPORT"' in installer
+    assert '"$DOCTOR_EXIT"' in installer
+    assert '"$TUNNEL_PROFILE_SAMPLE"' in installer
+    assert 'tunnel doctor contract validation failed' in installer
+    assert 'validate-tunnel-doctor-report.py' in full_installer
     assert 'Restart=on-failure' in service
     assert 'StartLimitIntervalSec=60' in service
     assert 'StartLimitBurst=3' in service
