@@ -8,6 +8,8 @@ from flask import Flask, request
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
+from agent_runtime import cognitive_swarm_routes as routes_runtime
+from agent_runtime.cognitive_swarm_agents import SwarmExecutionError
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 
 
@@ -151,6 +153,39 @@ def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
     assert factory.commits == 2
     assert any("INSERT INTO agent_runs" in sql for sql, _ in factory.calls)
     assert any("UPDATE agent_runs" in sql for sql, _ in factory.calls)
+
+
+def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monkeypatch) -> None:
+    async def fail_swarm(*args, **kwargs):
+        raise SwarmExecutionError(
+            stage="dispatcher",
+            family="OPENAI_PERMISSION_DENIED",
+            error_type="PermissionDeniedError",
+            next_action="VERIFY_OPENAI_PROJECT_AND_MODEL_ACCESS",
+            retryable=False,
+            http_status=403,
+            request_id="req-safe-456",
+        )
+
+    monkeypatch.setattr(routes_runtime, "run_cognitive_swarm", fail_swarm)
+    factory = FakeConnectionFactory()
+    client = _app(factory).test_client()
+    response = client.post(
+        "/api/user/agent/swarm/run",
+        json={"mission": "Inspect the bounded runtime state."},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 502
+    assert payload["status"] == "FAILED_RECOVERABLE"
+    assert payload["blocker"] == "OPENAI_PERMISSION_DENIED"
+    assert payload["failureStage"] == "dispatcher"
+    assert payload["httpStatus"] == 403
+    assert payload["requestId"] == "req-safe-456"
+    assert payload["nextAction"] == "VERIFY_OPENAI_PROJECT_AND_MODEL_ACCESS"
+    assert payload["retryable"] is False
+    assert "provider message" not in str(payload)
+    assert any("INSERT INTO agent_failures" in sql for sql, _ in factory.calls)
 
 
 def test_swarm_rejects_secret_shaped_input() -> None:

@@ -17,6 +17,9 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_input_client.py" in workflow
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
+    assert "controller_run_list" in workflow
+    assert "controller_run_status" in workflow
+    assert "controller_run_resume" in workflow
 
 
 def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
@@ -74,3 +77,22 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "if selected_target not in ALLOWED_TARGETS" in client
     assert "owner_input.create_request(" in server
     assert '"llm_can_receive_protected_value": False' in client
+
+
+def test_controller_operator_tools_are_owner_scoped_and_secret_bounded() -> None:
+    server = (ROOT / "server.py").read_text("utf-8")
+    client = (ROOT / "owner_input_client.py").read_text("utf-8")
+
+    assert "ControllerRuntimeClient" in server
+    assert "controller_runtime = ControllerRuntimeClient()" in server
+    assert "def controller_run_list(" in server
+    assert "def controller_run_status(" in server
+    assert "def controller_run_resume(" in server
+    assert "controller_runtime.list_runs(" in server
+    assert "controller_runtime.run_status(" in server
+    assert "controller_runtime.resume_run(" in server
+    assert 'RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")' in client
+    assert "MAX_OPERATOR_EVIDENCE = 250_000" in client
+    assert "Secret-förmige Evidence ist im Operator-Resume verboten" in client
+    assert '"/api/internal/controller/runs/{selected}/resume"' in client
+    assert "timeout=1200" in client

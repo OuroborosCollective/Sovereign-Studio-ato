@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -13,11 +14,70 @@ from typing import Any, Callable
 import requests
 from flask import jsonify, make_response, request
 
+from agent_runtime.cognitive_run_store import (
+    AgentRunIterationLimit,
+    AgentRunNotResumable,
+    AgentRunResumeConflict,
+    claim_agent_run_for_resume,
+)
+from agent_runtime.cognitive_swarm_routes import execute_persisted_swarm
 from security_oauth import _decrypt_token
 
 
 ConnectionFactory = Callable[[], Any]
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_OPERATOR_SECRET_MARKERS = (
+    "sk-proj-",
+    "github_pat_",
+    "ghp_",
+    "authorization: bearer",
+    "begin openssh private key",
+    "begin rsa private key",
+)
+
+
+def _service_authorized() -> bool:
+    expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+    supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
+    return bool(expected and supplied and hmac.compare_digest(expected, supplied))
+
+
+def _operator_contains_secret(value: str) -> bool:
+    normalized = str(value or "").casefold()
+    return any(marker in normalized for marker in _OPERATOR_SECRET_MARKERS)
+
+
+def _operator_owner_user_id(conn: Any) -> str:
+    expected_id = os.getenv("SOVEREIGN_OWNER_ADMIN_ID", "").strip()
+    expected_email = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "").strip().lower()
+    with conn.cursor() as cur:
+        if expected_id:
+            cur.execute("SELECT id::text FROM admin_users WHERE id=%s::uuid LIMIT 1", (expected_id,))
+        elif expected_email:
+            cur.execute("SELECT id::text FROM admin_users WHERE lower(email)=lower(%s) LIMIT 1", (expected_email,))
+        else:
+            raise RuntimeError("Sovereign owner identity is not configured")
+        row = cur.fetchone()
+    if not row:
+        raise LookupError("Configured Sovereign owner was not found")
+    return str(row["id"])
+
+
+def _operator_resume_lease_seconds() -> int:
+    try:
+        configured = int(os.getenv("SOVEREIGN_AGENTS_RESUME_LEASE_SECONDS", "900"))
+    except ValueError:
+        configured = 900
+    return max(30, min(configured, 3600))
+
+
+def _operator_json(payload: dict[str, Any], status: int = 200):
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response, status
+
 
 def _close(conn: Any) -> None:
     close = getattr(conn, "close", None)
@@ -96,6 +156,189 @@ def register_controller_board_routes(
             "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
         )
         return response
+
+    @app.route("/api/internal/controller/runs", methods=["GET"])
+    def operator_controller_runs():
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        try:
+            limit = max(1, min(int(request.args.get("limit") or 20), 100))
+        except ValueError:
+            return _operator_json({"error": "limit is invalid"}, 400)
+        conn = get_connection()
+        try:
+            owner_id = _operator_owner_user_id(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT run_id, session_key, status, source, evidence_id, trace_id,
+                              reason, next_action, mission_summary, iteration_count,
+                              max_iterations, created_at, updated_at,
+                              (lease_token IS NOT NULL AND lease_expires_at > NOW()) AS lease_active
+                       FROM agent_runs WHERE user_id=%s::uuid
+                       ORDER BY updated_at DESC LIMIT %s""",
+                    (owner_id, limit),
+                )
+                rows = [dict(row) for row in cur.fetchall()]
+            return _operator_json({
+                "ok": True,
+                "ownerUserId": owner_id,
+                "runs": [
+                    {key: _iso(value) if key.endswith("_at") else value for key, value in row.items()}
+                    for row in rows
+                ],
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/internal/controller/runs/<run_id>", methods=["GET"])
+    def operator_controller_run_status(run_id: str):
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        conn = get_connection()
+        try:
+            owner_id = _operator_owner_user_id(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT * FROM agent_runs
+                       WHERE run_id=%s AND user_id=%s::uuid LIMIT 1""",
+                    (run_id, owner_id),
+                )
+                run = cur.fetchone()
+                if not run:
+                    return _operator_json({"error": "run not found"}, 404)
+                cur.execute(
+                    """SELECT event_id, task_id, agent_id, type, status, source,
+                              summary, evidence_id, trace_id, next_action, created_at
+                       FROM agent_events WHERE run_id=%s ORDER BY created_at ASC LIMIT 500""",
+                    (run_id,),
+                )
+                events = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """SELECT task_id, agent_id, specialist_role, work_package, status,
+                              source, reason, next_action, tool_call_count, max_tool_calls,
+                              retry_count, max_retries, created_at, updated_at
+                       FROM agent_tasks WHERE run_id=%s ORDER BY created_at ASC LIMIT 200""",
+                    (run_id,),
+                )
+                tasks = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """SELECT failure_id, task_id, agent_id, family, recoverable,
+                              summary, evidence_id, retry_after, created_at, resolved_at
+                       FROM agent_failures WHERE run_id=%s ORDER BY created_at ASC LIMIT 200""",
+                    (run_id,),
+                )
+                failures = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """SELECT approval_id, task_id, kind, status, requested_by_agent,
+                              evidence_id, reason, created_at, decided_at
+                       FROM agent_approvals WHERE run_id=%s ORDER BY created_at ASC LIMIT 100""",
+                    (run_id,),
+                )
+                approvals = [dict(row) for row in cur.fetchall()]
+            normalize = lambda row: {
+                key: _iso(value) if key.endswith("_at") else value
+                for key, value in row.items()
+            }
+            return _operator_json({
+                "ok": True,
+                "run": normalize(dict(run)),
+                "events": [normalize(row) for row in events],
+                "tasks": [normalize(row) for row in tasks],
+                "failures": [normalize(row) for row in failures],
+                "approvals": [normalize(row) for row in approvals],
+                "protectedValuesReturned": False,
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/internal/controller/runs/<run_id>/resume", methods=["POST"])
+    def operator_controller_run_resume(run_id: str):
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        body = request.get_json(force=True) or {}
+        evidence = str(body.get("evidence") or "").strip()
+        if len(evidence) > 250_000:
+            return _operator_json({"error": "evidence exceeds the bounded input limit"}, 400)
+        if _operator_contains_secret(evidence):
+            return _operator_json({"error": "secret-shaped material is forbidden in operator evidence"}, 400)
+        trace_id = f"trace-{uuid.uuid4().hex}"
+        conn = get_connection()
+        try:
+            owner_id = _operator_owner_user_id(conn)
+            claim = claim_agent_run_for_resume(
+                conn,
+                user_id=owner_id,
+                run_id=run_id,
+                supplied_evidence=evidence,
+                trace_id=trace_id,
+                lease_seconds=_operator_resume_lease_seconds(),
+            )
+        except LookupError:
+            return _operator_json({"error": "run not found"}, 404)
+        except AgentRunResumeConflict as exc:
+            return _operator_json({
+                "ok": False,
+                "runId": run_id,
+                "status": "RUNNING",
+                "blocker": "RUN_ALREADY_CLAIMED",
+                "reason": str(exc),
+            }, 409)
+        except AgentRunIterationLimit as exc:
+            return _operator_json({
+                "ok": False,
+                "runId": run_id,
+                "blocker": "RUN_ITERATION_LIMIT_EXHAUSTED",
+                "reason": str(exc),
+            }, 409)
+        except AgentRunNotResumable as exc:
+            return _operator_json({
+                "ok": False,
+                "runId": run_id,
+                "blocker": "RUN_NOT_RESUMABLE",
+                "reason": str(exc),
+            }, 409)
+        finally:
+            _close(conn)
+
+        resume_context = {
+            "persistedRunId": claim.run.run_id,
+            "persistedMissionDigest": claim.run.mission_digest,
+            "previousStatus": claim.run.status,
+            "previousEvidenceId": claim.run.evidence_id,
+            "recoveryTaskId": claim.task_id,
+            "recoveryWorkPackage": claim.work_package,
+            "operatorBridge": True,
+            "protectedValuesReturned": False,
+        }
+        execution_evidence = (
+            "Persisted operator resume context:\n"
+            f"{json.dumps(resume_context, ensure_ascii=False, sort_keys=True)}\n\n"
+            "New bounded operator evidence:\n"
+            f"{evidence or '[no new evidence supplied]'}"
+        )
+        payload, status_code = execute_persisted_swarm(
+            get_connection=get_connection,
+            user_id=owner_id,
+            run_id=claim.run.run_id,
+            trace_id=trace_id,
+            mission=claim.run.mission_summary,
+            evidence=execution_evidence,
+            model=None,
+            task_id=claim.task_id,
+            lease_token=claim.lease_token,
+            response_context={
+                "sessionKey": claim.run.session_key,
+                "resumed": True,
+                "operatorBridge": True,
+                "resumeClaimEvidenceId": claim.evidence_id,
+                "recoveryTask": {
+                    "taskId": claim.task_id,
+                    "workPackage": claim.work_package,
+                    "leaseSeconds": claim.lease_seconds,
+                },
+            },
+        )
+        return _operator_json(payload, status_code)
 
     @app.route("/api/controller/overview", methods=["GET"])
     @require_session

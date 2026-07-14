@@ -9,7 +9,7 @@ from mcp.types import ToolAnnotations
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
-from owner_input_client import OwnerInputClient
+from owner_input_client import ControllerRuntimeClient, OwnerInputClient
 from runtime import OperatorRuntime
 from self_heal import REPAIR_ENGINE
 from sovereign_cognitive_widget import register_sovereign_cognitive_widget
@@ -59,6 +59,7 @@ database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
 android = AndroidHardeningRuntime(runtime._repo, runtime._run, runtime._record_check)
 owner_input = OwnerInputClient()
+controller_runtime = ControllerRuntimeClient()
 
 
 def _cognitive_architecture_status() -> dict[str, Any]:
@@ -101,6 +102,7 @@ mcp = FastMCP(
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
         "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. "
+        "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_list, controller_run_status und controller_run_resume. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Mutierende Host-, GitHub-, Datenbank-, Deploy- und Self-Update-Aktionen dürfen niemals direkt über den eingehenden Broker-Socket ausgeführt werden. Der MCP stellt nur einen validierten Job ein; ein unabhängiger Host-Worker holt ihn von innen ab. Bei IN_PROGRESS lies mcp_host_command_status und reiche den Auftrag nicht erneut ein. "
         "Vor jeder brokerabhängigen Status-, Workflow-, Merge-, Deploy- oder Self-Update-Operation prüfe mcp_control_plane_status. Verwende dessen failure_family unverändert und unterscheide "
         "Socket-Namespace, Pfadtyp, Rechte, Verbindungsverweigerung, Timeout und Protokollantwort. Wiederhole nicht denselben generischen Fix, solange die vorherige Fehlerfamilie nicht durch ihre "
@@ -350,6 +352,24 @@ def owner_approval_request_create(
 def owner_approval_request_status(request_id: str) -> dict[str, Any]:
     """Read only lifecycle metadata for one owner request; protected values are never returned."""
     return owner_input.status(request_id)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def controller_run_list(limit: int = 20) -> dict[str, Any]:
+    """List persisted Agents SDK runs for the configured owner without reading a browser session."""
+    return controller_runtime.list_runs(limit=limit)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def controller_run_status(run_id: str) -> dict[str, Any]:
+    """Read one owner-scoped persisted run with tasks, events, failures and approvals."""
+    return controller_runtime.run_status(run_id=run_id)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def controller_run_resume(run_id: str, evidence: str = "") -> dict[str, Any]:
+    """Resume one eligible owner-scoped run with bounded non-secret runtime evidence."""
+    return controller_runtime.resume_run(run_id=run_id, evidence=evidence)
 
 
 @mcp.tool(annotations=READ_ONLY)
