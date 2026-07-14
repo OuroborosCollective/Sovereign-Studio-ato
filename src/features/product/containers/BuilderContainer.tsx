@@ -307,6 +307,7 @@ const TIER_COLOR: Record<RuntimeTier, string> = {
   ready: C.green,
   active: C.sky,
   blocked: C.rose,
+  unknown: C.amber,
 };
 
 // AppControl module definitions
@@ -3113,33 +3114,45 @@ export function BuilderContainer({
           localRepoLoading,
           localRepoError: Boolean(chatRepoError),
         });
+  const workerHealthReady = workerBlocker?.health?.ok === true;
+  const workerResponseReady = hasScopedWorkerResponse;
   const workerSourceTier: RuntimeTier = workerBlocker
     ? "blocked"
     : chatResponseBusy
       ? "active"
-      : "ready";
+      : workerHealthReady || workerResponseReady
+        ? "ready"
+        : "unknown";
   const runtimeSource = {
     id: "worker-chat",
-    label: workerBlocker ? "Cloudflare Worker blockiert" : "Cloudflare Worker",
+    label: workerBlocker
+      ? "Cloudflare Worker blockiert"
+      : workerSourceTier === "unknown"
+        ? "Cloudflare Worker nicht geprüft"
+        : "Cloudflare Worker",
     tier: workerSourceTier,
-    description: workerBlocker ? workerBlocker.message : SOVEREIGN_WORKER_CHAT,
-    available: !workerBlocker,
+    description: workerBlocker
+      ? workerBlocker.message
+      : workerSourceTier === "unknown"
+        ? "Noch keine Health- oder Response-Evidence für diese Sitzung."
+        : SOVEREIGN_WORKER_CHAT,
+    available: workerHealthReady || workerResponseReady,
   };
   const runtimeSources = [
     runtimeSource,
     {
       id: "worker-kv",
-      label: "Worker KV",
-      tier: "ready" as RuntimeTier,
-      description: SOVEREIGN_WORKER_KV,
-      available: true,
+      label: "Worker KV konfiguriert",
+      tier: "unknown" as RuntimeTier,
+      description: `${SOVEREIGN_WORKER_KV} · keine Sitzungs-Evidence`,
+      available: false,
     },
     {
       id: "worker-models",
-      label: `${DEV_CHAT_WORKER_MODELS.length} Modelle`,
-      tier: "ready" as RuntimeTier,
-      description: DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(" · "),
-      available: true,
+      label: "Modellkatalog konfiguriert",
+      tier: "unknown" as RuntimeTier,
+      description: `${DEV_CHAT_WORKER_MODELS.map((m) => m.label).join(" · ")} · keine vollständige Live-Evidence`,
+      available: false,
     },
     {
       id: "sovereign-agent-runtime",

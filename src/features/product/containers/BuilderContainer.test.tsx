@@ -436,13 +436,16 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Bestätigte Änderungen werden übergeben");
   });
 
-  it("opens runtime source sheet with Cloudflare Worker as the standard LLM route", () => {
+  it("keeps Worker runtime sources unknown until health or response evidence exists", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} agentReady onStartAgent={vi.fn()} />);
     const rtButton = screen.getByRole("button", { name: /RT.*Runtime Quelle/i });
     expect(rtButton).toHaveAttribute("title", "Runtime Quelle");
     fireEvent.click(rtButton);
     expect(screen.getByText("Runtime Quelle")).toBeDefined();
-    expect(screen.getByText("Cloudflare Worker")).toBeDefined();
+    expect(screen.getByText("Cloudflare Worker nicht geprüft")).toBeDefined();
+    expect(screen.getByText("Noch keine Health- oder Response-Evidence für diese Sitzung.")).toBeDefined();
+    expect(screen.getByText("Worker KV konfiguriert")).toBeDefined();
+    expect(screen.getByText("Modellkatalog konfiguriert")).toBeDefined();
     expect(screen.getByText("Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge")).toBeDefined();
   });
 
