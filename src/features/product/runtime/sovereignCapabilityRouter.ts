@@ -31,8 +31,9 @@ const FREE_CHAT_TOKENS = [
   'was ist', 'wie funktioniert', 'erklär', 'was bedeutet', 'was ist das',
   'wie geht', 'was machst', 'was kannst', 'wieso', 'weshalb', 'warum',
   'what is', 'how does', 'explain', 'what does', 'what are', 'how do',
-  'hallo', 'hi', 'hello', 'guten tag', 'good morning',
 ];
+
+const GREETING_PATTERN = /^(?:hallo|hi|hello|guten tag|good morning)(?:[!,.]?\s|[!,.]?$)/i;
 
 const STATUS_QUESTION_TOKENS = [
   'arbeitet er schon', 'läuft das', 'läuft er', 'was macht er',
@@ -116,7 +117,11 @@ export function classifyIntent(text: string): IntentClassification {
     return 'load_repo';
   }
   if (STATUS_QUESTION_TOKENS.some((token) => lower.includes(token))) return 'status_question';
-  if (FREE_CHAT_TOKENS.some((token) => lower.includes(token)) || /\?\s*$/.test(trimmed)) return 'free_chat';
+  if (
+    GREETING_PATTERN.test(trimmed)
+    || FREE_CHAT_TOKENS.some((token) => lower.includes(token))
+    || /\?\s*$/.test(trimmed)
+  ) return 'free_chat';
   if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
   if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) return 'workflow_watch';
   if (DRAFT_PR_TOKENS.some((token) => lower.includes(token))) return 'draft_pr';
