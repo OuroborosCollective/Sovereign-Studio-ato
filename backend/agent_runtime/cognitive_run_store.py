@@ -56,6 +56,7 @@ TERMINAL_RUN_STATUSES: Final[frozenset[str]] = frozenset({
 NON_RESUMABLE_RUN_STATUSES: Final[frozenset[str]] = frozenset({
     *TERMINAL_RUN_STATUSES,
     "READY_FOR_DRAFT_PR",
+    "WAITING_FOR_OWNER",
 })
 
 _ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
@@ -460,6 +461,169 @@ def transition_agent_run(
         "traceId": normalized_trace_id,
         "reason": normalized_reason,
         "nextAction": normalized_next_action,
+    }
+
+
+def request_agent_approval(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    trace_id: str,
+    kind: str,
+    requested_by_agent: str,
+    reason: str,
+    next_action: str,
+    evidence_payload: Mapping[str, object],
+    task_id: str | None = None,
+    protected_input_ref: str | None = None,
+    expected_lease_token: str | None = None,
+) -> dict[str, str]:
+    """Persist one owner approval request and WAITING_FOR_OWNER state atomically."""
+
+    normalized_run_id = _validated_id(run_id, "run_id")
+    normalized_trace_id = _validated_id(trace_id, "trace_id")
+    normalized_kind = _bounded(kind, 120)
+    normalized_agent = _bounded(requested_by_agent, 160)
+    normalized_reason = _bounded(reason, 2000)
+    normalized_next_action = _bounded(next_action, 1000)
+    normalized_protected_ref = _bounded(protected_input_ref, 500) or None
+    if not all((normalized_kind, normalized_agent, normalized_reason, normalized_next_action)):
+        raise ValueError("approval request requires kind, agent, reason and next action")
+
+    safe_payload = dict(evidence_payload)
+    payload_json = _json(safe_payload)
+    evidence_id = _new_id("evidence")
+    approval_id = _new_id("approval")
+    event_id = _new_id("event")
+    if expected_lease_token:
+        lease_clause = "AND lease_token = %s AND lease_expires_at > NOW()"
+        lease_params: tuple[object, ...] = (_digest_text(expected_lease_token),)
+    else:
+        lease_clause = "AND (lease_token IS NULL OR lease_expires_at <= NOW())"
+        lease_params = ()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO agent_evidence (
+                    evidence_id, run_id, task_id, agent_id, source, kind,
+                    summary, sha256, payload
+                ) VALUES (%s, %s, %s, %s, 'agents-sdk', 'owner_approval_request', %s, %s, %s::jsonb)
+                """,
+                (
+                    evidence_id,
+                    normalized_run_id,
+                    task_id,
+                    normalized_agent,
+                    normalized_reason,
+                    _digest_text(payload_json),
+                    payload_json,
+                ),
+            )
+            cur.execute(
+                f"""
+                UPDATE agent_runs
+                SET status = 'WAITING_FOR_OWNER',
+                    source = 'agents-sdk',
+                    evidence_id = %s,
+                    trace_id = %s,
+                    reason = %s,
+                    next_action = %s,
+                    iteration_count = LEAST(iteration_count + 1, max_iterations),
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    resume_task_id = NULL
+                WHERE run_id = %s AND user_id = %s::uuid
+                  {lease_clause}
+                RETURNING run_id
+                """,
+                (
+                    evidence_id,
+                    normalized_trace_id,
+                    normalized_reason,
+                    normalized_next_action,
+                    normalized_run_id,
+                    str(user_id),
+                    *lease_params,
+                ),
+            )
+            if not cur.fetchone():
+                raise LookupError("agent run not found or active resume lease is not held")
+            if task_id:
+                cur.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET status = 'WAITING_FOR_OWNER',
+                        source = 'agents-sdk',
+                        evidence_id = %s,
+                        reason = %s,
+                        next_action = %s
+                    WHERE task_id = %s AND run_id = %s
+                    """,
+                    (
+                        evidence_id,
+                        normalized_reason,
+                        normalized_next_action,
+                        task_id,
+                        normalized_run_id,
+                    ),
+                )
+            cur.execute(
+                """
+                INSERT INTO agent_approvals (
+                    approval_id, run_id, task_id, kind, status,
+                    protected_input_ref, requested_by_agent, evidence_id, reason
+                ) VALUES (%s, %s, %s, %s, 'WAITING_FOR_OWNER', %s, %s, %s, %s)
+                """,
+                (
+                    approval_id,
+                    normalized_run_id,
+                    task_id,
+                    normalized_kind,
+                    normalized_protected_ref,
+                    normalized_agent,
+                    evidence_id,
+                    normalized_reason,
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO agent_events (
+                    event_id, run_id, task_id, agent_id, type, status, source,
+                    summary, evidence_id, trace_id, next_action
+                ) VALUES (%s, %s, %s, %s, 'owner_approval_requested',
+                          'WAITING_FOR_OWNER', 'agents-sdk', %s, %s, %s, %s)
+                """,
+                (
+                    event_id,
+                    normalized_run_id,
+                    task_id,
+                    normalized_agent,
+                    normalized_reason,
+                    evidence_id,
+                    normalized_trace_id,
+                    normalized_next_action,
+                ),
+            )
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+
+    return {
+        "runId": normalized_run_id,
+        "status": "WAITING_FOR_OWNER",
+        "source": "agents-sdk",
+        "evidenceId": evidence_id,
+        "traceId": normalized_trace_id,
+        "reason": normalized_reason,
+        "nextAction": normalized_next_action,
+        "approvalId": approval_id,
+        "approvalKind": normalized_kind,
     }
 
 

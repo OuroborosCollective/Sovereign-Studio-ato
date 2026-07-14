@@ -10,11 +10,19 @@ APP = BACKEND / "app.py"
 DOCKERFILE = BACKEND / "Dockerfile"
 RUN_STORE = BACKEND / "agent_runtime" / "cognitive_run_store.py"
 SWARM_ROUTES = BACKEND / "agent_runtime" / "cognitive_swarm_routes.py"
+CANONICAL_RUNTIME = BACKEND.parents[1] / "backend" / "agent_runtime"
+CANONICAL_RUN_STORE = CANONICAL_RUNTIME / "cognitive_run_store.py"
+CANONICAL_SWARM_ROUTES = CANONICAL_RUNTIME / "cognitive_swarm_routes.py"
 
 
 def test_controller_module_has_valid_python_syntax() -> None:
     for path in (CONTROLLER, RUN_STORE, SWARM_ROUTES):
         ast.parse(path.read_text("utf-8"), filename=str(path))
+
+
+def test_canonical_and_deployed_agent_runtime_are_byte_identical() -> None:
+    assert RUN_STORE.read_bytes() == CANONICAL_RUN_STORE.read_bytes()
+    assert SWARM_ROUTES.read_bytes() == CANONICAL_SWARM_ROUTES.read_bytes()
 
 
 def test_controller_board_is_registered_in_the_real_backend() -> None:
