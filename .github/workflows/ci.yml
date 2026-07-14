@@ -106,6 +106,12 @@ jobs:
             command: pnpm exec vitest run src/features/product/runtime/sovereignActionStreamRuntime.test.ts
           - gate: product-runtime-neighbors
             command: pnpm exec vitest run src/features/product/runtime
+          - gate: preset-route-neighbor
+            command: pnpm exec vitest run src/features/product/runtime/sovereignPresetDirectPatchRoute.test.ts
+          - gate: predictive-action-neighbors
+            command: pnpm exec vitest run src/features/product/runtime/sovereignPredictiveActionRuntime.test.ts src/features/product/runtime/sovereignPredictiveSystemRuntime.test.ts src/features/product/runtime/sovereignPredictiveRuntimePolicy.test.ts
+          - gate: agent-action-neighbors
+            command: pnpm exec vitest run src/features/product/runtime/sovereignAgentActionStreamBridge.test.ts src/features/product/runtime/sovereignAgentRuntimeE2E.test.ts src/features/product/runtime/sovereignCompactShortcutExecutionRuntime.test.ts
           - gate: product-surface-neighbors
             command: pnpm exec vitest run src/features/product/components src/features/product/hooks src/features/product/contexts
           - gate: github-feature-tests
