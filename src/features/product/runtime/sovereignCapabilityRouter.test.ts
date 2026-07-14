@@ -91,6 +91,9 @@ describe('Sovereign Capability Router', () => {
       expect(classifyIntent('Erkläre mir einen Workflow')).toBe('free_chat');
       expect(classifyIntent('Hi, wie geht es dir?')).toBe('free_chat');
       expect(classifyIntent('Aktualisiere README und Docs anhand der Architektur.')).toBe('direct_patch');
+      expect(classifyIntent('Kannst du einen Draft PR erstellen?')).toBe('draft_pr');
+      expect(classifyIntent('Can you update the README?')).toBe('direct_patch');
+      expect(classifyIntent('Kannst du den Workflow reparieren?')).toBe('repair_workflow');
     });
   });
 
