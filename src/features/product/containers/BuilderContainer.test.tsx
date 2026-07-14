@@ -1,9 +1,10 @@
 import React from "react";
 import { Provider } from "react-redux";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuilderContainer } from "./BuilderContainer";
 import * as areInferenceApi from "../../inference/areInferenceApi";
+import type { AreInferenceResult } from "../../inference/areInferenceApi";
 import { useToolchainStore } from "../../toolchain/useToolchainStore";
 import { useUserStore } from "../../user/useUserStore";
 import { useSovereignToolInspectionStore } from "../runtime/sovereignToolInspectionRuntime";
@@ -101,6 +102,100 @@ function fakeGitHubPat(): string {
     'YZabcdef',
     '0123456789',
   ].join('');
+}
+
+function workerHealthResponse(ok = true): Response {
+  return jsonResponse({
+    ok,
+    provider: 'sovereign-llm-bridge',
+    gateway: 'gatter',
+    model: 'health-evidence-model',
+    upstreamConfigured: ok,
+    secretConfigured: ok,
+  }, ok ? 200 : 503);
+}
+
+function runtimeSupportResponse(url: string): Response | null {
+  if (url.includes('/api/toolchain/user-tools')) {
+    return jsonResponse({ tools: [], allowed_repos: [], rules: {} });
+  }
+  if (url.includes('/api/toolchain/universal/manifest')) {
+    return jsonResponse({
+      name: 'test-universal-toolchain',
+      version: 'test',
+      runtime: 'embedded',
+      tools: [],
+      policy: {
+        autoLoad: true,
+        pushToMain: false,
+        draftPrOnly: true,
+        confirmRequired: true,
+        arbitraryShell: false,
+        directProductionRunner: false,
+        directGithubToken: false,
+        auditEvidence: true,
+      },
+    });
+  }
+  if (url.includes('/api/toolchain/skills/list')) return jsonResponse({ skills: [] });
+  return null;
+}
+
+function localAreInferenceResult(onlineAvailable = true): AreInferenceResult {
+  return {
+    ok: true,
+    schemaVersion: 1,
+    stateHash: 'a'.repeat(64),
+    state: {
+      schemaVersion: 1,
+      promptSha256: 'b'.repeat(64),
+      repository: {
+        owner: 'OuroborosCollective',
+        repo: 'Sovereign-Studio-ato',
+        branch: 'main',
+        repositoryRevision: 'c'.repeat(40),
+        files: [],
+        evidenceComplete: true,
+      },
+      knowledgeRevision: 'd'.repeat(64),
+      experienceRevision: 'e'.repeat(64),
+      embeddingModelHash: 'f'.repeat(64),
+      activeCapabilities: [],
+      onlineAvailable,
+    },
+    decision: 'local',
+    adapter: 'test-local',
+    confidence: 1,
+    knowledgeConfidence: 0,
+    experienceConfidence: 0,
+    selectedKnowledgeIds: [],
+    selectedPatternIds: [],
+    knowledgeContext: '',
+    experienceContext: '',
+    knowledgeResults: [],
+    experienceResults: [],
+    reasons: ['test_local_route'],
+    blockers: {},
+    deterministic: true,
+  };
+}
+
+function setRuntimeTestUser(): () => void {
+  const originalRefreshUser = useUserStore.getState().refreshUser;
+  useUserStore.setState({
+    user: {
+      id: 'runtime-health-user',
+      email: 'runtime-health@example.com',
+      displayName: 'Runtime Health',
+      role: 'user',
+      credits: 100,
+      subscriptionStatus: 'free',
+      isBanned: false,
+      createdAt: 1,
+    },
+    refreshUser: vi.fn(async () => undefined),
+  });
+  return () => useUserStore.setState({ refreshUser: originalRefreshUser });
 }
 
 const TEST_REPO_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato';
@@ -528,6 +623,144 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     } finally {
       rejectInference?.(new Error('Health evidence assertion completed.'));
       useUserStore.setState({ refreshUser: originalRefreshUser });
+    }
+  });
+
+  it("preserves a second composer message when another submit owns the lock", async () => {
+    const restoreUser = setRuntimeTestUser();
+    let rejectInference: ((reason?: unknown) => void) | null = null;
+    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
+      () => new Promise<never>((_resolve, reject) => { rejectInference = reject; }),
+    );
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.endsWith('/health')) return workerHealthResponse();
+      return runtimeSupportResponse(url)
+        ?? jsonResponse({ choices: [{ message: { content: 'Worker response must remain pending.' } }] });
+    }));
+
+    try {
+      renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady />);
+      fireEvent.change(chatField(), { target: { value: 'Erkläre mir die Runtime-Evidence.' } });
+      fireEvent.click(sendButton());
+      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
+
+      const secondMessage = 'Diese zweite Nachricht darf nicht verloren gehen.';
+      fireEvent.change(chatField(), { target: { value: secondMessage } });
+      fireEvent.click(sendButton());
+
+      expect(chatField().value).toBe(secondMessage);
+    } finally {
+      await act(async () => {
+        rejectInference?.(new Error('Composer lock assertion completed.'));
+        await Promise.resolve();
+      });
+      restoreUser();
+    }
+  });
+
+  it("retries a pending write intent after a competing submit releases the lock", async () => {
+    const restoreUser = setRuntimeTestUser();
+    let resolveInference: ((result: AreInferenceResult) => void) | null = null;
+    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
+      () => new Promise<AreInferenceResult>((resolve) => { resolveInference = resolve; }),
+    );
+    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.includes('/git/trees/')) {
+        return jsonResponse({ sha: 'tree-sha', tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }] });
+      }
+      if (url.endsWith('/health')) return workerHealthResponse();
+      if (url === 'https://api.github.com/user') return jsonResponse({ login: 'octo' });
+      if (url === 'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato') {
+        return jsonResponse({ permissions: { push: true } });
+      }
+      return runtimeSupportResponse(url)
+        ?? jsonResponse({ choices: [{ message: { content: 'Worker response.' } }] });
+    }));
+
+    try {
+      renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+      await loadRepoFromChat();
+
+      const pendingMessage = 'Sovereign Agent soll Feature X implementieren';
+      fireEvent.change(chatField(), { target: { value: pendingMessage } });
+      fireEvent.click(sendButton());
+      await waitFor(() =>
+        expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(2),
+      );
+      expect(props.onStartAgent).not.toHaveBeenCalled();
+
+      // The gate UI is rendered before the originating serialized submit releases
+      // its ref lock. Yield one task so this test starts the competing inference
+      // submit intentionally instead of racing that first submit's finally block.
+      await act(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
+      fireEvent.change(chatField(), { target: { value: 'Can you show me the README?' } });
+      fireEvent.click(sendButton());
+      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
+
+      fireEvent.click(screen.getAllByText('Zugang eingeben')[0]);
+      fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
+      fireEvent.click(screen.getByText('Übernehmen'));
+      await waitFor(() => expect(screen.getByText(/GitHub-Zugang ist bereit/i)).toBeDefined());
+      expect(props.onStartAgent).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveInference?.(localAreInferenceResult());
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+      expect(props.onStartAgent.mock.calls[0][0]).toContain(pendingMessage);
+    } finally {
+      await act(async () => {
+        resolveInference?.(localAreInferenceResult());
+        await Promise.resolve();
+      });
+      restoreUser();
+    }
+  });
+
+  it("replaces successful Worker health evidence with the latest failed check", async () => {
+    const restoreUser = setRuntimeTestUser();
+    vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
+      (input) => Promise.resolve(localAreInferenceResult(input.onlineAvailable)),
+    );
+    let healthChecks = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.endsWith('/health')) {
+        healthChecks += 1;
+        return workerHealthResponse(healthChecks === 1);
+      }
+      return runtimeSupportResponse(url)
+        ?? jsonResponse({ choices: [{ message: { content: 'Worker response.' } }] });
+    }));
+
+    try {
+      renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady />);
+      fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Health-State.' } });
+      fireEvent.click(sendButton());
+      await waitFor(() =>
+        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(1),
+      );
+
+      fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Health-State.' } });
+      fireEvent.click(sendButton());
+      await waitFor(() =>
+        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(2),
+      );
+      expect(healthChecks).toBe(2);
+
+      fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
+      await waitFor(() => expect(screen.getByText('Cloudflare Worker nicht geprüft')).toBeDefined());
+      expect(screen.getByText('Noch keine Health- oder Response-Evidence für diese Sitzung.')).toBeDefined();
+    } finally {
+      restoreUser();
     }
   });
 

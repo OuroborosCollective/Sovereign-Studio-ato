@@ -35,6 +35,18 @@ const FREE_CHAT_TOKENS = [
 
 const GREETING_PATTERN = /^(?:hallo|hi|hello|guten tag|good morning)(?:[!,.]?\s|[!,.]?$)/i;
 
+const READ_ONLY_REQUEST_PATTERN =
+  /^(?:(?:can|could|would)\s+you\s+(?:show|tell|explain|describe|summarize|inspect|read|list)\b|(?:show|tell|explain|describe|summarize|inspect|read|list)\b|(?:kannst|könntest)\s+du\s+(?:(?:mir|uns)\s+)?(?:zeig|sag|erklär|beschreib|fass|lies|list)|(?:zeig|sag|erklär|beschreib|fass|lies|list))/i;
+
+const ENGLISH_MUTATION_PATTERN =
+  /\b(?:add|apply|build|change|create|delete|deploy|edit|fix|implement|merge|modify|patch|publish|refactor|remove|repair|replace|update|write)\b/i;
+
+const GERMAN_MUTATION_STEMS = [
+  'füg', 'hinzufüg', 'bau', 'änder', 'aktualisier', 'erstell', 'lösch',
+  'implementier', 'veröffentlich', 'refaktor', 'entfern', 'reparier',
+  'beheb', 'ersetz', 'schreib', 'mach',
+];
+
 const STATUS_QUESTION_TOKENS = [
   'arbeitet er schon', 'läuft das', 'läuft er', 'was macht er',
   'sehe nichts', 'status?', 'ist er fertig', 'hat er angefangen',
@@ -109,6 +121,16 @@ function hasExplicitAgentIntent(text: string): boolean {
   return SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token));
 }
 
+function hasExplicitMutationIntent(lower: string): boolean {
+  return ENGLISH_MUTATION_PATTERN.test(lower)
+    || GERMAN_MUTATION_STEMS.some((stem) => lower.includes(stem));
+}
+
+function isReadOnlyRequest(trimmed: string, lower: string): boolean {
+  if (READ_ONLY_REQUEST_PATTERN.test(trimmed)) return true;
+  return /\?\s*$/.test(trimmed) && !hasExplicitMutationIntent(lower);
+}
+
 export function classifyIntent(text: string): IntentClassification {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
@@ -121,8 +143,9 @@ export function classifyIntent(text: string): IntentClassification {
     GREETING_PATTERN.test(trimmed)
     || FREE_CHAT_TOKENS.some((token) => lower.includes(token))
   ) return 'free_chat';
-  if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
   if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) return 'workflow_watch';
+  if (isReadOnlyRequest(trimmed, lower)) return 'free_chat';
+  if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
   if (DRAFT_PR_TOKENS.some((token) => lower.includes(token))) return 'draft_pr';
 
   const hasDirectPatchKeyword = DIRECT_PATCH_TOKENS.some((token) => lower.includes(token));
@@ -132,7 +155,6 @@ export function classifyIntent(text: string): IntentClassification {
   if (SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
-  if (/\?\s*$/.test(trimmed)) return 'free_chat';
   return 'unknown';
 }
 
