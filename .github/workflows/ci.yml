@@ -92,6 +92,10 @@ jobs:
             command: pnpm run type-check
           - gate: release-tests
             command: pnpm run test:release-gate
+          - gate: smoke-tests
+            command: pnpm run test:smoke
+          - gate: integration-tests
+            command: pnpm run test:integration
           - gate: web-build
             command: pnpm run build:web
           - gate: capability-router-tests
