@@ -3,6 +3,7 @@ import { Provider } from "react-redux";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuilderContainer } from "./BuilderContainer";
+import * as areInferenceApi from "../../inference/areInferenceApi";
 import { useUserStore } from "../../user/useUserStore";
 import { useSovereignToolInspectionStore } from "../runtime/sovereignToolInspectionRuntime";
 import { store } from "../../../store";
@@ -147,6 +148,7 @@ beforeEach(() => {
 afterEach(() => {
   useUserStore.getState().clearUser();
   window.localStorage.clear();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -447,6 +449,63 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Worker KV konfiguriert")).toBeDefined();
     expect(screen.getByText("Modellkatalog konfiguriert")).toBeDefined();
     expect(screen.getByText("Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge")).toBeDefined();
+  });
+
+  it("promotes the Worker source only after successful session health evidence", async () => {
+    const originalRefreshUser = useUserStore.getState().refreshUser;
+    let rejectInference: ((reason?: unknown) => void) | null = null;
+    vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
+      () => new Promise<never>((_resolve, reject) => { rejectInference = reject; }),
+    );
+    useUserStore.setState({
+      user: {
+        id: 'runtime-health-user',
+        email: 'runtime-health@example.com',
+        displayName: 'Runtime Health',
+        role: 'user',
+        credits: 100,
+        subscriptionStatus: 'free',
+        isBanned: false,
+        createdAt: 1,
+      },
+      refreshUser: vi.fn(async () => undefined),
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.endsWith('/health')) {
+        return jsonResponse({
+          ok: true,
+          provider: 'sovereign-llm-bridge',
+          gateway: 'gatter',
+          model: 'health-evidence-model',
+          upstreamConfigured: true,
+          secretConfigured: true,
+        });
+      }
+      if (url.includes('/api/toolchain/user-tools')) {
+        return jsonResponse({ tools: [], allowed_repos: [], rules: {} });
+      }
+      if (url.includes('/api/toolchain/universal/manifest')) return jsonResponse({});
+      if (url.includes('/api/toolchain/skills/list')) return jsonResponse({ skills: [] });
+      return jsonResponse({ choices: [{ message: { content: 'Worker response must remain pending.' } }] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady />);
+      fireEvent.change(chatField(), { target: { value: 'Was bedeutet Runtime-Evidence?' } });
+      fireEvent.click(sendButton());
+
+      await waitFor(() =>
+        expect(fetchMock.mock.calls.some(([input]) => requestUrl(input as RequestInfo | URL).endsWith('/health'))).toBe(true),
+      );
+      fireEvent.click(screen.getByRole("button", { name: /RT.*Runtime Quelle/i }));
+      await waitFor(() => expect(screen.getByText("Cloudflare Worker")).toBeDefined());
+      expect(screen.queryByText("Cloudflare Worker nicht geprüft")).toBeNull();
+    } finally {
+      rejectInference?.(new Error('Health evidence assertion completed.'));
+      useUserStore.setState({ refreshUser: originalRefreshUser });
+    }
   });
 
   it("starts the external agent only for explicit code or Draft-PR execution intent", async () => {
