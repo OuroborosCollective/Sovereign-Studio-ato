@@ -120,7 +120,6 @@ export function classifyIntent(text: string): IntentClassification {
   if (
     GREETING_PATTERN.test(trimmed)
     || FREE_CHAT_TOKENS.some((token) => lower.includes(token))
-    || /\?\s*$/.test(trimmed)
   ) return 'free_chat';
   if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
   if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) return 'workflow_watch';
@@ -133,6 +132,7 @@ export function classifyIntent(text: string): IntentClassification {
   if (SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
+  if (/\?\s*$/.test(trimmed)) return 'free_chat';
   return 'unknown';
 }
 
