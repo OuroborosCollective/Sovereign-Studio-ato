@@ -149,7 +149,7 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
     }
   }, [code]);
 
-  const label = copied ? 'Kopiert!' : 'Code kopieren';
+  const label = copied ? 'Copied!' : 'Copy code';
 
   return (
     <button
@@ -168,7 +168,7 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
         transition: 'all 0.15s ease',
       }}
     >
-      {copied ? '✓ Kopiert' : 'Kopieren'}
+      {copied ? '✓ Copied' : 'Copy'}
     </button>
   );
 });
@@ -177,15 +177,24 @@ const CopyButton = React.memo(function CopyButton({ code }: { code: string }) {
  * Code block with scroll and copy
  */
 const CodeBlockView = React.memo(function CodeBlockView({ language, code }: { language: string; code: string }) {
+  const ariaLabel = `Code block (${language})`;
   return (
     <div style={{ margin: '8px 0', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', background: C.codeBg, borderBottom: `1px solid ${C.border}` }}>
-        <span style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}>
+        <span
+          style={{ fontSize: 11, color: C.textSub, fontFamily: 'monospace' }}
+          title={`Language: ${language}`}
+        >
           {language}
         </span>
         <CopyButton code={code} />
       </div>
-      <pre style={{ margin: 0, padding: '12px', background: C.codeBg, overflowX: 'auto', fontSize: 12, fontFamily: 'monospace', color: C.text, lineHeight: 1.5, maxHeight: 300 }}>
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label={ariaLabel}
+        style={{ margin: 0, padding: '12px', background: C.codeBg, overflowX: 'auto', fontSize: 12, fontFamily: 'monospace', color: C.text, lineHeight: 1.5, maxHeight: 300 }}
+      >
         <code>{code}</code>
       </pre>
     </div>
