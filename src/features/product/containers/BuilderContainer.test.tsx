@@ -692,6 +692,13 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       );
       expect(props.onStartAgent).not.toHaveBeenCalled();
 
+      // The gate UI is rendered before the originating serialized submit releases
+      // its ref lock. Yield one task so this test starts the competing inference
+      // submit intentionally instead of racing that first submit's finally block.
+      await act(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      });
+
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir die aktuelle Runtime.' } });
       fireEvent.click(sendButton());
       await waitFor(() => expect(inferenceSpy).toHaveBeenCalledOnce());
