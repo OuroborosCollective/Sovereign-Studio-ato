@@ -21,6 +21,7 @@ from .cognitive_run_store import (
     list_resumable_agent_runs,
     read_agent_run,
     record_agent_failure,
+    request_agent_approval,
     transition_agent_run,
 )
 from .cognitive_swarm_agents import run_cognitive_swarm
@@ -144,6 +145,7 @@ def _execute_persisted_swarm(
             else "PROVIDE_MISSING_EVIDENCE_OR_PROTECTED_CONFIGURATION"
         )
         final_verdict = result.get("finalVerdict") if isinstance(result.get("finalVerdict"), dict) else {}
+        approval_required = ready and bool(final_verdict.get("human_approval_required", True))
         evidence_payload = {
             "resultStatus": final_status,
             "ok": ready,
@@ -154,22 +156,41 @@ def _execute_persisted_swarm(
         }
         conn = get_connection()
         try:
-            final_state = transition_agent_run(
-                conn,
-                user_id=user_id,
-                run_id=run_id,
-                status=final_status,
-                source="agents-sdk",
-                trace_id=trace_id,
-                reason=reason,
-                next_action=next_action,
-                evidence_kind="judge_verdict",
-                evidence_summary=reason,
-                evidence_payload=evidence_payload,
-                agent_id="judge",
-                task_id=task_id,
-                expected_lease_token=lease_token,
-            )
+            if approval_required:
+                final_state = request_agent_approval(
+                    conn,
+                    user_id=user_id,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    kind="draft_pr_readiness",
+                    requested_by_agent="judge",
+                    reason="Judge accepted the evidence; active user approval is required before Draft-PR readiness.",
+                    next_action="OWNER_APPROVAL_REQUIRED_FOR_DRAFT_PR",
+                    evidence_payload={
+                        **evidence_payload,
+                        "judgeReady": True,
+                        "ownerApprovalRequired": True,
+                    },
+                    task_id=task_id,
+                    expected_lease_token=lease_token,
+                )
+            else:
+                final_state = transition_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=run_id,
+                    status=final_status,
+                    source="agents-sdk",
+                    trace_id=trace_id,
+                    reason=reason,
+                    next_action=next_action,
+                    evidence_kind="judge_verdict",
+                    evidence_summary=reason,
+                    evidence_payload=evidence_payload,
+                    agent_id="judge",
+                    task_id=task_id,
+                    expected_lease_token=lease_token,
+                )
         finally:
             _close_connection(conn)
     except Exception as exc:
@@ -228,7 +249,11 @@ def _execute_persisted_swarm(
             **(response_context or {}),
         }, 502)
 
-    status_code = 200 if final_state["status"] == "READY_FOR_DRAFT_PR" else 503
+    status_code = (
+        202 if final_state["status"] == "WAITING_FOR_OWNER"
+        else 200 if final_state["status"] == "READY_FOR_DRAFT_PR"
+        else 503
+    )
     return ({
         "runtime": "openai-agents-sdk",
         **result,
@@ -239,6 +264,8 @@ def _execute_persisted_swarm(
         "evidenceId": final_state["evidenceId"],
         "reason": final_state["reason"],
         "nextAction": final_state["nextAction"],
+        "approvalId": final_state.get("approvalId"),
+        "approvalKind": final_state.get("approvalKind"),
         **(response_context or {}),
     }, status_code)
 

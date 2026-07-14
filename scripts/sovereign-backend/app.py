@@ -43,6 +43,7 @@ from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
+from controller_board import register_controller_board_routes
 
 # GitHub App integration (Marketplace)
 try:
@@ -6104,6 +6105,11 @@ register_owner_input_routes(
     require_admin=require_admin,
     get_connection=get_agent_runtime_connection,
     get_current_admin=get_current_admin,
+)
+register_controller_board_routes(
+    app,
+    require_session=require_session,
+    get_connection=get_agent_runtime_connection,
 )
 register_are_inference_routes(
     app,
