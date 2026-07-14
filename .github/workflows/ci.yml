@@ -80,6 +80,41 @@ jobs:
         name: www-dist
         path: dist/
         retention-days: 1
+  src-diagnostics:
+    name: Src Diagnostic — ${{ matrix.gate }}
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: typecheck
+            command: pnpm run type-check
+          - gate: release-tests
+            command: pnpm run test:release-gate
+          - gate: web-build
+            command: pnpm run build:web
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Install pnpm
+      shell: bash
+      run: |
+        npm install -g pnpm@${PNPM_VERSION}
+        pnpm --version
+    - name: Install Dependencies
+      run: pnpm install
+    - name: Run ${{ matrix.gate }}
+      run: ${{ matrix.command }}
+      env:
+        CI: true
+
   backend-tests:
     name: Backend OAuth Security Tests (Live Path)
     runs-on: ubuntu-latest
