@@ -219,7 +219,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     await loadRepoFromChat();
     fireEvent.click(screen.getByRole("button", { name: /^Changed:/ }));
-    expect(screen.getByText("src/App.tsx")).toBeDefined();
+    await waitFor(() => expect(screen.getByText("src/App.tsx")).toBeDefined());
     fireEvent.click(screen.getByLabelText("Schließen"));
     fireEvent.click(screen.getByRole("button", { name: /^Draft PR:/ }));
     expect(screen.getByText("Draft PR öffnen")).toBeDefined();
