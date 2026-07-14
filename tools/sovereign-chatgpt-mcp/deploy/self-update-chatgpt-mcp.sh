@@ -8,6 +8,7 @@ STATE_DIR="${SOVEREIGN_MCP_SELF_UPDATE_STATE_DIR:-/var/lib/sovereign-chatgpt-sel
 STATUS_FILE="$STATE_DIR/status.json"
 INSTALLER="$SOURCE_DIR/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
 BROKER_ENV="/opt/sovereign-chatgpt-tools/broker.env"
+SELF_UPDATE_TUNNEL_MODE="${SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE:-disabled}"
 
 mkdir -p "$STATE_DIR"
 chmod 0750 "$STATE_DIR"
@@ -84,7 +85,9 @@ recover_control_plane() {
         up -d --no-build --force-recreate sovereign-chatgpt-mcp
     fi
   fi
-  systemctl restart sovereign-openai-tunnel.service
+  if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
+    systemctl restart sovereign-openai-tunnel.service
+  fi
   set -e
 }
 
@@ -100,6 +103,10 @@ trap on_error ERR
 [[ -f "$REQUEST_FILE" ]] || { write_status FAILED "" "request file missing"; exit 1; }
 [[ -d "$SOURCE_DIR/.git" ]] || { write_status FAILED "" "source repository missing"; exit 1; }
 [[ -f "$BROKER_ENV" ]] || { write_status FAILED "" "broker environment missing"; exit 1; }
+[[ "$SELF_UPDATE_TUNNEL_MODE" =~ ^(disabled|required)$ ]] || {
+  write_status FAILED "" "SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE must be disabled or required"
+  exit 1
+}
 
 EXPECTED_REVISION="$(python3 - "$REQUEST_FILE" <<'PY'
 import json
@@ -149,7 +156,7 @@ CURRENT_STAGE="install_control_plane"
 write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and broker from the CI-built immutable image"
 INSTALL_LOG="$(mktemp)"
 if ! SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" \
-  SOVEREIGN_MCP_REQUIRE_TUNNEL=1 \
+  SOVEREIGN_MCP_TUNNEL_MODE="$SELF_UPDATE_TUNNEL_MODE" \
   bash "$INSTALLER" >"$INSTALL_LOG" 2>&1; then
   INSTALL_DETAIL="$(grep -E '^install blocked: stage=' "$INSTALL_LOG" | tail -n 1 | tr -d '\r\n' | cut -c1-1200 || true)"
   recover_control_plane
@@ -167,8 +174,16 @@ docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Hea
 docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock
 docker exec sovereign-chatgpt-mcp python -c 'import server; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
 docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
-systemctl is-active --quiet sovereign-openai-tunnel.service
+if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
+  CURRENT_STAGE="verify_required_tunnel"
+  systemctl is-active --quiet sovereign-openai-tunnel.service
+fi
 
 CURRENT_STAGE="completed"
-write_status UPDATED "$EXPECTED_REVISION" "private ChatGPT MCP, host command worker, broker RPC, protocol handshake and tunnel verified"
+if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then
+  COMPLETION_DETAIL="private ChatGPT MCP, host command worker, broker RPC, protocol handshake and required tunnel verified"
+else
+  COMPLETION_DETAIL="private ChatGPT MCP, host command worker, broker RPC and protocol handshake verified; tunnel not required"
+fi
+write_status UPDATED "$EXPECTED_REVISION" "$COMPLETION_DETAIL"
 rm -f "$REQUEST_FILE"
