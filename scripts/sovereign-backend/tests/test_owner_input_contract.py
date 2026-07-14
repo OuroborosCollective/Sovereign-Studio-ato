@@ -46,7 +46,9 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
 
 
 def test_backend_deploy_keeps_global_secure_mount_read_only_and_only_owner_subdir_writable() -> None:
-    deploy = (ROOT.parent.parent / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    repository_root = ROOT.parent.parent
+    deploy = (repository_root / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    workflow = (repository_root / ".github" / "workflows" / "sovereign-agent-backend.yml").read_text("utf-8")
 
     assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in deploy
     assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"' in deploy
@@ -59,3 +61,7 @@ def test_backend_deploy_keeps_global_secure_mount_read_only_and_only_owner_subdi
     assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
     assert ':/opt/secure/owner-managed:rw' not in deploy
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
+    assert 'OWNER_INPUT_ROOT="/opt/sovereign-owner-managed"' in workflow
+    assert 'if [ ! -d "$OWNER_INPUT_ROOT" ] || [ -L "$OWNER_INPUT_ROOT" ]; then' in workflow
+    assert workflow.count('--volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw"') == 2
+    assert workflow.count("--volume /opt/secure:/opt/secure:ro") == 2
