@@ -94,6 +94,12 @@ jobs:
             command: pnpm run test:release-gate
           - gate: web-build
             command: pnpm run build:web
+          - gate: capability-router-tests
+            command: pnpm exec vitest run src/features/product/runtime/sovereignCapabilityRouter.test.ts
+          - gate: builder-container-tests
+            command: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx
+          - gate: action-stream-tests
+            command: pnpm exec vitest run src/features/product/runtime/sovereignActionStreamRuntime.test.ts
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
