@@ -1295,6 +1295,24 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByRole('menuitem', { name: 'GitHub Access' }).getAttribute('title')).toContain('Zugang fehlt');
   });
 
+  it("serializes rapid duplicate preset submits before React busy state is visible", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} />);
+    await loadRepoFromChat();
+    const callsBeforePreset = nonAuthFetchCalls(fetchMock).length;
+    const presetButton = screen.getByRole("button", { name: /Fehler suchen & als Draft PR reparieren/i });
+
+    fireEvent.click(presetButton);
+    fireEvent.click(presetButton);
+
+    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    expect(screen.getAllByText(/Suche im aktuellen Repo nach belegten Fehlerquellen/i)).toHaveLength(1);
+    expect(screen.getAllByText(/Ich habe diesen Auftrag vorgemerkt/i)).toHaveLength(1);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforePreset);
+  });
+
   it("error repair preset opens the secure GitHub gate instead of falling back to read-only advice", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
