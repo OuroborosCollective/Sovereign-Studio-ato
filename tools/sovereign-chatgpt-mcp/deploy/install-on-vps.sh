@@ -9,6 +9,7 @@ DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
 ANDROID_SDK_DIR="/opt/android-sdk"
+OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 ENV_FILE="$INSTALL_ROOT/.env"
 GHCR_ENV="$INSTALL_ROOT/.ghcr.env"
 TUNNEL_ENV="$INSTALL_ROOT/tunnel.env"
@@ -221,6 +222,15 @@ install -d -m 0770 -o root -g sovereign-mcp "$COMMAND_QUEUE_DIR" "$COMMAND_QUEUE
 install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
 chmod 0770 "$WORKSPACE_DIR"
+if [[ -e "$OWNER_INPUT_HOST_ROOT" || -L "$OWNER_INPUT_HOST_ROOT" ]]; then
+  [[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]] \
+    || fail "owner input host root is not a regular directory"
+else
+  mkdir -p "$OWNER_INPUT_HOST_ROOT"
+fi
+chmod 0700 "$OWNER_INPUT_HOST_ROOT"
+[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]] \
+  || fail "owner input host root is not writable and searchable"
 
 INSTALL_STAGE="backup_existing_control_plane"
 ROLLBACK_DIR="$(mktemp -d "$INSTALL_ROOT/.control-plane-backup.XXXXXX")"

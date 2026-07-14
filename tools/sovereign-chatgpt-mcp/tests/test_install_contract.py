@@ -13,6 +13,10 @@ def test_installer_assigns_workspace_to_container_user_and_probes_write_access()
     assert 'MCP_GID="10001"' in script
     assert 'install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"' in script
     assert 'chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"' in script
+    assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in script
+    assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in script
+    assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in script
+    assert '[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]]' in script
     assert '.permission-probe' in script
 
 
@@ -37,6 +41,8 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'SOVEREIGN_MCP_COMMAND_QUEUE=' in script
     assert 'ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py' in worker_service
     assert 'ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue' in worker_service
+    assert '/opt/sovereign-owner-managed' in worker_service
+    assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 
 def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None:
