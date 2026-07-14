@@ -1,4 +1,4 @@
-import type { UserApiKeys } from '../components/UserKeyManager';
+import type { UserApiKeys } from './userApiKeysContract';
 
 export type ProviderKeyValidationCode =
   | 'valid'

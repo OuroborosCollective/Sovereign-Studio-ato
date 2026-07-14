@@ -1,4 +1,4 @@
-import type { UserApiKeys } from '../components/UserKeyManager';
+import type { UserApiKeys } from './userApiKeysContract';
 import { validateUserApiKeys, getValidatedKeys } from './apiKeyValidation';
 
 export type LlmProviderStatus =
