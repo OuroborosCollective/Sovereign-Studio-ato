@@ -206,7 +206,25 @@ jobs:
           agent_runtime/tools/shell_tool.py \
           agent_runtime/tools/git_tool.py \
           agent_runtime/tools/diff_tool.py \
-          agent_runtime/tools/test_tool.py
+          agent_runtime/tools/test_tool.py \
+          agent_runtime/cognitive_swarm_agents.py \
+          agent_runtime/cognitive_swarm_routes.py \
+          agent_runtime/cognitive_run_store.py \
+          ../scripts/sovereign-backend/controller_board.py
+    - name: Run Cognitive Swarm Build Preflight
+      run: |
+        cd backend
+        python - <<'PY'
+        from agent_runtime.cognitive_swarm_agents import agents_sdk_status, build_cognitive_swarm
+
+        status = agents_sdk_status()
+        if not status["available"]:
+            raise RuntimeError(f"OpenAI Agents SDK unavailable: {status['error']}")
+        swarm = build_cognitive_swarm(model="gpt-5.6")
+        if swarm.agent_count != 12:
+            raise RuntimeError(f"Unexpected cognitive swarm size: {swarm.agent_count}")
+        print("Cognitive swarm build preflight passed: 12 agents")
+        PY
     - name: Run Agent Tests
       run: |
         cd backend
@@ -221,6 +239,9 @@ jobs:
           tests/test_agent_mcp_integration.py \
           tests/test_agent_tool_creator.py \
           tests/test_agent_event_mapping_compat.py \
+          tests/test_cognitive_swarm_agents.py \
+          tests/test_cognitive_swarm_routes.py \
+          ../scripts/sovereign-backend/tests/test_controller_board_contract.py \
           -v \
           --junitxml=agent-test-results.xml
     - name: Upload Agent Test Results

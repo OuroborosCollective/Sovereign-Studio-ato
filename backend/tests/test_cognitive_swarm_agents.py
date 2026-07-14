@@ -7,6 +7,7 @@ import pytest
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
+import agent_runtime.cognitive_swarm_agents as swarm_module
 from agent_runtime.cognitive_swarm_agents import (
     SKILL_PATH,
     SwarmExecutionError,
@@ -53,6 +54,25 @@ def test_provider_failures_are_classified_without_raw_error_text() -> None:
     assert "sensitive provider message" not in str(payload)
 
 
+def test_swarm_build_failure_is_classified_before_first_model_call(monkeypatch) -> None:
+    monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
+
+    def fail_build(*, model=None):
+        raise TypeError("raw build detail must not persist")
+
+    monkeypatch.setattr(swarm_module, "build_cognitive_swarm", fail_build)
+
+    with pytest.raises(SwarmExecutionError) as captured:
+        asyncio.run(run_cognitive_swarm("Inspect bounded runtime evidence."))
+
+    failure = captured.value
+    assert failure.stage == "swarm-build"
+    assert failure.family == "AGENTS_SDK_EXECUTION_FAILED"
+    assert failure.error_type == "TypeError"
+    assert "raw build detail" not in str(failure.safe_payload())
+
+
 def test_structured_output_failure_has_bounded_recovery_family() -> None:
     ModelBehaviorError = type("ModelBehaviorError", (Exception,), {})
     failure = classify_swarm_exception(ModelBehaviorError("raw output"), stage="loop-1:judge")
@@ -72,6 +92,11 @@ def test_routes_persist_only_bounded_failure_metadata() -> None:
     assert "evidence_payload=failure" in routes
     assert "family=failure_family" in routes
     assert "Agents SDK execution failed without a validated final verdict." not in routes
+    agents = (BACKEND / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
+    assert 'stage="swarm-build"' in agents
+    assert 'stage="dispatcher-output"' in agents
+    assert 'stage=f"loop-{loop}:worker-output:{role}"' in agents
+    assert 'stage=f"loop-{loop}:judge-output"' in agents
 
 
 def test_repo_local_skill_bundle_is_present_and_bounded() -> None:
