@@ -112,6 +112,18 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert "StateDirectory=sovereign-chatgpt-self-update" in service
 
 
+def test_github_vps_release_directory_uses_portable_bounded_creation() -> None:
+    workflow = (ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+    prepare_step = workflow.split("- name: Prepare remote release directory", 1)[1].split("- name: Upload exact MCP release", 1)[0]
+
+    assert "umask 077" in prepare_step
+    assert 'mkdir -p "$RELEASE_DIR"' in prepare_step
+    assert 'chmod 0700 "$RELEASE_DIR"' in prepare_step
+    assert 'test -d "$RELEASE_DIR" && test ! -L "$RELEASE_DIR"' in prepare_step
+    assert 'test -w "$RELEASE_DIR" && test -x "$RELEASE_DIR"' in prepare_step
+    assert 'install -d -m 0700 "$RELEASE_DIR"' not in prepare_step
+
+
 def test_database_bootstrap_uses_real_binaries_and_authentication_canaries() -> None:
     script = (ROOT / "deploy" / "bootstrap-database.sh").read_text("utf-8")
 
