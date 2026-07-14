@@ -39,7 +39,7 @@ import requests
 
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
-from agent_runtime.contracts import sanitize_agent_text
+from agent_runtime.contracts import sanitize_agent_text, normalize_agent_path, is_safe_branch
 from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
@@ -4159,10 +4159,12 @@ def tc_github_read_file():
         b     = request.get_json(force=True) or {}
         owner = b.get("owner", "")
         repo  = b.get("repo", "")
-        path  = b.get("path", "")
+        path  = normalize_agent_path(str(b.get("path") or ""))
         ref   = b.get("ref")
         if not owner or not repo or not path:
-            return jsonify({"error": "owner, repo und path erforderlich"}), 400
+            return jsonify({"error": "owner, repo und valider Pfad erforderlich"}), 400
+        if ref and not is_safe_branch(ref):
+            return jsonify({"error": "Ungültiger Branch-Name"}), 400
         data = _tc_read_github_file(owner, repo, path, ref)
         _tc_audit(request.session_user_id, "read_file", {"owner": owner, "repo": repo, "path": path})
         content = data["content"]
@@ -4184,10 +4186,19 @@ def tc_github_list_directory():
         b     = request.get_json(force=True) or {}
         owner = b.get("owner", "")
         repo  = b.get("repo", "")
-        path  = b.get("path", "")
+        path_raw = str(b.get("path") or "").strip()
+        if not path_raw or path_raw == "." or path_raw == "./":
+            path = ""
+        else:
+            path = normalize_agent_path(path_raw)
+            if path is None:
+                return jsonify({"error": "valider Pfad erforderlich"}), 400
+
         ref   = b.get("ref")
         if not owner or not repo:
             return jsonify({"error": "owner und repo erforderlich"}), 400
+        if ref and not is_safe_branch(ref):
+            return jsonify({"error": "Ungültiger Branch-Name"}), 400
         _tc_allowed(owner, repo)
         qs = f"?ref={urllib.parse.quote(ref)}" if ref else ""
         items = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
@@ -4255,11 +4266,13 @@ def tc_preview_patch():
         b      = request.get_json(force=True) or {}
         owner  = b.get("owner", "")
         repo   = b.get("repo", "")
-        path   = b.get("path", "")
+        path   = normalize_agent_path(str(b.get("path") or ""))
         blocks = b.get("blocks", [])
         ref    = b.get("ref")
         if not owner or not repo or not path or not blocks:
-            return jsonify({"error": "owner, repo, path und blocks erforderlich"}), 400
+            return jsonify({"error": "owner, repo, valider Pfad und blocks erforderlich"}), 400
+        if ref and not is_safe_branch(ref):
+            return jsonify({"error": "Ungültiger Branch-Name"}), 400
 
         current = _tc_read_github_file(owner, repo, path, ref)
         before  = current["content"]
@@ -4293,13 +4306,13 @@ def tc_create_draft_pr():
         b       = request.get_json(force=True) or {}
         owner   = b.get("owner", "")
         repo    = b.get("repo", "")
-        path    = b.get("path", "")
+        path    = normalize_agent_path(str(b.get("path") or ""))
         message = b.get("message", "")
         blocks  = b.get("blocks", [])
         confirm = b.get("confirm", False)
 
         if not all([owner, repo, path, message, blocks]):
-            return jsonify({"error": "owner, repo, path, message und blocks erforderlich"}), 400
+            return jsonify({"error": "owner, repo, valider Pfad, message und blocks erforderlich"}), 400
 
         if not confirm:
             # Preview only — no write
@@ -4361,7 +4374,7 @@ def tc_apply_patch_worker():
         b       = request.get_json(force=True) or {}
         owner   = b.get("owner", "")
         repo    = b.get("repo", "")
-        path    = b.get("path", "")
+        path    = normalize_agent_path(str(b.get("path") or ""))
         message = b.get("message", "")
         blocks  = b.get("blocks", [])
         confirm = b.get("confirm", False)
@@ -4653,6 +4666,8 @@ def tc_skills_scan():
         ref   = b.get("ref")
         if not owner or not repo:
             return jsonify({"error": "owner und repo erforderlich"}), 400
+        if ref and not is_safe_branch(ref):
+            return jsonify({"error": "Ungültiger Branch-Name"}), 400
         _tc_allowed(owner, repo)
 
         tree  = _gh_list_tree(owner, repo, ref)
@@ -4693,9 +4708,9 @@ def tc_skills_read():
         b     = request.get_json(force=True) or {}
         owner = b.get("owner", "")
         repo  = b.get("repo", "")
-        path  = b.get("path", "")
+        path  = normalize_agent_path(str(b.get("path") or ""))
         if not owner or not repo or not path:
-            return jsonify({"error": "owner, repo und path erforderlich"}), 400
+            return jsonify({"error": "owner, repo und valider Pfad erforderlich"}), 400
         data = _tc_read_github_file(owner, repo, path)
         content = data["content"]
         # Detect framework from path + content
