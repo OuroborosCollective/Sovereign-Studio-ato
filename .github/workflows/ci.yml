@@ -102,6 +102,10 @@ jobs:
             command: pnpm exec vitest run src/features/product/runtime/sovereignCapabilityRouter.test.ts
           - gate: builder-container-tests
             command: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx
+          - gate: builder-preset-routes
+            command: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx -t "preset|bridge route"
+          - gate: builder-routing-resume
+            command: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx -t "external agent|README content question|Pull Request question|resumes one|repo status|fails closed|routes normal text"
           - gate: action-stream-tests
             command: pnpm exec vitest run src/features/product/runtime/sovereignActionStreamRuntime.test.ts
           - gate: product-runtime-neighbors
