@@ -410,8 +410,13 @@ async def run_cognitive_swarm(
             "manifest": manifest_payload(),
         }
 
-    _, runner_class = _require_agents_sdk()
-    swarm = build_cognitive_swarm(model=model)
+    try:
+        _, runner_class = _require_agents_sdk()
+        swarm = build_cognitive_swarm(model=model)
+    except SwarmExecutionError:
+        raise
+    except Exception as exc:
+        raise classify_swarm_exception(exc, stage="swarm-build") from exc
     plan_result = await _run_stage(
         runner_class,
         swarm.dispatcher,
@@ -420,7 +425,13 @@ async def run_cognitive_swarm(
     )
     plan = plan_result.final_output
     if not isinstance(plan, DispatchPlan):
-        raise RuntimeError("Dispatcher returned an invalid structured plan.")
+        raise SwarmExecutionError(
+            stage="dispatcher-output",
+            family="AGENTS_STRUCTURED_OUTPUT_INVALID",
+            error_type=type(plan).__name__,
+            next_action="RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS",
+            retryable=True,
+        )
 
     loop_payloads: list[dict[str, Any]] = []
     prior_verdict: JudgeVerdict | None = None
@@ -443,7 +454,13 @@ async def run_cognitive_swarm(
             )
             report = result.final_output
             if not isinstance(report, WorkerReport):
-                raise RuntimeError(f"Worker {role} returned an invalid structured report.")
+                raise SwarmExecutionError(
+                    stage=f"loop-{loop}:worker-output:{role}",
+                    family="AGENTS_STRUCTURED_OUTPUT_INVALID",
+                    error_type=type(report).__name__,
+                    next_action="RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS",
+                    retryable=True,
+                )
             report.role = role
             report.loop = loop
             reports.append(report)
@@ -462,7 +479,13 @@ async def run_cognitive_swarm(
         )
         verdict = judge_result.final_output
         if not isinstance(verdict, JudgeVerdict):
-            raise RuntimeError("Judge returned an invalid structured verdict.")
+            raise SwarmExecutionError(
+                stage=f"loop-{loop}:judge-output",
+                family="AGENTS_STRUCTURED_OUTPUT_INVALID",
+                error_type=type(verdict).__name__,
+                next_action="RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS",
+                retryable=True,
+            )
         verdict.loop = loop
         if loop == 1:
             verdict.draft_pr_ready = False

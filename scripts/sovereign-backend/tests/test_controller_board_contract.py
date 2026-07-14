@@ -10,19 +10,22 @@ APP = BACKEND / "app.py"
 DOCKERFILE = BACKEND / "Dockerfile"
 RUN_STORE = BACKEND / "agent_runtime" / "cognitive_run_store.py"
 SWARM_ROUTES = BACKEND / "agent_runtime" / "cognitive_swarm_routes.py"
+SWARM_AGENTS = BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
 CANONICAL_RUNTIME = BACKEND.parents[1] / "backend" / "agent_runtime"
 CANONICAL_RUN_STORE = CANONICAL_RUNTIME / "cognitive_run_store.py"
 CANONICAL_SWARM_ROUTES = CANONICAL_RUNTIME / "cognitive_swarm_routes.py"
+CANONICAL_SWARM_AGENTS = CANONICAL_RUNTIME / "cognitive_swarm_agents.py"
 
 
 def test_controller_module_has_valid_python_syntax() -> None:
-    for path in (CONTROLLER, RUN_STORE, SWARM_ROUTES):
+    for path in (CONTROLLER, RUN_STORE, SWARM_ROUTES, SWARM_AGENTS):
         ast.parse(path.read_text("utf-8"), filename=str(path))
 
 
 def test_canonical_and_deployed_agent_runtime_are_byte_identical() -> None:
     assert RUN_STORE.read_bytes() == CANONICAL_RUN_STORE.read_bytes()
     assert SWARM_ROUTES.read_bytes() == CANONICAL_SWARM_ROUTES.read_bytes()
+    assert SWARM_AGENTS.read_bytes() == CANONICAL_SWARM_AGENTS.read_bytes()
 
 
 def test_controller_board_is_registered_in_the_real_backend() -> None:
@@ -69,6 +72,22 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "secret-shaped material is forbidden in operator evidence" in controller
     assert "adminKey" not in controller.split('@app.route("/api/internal/controller/runs"', 1)[1].split('@app.route("/api/controller/overview"', 1)[0]
     assert "sovereign_session" not in controller
+
+
+def test_failure_details_are_bounded_and_come_from_persisted_evidence() -> None:
+    controller = CONTROLLER.read_text("utf-8")
+
+    assert "_FAILURE_DIAGNOSTIC_KEYS" in controller
+    assert '"failureStage"' in controller
+    assert '"failureFamily"' in controller
+    assert '"errorType"' in controller
+    assert '"httpStatus"' in controller
+    assert '"requestId"' in controller
+    assert "LEFT JOIN agent_evidence e ON e.evidence_id=f.evidence_id" in controller
+    assert 'failure["diagnostics"] = _bounded_failure_diagnostics' in controller
+    assert "Stage: ${esc(q.failureStage||'unknown')}" in controller
+    assert "Error: ${esc(q.errorType||'unknown')}" in controller
+    assert "raw exception" not in controller.lower()
 
 
 def test_visible_runtime_state_comes_from_persisted_agent_evidence() -> None:

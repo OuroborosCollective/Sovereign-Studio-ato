@@ -125,6 +125,28 @@ def _iso(value: object) -> str:
     return str(value or "")
 
 
+_FAILURE_DIAGNOSTIC_KEYS = (
+    "failureStage",
+    "failureFamily",
+    "errorType",
+    "nextAction",
+    "retryable",
+    "httpStatus",
+    "requestId",
+    "rawErrorPersisted",
+)
+
+
+def _bounded_failure_diagnostics(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: payload.get(key)
+        for key in _FAILURE_DIAGNOSTIC_KEYS
+        if key in payload
+    }
+
+
 def _json_digest(payload: dict[str, object]) -> str:
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -222,12 +244,19 @@ def register_controller_board_routes(
                 )
                 tasks = [dict(row) for row in cur.fetchall()]
                 cur.execute(
-                    """SELECT failure_id, task_id, agent_id, family, recoverable,
-                              summary, evidence_id, retry_after, created_at, resolved_at
-                       FROM agent_failures WHERE run_id=%s ORDER BY created_at ASC LIMIT 200""",
+                    """SELECT f.failure_id, f.task_id, f.agent_id, f.family, f.recoverable,
+                              f.summary, f.evidence_id, f.retry_after, f.created_at, f.resolved_at,
+                              e.payload AS evidence_payload
+                       FROM agent_failures f
+                       LEFT JOIN agent_evidence e ON e.evidence_id=f.evidence_id
+                       WHERE f.run_id=%s ORDER BY f.created_at ASC LIMIT 200""",
                     (run_id,),
                 )
                 failures = [dict(row) for row in cur.fetchall()]
+                for failure in failures:
+                    failure["diagnostics"] = _bounded_failure_diagnostics(
+                        failure.pop("evidence_payload", None)
+                    )
                 cur.execute(
                     """SELECT approval_id, task_id, kind, status, requested_by_agent,
                               evidence_id, reason, created_at, decided_at
@@ -436,12 +465,19 @@ def register_controller_board_routes(
                 )
                 tasks = [dict(row) for row in cur.fetchall()]
                 cur.execute(
-                    """SELECT failure_id, task_id, agent_id, family, recoverable,
-                              summary, evidence_id, retry_after, created_at, resolved_at
-                       FROM agent_failures WHERE run_id=%s ORDER BY created_at ASC LIMIT 100""",
+                    """SELECT f.failure_id, f.task_id, f.agent_id, f.family, f.recoverable,
+                              f.summary, f.evidence_id, f.retry_after, f.created_at, f.resolved_at,
+                              e.payload AS evidence_payload
+                       FROM agent_failures f
+                       LEFT JOIN agent_evidence e ON e.evidence_id=f.evidence_id
+                       WHERE f.run_id=%s ORDER BY f.created_at ASC LIMIT 100""",
                     (run_id,),
                 )
                 failures = [dict(row) for row in cur.fetchall()]
+                for failure in failures:
+                    failure["diagnostics"] = _bounded_failure_diagnostics(
+                        failure.pop("evidence_payload", None)
+                    )
             return jsonify({
                 "run": {key: _iso(value) if key.endswith("_at") else value for key, value in dict(run).items()},
                 "events": [{key: _iso(value) if key.endswith("_at") else value for key, value in row.items()} for row in events],
@@ -771,7 +807,7 @@ async function loadOverview(){const d=await api('/api/controller/overview');stat
 function runCard(r){return `<div class="item"><div class="row between"><h3>${esc(r.mission_summary)}</h3>${badge(r.status)}</div><p class="code">${esc(r.run_id)}</p><p>${esc(r.reason)}</p><div class="row"><button class="ghost" onclick="runDetail('${esc(r.run_id)}')">Details</button>${!['COMPLETED','FAILED_FINAL','DRAFT_PR_CREATED','READY_FOR_DRAFT_PR','WAITING_FOR_OWNER'].includes(r.status)&&!r.lease_active?`<button class="primary" onclick="resumeRun('${esc(r.run_id)}','Manueller Resume aus Controller Board; keine Secrets.')">Resume</button>`:''}</div></div>`}
 async function startMission(){const m=$('mission').value.trim();if(!m)return;$('missionMsg').textContent='Runtime läuft…';try{const d=await api('/api/user/agent/swarm/run',{method:'POST',body:JSON.stringify({mission:m,evidence:$('evidence').value.trim()})});$('missionMsg').textContent=(d.status||'')+' · '+(d.reason||'');await loadOverview();if(d.runId)runDetail(d.runId)}catch(e){$('missionMsg').textContent=(e.data?.status||'Fehler')+' · '+(e.data?.reason||e.message);await loadOverview()}}
 async function resumeRun(id,evidence){try{const d=await api('/api/user/agent/swarm/runs/'+encodeURIComponent(id)+'/resume',{method:'POST',body:JSON.stringify({evidence})});await loadOverview();await runDetail(id);return d}catch(e){await loadOverview();alert(e.data?.reason||e.message)}}
-async function runDetail(id){const d=await api('/api/controller/runs/'+encodeURIComponent(id));const r=d.run;$('runDetail').classList.remove('hidden');$('runDetail').innerHTML=`<div class="row between"><h2>${esc(r.mission_summary)}</h2>${badge(r.status)}</div><p>${esc(r.reason)}</p><p class="code">Evidence: ${esc(r.evidence_id)}<br>Trace: ${esc(r.trace_id)}<br>Next: ${esc(r.next_action)}</p><h3>Tasks</h3><div class="list">${(d.tasks||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)}</b> ${badge(x.status)}<p>${esc(x.work_package)}</p></div>`).join('')||'<p class="muted">Keine Tasks.</p>'}</div><h3>Events</h3><div class="timeline">${(d.events||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)} · ${esc(x.type)}</b> ${badge(x.status)}<p>${esc(x.summary)}</p></div>`).join('')}</div>`;$('runDetail').scrollIntoView({behavior:'smooth'})}
+async function runDetail(id){const d=await api('/api/controller/runs/'+encodeURIComponent(id));const r=d.run;$('runDetail').classList.remove('hidden');$('runDetail').innerHTML=`<div class="row between"><h2>${esc(r.mission_summary)}</h2>${badge(r.status)}</div><p>${esc(r.reason)}</p><p class="code">Evidence: ${esc(r.evidence_id)}<br>Trace: ${esc(r.trace_id)}<br>Next: ${esc(r.next_action)}</p><h3>Tasks</h3><div class="list">${(d.tasks||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)}</b> ${badge(x.status)}<p>${esc(x.work_package)}</p></div>`).join('')||'<p class="muted">Keine Tasks.</p>'}</div><h3>Failures</h3><div class="list">${(d.failures||[]).map(x=>{const q=x.diagnostics||{};return `<div class="item"><div class="row between"><b>${esc(x.family)}</b>${badge(x.recoverable?'FAILED_RECOVERABLE':'FAILED_FINAL')}</div><p>${esc(x.summary)}</p><p class="code">Stage: ${esc(q.failureStage||'unknown')}<br>Error: ${esc(q.errorType||'unknown')}<br>HTTP: ${esc(q.httpStatus??'–')}<br>Request: ${esc(q.requestId||'–')}<br>Next: ${esc(q.nextAction||'–')}</p></div>`}).join('')||'<p class="muted">Keine Failure-Evidence.</p>'}</div><h3>Events</h3><div class="timeline">${(d.events||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)} · ${esc(x.type)}</b> ${badge(x.status)}<p>${esc(x.summary)}</p></div>`).join('')}</div>`;$('runDetail').scrollIntoView({behavior:'smooth'})}
 async function loadApprovals(){const d=await api('/api/controller/approvals');$('approvalList').innerHTML=(d.approvals||[]).map(a=>`<div class="item"><div class="row between"><h3>${esc(a.kind)} · ${esc(a.requested_by_agent)}</h3>${badge(a.status)}</div><p>${esc(a.reason)}</p><p class="code">Run: ${esc(a.run_id)}</p>${a.requiresProtectedOwnerInput?`<a class="link" href="/owner-approvals" target="_blank">Geschützte Eingabe im Owner-Panel öffnen</a>`:`<div class="row"><button class="primary" onclick="decide('${esc(a.approval_id)}','approve')">Bestätigen</button><button class="danger" onclick="decide('${esc(a.approval_id)}','reject')">Ablehnen</button></div>`}</div>`).join('')||'<p class="muted">Keine offenen Bestätigungen.</p>'}
 async function decide(id,decision){const d=await api('/api/controller/approvals/'+encodeURIComponent(id)+'/decision',{method:'POST',body:JSON.stringify({decision})});if(d.resumeRequired)await resumeRun(d.runId,d.resumeEvidence);await refreshAll()}
 async function loadGithub(){try{const d=await api('/api/controller/github');state.github=d;const l=d.latestCommit||{},s=d.playwrightStats||{};$('latestCommit').innerHTML=`<div class="item"><div class="row between"><h3>${esc(l.message||'Kein Commit')}</h3><span class="badge">${esc((l.sha||'').slice(0,10))}</span></div><p>+${l.stats?.additions||0} / -${l.stats?.deletions||0} · ${l.stats?.total||0} Änderungen</p><div class="code">${(l.files||[]).slice(0,30).map(f=>esc(f.status)+' '+esc(f.filename)+' (+'+f.additions+' -'+f.deletions+')').join('\n')}</div></div>`;$('commits').innerHTML=(d.commits||[]).map(c=>`<div class="item"><div class="row between"><h3>${esc(c.message)}</h3><span class="badge">${esc(c.sha.slice(0,8))}</span></div><p>${esc(c.author)} · ${esc(c.date)}</p></div>`).join('');$('playwrightMetrics').innerHTML=[['Erfolg',s.successful||0],['Fehler',s.failed||0],['Laufend',s.running||0],['Quote',s.successRate===null||s.successRate===undefined?'–':s.successRate+'%']].map(x=>`<div class="metric"><span class="muted">${x[0]}</span><strong>${x[1]}</strong></div>`).join('');$('playwrightRuns').innerHTML=runList(d.playwrightRuns);$('workflowRuns').innerHTML=runList(d.workflowRuns)}catch(e){$('latestCommit').innerHTML='<p class="bad">'+esc(e.message)+'</p>';if(!$('playwrightRuns').innerHTML)$('playwrightRuns').innerHTML='<p class="muted">Noch keine Evidence.</p>'}}
