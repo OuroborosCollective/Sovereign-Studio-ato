@@ -211,6 +211,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             BUILD_DIR="$WORK_DIR/scripts/sovereign-backend"
+            OWNER_INPUT_ROOT="/opt/sovereign-owner-managed"
             for required_file in Dockerfile app.py requirements.txt; do
               if [ ! -f "$BUILD_DIR/$required_file" ]; then
                 echo "Required build file is missing: $BUILD_DIR/$required_file" >&2
@@ -241,6 +242,10 @@ jobs:
               echo "Secure mount source is missing: /opt/secure" >&2
               exit 1
             fi
+            if [ ! -d "$OWNER_INPUT_ROOT" ] || [ -L "$OWNER_INPUT_ROOT" ]; then
+              echo "Owner-managed mount source is missing or unsafe: $OWNER_INPUT_ROOT" >&2
+              exit 1
+            fi
             for network in supabase_default areloria_arelorian-network openhands-enterprise_default; do
               if ! docker network inspect "$network" >/dev/null 2>&1; then
                 echo "Required Docker network is missing: $network" >&2
@@ -259,6 +264,7 @@ jobs:
               --label "org.opencontainers.image.revision=$COMMIT_SHA" \
               --network supabase_default \
               --volume /opt/secure:/opt/secure:ro \
+              --volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw" \
               -p 127.0.0.1:8788:8787 \
               "$IMAGE_TAG"
             docker network connect areloria_arelorian-network sovereign-backend
@@ -286,6 +292,7 @@ jobs:
                   --env-file /opt/sovereign-backend/.env \
                   --network supabase_default \
                   --volume /opt/secure:/opt/secure:ro \
+                  --volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw" \
                   -p 127.0.0.1:8788:8787 \
                   "$PREVIOUS_IMAGE"
                 docker network connect areloria_arelorian-network sovereign-backend
