@@ -687,7 +687,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       const pendingMessage = 'Sovereign Agent soll Feature X implementieren';
       fireEvent.change(chatField(), { target: { value: pendingMessage } });
       fireEvent.click(sendButton());
-      await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+      await waitFor(() =>
+        expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(2),
+      );
       expect(props.onStartAgent).not.toHaveBeenCalled();
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir die aktuelle Runtime.' } });
