@@ -522,10 +522,12 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     fireEvent.change(chatField(), { target: { value: originalText } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(2),
+    );
     expect(props.onStartAgent).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText("Zugang eingeben"));
+    fireEvent.click(screen.getAllByText("Zugang eingeben")[0]);
     fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
     fireEvent.click(screen.getByText("Übernehmen"));
 
@@ -551,9 +553,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     fireEvent.change(screen.getByLabelText("GitHub Repository URL"), { target: { value: TEST_REPO_URL } });
     fireEvent.click(screen.getByRole("button", { name: "Repo-Snapshot laden" }));
-    await waitFor(() => expect(screen.getByText(/GitHub-Zugang fehlt/i)).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getAllByText(/GitHub-Zugang fehlt/i).length).toBeGreaterThanOrEqual(2),
+    );
 
-    fireEvent.click(screen.getByText("Zugang eingeben"));
+    fireEvent.click(screen.getAllByText("Zugang eingeben")[0]);
     fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
     fireEvent.click(screen.getByText("Übernehmen"));
 
