@@ -12,6 +12,10 @@ ROOT = BACKEND.parent
 sys.path.insert(0, str(BACKEND))
 
 from agent_runtime.cognitive_run_store import (
+    AgentRunIterationLimit,
+    AgentRunNotResumable,
+    AgentRunResumeConflict,
+    claim_agent_run_for_resume,
     create_agent_run,
     list_resumable_agent_runs,
     transition_agent_run,
@@ -102,6 +106,29 @@ def test_create_run_persists_received_state_event_and_digest_only_evidence() -> 
     assert hashlib.sha256(supplied_evidence.encode("utf-8")).hexdigest() in persisted_parameters
 
 
+def _stored_run_row(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "run_id": "run-resumable",
+        "user_id": USER_ID,
+        "session_key": "session-resumable",
+        "status": "FAILED_RECOVERABLE",
+        "source": "agents-sdk",
+        "evidence_id": "evidence-resumable",
+        "trace_id": "trace-resumable",
+        "reason": "Tool was temporarily unavailable.",
+        "next_action": "RETRY_FROM_PERSISTED_RUN_STATE",
+        "mission_summary": "Resume the bounded work package.",
+        "mission_digest": "b" * 64,
+        "max_active_specialists": 4,
+        "max_iterations": 12,
+        "iteration_count": 3,
+        "lease_active": False,
+        "resume_task_id": None,
+    }
+    row.update(overrides)
+    return row
+
+
 def test_transition_persists_evidence_before_state_and_event() -> None:
     conn = FakeConnection()
 
@@ -127,6 +154,129 @@ def test_transition_persists_evidence_before_state_and_event() -> None:
     assert conn.rollbacks == 0
     assert [call[0].split()[0] for call in conn.calls] == ["INSERT", "UPDATE", "INSERT"]
     assert "RETURNING run_id" in conn.calls[1][0]
+
+
+def test_lease_owned_transition_updates_recovery_task_and_hides_raw_token() -> None:
+    conn = FakeConnection()
+    raw_lease_token = "resume-lease-token"
+
+    state = transition_agent_run(
+        conn,
+        user_id=USER_ID,
+        run_id="run-test",
+        status="BLOCKED",
+        source="agents-sdk",
+        trace_id="trace-test",
+        reason="More runtime evidence is required.",
+        next_action="PROVIDE_RUNTIME_EVIDENCE",
+        evidence_kind="judge_verdict",
+        evidence_summary="The resumed run remained blocked.",
+        evidence_payload={"ok": False},
+        task_id="task-resume-test",
+        expected_lease_token=raw_lease_token,
+    )
+
+    assert state["status"] == "BLOCKED"
+    assert conn.commits == 1
+    assert [call[0].split()[0] for call in conn.calls] == ["INSERT", "UPDATE", "UPDATE", "INSERT"]
+    update_sql, update_params = conn.calls[1]
+    assert "lease_token = %s" in update_sql
+    assert "lease_token = NULL" in update_sql
+    assert hashlib.sha256(raw_lease_token.encode("utf-8")).hexdigest() in update_params
+    assert raw_lease_token not in repr(conn.calls)
+    assert "UPDATE agent_tasks" in conn.calls[2][0]
+
+
+def test_claim_resume_is_atomic_and_reconstructs_one_bounded_task() -> None:
+    conn = FakeConnection()
+    conn.fetchone_rows = [_stored_run_row()]
+    supplied_evidence = "fresh runtime evidence that must remain request-local"
+
+    claim = claim_agent_run_for_resume(
+        conn,
+        user_id=USER_ID,
+        run_id="run-resumable",
+        supplied_evidence=supplied_evidence,
+        trace_id="trace-resume",
+        lease_seconds=120,
+    )
+
+    assert claim.run.status == "FAILED_RECOVERABLE"
+    assert claim.work_package == "RETRY_FROM_PERSISTED_RUN_STATE"
+    assert claim.task_id.startswith("task-resume-")
+    assert claim.evidence_id.startswith("evidence-")
+    assert claim.lease_seconds == 120
+    assert conn.commits == 1
+    assert conn.rollbacks == 0
+    assert [call[0].split()[0] for call in conn.calls] == ["SELECT", "INSERT", "INSERT", "UPDATE", "INSERT"]
+    assert "INSERT INTO agent_tasks" in conn.calls[1][0]
+    assert "INSERT INTO agent_evidence" in conn.calls[2][0]
+    assert "FOR UPDATE" in conn.calls[0][0]
+    assert "lease_expires_at" in conn.calls[3][0]
+
+    persisted_parameters = repr(conn.calls)
+    assert supplied_evidence not in persisted_parameters
+    assert hashlib.sha256(supplied_evidence.encode("utf-8")).hexdigest() in persisted_parameters
+    assert claim.lease_token not in persisted_parameters
+    assert hashlib.sha256(claim.lease_token.encode("utf-8")).hexdigest() in persisted_parameters
+
+
+def test_claim_resume_blocks_active_lease_terminal_run_and_exhausted_budget() -> None:
+    active = FakeConnection()
+    active.fetchone_rows = [_stored_run_row(status="RUNNING", lease_active=True, resume_task_id="task-active")]
+    with pytest.raises(AgentRunResumeConflict):
+        claim_agent_run_for_resume(
+            active,
+            user_id=USER_ID,
+            run_id="run-resumable",
+            supplied_evidence="",
+            trace_id="trace-resume",
+        )
+    assert active.rollbacks == 1
+
+    terminal = FakeConnection()
+    terminal.fetchone_rows = [_stored_run_row(status="COMPLETED")]
+    with pytest.raises(AgentRunNotResumable):
+        claim_agent_run_for_resume(
+            terminal,
+            user_id=USER_ID,
+            run_id="run-resumable",
+            supplied_evidence="",
+            trace_id="trace-resume",
+        )
+
+    exhausted = FakeConnection()
+    exhausted.fetchone_rows = [_stored_run_row(iteration_count=12, max_iterations=12)]
+    with pytest.raises(AgentRunIterationLimit):
+        claim_agent_run_for_resume(
+            exhausted,
+            user_id=USER_ID,
+            run_id="run-resumable",
+            supplied_evidence="",
+            trace_id="trace-resume",
+        )
+
+
+def test_expired_resume_task_is_marked_recoverable_before_new_claim() -> None:
+    conn = FakeConnection()
+    conn.fetchone_rows = [_stored_run_row(
+        status="RUNNING",
+        lease_active=False,
+        resume_task_id="task-expired",
+    )]
+
+    claim_agent_run_for_resume(
+        conn,
+        user_id=USER_ID,
+        run_id="run-resumable",
+        supplied_evidence="new evidence",
+        trace_id="trace-resume",
+    )
+
+    assert "UPDATE agent_tasks" in conn.calls[1][0]
+    assert "FAILED_RECOVERABLE" in conn.calls[1][0]
+    assert conn.calls[1][1][1] == "task-expired"
+    assert "INSERT INTO agent_tasks" in conn.calls[2][0]
 
 
 def test_invalid_status_and_source_fail_closed() -> None:
@@ -166,24 +316,9 @@ def test_invalid_status_and_source_fail_closed() -> None:
     assert conn.commits == 0
 
 
-def test_resumable_query_excludes_only_terminal_runs() -> None:
+def test_resumable_query_excludes_terminal_and_draft_ready_runs() -> None:
     conn = FakeConnection()
-    conn.fetchall_rows = [{
-        "run_id": "run-resumable",
-        "user_id": USER_ID,
-        "session_key": "session-resumable",
-        "status": "FAILED_RECOVERABLE",
-        "source": "agents-sdk",
-        "evidence_id": "evidence-resumable",
-        "trace_id": "trace-resumable",
-        "reason": "Tool was temporarily unavailable.",
-        "next_action": "RETRY_FROM_PERSISTED_RUN_STATE",
-        "mission_summary": "Resume the bounded work package.",
-        "mission_digest": "b" * 64,
-        "max_active_specialists": 4,
-        "max_iterations": 12,
-        "iteration_count": 3,
-    }]
+    conn.fetchall_rows = [_stored_run_row()]
 
     runs = list_resumable_agent_runs(conn, user_id=USER_ID)
 
@@ -191,7 +326,8 @@ def test_resumable_query_excludes_only_terminal_runs() -> None:
     assert runs[0].status == "FAILED_RECOVERABLE"
     sql, params = conn.calls[0]
     assert "status <> ALL" in sql
-    assert set(params[1]) == {"COMPLETED", "DRAFT_PR_CREATED", "FAILED_FINAL"}
+    assert "lease_expires_at <= NOW()" in sql
+    assert set(params[1]) == {"COMPLETED", "DRAFT_PR_CREATED", "FAILED_FINAL", "READY_FOR_DRAFT_PR"}
 
 
 def test_migration_creates_all_required_runtime_truth_tables() -> None:
@@ -225,6 +361,13 @@ def test_migration_creates_all_required_runtime_truth_tables() -> None:
     assert "result_digest CHAR(64)" in migration
     assert "raw_arguments" not in migration
     assert "evidence_id <> '' AND reason <> '' AND next_action <> ''" in migration
+
+    resume_migration = (ROOT / "scripts/sovereign-backend/migrations/019_agents_sdk_resume_lease.sql").read_text("utf-8")
+    assert "ADD COLUMN IF NOT EXISTS lease_token CHAR(64)" in resume_migration
+    assert "ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ" in resume_migration
+    assert "ADD COLUMN IF NOT EXISTS resume_task_id TEXT" in resume_migration
+    assert "lease_token ~ '^[0-9a-f]{64}$'" in resume_migration
+    assert "raw token is process-local only" in resume_migration
 
 
 def test_canonical_and_deployment_agents_sdk_runtime_are_identical() -> None:
