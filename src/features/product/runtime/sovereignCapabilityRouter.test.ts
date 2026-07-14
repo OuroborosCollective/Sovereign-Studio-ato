@@ -7,6 +7,7 @@ import {
   determineTaskComplexity,
   getBlockerExplanation,
   getRouteLabel,
+  mapCapabilityRouteToActionRoute,
   requiresExecutor,
   requiresGitHubAccess,
   type CapabilityRouterInput,
@@ -75,7 +76,7 @@ describe('Sovereign Capability Router', () => {
       const event = buildCapabilityRouteActionEvent(decision, 'trace-local', 0);
 
       expect(event.kind).toBe('capability_checked');
-      expect(event.route).toBe('local-runtime-answer');
+      expect(event.route).toBe('runtime');
       expect(event.label).toBe('Lokale Runtime-Antwort vorbereitet');
       expect(event.state).toBe('done');
       expect(decision.nextAction).toBe('answer_locally');
@@ -85,6 +86,9 @@ describe('Sovereign Capability Router', () => {
       expect(classifyIntent('Was ist das?')).toBe('free_chat');
       expect(classifyIntent('arbeitet er schon')).toBe('status_question');
       expect(classifyIntent('https://github.com/owner/repo')).toBe('load_repo');
+      expect(classifyIntent('Was ist der Inhalt der README?')).toBe('free_chat');
+      expect(classifyIntent('Was ist ein Pull Request?')).toBe('free_chat');
+      expect(classifyIntent('Erkläre mir einen Workflow')).toBe('free_chat');
     });
   });
 
@@ -142,7 +146,24 @@ describe('Sovereign Capability Router', () => {
       expect(decision.nextAction).toBe('start_workspace');
     });
 
-    it('routes explicit Draft-PR execution to sovereign-agent when explicitly requested', () => {
+    it('routes explicit Draft-PR execution to sovereign-agent only with validated GitHub access', () => {
+      const decision = decideSovereignCapabilityRoute({
+        text: 'Bitte mit Sovereign Agent einen Draft PR erstellen.',
+        repoReady: true,
+        githubAccessState: 'ready',
+        agentReady: true,
+        directGitHubPatchReady: false,
+        workspaceReady: false,
+        hasActiveWorkerBlocker: false,
+      });
+
+      expect(decision.route).toBe('sovereign-agent');
+      expect(decision.capability).toBe('draft_pr');
+      expect(decision.allowed).toBe(true);
+      expect(decision.nextAction).toBe('start_agent');
+    });
+
+    it('blocks explicit Sovereign Agent execution while GitHub access is missing', () => {
       const decision = decideSovereignCapabilityRoute({
         text: 'Bitte mit Sovereign Agent einen Draft PR erstellen.',
         repoReady: true,
@@ -154,9 +175,42 @@ describe('Sovereign Capability Router', () => {
       });
 
       expect(decision.route).toBe('sovereign-agent');
-      expect(decision.capability).toBe('draft_pr');
-      expect(decision.allowed).toBe(true);
-      expect(decision.nextAction).toBe('start_agent');
+      expect(decision.allowed).toBe(false);
+      expect(decision.blocker).toBe('github_access_missing');
+      expect(decision.nextAction).toBe('validate_github_access');
+    });
+
+    it('blocks explicit Sovereign Agent code execution while GitHub access is missing', () => {
+      const decision = decideSovereignCapabilityRoute({
+        text: 'Sovereign Agent soll Feature X implementieren',
+        repoReady: true,
+        githubAccessState: 'missing',
+        agentReady: true,
+        directGitHubPatchReady: false,
+        workspaceReady: false,
+        hasActiveWorkerBlocker: false,
+      });
+
+      expect(decision.route).toBe('sovereign-agent');
+      expect(decision.allowed).toBe(false);
+      expect(decision.blocker).toBe('github_access_missing');
+      expect(decision.nextAction).toBe('validate_github_access');
+    });
+
+    it('blocks repo-scoped execution before selecting an executor', () => {
+      const decision = decideSovereignCapabilityRoute({
+        text: 'Implementiere Feature X und teste es',
+        repoReady: false,
+        githubAccessState: 'ready',
+        agentReady: true,
+        directGitHubPatchReady: true,
+        workspaceReady: true,
+        hasActiveWorkerBlocker: false,
+      });
+
+      expect(decision.allowed).toBe(false);
+      expect(decision.blocker).toBe('repo_missing');
+      expect(decision.nextAction).toBe('load_repo');
     });
 
     it('routes complex code work to workspace-executor when available', () => {
@@ -314,6 +368,20 @@ describe('Sovereign Capability Router', () => {
       expect(decision.allowed).toBe(false);
       expect(decision.blocker).toBe('github_access_missing');
     });
+
+    it('blocks workflow watch when the selected worker route has runtime evidence of a blocker', () => {
+      const decision = decideSovereignCapabilityRoute({
+        ...FULL_READY_STATE,
+        text: 'Workflow-Status prüfen',
+        hasActiveWorkerBlocker: true,
+      });
+
+      expect(decision.allowed).toBe(false);
+      expect(decision.route).toBe('worker-chat');
+      expect(decision.blocker).toBe('executor_unavailable');
+      expect(decision.nextAction).toBe('show_blocker');
+      expect(decision.reason).toContain('Worker ist blockiert');
+    });
   });
 
   describe('helpers and security', () => {
@@ -326,6 +394,7 @@ describe('Sovereign Capability Router', () => {
       expect(determineTaskComplexity('direct_patch', 'passe readme an')).toBe('simple');
       expect(determineTaskComplexity('code_generation', 'baue ein backend')).toBe('complex');
       expect(determineTaskComplexity('code_generation', 'fixe button')).toBe('medium');
+      expect(determineTaskComplexity('unknown', 'unbekannte eingabe')).toBe('unknown');
     });
 
     it('builds action events from decisions', () => {
@@ -340,6 +409,13 @@ describe('Sovereign Capability Router', () => {
 
     it('keeps package_required visible in blocker explanation', () => {
       expect(getBlockerExplanation('package_required')).toContain('Patch-Paket');
+    });
+
+    it('maps capability routes into the canonical Action Stream vocabulary', () => {
+      expect(mapCapabilityRouteToActionRoute('worker-chat')).toBe('worker');
+      expect(mapCapabilityRouteToActionRoute('workspace-executor')).toBe('agent-workspace');
+      expect(mapCapabilityRouteToActionRoute('draft-pr-runtime')).toBe('github-patch');
+      expect(mapCapabilityRouteToActionRoute('repo-load')).toBe('repo');
     });
 
     it('exports route labels and executor checks', () => {

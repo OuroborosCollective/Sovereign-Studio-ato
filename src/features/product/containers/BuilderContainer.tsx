@@ -2739,7 +2739,9 @@ export function BuilderContainer({
     );
     if (!accessMatchesCurrentRepo) {
       githubTokenRef.current = null;
-      pendingWriteIntentRef.current = null;
+      // Preserve an unscoped blocked intent across the first successful repo
+      // load. A pending intent from an already-scoped previous repo is stale.
+      if (previousScopeKey) pendingWriteIntentRef.current = null;
       setValidatedGitHubTargetKey(null);
       setGitHubAccessState(createGitHubAccessSnapshot());
       setShowGitHubAccessOverride(false);
@@ -3480,6 +3482,7 @@ export function BuilderContainer({
     }
     if (!githubWriteAllowed) {
       appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
+      pendingWriteIntentRef.current = text;
       setShowGitHubAccessOverride(true);
       appendChatLine({ role: 'assistant', text: 'Executor-Auftrag erkannt. Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.' });
       return false;
@@ -3630,7 +3633,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
   // Retry submit with a specific message (used by WorkerBlockerCard and Banner)
   const retrySubmit = async (
     message: string,
-    options: { readonly ignoreExistingWorkerBlocker?: boolean } = {},
+    options: {
+      readonly ignoreExistingWorkerBlocker?: boolean;
+      readonly resumePendingIntent?: boolean;
+    } = {},
   ) => {
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
     setWishText("");
@@ -3639,7 +3645,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
   const _processSubmit = async (
     submittedText: string,
-    options: { readonly ignoreExistingWorkerBlocker?: boolean } = {},
+    options: {
+      readonly ignoreExistingWorkerBlocker?: boolean;
+      readonly resumePendingIntent?: boolean;
+    } = {},
   ) => {
     const routingWorkerBlocker = options.ignoreExistingWorkerBlocker ? null : workerBlocker;
     // ── Issue #445: SecureInputGuard — block secrets before any storage or LLM path
@@ -3739,8 +3748,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // Haptic feedback for send (Issue #429)
     triggerHaptic("light");
 
-    appendChatLine({ role: "user", text: submittedText });
-    appendActionEvent(buildInputReceivedEvent(submittedText));
+    if (!options.resumePendingIntent) {
+      appendChatLine({ role: "user", text: submittedText });
+      appendActionEvent(buildInputReceivedEvent(submittedText));
+    }
 
     // ── Issue #522 P2 Fix 2 & 3: Local routing BEFORE Integration Intent Draft Detection
     // Status, diagnostic, and retry intents must be handled locally FIRST.
@@ -3916,6 +3927,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // Fix: Safe-analysis presets are read-only and must never create an integration draft.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     if (effectiveRepoReady &&
+        !options.resumePendingIntent &&
         !isSafeAnalysisPreset &&
         !isSovereignAgentExecutionIntent(submittedText) &&
         !isDelegationIntent(submittedText) &&
@@ -3954,45 +3966,61 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     };
     const capabilityDecision = decideSovereignCapabilityRoute(capabilityRouterInput);
 
-    // Emit action event for Sovereign Action Stream
-    const routeActionEvent = buildCapabilityRouteActionEvent(capabilityDecision, agentWorkSnapshot.traceId, agentWorkSnapshot.events.length);
-    // Cast to match SovereignActionEventInput (capability router uses its own route/kind types)
-    appendActionEvent({
-      kind: 'route_selected',
-      route: routeActionEvent.route as 'repo' | 'free-chat' | 'code-llm' | 'worker' | 'sovereign-agent' | 'github-patch' | 'direct-github-patch' | 'github-access' | 'toolchain' | 'runtime',
-      label: routeActionEvent.label,
-      detail: routeActionEvent.detail,
-      state: routeActionEvent.state,
-    });
+    // Emit the runtime-typed action event. Capability routes are mapped to the
+    // canonical Action Stream route vocabulary inside the router runtime.
+    const routeActionEvent = buildCapabilityRouteActionEvent(
+      capabilityDecision,
+      agentWorkSnapshot.traceId,
+      agentWorkSnapshot.events.length,
+    );
+    appendActionEvent(routeActionEvent);
 
     // Log routing decision for telemetry
     addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
 
-    // ── Issue #502: Blocked capability decisions stop legacy routing
-    // BUT: Some cases must let legacy flow handle them:
-    // - Worker retry (retry/nochmal) should clear blocker and retry
-    // - Repo-first: no repo + no GitHub → tell user to load repo first
-    // - Legacy fallback: unrecognized intents → Worker handles them
+    // ── Issue #502: Blocked capability decisions stop legacy routing.
+    // Recoverable blockers persist the original intent and wait for real repo
+    // or GitHub-access evidence before the same pipeline is resumed.
     if (!capabilityDecision.allowed) {
-      // P1: Worker retry should bypass blocking - let legacy handle it
-      if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
-        setWorkerBlocker(null);
-        addLog("info", "Capability Router: worker retry bypasses blocked decision", "router");
-        // Continue to legacy retry flow below
-      }
-      // P1: Repo-first when no repo loaded - GitHub access needs a repo to validate against
-      else if (capabilityDecision.blocker === 'github_access_missing' && !effectiveRepoReady) {
+      if (capabilityDecision.blocker === 'repo_missing') {
+        pendingWriteIntentRef.current = submittedText;
+        setRepoSetupError(null);
+        setShowRepoSetup(true);
         appendChatLine({
           role: 'assistant',
-          text: 'Route blockiert: GitHub-Zugang erfordert ein geladenes Repository.\nBitte zuerst GitHub-Repo-Link senden.',
+          text: `Route blockiert: ${capabilityDecision.reason}\nDas Repo-Setup wurde geöffnet; der Auftrag bleibt für die Wiederaufnahme vorgemerkt.`,
         });
-        addLog("warn", "Capability Router blocked: repo-first needed before GitHub access", "router");
+        addLog("warn", "Capability Router blocked: repo missing; intent persisted", "router");
         return;
       }
-      // P2: Legacy Worker fallback for unrecognized intents
-      else if (capabilityDecision.blocker === 'unsupported_intent') {
-        addLog("info", "Capability Router: unsupported intent, falling through to legacy Worker", "router");
-        // Continue to legacy Worker/executor flow below
+      if (capabilityDecision.blocker === 'github_access_missing') {
+        pendingWriteIntentRef.current = submittedText;
+        setShowGitHubAccessOverride(true);
+        appendChatLine({
+          role: 'assistant',
+          text: `Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt vorgemerkt und wird erst nach bestätigter GitHub-API-Evidence fortgesetzt.`,
+        });
+        addLog("warn", "Capability Router blocked: GitHub access missing; intent persisted", "router");
+        return;
+      }
+      if (capabilityDecision.blocker === 'github_access_validating') {
+        pendingWriteIntentRef.current = submittedText;
+        appendChatLine({
+          role: 'assistant',
+          text: `Route blockiert: ${capabilityDecision.reason}\nDer Auftrag bleibt bis zum Ergebnis der laufenden Zugangsprüfung vorgemerkt.`,
+        });
+        addLog("info", "Capability Router waiting for GitHub validation; intent persisted", "router");
+        return;
+      }
+      // Unknown intents fail closed. The Worker must not invent a route for an
+      // input that the capability runtime could not classify.
+      if (capabilityDecision.blocker === 'unsupported_intent') {
+        appendChatLine({
+          role: 'assistant',
+          text: `Route blockiert: ${capabilityDecision.reason}`,
+        });
+        addLog("warn", "Capability Router: unsupported intent blocked; no Worker call", "router");
+        return;
       }
       // Default: Block with clear message
       else {
@@ -4063,7 +4091,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       if (result.ok && result.snapshot) {
         clearPatchEvidence();
         githubTokenRef.current = null;
-        pendingWriteIntentRef.current = null;
         setValidatedGitHubTargetKey(null);
         setGitHubAccessState(createGitHubAccessSnapshot());
         setActionStream(createSovereignActionStreamState());
@@ -4831,6 +4858,29 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     );
   };
 
+  useEffect(() => {
+    const pendingIntent = pendingWriteIntentRef.current;
+    if (!pendingIntent || !effectiveRepoReady) return;
+    if (localRepoLoading || chatResponseBusy || isPublishing) return;
+
+    pendingWriteIntentRef.current = null;
+    setShowGitHubAccessOverride(false);
+    appendActionEvent({
+      kind: 'route_selected',
+      route: 'runtime',
+      label: 'Blockierter Auftrag wird wiederaufgenommen',
+      detail: githubWriteAllowed
+        ? 'Repository und GitHub-Schreibzugang sind jetzt durch Runtime-Evidence belegt.'
+        : 'Repository ist jetzt belegt; der Auftrag wird bis zum nächsten erforderlichen Gate fortgesetzt.',
+      state: 'running',
+    });
+    addLog('info', 'Pending intent resumed after runtime gate changed', 'router');
+    void _processSubmit(pendingIntent, { resumePendingIntent: true });
+    // Resume is triggered only by new repo/access evidence. The pending ref is
+    // cleared before execution, so unrelated renders cannot duplicate the job.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveRepoReady, githubWriteAllowed]);
+
   const handleRepoSetupLoad = () => {
     const clean = repoSetupUrl.trim();
     if (!clean) {
@@ -4864,6 +4914,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
 
     if (!gate.canStart) {
       if (action.requiresRepo && !effectiveRepoReady) {
+        pendingWriteIntentRef.current = submitted;
         setRepoSetupError(null);
         setShowRepoSetup(true);
         appendActionEvent(buildBlockedActionEvent({
@@ -5606,8 +5657,10 @@ Das echte Repo-Setup wurde geöffnet.`,
                         case 'sovereign-agent':
                           // Sovereign Agent route — ONLY with validated GitHub write
                           if (!githubWriteAllowed) {
-                            // Defensive: block and open access gate
+                            // Defensive: block and open access gate while preserving
+                            // the confirmed original intent for state-driven resume.
                             appendActionEvent(buildRouteBlockedEvent('GitHub-Zugang erforderlich'));
+                            pendingWriteIntentRef.current = draft.originalText;
                             setShowGitHubAccessOverride(true);
                             appendChatLine({
                               role: 'assistant',
@@ -5818,7 +5871,6 @@ Das echte Repo-Setup wurde geöffnet.`,
                     });
 
                     const pendingWriteIntent = pendingWriteIntentRef.current;
-                    pendingWriteIntentRef.current = null;
                     if (!pendingWriteIntent) {
                       appendChatLine({
                         role: 'assistant',
@@ -5829,127 +5881,12 @@ Das echte Repo-Setup wurde geöffnet.`,
 
                     appendChatLine({
                       role: 'assistant',
-                      text: 'GitHub-Zugang ist bereit. Ich nehme den blockierten Schreibauftrag wieder auf. Der Zugangswert wird nicht im Chat gespeichert. Wenn er in einem Screen Recording oder Clipboard-Verlauf sichtbar war, bitte rotieren.',
+                      text: 'GitHub-Zugang ist bereit. Der vorgemerkte Auftrag wird nach dem bestätigten Runtime-State automatisch über dieselbe Routing-Pipeline fortgesetzt. Der Zugangswert wird nicht im Chat gespeichert.',
                     });
-                    appendActionEvent({
-                      kind: 'route_selected',
-                      route: 'github-patch',
-                      label: 'Patch/Draft-PR Route gestartet',
-                      detail: 'Blockierter Schreibauftrag wird nach bestätigtem GitHub-Zugang fortgesetzt.',
-                      state: 'running',
-                    });
-
-                    if (agentDisabled) {
-                      const tokenForDirectPatch = githubTokenRef.current;
-                      if (!agentReady && tokenForDirectPatch && validation.canWrite === true) {
-                        const patchScopeKey = validationRepoScopeKey;
-                        clearPatchEvidence();
-                        const directPatchResult = await buildDirectPatchPlanWithContentLoad({
-                          repoContext: {
-                            owner: chatRepoSnapshot.owner,
-                            name: chatRepoSnapshot.repo,
-                            branch: chatRepoSnapshot.branch,
-                            filePaths: chatRepoSnapshot.filePaths ?? [],
-                          },
-                          instruction: pendingWriteIntent,
-                          githubAccessReady: true,
-                          token: tokenForDirectPatch,
-                          fetcher: globalThis.fetch,
-                        });
-
-                        if (!isCurrentRepoScope(patchScopeKey)) {
-                          appendActionEvent(buildBlockedActionEvent({
-                            route: 'direct-github-patch',
-                            label: 'Patch-Ergebnis verworfen',
-                            detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
-                            kind: 'blocked',
-                          }));
-                          return;
-                        }
-
-                        if ('result' in directPatchResult && directPatchResult.result.ok) {
-                          appendActionEvent({
-                            kind: 'route_selected',
-                            route: 'direct-github-patch',
-                            label: 'Direct GitHub Patch Route gewählt',
-                            detail: `Zieldatei: ${directPatchResult.result.targetPath}`,
-                            state: 'running',
-                          });
-                          appendActionEvent({
-                            kind: 'done',
-                            route: 'direct-github-patch',
-                            label: 'Patch-Vorschau generiert',
-                            detail: directPatchResult.result.patchSummary,
-                            state: 'done',
-                          });
-                          appendChatLine({
-                            role: 'assistant',
-                            text: `Direct GitHub Patch Route verfügbar für ${directPatchResult.result.targetPath}.\n\nPatch-Vorschlag:\n${directPatchResult.result.patchSummary}\n\nNächste Aktion: ${directPatchResult.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
-                          });
-                          stageGeneratedPatch({
-                            path: directPatchResult.result.targetPath,
-                            proposedContent: directPatchResult.result.proposedContent,
-                            baseContent: directPatchResult.result.baseContent,
-                            summary: directPatchResult.result.patchSummary,
-                          });
-                          setLastAnswerWasLocal(true);
-                          addLog('info', 'Pending write intent resumed through Direct GitHub Patch Route', 'router');
-                          return;
-                        }
-
-                        if ('capability' in directPatchResult && !directPatchResult.capability.available) {
-                          appendActionEvent(buildBlockedActionEvent({
-                            route: 'direct-github-patch',
-                            label: 'Direct Patch nicht verfügbar',
-                            detail: directPatchResult.capability.reason,
-                            kind: 'patch_blocked',
-                          }));
-                          appendChatLine({
-                            role: 'assistant',
-                            text: `Der GitHub-Zugang ist bereit, aber Direct GitHub Patch ist für diesen Auftrag nicht verfügbar.\nGrund: ${directPatchResult.capability.reason}\n\nSovereignAgent Runtime ist nicht verbunden. Es wurde noch keine Datei geändert.`,
-                          });
-                          addLog('warn', 'Pending write intent direct patch unavailable: ' + directPatchResult.capability.reason, 'router');
-                          return;
-                        }
-
-                        // Runtime-Truth: Handle Direct Patch failure (result.ok === false)
-                        if ('result' in directPatchResult && !directPatchResult.result.ok) {
-                          const failureResult = directPatchResult.result;
-                          const errorMessage = 'reason' in failureResult ? failureResult.reason : 'Direct Patch fehlgeschlagen';
-                          appendActionEvent({
-                            kind: 'failed',
-                            route: 'direct-github-patch',
-                            label: 'Direct Patch fehlgeschlagen',
-                            detail: errorMessage,
-                            state: 'failed',
-                          });
-                          appendChatLine({
-                            role: 'assistant',
-                            text: `Direct GitHub Patch fehlgeschlagen: ${errorMessage}`,
-                          });
-                          addLog('error', 'Pending write intent direct patch failed: ' + errorMessage, 'router');
-                          return;
-                        }
-                      }
-
-                      appendActionEvent(buildBlockedActionEvent({
-                        route: 'github-patch',
-                        label: 'Patch/Draft-PR Route blockiert',
-                        detail: agentReady ? 'Executor ist für diesen Auftrag nicht startklar.' : 'Sovereign Agent Runtime ist nicht verbunden.',
-                        kind: 'patch_blocked',
-                      }));
-                      appendChatLine({
-                        role: 'assistant',
-                        text: agentReady
-                          ? 'Der GitHub-Zugang ist bereit, aber die Patch/Draft-PR Route ist gerade blockiert. Es wurde noch keine Datei geändert.'
-                          : 'Der GitHub-Zugang ist bereit, aber weder Direct GitHub Patch noch Sovereign Agent Runtime ist für diesen Auftrag verfügbar. Es wurde noch keine Datei geändert.',
-                      });
-                      return;
-                    }
-
-                    void startAgentFromText(pendingWriteIntent);
+                    addLog('info', 'GitHub access confirmed; pending intent awaits state-driven resume', 'router');
                   }}
                   onDismiss={() => {
+                    pendingWriteIntentRef.current = null;
                     setShowGitHubAccessOverride(false);
                     appendActionEvent(buildLocalRuntimeResultEvent({
                       label: 'GitHub-Zugangsfläche geschlossen',

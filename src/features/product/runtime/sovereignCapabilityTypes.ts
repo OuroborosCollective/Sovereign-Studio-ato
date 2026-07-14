@@ -108,7 +108,7 @@ export interface CapabilityRouterInput {
  * Task complexity classification.
  * Determines which executor is appropriate.
  */
-export type TaskComplexity = 'simple' | 'medium' | 'complex';
+export type TaskComplexity = 'simple' | 'medium' | 'complex' | 'unknown';
 
 /**
  * Intent classification from text analysis.

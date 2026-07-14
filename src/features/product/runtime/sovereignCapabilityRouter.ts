@@ -20,6 +20,10 @@ import type {
   SovereignRouteBlocker,
   TaskComplexity,
 } from './sovereignCapabilityTypes';
+import type {
+  SovereignActionEventInput,
+  SovereignActionRoute,
+} from './sovereignActionStreamRuntime';
 
 export type { CapabilityRouterInput, CapabilityDecision } from './sovereignCapabilityTypes';
 
@@ -90,7 +94,6 @@ const SOVEREIGN_AGENT_TOKENS = [
 
 const WORKFLOW_WATCH_TOKENS = [
   'watch workflow', 'workflow status', 'ci status', 'github actions',
-  'beobachte', 'workflow', 'workflows', 'überwach',
   'beobachte workflow', 'workflow überwachen', 'ci status prüfen',
   'läuft der workflow', 'workflow ergebnis', 'workflow-status',
 ];
@@ -112,10 +115,11 @@ export function classifyIntent(text: string): IntentClassification {
   if (/^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i.test(trimmed)) {
     return 'load_repo';
   }
+  if (STATUS_QUESTION_TOKENS.some((token) => lower.includes(token))) return 'status_question';
+  if (FREE_CHAT_TOKENS.some((token) => lower.includes(token)) || /\?\s*$/.test(trimmed)) return 'free_chat';
   if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
   if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) return 'workflow_watch';
   if (DRAFT_PR_TOKENS.some((token) => lower.includes(token))) return 'draft_pr';
-  if (STATUS_QUESTION_TOKENS.some((token) => lower.includes(token))) return 'status_question';
 
   const hasDirectPatchKeyword = DIRECT_PATCH_TOKENS.some((token) => lower.includes(token));
   const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
@@ -124,7 +128,6 @@ export function classifyIntent(text: string): IntentClassification {
   if (SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
   if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
-  if (FREE_CHAT_TOKENS.some((token) => lower.includes(token))) return 'free_chat';
   return 'unknown';
 }
 
@@ -151,7 +154,7 @@ export function determineTaskComplexity(
       return hasSimpleModifier ? 'medium' : 'complex';
     }
     default:
-      return 'unknown' as TaskComplexity;
+      return 'unknown';
   }
 }
 
@@ -165,7 +168,7 @@ export function detectBlockers(input: CapabilityRouterInput): SovereignRouteBloc
     blockers.push('github_access_missing');
   }
 
-  if (!input.directGitHubPatchReady && !input.workspaceReady) {
+  if (!input.directGitHubPatchReady && !input.workspaceReady && !input.agentReady) {
     blockers.push('executor_unavailable');
   }
   return blockers;
@@ -236,6 +239,32 @@ function buildRecoverablePackageDecision(
   };
 }
 
+function buildRepoMissingDecision(intent: IntentClassification): CapabilityDecision {
+  const route: SovereignRoute = intent === 'direct_patch'
+    ? 'direct-github-patch'
+    : intent === 'draft_pr'
+      ? 'draft-pr-runtime'
+      : intent === 'workflow_watch'
+        ? 'worker-chat'
+        : 'workspace-executor';
+  const capability: SovereignCapability = intent === 'direct_patch'
+    ? 'direct_github_patch'
+    : intent === 'draft_pr'
+      ? 'draft_pr'
+      : intent === 'workflow_watch'
+        ? 'workflow_watch'
+        : 'code_patch_plan';
+
+  return {
+    route,
+    capability,
+    allowed: false,
+    reason: buildReason(route, capability, 'repo_missing'),
+    blocker: 'repo_missing',
+    nextAction: 'load_repo',
+  };
+}
+
 export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): CapabilityDecision {
   const intent = classifyIntent(input.text);
   const complexity = determineTaskComplexity(intent, input.text);
@@ -285,32 +314,63 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
     };
   }
 
+  if (intent !== 'unknown' && blockers.includes('repo_missing')) {
+    return buildRepoMissingDecision(intent);
+  }
+
   if (intent === 'workflow_watch') {
     const blocker = blockers.includes('github_access_missing')
       ? 'github_access_missing'
       : blockers.includes('github_access_validating')
         ? 'github_access_validating'
-        : blockers.includes('executor_unavailable')
+        : input.hasActiveWorkerBlocker
           ? 'executor_unavailable'
           : undefined;
     return {
       route: 'worker-chat',
       capability: 'workflow_watch',
       allowed: !blocker,
-      reason: buildReason('worker-chat', 'workflow_watch', blocker),
+      reason: input.hasActiveWorkerBlocker && blocker === 'executor_unavailable'
+        ? 'Worker ist blockiert. Workflow-Status kann nicht abgefragt werden.'
+        : buildReason('worker-chat', 'workflow_watch', blocker),
       blocker,
-      nextAction: blocker ? determineNextAction(blocker) : 'run_worker',
+      nextAction: input.hasActiveWorkerBlocker && blocker === 'executor_unavailable'
+        ? 'show_blocker'
+        : blocker
+          ? determineNextAction(blocker)
+          : 'run_worker',
     };
   }
 
   if (intent === 'draft_pr') {
-    // Sovereign Agent is only used when explicitly requested by the user
+    // Sovereign Agent is only used when explicitly requested by the user,
+    // after repository and GitHub write access are proven.
     if (explicitSovereignAgentIntent && input.agentReady) {
+      if (blockers.includes('github_access_missing')) {
+        return {
+          route: 'sovereign-agent',
+          capability: 'draft_pr',
+          allowed: false,
+          reason: buildReason('sovereign-agent', 'draft_pr', 'github_access_missing'),
+          blocker: 'github_access_missing',
+          nextAction: 'validate_github_access',
+        };
+      }
+      if (blockers.includes('github_access_validating')) {
+        return {
+          route: 'sovereign-agent',
+          capability: 'draft_pr',
+          allowed: false,
+          reason: buildReason('sovereign-agent', 'draft_pr', 'github_access_validating'),
+          blocker: 'github_access_validating',
+          nextAction: 'show_blocker',
+        };
+      }
       return {
         route: 'sovereign-agent',
         capability: 'draft_pr',
         allowed: true,
-        reason: 'Sovereign Agent wurde ausdrücklich angefordert und ist als interne Runtime verfügbar.',
+        reason: 'Sovereign Agent wurde ausdrücklich angefordert; Repository und GitHub-Zugang sind validiert.',
         nextAction: 'start_agent',
       };
     }
@@ -368,8 +428,28 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
         nextAction: 'show_blocker',
       };
     }
-    // Sovereign Agent only when explicitly requested
+    // Sovereign Agent only when explicitly requested and GitHub access is proven.
     if (explicitSovereignAgentIntent && input.agentReady) {
+      if (blockers.includes('github_access_missing')) {
+        return {
+          route: 'sovereign-agent',
+          capability: 'code_patch_plan',
+          allowed: false,
+          reason: buildReason('sovereign-agent', 'code_patch_plan', 'github_access_missing'),
+          blocker: 'github_access_missing',
+          nextAction: 'validate_github_access',
+        };
+      }
+      if (blockers.includes('github_access_validating')) {
+        return {
+          route: 'sovereign-agent',
+          capability: 'code_patch_plan',
+          allowed: false,
+          reason: buildReason('sovereign-agent', 'code_patch_plan', 'github_access_validating'),
+          blocker: 'github_access_validating',
+          nextAction: 'show_blocker',
+        };
+      }
       return {
         route: 'sovereign-agent',
         capability: 'code_patch_plan',
@@ -440,6 +520,26 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
 
   if (intent === 'code_generation') {
     if (explicitSovereignAgentIntent && input.agentReady) {
+      if (blockers.includes('github_access_validating')) {
+        return {
+          route: 'sovereign-agent',
+          capability: 'code_patch_plan',
+          allowed: false,
+          reason: buildReason('sovereign-agent', 'code_patch_plan', 'github_access_validating'),
+          blocker: 'github_access_validating',
+          nextAction: 'show_blocker',
+        };
+      }
+      if (blockers.includes('github_access_missing')) {
+        return {
+          route: 'sovereign-agent',
+          capability: 'code_patch_plan',
+          allowed: false,
+          reason: buildReason('sovereign-agent', 'code_patch_plan', 'github_access_missing'),
+          blocker: 'github_access_missing',
+          nextAction: 'validate_github_access',
+        };
+      }
       return {
         route: 'sovereign-agent',
         capability: 'code_patch_plan',
@@ -521,16 +621,38 @@ export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): Ca
   };
 }
 
+export function mapCapabilityRouteToActionRoute(route: SovereignRoute): SovereignActionRoute {
+  switch (route) {
+    case 'worker-chat':
+      return 'worker';
+    case 'code-llm':
+      return 'code-llm';
+    case 'direct-github-patch':
+      return 'direct-github-patch';
+    case 'workspace-executor':
+      return 'agent-workspace';
+    case 'sovereign-agent':
+      return 'sovereign-agent';
+    case 'draft-pr-runtime':
+      return 'github-patch';
+    case 'local-runtime-answer':
+      return 'runtime';
+    case 'repo-load':
+      return 'repo';
+  }
+}
+
 export function buildCapabilityRouteActionEvent(
   decision: CapabilityDecision,
   _traceId: string,
   _index: number,
-): { kind: 'route_selected' | 'capability_checked'; route: string; label: string; detail: string; state: 'running' | 'blocked' | 'done' } {
+): SovereignActionEventInput {
+  const route = mapCapabilityRouteToActionRoute(decision.route);
   if (decision.isTerminal) {
     const isLocalAnswer = decision.route === 'local-runtime-answer' && decision.nextAction === 'answer_locally';
     return {
       kind: isLocalAnswer ? 'capability_checked' : 'route_selected',
-      route: decision.route,
+      route,
       label: isLocalAnswer ? 'Lokale Runtime-Antwort vorbereitet' : 'Route gewählt',
       detail: decision.reason,
       state: 'done',
@@ -538,7 +660,7 @@ export function buildCapabilityRouteActionEvent(
   }
   return {
     kind: 'route_selected',
-    route: decision.route,
+    route,
     label: 'Route gewählt',
     detail: decision.reason,
     state: decision.allowed ? 'running' : 'blocked',
