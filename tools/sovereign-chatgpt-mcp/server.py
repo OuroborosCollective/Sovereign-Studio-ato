@@ -95,8 +95,9 @@ mcp = FastMCP(
         "Für Android-Produktionsarbeit beginne mit android_project_inventory, android_failure_family_scan und vorhandener Runtime-Evidence. Korrigiere zuerst die kausale Fehlerfamilie, "
         "füge Regressionstests hinzu, fahre denselben Check erneut und erweitere danach auf benachbarte Familien. android_run_validation_suite bietet fast, standard und release. "
         "Eine Release-Bereitschaft erfordert keine kritischen oder hohen Blocker, grüne relevante Tests und geprüfte APK/AAB-Evidence. "
-        "Draft-PR bleibt verfügbar. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, nicht als Draft markierten, "
-        "mergefähigen PR mit exakt bestätigtem Head-SHA und vollständig grünen Checks mergen. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
+        "Draft-PR bleibt verfügbar. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
+        "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
+        "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
         "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. "
@@ -208,8 +209,11 @@ def repository_merge_pr(
     expected_head_sha: str,
     merge_method: str = "squash",
     self_update_after_merge: bool = True,
+    owner_approved: bool = False,
+    mark_ready_if_draft: bool = False,
+    allow_unrelated_android_pending: bool = False,
 ) -> dict[str, Any]:
-    """Merge one confirmed non-draft PR only when GitHub reports it mergeable and all checks are green."""
+    """Merge one confirmed PR; owner-scoped overrides remain bounded to unrelated Android pending gates."""
     return broker.call(
         "github_merge_pr",
         {
@@ -217,6 +221,9 @@ def repository_merge_pr(
             "expected_head_sha": expected_head_sha,
             "merge_method": merge_method,
             "self_update_after_merge": self_update_after_merge,
+            "owner_approved": owner_approved,
+            "mark_ready_if_draft": mark_ready_if_draft,
+            "allow_unrelated_android_pending": allow_unrelated_android_pending,
         },
         timeout=180,
     )

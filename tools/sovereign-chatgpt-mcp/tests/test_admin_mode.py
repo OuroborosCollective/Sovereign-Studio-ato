@@ -210,7 +210,7 @@ def test_git_commands_pin_the_validated_workspace_with_dash_c(tmp_path, monkeypa
 
     assert result["ok"] is True
     assert calls == [
-        (["git", "-C", str(repo.resolve()), "status", "--short"], str(repo.resolve()))
+        (["git", "-c", f"safe.directory={repo.resolve()}", "-C", str(repo.resolve()), "status", "--short"], str(repo.resolve()))
     ]
 
 

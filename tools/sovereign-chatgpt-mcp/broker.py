@@ -230,6 +230,9 @@ class BrokerRuntime:
                 expected_head_sha=str(values.get("expected_head_sha") or ""),
                 merge_method=str(values.get("merge_method") or "squash"),
                 self_update_after_merge=bool(values.get("self_update_after_merge", True)),
+                owner_approved=bool(values.get("owner_approved", False)),
+                mark_ready_if_draft=bool(values.get("mark_ready_if_draft", False)),
+                allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),
             ),
             "mcp_self_update_schedule": lambda values: self.self_update.schedule(
                 expected_revision=str(values.get("expected_revision") or ""),
