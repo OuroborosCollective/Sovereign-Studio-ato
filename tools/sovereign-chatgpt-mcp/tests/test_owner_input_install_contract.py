@@ -37,13 +37,16 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert "printf '%s' \"$OWNER_REQUEST_KEY\"" not in installer
     assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
     assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
+    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
+    assert '/opt/secure/owner-managed' not in installer
 
 
 def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> None:
     deploy = (ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
 
     assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in deploy
-    assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/secure/owner-managed"' in deploy
+    assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"' in deploy
+    assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/secure/owner-managed"' not in deploy
     assert 'umask 077' in deploy
     assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in deploy
     assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in deploy
@@ -53,6 +56,7 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
     assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
     assert "install -d -m 0700 /opt/secure/owner-managed" not in deploy
+    assert ':/opt/secure/owner-managed:rw' not in deploy
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
 
 

@@ -10,7 +10,7 @@ CANDIDATE="sovereign-backend-candidate"
 PREVIOUS_IMAGE=""
 NEW_IMAGE=""
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
-OWNER_INPUT_CONTAINER_ROOT="/opt/secure/owner-managed"
+OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"
 
 fail() {
   printf 'deploy blocked: %s\n' "$*" >&2
