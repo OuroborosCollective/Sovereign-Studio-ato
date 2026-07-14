@@ -104,6 +104,16 @@ jobs:
             command: pnpm exec vitest run src/features/product/containers/BuilderContainer.test.tsx
           - gate: action-stream-tests
             command: pnpm exec vitest run src/features/product/runtime/sovereignActionStreamRuntime.test.ts
+          - gate: product-runtime-neighbors
+            command: pnpm exec vitest run src/features/product/runtime
+          - gate: product-surface-neighbors
+            command: pnpm exec vitest run src/features/product/components src/features/product/hooks src/features/product/contexts
+          - gate: github-feature-tests
+            command: pnpm exec vitest run src/features/github
+          - gate: ai-feature-tests
+            command: pnpm exec vitest run src/features/ai
+          - gate: top-level-contract-tests
+            command: pnpm exec vitest run src/*.test.ts src/*.test.tsx
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
