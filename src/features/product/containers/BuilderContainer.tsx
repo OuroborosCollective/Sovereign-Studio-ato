@@ -2688,6 +2688,8 @@ export function BuilderContainer({
   const [validatedGitHubTargetKey, setValidatedGitHubTargetKey] = useState<string | null>(null);
   const pendingWriteIntentRef = useRef<string | null>(null);
   const submitInFlightRef = useRef(false);
+  const pendingResumeRetryRef = useRef(false);
+  const [pendingResumeRetrySequence, setPendingResumeRetrySequence] = useState(0);
   const currentRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
   currentRepoScopeKeyRef.current = currentRepoScopeKey;
   const isCurrentRepoScope = useCallback(
@@ -3629,8 +3631,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     const submittedText = wishText.trim();
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing)
       return;
-    setWishText("");
-    void runSerializedSubmit(() => _processSubmit(submittedText));
+    void runSerializedSubmit(async () => {
+      setWishText("");
+      await _processSubmit(submittedText);
+    });
   };
 
   // Retry submit with a specific message (used by WorkerBlockerCard and Banner)
@@ -3642,8 +3646,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     } = {},
   ) => {
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
-    setWishText("");
-    void runSerializedSubmit(() => _processSubmit(message, options));
+    void runSerializedSubmit(async () => {
+      setWishText("");
+      await _processSubmit(message, options);
+    });
   };
 
   const _processSubmit = async (
@@ -4544,7 +4550,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (authUser) {
       try {
         const workerHealthForInference = await fetchDevChatWorkerHealth();
-        if (workerHealthForInference.ok) setWorkerHealthEvidence(workerHealthForInference);
+        setWorkerHealthEvidence(workerHealthForInference);
         areInferenceResult = await evaluateAreInference({
           prompt: submittedText,
           repository: buildAreRepositoryState({
@@ -4832,7 +4838,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     }
 
     const health = await fetchDevChatWorkerHealth();
-    if (health.ok) setWorkerHealthEvidence(health);
+    setWorkerHealthEvidence(health);
     const diagnostic = streamDiagnostic ??
       fallback?.diagnostic ?? {
         route: SOVEREIGN_WORKER_CHAT,
@@ -4878,8 +4884,10 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
 
   const runSerializedSubmit = async (
     submit: () => Promise<void>,
+    options: { readonly retryPendingOnReject?: boolean } = {},
   ): Promise<boolean> => {
     if (submitInFlightRef.current) {
+      if (options.retryPendingOnReject) pendingResumeRetryRef.current = true;
       addLog('info', 'Submit ignored while another route is active', 'router');
       return false;
     }
@@ -4890,6 +4898,10 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       return true;
     } finally {
       submitInFlightRef.current = false;
+      if (pendingResumeRetryRef.current) {
+        pendingResumeRetryRef.current = false;
+        setPendingResumeRetrySequence((sequence) => sequence + 1);
+      }
     }
   };
 
@@ -4915,11 +4927,11 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       });
       addLog('info', 'Pending intent resumed after runtime gate changed', 'router');
       await _processSubmit(currentPendingIntent, { resumePendingIntent: true });
-    });
+    }, { retryPendingOnReject: true });
     // Resume is retried whenever repo/access evidence or a blocking busy gate
     // changes. The pending ref is cleared only after the submit lock is acquired.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveRepoReady, githubWriteAllowed, localRepoLoading, chatResponseBusy, isPublishing]);
+  }, [effectiveRepoReady, githubWriteAllowed, localRepoLoading, chatResponseBusy, isPublishing, pendingResumeRetrySequence]);
 
   const handleRepoSetupLoad = () => {
     const clean = repoSetupUrl.trim();
@@ -5176,9 +5188,11 @@ Das echte Repo-Setup wurde geöffnet.`,
       ? clean.slice(command.cmd.length).trim()
       : "";
     const submitted = argument ? `${command.cmd} ${argument}` : command.cmd;
-    setWishText("");
-    setSlashMenuDismissed(false);
-    void runSerializedSubmit(() => _processSubmit(submitted));
+    void runSerializedSubmit(async () => {
+      setWishText("");
+      setSlashMenuDismissed(false);
+      await _processSubmit(submitted);
+    });
   };
 
   const handleComposerKeyDown = (

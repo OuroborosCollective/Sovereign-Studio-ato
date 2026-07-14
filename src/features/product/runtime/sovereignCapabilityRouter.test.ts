@@ -89,6 +89,8 @@ describe('Sovereign Capability Router', () => {
       expect(classifyIntent('Was ist der Inhalt der README?')).toBe('free_chat');
       expect(classifyIntent('Was ist ein Pull Request?')).toBe('free_chat');
       expect(classifyIntent('Erkläre mir einen Workflow')).toBe('free_chat');
+      expect(classifyIntent('Can you show me the README?')).toBe('free_chat');
+      expect(classifyIntent('Tell me about the pull request?')).toBe('free_chat');
       expect(classifyIntent('Hi, wie geht es dir?')).toBe('free_chat');
       expect(classifyIntent('Aktualisiere README und Docs anhand der Architektur.')).toBe('direct_patch');
       expect(classifyIntent('Kannst du einen Draft PR erstellen?')).toBe('draft_pr');
