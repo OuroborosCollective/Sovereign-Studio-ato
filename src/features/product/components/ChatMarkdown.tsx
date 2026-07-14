@@ -31,6 +31,13 @@ const LINK_REGEX = /\[([^\]\n]+)\]\(([^)\n]+)\)/;
 const CODE_BLOCK_START_REGEX = /^```(\w*)$/;
 const CODE_BLOCK_END_REGEX = /^```$/;
 
+// Hoisted patterns array to reduce garbage collection pressure in the high-frequency render path.
+const INLINE_PATTERNS = [
+  { regex: BOLD_REGEX, type: 'bold' as const },
+  { regex: CODE_REGEX, type: 'code' as const },
+  { regex: LINK_REGEX, type: 'link' as const, urlGroup: 2 },
+];
+
 /**
  * Sanitizes URLs to prevent XSS (e.g., javascript: protocols)
  */
@@ -57,16 +64,10 @@ function pushInlineSegments(line: string, segments: Segment[]): void {
   let remaining = line;
 
   while (remaining.length > 0) {
-    const patterns = [
-      { regex: BOLD_REGEX, type: 'bold' as const },
-      { regex: CODE_REGEX, type: 'code' as const },
-      { regex: LINK_REGEX, type: 'link' as const, urlGroup: 2 },
-    ];
-
     let earliestMatch: { match: RegExpExecArray; type: string; url?: string } | null = null;
     let earliestIndex = Infinity;
 
-    for (const p of patterns) {
+    for (const p of INLINE_PATTERNS) {
       p.regex.lastIndex = 0;
       const m = p.regex.exec(remaining);
       if (m && m.index < earliestIndex) {
