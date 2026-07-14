@@ -264,6 +264,25 @@ describe('Sovereign Capability Router', () => {
       expect(decision.reason).toContain('Patch-Paket');
     });
 
+    it('keeps a recoverable package route queued until package generation starts', () => {
+      const decision = decideSovereignCapabilityRoute({
+        text: 'Fixe den kleinen Button Bug',
+        repoReady: true,
+        githubAccessState: 'ready',
+        agentReady: false,
+        directGitHubPatchReady: false,
+        workspaceReady: false,
+        hasActiveWorkerBlocker: false,
+        hasPackage: false,
+      });
+      const event = buildCapabilityRouteActionEvent(decision, 'trace-package', 0);
+
+      expect(decision.allowed).toBe(true);
+      expect(decision.blocker).toBe('package_required');
+      expect(event.label).toBe('Nächste Route eingeplant');
+      expect(event.state).toBe('queued');
+    });
+
     it('runs code-llm when a package already exists', () => {
       const decision = decideSovereignCapabilityRoute({
         text: 'Fixe den kleinen Button Bug',

@@ -489,6 +489,26 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
   });
 
+  it("keeps a Pull Request question advisory despite executor keywords", async () => {
+    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ choices: [{ message: { content: "Ein Pull Request ist eine prüfbare Änderung." } }] }),
+    );
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+
+    fireEvent.change(chatField(), { target: { value: "Was ist ein Pull Request?" } });
+    fireEvent.click(sendButton());
+
+    await waitFor(() =>
+      expect(screen.getByText("Ein Pull Request ist eine prüfbare Änderung.")).toBeDefined(),
+    );
+    expect(props.onStartAgent).not.toHaveBeenCalled();
+    expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
+  });
+
   it("resumes one blocked Sovereign Agent request after GitHub access becomes ready", async () => {
     const originalText = "Sovereign Agent soll Feature X implementieren";
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };

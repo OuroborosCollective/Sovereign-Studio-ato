@@ -658,12 +658,17 @@ export function buildCapabilityRouteActionEvent(
       state: 'done',
     };
   }
+  const recoverableNextActionPending = Boolean(decision.allowed && decision.blocker);
   return {
     kind: 'route_selected',
     route,
-    label: 'Route gewählt',
+    label: recoverableNextActionPending ? 'Nächste Route eingeplant' : 'Route gewählt',
     detail: decision.reason,
-    state: decision.allowed ? 'running' : 'blocked',
+    state: recoverableNextActionPending
+      ? 'queued'
+      : decision.allowed
+        ? 'running'
+        : 'blocked',
   };
 }
 

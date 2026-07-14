@@ -4074,6 +4074,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       return;
     }
 
+    const advisoryWorkerRoute = capabilityDecision.route === 'worker-chat'
+      && capabilityDecision.capability === 'free_chat';
+
     const parsedRepo = parseDevChatGithubUrl(submittedText);
     if (parsedRepo) {
       setRepoLoading(true);
@@ -4147,7 +4150,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // readiness gate below (agentDisabled) and must not be short-circuited
     // here — this gate only covers write-language that would otherwise be
     // sent straight to the advisory Worker chat.
-    if (isWriteIntent(submittedText) && !isSovereignAgentExecutionIntent(submittedText)) {
+    if (
+      !advisoryWorkerRoute
+      && isWriteIntent(submittedText)
+      && !isSovereignAgentExecutionIntent(submittedText)
+    ) {
       if (!effectiveRepoReady) {
         appendActionEvent(buildBlockedActionEvent({
           route: 'github-access',
@@ -4406,7 +4413,7 @@ Es wurde noch keine Datei geändert.`,
     const isExecutionIntent = isSovereignAgentExecutionIntent(submittedText);
     const isDelegatedExecution = isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
 
-    if (isExecutionIntent || isDelegatedExecution) {
+    if (!advisoryWorkerRoute && (isExecutionIntent || isDelegatedExecution)) {
       if (!agentDisabled) {
         // Immediately reflect intent in AgentWorkTimeline — truth from runtime, not from polling.
         const _repo = chatRepoSnapshot
@@ -4498,7 +4505,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       return;
     }
 
-    if (!isSafeAnalysisPreset && isCodeGenerationIntent(submittedText)) {
+    if (!advisoryWorkerRoute && !isSafeAnalysisPreset && isCodeGenerationIntent(submittedText)) {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',
@@ -4511,7 +4518,12 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     // "done" — the result gate (sovereignActionStreamRuntime) requires a
     // patch/diff, Draft PR, or an explicit blocked/access_required state
     // before the write intent can be considered resolved.
-    if (!isSafeAnalysisPreset && isWriteIntent(submittedText) && !isCodeGenerationIntent(submittedText)) {
+    if (
+      !advisoryWorkerRoute
+      && !isSafeAnalysisPreset
+      && isWriteIntent(submittedText)
+      && !isCodeGenerationIntent(submittedText)
+    ) {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Schreibauftrag erkannt; Ergebnis gilt erst mit Patch/Diff, Draft PR oder explizitem Blocker als abgeschlossen.',
