@@ -89,7 +89,11 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert 'sha256sum --check sovereign-chatgpt-mcp.sha256' in workflow
     assert 'EXPECTED_REVISION: ${{ github.sha }}' in workflow
     assert 'EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}' in workflow
-    assert 'RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}' in workflow
+    assert 'RELEASE_RELATIVE_DIR: .sovereign-releases/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}' in workflow
+    assert 'RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-' not in workflow
+    assert 'RELEASE_DIR="$HOME/$RELEASE_RELATIVE_DIR"' in workflow
+    assert 'target: ${{ env.RELEASE_RELATIVE_DIR }}' in workflow
+    assert 'Release directory traversal is forbidden.' in workflow
     assert '/opt/sovereign-chatgpt-mcp/releases/' not in workflow
     assert 'envs: SUDO_PASSWORD' in workflow
     assert 'run_root env SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow

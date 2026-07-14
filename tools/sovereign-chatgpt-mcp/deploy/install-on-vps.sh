@@ -22,11 +22,9 @@ MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
-BACKEND_IMAGE_REPOSITORY="${SOVEREIGN_BACKEND_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-backend}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 REQUIRE_TUNNEL="${SOVEREIGN_MCP_REQUIRE_TUNNEL:-0}"
 TUNNEL_MODE="${SOVEREIGN_MCP_TUNNEL_MODE:-auto}"
-SYNC_BACKEND="${SOVEREIGN_MCP_SYNC_BACKEND:-0}"
 INSTALL_STAGE="initializing"
 INSTALL_FAILURE_REASON=""
 INSTALL_COMPLETED=0
@@ -207,9 +205,7 @@ INSTALL_STAGE="preflight"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
 [[ "$REQUIRE_TUNNEL" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_REQUIRE_TUNNEL must be 0 or 1"
 [[ "$TUNNEL_MODE" =~ ^(auto|required|disabled)$ ]] || fail "SOVEREIGN_MCP_TUNNEL_MODE must be auto, required or disabled"
-[[ "$SYNC_BACKEND" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_SYNC_BACKEND must be 0 or 1"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
-[[ "$BACKEND_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is invalid"
 for command in docker systemctl python3 git ss openssl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
@@ -555,34 +551,7 @@ else
 fi
 unset TUNNEL_CONFIGURED
 
-BACKEND_SYNCED=0
-if [[ "$SYNC_BACKEND" == "1" ]]; then
-  INSTALL_STAGE="sync_backend_exact_revision"
-  BACKEND_TAGGED_IMAGE="$BACKEND_IMAGE_REPOSITORY:$EXPECTED_REVISION"
-  if [[ -n "$DOCKER_CONFIG_VALUE" ]]; then
-    docker --config "$DOCKER_CONFIG_VALUE" pull "$BACKEND_TAGGED_IMAGE"
-  else
-    docker pull "$BACKEND_TAGGED_IMAGE"
-  fi
-  BACKEND_IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$BACKEND_TAGGED_IMAGE")"
-  [[ "$BACKEND_IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "backend image revision label does not match expected revision"
-  BACKEND_IMAGE_DIGEST="$(docker image inspect --format '{{json .RepoDigests}}' "$BACKEND_TAGGED_IMAGE" \
-    | python3 -c 'import json,sys; repo=sys.argv[1]+"@"; values=json.load(sys.stdin); print(next((item for item in values if isinstance(item,str) and item.startswith(repo)), ""))' "$BACKEND_IMAGE_REPOSITORY")"
-  [[ "$BACKEND_IMAGE_DIGEST" == "$BACKEND_IMAGE_REPOSITORY"@sha256:* ]] || fail "backend image digest repository does not match"
-  BACKEND_DIGEST_ONLY="${BACKEND_IMAGE_DIGEST#*@}"
-  [[ "$BACKEND_DIGEST_ONLY" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "backend image has no immutable repository digest"
-
-  # MCP, broker, worker and protocol gates are already green. Keep this control
-  # plane even if the independently rollback-protected backend refresh fails.
-  ROLLBACK_ARMED=0
-  SOVEREIGN_BACKEND_IMAGE_REPOSITORY="$BACKEND_IMAGE_REPOSITORY" \
-    SOVEREIGN_BACKEND_ENV_FILE="$BACKEND_ENV_PATH" \
-    "$BIN_DIR/deploy-sovereign-backend" "$BACKEND_DIGEST_ONLY" "$EXPECTED_REVISION"
-  BACKEND_SYNCED=1
-  unset BACKEND_TAGGED_IMAGE BACKEND_IMAGE_REVISION BACKEND_IMAGE_DIGEST BACKEND_DIGEST_ONLY
-fi
-
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","backend_synced":%s,"workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$BACKEND_SYNCED"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"

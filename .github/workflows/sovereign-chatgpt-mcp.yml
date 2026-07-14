@@ -301,7 +301,7 @@ jobs:
       VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
       VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
-      RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}
+      RELEASE_RELATIVE_DIR: .sovereign-releases/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}
       EXPECTED_REVISION: ${{ github.sha }}
       EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}
     steps:
@@ -320,10 +320,12 @@ jobs:
           [[ "${EXPECTED_REVISION}" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected revision must be a full commit SHA.' >&2; exit 1; }
           [[ "${EXPECTED_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Published image digest is missing or invalid.' >&2; exit 1; }
           test "${KAPPA_POS}" = '1000000' || { echo 'KAPPA_POS invariant mismatch.' >&2; exit 1; }
-          case "${RELEASE_DIR}" in
-            /tmp/sovereign-chatgpt-mcp-*) ;;
-            *) echo "Unsafe release directory: ${RELEASE_DIR}" >&2; exit 1 ;;
+          case "${RELEASE_RELATIVE_DIR}" in
+            .sovereign-releases/sovereign-chatgpt-mcp-*) ;;
+            *) echo "Unsafe relative release directory: ${RELEASE_RELATIVE_DIR}" >&2; exit 1 ;;
           esac
+          [[ "${RELEASE_RELATIVE_DIR}" != /* ]]
+          [[ "${RELEASE_RELATIVE_DIR}" != *".."* ]]
 
       - name: Create deterministic MCP release archive
         run: |
@@ -362,11 +364,13 @@ jobs:
           command_timeout: 10m
           script: |
             set -eu
-            RELEASE_DIR='${{ env.RELEASE_DIR }}'
-            case "$RELEASE_DIR" in
-              /tmp/sovereign-chatgpt-mcp-*) ;;
-              *) echo "Unsafe release directory: $RELEASE_DIR" >&2; exit 1 ;;
+            RELEASE_RELATIVE_DIR='${{ env.RELEASE_RELATIVE_DIR }}'
+            case "$RELEASE_RELATIVE_DIR" in
+              .sovereign-releases/sovereign-chatgpt-mcp-*) ;;
+              *) echo "Unsafe relative release directory: $RELEASE_RELATIVE_DIR" >&2; exit 1 ;;
             esac
+            case "$RELEASE_RELATIVE_DIR" in *..*) echo 'Release directory traversal is forbidden.' >&2; exit 1 ;; esac
+            RELEASE_DIR="$HOME/$RELEASE_RELATIVE_DIR"
             umask 077
             mkdir -p "$RELEASE_DIR"
             chmod 0700 "$RELEASE_DIR"
@@ -387,7 +391,7 @@ jobs:
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           source: 'sovereign-chatgpt-mcp.tar.gz,sovereign-chatgpt-mcp.revision,sovereign-chatgpt-mcp.image-digest,sovereign-chatgpt-mcp.kappa-pos,sovereign-chatgpt-mcp.sha256'
-          target: ${{ env.RELEASE_DIR }}
+          target: ${{ env.RELEASE_RELATIVE_DIR }}
           overwrite: true
 
       - name: Install and verify private MCP on VPS
@@ -415,7 +419,13 @@ jobs:
               test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password is unavailable for VPS bootstrap.' >&2; exit 1; }
               printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
             }
-            RELEASE_DIR='${{ env.RELEASE_DIR }}'
+            RELEASE_RELATIVE_DIR='${{ env.RELEASE_RELATIVE_DIR }}'
+            case "$RELEASE_RELATIVE_DIR" in
+              .sovereign-releases/sovereign-chatgpt-mcp-*) ;;
+              *) echo "Unsafe relative release directory: $RELEASE_RELATIVE_DIR" >&2; exit 1 ;;
+            esac
+            case "$RELEASE_RELATIVE_DIR" in *..*) echo 'Release directory traversal is forbidden.' >&2; exit 1 ;; esac
+            RELEASE_DIR="$HOME/$RELEASE_RELATIVE_DIR"
             EXPECTED_REVISION='${{ env.EXPECTED_REVISION }}'
             EXPECTED_IMAGE_DIGEST='${{ env.EXPECTED_IMAGE_DIGEST }}'
             IMAGE_REPOSITORY='${{ env.IMAGE_REPOSITORY }}'
@@ -435,9 +445,10 @@ jobs:
             }
             trap cleanup EXIT
 
+            test -n "${HOME:-}" || { echo 'Remote HOME is unavailable.' >&2; exit 1; }
             case "$RELEASE_DIR" in
-              /tmp/sovereign-chatgpt-mcp-*) ;;
-              *) echo "Unsafe release directory: $RELEASE_DIR" >&2; exit 1 ;;
+              "$HOME"/.sovereign-releases/sovereign-chatgpt-mcp-*) ;;
+              *) echo "Unsafe resolved release directory: $RELEASE_DIR" >&2; exit 1 ;;
             esac
             [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid expected revision.' >&2; exit 1; }
             [[ "$EXPECTED_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Invalid expected image digest.' >&2; exit 1; }
