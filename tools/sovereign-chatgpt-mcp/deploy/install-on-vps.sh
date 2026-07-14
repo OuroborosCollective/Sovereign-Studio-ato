@@ -24,6 +24,7 @@ MCP_HOST_PORT="8090"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 REQUIRE_TUNNEL="${SOVEREIGN_MCP_REQUIRE_TUNNEL:-0}"
+TUNNEL_MODE="${SOVEREIGN_MCP_TUNNEL_MODE:-auto}"
 INSTALL_STAGE="initializing"
 INSTALL_FAILURE_REASON=""
 INSTALL_COMPLETED=0
@@ -143,7 +144,9 @@ recover_previous_control_plane() {
         up -d --no-build --force-recreate sovereign-chatgpt-mcp >/dev/null 2>&1
     fi
   fi
-  systemctl restart sovereign-openai-tunnel.service >/dev/null 2>&1
+  if [[ "$TUNNEL_MODE" != "disabled" ]]; then
+    systemctl restart sovereign-openai-tunnel.service >/dev/null 2>&1
+  fi
   set -e
 }
 
@@ -201,6 +204,7 @@ INSTALL_STAGE="preflight"
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
 [[ "$REQUIRE_TUNNEL" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_REQUIRE_TUNNEL must be 0 or 1"
+[[ "$TUNNEL_MODE" =~ ^(auto|required|disabled)$ ]] || fail "SOVEREIGN_MCP_TUNNEL_MODE must be auto, required or disabled"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
 for command in docker systemctl python3 git ss openssl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
@@ -441,7 +445,7 @@ wait_for_broker_ready || {
 INSTALL_STAGE="replace_mcp_container"
 # Stop only the known tunnel and MCP container before claiming the host port.
 # Unknown listeners are never killed: they block deployment with bounded evidence.
-if systemctl is-active --quiet sovereign-openai-tunnel.service; then
+if [[ "$TUNNEL_MODE" != "disabled" ]] && systemctl is-active --quiet sovereign-openai-tunnel.service; then
   systemctl stop sovereign-openai-tunnel.service
 fi
 if docker container inspect sovereign-chatgpt-mcp >/dev/null 2>&1; then
@@ -502,12 +506,14 @@ docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path
 
 INSTALL_STAGE="verify_tunnel_configuration"
 TUNNEL_CONFIGURED=0
-if [[ -f "$TUNNEL_ENV" ]] \
+if [[ "$TUNNEL_MODE" == "disabled" ]]; then
+  printf 'Tunnel checks skipped for the tunnel-independent MCP profile.\n'
+elif [[ -f "$TUNNEL_ENV" ]] \
   && grep -Eq '^OPENAI_TUNNEL_ID=tunnel_.+' "$TUNNEL_ENV" \
   && grep -Eq '^CONTROL_PLANE_API_KEY=.+$' "$TUNNEL_ENV"; then
   TUNNEL_CONFIGURED=1
-elif [[ "$REQUIRE_TUNNEL" == "1" ]]; then
-  fail "the self-update requires a valid tunnel.env with OPENAI_TUNNEL_ID and CONTROL_PLANE_API_KEY"
+elif [[ "$REQUIRE_TUNNEL" == "1" || "$TUNNEL_MODE" == "required" ]]; then
+  fail "the selected MCP profile requires a valid tunnel.env with OPENAI_TUNNEL_ID and CONTROL_PLANE_API_KEY"
 fi
 
 INSTALL_STAGE="verify_tunnel"
@@ -534,4 +540,4 @@ unset TUNNEL_CONFIGURED
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"

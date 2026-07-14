@@ -101,7 +101,9 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert '[[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]]' in updater
     assert 'git reset --hard "$EXPECTED_REVISION"' in updater
     assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION"' in updater
-    assert 'SOVEREIGN_MCP_REQUIRE_TUNNEL=1' in updater
+    assert 'SELF_UPDATE_TUNNEL_MODE="${SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE:-disabled}"' in updater
+    assert 'SOVEREIGN_MCP_TUNNEL_MODE="$SELF_UPDATE_TUNNEL_MODE"' in updater
+    assert 'SOVEREIGN_MCP_REQUIRE_TUNNEL=1' not in updater
     assert 'bash "$INSTALLER"' in updater
     assert 'recover_control_plane()' in updater
     assert 'broker_rpc_ready()' in updater
@@ -111,7 +113,9 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
     assert 'status=server.broker.status()' in updater
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in updater
+    assert 'if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then' in updater
     assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in updater
+    assert 'tunnel not required' in updater
     assert 'CURRENT_STAGE="completed"' in updater
     assert "StateDirectory=sovereign-chatgpt-self-update" in service
 
@@ -158,8 +162,10 @@ def test_tunnel_state_is_outside_root_only_install_directory() -> None:
     full_installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     assert 'repeated malformed MCP requests detected after tunnel start' in full_installer
     assert 'SOVEREIGN_MCP_REQUIRE_TUNNEL' in full_installer
+    assert 'TUNNEL_MODE="${SOVEREIGN_MCP_TUNNEL_MODE:-auto}"' in full_installer
     assert 'INSTALL_STAGE="verify_tunnel_configuration"' in full_installer
-    assert 'the self-update requires a valid tunnel.env' in full_installer
+    assert 'Tunnel checks skipped for the tunnel-independent MCP profile.' in full_installer
+    assert 'the selected MCP profile requires a valid tunnel.env' in full_installer
     assert 'tunnel installer returned without an active service' in full_installer
     assert 'SUCCESSFUL_MCP_REQUESTS' in full_installer
     assert 'MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0' in full_installer
