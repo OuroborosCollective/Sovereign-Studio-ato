@@ -24,7 +24,7 @@ from .cognitive_run_store import (
     request_agent_approval,
     transition_agent_run,
 )
-from .cognitive_swarm_agents import run_cognitive_swarm
+from .cognitive_swarm_agents import ensure_openai_runtime_key, run_cognitive_swarm
 from .cognitive_swarm_manifest import manifest_payload
 
 
@@ -282,7 +282,7 @@ def register_cognitive_swarm_routes(
         return jsonify({
             "ok": True,
             "runtime": "openai-agents-sdk",
-            "configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+            "configured": ensure_openai_runtime_key(),
             "allowedModels": sorted(_allowed_models()),
             "manifest": manifest_payload(),
         })

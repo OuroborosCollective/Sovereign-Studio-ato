@@ -30,7 +30,14 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "path": "/opt/secure/owner-managed/openhands_api_key.txt",
         "maxBytes": 8192,
         "kind": "credential",
-    }
+    },
+    "openai_api_key": {
+        "label": "OpenAI Agents SDK",
+        "fieldLabel": "OpenAI API-Key",
+        "path": "/opt/secure/owner-managed/openai_api_key.txt",
+        "maxBytes": 8192,
+        "kind": "credential",
+    },
 }
 SENSITIVE_COMMENT_PATTERNS = (
     re.compile(r"\b(?:ghp_|github_pat_|sk-proj-|Bearer\s+)[A-Za-z0-9_./+=-]{8,}", re.IGNORECASE),
@@ -51,6 +58,7 @@ def _root() -> Path:
 def _target_map() -> dict[str, dict[str, Any]]:
     targets = {key: dict(value) for key, value in DEFAULT_TARGETS.items()}
     targets["openhands_api_key"]["path"] = str(_root() / "openhands_api_key.txt")
+    targets["openai_api_key"]["path"] = str(_root() / "openai_api_key.txt")
     configured = os.getenv("SOVEREIGN_OWNER_INPUT_TARGETS_JSON", "").strip()
     if configured:
         parsed = json.loads(configured)
@@ -210,6 +218,12 @@ def register_owner_input_routes(
         conn = get_connection()
         try:
             with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE owner_input_requests
+                       SET status='expired', resolved_at=NOW(), result_code='expired'
+                       WHERE target_id=%s AND status='pending' AND expires_at <= NOW()""",
+                    (target_id,),
+                )
                 cur.execute(
                     """INSERT INTO owner_input_requests
                        (target_id, title, reason, field_label, expires_at)
