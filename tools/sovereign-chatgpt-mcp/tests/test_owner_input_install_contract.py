@@ -44,8 +44,12 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
 
     assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in deploy
     assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/secure/owner-managed"' in deploy
-    assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' in deploy
+    assert 'umask 077' in deploy
+    assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in deploy
+    assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in deploy
     assert '[[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
+    assert '[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
+    assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' not in deploy
     assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
     assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
     assert "install -d -m 0700 /opt/secure/owner-managed" not in deploy
