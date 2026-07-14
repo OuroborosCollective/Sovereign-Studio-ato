@@ -73,6 +73,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'docker compose up -d --no-build --force-recreate --remove-orphans' in installer
     assert 'MCP container did not pass protocol health' in installer
     assert 'mcp_protocol_health.py --url http://127.0.0.1:8090/mcp' in installer
+    assert 'broker_rpc_ready()' in installer
+    assert 'wait_for_broker_ready()' in installer
+    assert '"action": "broker_health"' in installer
+    assert 'host broker socket exists but the broker RPC did not become ready' in installer
     assert 'host broker socket disappeared after MCP recreation' in installer
     assert 'broker socket is not visible inside the recreated MCP container' in installer
     assert 'status=server.broker.status()' in installer
@@ -100,6 +104,9 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'SOVEREIGN_MCP_REQUIRE_TUNNEL=1' in updater
     assert 'bash "$INSTALLER"' in updater
     assert 'recover_control_plane()' in updater
+    assert 'broker_rpc_ready()' in updater
+    assert 'wait_for_broker_ready()' in updater
+    assert '"action": "broker_health"' in updater
     assert 'stage=${CURRENT_STAGE}; self-update command failed; recovery attempted' in updater
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in updater
     assert 'status=server.broker.status()' in updater
