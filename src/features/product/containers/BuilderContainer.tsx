@@ -2566,6 +2566,8 @@ export function BuilderContainer({
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] =
     useState<WorkerRuntimeBlocker | null>(null);
+  const [workerHealthEvidence, setWorkerHealthEvidence] =
+    useState<DevChatWorkerHealthResult | null>(null);
   const [lastWorkerRequestMessage, setLastWorkerRequestMessage] = useState<string | null>(null);
   const [patchPreviewReady, setPatchPreviewReady] = useState(false);
   const [patchConfirmed, setPatchConfirmed] = useState(false);
@@ -2685,6 +2687,7 @@ export function BuilderContainer({
   );
   const [validatedGitHubTargetKey, setValidatedGitHubTargetKey] = useState<string | null>(null);
   const pendingWriteIntentRef = useRef<string | null>(null);
+  const submitInFlightRef = useRef(false);
   const currentRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
   currentRepoScopeKeyRef.current = currentRepoScopeKey;
   const isCurrentRepoScope = useCallback(
@@ -3116,7 +3119,7 @@ export function BuilderContainer({
           localRepoLoading,
           localRepoError: Boolean(chatRepoError),
         });
-  const workerHealthReady = workerBlocker?.health?.ok === true;
+  const workerHealthReady = workerHealthEvidence?.ok === true;
   const workerResponseReady = hasScopedWorkerResponse;
   const workerSourceTier: RuntimeTier = workerBlocker
     ? "blocked"
@@ -3138,7 +3141,7 @@ export function BuilderContainer({
       : workerSourceTier === "unknown"
         ? "Noch keine Health- oder Response-Evidence für diese Sitzung."
         : SOVEREIGN_WORKER_CHAT,
-    available: workerHealthReady || workerResponseReady,
+    available: !workerBlocker && (workerHealthReady || workerResponseReady),
   };
   const runtimeSources = [
     runtimeSource,
@@ -3627,7 +3630,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing)
       return;
     setWishText("");
-    void _processSubmit(submittedText);
+    void runSerializedSubmit(() => _processSubmit(submittedText));
   };
 
   // Retry submit with a specific message (used by WorkerBlockerCard and Banner)
@@ -3640,7 +3643,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
   ) => {
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
     setWishText("");
-    void _processSubmit(message, options);
+    void runSerializedSubmit(() => _processSubmit(message, options));
   };
 
   const _processSubmit = async (
@@ -3648,6 +3651,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     options: {
       readonly ignoreExistingWorkerBlocker?: boolean;
       readonly resumePendingIntent?: boolean;
+      readonly inputAlreadyRecorded?: boolean;
     } = {},
   ) => {
     const routingWorkerBlocker = options.ignoreExistingWorkerBlocker ? null : workerBlocker;
@@ -3748,7 +3752,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // Haptic feedback for send (Issue #429)
     triggerHaptic("light");
 
-    if (!options.resumePendingIntent) {
+    if (!options.resumePendingIntent && !options.inputAlreadyRecorded) {
       appendChatLine({ role: "user", text: submittedText });
       appendActionEvent(buildInputReceivedEvent(submittedText));
     }
@@ -3857,7 +3861,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           detail: 'Worker-Blocker zurückgesetzt; letzter Request wird erneut ausgeführt',
         }));
         addLog('info', 'Issue #522 P2 Fix 2: Retry intent triggers real retry via retrySubmit', 'router');
-        retrySubmit(lastWorkerRequestMessage, { ignoreExistingWorkerBlocker: true });
+        await _processSubmit(lastWorkerRequestMessage, { ignoreExistingWorkerBlocker: true });
         return;
       } else {
         // Honest state: no prior request to retry
@@ -4540,6 +4544,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (authUser) {
       try {
         const workerHealthForInference = await fetchDevChatWorkerHealth();
+        if (workerHealthForInference.ok) setWorkerHealthEvidence(workerHealthForInference);
         areInferenceResult = await evaluateAreInference({
           prompt: submittedText,
           repository: buildAreRepositoryState({
@@ -4827,6 +4832,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     }
 
     const health = await fetchDevChatWorkerHealth();
+    if (health.ok) setWorkerHealthEvidence(health);
     const diagnostic = streamDiagnostic ??
       fallback?.diagnostic ?? {
         route: SOVEREIGN_WORKER_CHAT,
@@ -4870,28 +4876,50 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     );
   };
 
+  const runSerializedSubmit = async (
+    submit: () => Promise<void>,
+  ): Promise<boolean> => {
+    if (submitInFlightRef.current) {
+      addLog('info', 'Submit ignored while another route is active', 'router');
+      return false;
+    }
+
+    submitInFlightRef.current = true;
+    try {
+      await submit();
+      return true;
+    } finally {
+      submitInFlightRef.current = false;
+    }
+  };
+
   useEffect(() => {
     const pendingIntent = pendingWriteIntentRef.current;
     if (!pendingIntent || !effectiveRepoReady) return;
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
 
-    pendingWriteIntentRef.current = null;
-    setShowGitHubAccessOverride(false);
-    appendActionEvent({
-      kind: 'route_selected',
-      route: 'runtime',
-      label: 'Blockierter Auftrag wird wiederaufgenommen',
-      detail: githubWriteAllowed
-        ? 'Repository und GitHub-Schreibzugang sind jetzt durch Runtime-Evidence belegt.'
-        : 'Repository ist jetzt belegt; der Auftrag wird bis zum nächsten erforderlichen Gate fortgesetzt.',
-      state: 'running',
+    void runSerializedSubmit(async () => {
+      const currentPendingIntent = pendingWriteIntentRef.current;
+      if (!currentPendingIntent) return;
+
+      pendingWriteIntentRef.current = null;
+      setShowGitHubAccessOverride(false);
+      appendActionEvent({
+        kind: 'route_selected',
+        route: 'runtime',
+        label: 'Blockierter Auftrag wird wiederaufgenommen',
+        detail: githubWriteAllowed
+          ? 'Repository und GitHub-Schreibzugang sind jetzt durch Runtime-Evidence belegt.'
+          : 'Repository ist jetzt belegt; der Auftrag wird bis zum nächsten erforderlichen Gate fortgesetzt.',
+        state: 'running',
+      });
+      addLog('info', 'Pending intent resumed after runtime gate changed', 'router');
+      await _processSubmit(currentPendingIntent, { resumePendingIntent: true });
     });
-    addLog('info', 'Pending intent resumed after runtime gate changed', 'router');
-    void _processSubmit(pendingIntent, { resumePendingIntent: true });
-    // Resume is triggered only by new repo/access evidence. The pending ref is
-    // cleared before execution, so unrelated renders cannot duplicate the job.
+    // Resume is retried whenever repo/access evidence or a blocking busy gate
+    // changes. The pending ref is cleared only after the submit lock is acquired.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveRepoReady, githubWriteAllowed]);
+  }, [effectiveRepoReady, githubWriteAllowed, localRepoLoading, chatResponseBusy, isPublishing]);
 
   const handleRepoSetupLoad = () => {
     const clean = repoSetupUrl.trim();
@@ -4906,10 +4934,10 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       return;
     }
     setRepoSetupError(null);
-    void _processSubmit(clean);
+    void runSerializedSubmit(() => _processSubmit(clean));
   };
 
-  const handlePresetActionSelect = (actionId: SovereignPresetActionId) => {
+  const processPresetActionSelect = async (actionId: SovereignPresetActionId) => {
     const action = getSovereignPresetAction(actionId);
     const submitted = buildSovereignPresetActionSubmission(action, {
       repoReady: effectiveRepoReady,
@@ -4923,6 +4951,9 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       githubWriteReady: githubWriteAllowed,
       agentReady: agentReady ?? false,
     });
+
+    appendChatLine({ role: 'user', text: submitted });
+    appendActionEvent(buildInputReceivedEvent(submitted));
 
     if (!gate.canStart) {
       if (action.requiresRepo && !effectiveRepoReady) {
@@ -4993,7 +5024,11 @@ Das echte Repo-Setup wurde geöffnet.`,
     }
 
     setWishText('');
-    void _processSubmit(submitted);
+    await _processSubmit(submitted, { inputAlreadyRecorded: true });
+  };
+
+  const handlePresetActionSelect = (actionId: SovereignPresetActionId) => {
+    void runSerializedSubmit(() => processPresetActionSelect(actionId));
   };
 
   const handleCompactToolSelect = (toolId: ToolId) => {
@@ -5143,7 +5178,7 @@ Das echte Repo-Setup wurde geöffnet.`,
     const submitted = argument ? `${command.cmd} ${argument}` : command.cmd;
     setWishText("");
     setSlashMenuDismissed(false);
-    void _processSubmit(submitted);
+    void runSerializedSubmit(() => _processSubmit(submitted));
   };
 
   const handleComposerKeyDown = (
