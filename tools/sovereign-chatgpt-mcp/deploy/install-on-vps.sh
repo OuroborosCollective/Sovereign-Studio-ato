@@ -22,12 +22,14 @@ MCP_GID="10001"
 MCP_HOST_PORT="8090"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
+REQUIRE_TUNNEL="${SOVEREIGN_MCP_REQUIRE_TUNNEL:-0}"
 INSTALL_STAGE="initializing"
 INSTALL_FAILURE_REASON=""
 INSTALL_COMPLETED=0
 ROLLBACK_ARMED=0
 ROLLBACK_DIR=""
 ROLLBACK_MANIFEST=""
+PREVIOUS_MCP_IMAGE_DIGEST=""
 
 fail() {
   INSTALL_FAILURE_REASON="$*"
@@ -70,6 +72,25 @@ temporary.replace(path)
 PY
 }
 
+valid_mcp_image_digest() {
+  local value="$1"
+  [[ "$value" == "$MCP_IMAGE_REPOSITORY"@sha256:* ]] \
+    && [[ "${value#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
+}
+
+resolve_running_mcp_image_digest() {
+  local configured image_id
+  configured="$(docker inspect sovereign-chatgpt-mcp --format '{{.Config.Image}}' 2>/dev/null || true)"
+  if valid_mcp_image_digest "$configured"; then
+    printf '%s\n' "$configured"
+    return 0
+  fi
+  image_id="$(docker inspect sovereign-chatgpt-mcp --format '{{.Image}}' 2>/dev/null || true)"
+  [[ -n "$image_id" ]] || return 1
+  docker image inspect --format '{{json .RepoDigests}}' "$image_id" 2>/dev/null \
+    | python3 -c 'import json,sys; repo=sys.argv[1]+"@"; values=json.load(sys.stdin); print(next((item for item in values if isinstance(item,str) and item.startswith(repo)), ""))' "$MCP_IMAGE_REPOSITORY"
+}
+
 backup_control_plane_file() {
   local target="$1"
   local key
@@ -104,9 +125,13 @@ restore_control_plane_files() {
 recover_previous_control_plane() {
   set +e
   restore_control_plane_files
+  if [[ -f "$ENV_FILE" ]] && valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
+    set_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE "$PREVIOUS_MCP_IMAGE_DIGEST"
+  fi
   systemctl daemon-reload >/dev/null 2>&1
   systemctl restart sovereign-chatgpt-command-worker.service >/dev/null 2>&1
   systemctl restart sovereign-chatgpt-broker.service >/dev/null 2>&1
+  wait_for_broker_ready >/dev/null 2>&1 || true
   if [[ -f "$INSTALL_ROOT/docker-compose.yml" && -f "$ENV_FILE" ]]; then
     local rollback_gid
     rollback_gid="$(getent group sovereign-mcp | cut -d: -f3)"
@@ -141,9 +166,40 @@ port_listener_evidence() {
   ss -H -ltnp 2>/dev/null | awk -v suffix=":$MCP_HOST_PORT" '$4 ~ suffix "$" {print}'
 }
 
+broker_rpc_ready() {
+  python3 - <<'PY'
+import json
+import socket
+
+payload = json.dumps(
+    {"request_id": "broker-readiness-canary", "action": "broker_health", "arguments": {}},
+    separators=(",", ":"),
+).encode("utf-8") + b"\n"
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(2)
+    client.connect("/run/sovereign-chatgpt-broker/operator.sock")
+    client.sendall(payload)
+    response = json.loads(client.recv(65536).split(b"\n", 1)[0].decode("utf-8"))
+result = response.get("result") or {}
+if result.get("status") != "BROKER_READY":
+    raise SystemExit(1)
+PY
+}
+
+wait_for_broker_ready() {
+  for attempt in $(seq 1 30); do
+    if [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] && broker_rpc_ready >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 INSTALL_STAGE="preflight"
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
+[[ "$REQUIRE_TUNNEL" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_REQUIRE_TUNNEL must be 0 or 1"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
 for command in docker systemctl python3 git ss openssl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
@@ -171,6 +227,10 @@ backup_control_plane_file "$BROKER_SERVICE"
 backup_control_plane_file "$COMMAND_WORKER_SERVICE"
 backup_control_plane_file "$SELF_UPDATE_SERVICE"
 backup_control_plane_file "$TUNNEL_SERVICE"
+PREVIOUS_MCP_IMAGE_DIGEST="$(read_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE 2>/dev/null || true)"
+if ! valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
+  PREVIOUS_MCP_IMAGE_DIGEST="$(resolve_running_mcp_image_digest || true)"
+fi
 ROLLBACK_ARMED=1
 
 INSTALL_STAGE="copy_control_plane_files"
@@ -222,6 +282,16 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 chmod 0600 "$ENV_FILE"
 grep -Eq '^GITHUB_TOKEN=.+$' "$ENV_FILE" || fail "GITHUB_TOKEN is not configured in $ENV_FILE"
+
+INSTALL_STAGE="ensure_recovery_image_digest"
+CURRENT_MCP_IMAGE_DIGEST="$(read_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE)"
+if ! valid_mcp_image_digest "$CURRENT_MCP_IMAGE_DIGEST"; then
+  CURRENT_MCP_IMAGE_DIGEST="$PREVIOUS_MCP_IMAGE_DIGEST"
+fi
+valid_mcp_image_digest "$CURRENT_MCP_IMAGE_DIGEST" \
+  || fail "SOVEREIGN_MCP_IMAGE is missing and the running MCP container has no immutable GHCR digest"
+set_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE "$CURRENT_MCP_IMAGE_DIGEST"
+unset CURRENT_MCP_IMAGE_DIGEST
 
 INSTALL_STAGE="configure_owner_bridge"
 BACKEND_ENV_PATH="$(read_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE)"
@@ -348,13 +418,9 @@ systemctl restart sovereign-chatgpt-command-worker.service
 systemctl is-active --quiet sovereign-chatgpt-command-worker.service || fail "host command worker is not active"
 systemctl enable --now sovereign-chatgpt-broker.service
 systemctl restart sovereign-chatgpt-broker.service
-for attempt in $(seq 1 20); do
-  [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] && break
-  sleep 1
-done
-[[ -S /run/sovereign-chatgpt-broker/operator.sock ]] || {
+wait_for_broker_ready || {
   systemctl status sovereign-chatgpt-broker.service --no-pager >&2 || true
-  fail "host broker socket was not created"
+  fail "host broker socket exists but the broker RPC did not become ready"
 }
 
 # The image is built and dependency-resolved in GitHub Actions. The VPS only
@@ -422,11 +488,21 @@ docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http:
 docker exec sovereign-chatgpt-mcp python -c 'import os; assert os.getenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions") == "github_actions"'
 docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
 
-INSTALL_STAGE="verify_tunnel"
+INSTALL_STAGE="verify_tunnel_configuration"
+TUNNEL_CONFIGURED=0
 if [[ -f "$TUNNEL_ENV" ]] \
   && grep -Eq '^OPENAI_TUNNEL_ID=tunnel_.+' "$TUNNEL_ENV" \
   && grep -Eq '^CONTROL_PLANE_API_KEY=.+$' "$TUNNEL_ENV"; then
+  TUNNEL_CONFIGURED=1
+elif [[ "$REQUIRE_TUNNEL" == "1" ]]; then
+  fail "the self-update requires a valid tunnel.env with OPENAI_TUNNEL_ID and CONTROL_PLANE_API_KEY"
+fi
+
+INSTALL_STAGE="verify_tunnel"
+if [[ "$TUNNEL_CONFIGURED" == "1" ]]; then
   "$BIN_DIR/install-secure-tunnel"
+  systemctl is-active --quiet sovereign-openai-tunnel.service \
+    || fail "tunnel installer returned without an active service"
   sleep 11
   MALFORMED_MCP_REQUESTS="$(docker logs --since 20s sovereign-chatgpt-mcp 2>&1 \
     | grep -Ec 'POST /mcp HTTP/1\.1" 400 Bad Request' || true)"
@@ -439,8 +515,9 @@ if [[ -f "$TUNNEL_ENV" ]] \
     fail "repeated malformed MCP requests detected after tunnel start"
   fi
 else
-  printf 'Tunnel not installed: configure %s when the OpenAI tunnel_id and runtime key are available.\n' "$TUNNEL_ENV"
+  printf 'Tunnel not installed: configure %s before using the ChatGPT app connection.\n' "$TUNNEL_ENV"
 fi
+unset TUNNEL_CONFIGURED
 
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1

@@ -40,10 +40,41 @@ PY
 
 CURRENT_STAGE="initializing"
 
+broker_rpc_ready() {
+  python3 - <<'PY'
+import json
+import socket
+
+payload = json.dumps(
+    {"request_id": "broker-readiness-canary", "action": "broker_health", "arguments": {}},
+    separators=(",", ":"),
+).encode("utf-8") + b"\n"
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(2)
+    client.connect("/run/sovereign-chatgpt-broker/operator.sock")
+    client.sendall(payload)
+    response = json.loads(client.recv(65536).split(b"\n", 1)[0].decode("utf-8"))
+result = response.get("result") or {}
+if result.get("status") != "BROKER_READY":
+    raise SystemExit(1)
+PY
+}
+
+wait_for_broker_ready() {
+  for attempt in $(seq 1 30); do
+    if [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] && broker_rpc_ready >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 recover_control_plane() {
   set +e
   systemctl restart sovereign-chatgpt-command-worker.service
   systemctl restart sovereign-chatgpt-broker.service
+  wait_for_broker_ready || true
   if [[ -f /opt/sovereign-chatgpt-tools/docker-compose.yml ]]; then
     BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
     if [[ "$BROKER_GID" =~ ^[0-9]+$ ]]; then
@@ -117,7 +148,9 @@ git reset --hard "$EXPECTED_REVISION"
 CURRENT_STAGE="install_control_plane"
 write_status INSTALLING "$EXPECTED_REVISION" "installing private ChatGPT MCP and broker from the CI-built immutable image"
 INSTALL_LOG="$(mktemp)"
-if ! SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$INSTALLER" >"$INSTALL_LOG" 2>&1; then
+if ! SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" \
+  SOVEREIGN_MCP_REQUIRE_TUNNEL=1 \
+  bash "$INSTALLER" >"$INSTALL_LOG" 2>&1; then
   INSTALL_DETAIL="$(grep -E '^install blocked: stage=' "$INSTALL_LOG" | tail -n 1 | tr -d '\r\n' | cut -c1-1200 || true)"
   recover_control_plane
   write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; ${INSTALL_DETAIL:-installer failed without bounded stage evidence}; recovery attempted"
@@ -129,7 +162,7 @@ rm -f "$INSTALL_LOG"
 CURRENT_STAGE="verify_end_to_end_control_plane"
 systemctl is-active --quiet sovereign-chatgpt-command-worker.service
 systemctl is-active --quiet sovereign-chatgpt-broker.service
-[[ -S /run/sovereign-chatgpt-broker/operator.sock ]]
+wait_for_broker_ready
 docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}' | grep -qx 'running healthy'
 docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock
 docker exec sovereign-chatgpt-mcp python -c 'import server; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
