@@ -118,6 +118,24 @@ describe('devChatWorkerBridge', () => {
     expect(fetchMock).toHaveBeenCalledWith(SOVEREIGN_WORKER_CHAT, expect.objectContaining({ method: 'POST' }));
   });
 
+  it('ignores malformed non-string worker metadata in JSON replies', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: 'Antwort aus Worker.' } }],
+      model: 123,
+      fallback_reason: { message: 'not a string' },
+    })));
+
+    const result = await fetchDevChatWorkerReply({
+      model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      messages: [{ role: 'user', content: 'Hallo' }],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.actualModel).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.fallbackReason).toBeUndefined();
+  });
+
   it('returns a diagnostic blocker for HTTP 500 responses', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { message: 'Gateway exploded', type: 'server_error' } }, 500)));
 
@@ -244,6 +262,31 @@ describe('streamDevChatWorkerReply', () => {
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Sag Hallo' }] })) chunks.push(chunk);
     expect(chunks).toEqual(['Hallo', ' Welt']);
+  });
+
+  it('does not emit malformed non-string SSE metadata', async () => {
+    const body = [
+      `data: ${JSON.stringify({
+        model: 123,
+        fallback_reason: { message: 'not a string' },
+        choices: [{ delta: { content: 'Valid' } }],
+      })}`,
+      'data: [DONE]',
+    ].join('\n');
+    const onMetadata = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+
+    const chunks: string[] = [];
+    for await (const chunk of streamDevChatWorkerReply({
+      model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      messages: [{ role: 'user', content: 'Test' }],
+    }, onMetadata)) chunks.push(chunk);
+
+    expect(chunks).toEqual(['Valid']);
+    expect(onMetadata).not.toHaveBeenCalled();
   });
 
   it('terminates cleanly on DONE', async () => {

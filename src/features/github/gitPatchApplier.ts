@@ -42,7 +42,12 @@ export interface GitPatchResult {
   readonly error?: string;
 }
 
-import { buildUnifiedLikePreview, type GeneratedFileDiffReport } from '../product/runtime/generatedFileDiffPreview';
+import {
+  buildUnifiedLikePreview,
+  type GeneratedFileDiffItem,
+  type GeneratedFileDiffKind,
+  type GeneratedFileDiffReport,
+} from '../product/runtime/generatedFileDiffPreview';
 
 export interface GitPatchValidationReport {
   readonly valid: boolean;
@@ -200,9 +205,10 @@ export function convertPatchResultToDiffReport(
   const newLines = newContent.split(/\r?\n/);
   const changed = originalContent !== newContent;
 
-  const item = {
+  const kind: GeneratedFileDiffKind = changed ? 'modified' : 'unchanged';
+  const item: GeneratedFileDiffItem = {
     path: filePath,
-    kind: (changed ? 'modified' : 'unchanged') as any,
+    kind,
     oldLineCount: oldLines.length,
     newLineCount: newLines.length,
     addedLines: Math.max(0, newLines.length - oldLines.length),

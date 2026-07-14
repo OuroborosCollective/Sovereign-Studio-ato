@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyGitPatch, validateGitPatchRequest } from './gitPatchApplier';
+import { applyGitPatch, convertPatchResultToDiffReport, validateGitPatchRequest } from './gitPatchApplier';
 
 describe('gitPatchApplier - validateGitPatchRequest', () => {
   const validRequest = {
@@ -87,6 +87,28 @@ describe('gitPatchApplier - validateGitPatchRequest', () => {
     });
     expect(report.valid).toBe(false);
     expect(report.errors[0]).toContain('secret-like content detected');
+  });
+});
+
+describe('gitPatchApplier - diff report contract', () => {
+  it('uses the typed modified and unchanged diff kinds', () => {
+    const modified = convertPatchResultToDiffReport('src/app.ts', 'old', {
+      ok: true,
+      dryRun: true,
+      appliedBlocks: 1,
+      newContent: 'new',
+    });
+    const unchanged = convertPatchResultToDiffReport('src/app.ts', 'same', {
+      ok: true,
+      dryRun: true,
+      appliedBlocks: 1,
+      newContent: 'same',
+    });
+
+    expect(modified.files[0].kind).toBe('modified');
+    expect(modified.modified).toBe(1);
+    expect(unchanged.files[0].kind).toBe('unchanged');
+    expect(unchanged.unchanged).toBe(1);
   });
 });
 
