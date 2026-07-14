@@ -16,6 +16,7 @@ BROKER_ENV="$INSTALL_ROOT/broker.env"
 BROKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-broker.service"
 COMMAND_WORKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-command-worker.service"
 SELF_UPDATE_SERVICE="/etc/systemd/system/sovereign-chatgpt-mcp-self-update.service"
+SELF_UPDATE_BIN="$BIN_DIR/self-update-chatgpt-mcp"
 TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
 MCP_UID="10001"
 MCP_GID="10001"
@@ -206,6 +207,8 @@ for command in docker systemctl python3 git ss openssl sha256sum; do
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
 [[ -S /var/run/docker.sock ]] || fail "docker socket is missing"
+bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
+  || fail "source self-update wrapper has invalid bash syntax"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
 install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR"
@@ -242,9 +245,18 @@ done
 for file in broker.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py; do
   backup_control_plane_file "$BROKER_DIR/$file"
 done
-for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report self-update-chatgpt-mcp; do
+for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report; do
   backup_control_plane_file "$BIN_DIR/$file"
 done
+
+# The updater is the recovery and diagnostic entrypoint. After syntax validation,
+# keep the newest bounded-status wrapper even when the wider control-plane install
+# rolls back, otherwise the next attempt reintroduces generic failure evidence.
+SELF_UPDATE_NEXT="$(mktemp "$BIN_DIR/.self-update-chatgpt-mcp.XXXXXX")"
+install -m 0750 "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" "$SELF_UPDATE_NEXT"
+chown root:sovereign-mcp "$SELF_UPDATE_NEXT"
+mv -f "$SELF_UPDATE_NEXT" "$SELF_UPDATE_BIN"
+unset SELF_UPDATE_NEXT
 
 install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"
 install -m 0640 "$SOURCE_DIR/command_contract.py" "$BROKER_DIR/command_contract.py"
@@ -261,7 +273,6 @@ install -m 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollba
 install -m 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database"
 install -m 0750 "$SOURCE_DIR/deploy/install-secure-tunnel.sh" "$BIN_DIR/install-secure-tunnel"
 install -m 0750 "$SOURCE_DIR/deploy/validate-tunnel-doctor-report.py" "$BIN_DIR/validate-tunnel-doctor-report"
-install -m 0750 "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" "$BIN_DIR/self-update-chatgpt-mcp"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-broker.service" "$BROKER_SERVICE"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE"
 install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-mcp-self-update.service" "$SELF_UPDATE_SERVICE"
