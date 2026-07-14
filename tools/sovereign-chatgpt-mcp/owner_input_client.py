@@ -14,7 +14,17 @@ from typing import Any
 import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
 MAX_TEXT = 1000
+MAX_OPERATOR_EVIDENCE = 250_000
+OPERATOR_SECRET_MARKERS = (
+    "sk-proj-",
+    "github_pat_",
+    "ghp_",
+    "authorization: bearer",
+    "begin openssh private key",
+    "begin rsa private key",
+)
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
     "openhands_api_key": "OpenHands API-Key",
@@ -46,6 +56,7 @@ class OwnerInputClient:
         *,
         json_body: dict[str, Any] | None = None,
         expected: tuple[int, ...] = (200,),
+        timeout: int = 15,
     ) -> dict[str, Any]:
         try:
             response = self.session.request(
@@ -53,12 +64,18 @@ class OwnerInputClient:
                 f"{self.base_url}{path}",
                 headers=self._headers(),
                 json=json_body,
-                timeout=15,
+                timeout=max(1, min(int(timeout), 1200)),
             )
         except requests.RequestException as exc:
             raise RuntimeError(f"Owner-Freigabe-Backend ist nicht erreichbar: {exc}") from exc
         if response.status_code not in expected:
-            raise RuntimeError(f"Owner-Freigabe-Backend meldet HTTP {response.status_code}")
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = {}
+            detail = str(error_payload.get("blocker") or error_payload.get("error") or error_payload.get("reason") or "")[:240]
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(f"Owner-Freigabe-Backend meldet HTTP {response.status_code}{suffix}")
         payload = response.json()
         if not isinstance(payload, dict):
             raise RuntimeError("Owner-Freigabe-Backend lieferte keine gültige Antwort")
@@ -143,3 +160,53 @@ class OwnerInputClient:
             "request": request_payload,
             "protected_value_returned": False,
         }
+
+
+class ControllerRuntimeClient(OwnerInputClient):
+    def _run_id(self, run_id: str) -> str:
+        selected = str(run_id or "").strip()
+        if not RUN_ID_RE.fullmatch(selected):
+            raise ValueError("run_id ist ungültig")
+        return selected
+
+    def list_runs(self, limit: int = 20) -> dict[str, Any]:
+        bounded_limit = max(1, min(int(limit), 100))
+        payload = self._request(
+            "GET",
+            f"/api/internal/controller/runs?limit={bounded_limit}",
+            timeout=30,
+        )
+        return {
+            **payload,
+            "status": "CONTROLLER_RUNS",
+            "protected_values_returned": False,
+        }
+
+    def run_status(self, run_id: str) -> dict[str, Any]:
+        selected = self._run_id(run_id)
+        payload = self._request(
+            "GET",
+            f"/api/internal/controller/runs/{selected}",
+            timeout=30,
+        )
+        return {
+            **payload,
+            "status": "CONTROLLER_RUN_STATUS",
+            "protected_values_returned": False,
+        }
+
+    def resume_run(self, run_id: str, evidence: str = "") -> dict[str, Any]:
+        selected = self._run_id(run_id)
+        bounded_evidence = str(evidence or "").strip()
+        if len(bounded_evidence) > MAX_OPERATOR_EVIDENCE:
+            raise ValueError("evidence überschreitet das Operator-Limit")
+        normalized = bounded_evidence.casefold()
+        if any(marker in normalized for marker in OPERATOR_SECRET_MARKERS):
+            raise ValueError("Secret-förmige Evidence ist im Operator-Resume verboten")
+        return self._request(
+            "POST",
+            f"/api/internal/controller/runs/{selected}/resume",
+            json_body={"evidence": bounded_evidence},
+            expected=(200, 202, 409, 502, 503),
+            timeout=1200,
+        )

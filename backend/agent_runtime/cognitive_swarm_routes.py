@@ -24,7 +24,7 @@ from .cognitive_run_store import (
     request_agent_approval,
     transition_agent_run,
 )
-from .cognitive_swarm_agents import ensure_openai_runtime_key, run_cognitive_swarm
+from .cognitive_swarm_agents import SwarmExecutionError, ensure_openai_runtime_key, run_cognitive_swarm
 from .cognitive_swarm_manifest import manifest_payload
 
 
@@ -108,7 +108,7 @@ def _stored_run_to_api(run: Any) -> dict[str, object]:
     }
 
 
-def _execute_persisted_swarm(
+def execute_persisted_swarm(
     *,
     get_connection: ConnectionFactory,
     user_id: str,
@@ -194,6 +194,23 @@ def _execute_persisted_swarm(
         finally:
             _close_connection(conn)
     except Exception as exc:
+        if isinstance(exc, SwarmExecutionError):
+            failure = exc.safe_payload()
+        else:
+            failure = {
+                "failureStage": "unknown",
+                "failureFamily": "AGENTS_SDK_EXECUTION_FAILED",
+                "errorType": type(exc).__name__,
+                "nextAction": "INSPECT_BOUNDED_SDK_FAILURE_EVIDENCE",
+                "retryable": True,
+                "httpStatus": None,
+                "requestId": None,
+                "rawErrorPersisted": False,
+            }
+        failure_family = str(failure["failureFamily"])
+        failure_stage = str(failure["failureStage"])
+        failure_next_action = str(failure["nextAction"])
+        failure_reason = f"Agents SDK execution failed at {failure_stage} ({failure_family})."
         try:
             conn = get_connection()
             try:
@@ -204,11 +221,11 @@ def _execute_persisted_swarm(
                     status="FAILED_RECOVERABLE",
                     source="agents-sdk",
                     trace_id=trace_id,
-                    reason="Agents SDK execution failed without a validated final verdict.",
-                    next_action="RETRY_FROM_PERSISTED_RUN_STATE",
+                    reason=failure_reason,
+                    next_action=failure_next_action,
                     evidence_kind="runtime_failure",
-                    evidence_summary="Agents SDK execution raised a bounded runtime failure.",
-                    evidence_payload={"errorType": type(exc).__name__},
+                    evidence_summary=failure_reason,
+                    evidence_payload=failure,
                     task_id=task_id,
                     expected_lease_token=lease_token,
                 )
@@ -216,10 +233,10 @@ def _execute_persisted_swarm(
                     conn,
                     run_id=run_id,
                     agent_id="orchestrator",
-                    family="AGENTS_SDK_EXECUTION_FAILED",
-                    summary="Agents SDK execution failed; the persisted run remains resumable.",
+                    family=failure_family,
+                    summary=failure_reason,
                     evidence_id=failed_state["evidenceId"],
-                    recoverable=True,
+                    recoverable=bool(failure["retryable"]),
                     task_id=task_id,
                 )
             finally:
@@ -230,7 +247,7 @@ def _execute_persisted_swarm(
                 "runtime": "openai-agents-sdk",
                 "runId": run_id,
                 "traceId": trace_id,
-                "error": type(exc).__name__,
+                "error": str(failure["errorType"]),
                 "blocker": "AGENT_RUN_FAILURE_PERSISTENCE_UNAVAILABLE",
                 "persistenceErrorType": type(persistence_exc).__name__,
                 **(response_context or {}),
@@ -245,7 +262,12 @@ def _execute_persisted_swarm(
             "evidenceId": failed_state["evidenceId"],
             "reason": failed_state["reason"],
             "nextAction": failed_state["nextAction"],
-            "error": type(exc).__name__,
+            "blocker": failure_family,
+            "failureStage": failure_stage,
+            "retryable": bool(failure["retryable"]),
+            "httpStatus": failure["httpStatus"],
+            "requestId": failure["requestId"],
+            "error": str(failure["errorType"]),
             **(response_context or {}),
         }, 502)
 
@@ -436,7 +458,7 @@ def register_cognitive_swarm_routes(
             "New runtime evidence:\n"
             f"{evidence or '[no new evidence supplied]'}"
         )
-        payload, status_code = _execute_persisted_swarm(
+        payload, status_code = execute_persisted_swarm(
             get_connection=get_connection,
             user_id=user_id,
             run_id=claim.run.run_id,
@@ -512,7 +534,7 @@ def register_cognitive_swarm_routes(
                 "errorType": type(exc).__name__,
             }), 503
 
-        payload, status_code = _execute_persisted_swarm(
+        payload, status_code = execute_persisted_swarm(
             get_connection=get_connection,
             user_id=user_id,
             run_id=run_id,

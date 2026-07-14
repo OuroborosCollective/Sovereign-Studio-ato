@@ -62,6 +62,111 @@ def ensure_openai_runtime_key() -> bool:
     os.environ["OPENAI_API_KEY"] = value
     return True
 
+
+class SwarmExecutionError(RuntimeError):
+    """Bounded provider/runtime failure without raw exception or credential text."""
+
+    def __init__(
+        self,
+        *,
+        stage: str,
+        family: str,
+        error_type: str,
+        next_action: str,
+        retryable: bool,
+        http_status: int | None = None,
+        request_id: str | None = None,
+    ) -> None:
+        super().__init__(family)
+        self.stage = stage[:160]
+        self.family = family[:160]
+        self.error_type = error_type[:160]
+        self.next_action = next_action[:240]
+        self.retryable = bool(retryable)
+        self.http_status = http_status
+        self.request_id = (request_id or "")[:200] or None
+
+    def safe_payload(self) -> dict[str, object]:
+        return {
+            "failureStage": self.stage,
+            "failureFamily": self.family,
+            "errorType": self.error_type,
+            "nextAction": self.next_action,
+            "retryable": self.retryable,
+            "httpStatus": self.http_status,
+            "requestId": self.request_id,
+            "rawErrorPersisted": False,
+        }
+
+
+def _exception_status(exc: Exception) -> int | None:
+    direct = getattr(exc, "status_code", None)
+    if isinstance(direct, int):
+        return direct
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    return status if isinstance(status, int) else None
+
+
+def _exception_request_id(exc: Exception) -> str | None:
+    direct = getattr(exc, "request_id", None) or getattr(exc, "requestId", None)
+    if direct:
+        return str(direct)
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers:
+        value = headers.get("x-request-id") or headers.get("X-Request-Id")
+        if value:
+            return str(value)
+    return None
+
+
+def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionError:
+    error_type = type(exc).__name__
+    lowered = error_type.casefold()
+    status = _exception_status(exc)
+    if status == 401 or "authentication" in lowered:
+        family, next_action, retryable = "OPENAI_AUTHENTICATION_FAILED", "VERIFY_OPENAI_PROJECT_KEY", False
+    elif status == 403 or "permission" in lowered:
+        family, next_action, retryable = "OPENAI_PERMISSION_DENIED", "VERIFY_OPENAI_PROJECT_AND_MODEL_ACCESS", False
+    elif status == 404 or "notfound" in lowered or "not_found" in lowered:
+        family, next_action, retryable = "OPENAI_MODEL_OR_ENDPOINT_NOT_FOUND", "VERIFY_ALLOWLISTED_MODEL_ACCESS", False
+    elif status == 429 or "ratelimit" in lowered or "rate_limit" in lowered:
+        family, next_action, retryable = "OPENAI_RATE_LIMITED", "RETRY_AFTER_PROVIDER_BACKOFF", True
+    elif status in {408, 504} or "timeout" in lowered:
+        family, next_action, retryable = "OPENAI_TIMEOUT", "RETRY_FROM_PERSISTED_RUN_STATE", True
+    elif status is not None and status >= 500:
+        family, next_action, retryable = "OPENAI_PROVIDER_UNAVAILABLE", "RETRY_FROM_PERSISTED_RUN_STATE", True
+    elif status == 400 or "badrequest" in lowered or "bad_request" in lowered:
+        family, next_action, retryable = "OPENAI_REQUEST_REJECTED", "REVIEW_MODEL_AND_STRUCTURED_OUTPUT_CONTRACT", False
+    elif any(marker in lowered for marker in ("modelbehavior", "output", "validation")):
+        family, next_action, retryable = "AGENTS_STRUCTURED_OUTPUT_INVALID", "RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS", True
+    elif "maxturn" in lowered or "max_turn" in lowered:
+        family, next_action, retryable = "AGENTS_TURN_LIMIT_EXHAUSTED", "REVIEW_AGENT_TURN_BUDGET", False
+    elif "connection" in lowered or "network" in lowered:
+        family, next_action, retryable = "OPENAI_CONNECTION_FAILED", "RETRY_FROM_PERSISTED_RUN_STATE", True
+    else:
+        family, next_action, retryable = "AGENTS_SDK_EXECUTION_FAILED", "INSPECT_BOUNDED_SDK_FAILURE_EVIDENCE", True
+    return SwarmExecutionError(
+        stage=stage,
+        family=family,
+        error_type=error_type,
+        next_action=next_action,
+        retryable=retryable,
+        http_status=status,
+        request_id=_exception_request_id(exc),
+    )
+
+
+async def _run_stage(runner_class: Any, agent: Any, prompt: str, *, stage: str) -> Any:
+    try:
+        return await runner_class.run(agent, prompt)
+    except SwarmExecutionError:
+        raise
+    except Exception as exc:
+        raise classify_swarm_exception(exc, stage=stage) from exc
+
+
 try:
     _AGENTS_SDK_VERSION = importlib.metadata.version("openai-agents")
     _agents_module = importlib.import_module("agents")
@@ -307,9 +412,11 @@ async def run_cognitive_swarm(
 
     _, runner_class = _require_agents_sdk()
     swarm = build_cognitive_swarm(model=model)
-    plan_result = await runner_class.run(
+    plan_result = await _run_stage(
+        runner_class,
         swarm.dispatcher,
         f"Mission:\n{normalized_mission}\n\nRuntime evidence:\n{evidence or '[no evidence supplied]'}",
+        stage="dispatcher",
     )
     plan = plan_result.final_output
     if not isinstance(plan, DispatchPlan):
@@ -321,7 +428,8 @@ async def run_cognitive_swarm(
     for loop in (1, 2):
         reports: list[WorkerReport] = []
         for role, worker in zip(WORKER_ROLES, swarm.workers, strict=True):
-            result = await runner_class.run(
+            result = await _run_stage(
+                runner_class,
                 worker,
                 _worker_input(
                     mission=normalized_mission,
@@ -331,6 +439,7 @@ async def run_cognitive_swarm(
                     role=role,
                     prior_verdict=prior_verdict,
                 ),
+                stage=f"loop-{loop}:worker:{role}",
             )
             report = result.final_output
             if not isinstance(report, WorkerReport):
@@ -339,7 +448,8 @@ async def run_cognitive_swarm(
             report.loop = loop
             reports.append(report)
 
-        judge_result = await runner_class.run(
+        judge_result = await _run_stage(
+            runner_class,
             swarm.judge,
             _judge_input(
                 mission=normalized_mission,
@@ -348,6 +458,7 @@ async def run_cognitive_swarm(
                 loop=loop,
                 reports=reports,
             ),
+            stage=f"loop-{loop}:judge",
         )
         verdict = judge_result.final_output
         if not isinstance(verdict, JudgeVerdict):
