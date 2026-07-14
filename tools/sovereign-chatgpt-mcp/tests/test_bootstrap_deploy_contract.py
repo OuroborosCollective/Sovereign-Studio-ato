@@ -96,7 +96,9 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert 'Release directory traversal is forbidden.' in workflow
     assert '/opt/sovereign-chatgpt-mcp/releases/' not in workflow
     assert 'envs: SUDO_PASSWORD' in workflow
-    assert 'run_root env SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION"' in workflow
+    assert 'SOVEREIGN_MCP_TUNNEL_MODE=disabled' in workflow
+    assert 'bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
     assert 'run_root docker inspect sovereign-chatgpt-mcp' in workflow
     assert 'name: Publish immutable MCP image' in workflow
     assert 'digest: ${{ steps.publish.outputs.digest }}' in workflow
@@ -124,14 +126,18 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert "canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN'" in workflow
     assert 'COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"' in workflow
     assert 'BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"' in workflow
-    assert 'TUNNEL_SERVICE_STATE="$(run_root systemctl is-active sovereign-openai-tunnel.service)"' in workflow
+    assert 'TUNNEL_SERVICE_STATE=not_required' in workflow
+    assert 'test "$TUNNEL_SERVICE_STATE" = active' not in workflow
+    assert 'test "$(run_root systemctl is-active sovereign-openai-tunnel.service)" = active' not in workflow
     assert "'mcp_protocol_ready': mcp_protocol_state == 'ready'" in workflow
     assert "'broker_rpc_ready': broker_rpc_state == 'ready'" in workflow
     assert "'broker_socket_host_visible': broker_socket_host_state == 'visible'" in workflow
     assert "'broker_socket_container_visible': broker_socket_container_state == 'visible'" in workflow
     assert "'host_command_worker_active': command_worker_state == 'active'" in workflow
     assert "'inbound_mutation_forbidden': inbound_mutation_state == 'forbidden'" in workflow
-    assert "'openai_tunnel_active': tunnel_service_state == 'active'" in workflow
+    assert "'tunnel_mode': 'disabled'" in workflow
+    assert "'tunnel_not_required': tunnel_service_state == 'not_required'" in workflow
+    assert "payload.get('tunnel_not_required') is True" in workflow
     assert "'ok': all(checks.values())" in workflow
     assert "'evidence_sha256': hashlib.sha256(canonical).hexdigest()" in workflow
     assert 'name: Reverify deployed evidence in fresh SSH session' in workflow

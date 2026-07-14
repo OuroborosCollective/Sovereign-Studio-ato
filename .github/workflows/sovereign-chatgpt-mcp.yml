@@ -492,7 +492,10 @@ jobs:
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
-            run_root env SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" bash "$SOURCE_DIR/deploy/install-on-vps.sh"
+            run_root env \
+              SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" \
+              SOVEREIGN_MCP_TUNNEL_MODE=disabled \
+              bash "$SOURCE_DIR/deploy/install-on-vps.sh"
 
             CONTAINER_STATE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}no-health{{end}}')"
             test "$CONTAINER_STATE" = 'running healthy'
@@ -522,10 +525,9 @@ jobs:
             INBOUND_MUTATION_STATE=forbidden
             COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"
             BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"
-            TUNNEL_SERVICE_STATE="$(run_root systemctl is-active sovereign-openai-tunnel.service)"
+            TUNNEL_SERVICE_STATE=not_required
             test "$COMMAND_WORKER_STATE" = active
             test "$BROKER_SERVICE_STATE" = active
-            test "$TUNNEL_SERVICE_STATE" = active
 
             run_root install -d -m 0750 "$STATUS_DIR"
             STATUS_WRITER="$RELEASE_DIR/write-mcp-status.py"
@@ -570,10 +572,11 @@ jobs:
                 'broker_socket_container_visible': broker_socket_container_state == 'visible',
                 'host_command_worker_active': command_worker_state == 'active',
                 'inbound_mutation_forbidden': inbound_mutation_state == 'forbidden',
-                'openai_tunnel_active': tunnel_service_state == 'active',
+                'tunnel_not_required': tunnel_service_state == 'not_required',
             }
             evidence = {
                 'revision': revision,
+                'tunnel_mode': 'disabled',
                 'image': image_reference,
                 'image_id': image_id,
                 'kappa_pos': int(kappa_pos),
@@ -584,7 +587,7 @@ jobs:
             payload = {
                 'ok': all(checks.values()),
                 'status': 'UPDATED' if all(checks.values()) else 'FAILED',
-                'detail': 'private ChatGPT MCP installed from measured GitHub Actions and VPS evidence',
+                'detail': 'private ChatGPT MCP installed from measured GitHub Actions and VPS evidence; tunnel not required',
                 **evidence,
                 'evidence_sha256': hashlib.sha256(canonical).hexdigest(),
                 'updated_at': int(time.time()),
@@ -641,7 +644,7 @@ jobs:
             printf 'Broker RPC: %s\n' "$BROKER_RPC_STATE"
             printf 'Host command worker: %s\n' "$COMMAND_WORKER_STATE"
             printf 'Inbound mutation: %s\n' "$INBOUND_MUTATION_STATE"
-            printf 'OpenAI tunnel service: %s\n' "$TUNNEL_SERVICE_STATE"
+            printf 'Tunnel requirement: %s\n' "$TUNNEL_SERVICE_STATE"
 
       - name: Reverify deployed evidence in fresh SSH session
         uses: appleboy/ssh-action@v1.2.5
@@ -681,7 +684,6 @@ jobs:
             test "$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')" = "$KAPPA_POS"
             test "$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)" = active
             test "$(run_root systemctl is-active sovereign-chatgpt-broker.service)" = active
-            test "$(run_root systemctl is-active sovereign-openai-tunnel.service)" = active
             run_root docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
             run_root python3 - "$STATUS_FILE" "$EXPECTED_REVISION" "$EXPECTED_IMAGE_REFERENCE" "$KAPPA_POS" <<'PY'
             from pathlib import Path
@@ -697,7 +699,8 @@ jobs:
             assert payload.get('container_healthy') is True, payload
             assert payload.get('mcp_protocol_ready') is True, payload
             assert payload.get('broker_rpc_ready') is True, payload
-            assert payload.get('openai_tunnel_active') is True, payload
+            assert payload.get('tunnel_mode') == 'disabled', payload
+            assert payload.get('tunnel_not_required') is True, payload
             assert re.fullmatch(r'[0-9a-f]{64}', str(payload.get('evidence_sha256', ''))), payload
             print({'fresh_session_runtime_evidence': True, 'revision': payload['revision'], 'image': payload['image'], 'kappa_pos': payload['kappa_pos']})
             PY
