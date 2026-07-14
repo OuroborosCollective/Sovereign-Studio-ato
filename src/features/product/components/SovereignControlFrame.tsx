@@ -78,7 +78,15 @@ export function SovereignControlFrame({ state, children, title = 'Sovereign Cont
           <p className="truncate font-mono text-[9px] text-slate-500">{active.id} · {state.signalSummary}</p>
         </div>
         <span className="rounded border px-2 py-1 font-mono text-[9px]" style={{ color, borderColor: `${color}55` }}>{state.overrideActive ? 'OVR' : 'AUTO'}</span>
-        <button type="button" className="h-8 w-8 rounded-md border border-slate-700 bg-slate-900 text-slate-400" onClick={() => setPanelOpen((value) => !value)}>{panelOpen ? '▾' : '▴'}</button>
+        <button
+          type="button"
+          className="h-8 w-8 rounded-md border border-slate-700 bg-slate-900 text-slate-400"
+          onClick={() => setPanelOpen((value) => !value)}
+          aria-label={panelOpen ? 'Close runtime panel' : 'Open runtime panel'}
+          title={panelOpen ? 'Close runtime panel' : 'Open runtime panel'}
+        >
+          {panelOpen ? '▾' : '▴'}
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden bg-black" data-testid="control-frame-center-chat-workbench">
@@ -89,7 +97,15 @@ export function SovereignControlFrame({ state, children, title = 'Sovereign Cont
 
       <nav className="grid h-14 flex-shrink-0 grid-cols-8 border-t border-slate-900 bg-black" data-testid="control-frame-bottom-nav">
         {state.modules.map((module) => (
-          <button key={module.id} type="button" className="min-w-0 border-t-2 px-1 py-1 text-center" style={{ borderColor: module.id === active.id ? SIGNAL_COLOR[module.signal] : 'transparent' }} onClick={() => onModuleSelect?.(module.id)}>
+          <button
+            key={module.id}
+            type="button"
+            className="min-w-0 border-t-2 px-1 py-1 text-center"
+            style={{ borderColor: module.id === active.id ? SIGNAL_COLOR[module.signal] : 'transparent' }}
+            onClick={() => onModuleSelect?.(module.id)}
+            aria-label={module.id.toUpperCase()}
+            title={module.id.toUpperCase()}
+          >
             <span className="mx-auto mb-1 flex justify-center"><ControlLamp module={module} /></span>
             <span className="block truncate font-mono text-[7.5px] text-slate-500">{module.id.slice(0, 3).toUpperCase()}</span>
           </button>
