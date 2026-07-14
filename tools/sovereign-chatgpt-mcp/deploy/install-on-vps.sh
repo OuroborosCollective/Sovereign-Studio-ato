@@ -475,9 +475,12 @@ if [[ "$CONTAINER_STATE" != "running healthy" ]]; then
   fail "MCP container did not pass protocol health: ${CONTAINER_STATE:-missing}"
 fi
 
+INSTALL_STAGE="verify_broker_socket_visibility"
 [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] || fail "host broker socket disappeared after MCP recreation"
 docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock || fail "broker socket is not visible inside the recreated MCP container"
-docker exec sovereign-chatgpt-mcp python - <<'PY'
+
+INSTALL_STAGE="verify_inbound_mutation_boundary"
+docker exec -i sovereign-chatgpt-mcp python - <<'PY'
 import json
 import socket
 import uuid
@@ -495,9 +498,20 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
 result = response["result"]
 assert result.get("failure_family") == "INBOUND_MUTATION_FORBIDDEN", result
 PY
-docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import sovereign_cognitive_widget; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert sovereign_cognitive_widget.WIDGET_MANIFEST.get("agentCount") == 8; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); status=server.broker.status(); assert status.get("status") == "BROKER_READY", status; worker=server.broker.call("host_worker_canary", {}, timeout=10); assert worker.get("status") == "HOST_WORKER_READY", worker; assert worker.get("execution_origin") == "host_worker", worker'
+
+INSTALL_STAGE="verify_runtime_import_contracts"
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+
+INSTALL_STAGE="verify_host_worker_canary"
+docker exec sovereign-chatgpt-mcp python -c 'import server; worker=server.broker.call("host_worker_canary", {}, timeout=10); assert worker.get("status") == "HOST_WORKER_READY", worker; assert worker.get("execution_origin") == "host_worker", worker'
+
+INSTALL_STAGE="verify_mcp_protocol_handshake"
 docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
+
+INSTALL_STAGE="verify_android_native_boundary"
 docker exec sovereign-chatgpt-mcp python -c 'import os; assert os.getenv("SOVEREIGN_ANDROID_NATIVE_BUILD_MODE", "github_actions") == "github_actions"'
+
+INSTALL_STAGE="verify_workspace_write_boundary"
 docker exec sovereign-chatgpt-mcp python -c 'from pathlib import Path; root=Path("/opt/sovereign-chatgpt-tools/workspaces"); probe=root/".permission-probe"; probe.write_text("ok", encoding="utf-8"); probe.unlink()'
 
 INSTALL_STAGE="verify_tunnel_configuration"
