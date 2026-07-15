@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     env_file:
       - /opt/sovereign-chatgpt-tools/.env
+      - /opt/sovereign-chatgpt-tools/runtime.env
     environment:
       SOVEREIGN_MCP_HOST: 0.0.0.0
       SOVEREIGN_MCP_PORT: 8090

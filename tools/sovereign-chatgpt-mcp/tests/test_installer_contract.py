@@ -72,9 +72,10 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
     assert 'org.opencontainers.image.revision' in installer
     assert 'SOVEREIGN_MCP_EXPECTED_REVISION' in installer
-    assert "grep -q '^SOVEREIGN_MCP_IMAGE=' \"$ENV_FILE\"" in installer
-    assert 'SOVEREIGN_MCP_IMAGE=$MCP_IMAGE_DIGEST' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"' in installer
+    assert 'export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"' in installer
     assert 'image: ${SOVEREIGN_MCP_IMAGE:' in compose
+    assert '/opt/sovereign-chatgpt-tools/runtime.env' in compose
     assert 'build:' not in compose
     assert 'broker_rpc_ready()' in installer
     assert 'wait_for_broker_ready()' in installer

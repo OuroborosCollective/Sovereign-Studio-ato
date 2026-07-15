@@ -27,9 +27,10 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
 
     assert 'OWNER_REQUEST_KEY="$(openssl rand -hex 32)"' in installer
-    assert 'set_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
-    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
-    assert 'set_value "$ENV_FILE" SOVEREIGN_BACKEND_INTERNAL_URL "http://sovereign-backend:8787"' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
+    assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_INTERNAL_URL "http://sovereign-backend:8787"' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_MANAGED_ENV_FILE "$BACKEND_MANAGED_ENV"' in installer
     assert 'OWNER_REFERENCE_ID="26487"' in installer
     assert 'OWNER_ADMIN_EMAIL="rastamanweeste@gmail.com"' in installer
     assert "SOVEREIGN_OWNER_REFERENCE_ID" in installer
@@ -39,9 +40,9 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert "unset OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL" in installer
     assert "echo $OWNER_REQUEST_KEY" not in installer
     assert "printf '%s' \"$OWNER_REQUEST_KEY\"" not in installer
-    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
-    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
-    assert 'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
+    assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
+    assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
+    assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
     assert '/opt/secure/owner-managed' not in installer
 
 
@@ -58,6 +59,7 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert '[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]]' in deploy
     assert 'install -d -m 0700 "$OWNER_INPUT_HOST_ROOT"' not in deploy
     assert deploy.count("--volume /opt/secure:/opt/secure:ro") == 2
+    assert deploy.count('--env-file "$MANAGED_ENV_FILE"') == 2
     assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
     assert "install -d -m 0700 /opt/secure/owner-managed" not in deploy
     assert ':/opt/secure/owner-managed:rw' not in deploy
@@ -72,6 +74,7 @@ def test_backend_rollback_preserves_owner_managed_openai_key_mount() -> None:
     assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in rollback
     assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in rollback
     assert '--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"' in rollback
+    assert '--env-file "$MANAGED_ENV_FILE"' in rollback
     assert "openhands-enterprise_default" not in rollback
 
 

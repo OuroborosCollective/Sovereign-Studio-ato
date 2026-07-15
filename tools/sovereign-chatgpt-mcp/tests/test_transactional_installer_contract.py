@@ -161,15 +161,20 @@ def test_failed_install_restores_previous_files_services_container_and_tunnel() 
     assert 'ROLLBACK_ARMED=0' in script
 
 
-def test_backend_and_control_plane_environment_files_are_backed_up_before_mutation() -> None:
+def test_only_managed_environment_overlays_are_backed_up_and_mutated() -> None:
     script = INSTALLER.read_text("utf-8")
 
-    assert 'backup_control_plane_file "$ENV_FILE"' in script
+    assert 'backup_control_plane_file "$MANAGED_ENV"' in script
+    assert 'backup_control_plane_file "$BACKEND_MANAGED_ENV"' in script
     assert 'backup_control_plane_file "$BROKER_ENV"' in script
-    assert 'backup_control_plane_file "$BACKEND_ENV_PATH"' in script
-    assert script.index('backup_control_plane_file "$BACKEND_ENV_PATH"') < script.index(
-        'set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REQUEST_KEY'
-    )
+    assert 'backup_control_plane_file "$ENV_FILE"' not in script
+    assert 'backup_control_plane_file "$BACKEND_ENV_PATH"' not in script
+    assert 'set_value "$ENV_FILE"' not in script
+    assert 'set_value "$BACKEND_ENV_PATH"' not in script
+    assert 'sed -i' not in script or '"$ENV_FILE"' not in script.split('sed -i', 1)[1]
+    assert '>> "$ENV_FILE"' not in script
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY' in script
+    assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY' in script
 
 
 def test_self_update_persists_only_bounded_installer_stage_evidence() -> None:

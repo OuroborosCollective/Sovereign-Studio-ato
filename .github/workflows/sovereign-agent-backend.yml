@@ -212,6 +212,7 @@ jobs:
 
             BUILD_DIR="$WORK_DIR/scripts/sovereign-backend"
             OWNER_INPUT_ROOT="/opt/sovereign-owner-managed"
+            BACKEND_MANAGED_ENV="/opt/sovereign-chatgpt-tools/backend-runtime.env"
             for required_file in Dockerfile app.py requirements.txt; do
               if [ ! -f "$BUILD_DIR/$required_file" ]; then
                 echo "Required build file is missing: $BUILD_DIR/$required_file" >&2
@@ -238,6 +239,9 @@ jobs:
               echo "Backend environment file is missing: /opt/sovereign-backend/.env" >&2
               exit 1
             fi
+            if [ ! -f "$BACKEND_MANAGED_ENV" ]; then
+              install -m 0600 /dev/null "$BACKEND_MANAGED_ENV"
+            fi
             if [ ! -d /opt/secure ]; then
               echo "Secure mount source is missing: /opt/secure" >&2
               exit 1
@@ -261,6 +265,7 @@ jobs:
               --name sovereign-backend \
               --restart unless-stopped \
               --env-file /opt/sovereign-backend/.env \
+              --env-file "$BACKEND_MANAGED_ENV" \
               --label "org.opencontainers.image.revision=$COMMIT_SHA" \
               --network supabase_default \
               --volume /opt/secure:/opt/secure:ro \
@@ -289,6 +294,7 @@ jobs:
                   --name sovereign-backend \
                   --restart unless-stopped \
                   --env-file /opt/sovereign-backend/.env \
+                  --env-file "$BACKEND_MANAGED_ENV" \
                   --network supabase_default \
                   --volume /opt/secure:/opt/secure:ro \
                   --volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw" \

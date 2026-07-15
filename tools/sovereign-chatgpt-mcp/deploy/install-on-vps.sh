@@ -11,6 +11,8 @@ COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 ENV_FILE="$INSTALL_ROOT/.env"
+MANAGED_ENV="$INSTALL_ROOT/runtime.env"
+BACKEND_MANAGED_ENV="$INSTALL_ROOT/backend-runtime.env"
 GHCR_ENV="$INSTALL_ROOT/.ghcr.env"
 TUNNEL_ENV="$INSTALL_ROOT/tunnel.env"
 BROKER_ENV="$INSTALL_ROOT/broker.env"
@@ -43,6 +45,33 @@ read_value() {
   local file="$1"
   local key="$2"
   sed -n "s/^${key}=//p" "$file" | tail -n 1
+}
+
+read_mcp_value() {
+  local key="$1"
+  if [[ -f "$MANAGED_ENV" ]] && grep -q "^${key}=" "$MANAGED_ENV"; then
+    read_value "$MANAGED_ENV" "$key"
+  else
+    read_value "$ENV_FILE" "$key"
+  fi
+}
+
+read_backend_value() {
+  local key="$1"
+  if [[ -f "$BACKEND_MANAGED_ENV" ]] && grep -q "^${key}=" "$BACKEND_MANAGED_ENV"; then
+    read_value "$BACKEND_MANAGED_ENV" "$key"
+  else
+    read_value "$BACKEND_ENV_PATH" "$key"
+  fi
+}
+
+ensure_managed_env() {
+  local file="$1"
+  if [[ ! -f "$file" ]]; then
+    install -m 0600 /dev/null "$file"
+  else
+    ensure_private_file_mode "$file"
+  fi
 }
 
 ensure_private_file_mode() {
@@ -172,7 +201,9 @@ recover_previous_control_plane() {
   set +e
   restore_control_plane_files
   if [[ -f "$ENV_FILE" ]] && valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
-    set_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE "$PREVIOUS_MCP_IMAGE_DIGEST"
+    ensure_managed_env "$MANAGED_ENV"
+    set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$PREVIOUS_MCP_IMAGE_DIGEST"
+    export SOVEREIGN_MCP_IMAGE="$PREVIOUS_MCP_IMAGE_DIGEST"
   fi
   systemctl daemon-reload >/dev/null 2>&1
   systemctl restart sovereign-chatgpt-command-worker.service >/dev/null 2>&1
@@ -281,13 +312,14 @@ chmod 0700 "$ROLLBACK_DIR"
 ROLLBACK_MANIFEST="$ROLLBACK_DIR/manifest.tsv"
 : > "$ROLLBACK_MANIFEST"
 : > "$ROLLBACK_MANIFEST.paths"
-backup_control_plane_file "$ENV_FILE"
+backup_control_plane_file "$MANAGED_ENV"
+backup_control_plane_file "$BACKEND_MANAGED_ENV"
 backup_control_plane_file "$BROKER_ENV"
 backup_control_plane_file "$BROKER_SERVICE"
 backup_control_plane_file "$COMMAND_WORKER_SERVICE"
 backup_control_plane_file "$SELF_UPDATE_SERVICE"
 backup_control_plane_file "$TUNNEL_SERVICE"
-PREVIOUS_MCP_IMAGE_DIGEST="$(read_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE 2>/dev/null || true)"
+PREVIOUS_MCP_IMAGE_DIGEST="$(read_mcp_value SOVEREIGN_MCP_IMAGE 2>/dev/null || true)"
 if ! valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
   PREVIOUS_MCP_IMAGE_DIGEST="$(resolve_running_mcp_image_digest || true)"
 fi
@@ -350,15 +382,16 @@ if [[ ! -f "$ENV_FILE" ]]; then
   fail "create $ENV_FILE from $INSTALL_ROOT/.env.example and fill it only on the VPS"
 fi
 ensure_private_file_mode "$ENV_FILE"
+ensure_managed_env "$MANAGED_ENV"
 grep -Eq '^GITHUB_TOKEN=.+$' "$ENV_FILE" || fail "GITHUB_TOKEN is not configured in $ENV_FILE"
 
 INSTALL_STAGE="configure_private_owner_mode"
-PRIVATE_OWNER_MODE="$(read_value "$ENV_FILE" SOVEREIGN_MCP_PRIVATE_OWNER_MODE)"
+PRIVATE_OWNER_MODE="$(read_mcp_value SOVEREIGN_MCP_PRIVATE_OWNER_MODE)"
 if [[ -z "$PRIVATE_OWNER_MODE" ]]; then
   PRIVATE_OWNER_MODE="1"
 fi
 [[ "$PRIVATE_OWNER_MODE" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_PRIVATE_OWNER_MODE must be 0 or 1"
-set_value "$ENV_FILE" SOVEREIGN_MCP_PRIVATE_OWNER_MODE "$PRIVATE_OWNER_MODE"
+set_value "$MANAGED_ENV" SOVEREIGN_MCP_PRIVATE_OWNER_MODE "$PRIVATE_OWNER_MODE"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
   for OWNER_CAPABILITY in \
     SOVEREIGN_MCP_ENABLE_DB_WRITES \
@@ -369,30 +402,31 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_PR_MERGE \
     SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \
     SOVEREIGN_MCP_ENABLE_SELF_UPDATE; do
-    set_value "$ENV_FILE" "$OWNER_CAPABILITY" "1"
+    set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
 fi
 for GUARDED_CAPABILITY in \
   SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS \
   SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS; do
-  if [[ -z "$(read_value "$ENV_FILE" "$GUARDED_CAPABILITY")" ]]; then
-    set_value "$ENV_FILE" "$GUARDED_CAPABILITY" "0"
+  if [[ -z "$(read_mcp_value "$GUARDED_CAPABILITY")" ]]; then
+    set_value "$MANAGED_ENV" "$GUARDED_CAPABILITY" "0"
   fi
 done
 unset PRIVATE_OWNER_MODE OWNER_CAPABILITY GUARDED_CAPABILITY
 
 INSTALL_STAGE="ensure_recovery_image_digest"
-CURRENT_MCP_IMAGE_DIGEST="$(read_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE)"
+CURRENT_MCP_IMAGE_DIGEST="$(read_mcp_value SOVEREIGN_MCP_IMAGE)"
 if ! valid_mcp_image_digest "$CURRENT_MCP_IMAGE_DIGEST"; then
   CURRENT_MCP_IMAGE_DIGEST="$PREVIOUS_MCP_IMAGE_DIGEST"
 fi
 valid_mcp_image_digest "$CURRENT_MCP_IMAGE_DIGEST" \
   || fail "SOVEREIGN_MCP_IMAGE is missing and the running MCP container has no immutable GHCR digest"
-set_value "$ENV_FILE" SOVEREIGN_MCP_IMAGE "$CURRENT_MCP_IMAGE_DIGEST"
+set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$CURRENT_MCP_IMAGE_DIGEST"
+export SOVEREIGN_MCP_IMAGE="$CURRENT_MCP_IMAGE_DIGEST"
 unset CURRENT_MCP_IMAGE_DIGEST
 
 INSTALL_STAGE="configure_owner_bridge"
-BACKEND_ENV_PATH="$(read_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE)"
+BACKEND_ENV_PATH="$(read_mcp_value SOVEREIGN_BACKEND_ENV_FILE)"
 if [[ -z "$BACKEND_ENV_PATH" ]]; then
   for candidate in /run/secrets/sovereign-backend.env /opt/sovereign-backend/.env; do
     if [[ -f "$candidate" ]]; then
@@ -402,20 +436,24 @@ if [[ -z "$BACKEND_ENV_PATH" ]]; then
   done
 fi
 [[ -n "$BACKEND_ENV_PATH" && -f "$BACKEND_ENV_PATH" ]] || fail "backend env file is missing for the owner approval bridge"
-backup_control_plane_file "$BACKEND_ENV_PATH"
 ensure_private_file_mode "$BACKEND_ENV_PATH"
-OWNER_REQUEST_KEY="$(read_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY)"
+ensure_managed_env "$BACKEND_MANAGED_ENV"
+OWNER_REQUEST_KEY="$(read_mcp_value SOVEREIGN_OWNER_REQUEST_KEY)"
+if [[ -z "$OWNER_REQUEST_KEY" ]]; then
+  OWNER_REQUEST_KEY="$(read_backend_value SOVEREIGN_OWNER_REQUEST_KEY)"
+fi
 if [[ -z "$OWNER_REQUEST_KEY" ]]; then
   OWNER_REQUEST_KEY="$(openssl rand -hex 32)"
 fi
-set_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
-set_value "$ENV_FILE" SOVEREIGN_BACKEND_INTERNAL_URL "http://sovereign-backend:8787"
-set_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE "$BACKEND_ENV_PATH"
-set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
-set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"
-OWNER_REFERENCE_ID="$(read_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REFERENCE_ID)"
-OWNER_ADMIN_ID="$(read_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_ID)"
-OWNER_ADMIN_EMAIL="$(read_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_EMAIL)"
+set_value "$MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
+set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_INTERNAL_URL "http://sovereign-backend:8787"
+set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_ENV_FILE "$BACKEND_ENV_PATH"
+set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_MANAGED_ENV_FILE "$BACKEND_MANAGED_ENV"
+set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
+set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"
+OWNER_REFERENCE_ID="$(read_backend_value SOVEREIGN_OWNER_REFERENCE_ID)"
+OWNER_ADMIN_ID="$(read_backend_value SOVEREIGN_OWNER_ADMIN_ID)"
+OWNER_ADMIN_EMAIL="$(read_backend_value SOVEREIGN_OWNER_ADMIN_EMAIL)"
 if [[ -z "$OWNER_REFERENCE_ID" ]]; then
   OWNER_REFERENCE_ID="26487"
 fi
@@ -423,48 +461,49 @@ if [[ -z "$OWNER_ADMIN_ID" && -z "$OWNER_ADMIN_EMAIL" ]]; then
   OWNER_ADMIN_EMAIL="rastamanweeste@gmail.com"
 fi
 [[ "$OWNER_REFERENCE_ID" =~ ^[0-9]{1,20}$ ]] || fail "SOVEREIGN_OWNER_REFERENCE_ID is invalid"
-set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"
+set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"
 if [[ -n "$OWNER_ADMIN_ID" ]]; then
   [[ "$OWNER_ADMIN_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail "SOVEREIGN_OWNER_ADMIN_ID is invalid"
-  set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_ID "$OWNER_ADMIN_ID"
+  set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_ID "$OWNER_ADMIN_ID"
 elif [[ "$OWNER_ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
-  set_value "$BACKEND_ENV_PATH" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"
+  set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"
 else
   fail "configure a valid SOVEREIGN_OWNER_ADMIN_ID or SOVEREIGN_OWNER_ADMIN_EMAIL for the owner approval surface"
 fi
 unset OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL
 
 for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml sovereign-chatgpt-mcp.yml sovereign-agent-backend.yml release-verification.yml; do
-  CURRENT_ALLOWED_WORKFLOWS="$(read_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_WORKFLOWS)"
+  CURRENT_ALLOWED_WORKFLOWS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_WORKFLOWS)"
   if [[ -z "$CURRENT_ALLOWED_WORKFLOWS" ]]; then
-    set_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_WORKFLOWS "$REQUIRED_WORKFLOW"
+    set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_WORKFLOWS "$REQUIRED_WORKFLOW"
   elif [[ ",$CURRENT_ALLOWED_WORKFLOWS," != *",$REQUIRED_WORKFLOW,"* ]]; then
-    set_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_WORKFLOWS "$REQUIRED_WORKFLOW,$CURRENT_ALLOWED_WORKFLOWS"
+    set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_WORKFLOWS "$REQUIRED_WORKFLOW,$CURRENT_ALLOWED_WORKFLOWS"
   fi
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
 for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless; do
-  CURRENT_ALLOWED_CONTAINERS="$(read_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
+  CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
-    set_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
+    set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
   elif [[ ",$CURRENT_ALLOWED_CONTAINERS," != *",$REQUIRED_CONTAINER,"* ]]; then
-    set_value "$ENV_FILE" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER,$CURRENT_ALLOWED_CONTAINERS"
+    set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER,$CURRENT_ALLOWED_CONTAINERS"
   fi
 done
 unset REQUIRED_CONTAINER CURRENT_ALLOWED_CONTAINERS
 
-if [[ "$(read_value "$ENV_FILE" SOVEREIGN_MCP_BOOTSTRAP_DATABASE)" == "1" ]]; then
+if [[ "$(read_mcp_value SOVEREIGN_MCP_BOOTSTRAP_DATABASE)" == "1" ]]; then
   command -v openssl >/dev/null 2>&1 || fail "openssl is required for database bootstrap"
-  BACKEND_ENV_PATH="$(read_value "$ENV_FILE" SOVEREIGN_BACKEND_ENV_FILE)"
-  MCP_ENV_FILE="$ENV_FILE" \
+  BACKEND_ENV_PATH="$(read_mcp_value SOVEREIGN_BACKEND_ENV_FILE)"
+  MCP_BASE_ENV_FILE="$ENV_FILE" \
+    MCP_ENV_FILE="$MANAGED_ENV" \
     SOVEREIGN_BACKEND_ENV_FILE="${BACKEND_ENV_PATH:-/opt/sovereign-backend/.env}" \
     "$BIN_DIR/bootstrap-database"
-  sed -i 's/^SOVEREIGN_MCP_BOOTSTRAP_DATABASE=.*/SOVEREIGN_MCP_BOOTSTRAP_DATABASE=0/' "$ENV_FILE"
+  set_value "$MANAGED_ENV" SOVEREIGN_MCP_BOOTSTRAP_DATABASE "0"
 fi
 
-grep -Eq '^POSTGRES_PASSWORD=.+$' "$ENV_FILE" || fail "POSTGRES_PASSWORD is missing"
-grep -Eq '^SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD=.+$' "$ENV_FILE" || fail "preview database password is missing"
+[[ -n "$(read_mcp_value POSTGRES_PASSWORD)" ]] || fail "POSTGRES_PASSWORD is missing"
+[[ -n "$(read_mcp_value SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD)" ]] || fail "preview database password is missing"
 
 DOCKER_CONFIG_VALUE=""
 if [[ -f "$GHCR_ENV" ]]; then
@@ -493,16 +532,14 @@ MCP_IMAGE_DIGEST="$(docker image inspect --format '{{json .RepoDigests}}' "$MCP_
   | python3 -c 'import json,sys; repo=sys.argv[1]+"@"; values=json.load(sys.stdin); print(next((item for item in values if isinstance(item,str) and item.startswith(repo)), ""))' "$MCP_IMAGE_REPOSITORY")"
 [[ "$MCP_IMAGE_DIGEST" == "$MCP_IMAGE_REPOSITORY"@sha256:* ]] || fail "MCP image digest repository does not match"
 [[ "${MCP_IMAGE_DIGEST#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "MCP image has no immutable repository digest"
-if grep -q '^SOVEREIGN_MCP_IMAGE=' "$ENV_FILE"; then
-  sed -i "s|^SOVEREIGN_MCP_IMAGE=.*$|SOVEREIGN_MCP_IMAGE=$MCP_IMAGE_DIGEST|" "$ENV_FILE"
-else
-  printf '\nSOVEREIGN_MCP_IMAGE=%s\n' "$MCP_IMAGE_DIGEST" >> "$ENV_FILE"
-fi
+set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"
 export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 
 INSTALL_STAGE="write_broker_environment"
 {
-  grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE)=' "$ENV_FILE" || true
+  for environment_file in "$ENV_FILE" "$MANAGED_ENV"; do
+    grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
+  done
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
   printf 'SOVEREIGN_MCP_SOURCE_DIR=/opt/sovereign-operator-source\n'

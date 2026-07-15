@@ -5,6 +5,7 @@ DIGEST="${1:-}"
 EXPECTED_REVISION="${2:-}"
 IMAGE_REPOSITORY="${SOVEREIGN_BACKEND_IMAGE_REPOSITORY:-}"
 ENV_FILE="${SOVEREIGN_BACKEND_ENV_FILE:-/run/secrets/sovereign-backend.env}"
+MANAGED_ENV_FILE="${SOVEREIGN_BACKEND_MANAGED_ENV_FILE:-/opt/sovereign-chatgpt-tools/backend-runtime.env}"
 CONTAINER="sovereign-backend"
 CANDIDATE="sovereign-backend-candidate"
 PREVIOUS_IMAGE=""
@@ -21,6 +22,7 @@ fail() {
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "invalid expected revision"
 [[ -n "$IMAGE_REPOSITORY" ]] || fail "SOVEREIGN_BACKEND_IMAGE_REPOSITORY is missing"
 [[ -f "$ENV_FILE" ]] || fail "backend env file is missing"
+[[ -f "$MANAGED_ENV_FILE" ]] || fail "backend managed env file is missing"
 umask 077
 if [[ -e "$OWNER_INPUT_HOST_ROOT" || -L "$OWNER_INPUT_HOST_ROOT" ]]; then
   [[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]] \
@@ -51,6 +53,7 @@ docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
 docker run -d \
   --name "$CANDIDATE" \
   --env-file "$ENV_FILE" \
+  --env-file "$MANAGED_ENV_FILE" \
   --network supabase_default \
   --volume /opt/secure:/opt/secure:ro \
   --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
@@ -87,6 +90,7 @@ start_production() {
     --name "$CONTAINER" \
     --restart unless-stopped \
     --env-file "$ENV_FILE" \
+    --env-file "$MANAGED_ENV_FILE" \
     --network supabase_default \
     --volume /opt/secure:/opt/secure:ro \
     --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
