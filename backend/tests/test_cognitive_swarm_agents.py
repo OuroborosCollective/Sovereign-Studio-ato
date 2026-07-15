@@ -123,7 +123,7 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
     assert all("prompt" not in event and "output" not in event for event in events)
 
 
-def test_confirmed_nullfund_finishes_completed_without_approval(monkeypatch) -> None:
+def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> None:
     monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
     monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
 
@@ -152,11 +152,12 @@ def test_confirmed_nullfund_finishes_completed_without_approval(monkeypatch) -> 
             output = JudgeVerdict(
                 loop=0,
                 verdict="nullfund_confirmed",
-                blockers=["No evidenced release blocker remains."],
+                blockers=[],
                 accepted_evidence=["All required release gates are green."],
                 rejected_claims=[],
                 required_next_actions=["Document the nullfund."],
                 draft_pr_ready=False,
+                mission_complete=True,
                 human_approval_required=False,
             )
         else:
@@ -181,6 +182,24 @@ def test_confirmed_nullfund_finishes_completed_without_approval(monkeypatch) -> 
     assert result["status"] == "COMPLETED"
     assert result["approvalRequired"] is False
     assert result["finalVerdict"]["verdict"] == "nullfund_confirmed"
+    assert result["finalVerdict"]["mission_complete"] is True
+    assert result["finalVerdict"]["blockers"] == []
+
+
+def test_nullfund_label_cannot_override_a_real_blocker() -> None:
+    verdict = JudgeVerdict(
+        loop=2,
+        verdict="nullfund_confirmed",
+        blockers=["Runtime evidence is still missing."],
+        accepted_evidence=[],
+        rejected_claims=[],
+        required_next_actions=["Provide the missing runtime evidence."],
+        draft_pr_ready=False,
+        mission_complete=True,
+        human_approval_required=False,
+    )
+
+    assert swarm_module._resolved_swarm_status(verdict) == (False, "BLOCKED")
 
 
 def test_provider_failures_are_classified_without_raw_error_text() -> None:
