@@ -84,9 +84,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
   confirmBlocker,
 }) => {
   // Determine if we need GitHub access to proceed
-  const needsGitHubAccess = gateSnapshot.repoReady && 
-    !gateSnapshot.githubWriteReady && 
-    !gateSnapshot.agentReady;
+  const needsGitHubAccess = gateSnapshot.repoReady && !gateSnapshot.githubWriteReady;
   
   // The "Einbauen" button should be enabled if repo is ready
   // Even without GitHub write, clicking it should lead to the access gate

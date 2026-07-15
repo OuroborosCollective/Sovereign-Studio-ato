@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(() => {
   const enableSourcemaps = process.env.VITE_BUILD_SOURCEMAP === 'true';
+  const e2eBackendProxyTarget = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim();
 
   return {
     base: './',
@@ -17,6 +18,19 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, './'),
       },
     },
+    preview: e2eBackendProxyTarget ? {
+      host: '127.0.0.1',
+      port: 3000,
+      strictPort: true,
+      proxy: {
+        '/api': {
+          target: e2eBackendProxyTarget,
+          changeOrigin: true,
+          secure: true,
+          cookieDomainRewrite: '127.0.0.1',
+        },
+      },
+    } : undefined,
     server: {
       host: '0.0.0.0',
       port: 5000,

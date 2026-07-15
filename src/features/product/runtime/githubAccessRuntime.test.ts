@@ -219,6 +219,19 @@ describe('GitHub Access Runtime', () => {
       expect(fetcher).toHaveBeenCalledTimes(2);
     });
 
+    it('validates an installation token through the real target repository without requiring a user endpoint', async () => {
+      const installationToken = ['g', 'h', 's', '_', 'b'.repeat(40)].join('');
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+        expect(String(url)).toContain('/repos/OuroborosCollective/Sovereign-Studio-ato');
+        return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
+      }) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(installationToken, target, fetcher);
+
+      expect(result).toEqual({ ok: true, canWrite: true });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    });
+
     it('validates github_pat_ candidates through the real GitHub API path after format preflight', async () => {
       const fetcher = vi.fn(async (url: RequestInfo | URL) => {
         const value = String(url);

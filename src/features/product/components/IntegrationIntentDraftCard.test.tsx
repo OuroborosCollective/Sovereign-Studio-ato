@@ -266,6 +266,31 @@ describe('IntegrationIntentDraftCard', () => {
       expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang benötigt');
     });
 
+    it('keeps the GitHub access action available when the agent is configured but write access is missing', () => {
+      const draft = createMockDraft();
+      const gates = createMockGates({
+        repoReady: true,
+        githubWriteReady: false,
+        directPatchReady: false,
+        agentReady: true,
+      });
+
+      render(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={gates}
+          onConfirm={vi.fn()}
+          onConfirmWithGitHubAccess={vi.fn()}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+          canConfirm={false}
+        />
+      );
+
+      expect(screen.getByTestId('btn-confirm')).not.toBeDisabled();
+      expect(screen.getByTestId('btn-confirm').textContent).toBe('GitHub-Zugang benötigt');
+    });
+
     it('calls onConfirmWithGitHubAccess when button clicked with GitHub access needed', () => {
       const onConfirm = vi.fn();
       const onConfirmWithGitHubAccess = vi.fn();

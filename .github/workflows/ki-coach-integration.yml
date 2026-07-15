@@ -209,7 +209,7 @@ jobs:
   # Real E2E Smoke Test (NO MOCKS, NO STUBS)
   # ============================================
   real-e2e-smoke:
-    name: Real E2E Smoke Test (No Mocks)
+    name: Current UI Playwright Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
@@ -232,46 +232,19 @@ jobs:
       - name: Build web app
         run: pnpm run build:web
 
-      - name: Start dev server
-        run: |
-          pnpm dev &
-          SERVER_PID=$!
-          echo "Server PID: $SERVER_PID"
-          sleep 10
-          curl -s http://localhost:3000 > /dev/null && echo "Server ready" || echo "Server not ready"
-          
-      - name: Run Real E2E Smoke Test
+      - name: Run current Playwright smoke gate
         id: smoke-test
         run: |
-          echo "### 🔥 Real E2E Smoke Test (NO MOCKS, NO STUBS)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          
-          # Check if server is running
-          if curl -s http://localhost:3000 > /dev/null 2>&1; then
-            echo "| App Server | ✅ Running |" >> $GITHUB_STEP_SUMMARY
-            SERVER_OK=true
-          else
-            echo "| App Server | ❌ **NOT RUNNING** |" >> $GITHUB_STEP_SUMMARY
-            SERVER_OK=false
-          fi
-          
-          if [ "$SERVER_OK" = "true" ]; then
-            # Run playwright test
-            npx playwright test sovereign-studio-rn/e2e/ki-coach/real-smoke.spec.ts --reporter=list 2>&1 | tee /tmp/smoke-output.txt || true
-            
-            # Check results
-            if grep -q "passed" /tmp/smoke-output.txt; then
-              echo "| E2E Tests | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "| E2E Tests | ⚠️  Inconclusive |" >> $GITHUB_STEP_SUMMARY
-            fi
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note:** Real E2E tests require running app. CI provides logic validation only." >> $GITHUB_STEP_SUMMARY
-          echo "**Result:** ✅ SMOKE TEST COMPLETED" >> $GITHUB_STEP_SUMMARY
+          pnpm run test:e2e
+          {
+            echo "### Current UI Playwright Smoke"
+            echo ""
+            echo "- Current app build served by the Playwright webServer contract"
+            echo "- Playwright failures fail this job; no ignored or inconclusive green state"
+            echo "- Protected five-path Draft-PR validation runs only from Sovereign E2E Smoke workflow_dispatch"
+            echo ""
+            echo "**Result:** ✅ Playwright smoke passed"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ============================================
   # Self-Learning Pattern Validation
