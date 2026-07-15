@@ -135,6 +135,7 @@ export default function App() {
         evidenceText: nextMission,
         provisionWorkspace: true,
         cloneRepo: false,
+        githubAccessToken: input.githubAccessToken,
       });
       setAgentJob(snapshot);
     } catch (error) {
@@ -244,6 +245,7 @@ export default function App() {
           provisionWorkspace: true,
           cloneRepo: true,
           stagedFiles: input.changes,
+          githubAccessToken: input.githubAccessToken,
         });
         setAgentJob(snapshot);
         jobId = snapshot.jobId;
@@ -293,7 +295,7 @@ export default function App() {
         );
       }
 
-      const creation = await agentClient.createDraftPr(jobId);
+      const creation = await agentClient.createDraftPr(jobId, input?.githubAccessToken);
       if (!creation.ok || !creation.draftPrCreate.allowed || !creation.draftPrCreate.prUrl) {
         throw new Error(
           creation.draftPrCreate.blocker

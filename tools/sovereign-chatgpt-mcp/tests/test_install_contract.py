@@ -32,6 +32,9 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
     assert "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL" in script
     assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
+    assert "e2e-testing.yml" in script
+    assert "SOVEREIGN_MCP_ALLOWED_CONTAINERS" in script
+    assert "gpt-browserless" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service

@@ -25,8 +25,10 @@ describe('SovereignAgentClient', () => {
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
     await expect(client.startJob({ repoUrl: 'https://github.com/acme/repo', mission: 'Fix tests' })).rejects.toThrow('workspace unavailable');
   });
-  it('carries chat work through predictive handoff and the real Draft-PR route family', async () => {
+  it('carries staged changes and ephemeral GitHub access through the real Draft-PR route family', async () => {
     const calls: string[] = [];
+    const requestInits: RequestInit[] = [];
+    const githubAccessToken = 'not-a-real-github-token';
     const responses = [
       {
         ok: true,
@@ -85,8 +87,9 @@ describe('SovereignAgentClient', () => {
         events: [],
       },
     ];
-    const fetcher = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       calls.push(String(url));
+      requestInits.push(init || {});
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     });
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch, now: () => 10 });
@@ -95,15 +98,26 @@ describe('SovereignAgentClient', () => {
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
       mission: 'Fix TypeScript and create a Draft PR.',
       evidenceText: 'TS2339 Property paymentMethods does not exist',
+      stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
+      testCommand: '  git diff --check  ',
+      githubAccessToken: `  ${githubAccessToken}  `,
     });
     const preparation = await client.prepareDraftPr(job.jobId || '');
-    const creation = await client.createDraftPr(job.jobId || '');
+    const creation = await client.createDraftPr(job.jobId || '', `  ${githubAccessToken}  `);
     const finalJob = await client.getJob(job.jobId || '');
 
     expect(job.events.filter(event => event.stage === 'toolchain_predictive_handoff')).toHaveLength(4);
     expect(preparation.draftPrPreparation.allowed).toBe(true);
     expect(creation.draftPrCreate.prUrl).toContain('/pull/999');
     expect(finalJob.draftPrUrl).toContain('/pull/999');
+    expect(JSON.parse(String(requestInits[0].body))).toMatchObject({
+      stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
+      testCommand: 'git diff --check',
+      githubAccessToken,
+      cloneRepo: false,
+      provisionWorkspace: true,
+    });
+    expect(JSON.parse(String(requestInits[2].body))).toEqual({ githubAccessToken });
     expect(calls).toEqual([
       'https://agent.example.test/api/user/agent/toolchain/handoff',
       'https://agent.example.test/api/user/agent/jobs/job-flow/draft-pr/prepare',

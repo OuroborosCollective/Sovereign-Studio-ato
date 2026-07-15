@@ -107,24 +107,30 @@ export async function validateGitHubTokenForRepo(
 ): Promise<GitHubAccessApiValidationResult> {
   const format = validateGitHubTokenFormat(token);
   if (!format.isValid) return { ok: false, error: format.error };
+  const normalizedToken = token.trim();
+  const isInstallationToken = normalizedToken.startsWith('ghs_');
   const owner = target.owner.trim();
   const repo = target.repo.trim();
   if (!owner || !repo) return { ok: false, error: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.' };
 
   const authHeaders: HeadersInit = {
     Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${token.trim()}`,
+    Authorization: `Bearer ${normalizedToken}`,
     'X-GitHub-Api-Version': '2022-11-28',
   };
 
-  const userResponse = await fetcher('https://api.github.com/user', { headers: authHeaders });
-  if (!userResponse.ok) {
-    return {
-      ok: false,
-      error: userResponse.status === 401
-        ? 'GitHub-Token wurde abgelehnt.'
-        : `GitHub-User-Prüfung fehlgeschlagen: HTTP ${userResponse.status}`,
-    };
+  // Installation tokens are repository-scoped server identities. Some user endpoints
+  // do not accept them, so their truth comes from the real target-repository response.
+  if (!isInstallationToken) {
+    const userResponse = await fetcher('https://api.github.com/user', { headers: authHeaders });
+    if (!userResponse.ok) {
+      return {
+        ok: false,
+        error: userResponse.status === 401
+          ? 'GitHub-Token wurde abgelehnt.'
+          : `GitHub-User-Prüfung fehlgeschlagen: HTTP ${userResponse.status}`,
+      };
+    }
   }
 
   const repoResponse = await fetcher(

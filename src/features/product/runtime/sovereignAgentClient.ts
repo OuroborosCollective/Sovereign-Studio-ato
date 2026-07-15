@@ -408,6 +408,9 @@ export class SovereignAgentClient {
           evidenceText: input.evidenceText || '',
           provisionWorkspace: input.provisionWorkspace ?? true,
           cloneRepo: input.cloneRepo ?? false,
+          ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
+          ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
+          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
         }),
       },
       fetcher: this.fetcher,
@@ -462,12 +465,18 @@ export class SovereignAgentClient {
       },
     };
   }
-  async createDraftPr(jobId: string): Promise<SovereignDraftPrCreateResponse> {
+  async createDraftPr(jobId: string, githubAccessToken?: string): Promise<SovereignDraftPrCreateResponse> {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const token = githubAccessToken?.trim();
     const body = await requestObject({
       url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/draft-pr/create')),
-      init: { method: 'POST', headers: headers(), credentials: 'include', body: '{}' },
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify(token ? { githubAccessToken: token } : {}),
+      },
       fetcher: this.fetcher,
       fallback: 'Sovereign Draft PR create',
     });

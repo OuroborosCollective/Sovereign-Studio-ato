@@ -30,6 +30,12 @@ on:
       - 'capacitor.config.*'
       - '.github/workflows/e2e-testing.yml'
   workflow_dispatch:
+    inputs:
+      live_five_path:
+        description: 'Run five real first-user paths through verified Draft PR creation'
+        required: true
+        type: boolean
+        default: false
 
 env:
   NODE_VERSION: '22'
@@ -96,4 +102,87 @@ jobs:
             echo "- Artifact Gate: pnpm run test:artifact-smoke (validates build handoff)"
             echo "- Browser Gate: pnpm run test:e2e (Playwright smoke tests)"
             echo "- Legacy RN path retired: sovereign-studio-rn/** is no longer required"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  live-five-path-draft-pr:
+    name: Five Real UI Paths to Draft PR
+    if: github.event_name == 'workflow_dispatch' && inputs.live_five_path == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      SOVEREIGN_E2E_LIVE: '1'
+      SOVEREIGN_E2E_ACCOUNT_KEY: ${{ secrets.SOVEREIGN_E2E_ACCOUNT_KEY }}
+      SOVEREIGN_E2E_GITHUB_TOKEN: ${{ github.token }}
+      SOVEREIGN_E2E_REPO_URL: https://github.com/${{ github.repository }}
+      SOVEREIGN_E2E_APP_URL: http://127.0.0.1:3000
+      SOVEREIGN_E2E_BACKEND_PROXY_TARGET: https://sovereign-backend.arelorian.de
+      VITE_SOVEREIGN_AGENT_API_URL: http://127.0.0.1:3000
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Require protected live-test identity
+        shell: bash
+        run: |
+          if [ -z "$SOVEREIGN_E2E_ACCOUNT_KEY" ]; then
+            echo "Missing protected repository secret: SOVEREIGN_E2E_ACCOUNT_KEY" >&2
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Build current branch with real agent route
+        shell: bash
+        run: pnpm run build:web
+
+      - name: Install Chromium
+        shell: bash
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run five serial first-user Draft-PR paths
+        shell: bash
+        run: pnpm exec playwright test tests/e2e/five-draft-pr-paths.spec.ts --project=chromium --workers=1 --reporter=list,html
+
+      - name: Upload five-path runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: five-draft-pr-runtime-evidence-${{ github.run_id }}
+          path: |
+            test-results/five-draft-pr-evidence.json
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Write five-path summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Five real first-user Draft-PR paths"
+            echo ""
+            echo "- Current branch UI served locally at 390×844"
+            echo "- Real production API reached through same-origin preview proxy"
+            echo "- Real account-key session; no authentication bypass"
+            echo "- GitHub verifies every PR as open and draft before cleanup"
+            echo "- Every owned test PR is closed and its sovereign/agent-* branch deleted"
+            echo "- Evidence: five-draft-pr-runtime-evidence-${{ github.run_id }}"
           } >> "$GITHUB_STEP_SUMMARY"
