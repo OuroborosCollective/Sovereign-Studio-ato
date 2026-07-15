@@ -2735,10 +2735,8 @@ export function BuilderContainer({
 
     clearPatchEvidence();
     setOpenWorkbenchSlot(null);
-    // On the first complete repo load there is no stale explorer to close.
-    // Closing unconditionally races file-badge clicks that become available in
-    // the same commit. Only an actual previous repo scope can own a stale dialog.
-    if (previousScopeKey) setShowRepoExplorer(false);
+    // Explorer visibility is reset at the explicit repository replacement point.
+    // Derived scope effects must not race a user click that opens the inspector.
     setAgentWorkSnapshot(createIdleSnapshot(`sovereign-${Date.now()}`));
 
     const accessMatchesCurrentRepo = Boolean(
@@ -4114,6 +4112,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         setWorkerBlocker(null);
         setLastWorkerRequestMessage(null);
         setLastAnswerWasLocal(false);
+        // Repository replacement is the causal point that invalidates an open
+        // explorer. Closing here prevents the later scope effect from racing a
+        // file-badge click rendered from the newly loaded snapshot.
+        setShowRepoExplorer(false);
         setChatRepo(result.snapshot);
         triggerHaptic("medium");
         const summary = summarizeDevChatRepoSnapshot(result.snapshot);
