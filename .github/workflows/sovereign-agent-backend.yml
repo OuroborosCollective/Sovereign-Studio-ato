@@ -317,7 +317,7 @@ jobs:
           command_timeout: 30m
           script: |
             set -eu
-            docker exec sovereign-backend python3 -c 'from app import app; rules={(r.rule, tuple(sorted(r.methods or ()))) for r in app.url_map.iter_rules()}; required={"/api/user/agent/swarm/manifest","/api/user/agent/swarm/run","/api/internal/controller/runs","/api/internal/controller/runs/<run_id>"}; present={rule for rule,_methods in rules}; missing=sorted(required-present); assert not missing, missing; start_methods=next(methods for rule,methods in rules if rule=="/api/internal/controller/runs"); assert "POST" in start_methods and "GET" in start_methods, start_methods; print({"agents_sdk_routes_verified": True, "required": sorted(required), "controller_methods": start_methods})'
+            docker exec sovereign-backend python3 -c 'from app import app; rules=[(r.rule, set(r.methods or ())) for r in app.url_map.iter_rules()]; required={"/api/user/agent/swarm/manifest","/api/user/agent/swarm/run","/api/internal/controller/runs","/api/internal/controller/runs/<run_id>"}; present={rule for rule,_methods in rules}; missing=sorted(required-present); assert not missing, missing; controller_methods=set().union(*(methods for rule,methods in rules if rule=="/api/internal/controller/runs")); assert {"GET","POST"}.issubset(controller_methods), sorted(controller_methods); print({"agents_sdk_routes_verified": True, "required": sorted(required), "controller_methods": sorted(controller_methods)})'
 
   smoke-test:
     name: VPS Smoke Tests

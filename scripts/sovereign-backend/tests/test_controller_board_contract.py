@@ -11,6 +11,7 @@ DOCKERFILE = BACKEND / "Dockerfile"
 RUN_STORE = BACKEND / "agent_runtime" / "cognitive_run_store.py"
 SWARM_ROUTES = BACKEND / "agent_runtime" / "cognitive_swarm_routes.py"
 SWARM_AGENTS = BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
+WORKFLOW = BACKEND.parents[1] / ".github" / "workflows" / "sovereign-agent-backend.yml"
 CANONICAL_RUNTIME = BACKEND.parents[1] / "backend" / "agent_runtime"
 CANONICAL_RUN_STORE = CANONICAL_RUNTIME / "cognitive_run_store.py"
 CANONICAL_SWARM_ROUTES = CANONICAL_RUNTIME / "cognitive_swarm_routes.py"
@@ -43,6 +44,14 @@ def test_controller_board_is_registered_in_the_real_backend() -> None:
     assert '@app.route("/api/internal/controller/runs", methods=["POST"])' in controller
     assert '@app.route("/api/internal/controller/runs/<run_id>", methods=["GET"])' in controller
     assert '@app.route("/api/internal/controller/runs/<run_id>/resume", methods=["POST"])' in controller
+
+
+def test_deploy_verifier_unions_duplicate_flask_route_methods() -> None:
+    workflow = WORKFLOW.read_text("utf-8")
+
+    assert 'controller_methods=set().union(*(methods for rule,methods in rules if rule=="/api/internal/controller/runs"))' in workflow
+    assert '{"GET","POST"}.issubset(controller_methods)' in workflow
+    assert 'next(methods for rule,methods in rules if rule=="/api/internal/controller/runs")' not in workflow
 
 
 def test_controller_uses_real_user_session_and_never_browser_storage() -> None:
