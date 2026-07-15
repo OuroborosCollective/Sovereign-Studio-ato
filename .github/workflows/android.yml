@@ -32,7 +32,6 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NODE_VERSION: 22
   JAVA_VERSION: 17
-  PNPM_VERSION: "9.12.2"
   ANDROID_COMPILE_SDK: 35
   ANDROID_BUILD_TOOLS: 35.0.0
   KEYSTORE_FILE: android/app/keystore/release.jks
@@ -65,7 +64,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
           run_install: false
 
       - name: Setup Node.js
