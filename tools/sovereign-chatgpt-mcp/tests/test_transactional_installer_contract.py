@@ -22,25 +22,113 @@ def test_installer_and_updater_have_valid_bash_syntax() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
-def test_env_update_falls_back_when_atomic_replace_is_not_permitted(tmp_path, monkeypatch) -> None:
+def test_private_mode_preflight_accepts_protected_secure_file(tmp_path, monkeypatch) -> None:
+    script = INSTALLER.read_text("utf-8")
+    marker = 'ensure_private_file_mode() {\n  local file="$1"\n  python3 - "$file" <<\'PY\'\n'
+    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
+    target = tmp_path / ".env"
+    target.write_text("ALPHA=old\n", "utf-8")
+    target.chmod(0o600)
+    original_chmod = os.chmod
+
+    def deny_target_chmod(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], mode: int) -> None:
+        if Path(path) == target:
+            raise OSError(errno.EPERM, "operation not permitted")
+        original_chmod(path, mode)
+
+    monkeypatch.setattr(os, "chmod", deny_target_chmod)
+    monkeypatch.setattr(sys, "argv", ["ensure-private-mode", str(target)])
+    exec(compile(embedded, "embedded-private-mode", "exec"), {})
+
+    assert os.stat(target).st_mode & 0o777 == 0o600
+
+
+def test_private_mode_preflight_rejects_protected_public_file(tmp_path, monkeypatch) -> None:
+    script = INSTALLER.read_text("utf-8")
+    marker = 'ensure_private_file_mode() {\n  local file="$1"\n  python3 - "$file" <<\'PY\'\n'
+    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
+    target = tmp_path / ".env"
+    target.write_text("ALPHA=old\n", "utf-8")
+    target.chmod(0o644)
+    original_chmod = os.chmod
+
+    def deny_target_chmod(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], mode: int) -> None:
+        if Path(path) == target:
+            raise OSError(errno.EPERM, "operation not permitted")
+        original_chmod(path, mode)
+
+    monkeypatch.setattr(os, "chmod", deny_target_chmod)
+    monkeypatch.setattr(sys, "argv", ["ensure-private-mode", str(target)])
+
+    try:
+        exec(compile(embedded, "embedded-private-mode", "exec"), {})
+    except SystemExit as exc:
+        assert "unsafe mode" in str(exc)
+    else:
+        raise AssertionError("protected public file must be rejected")
+
+
+def test_env_update_falls_back_when_replace_and_chmod_are_not_permitted(tmp_path, monkeypatch) -> None:
     script = INSTALLER.read_text("utf-8")
     marker = 'python3 - "$file" "$key" "$value" <<\'PY\'\n'
     embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
     target = tmp_path / ".env"
     target.write_text("ALPHA=old\nOTHER=kept\n", "utf-8")
+    target.chmod(0o600)
     original_replace = Path.replace
+    original_chmod = os.chmod
 
     def deny_atomic_replace(self: Path, destination: Path) -> Path:
         if self.name == ".env.tmp":
             raise OSError(errno.EPERM, "operation not permitted")
         return original_replace(self, destination)
 
+    def deny_target_chmod(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], mode: int) -> None:
+        if Path(path) == target:
+            raise OSError(errno.EPERM, "operation not permitted")
+        original_chmod(path, mode)
+
     monkeypatch.setattr(Path, "replace", deny_atomic_replace)
+    monkeypatch.setattr(os, "chmod", deny_target_chmod)
     monkeypatch.setattr(sys, "argv", ["set-value", str(target), "ALPHA", "new"])
     exec(compile(embedded, "embedded-set-value", "exec"), {})
 
     assert target.read_text("utf-8") == "ALPHA=new\nOTHER=kept\n"
     assert os.stat(target).st_mode & 0o777 == 0o600
+    assert not target.with_suffix(".env.tmp").exists()
+
+
+def test_env_update_rejects_unfixable_public_mode(tmp_path, monkeypatch) -> None:
+    script = INSTALLER.read_text("utf-8")
+    marker = 'python3 - "$file" "$key" "$value" <<\'PY\'\n'
+    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
+    target = tmp_path / ".env"
+    target.write_text("ALPHA=old\n", "utf-8")
+    target.chmod(0o644)
+    original_replace = Path.replace
+    original_chmod = os.chmod
+
+    def deny_atomic_replace(self: Path, destination: Path) -> Path:
+        if self.name == ".env.tmp":
+            raise OSError(errno.EPERM, "operation not permitted")
+        return original_replace(self, destination)
+
+    def deny_target_chmod(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], mode: int) -> None:
+        if Path(path) == target:
+            raise OSError(errno.EPERM, "operation not permitted")
+        original_chmod(path, mode)
+
+    monkeypatch.setattr(Path, "replace", deny_atomic_replace)
+    monkeypatch.setattr(os, "chmod", deny_target_chmod)
+    monkeypatch.setattr(sys, "argv", ["set-value", str(target), "ALPHA", "new"])
+
+    try:
+        exec(compile(embedded, "embedded-set-value", "exec"), {})
+    except PermissionError as exc:
+        assert "unsafe mode" in str(exc)
+    else:
+        raise AssertionError("unfixable public mode must be rejected")
+
     assert not target.with_suffix(".env.tmp").exists()
 
 
