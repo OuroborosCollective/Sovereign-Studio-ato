@@ -81,6 +81,21 @@ def install(android_runtime: Any, operator_runtime: Any, broker: Any) -> None:
                 "url": draft_pr.get("url"),
             }
         elif direct_main_enabled and str(metadata.get("base_branch") or "") == "main":
+            if selected != "release":
+                return {
+                    "ok": False,
+                    "status": "MAIN_REQUIRES_RELEASE_PROFILE",
+                    "workspace_id": workspace_id,
+                    "profile": selected,
+                    "execution_mode": "github_actions",
+                    "ref": "main",
+                    "draft_pr": None,
+                    "local_preflight": preflight,
+                    "blocker": (
+                        "Main Android validation requires the release profile; standard validation must use a published Draft-PR branch."
+                    ),
+                    "next_action": "run_release_profile_on_main_or_publish_draft_pr_branch",
+                }
             remote_ref = "main"
             draft_pr_evidence = None
         else:

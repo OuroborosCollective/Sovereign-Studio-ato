@@ -158,6 +158,27 @@ def test_release_profile_blocks_before_gradle_when_workspace_branch_is_not_publi
     assert broker.calls == []
 
 
+def test_standard_profile_blocks_on_main_when_private_main_mode_is_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "1")
+    android = FakeAndroidRuntime()
+    operator = FakeOperatorRuntime({"base_branch": "main", "branch": "sovereign/chatgpt/local-only"})
+    broker = FakeBroker()
+    install(android, operator, broker)
+
+    result = android.run_suite("job-test", "standard")
+
+    assert result["status"] == "MAIN_REQUIRES_RELEASE_PROFILE"
+    assert result["profile"] == "standard"
+    assert result["ref"] == "main"
+    assert result["next_action"] == "run_release_profile_on_main_or_publish_draft_pr_branch"
+    assert "release profile" in result["blocker"]
+    assert android.calls == []
+    assert operator.commands == [
+        ["git", "diff", "--check"],
+    ]
+    assert broker.calls == []
+
+
 def test_release_profile_dispatches_main_when_private_main_mode_is_enabled(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "1")
     monkeypatch.setenv("SOVEREIGN_ANDROID_VALIDATION_WORKFLOW", "android.yml")
