@@ -189,6 +189,22 @@ def execute_persisted_swarm(
         )
         final_verdict = result.get("finalVerdict") if isinstance(result.get("finalVerdict"), dict) else {}
         approval_required = ready and bool(final_verdict.get("human_approval_required", True))
+        hunt_outcome = str(final_verdict.get("hunt_outcome") or "").strip().upper()
+        if hunt_outcome not in {"FINDING", "NULLFIND", "BLOCKED"}:
+            hunt_outcome = ""
+        error_family = str(final_verdict.get("error_family") or "").strip()[:160]
+        next_error_family = str(final_verdict.get("next_error_family") or "").strip()[:160]
+        nullfind_confirmed = (
+            hunt_outcome == "NULLFIND"
+            and bool(final_verdict.get("nullfind_confirmed"))
+            and completed
+        )
+        release_hunt = {
+            "outcome": hunt_outcome,
+            "errorFamily": error_family,
+            "nextErrorFamily": next_error_family if nullfind_confirmed else "",
+            "nullfindConfirmed": nullfind_confirmed,
+        }
         evidence_payload = {
             "resultStatus": final_status,
             "ok": accepted,
@@ -196,6 +212,7 @@ def execute_persisted_swarm(
             "activeSpecialists": int(result.get("activeSpecialists") or 0),
             "manifestSchema": int((result.get("manifest") or manifest).get("schema") or 0),
             "finalVerdictDigest": _digest_json(final_verdict),
+            "releaseHunt": release_hunt,
             "autoMerge": False,
         }
         conn = get_connection()

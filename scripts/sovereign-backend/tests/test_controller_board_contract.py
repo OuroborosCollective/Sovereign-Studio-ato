@@ -109,6 +109,35 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "sovereign_session" not in controller
 
 
+def test_task_lifecycle_preserves_history_without_false_active_blockers() -> None:
+    controller = CONTROLLER.read_text("utf-8")
+
+    assert "def _current_task_id(" in controller
+    assert "def _task_runtime_view(" in controller
+    assert '"taskLifecycle": "current" if is_current else "historical"' in controller
+    assert '"isActiveBlocker": is_current and not run_terminal' in controller
+    assert '"resolvedByTaskId": current_task_id if not is_current else None' in controller
+    assert "JOIN LATERAL (" in controller
+    assert "ORDER BY created_at DESC LIMIT 1" in controller
+    assert "Historische Evidence, kein aktiver Blocker." in controller
+
+
+def test_release_hunt_evidence_is_persisted_and_rendered_from_jsonb() -> None:
+    controller = CONTROLLER.read_text("utf-8")
+    routes = SWARM_ROUTES.read_text("utf-8")
+    agents = SWARM_AGENTS.read_text("utf-8")
+
+    assert '"releaseHunt": release_hunt' in routes
+    assert 'hunt_outcome not in {"FINDING", "NULLFIND", "BLOCKED"}' in routes
+    assert '"nullfindConfirmed": nullfind_confirmed' in routes
+    assert "payload->'releaseHunt' AS release_hunt" in controller
+    assert '"releaseHunt": release_hunt' in controller
+    assert '"releaseHunt": _release_hunt_payload' in controller
+    assert "Release-Jagd · ${esc(h.errorFamily" in controller
+    assert "RELEASE_HUNT_SKILL_PATH" in agents
+    assert "sovereign-release-ready-error-family-hunt" in agents
+
+
 def test_failure_details_are_bounded_and_come_from_persisted_evidence() -> None:
     controller = CONTROLLER.read_text("utf-8")
 
