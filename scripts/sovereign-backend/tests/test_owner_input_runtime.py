@@ -87,6 +87,29 @@ def test_openai_agents_key_rejects_group_or_world_readable_file(monkeypatch, tmp
     assert "OPENAI_API_KEY" not in os.environ
 
 
+def test_agents_sdk_resolves_read_only_completion_without_draft_pr() -> None:
+    read_only = swarm_runtime.JudgeVerdict(
+        loop=2,
+        verdict="accepted",
+        blockers=[],
+        accepted_evidence=["runtime evidence complete"],
+        rejected_claims=[],
+        required_next_actions=[],
+        draft_pr_ready=False,
+        mission_complete=True,
+        human_approval_required=False,
+    )
+    draft_pr = read_only.model_copy(update={
+        "draft_pr_ready": True,
+        "mission_complete": False,
+    })
+    blocked = read_only.model_copy(update={"blockers": ["missing evidence"]})
+
+    assert swarm_runtime._resolved_swarm_status(read_only) == (True, "COMPLETED")
+    assert swarm_runtime._resolved_swarm_status(draft_pr) == (True, "READY_FOR_DRAFT_PR")
+    assert swarm_runtime._resolved_swarm_status(blocked) == (False, "BLOCKED")
+
+
 def test_raw_payment_card_numbers_are_rejected_but_provider_tokens_are_not() -> None:
     assert runtime._contains_payment_card_number("4242 4242 4242 4242") is True
     assert runtime._contains_payment_card_bytes(b"4242 4242 4242 4242") is True
