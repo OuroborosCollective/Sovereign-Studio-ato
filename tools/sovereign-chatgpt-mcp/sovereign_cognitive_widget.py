@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 
 WIDGET_URI = "ui://sovereign/dev_dashboard.html"
 WIDGET_MIME_TYPE = "text/html;profile=mcp-app"
+WIDGET_DOMAIN = "https://sovereign-backend.arelorian.de"
 
 STRICT_CSP = {
     "connectDomains": [],
@@ -21,8 +22,10 @@ STRICT_CSP = {
 RESOURCE_META = {
     "ui": {
         "csp": STRICT_CSP,
+        "domain": WIDGET_DOMAIN,
         "prefersBorder": True,
     },
+    "openai/widgetDomain": WIDGET_DOMAIN,
     "openai/widgetDescription": "Shows evidence-backed Sovereign swarm, control-plane and Draft PR status.",
     "openai/widgetCSP": {
         "connect_domains": [],
