@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,9 +11,13 @@ sys.path.insert(0, str(BACKEND))
 
 import agent_runtime.cognitive_swarm_agents as swarm_module
 from agent_runtime.cognitive_swarm_agents import (
+    CognitiveSwarm,
     DEFAULT_MODEL,
+    DispatchPlan,
+    JudgeVerdict,
     SKILL_PATH,
     SwarmExecutionError,
+    WorkerReport,
     agents_sdk_status,
     build_cognitive_swarm,
     classify_swarm_exception,
@@ -41,6 +46,81 @@ def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists
     assert len(swarm.workers) == 6
     assert len(swarm.specialists) == 4
     assert swarm.judge.name == "The Judge"
+
+
+def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> None:
+    monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
+
+    dispatcher = object()
+    workers = tuple(object() for _ in range(6))
+    judge = object()
+    fake_swarm = CognitiveSwarm(
+        dispatcher=dispatcher,
+        workers=workers,
+        specialists=(),
+        judge=judge,
+    )
+    worker_roles = {id(worker): role for worker, role in zip(workers, swarm_module.WORKER_ROLES, strict=True)}
+
+    def fake_build(*, model=None):
+        return fake_swarm
+
+    async def fake_run_stage(runner_class, agent, prompt, *, stage):
+        if agent is dispatcher:
+            output = DispatchPlan(
+                mission="Inspect evidence.",
+                ordered_work=[f"work-{index}" for index in range(6)],
+                required_evidence=["runtime evidence"],
+                initial_blockers=["missing evidence"],
+            )
+        elif agent is judge:
+            output = JudgeVerdict(
+                loop=0,
+                verdict="blocked",
+                blockers=["missing evidence"],
+                accepted_evidence=[],
+                rejected_claims=[],
+                required_next_actions=["provide evidence"],
+                draft_pr_ready=False,
+                human_approval_required=False,
+            )
+        else:
+            role = worker_roles[id(agent)]
+            output = WorkerReport(
+                role=role,
+                loop=0,
+                status="blocked",
+                findings=["Evidence is incomplete."],
+                required_actions=["Provide evidence."],
+                evidence_observed=[],
+                evidence_missing=["runtime evidence"],
+                blocked=True,
+            )
+        return SimpleNamespace(final_output=output)
+
+    monkeypatch.setattr(swarm_module, "build_cognitive_swarm", fake_build)
+    monkeypatch.setattr(swarm_module, "_run_stage", fake_run_stage)
+    events: list[dict[str, object]] = []
+
+    result = asyncio.run(
+        run_cognitive_swarm(
+            "Inspect bounded runtime evidence.",
+            stage_observer=events.append,
+        )
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert len(events) == 30
+    assert events[0]["agentId"] == "dispatcher"
+    assert events[0]["eventType"] == "agent_started"
+    assert events[-1]["agentId"] == "judge"
+    assert events[-1]["eventType"] == "agent_completed"
+    for role in swarm_module.WORKER_ROLES:
+        assert sum(event["agentId"] == role for event in events) == 4
+    assert sum(event["agentId"] == "judge" for event in events) == 4
+    assert all(event["status"] in {"RUNNING", "VERIFYING", "COMPLETED"} for event in events)
+    assert all("prompt" not in event and "output" not in event for event in events)
 
 
 def test_provider_failures_are_classified_without_raw_error_text() -> None:

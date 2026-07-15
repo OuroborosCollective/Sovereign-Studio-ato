@@ -121,6 +121,7 @@ def _app(factory: FakeConnectionFactory | None = None) -> Flask:
 
 def test_swarm_manifest_route_reports_exact_topology(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("SOVEREIGN_AGENTS_ALLOWED_MODELS", raising=False)
     client = _app().test_client()
     response = client.get("/api/user/agent/swarm/manifest")
     payload = response.get_json()
@@ -131,6 +132,7 @@ def test_swarm_manifest_route_reports_exact_topology(monkeypatch) -> None:
     assert payload["manifest"]["coreAgentCount"] == 8
     assert payload["manifest"]["maxActiveSpecialists"] == 4
     assert payload["manifest"]["autoMerge"] is False
+    assert payload["allowedModels"] == ["gpt-5.4-mini"]
 
 
 def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
@@ -153,6 +155,48 @@ def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
     assert factory.commits == 2
     assert any("INSERT INTO agent_runs" in sql for sql, _ in factory.calls)
     assert any("UPDATE agent_runs" in sql for sql, _ in factory.calls)
+
+
+def test_swarm_persists_core_agent_stage_events_for_chat_widget(monkeypatch) -> None:
+    async def bounded_swarm(*args, stage_observer=None, **kwargs):
+        assert stage_observer is not None
+        stage_observer({
+            "agentId": "dispatcher",
+            "eventType": "agent_started",
+            "status": "RUNNING",
+            "summary": "Dispatcher started the bounded planning call.",
+            "nextAction": "WAIT_FOR_DISPATCH_PLAN",
+        })
+        return {
+            "ok": False,
+            "status": "BLOCKED",
+            "blocker": "Required runtime evidence is missing.",
+            "manifest": {"schema": 2},
+            "activeSpecialists": 0,
+            "finalVerdict": {
+                "draft_pr_ready": False,
+                "human_approval_required": False,
+            },
+        }
+
+    monkeypatch.setattr(routes_runtime, "run_cognitive_swarm", bounded_swarm)
+    factory = FakeConnectionFactory()
+    client = _app(factory).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/run",
+        json={"mission": "Persist the real core-agent lifecycle for the chat widget."},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 503
+    assert payload["status"] == "BLOCKED"
+    assert sum("INSERT INTO agent_events" in sql for sql, _ in factory.calls) == 3
+    persisted = repr(factory.calls)
+    assert "agent_started" in persisted
+    assert "dispatcher" in persisted
+    assert "rawModelOutputPersisted" in persisted
+    assert "WAIT_FOR_DISPATCH_PLAN" in persisted
 
 
 def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monkeypatch) -> None:

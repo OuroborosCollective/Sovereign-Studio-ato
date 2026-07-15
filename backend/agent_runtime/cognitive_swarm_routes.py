@@ -21,6 +21,7 @@ from .cognitive_run_store import (
     list_resumable_agent_runs,
     read_agent_run,
     record_agent_failure,
+    record_agent_stage_event,
     request_agent_approval,
     transition_agent_run,
 )
@@ -47,9 +48,9 @@ def _contains_secret_shaped_text(value: str) -> bool:
 
 
 def _allowed_models() -> frozenset[str]:
-    configured = os.getenv("SOVEREIGN_AGENTS_ALLOWED_MODELS", "gpt-5.6")
+    configured = os.getenv("SOVEREIGN_AGENTS_ALLOWED_MODELS", "gpt-5.4-mini")
     values = frozenset(item.strip() for item in configured.split(",") if item.strip())
-    return values or frozenset({"gpt-5.6"})
+    return values or frozenset({"gpt-5.4-mini"})
 
 
 def _current_session_user_id() -> str:
@@ -122,12 +123,48 @@ def execute_persisted_swarm(
     response_context: dict[str, object] | None = None,
 ) -> tuple[dict[str, object], int]:
     manifest = manifest_payload()
+
+    def persist_stage_event(stage: dict[str, object]) -> None:
+        agent_id = str(stage.get("agentId") or "orchestrator").strip()
+        event_type = str(stage.get("eventType") or "agent_stage").strip()
+        status = str(stage.get("status") or "RUNNING").strip()
+        summary = str(stage.get("summary") or "Agent stage changed.").strip()
+        next_action = str(stage.get("nextAction") or "WAIT_FOR_AGENT").strip()
+        loop_value = stage.get("loop")
+        safe_payload: dict[str, object] = {
+            "agentId": agent_id,
+            "eventType": event_type,
+            "status": status,
+            "rawModelOutputPersisted": False,
+        }
+        if isinstance(loop_value, int):
+            safe_payload["loop"] = loop_value
+        conn = get_connection()
+        try:
+            record_agent_stage_event(
+                conn,
+                user_id=user_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                agent_id=agent_id,
+                event_type=event_type,
+                status=status,
+                summary=summary,
+                next_action=next_action,
+                evidence_payload=safe_payload,
+                task_id=task_id,
+                expected_lease_token=lease_token,
+            )
+        finally:
+            _close_connection(conn)
+
     try:
         result = asyncio.run(
             run_cognitive_swarm(
                 mission,
                 evidence=evidence,
                 model=model,
+                stage_observer=persist_stage_event,
             )
         )
         final_status = str(result.get("status") or "BLOCKED")

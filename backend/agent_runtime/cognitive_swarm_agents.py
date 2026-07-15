@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
@@ -31,6 +32,32 @@ _RUNNER_CLASS: Any | None = None
 _AGENTS_SDK_ERROR = ""
 _OPENAI_KEY_FILENAME: Final[str] = "openai_api_key.txt"
 _OPENAI_KEY_MAX_BYTES: Final[int] = 8192
+
+StageObserver = Callable[[dict[str, object]], None]
+
+
+def _emit_stage(
+    observer: StageObserver | None,
+    *,
+    agent_id: str,
+    event_type: str,
+    status: str,
+    summary: str,
+    next_action: str,
+    loop: int | None = None,
+) -> None:
+    if observer is None:
+        return
+    payload: dict[str, object] = {
+        "agentId": agent_id,
+        "eventType": event_type,
+        "status": status,
+        "summary": summary,
+        "nextAction": next_action,
+    }
+    if loop is not None:
+        payload["loop"] = loop
+    observer(payload)
 
 
 def ensure_openai_runtime_key() -> bool:
@@ -400,6 +427,7 @@ async def run_cognitive_swarm(
     *,
     evidence: str = "",
     model: str | None = None,
+    stage_observer: StageObserver | None = None,
 ) -> dict[str, Any]:
     normalized_mission = mission.strip()
     if not normalized_mission:
@@ -419,6 +447,14 @@ async def run_cognitive_swarm(
         raise
     except Exception as exc:
         raise classify_swarm_exception(exc, stage="swarm-build") from exc
+    _emit_stage(
+        stage_observer,
+        agent_id="dispatcher",
+        event_type="agent_started",
+        status="RUNNING",
+        summary="Dispatcher started the evidence-bounded planning model call.",
+        next_action="WAIT_FOR_DISPATCH_PLAN",
+    )
     plan_result = await _run_stage(
         runner_class,
         swarm.dispatcher,
@@ -434,6 +470,14 @@ async def run_cognitive_swarm(
             next_action="RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS",
             retryable=True,
         )
+    _emit_stage(
+        stage_observer,
+        agent_id="dispatcher",
+        event_type="agent_completed",
+        status="COMPLETED",
+        summary="Dispatcher produced a validated six-role work plan.",
+        next_action="START_WORKER_PASS_ONE",
+    )
 
     loop_payloads: list[dict[str, Any]] = []
     prior_verdict: JudgeVerdict | None = None
@@ -441,6 +485,15 @@ async def run_cognitive_swarm(
     for loop in (1, 2):
         reports: list[WorkerReport] = []
         for role, worker in zip(WORKER_ROLES, swarm.workers, strict=True):
+            _emit_stage(
+                stage_observer,
+                agent_id=role,
+                event_type="agent_started",
+                status="RUNNING",
+                summary=f"{role} started evidence analysis for double-loop pass {loop}.",
+                next_action="WAIT_FOR_AGENT_REPORT",
+                loop=loop,
+            )
             result = await _run_stage(
                 runner_class,
                 worker,
@@ -466,7 +519,25 @@ async def run_cognitive_swarm(
             report.role = role
             report.loop = loop
             reports.append(report)
+            _emit_stage(
+                stage_observer,
+                agent_id=role,
+                event_type="agent_completed",
+                status="COMPLETED",
+                summary=f"{role} produced a validated evidence report for double-loop pass {loop}.",
+                next_action="CONTINUE_WORKER_PASS" if role != WORKER_ROLES[-1] else "START_JUDGE_CHECKPOINT",
+                loop=loop,
+            )
 
+        _emit_stage(
+            stage_observer,
+            agent_id="judge",
+            event_type="agent_started",
+            status="VERIFYING",
+            summary=f"Judge started evidence verification for double-loop checkpoint {loop}.",
+            next_action="WAIT_FOR_JUDGE_VERDICT",
+            loop=loop,
+        )
         judge_result = await _run_stage(
             runner_class,
             swarm.judge,
@@ -493,6 +564,15 @@ async def run_cognitive_swarm(
             verdict.draft_pr_ready = False
             if "mandatory_second_loop" not in verdict.required_next_actions:
                 verdict.required_next_actions.append("mandatory_second_loop")
+        _emit_stage(
+            stage_observer,
+            agent_id="judge",
+            event_type="agent_completed",
+            status="COMPLETED",
+            summary=f"Judge produced a validated verdict for double-loop checkpoint {loop}.",
+            next_action="START_WORKER_REFINEMENT_PASS_TWO" if loop == 1 else "FINALIZE_PERSISTED_RUN",
+            loop=loop,
+        )
 
         loop_payloads.append({
             "loop": loop,
