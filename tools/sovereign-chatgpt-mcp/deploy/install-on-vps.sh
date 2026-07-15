@@ -45,6 +45,26 @@ read_value() {
   sed -n "s/^${key}=//p" "$file" | tail -n 1
 }
 
+ensure_private_file_mode() {
+  local file="$1"
+  python3 - "$file" <<'PY'
+import errno
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    os.chmod(path, 0o600)
+except OSError as exc:
+    if exc.errno not in {errno.EPERM, errno.EACCES, errno.EROFS}:
+        raise
+    mode = stat.S_IMODE(os.stat(path).st_mode)
+    if mode & 0o077:
+        raise SystemExit(f"protected file has unsafe mode: {mode:o}")
+PY
+}
+
 set_value() {
   local file="$1"
   local key="$2"
@@ -53,6 +73,7 @@ set_value() {
 from pathlib import Path
 import errno
 import os
+import stat
 import sys
 
 path = Path(sys.argv[1])
@@ -79,12 +100,21 @@ except OSError as exc:
     if exc.errno not in {errno.EPERM, errno.EBUSY, errno.EXDEV}:
         temporary.unlink(missing_ok=True)
         raise
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.chmod(path, 0o600)
-    temporary.unlink(missing_ok=True)
+    try:
+        with path.open("w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.chmod(path, 0o600)
+        except OSError as chmod_exc:
+            if chmod_exc.errno not in {errno.EPERM, errno.EACCES, errno.EROFS}:
+                raise
+            mode = stat.S_IMODE(path.stat().st_mode)
+            if mode & 0o077:
+                raise PermissionError(f"protected file has unsafe mode: {mode:o}") from chmod_exc
+    finally:
+        temporary.unlink(missing_ok=True)
 PY
 }
 
@@ -319,7 +349,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.tunnel.env.example" "$INSTALL_ROOT/tunnel.env.example"
   fail "create $ENV_FILE from $INSTALL_ROOT/.env.example and fill it only on the VPS"
 fi
-chmod 0600 "$ENV_FILE"
+ensure_private_file_mode "$ENV_FILE"
 grep -Eq '^GITHUB_TOKEN=.+$' "$ENV_FILE" || fail "GITHUB_TOKEN is not configured in $ENV_FILE"
 
 INSTALL_STAGE="configure_private_owner_mode"
@@ -373,7 +403,7 @@ if [[ -z "$BACKEND_ENV_PATH" ]]; then
 fi
 [[ -n "$BACKEND_ENV_PATH" && -f "$BACKEND_ENV_PATH" ]] || fail "backend env file is missing for the owner approval bridge"
 backup_control_plane_file "$BACKEND_ENV_PATH"
-chmod 0600 "$BACKEND_ENV_PATH"
+ensure_private_file_mode "$BACKEND_ENV_PATH"
 OWNER_REQUEST_KEY="$(read_value "$ENV_FILE" SOVEREIGN_OWNER_REQUEST_KEY)"
 if [[ -z "$OWNER_REQUEST_KEY" ]]; then
   OWNER_REQUEST_KEY="$(openssl rand -hex 32)"
@@ -438,7 +468,7 @@ grep -Eq '^SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD=.+$' "$ENV_FILE" || fail "pre
 
 DOCKER_CONFIG_VALUE=""
 if [[ -f "$GHCR_ENV" ]]; then
-  chmod 0600 "$GHCR_ENV"
+  ensure_private_file_mode "$GHCR_ENV"
   GHCR_USERNAME="$(read_value "$GHCR_ENV" GHCR_USERNAME)"
   GHCR_TOKEN="$(read_value "$GHCR_ENV" GHCR_TOKEN)"
   if [[ -n "$GHCR_USERNAME" || -n "$GHCR_TOKEN" ]]; then
