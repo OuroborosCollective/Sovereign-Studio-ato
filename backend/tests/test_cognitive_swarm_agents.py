@@ -10,6 +10,7 @@ sys.path.insert(0, str(BACKEND))
 
 import agent_runtime.cognitive_swarm_agents as swarm_module
 from agent_runtime.cognitive_swarm_agents import (
+    DEFAULT_MODEL,
     SKILL_PATH,
     SwarmExecutionError,
     agents_sdk_status,
@@ -17,6 +18,14 @@ from agent_runtime.cognitive_swarm_agents import (
     classify_swarm_exception,
     run_cognitive_swarm,
 )
+
+
+def test_default_model_uses_the_agents_sdk_low_latency_baseline() -> None:
+    assert DEFAULT_MODEL == "gpt-5.4-mini"
+    production_agents = (
+        PRODUCTION_BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
+    ).read_text("utf-8")
+    assert 'DEFAULT_MODEL: Final[str] = "gpt-5.4-mini"' in production_agents
 
 
 def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists_or_fails_closed() -> None:
