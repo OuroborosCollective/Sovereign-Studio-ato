@@ -304,6 +304,132 @@ def create_agent_run(
     }
 
 
+def record_agent_stage_event(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    trace_id: str,
+    agent_id: str,
+    event_type: str,
+    status: str,
+    summary: str,
+    next_action: str,
+    evidence_payload: Mapping[str, object],
+    task_id: str | None = None,
+    expected_lease_token: str | None = None,
+) -> dict[str, str]:
+    """Persist one bounded agent lifecycle event without inventing run completion."""
+
+    normalized_run_id = _validated_id(run_id, "run_id")
+    normalized_trace_id = _validated_id(trace_id, "trace_id")
+    normalized_status = _validated_status(status)
+    normalized_agent = _bounded(agent_id, 160)
+    normalized_event_type = _bounded(event_type, 120)
+    normalized_summary = _bounded(summary, 2000)
+    normalized_next_action = _bounded(next_action, 1000)
+    if not all((normalized_agent, normalized_event_type, normalized_summary, normalized_next_action)):
+        raise ValueError("agent stage event requires agent, type, summary and next action")
+
+    payload_json = _json(dict(evidence_payload))
+    evidence_id = _new_id("evidence")
+    event_id = _new_id("event")
+    if expected_lease_token:
+        lease_clause = "AND lease_token = %s AND lease_expires_at > NOW()"
+        lease_params: tuple[object, ...] = (_digest_text(expected_lease_token),)
+    else:
+        lease_clause = "AND (lease_token IS NULL OR lease_expires_at <= NOW())"
+        lease_params = ()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO agent_evidence (
+                    evidence_id, run_id, task_id, agent_id, source, kind,
+                    summary, sha256, payload
+                ) VALUES (%s, %s, %s, %s, 'agents-sdk', 'agent_stage', %s, %s, %s::jsonb)
+                """,
+                (
+                    evidence_id,
+                    normalized_run_id,
+                    task_id,
+                    normalized_agent,
+                    normalized_summary,
+                    _digest_text(payload_json),
+                    payload_json,
+                ),
+            )
+            cur.execute(
+                f"""
+                UPDATE agent_runs
+                SET status = CASE
+                        WHEN %s IN ('RUNNING', 'VERIFYING', 'WAITING_FOR_AGENT', 'WAITING_FOR_TOOL') THEN %s
+                        ELSE status
+                    END,
+                    source = 'agents-sdk',
+                    evidence_id = %s,
+                    trace_id = %s,
+                    reason = %s,
+                    next_action = %s
+                WHERE run_id = %s AND user_id = %s::uuid
+                  {lease_clause}
+                RETURNING run_id
+                """,
+                (
+                    normalized_status,
+                    normalized_status,
+                    evidence_id,
+                    normalized_trace_id,
+                    normalized_summary,
+                    normalized_next_action,
+                    normalized_run_id,
+                    str(user_id),
+                    *lease_params,
+                ),
+            )
+            if not cur.fetchone():
+                raise LookupError("agent run not found or active resume lease is not held")
+            cur.execute(
+                """
+                INSERT INTO agent_events (
+                    event_id, run_id, task_id, agent_id, type, status, source,
+                    summary, evidence_id, trace_id, next_action
+                ) VALUES (%s, %s, %s, %s, %s, %s, 'agents-sdk', %s, %s, %s, %s)
+                """,
+                (
+                    event_id,
+                    normalized_run_id,
+                    task_id,
+                    normalized_agent,
+                    normalized_event_type,
+                    normalized_status,
+                    normalized_summary,
+                    evidence_id,
+                    normalized_trace_id,
+                    normalized_next_action,
+                ),
+            )
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+
+    return {
+        "runId": normalized_run_id,
+        "status": normalized_status,
+        "source": "agents-sdk",
+        "evidenceId": evidence_id,
+        "traceId": normalized_trace_id,
+        "agentId": normalized_agent,
+        "eventType": normalized_event_type,
+        "summary": normalized_summary,
+        "nextAction": normalized_next_action,
+    }
+
+
 def transition_agent_run(
     conn: Any,
     *,

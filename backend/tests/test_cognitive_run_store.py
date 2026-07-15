@@ -18,6 +18,7 @@ from agent_runtime.cognitive_run_store import (
     claim_agent_run_for_resume,
     create_agent_run,
     list_resumable_agent_runs,
+    record_agent_stage_event,
     transition_agent_run,
 )
 
@@ -127,6 +128,43 @@ def _stored_run_row(**overrides: Any) -> dict[str, Any]:
     }
     row.update(overrides)
     return row
+
+
+def test_stage_event_persists_agent_activity_without_advancing_iteration_budget() -> None:
+    conn = FakeConnection()
+    lease_token = "bounded-resume-lease"
+
+    state = record_agent_stage_event(
+        conn,
+        user_id=USER_ID,
+        run_id="run-test",
+        trace_id="trace-test",
+        agent_id="data_storage",
+        event_type="agent_started",
+        status="RUNNING",
+        summary="Data and Storage started bounded evidence analysis.",
+        next_action="WAIT_FOR_AGENT_REPORT",
+        evidence_payload={
+            "agentId": "data_storage",
+            "eventType": "agent_started",
+            "loop": 1,
+            "rawModelOutputPersisted": False,
+        },
+        expected_lease_token=lease_token,
+    )
+
+    assert state["agentId"] == "data_storage"
+    assert state["eventType"] == "agent_started"
+    assert state["status"] == "RUNNING"
+    assert conn.commits == 1
+    assert conn.rollbacks == 0
+    assert [call[0].split()[0] for call in conn.calls] == ["INSERT", "UPDATE", "INSERT"]
+    update_sql, update_params = conn.calls[1]
+    assert "iteration_count" not in update_sql
+    assert "lease_token = %s" in update_sql
+    assert hashlib.sha256(lease_token.encode("utf-8")).hexdigest() in update_params
+    assert lease_token not in repr(conn.calls)
+    assert "INSERT INTO agent_events" in conn.calls[2][0]
 
 
 def test_transition_persists_evidence_before_state_and_event() -> None:
@@ -327,7 +365,13 @@ def test_resumable_query_excludes_terminal_and_draft_ready_runs() -> None:
     sql, params = conn.calls[0]
     assert "status <> ALL" in sql
     assert "lease_expires_at <= NOW()" in sql
-    assert set(params[1]) == {"COMPLETED", "DRAFT_PR_CREATED", "FAILED_FINAL", "READY_FOR_DRAFT_PR"}
+    assert set(params[1]) == {
+        "COMPLETED",
+        "DRAFT_PR_CREATED",
+        "FAILED_FINAL",
+        "READY_FOR_DRAFT_PR",
+        "WAITING_FOR_OWNER",
+    }
 
 
 def test_migration_creates_all_required_runtime_truth_tables() -> None:
