@@ -19,6 +19,7 @@ from agent_runtime.cognitive_run_store import (
     create_agent_run,
     list_resumable_agent_runs,
     record_agent_stage_event,
+    request_agent_approval,
     transition_agent_run,
 )
 
@@ -254,6 +255,36 @@ def test_failed_recovery_transition_keeps_prior_failure_unresolved() -> None:
 
     assert [call[0].split()[0] for call in conn.calls] == ["INSERT", "UPDATE", "INSERT"]
     assert not any("UPDATE agent_failures" in sql for sql, _ in conn.calls)
+
+
+def test_owner_approval_state_resolves_recoverable_failures_without_deleting_history() -> None:
+    conn = FakeConnection()
+
+    state = request_agent_approval(
+        conn,
+        user_id=USER_ID,
+        run_id="run-test",
+        trace_id="trace-test",
+        kind="draft_pr_readiness",
+        requested_by_agent="judge",
+        reason="Owner approval is required after validated recovery.",
+        next_action="OWNER_APPROVAL_REQUIRED_FOR_DRAFT_PR",
+        evidence_payload={"judgeReady": True},
+    )
+
+    assert state["status"] == "WAITING_FOR_OWNER"
+    assert [call[0].split()[0] for call in conn.calls] == [
+        "INSERT",
+        "UPDATE",
+        "UPDATE",
+        "INSERT",
+        "INSERT",
+    ]
+    resolution_sql, resolution_params = conn.calls[2]
+    assert "UPDATE agent_failures" in resolution_sql
+    assert "resolved_at = COALESCE(resolved_at, NOW())" in resolution_sql
+    assert "DELETE" not in resolution_sql
+    assert resolution_params == ("run-test",)
 
 
 def test_claim_resume_is_atomic_and_reconstructs_one_bounded_task() -> None:
