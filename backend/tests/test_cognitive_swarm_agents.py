@@ -5,6 +5,7 @@ import sys
 import pytest
 
 BACKEND = Path(__file__).resolve().parents[1]
+PRODUCTION_BACKEND = BACKEND.parent / "scripts" / "sovereign-backend"
 sys.path.insert(0, str(BACKEND))
 
 import agent_runtime.cognitive_swarm_agents as swarm_module
@@ -73,6 +74,19 @@ def test_swarm_build_failure_is_classified_before_first_model_call(monkeypatch) 
     assert "raw build detail" not in str(failure.safe_payload())
 
 
+def test_local_runtime_file_errors_are_not_misclassified_as_provider_404() -> None:
+    failure = classify_swarm_exception(
+        FileNotFoundError("missing runtime asset path must not persist"),
+        stage="swarm-build",
+    )
+
+    assert failure.family == "AGENTS_RUNTIME_ASSET_MISSING"
+    assert failure.next_action == "VERIFY_PRODUCTION_RUNTIME_ASSETS"
+    assert failure.retryable is False
+    assert failure.http_status is None
+    assert "missing runtime asset path" not in str(failure.safe_payload())
+
+
 def test_structured_output_failure_has_bounded_recovery_family() -> None:
     ModelBehaviorError = type("ModelBehaviorError", (Exception,), {})
     failure = classify_swarm_exception(ModelBehaviorError("raw output"), stage="loop-1:judge")
@@ -105,6 +119,17 @@ def test_repo_local_skill_bundle_is_present_and_bounded() -> None:
     assert "name: sovereign-cognitive-architecture" in content
     assert "Never auto-merge" in content
     assert "Missing evidence is a blocker" in content
+
+
+def test_production_image_source_contains_the_same_cognitive_skill_bundle() -> None:
+    production_skill = (
+        PRODUCTION_BACKEND
+        / "agent_runtime"
+        / "skills"
+        / "sovereign-cognitive-architecture"
+        / "SKILL.md"
+    )
+    assert production_skill.read_bytes() == SKILL_PATH.read_bytes()
 
 
 def test_swarm_fails_closed_without_openai_api_key(monkeypatch) -> None:

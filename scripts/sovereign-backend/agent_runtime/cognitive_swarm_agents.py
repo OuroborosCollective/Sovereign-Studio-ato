@@ -125,7 +125,9 @@ def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionErr
     error_type = type(exc).__name__
     lowered = error_type.casefold()
     status = _exception_status(exc)
-    if status == 401 or "authentication" in lowered:
+    if isinstance(exc, FileNotFoundError):
+        family, next_action, retryable = "AGENTS_RUNTIME_ASSET_MISSING", "VERIFY_PRODUCTION_RUNTIME_ASSETS", False
+    elif status == 401 or "authentication" in lowered:
         family, next_action, retryable = "OPENAI_AUTHENTICATION_FAILED", "VERIFY_OPENAI_PROJECT_KEY", False
     elif status == 403 or "permission" in lowered:
         family, next_action, retryable = "OPENAI_PERMISSION_DENIED", "VERIFY_OPENAI_PROJECT_AND_MODEL_ACCESS", False
