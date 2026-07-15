@@ -612,6 +612,6 @@ async def run_cognitive_swarm(
         "loops": loop_payloads,
         "finalVerdict": final_verdict.model_dump(),
         "activeSpecialists": len(swarm.specialists),
-        "approvalRequired": True,
+        "approvalRequired": final_status == "READY_FOR_DRAFT_PR" and final_verdict.human_approval_required,
         "autoMerge": False,
     }

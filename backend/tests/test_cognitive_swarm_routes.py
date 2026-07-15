@@ -199,6 +199,42 @@ def test_swarm_persists_core_agent_stage_events_for_chat_widget(monkeypatch) -> 
     assert "WAIT_FOR_DISPATCH_PLAN" in persisted
 
 
+def test_swarm_persists_confirmed_nullfund_as_completed(monkeypatch) -> None:
+    async def completed_swarm(*args, **kwargs):
+        return {
+            "ok": True,
+            "status": "COMPLETED",
+            "manifest": {"schema": 2},
+            "activeSpecialists": 0,
+            "finalVerdict": {
+                "verdict": "nullfund_confirmed",
+                "draft_pr_ready": False,
+                "human_approval_required": False,
+            },
+        }
+
+    monkeypatch.setattr(routes_runtime, "run_cognitive_swarm", completed_swarm)
+    factory = FakeConnectionFactory()
+    client = _app(factory).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/run",
+        json={"mission": "Persist the evidence-backed nullfund as terminal completion."},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["status"] == "COMPLETED"
+    assert payload["nextAction"] == "NO_FURTHER_ACTION_REQUIRED"
+    assert "evidence-only mission" in payload["reason"]
+    assert payload["approvalId"] is None
+    assert payload["approvalKind"] is None
+    persisted = repr(factory.calls)
+    assert "COMPLETED" in persisted
+    assert "NO_FURTHER_ACTION_REQUIRED" in persisted
+
+
 def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monkeypatch) -> None:
     async def fail_swarm(*args, **kwargs):
         raise SwarmExecutionError(

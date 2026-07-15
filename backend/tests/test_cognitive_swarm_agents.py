@@ -123,6 +123,66 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
     assert all("prompt" not in event and "output" not in event for event in events)
 
 
+def test_confirmed_nullfund_finishes_completed_without_approval(monkeypatch) -> None:
+    monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
+
+    dispatcher = object()
+    workers = tuple(object() for _ in range(6))
+    judge = object()
+    fake_swarm = CognitiveSwarm(
+        dispatcher=dispatcher,
+        workers=workers,
+        specialists=(),
+        judge=judge,
+    )
+    worker_roles = {id(worker): role for worker, role in zip(workers, swarm_module.WORKER_ROLES, strict=True)}
+
+    monkeypatch.setattr(swarm_module, "build_cognitive_swarm", lambda *, model=None: fake_swarm)
+
+    async def fake_run_stage(runner_class, agent, prompt, *, stage):
+        if agent is dispatcher:
+            output = DispatchPlan(
+                mission="Confirm the release-readiness nullfund.",
+                ordered_work=[f"work-{index}" for index in range(6)],
+                required_evidence=["verified release evidence"],
+                initial_blockers=[],
+            )
+        elif agent is judge:
+            output = JudgeVerdict(
+                loop=0,
+                verdict="nullfund_confirmed",
+                blockers=["No evidenced release blocker remains."],
+                accepted_evidence=["All required release gates are green."],
+                rejected_claims=[],
+                required_next_actions=["Document the nullfund."],
+                draft_pr_ready=False,
+                human_approval_required=False,
+            )
+        else:
+            role = worker_roles[id(agent)]
+            output = WorkerReport(
+                role=role,
+                loop=0,
+                status="nullfund_confirmed",
+                findings=["No evidenced defect remains."],
+                required_actions=[],
+                evidence_observed=["verified release evidence"],
+                evidence_missing=[],
+                blocked=False,
+            )
+        return SimpleNamespace(final_output=output)
+
+    monkeypatch.setattr(swarm_module, "_run_stage", fake_run_stage)
+
+    result = asyncio.run(run_cognitive_swarm("Confirm the release-readiness nullfund."))
+
+    assert result["ok"] is True
+    assert result["status"] == "COMPLETED"
+    assert result["approvalRequired"] is False
+    assert result["finalVerdict"]["verdict"] == "nullfund_confirmed"
+
+
 def test_provider_failures_are_classified_without_raw_error_text() -> None:
     class ProviderFailure(Exception):
         status_code = 429
