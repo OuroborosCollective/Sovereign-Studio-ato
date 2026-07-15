@@ -46,6 +46,16 @@ def test_controller_board_is_registered_in_the_real_backend() -> None:
     assert '@app.route("/api/internal/controller/runs/<run_id>/resume", methods=["POST"])' in controller
 
 
+def test_backend_reserves_request_capacity_during_long_agents_sdk_runs() -> None:
+    dockerfile = DOCKERFILE.read_text("utf-8")
+
+    assert "--worker-class gthread" in dockerfile
+    assert '--workers \\"${SOVEREIGN_WEB_WORKERS:-2}\\"' in dockerfile
+    assert '--threads \\"${SOVEREIGN_WEB_THREADS:-4}\\"' in dockerfile
+    assert "--timeout 120" in dockerfile
+    assert "--workers 2 --timeout 120" not in dockerfile
+
+
 def test_deploy_verifier_unions_duplicate_flask_route_methods() -> None:
     workflow = WORKFLOW.read_text("utf-8")
 
