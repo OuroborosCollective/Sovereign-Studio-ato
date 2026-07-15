@@ -122,7 +122,7 @@ def test_controller_start_rejects_secret_shaped_input_before_network(monkeypatch
     client = ControllerRuntimeClient(session=session)
 
     with pytest.raises(ValueError, match="Secret-förmiger"):
-        client.start_run("Nutze sk-proj-not-allowed-in-tools")
+        client.start_run("Nutze sk-proj-x")
     assert session.calls == []
 
 
