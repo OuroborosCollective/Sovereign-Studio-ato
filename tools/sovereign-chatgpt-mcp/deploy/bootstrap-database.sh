@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-MCP_ENV_FILE="${MCP_ENV_FILE:-/opt/sovereign-chatgpt-tools/.env}"
+MCP_BASE_ENV_FILE="${MCP_BASE_ENV_FILE:-/opt/sovereign-chatgpt-tools/.env}"
+MCP_ENV_FILE="${MCP_ENV_FILE:-/opt/sovereign-chatgpt-tools/runtime.env}"
 BACKEND_ENV_FILE="${SOVEREIGN_BACKEND_ENV_FILE:-/opt/sovereign-backend/.env}"
 BACKEND_CONTAINER="${SOVEREIGN_BACKEND_CONTAINER:-sovereign-backend}"
 READER_USER="sovereign_mcp_reader"
@@ -19,6 +20,15 @@ read_value() {
   local file="$1"
   local key="$2"
   sed -n "s/^${key}=//p" "$file" | tail -n 1
+}
+
+read_mcp_value() {
+  local key="$1"
+  if [[ -f "$MCP_ENV_FILE" ]] && grep -q "^${key}=" "$MCP_ENV_FILE"; then
+    read_value "$MCP_ENV_FILE" "$key"
+  else
+    read_value "$MCP_BASE_ENV_FILE" "$key"
+  fi
 }
 
 set_value() {
@@ -52,7 +62,10 @@ PY
 }
 
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root"
-[[ -f "$MCP_ENV_FILE" ]] || fail "MCP environment file is missing"
+[[ -f "$MCP_BASE_ENV_FILE" ]] || fail "MCP base environment file is missing"
+if [[ ! -f "$MCP_ENV_FILE" ]]; then
+  install -m 0600 /dev/null "$MCP_ENV_FILE"
+fi
 [[ -f "$BACKEND_ENV_FILE" ]] || fail "backend environment file is missing"
 docker inspect "$BACKEND_CONTAINER" >/dev/null 2>&1 || fail "backend container is not running"
 docker exec "$BACKEND_CONTAINER" "$PSQL_BIN" --version >/dev/null 2>&1 || fail "psql is missing in backend container"
@@ -73,8 +86,8 @@ ADMIN_DB="${ADMIN_DB:-postgres}"
 [[ "$ADMIN_USER" =~ ^[A-Za-z0-9_]+$ ]] || fail "invalid POSTGRES_USER"
 [[ -n "$ADMIN_PASSWORD" ]] || fail "POSTGRES_PASSWORD is empty"
 
-READER_PASSWORD="$(read_value "$MCP_ENV_FILE" POSTGRES_PASSWORD)"
-PREVIEW_PASSWORD="$(read_value "$MCP_ENV_FILE" SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD)"
+READER_PASSWORD="$(read_mcp_value POSTGRES_PASSWORD)"
+PREVIEW_PASSWORD="$(read_mcp_value SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD)"
 READER_PASSWORD="${READER_PASSWORD:-$(openssl rand -hex 32)}"
 PREVIEW_PASSWORD="${PREVIEW_PASSWORD:-$(openssl rand -hex 32)}"
 

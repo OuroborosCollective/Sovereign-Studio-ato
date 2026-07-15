@@ -44,7 +44,9 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL" in script
     assert "SOVEREIGN_MCP_PRIVATE_OWNER_MODE" in script
     assert 'PRIVATE_OWNER_MODE="1"' in script
-    assert 'set_value "$ENV_FILE" "$OWNER_CAPABILITY" "1"' in script
+    assert 'set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"' in script
+    assert 'MANAGED_ENV="$INSTALL_ROOT/runtime.env"' in script
+    assert 'BACKEND_MANAGED_ENV="$INSTALL_ROOT/backend-runtime.env"' in script
     assert "SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS" in script
     assert "SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS" in script
     assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
@@ -88,13 +90,14 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
     assert 'org.opencontainers.image.revision' in installer
     assert 'SOVEREIGN_MCP_EXPECTED_REVISION' in installer
-    assert "grep -q '^SOVEREIGN_MCP_IMAGE=' \"$ENV_FILE\"" in installer
-    assert 'SOVEREIGN_MCP_IMAGE=$MCP_IMAGE_DIGEST' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"' in installer
+    assert 'export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"' in installer
     assert 'resolve_running_mcp_image_digest' in installer
     assert 'PREVIOUS_MCP_IMAGE_DIGEST' in installer
     assert 'INSTALL_STAGE="ensure_recovery_image_digest"' in installer
     assert 'the running MCP container has no immutable GHCR digest' in installer
     assert 'image: ${SOVEREIGN_MCP_IMAGE:' in compose
+    assert '/opt/sovereign-chatgpt-tools/runtime.env' in compose
     assert 'build:' not in compose
     assert 'docker compose up -d --no-build --force-recreate --remove-orphans' in installer
     assert 'MCP container did not pass protocol health' in installer
