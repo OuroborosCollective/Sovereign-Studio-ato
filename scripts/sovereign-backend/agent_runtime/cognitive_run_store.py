@@ -59,6 +59,14 @@ NON_RESUMABLE_RUN_STATUSES: Final[frozenset[str]] = frozenset({
     "WAITING_FOR_OWNER",
 })
 
+RECOVERY_RESOLUTION_STATUSES: Final[frozenset[str]] = frozenset({
+    "BLOCKED",
+    "WAITING_FOR_OWNER",
+    "READY_FOR_DRAFT_PR",
+    "DRAFT_PR_CREATED",
+    "COMPLETED",
+})
+
 _ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 
 
@@ -154,6 +162,23 @@ def _validated_limits(max_active_specialists: int, max_iterations: int) -> tuple
     if not 1 <= iterations <= 100:
         raise ValueError("max_iterations must be between 1 and 100")
     return active, iterations
+
+
+def _resolve_recoverable_failures(cur: Any, *, run_id: str, status: str) -> None:
+    """Close prior recoverable failures only after a successful persisted execution state."""
+
+    if status not in RECOVERY_RESOLUTION_STATUSES:
+        return
+    cur.execute(
+        """
+        UPDATE agent_failures
+        SET resolved_at = COALESCE(resolved_at, NOW())
+        WHERE run_id = %s
+          AND recoverable = TRUE
+          AND resolved_at IS NULL
+        """,
+        (run_id,),
+    )
 
 
 def _event_payload(
@@ -551,6 +576,11 @@ def transition_agent_run(
                         normalized_run_id,
                     ),
                 )
+            _resolve_recoverable_failures(
+                cur,
+                run_id=normalized_run_id,
+                status=normalized_status,
+            )
             cur.execute(
                 """
                 INSERT INTO agent_events (
@@ -696,6 +726,11 @@ def request_agent_approval(
                         normalized_run_id,
                     ),
                 )
+            _resolve_recoverable_failures(
+                cur,
+                run_id=normalized_run_id,
+                status="WAITING_FOR_OWNER",
+            )
             cur.execute(
                 """
                 INSERT INTO agent_approvals (
