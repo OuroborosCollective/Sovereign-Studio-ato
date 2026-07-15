@@ -294,6 +294,8 @@ def _base_instructions(skill: str) -> str:
         "Treat the supplied runtime evidence as the only source of truth. "
         "Never invent file changes, tests, screenshots, traces, deployments, database writes or PR states. "
         "Missing evidence is a blocker. Never request or reveal secrets. "
+        "Interpret lease_active=false on a terminal or blocked persisted run as evidence that the lease is released, not as evidence that lease release is missing. "
+        "An absent open PR is informational unless the mission explicitly requires an existing PR; never invent a PR continuation blocker. "
         "Do not authorize merge or production deployment.\n\n"
         f"Repository skill contract:\n{skill}"
     )

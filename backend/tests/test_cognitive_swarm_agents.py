@@ -202,6 +202,15 @@ def test_routes_persist_only_bounded_failure_metadata() -> None:
     assert 'stage=f"loop-{loop}:judge-output"' in agents
 
 
+def test_base_instructions_define_released_lease_and_absent_pr_semantics() -> None:
+    instructions = swarm_module._base_instructions("bounded skill")
+
+    assert "lease_active=false" in instructions
+    assert "the lease is released" in instructions
+    assert "absent open PR is informational" in instructions
+    assert "never invent a PR continuation blocker" in instructions
+
+
 def test_repo_local_skill_bundle_is_present_and_bounded() -> None:
     content = SKILL_PATH.read_text("utf-8")
     assert content.startswith("---")
