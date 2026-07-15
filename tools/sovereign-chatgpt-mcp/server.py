@@ -71,6 +71,102 @@ owner_input = OwnerInputClient()
 controller_runtime = ControllerRuntimeClient()
 
 
+def _bounded_controller_text(value: Any, limit: int = 320) -> str:
+    return str(value or "").strip()[: max(1, int(limit))]
+
+
+def _controller_run_summary(payload: Any) -> dict[str, Any]:
+    run = payload if isinstance(payload, dict) else {}
+    return {
+        "runId": _bounded_controller_text(run.get("run_id"), 80),
+        "status": _bounded_controller_text(run.get("status"), 80),
+        "source": _bounded_controller_text(run.get("source"), 80),
+        "iterationCount": run.get("iteration_count") if isinstance(run.get("iteration_count"), int) else 0,
+        "maxIterations": run.get("max_iterations") if isinstance(run.get("max_iterations"), int) else 0,
+        "leaseActive": bool(run.get("lease_active")),
+        "nextAction": _bounded_controller_text(run.get("next_action"), 160),
+        "reason": _bounded_controller_text(run.get("reason"), 320),
+        "missionSummary": _bounded_controller_text(run.get("mission_summary"), 420),
+        "updatedAt": _bounded_controller_text(run.get("updated_at"), 80),
+    }
+
+
+def _controller_item_summary(payload: Any) -> dict[str, Any]:
+    item = payload if isinstance(payload, dict) else {}
+    return {
+        "taskId": _bounded_controller_text(item.get("task_id"), 100),
+        "agentId": _bounded_controller_text(
+            item.get("agent_id") or item.get("assigned_agent_id") or item.get("role"),
+            120,
+        ),
+        "type": _bounded_controller_text(item.get("type"), 100),
+        "status": _bounded_controller_text(item.get("status"), 80),
+        "summary": _bounded_controller_text(
+            item.get("summary") or item.get("title") or item.get("reason"),
+            420,
+        ),
+        "nextAction": _bounded_controller_text(item.get("next_action"), 160),
+        "createdAt": _bounded_controller_text(item.get("created_at") or item.get("updated_at"), 80),
+        "family": _bounded_controller_text(item.get("family"), 120),
+        "recoverable": bool(item.get("recoverable")),
+    }
+
+
+def _controller_run_evidence(backend_configured: bool) -> dict[str, Any]:
+    if not backend_configured:
+        return {
+            "ok": False,
+            "status": "BACKEND_ENDPOINT_NOT_CONFIGURED",
+            "runs": [],
+            "latestRun": None,
+        }
+    try:
+        listed = controller_runtime.list_runs(limit=5)
+        raw_runs = listed.get("runs") if isinstance(listed, dict) else []
+        raw_runs = raw_runs if isinstance(raw_runs, list) else []
+        runs = [_controller_run_summary(run) for run in raw_runs[:5]]
+        latest: dict[str, Any] | None = None
+        if raw_runs:
+            latest_id = _bounded_controller_text(raw_runs[0].get("run_id") if isinstance(raw_runs[0], dict) else "", 80)
+            if latest_id:
+                detail = controller_runtime.run_status(run_id=latest_id)
+                detail = detail if isinstance(detail, dict) else {}
+                detail_run = detail.get("run") if isinstance(detail.get("run"), dict) else raw_runs[0]
+                latest = {
+                    "run": _controller_run_summary(detail_run),
+                    "tasks": [
+                        _controller_item_summary(item)
+                        for item in (detail.get("tasks") if isinstance(detail.get("tasks"), list) else [])[:20]
+                    ],
+                    "events": [
+                        _controller_item_summary(item)
+                        for item in (detail.get("events") if isinstance(detail.get("events"), list) else [])[-30:]
+                    ],
+                    "failures": [
+                        _controller_item_summary(item)
+                        for item in (detail.get("failures") if isinstance(detail.get("failures"), list) else [])[-10:]
+                    ],
+                    "approvals": [
+                        _controller_item_summary(item)
+                        for item in (detail.get("approvals") if isinstance(detail.get("approvals"), list) else [])[-10:]
+                    ],
+                }
+        return {
+            "ok": True,
+            "status": "CONTROLLER_EVIDENCE_READY",
+            "runs": runs,
+            "latestRun": latest,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "CONTROLLER_EVIDENCE_UNAVAILABLE",
+            "error": type(exc).__name__,
+            "runs": [],
+            "latestRun": None,
+        }
+
+
 def _cognitive_architecture_status() -> dict[str, Any]:
     try:
         control_plane = broker.status()
@@ -82,16 +178,26 @@ def _cognitive_architecture_status() -> dict[str, Any]:
         }
     control_ready = control_plane.get("status") == "BROKER_READY"
     backend_configured = bool(os.getenv("SOVEREIGN_BACKEND_INTERNAL_URL", "").strip())
+    controller_evidence = _controller_run_evidence(backend_configured)
+    latest = controller_evidence.get("latestRun")
+    latest_run = latest.get("run") if isinstance(latest, dict) and isinstance(latest.get("run"), dict) else {}
+    latest_status = _bounded_controller_text(latest_run.get("status"), 80)
+    agents_sdk_state = latest_status or (
+        "backend_endpoint_configured" if backend_configured else "backend_endpoint_not_configured"
+    )
+    if control_ready and latest_status:
+        summary = f"Control plane is ready; latest persisted Agents SDK run is {latest_status}."
+    elif control_ready:
+        summary = "Eight-role cognitive architecture is registered; control plane is ready."
+    else:
+        summary = "Eight-role cognitive architecture is registered, but control-plane evidence is not ready."
     return {
         "ok": control_ready,
         "status": "RUNTIME_READY" if control_ready else "DEGRADED",
-        "summary": (
-            "Eight-role cognitive architecture is registered; control plane is ready."
-            if control_ready
-            else "Eight-role cognitive architecture is registered, but control-plane evidence is not ready."
-        ),
+        "summary": summary,
         "controlPlane": control_plane,
-        "agentsSdkState": "backend_endpoint_configured" if backend_configured else "backend_endpoint_not_configured",
+        "agentsSdkState": agents_sdk_state,
+        "controllerRuns": controller_evidence,
         "draftPr": {"ready": False},
         "secretsExposed": False,
     }

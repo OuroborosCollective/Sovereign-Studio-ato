@@ -88,7 +88,10 @@ WIDGET_HTML = r'''<!doctype html>
     .card { border: 1px solid color-mix(in srgb, CanvasText 14%, transparent); border-radius: 10px; padding: 10px; }
     .label { font-size: .78rem; opacity: .72; }
     .value { font-weight: 700; overflow-wrap: anywhere; }
+    .muted { opacity: .72; font-size: .82rem; margin: 12px 0 6px; }
     ul { margin: 0; padding-left: 20px; }
+    .run-list { display: grid; gap: 8px; }
+    .run-list li { overflow-wrap: anywhere; }
     button { min-height: 48px; border-radius: 10px; border: 1px solid currentColor; padding: 0 16px; font: inherit; font-weight: 700; }
     button:disabled { opacity: .48; cursor: not-allowed; }
     #message { min-height: 1.3em; }
@@ -112,6 +115,20 @@ WIDGET_HTML = r'''<!doctype html>
   <section aria-labelledby="agents-title">
     <h2 id="agents-title">Acht Rollen</h2>
     <ul id="agents"></ul>
+  </section>
+  <section aria-labelledby="runs-title">
+    <h2 id="runs-title">Persistierte Agents-SDK-Läufe</h2>
+    <div class="grid">
+      <div class="card"><div class="label">Letzter Status</div><div class="value" id="latest-run-status">nicht belegt</div></div>
+      <div class="card"><div class="label">Run-ID</div><div class="value" id="latest-run-id">nicht belegt</div></div>
+      <div class="card"><div class="label">Aktiver Agent</div><div class="value" id="latest-agent">nicht belegt</div></div>
+      <div class="card"><div class="label">Nächste Aktion</div><div class="value" id="latest-next-action">nicht belegt</div></div>
+    </div>
+    <div class="muted">Aktuelle Agentenaktivität</div>
+    <ul id="run-events" class="run-list" aria-live="polite"><li>Keine persistierte Agentenaktivität geladen.</li></ul>
+    <div class="muted">Letzte Läufe</div>
+    <ul id="recent-runs" class="run-list"><li>Keine persistierten Läufe geladen.</li></ul>
+    <button id="refresh-runs" type="button" aria-label="Persistierte Agents-SDK-Läufe erneut laden">Runs aktualisieren</button>
   </section>
   <section aria-labelledby="evidence-title">
     <h2 id="evidence-title">Evidence und Draft PR</h2>
@@ -147,6 +164,48 @@ WIDGET_HTML = r'''<!doctype html>
       list.appendChild(item);
     }
 
+    const controller = data.controllerRuns && typeof data.controllerRuns === 'object' ? data.controllerRuns : {};
+    const latest = controller.latestRun && typeof controller.latestRun === 'object' ? controller.latestRun : {};
+    const latestRun = latest.run && typeof latest.run === 'object' ? latest.run : {};
+    const events = Array.isArray(latest.events) ? latest.events : [];
+    const tasks = Array.isArray(latest.tasks) ? latest.tasks : [];
+    const activity = events.length ? events : tasks;
+    const newestActivity = activity.length ? activity[activity.length - 1] : {};
+    byId('latest-run-status').textContent = text(latestRun.status, text(controller.status, 'nicht belegt'));
+    byId('latest-run-id').textContent = text(latestRun.runId, 'nicht belegt');
+    byId('latest-agent').textContent = text(newestActivity.agentId, 'nicht belegt');
+    byId('latest-next-action').textContent = text(latestRun.nextAction || newestActivity.nextAction, 'nicht belegt');
+
+    const eventList = byId('run-events');
+    eventList.replaceChildren();
+    const visibleActivity = activity.slice(-10).reverse();
+    if (!visibleActivity.length) {
+      const item = document.createElement('li');
+      item.textContent = 'Keine persistierte Agentenaktivität belegt.';
+      eventList.appendChild(item);
+    }
+    for (const event of visibleActivity) {
+      const item = document.createElement('li');
+      const actor = text(event.agentId, 'runtime');
+      const status = text(event.status || event.type, 'Status unbekannt');
+      item.textContent = `${actor}: ${status} — ${text(event.summary, 'Keine Zusammenfassung.')}`;
+      eventList.appendChild(item);
+    }
+
+    const recentList = byId('recent-runs');
+    recentList.replaceChildren();
+    const runs = Array.isArray(controller.runs) ? controller.runs : [];
+    if (!runs.length) {
+      const item = document.createElement('li');
+      item.textContent = 'Keine persistierten Agents-SDK-Läufe belegt.';
+      recentList.appendChild(item);
+    }
+    for (const run of runs) {
+      const item = document.createElement('li');
+      item.textContent = `${text(run.status)} — ${text(run.runId)} — ${text(run.nextAction, 'keine nächste Aktion')}`;
+      recentList.appendChild(item);
+    }
+
     const draftPr = data.draftPr && typeof data.draftPr === 'object' ? data.draftPr : null;
     const verified = draftPr && draftPr.ready === true && Number.isInteger(draftPr.number) && typeof draftPr.headSha === 'string' && draftPr.headSha.length === 40;
     state.draftPr = verified ? draftPr : null;
@@ -166,6 +225,14 @@ WIDGET_HTML = r'''<!doctype html>
 
   window.addEventListener('message', acceptToolResult);
   if (window.openai && window.openai.toolOutput) render(window.openai.toolOutput);
+
+  byId('refresh-runs').addEventListener('click', async () => {
+    if (!window.openai || typeof window.openai.sendFollowUpMessage !== 'function') return;
+    byId('refresh-runs').disabled = true;
+    await window.openai.sendFollowUpMessage({
+      prompt: 'Rufe sovereign_cognitive_architecture_status erneut auf und zeige die aktuelle persistierte Agents-SDK-Run- und Agenten-Evidence im bestehenden Sovereign Widget.'
+    });
+  });
 
   byId('approve').addEventListener('click', async () => {
     if (!state.draftPr || !window.openai || typeof window.openai.sendFollowUpMessage !== 'function') return;

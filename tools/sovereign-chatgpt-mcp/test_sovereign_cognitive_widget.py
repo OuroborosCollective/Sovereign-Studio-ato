@@ -30,7 +30,35 @@ def _status():
         "status": "RUNTIME_READY",
         "summary": "Evidence loaded.",
         "controlPlane": {"status": "BROKER_READY"},
-        "agentsSdkState": "backend_endpoint_configured",
+        "agentsSdkState": "RUNNING",
+        "controllerRuns": {
+            "ok": True,
+            "status": "CONTROLLER_EVIDENCE_READY",
+            "runs": [
+                {
+                    "runId": "run-0123456789abcdef0123456789abcdef",
+                    "status": "RUNNING",
+                    "nextAction": "WAIT_FOR_AGENT",
+                }
+            ],
+            "latestRun": {
+                "run": {
+                    "runId": "run-0123456789abcdef0123456789abcdef",
+                    "status": "RUNNING",
+                    "nextAction": "WAIT_FOR_AGENT",
+                },
+                "tasks": [],
+                "events": [
+                    {
+                        "agentId": "dispatcher",
+                        "status": "RUNNING",
+                        "summary": "Dispatcher erstellt den belegten Arbeitsplan.",
+                    }
+                ],
+                "failures": [],
+                "approvals": [],
+            },
+        },
         "draftPr": {"ready": False},
     }
 
@@ -49,6 +77,10 @@ def test_widget_contract_is_strict_and_evidence_only() -> None:
     assert "aria-live=\"polite\"" in WIDGET_HTML
     assert "sendFollowUpMessage" in WIDGET_HTML
     assert "repository_pr_status" in WIDGET_HTML
+    assert 'id="run-events"' in WIDGET_HTML
+    assert 'id="recent-runs"' in WIDGET_HTML
+    assert 'id="refresh-runs"' in WIDGET_HTML
+    assert "sovereign_cognitive_architecture_status erneut" in WIDGET_HTML
 
 
 def test_widget_registers_one_resource_and_status_tool() -> None:

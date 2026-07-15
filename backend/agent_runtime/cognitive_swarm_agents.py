@@ -23,7 +23,7 @@ from .cognitive_swarm_manifest import (
 )
 
 
-DEFAULT_MODEL: Final[str] = "gpt-5.6"
+DEFAULT_MODEL: Final[str] = "gpt-5.4-mini"
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
 
 _AGENT_CLASS: Any | None = None
