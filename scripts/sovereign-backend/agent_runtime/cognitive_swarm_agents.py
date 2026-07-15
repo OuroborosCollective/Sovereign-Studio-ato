@@ -259,23 +259,9 @@ class JudgeVerdict(BaseModel):
     human_approval_required: bool = True
 
 
-_CONFIRMED_NULLFUND_VERDICTS: Final[frozenset[str]] = frozenset({
-    "healthy_nullfind",
-    "healthy_nullfund",
-    "nullfund_confirmed",
-})
-
-
-def _is_confirmed_nullfund(verdict: JudgeVerdict) -> bool:
-    normalized = verdict.verdict.strip().casefold().replace("-", "_").replace(" ", "_")
-    return normalized in _CONFIRMED_NULLFUND_VERDICTS
-
-
 def _resolved_swarm_status(final_verdict: JudgeVerdict) -> tuple[bool, str]:
     ready_for_draft_pr = final_verdict.draft_pr_ready and not final_verdict.blockers
-    read_only_complete = (
-        final_verdict.mission_complete and not final_verdict.blockers
-    ) or _is_confirmed_nullfund(final_verdict)
+    read_only_complete = final_verdict.mission_complete and not final_verdict.blockers
     if ready_for_draft_pr:
         return True, "READY_FOR_DRAFT_PR"
     if read_only_complete:
