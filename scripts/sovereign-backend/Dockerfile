@@ -35,5 +35,7 @@ RUN chmod +x /docker-entrypoint.d/auto-migrate.sh
 # Expose port
 EXPOSE 8787
 
-# Run migrations on startup, then start gunicorn
-CMD ["/bin/sh", "-c", "/docker-entrypoint.d/auto-migrate.sh && exec gunicorn --bind 0.0.0.0:8787 --workers 2 --timeout 120 app:app"]
+# Run migrations on startup, then start bounded threaded gunicorn workers.
+# Agents SDK requests may hold one request slot for a complete double loop, so
+# status and health routes need independent capacity instead of two sync slots.
+CMD ["/bin/sh", "-c", "/docker-entrypoint.d/auto-migrate.sh && exec gunicorn --bind 0.0.0.0:8787 --worker-class gthread --workers \"${SOVEREIGN_WEB_WORKERS:-2}\" --threads \"${SOVEREIGN_WEB_THREADS:-4}\" --timeout 120 app:app"]
