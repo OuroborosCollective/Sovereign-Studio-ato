@@ -216,13 +216,44 @@ def test_lease_owned_transition_updates_recovery_task_and_hides_raw_token() -> N
 
     assert state["status"] == "BLOCKED"
     assert conn.commits == 1
-    assert [call[0].split()[0] for call in conn.calls] == ["INSERT", "UPDATE", "UPDATE", "INSERT"]
+    assert [call[0].split()[0] for call in conn.calls] == [
+        "INSERT",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "INSERT",
+    ]
     update_sql, update_params = conn.calls[1]
     assert "lease_token = %s" in update_sql
     assert "lease_token = NULL" in update_sql
     assert hashlib.sha256(raw_lease_token.encode("utf-8")).hexdigest() in update_params
     assert raw_lease_token not in repr(conn.calls)
     assert "UPDATE agent_tasks" in conn.calls[2][0]
+    assert "UPDATE agent_failures" in conn.calls[3][0]
+    assert "recoverable = TRUE" in conn.calls[3][0]
+    assert "resolved_at IS NULL" in conn.calls[3][0]
+    assert conn.calls[3][1] == ("run-test",)
+
+
+def test_failed_recovery_transition_keeps_prior_failure_unresolved() -> None:
+    conn = FakeConnection()
+
+    transition_agent_run(
+        conn,
+        user_id=USER_ID,
+        run_id="run-test",
+        status="FAILED_RECOVERABLE",
+        source="agents-sdk",
+        trace_id="trace-test",
+        reason="The retry failed again.",
+        next_action="RETRY_WITH_NEW_EVIDENCE",
+        evidence_kind="runtime_failure",
+        evidence_summary="The recoverable failure remains active.",
+        evidence_payload={"retryable": True},
+    )
+
+    assert [call[0].split()[0] for call in conn.calls] == ["INSERT", "UPDATE", "INSERT"]
+    assert not any("UPDATE agent_failures" in sql for sql, _ in conn.calls)
 
 
 def test_claim_resume_is_atomic_and_reconstructs_one_bounded_task() -> None:
