@@ -24,6 +24,14 @@ def _host() -> str:
 
 def _private_admin_capabilities() -> list[str]:
     capabilities: list[str] = []
+    if os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1":
+        capabilities.append("private_owner_mode")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_DB_WRITES", "0").strip() == "1":
+        capabilities.append("postgres_write")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_DEPLOY", "0").strip() == "1":
+        capabilities.append("backend_deploy")
+    if os.getenv("SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS", "0").strip() == "1":
+        capabilities.append("data_backfill")
     if os.getenv("SOVEREIGN_MCP_ENABLE_ADMIN_SQL", "0").strip() == "1":
         capabilities.append("postgres_admin_sql")
     if os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1":
@@ -31,7 +39,7 @@ def _private_admin_capabilities() -> list[str]:
     if os.getenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "0").strip() == "1":
         capabilities.append("repository_merge_pr")
     if os.getenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "0").strip() == "1":
-        capabilities.append("repository_rerun_failed_workflows")
+        capabilities.extend(("repository_workflow_dispatch", "repository_rerun_failed_workflows"))
     if os.getenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "0").strip() == "1":
         capabilities.append("mcp_self_update")
     return capabilities
@@ -50,6 +58,7 @@ def _runtime_boundaries() -> dict[str, Any]:
         "owner_protected_input_execution": "authenticated_owner_ui_only",
         "llm_can_receive_protected_values": False,
         "raw_payment_card_input_allowed": False,
+        "private_owner_mode_enabled": os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1",
         "active_private_admin_capabilities": _private_admin_capabilities(),
     }
 

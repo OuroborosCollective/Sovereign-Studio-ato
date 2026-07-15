@@ -26,6 +26,9 @@ def test_container_aliases_resolve_only_to_allowlisted_canonical_names() -> None
     assert validate_container("sovereign-backend", allowed) == "sovereign-backend"
     with pytest.raises(ValueError):
         validate_container("unrelated-root-container", allowed)
+    assert validate_container("apache-tika-2l6t-tika-1", allowed, allow_any=True) == "apache-tika-2l6t-tika-1"
+    with pytest.raises(ValueError):
+        validate_container("../../docker.sock", allowed, allow_any=True)
 
 
 def test_repo_path_blocks_escape_and_secrets(tmp_path: Path) -> None:

@@ -24,6 +24,7 @@ COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 class BrokerRuntime:
     def __init__(self) -> None:
+        self.private_owner_mode = os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
         self.allowed_containers = tuple(
             item.strip()
             for item in os.getenv(
@@ -78,7 +79,11 @@ class BrokerRuntime:
         }
 
     def container_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        container = validate_container(str(arguments.get("container") or ""), self.allowed_containers)
+        container = validate_container(
+            str(arguments.get("container") or ""),
+            self.allowed_containers,
+            allow_any=self.private_owner_mode,
+        )
         result = self._run(
             ["docker", "inspect", "--format", "{{json .State}}", container],
             timeout=30,
@@ -102,7 +107,11 @@ class BrokerRuntime:
         return {"ok": True, "status": "VERIFIED", "container": container, "state": state}
 
     def container_logs(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        container = validate_container(str(arguments.get("container") or ""), self.allowed_containers)
+        container = validate_container(
+            str(arguments.get("container") or ""),
+            self.allowed_containers,
+            allow_any=self.private_owner_mode,
+        )
         tail = max(1, min(int(arguments.get("tail", 200)), 1000))
         result = self._run(["docker", "logs", "--tail", str(tail), container], timeout=60)
         return {

@@ -44,13 +44,13 @@ def validate_branch(value: str) -> str:
     return value
 
 
-def validate_container(value: str, allowed: Iterable[str]) -> str:
+def validate_container(value: str, allowed: Iterable[str], *, allow_any: bool = False) -> str:
     requested = str(value or "").strip()
     if not CONTAINER_RE.fullmatch(requested):
         raise ValueError("Container ist nicht freigegeben")
     canonical = CONTAINER_ALIASES.get(requested, requested)
     allowlist = {item.strip() for item in allowed if item.strip()}
-    if canonical not in allowlist:
+    if not allow_any and canonical not in allowlist:
         raise ValueError("Container ist nicht freigegeben")
     return canonical
 

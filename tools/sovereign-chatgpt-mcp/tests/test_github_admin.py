@@ -316,6 +316,36 @@ def test_allowlisted_android_workflow_can_be_dispatched_without_secret_inputs(mo
     assert session.calls[0]["json"]["inputs"]["version_code"] == "101"
 
 
+def test_private_owner_mode_can_dispatch_any_safe_repository_workflow(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("POST", "/repos/OuroborosCollective/Sovereign-Studio-ato/actions/workflows/sovereign-backend-image.yml/dispatches"): [
+                FakeResponse(
+                    200,
+                    {
+                        "workflow_run_id": 4321,
+                        "run_url": "https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato/actions/runs/4321",
+                        "html_url": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/actions/runs/4321",
+                    },
+                )
+            ]
+        },
+    )
+
+    result = runtime.dispatch_workflow(
+        workflow="sovereign-backend-image.yml",
+        ref="main",
+        inputs={},
+    )
+
+    assert result["status"] == "DISPATCHED"
+    assert result["run_id"] == 4321
+    assert session.calls[0]["path"].endswith("/sovereign-backend-image.yml/dispatches")
+
+
 def test_workflow_dispatch_blocks_when_github_omits_run_evidence(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "1")
     runtime, _update, _session = _runtime(
