@@ -25,9 +25,7 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
 
     targets = runtime._target_map()
 
-    target = targets["openhands_api_key"]
-    assert target["path"] == (tmp_path / "openhands_api_key.txt").resolve()
-    assert target["maxBytes"] == 8192
+    assert set(targets) == {"openai_api_key"}
 
     openai_target = targets["openai_api_key"]
     assert openai_target["path"] == (tmp_path / "openai_api_key.txt").resolve()
@@ -37,11 +35,11 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
 
 def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    target = runtime._target_map()["openhands_api_key"]
+    target = runtime._target_map()["openai_api_key"]
 
     runtime._atomic_write(target, "one-time-provider-value")
 
-    path = tmp_path / "openhands_api_key.txt"
+    path = tmp_path / "openai_api_key.txt"
     assert path.read_text("utf-8") == "one-time-provider-value"
     assert os.stat(path).st_mode & 0o777 == 0o600
     assert list(tmp_path.glob(".*.tmp")) == []
@@ -49,7 +47,7 @@ def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypa
 
 def test_atomic_write_rejects_empty_and_oversized_values(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    target = runtime._target_map()["openhands_api_key"]
+    target = runtime._target_map()["openai_api_key"]
 
     with pytest.raises(ValueError, match="fehlt"):
         runtime._atomic_write(target, "")
@@ -94,7 +92,7 @@ def test_raw_payment_card_numbers_are_rejected_but_provider_tokens_are_not() -> 
     assert runtime._contains_payment_card_bytes(b"4242 4242 4242 4242") is True
     assert runtime._contains_payment_card_number("tok_provider_9f42b1d0") is False
     assert runtime._contains_payment_card_bytes(b"tok_provider_9f42b1d0") is False
-    assert runtime._comment_is_safe("Bitte für den OpenHands-Lauf verwenden.") is True
+    assert runtime._comment_is_safe("Bitte für den Agents-SDK-Lauf verwenden.") is True
     assert runtime._comment_is_safe("Karte 4242 4242 4242 4242") is False
     assert runtime._comment_is_safe("ghp_abcdefghijklmnopqrstuvwxyz123456") is False
 

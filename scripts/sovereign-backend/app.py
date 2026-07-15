@@ -1152,7 +1152,7 @@ register_cognitive_swarm_routes(
     get_connection=get_agent_runtime_connection,
 )
 
-# ── User OpenHands Jobs (Tool Section) ───────────────────────────────────────
+# ── Legacy external job compatibility tables ─────────────────────────────────
 
 
 
@@ -1168,7 +1168,7 @@ register_cognitive_swarm_routes(
 
 
 
-# ── Admin: List all user OpenHands jobs ──────────────────────────────────────
+# ── Admin: List legacy external jobs ─────────────────────────────────────────
 
 
 
@@ -1714,30 +1714,7 @@ def admin_tool_healthcheck(tid):
     error_message = None
     
     try:
-        # Special handling for OpenHands - must actually check if it's reachable
-        if label == "OpenHands":
-            # Check if OpenHands API is reachable
-            oh_url = os.getenv("OPENHANDS_API_URL", "http://127.0.0.1:3000")
-            try:
-                start_time = time.time()
-                resp = requests.get(f"{oh_url.rstrip('/')}/api/agents", timeout=10)
-                response_time_ms = int((time.time() - start_time) * 1000)
-                if resp.ok:
-                    health_status = "healthy"
-                else:
-                    health_status = "degraded"
-                    blocker = "openhands_unreachable"
-                    error_message = f"OpenHands returned HTTP {resp.status_code}"
-            except requests.exceptions.Timeout:
-                health_status = "degraded"
-                blocker = "timeout"
-                error_message = "OpenHands antwortet nicht"
-            except requests.exceptions.ConnectionError:
-                health_status = "degraded"
-                blocker = "connection_error"
-                error_message = "OpenHands nicht erreichbar"
-        
-        elif not base_url:
+        if not base_url:
             # Tools without a configured URL remain unknown
             health_status = "unknown"
             blocker = "missing_base_url"
@@ -1804,95 +1781,6 @@ def admin_tool_healthcheck(tid):
         "responseTimeMs": response_time_ms,
         "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# OPENHANDS PROXY
-# ═════════════════════════════════════════════════════════════════════════════
-
-jobs: dict = {}
-events_lock = threading.Lock()
-
-
-def get_oh_key():
-    for path in (
-        "/opt/secure/owner-managed/openhands_api_key.txt",
-        "/opt/secure/openhands_api_key.txt",
-    ):
-        if os.path.exists(path):
-            with open(path) as handle:
-                return handle.read().strip()
-    return os.getenv("OPENHANDS_API_KEY", "")
-
-
-def oh_headers():
-    return {
-        "Content-Type": "application/json",
-        "X-Session-API-Key": get_oh_key(),
-    }
-
-
-def poll_oh_events(job_id, oh_conv_id):
-    try:
-        resp = requests.get(
-            f"{OPENHANDS_API_URL}/api/conversations/{oh_conv_id}/events/search"
-            "?limit=50&sort_order=TIMESTAMP_DESC",
-            headers=oh_headers(), timeout=30,
-        )
-        if not resp.ok:
-            return
-        events = resp.json().get("items", [])
-        with events_lock:
-            if job_id not in jobs:
-                return
-            job = jobs[job_id]
-            runtime_events = []
-            for e in events[:20]:
-                kind = e.get("kind", "")
-                msg  = ""
-                level = "info"
-                if kind == "ActionEvent":
-                    msg = "Agent action: " + e.get("tool_name", "unknown")
-                elif kind == "ObservationEvent":
-                    msg = "Tool result: " + e.get("tool_name", "")
-                elif kind == "ErrorEvent":
-                    msg   = e.get("message", "Error")
-                    level = "error"
-                elif kind == "MessageEvent":
-                    msg = e.get("role", "") + ": " + e.get("message", "")[:100]
-                elif kind == "ConversationStatusEvent":
-                    status = e.get("status", "")
-                    msg    = "Status: " + status
-                    if status in ("stopped", "finished"):
-                        level = "success"
-                    elif status == "failed":
-                        level = "error"
-                runtime_events.append({
-                    "at": int(time.time()), "level": level,
-                    "stage": "openhands", "message": msg or f"Event: {kind}",
-                })
-            if job["status"] == "running":
-                for e in events:
-                    if e.get("kind") == "ConversationStatusEvent" and \
-                            e.get("status") in ("stopped", "finished", "failed"):
-                        terminal_status = e.get("status")
-                        job["status"] = "failed" if terminal_status == "failed" else "completed"
-                        runtime_events.append({
-                            "at": int(time.time()),
-                            "level": "error" if terminal_status == "failed" else "success",
-                            "stage": "openhands",
-                            "message": "OpenHands failed" if terminal_status == "failed" else "OpenHands completed",
-                        })
-                        break
-            job["events"] = runtime_events
-    except Exception as exc:
-        with events_lock:
-            if job_id in jobs:
-                jobs[job_id]["events"].append({
-                    "at": int(time.time()), "level": "error",
-                    "stage": "openhands",
-                    "message": "Poll error: " + str(exc)[:50],
-                })
 
 
 @app.route("/health")

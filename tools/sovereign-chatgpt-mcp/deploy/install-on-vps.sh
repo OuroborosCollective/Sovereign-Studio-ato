@@ -51,6 +51,7 @@ set_value() {
   local value="$3"
   python3 - "$file" "$key" "$value" <<'PY'
 from pathlib import Path
+import errno
 import os
 import sys
 
@@ -68,10 +69,22 @@ for line in lines:
         out.append(line)
 if not replaced:
     out.append(f"{key}={value}")
+payload = "\n".join(out) + "\n"
 temporary = path.with_suffix(path.suffix + ".tmp")
-temporary.write_text("\n".join(out) + "\n", "utf-8")
+temporary.write_text(payload, "utf-8")
 os.chmod(temporary, 0o600)
-temporary.replace(path)
+try:
+    temporary.replace(path)
+except OSError as exc:
+    if exc.errno not in {errno.EPERM, errno.EBUSY, errno.EXDEV}:
+        temporary.unlink(missing_ok=True)
+        raise
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(path, 0o600)
+    temporary.unlink(missing_ok=True)
 PY
 }
 

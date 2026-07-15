@@ -16,6 +16,7 @@ import requests
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
 MAX_TEXT = 1000
+MAX_OPERATOR_MISSION = 20_000
 MAX_OPERATOR_EVIDENCE = 250_000
 OPERATOR_SECRET_MARKERS = (
     "sk-proj-",
@@ -27,7 +28,6 @@ OPERATOR_SECRET_MARKERS = (
 )
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
-    "openhands_api_key": "OpenHands API-Key",
 }
 
 
@@ -123,22 +123,6 @@ class OwnerInputClient:
             "llm_can_receive_protected_value": False,
         }
 
-    def create_openhands_request(
-        self,
-        *,
-        title: str,
-        reason: str,
-        field_label: str = "OpenHands API-Key",
-        expires_in_seconds: int = 900,
-    ) -> dict[str, Any]:
-        return self.create_request(
-            target_id="openhands_api_key",
-            title=title,
-            reason=reason,
-            field_label=field_label,
-            expires_in_seconds=expires_in_seconds,
-        )
-
     def status(self, request_id: str) -> dict[str, Any]:
         selected = str(request_id or "").strip()
         if not REQUEST_ID_RE.fullmatch(selected):
@@ -168,6 +152,26 @@ class ControllerRuntimeClient(OwnerInputClient):
         if not RUN_ID_RE.fullmatch(selected):
             raise ValueError("run_id ist ungültig")
         return selected
+
+    def start_run(self, mission: str, evidence: str = "") -> dict[str, Any]:
+        bounded_mission = str(mission or "").strip()
+        bounded_evidence = str(evidence or "").strip()
+        if not bounded_mission:
+            raise ValueError("mission ist erforderlich")
+        if len(bounded_mission) > MAX_OPERATOR_MISSION:
+            raise ValueError("mission überschreitet das Operator-Limit")
+        if len(bounded_evidence) > MAX_OPERATOR_EVIDENCE:
+            raise ValueError("evidence überschreitet das Operator-Limit")
+        normalized = f"{bounded_mission}\n{bounded_evidence}".casefold()
+        if any(marker in normalized for marker in OPERATOR_SECRET_MARKERS):
+            raise ValueError("Secret-förmiger Inhalt ist im Operator-Start verboten")
+        return self._request(
+            "POST",
+            "/api/internal/controller/runs",
+            json_body={"mission": bounded_mission, "evidence": bounded_evidence},
+            expected=(200, 202, 502, 503),
+            timeout=1200,
+        )
 
     def list_runs(self, limit: int = 20) -> dict[str, Any]:
         bounded_limit = max(1, min(int(limit), 100))

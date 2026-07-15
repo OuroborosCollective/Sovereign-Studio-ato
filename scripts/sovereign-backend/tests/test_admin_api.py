@@ -296,23 +296,14 @@ class TestAuditArchitecture(unittest.TestCase):
 
 class TestHealthcheckArchitecture(unittest.TestCase):
     """Tests for health check architecture."""
-    
-    def test_openhands_healthcheck_not_fake(self):
-        """OpenHands should NOT be marked as always healthy."""
+
+    def test_removed_openhands_runtime_is_not_probed(self):
         app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
         with open(app_path) as f:
             content = f.read()
-            # Should NOT have "OpenHands" as always healthy
-            # Instead should check the actual API
-            self.assertIn("OPENHANDS_API_URL", content)
-    
-    def test_builtin_tools_not_hardcoded_healthy(self):
-        """Built-in tools should be checked, not hardcoded healthy."""
-        app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
-        with open(app_path) as f:
-            content = f.read()
-            # For OpenHands, should make actual HTTP request
-            self.assertIn("/api/agents", content)  # OpenHands health endpoint
+        self.assertNotIn("OPENHANDS_API_URL", content)
+        self.assertNotIn("/api/agents", content)
+        self.assertNotIn("openhands_api_key.txt", content)
 
 
 class TestAppRunPlacement(unittest.TestCase):

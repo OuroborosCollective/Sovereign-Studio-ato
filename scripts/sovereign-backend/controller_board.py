@@ -19,7 +19,9 @@ from agent_runtime.cognitive_run_store import (
     AgentRunNotResumable,
     AgentRunResumeConflict,
     claim_agent_run_for_resume,
+    create_agent_run,
 )
+from agent_runtime.cognitive_swarm_manifest import manifest_payload
 from agent_runtime.cognitive_swarm_routes import execute_persisted_swarm
 from security_oauth import _decrypt_token
 
@@ -69,6 +71,14 @@ def _operator_resume_lease_seconds() -> int:
     except ValueError:
         configured = 900
     return max(30, min(configured, 3600))
+
+
+def _operator_max_iterations() -> int:
+    try:
+        configured = int(os.getenv("SOVEREIGN_AGENTS_MAX_ITERATIONS", "12"))
+    except ValueError:
+        configured = 12
+    return max(1, min(configured, 100))
 
 
 def _operator_json(payload: dict[str, Any], status: int = 200):
@@ -211,6 +221,69 @@ def register_controller_board_routes(
             })
         finally:
             _close(conn)
+
+    @app.route("/api/internal/controller/runs", methods=["POST"])
+    def operator_controller_run_start():
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        body = request.get_json(force=True) or {}
+        mission = str(body.get("mission") or "").strip()
+        evidence = str(body.get("evidence") or "").strip()
+        if not mission:
+            return _operator_json({"error": "mission is required"}, 400)
+        if len(mission) > 20_000:
+            return _operator_json({"error": "mission exceeds the bounded input limit"}, 400)
+        if len(evidence) > 250_000:
+            return _operator_json({"error": "evidence exceeds the bounded input limit"}, 400)
+        if _operator_contains_secret(mission) or _operator_contains_secret(evidence):
+            return _operator_json({"error": "secret-shaped material is forbidden in operator input"}, 400)
+
+        manifest = manifest_payload()
+        run_id = f"run-{uuid.uuid4().hex}"
+        session_key = f"session-{uuid.uuid4().hex}"
+        trace_id = f"trace-{uuid.uuid4().hex}"
+        conn = get_connection()
+        try:
+            owner_id = _operator_owner_user_id(conn)
+            received_state = create_agent_run(
+                conn,
+                user_id=owner_id,
+                run_id=run_id,
+                session_key=session_key,
+                mission=mission,
+                supplied_evidence=evidence,
+                trace_id=trace_id,
+                max_active_specialists=int(manifest["maxActiveSpecialists"]),
+                max_iterations=_operator_max_iterations(),
+            )
+        except Exception as exc:
+            return _operator_json({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "error": "agent run persistence unavailable",
+                "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(exc).__name__,
+            }, 503)
+        finally:
+            _close(conn)
+
+        payload, status_code = execute_persisted_swarm(
+            get_connection=get_connection,
+            user_id=owner_id,
+            run_id=run_id,
+            trace_id=trace_id,
+            mission=mission,
+            evidence=evidence,
+            model=None,
+            response_context={
+                "sessionKey": session_key,
+                "resumed": False,
+                "operatorBridge": True,
+                "receivedEvidenceId": received_state["evidenceId"],
+                "protectedValuesReturned": False,
+            },
+        )
+        return _operator_json(payload, status_code)
 
     @app.route("/api/internal/controller/runs/<run_id>", methods=["GET"])
     def operator_controller_run_status(run_id: str):
