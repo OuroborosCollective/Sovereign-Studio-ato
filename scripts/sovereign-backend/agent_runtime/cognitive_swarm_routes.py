@@ -172,17 +172,18 @@ def execute_persisted_swarm(
             final_status = "BLOCKED"
         ready = final_status == "READY_FOR_DRAFT_PR" and bool(result.get("ok"))
         completed = final_status == "COMPLETED" and bool(result.get("ok"))
+        accepted = ready or completed
         reason = (
             "Judge accepted the supplied evidence for Draft PR readiness."
             if ready
-            else "Judge confirmed an evidence-backed nullfund with no remaining release blocker."
+            else "Judge completed the evidence-only mission without repository changes."
             if completed
             else str(result.get("blocker") or "Required runtime evidence or protected configuration is missing.")
         )
         next_action = (
             "CREATE_DRAFT_PR_AFTER_OWNER_APPROVAL"
             if ready
-            else "START_NEW_RUN_FOR_NEXT_ERROR_FAMILY"
+            else "NO_FURTHER_ACTION_REQUIRED"
             if completed
             else "PROVIDE_MISSING_EVIDENCE_OR_PROTECTED_CONFIGURATION"
         )
@@ -190,7 +191,8 @@ def execute_persisted_swarm(
         approval_required = ready and bool(final_verdict.get("human_approval_required", True))
         evidence_payload = {
             "resultStatus": final_status,
-            "ok": ready or completed,
+            "ok": accepted,
+            "missionCompleted": completed,
             "activeSpecialists": int(result.get("activeSpecialists") or 0),
             "manifestSchema": int((result.get("manifest") or manifest).get("schema") or 0),
             "finalVerdictDigest": _digest_json(final_verdict),

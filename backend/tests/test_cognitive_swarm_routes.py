@@ -226,13 +226,13 @@ def test_swarm_persists_confirmed_nullfund_as_completed(monkeypatch) -> None:
     assert response.status_code == 200
     assert payload["ok"] is True
     assert payload["status"] == "COMPLETED"
-    assert payload["nextAction"] == "START_NEW_RUN_FOR_NEXT_ERROR_FAMILY"
-    assert "nullfund" in payload["reason"]
+    assert payload["nextAction"] == "NO_FURTHER_ACTION_REQUIRED"
+    assert "evidence-only mission" in payload["reason"]
     assert payload["approvalId"] is None
     assert payload["approvalKind"] is None
     persisted = repr(factory.calls)
     assert "COMPLETED" in persisted
-    assert "START_NEW_RUN_FOR_NEXT_ERROR_FAMILY" in persisted
+    assert "NO_FURTHER_ACTION_REQUIRED" in persisted
 
 
 def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monkeypatch) -> None:
