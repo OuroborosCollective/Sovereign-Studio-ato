@@ -29,6 +29,19 @@ def test_canonical_and_deployed_agent_runtime_are_byte_identical() -> None:
     assert SWARM_AGENTS.read_bytes() == CANONICAL_SWARM_AGENTS.read_bytes()
 
 
+def test_read_only_agents_missions_have_a_terminal_completed_path() -> None:
+    agents = SWARM_AGENTS.read_text("utf-8")
+    routes = SWARM_ROUTES.read_text("utf-8")
+
+    assert "mission_complete: bool = False" in agents
+    assert "def _resolved_swarm_status(" in agents
+    assert 'return True, "COMPLETED"' in agents
+    assert "verdict.mission_complete = False" in agents
+    assert '{"BLOCKED", "READY_FOR_DRAFT_PR", "COMPLETED"}' in routes
+    assert '"NO_FURTHER_ACTION_REQUIRED"' in routes
+    assert 'final_state["status"] in {"READY_FOR_DRAFT_PR", "COMPLETED"}' in routes
+
+
 def test_controller_board_is_registered_in_the_real_backend() -> None:
     controller = CONTROLLER.read_text("utf-8")
     app = APP.read_text("utf-8")

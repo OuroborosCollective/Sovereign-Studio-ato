@@ -168,24 +168,31 @@ def execute_persisted_swarm(
             )
         )
         final_status = str(result.get("status") or "BLOCKED")
-        if final_status not in {"BLOCKED", "READY_FOR_DRAFT_PR"}:
+        if final_status not in {"BLOCKED", "READY_FOR_DRAFT_PR", "COMPLETED"}:
             final_status = "BLOCKED"
         ready = final_status == "READY_FOR_DRAFT_PR" and bool(result.get("ok"))
+        completed = final_status == "COMPLETED" and bool(result.get("ok"))
+        accepted = ready or completed
         reason = (
             "Judge accepted the supplied evidence for Draft PR readiness."
             if ready
+            else "Judge completed the evidence-only mission without repository changes."
+            if completed
             else str(result.get("blocker") or "Required runtime evidence or protected configuration is missing.")
         )
         next_action = (
             "CREATE_DRAFT_PR_AFTER_OWNER_APPROVAL"
             if ready
+            else "NO_FURTHER_ACTION_REQUIRED"
+            if completed
             else "PROVIDE_MISSING_EVIDENCE_OR_PROTECTED_CONFIGURATION"
         )
         final_verdict = result.get("finalVerdict") if isinstance(result.get("finalVerdict"), dict) else {}
         approval_required = ready and bool(final_verdict.get("human_approval_required", True))
         evidence_payload = {
             "resultStatus": final_status,
-            "ok": ready,
+            "ok": accepted,
+            "missionCompleted": completed,
             "activeSpecialists": int(result.get("activeSpecialists") or 0),
             "manifestSchema": int((result.get("manifest") or manifest).get("schema") or 0),
             "finalVerdictDigest": _digest_json(final_verdict),
@@ -310,7 +317,7 @@ def execute_persisted_swarm(
 
     status_code = (
         202 if final_state["status"] == "WAITING_FOR_OWNER"
-        else 200 if final_state["status"] == "READY_FOR_DRAFT_PR"
+        else 200 if final_state["status"] in {"READY_FOR_DRAFT_PR", "COMPLETED"}
         else 503
     )
     return ({

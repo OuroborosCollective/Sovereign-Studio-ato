@@ -255,7 +255,18 @@ class JudgeVerdict(BaseModel):
     rejected_claims: list[str]
     required_next_actions: list[str]
     draft_pr_ready: bool
+    mission_complete: bool = False
     human_approval_required: bool = True
+
+
+def _resolved_swarm_status(final_verdict: JudgeVerdict) -> tuple[bool, str]:
+    ready_for_draft_pr = final_verdict.draft_pr_ready and not final_verdict.blockers
+    read_only_complete = final_verdict.mission_complete and not final_verdict.blockers
+    if ready_for_draft_pr:
+        return True, "READY_FOR_DRAFT_PR"
+    if read_only_complete:
+        return True, "COMPLETED"
+    return False, "BLOCKED"
 
 
 class CognitiveSwarm:
@@ -371,7 +382,10 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
             "You are the final evidence controller. You never edit files and never perform a release. "
             "Reject unsupported worker claims. draft_pr_ready may be true only when all required evidence "
             "is supplied, all checks are green, no blocker remains, and the result is explicitly Draft-PR-only. "
-            "The first-loop verdict can never end the workflow; a second refinement loop is mandatory."
+            "For a read-only mission, mission_complete may be true when the requested analysis is satisfied, "
+            "no blocker remains, and no repository change is required. Do not block on evidence for your own "
+            "current response; the host records that stage afterward. The first-loop verdict can never end the "
+            "workflow; a second refinement loop is mandatory."
         ),
         output_type=JudgeVerdict,
     )
@@ -564,6 +578,7 @@ async def run_cognitive_swarm(
         verdict.loop = loop
         if loop == 1:
             verdict.draft_pr_ready = False
+            verdict.mission_complete = False
             if "mandatory_second_loop" not in verdict.required_next_actions:
                 verdict.required_next_actions.append("mandatory_second_loop")
         _emit_stage(
@@ -587,9 +602,11 @@ async def run_cognitive_swarm(
     if final_verdict is None:
         raise RuntimeError("The mandatory double loop did not produce a verdict.")
 
+    ok, final_status = _resolved_swarm_status(final_verdict)
+
     return {
-        "ok": final_verdict.draft_pr_ready and not final_verdict.blockers,
-        "status": "READY_FOR_DRAFT_PR" if final_verdict.draft_pr_ready and not final_verdict.blockers else "BLOCKED",
+        "ok": ok,
+        "status": final_status,
         "manifest": manifest_payload(),
         "plan": plan.model_dump(),
         "loops": loop_payloads,
