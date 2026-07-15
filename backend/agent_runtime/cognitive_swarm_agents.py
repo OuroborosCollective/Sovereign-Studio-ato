@@ -258,6 +258,18 @@ class JudgeVerdict(BaseModel):
     human_approval_required: bool = True
 
 
+_CONFIRMED_NULLFUND_VERDICTS: Final[frozenset[str]] = frozenset({
+    "healthy_nullfind",
+    "healthy_nullfund",
+    "nullfund_confirmed",
+})
+
+
+def _is_confirmed_nullfund(verdict: JudgeVerdict) -> bool:
+    normalized = verdict.verdict.strip().casefold().replace("-", "_").replace(" ", "_")
+    return normalized in _CONFIRMED_NULLFUND_VERDICTS
+
+
 class CognitiveSwarm:
     def __init__(
         self,
@@ -587,14 +599,24 @@ async def run_cognitive_swarm(
     if final_verdict is None:
         raise RuntimeError("The mandatory double loop did not produce a verdict.")
 
+    draft_pr_ready = final_verdict.draft_pr_ready and not final_verdict.blockers
+    nullfund_confirmed = _is_confirmed_nullfund(final_verdict)
+    final_status = (
+        "READY_FOR_DRAFT_PR"
+        if draft_pr_ready
+        else "COMPLETED"
+        if nullfund_confirmed
+        else "BLOCKED"
+    )
+
     return {
-        "ok": final_verdict.draft_pr_ready and not final_verdict.blockers,
-        "status": "READY_FOR_DRAFT_PR" if final_verdict.draft_pr_ready and not final_verdict.blockers else "BLOCKED",
+        "ok": final_status in {"READY_FOR_DRAFT_PR", "COMPLETED"},
+        "status": final_status,
         "manifest": manifest_payload(),
         "plan": plan.model_dump(),
         "loops": loop_payloads,
         "finalVerdict": final_verdict.model_dump(),
         "activeSpecialists": len(swarm.specialists),
-        "approvalRequired": True,
+        "approvalRequired": draft_pr_ready and final_verdict.human_approval_required,
         "autoMerge": False,
     }
