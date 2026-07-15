@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_installer_has_valid_bash_syntax() -> None:
+    result = subprocess.run(
+        ["bash", "-n", str(ROOT / "deploy" / "install-on-vps.sh")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_installer_assigns_workspace_to_container_user_and_probes_write_access() -> None:
@@ -31,8 +42,14 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ENABLE_MAIN_PUSH" in script
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
     assert "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL" in script
+    assert "SOVEREIGN_MCP_PRIVATE_OWNER_MODE" in script
+    assert 'PRIVATE_OWNER_MODE="1"' in script
+    assert 'set_value "$ENV_FILE" "$OWNER_CAPABILITY" "1"' in script
+    assert "SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS" in script
+    assert "SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS" in script
     assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
     assert "e2e-testing.yml" in script
+    assert "sovereign-backend-image.yml" in script
     assert "SOVEREIGN_MCP_ALLOWED_CONTAINERS" in script
     assert "gpt-browserless" in script
     assert "GITHUB_TOKEN" in script

@@ -10,6 +10,7 @@ from self_update import SelfUpdateRuntime
 
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
+WORKFLOW_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.ya?ml$")
 INPUT_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 ALLOWED_MERGE_METHODS = {"merge", "squash", "rebase"}
 SUCCESSFUL_CHECK_CONCLUSIONS = {"success", "neutral", "skipped"}
@@ -52,6 +53,7 @@ class GitHubAdminRuntime:
         self.token = os.getenv("GITHUB_TOKEN", "").strip()
         self.session = session or requests.Session()
         self.api_root = "https://api.github.com"
+        self.private_owner_mode = _enabled("SOVEREIGN_MCP_PRIVATE_OWNER_MODE")
         self.allowed_workflows = {
             item.strip()
             for item in os.getenv(
@@ -235,7 +237,9 @@ class GitHubAdminRuntime:
         if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):
             return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}
         selected = str(workflow or "").strip()
-        if selected not in self.allowed_workflows:
+        if not WORKFLOW_RE.fullmatch(selected):
+            raise ValueError("Workflow-Dateiname ist ungültig")
+        if selected not in self.allowed_workflows and not self.private_owner_mode:
             raise ValueError("Workflow ist nicht freigegeben")
         selected_ref = str(ref or "main").strip()
         if not REF_RE.fullmatch(selected_ref) or ".." in selected_ref:
