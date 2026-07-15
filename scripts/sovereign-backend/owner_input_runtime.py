@@ -22,19 +22,12 @@ ConnectionFactory = Callable[[], Any]
 DEFAULT_TTL_SECONDS = 900
 MAX_TTL_SECONDS = 3600
 MAX_COMMENT_CHARS = 1000
-DEFAULT_ROOT = Path("/opt/secure/owner-managed")
+DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
 DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
-    "openhands_api_key": {
-        "label": "OpenHands API-Zugang",
-        "fieldLabel": "OpenHands API-Key",
-        "path": "/opt/secure/owner-managed/openhands_api_key.txt",
-        "maxBytes": 8192,
-        "kind": "credential",
-    },
     "openai_api_key": {
         "label": "OpenAI Agents SDK",
         "fieldLabel": "OpenAI API-Key",
-        "path": "/opt/secure/owner-managed/openai_api_key.txt",
+        "path": "/opt/sovereign-owner-managed/openai_api_key.txt",
         "maxBytes": 8192,
         "kind": "credential",
     },
@@ -57,7 +50,6 @@ def _root() -> Path:
 
 def _target_map() -> dict[str, dict[str, Any]]:
     targets = {key: dict(value) for key, value in DEFAULT_TARGETS.items()}
-    targets["openhands_api_key"]["path"] = str(_root() / "openhands_api_key.txt")
     targets["openai_api_key"]["path"] = str(_root() / "openai_api_key.txt")
     configured = os.getenv("SOVEREIGN_OWNER_INPUT_TARGETS_JSON", "").strip()
     if configured:

@@ -246,7 +246,7 @@ jobs:
               echo "Owner-managed mount source is missing or unsafe: $OWNER_INPUT_ROOT" >&2
               exit 1
             fi
-            for network in supabase_default areloria_arelorian-network openhands-enterprise_default; do
+            for network in supabase_default areloria_arelorian-network; do
               if ! docker network inspect "$network" >/dev/null 2>&1; then
                 echo "Required Docker network is missing: $network" >&2
                 exit 1
@@ -268,7 +268,6 @@ jobs:
               -p 127.0.0.1:8788:8787 \
               "$IMAGE_TAG"
             docker network connect areloria_arelorian-network sovereign-backend
-            docker network connect openhands-enterprise_default sovereign-backend
 
             HEALTH=""
             for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
@@ -296,7 +295,6 @@ jobs:
                   -p 127.0.0.1:8788:8787 \
                   "$PREVIOUS_IMAGE"
                 docker network connect areloria_arelorian-network sovereign-backend
-                docker network connect openhands-enterprise_default sovereign-backend
               fi
               exit 1
             fi
@@ -313,7 +311,7 @@ jobs:
           command_timeout: 30m
           script: |
             set -eu
-            docker exec sovereign-backend python3 -c 'from app import app; routes = [r.rule for r in app.url_map.iter_rules() if "agent" in r.rule]; assert routes, "No agent routes registered"; print(f"Agent routes: {len(routes)}"); [print(f"  - {r}") for r in sorted(routes)]'
+            docker exec sovereign-backend python3 -c 'from app import app; rules={(r.rule, tuple(sorted(r.methods or ()))) for r in app.url_map.iter_rules()}; required={"/api/user/agent/swarm/manifest","/api/user/agent/swarm/run","/api/internal/controller/runs","/api/internal/controller/runs/<run_id>"}; present={rule for rule,_methods in rules}; missing=sorted(required-present); assert not missing, missing; start_methods=next(methods for rule,methods in rules if rule=="/api/internal/controller/runs"); assert "POST" in start_methods and "GET" in start_methods, start_methods; print({"agents_sdk_routes_verified": True, "required": sorted(required), "controller_methods": start_methods})'
 
   smoke-test:
     name: VPS Smoke Tests

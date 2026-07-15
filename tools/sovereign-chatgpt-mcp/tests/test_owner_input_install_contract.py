@@ -17,6 +17,7 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_input_client.py" in workflow
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
+    assert "controller_run_start" in workflow
     assert "controller_run_list" in workflow
     assert "controller_run_status" in workflow
     assert "controller_run_resume" in workflow
@@ -63,6 +64,17 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
 
 
+def test_backend_rollback_preserves_owner_managed_openai_key_mount() -> None:
+    rollback = (ROOT / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
+
+    assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in rollback
+    assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"' in rollback
+    assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in rollback
+    assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in rollback
+    assert '--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"' in rollback
+    assert "openhands-enterprise_default" not in rollback
+
+
 def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     server = (ROOT / "server.py").read_text("utf-8")
     client = (ROOT / "owner_input_client.py").read_text("utf-8")
@@ -72,7 +84,8 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "secret" not in signature.lower()
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
-    assert '"openhands_api_key": "OpenHands API-Key"' in client
+    assert "openhands_api_key" not in client
+    assert "OpenHands API-Key" not in client
     assert '"targetId": selected_target' in client
     assert "if selected_target not in ALLOWED_TARGETS" in client
     assert "owner_input.create_request(" in server
@@ -85,14 +98,18 @@ def test_controller_operator_tools_are_owner_scoped_and_secret_bounded() -> None
 
     assert "ControllerRuntimeClient" in server
     assert "controller_runtime = ControllerRuntimeClient()" in server
+    assert "def controller_run_start(" in server
     assert "def controller_run_list(" in server
     assert "def controller_run_status(" in server
     assert "def controller_run_resume(" in server
+    assert "controller_runtime.start_run(" in server
     assert "controller_runtime.list_runs(" in server
     assert "controller_runtime.run_status(" in server
     assert "controller_runtime.resume_run(" in server
     assert 'RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")' in client
+    assert "MAX_OPERATOR_MISSION = 20_000" in client
     assert "MAX_OPERATOR_EVIDENCE = 250_000" in client
     assert "Secret-förmige Evidence ist im Operator-Resume verboten" in client
+    assert '"/api/internal/controller/runs"' in client
     assert '"/api/internal/controller/runs/{selected}/resume"' in client
     assert "timeout=1200" in client

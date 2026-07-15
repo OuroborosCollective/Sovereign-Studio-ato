@@ -7,7 +7,6 @@
 # Networks:
 # - supabase_default: Network for PostgreSQL database access
 # - areloria_arelorian-network: Network for Areloria services
-# - openhands-enterprise_default: Network for OpenHands integration
 # =============================================================================
 
 services:
@@ -25,7 +24,6 @@ services:
     networks:
       - supabase_default
       - areloria_arelorian-network
-      - openhands-enterprise_default
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health')"]
       interval: 30s
@@ -37,6 +35,4 @@ networks:
   supabase_default:
     external: true
   areloria_arelorian-network:
-    external: true
-  openhands-enterprise_default:
     external: true

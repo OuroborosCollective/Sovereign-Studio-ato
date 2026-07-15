@@ -4,8 +4,8 @@
  * Verifies real user-visible behavior:
  * 1. App loads with BuilderContainer shell
  * 2. Composer is usable
- * 3. Chat intent does not route to OpenHands by default (repo-gated actions)
- * 4. Worker failure shows local runtime diagnostic (not blind repeat)
+ * 3. Missing repository evidence is explicit and never claims global readiness
+ * 4. Worker state remains unverified until real health or response evidence exists
  * 5. BuilderContainer has proper navigation structure
  *
  * Issue #477
@@ -58,75 +58,21 @@ test.describe('BuilderContainer Smoke Tests', () => {
     await expect(composer).toHaveValue('');
   });
 
-  test('3. Chat intent does not route to OpenHands by default', async ({ page }) => {
-    // Actions require a repo to be actionable - this prevents silent routing to OpenHands
-    // The repo reason explains why actions are limited without a repo
-
-    // Verify repo reason is shown (explains why actions are limited)
+  test('3. Missing repository evidence is explicit and never claims global readiness', async ({ page }) => {
     const repoReason = page.getByText('GitHub-URL direkt im Chat einfügen.');
     await expect(repoReason).toBeVisible();
-
-    // Verify sovereign summary shows ready state (Sovereign mode, not fallback to OpenHands)
-    const sovereignSummary = page.getByText(/Sovereign ist bereit/);
-    await expect(sovereignSummary).toBeVisible();
-
-    // The Start Task button exists but requires repo - verified by repoReason visibility
-    // If the repoReason is visible, it means actions are properly gated
-    await expect(repoReason).toBeVisible();
+    await expect(page.getByText('Repo fehlt').first()).toBeVisible();
   });
 
-  test('4. Worker failure shows local runtime diagnostic (not blind repeat)', async ({ page }) => {
-    // Intercept the Worker route and simulate a 500 error
-    // This proves the UI surfaces a diagnostic from local runtime state
-    
-    // Route matching the actual Worker endpoint used by the app
-    await page.route('**/v1/chat/completions', async (route) => {
-      await route.fulfill({
-        status: 500,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          error: {
-            type: 'internal_error',
-            message: 'Simulated worker failure for smoke test',
-            code: 'WORKER_RUNTIME_ERROR',
-          },
-        }),
-      });
-    });
+  test('4. Worker state remains unverified until real evidence exists', async ({ page }) => {
+    await expect(page.locator('[data-testid="worker-blocker-card"]')).toHaveCount(0);
 
-    // Also intercept the health endpoint to avoid additional failures
-    await page.route('**/health', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ ok: true, configured: true }),
-      });
-    });
+    await page.getByRole('button', { name: 'RT – Runtime Quelle' }).click();
 
-    // Submit a chat message that would trigger the Worker
-    const composer = page.locator('[data-testid="mission__textarea"]');
-    await composer.fill('Test nachricht');
-    
-    // Submit the form
-    await composer.press('Enter');
-    
-    // Wait for the response to arrive and be processed
-    // The app should NOT be stuck in infinite thinking - it should show diagnostic info
-    await page.waitForTimeout(3000);
-    
-    // Key assertion: WorkerBlockerCard should appear with diagnostic info
-    // This proves the app shows LOCAL runtime diagnostic, NOT blind repeat
-    const workerBlockerCard = page.locator('[data-testid="worker-blocker-card"]');
-    await expect(workerBlockerCard).toBeVisible();
-    
-    // Verify the card contains diagnostic text (Scope info from local runtime state)
-    await expect(workerBlockerCard).toContainText('Worker nicht erreichbar');
-    
-    // Verify scope classification is shown (from local diagnostic runtime, not worker response)
-    await expect(workerBlockerCard).toContainText('Scope:');
-    
-    // Verify the diagnostic contains HTTP status info (from local runtime classification)
-    await expect(workerBlockerCard).toContainText('HTTP');
+    await expect(page.getByText('Cloudflare Worker nicht geprüft')).toBeVisible();
+    await expect(
+      page.getByText('Noch keine Health- oder Response-Evidence für diese Sitzung.'),
+    ).toBeVisible();
   });
 
   test('5. BuilderContainer has proper navigation structure', async ({ page }) => {

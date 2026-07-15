@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import errno
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -17,6 +20,28 @@ def test_installer_and_updater_have_valid_bash_syntax() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+def test_env_update_falls_back_when_atomic_replace_is_not_permitted(tmp_path, monkeypatch) -> None:
+    script = INSTALLER.read_text("utf-8")
+    marker = 'python3 - "$file" "$key" "$value" <<\'PY\'\n'
+    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
+    target = tmp_path / ".env"
+    target.write_text("ALPHA=old\nOTHER=kept\n", "utf-8")
+    original_replace = Path.replace
+
+    def deny_atomic_replace(self: Path, destination: Path) -> Path:
+        if self.name == ".env.tmp":
+            raise OSError(errno.EPERM, "operation not permitted")
+        return original_replace(self, destination)
+
+    monkeypatch.setattr(Path, "replace", deny_atomic_replace)
+    monkeypatch.setattr(sys, "argv", ["set-value", str(target), "ALPHA", "new"])
+    exec(compile(embedded, "embedded-set-value", "exec"), {})
+
+    assert target.read_text("utf-8") == "ALPHA=new\nOTHER=kept\n"
+    assert os.stat(target).st_mode & 0o777 == 0o600
+    assert not target.with_suffix(".env.tmp").exists()
 
 
 def test_compose_preflight_runs_before_host_control_plane_restart() -> None:

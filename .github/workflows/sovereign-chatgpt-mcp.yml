@@ -170,6 +170,7 @@ jobs:
               'mcp_host_command_status',
               'owner_approval_request_create',
               'owner_approval_request_status',
+              'controller_run_start',
               'controller_run_list',
               'controller_run_status',
               'controller_run_resume',
@@ -524,7 +525,7 @@ jobs:
             BROKER_RPC_STATE=ready
             run_root docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
             MCP_PROTOCOL_STATE=ready
-            run_root docker exec sovereign-chatgpt-mcp python -c "import server; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status','controller_run_list','controller_run_status','controller_run_resume'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; tool_names={tool.name for tool in server.mcp._tool_manager.list_tools()}; resource_uris={str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}; assert 'sovereign_cognitive_architecture_status' in tool_names, tool_names; assert 'ui://sovereign/dev_dashboard.html' in resource_uris, resource_uris; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; canary=server.broker.call('host_worker_canary', {}, timeout=10); assert canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN', canary; print({'tool_contract': True, 'cognitive_widget': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True, 'inbound_mutation_forbidden': True})"
+            run_root docker exec sovereign-chatgpt-mcp python -c "import server; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status','controller_run_start','controller_run_list','controller_run_status','controller_run_resume'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; tool_names={tool.name for tool in server.mcp._tool_manager.list_tools()}; resource_uris={str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}; assert 'sovereign_cognitive_architecture_status' in tool_names, tool_names; assert 'ui://sovereign/dev_dashboard.html' in resource_uris, resource_uris; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; canary=server.broker.call('host_worker_canary', {}, timeout=10); assert canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN', canary; print({'tool_contract': True, 'cognitive_widget': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True, 'inbound_mutation_forbidden': True})"
             INBOUND_MUTATION_STATE=forbidden
             COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"
             BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"

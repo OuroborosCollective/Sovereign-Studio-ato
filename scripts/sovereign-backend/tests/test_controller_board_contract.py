@@ -40,6 +40,7 @@ def test_controller_board_is_registered_in_the_real_backend() -> None:
     assert '@app.route("/api/controller/overview", methods=["GET"])' in controller
     assert '@app.route("/api/controller/github", methods=["GET"])' in controller
     assert '@app.route("/api/internal/controller/runs", methods=["GET"])' in controller
+    assert '@app.route("/api/internal/controller/runs", methods=["POST"])' in controller
     assert '@app.route("/api/internal/controller/runs/<run_id>", methods=["GET"])' in controller
     assert '@app.route("/api/internal/controller/runs/<run_id>/resume", methods=["POST"])' in controller
 
@@ -65,10 +66,12 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert 'os.getenv("SOVEREIGN_OWNER_ADMIN_ID"' in controller
     assert 'os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL"' in controller
     assert "WHERE run_id=%s AND user_id=%s::uuid" in controller
+    assert "create_agent_run(" in controller
     assert "claim_agent_run_for_resume(" in controller
     assert "execute_persisted_swarm(" in controller
     assert '"operatorBridge": True' in controller
     assert '"protectedValuesReturned": False' in controller
+    assert "secret-shaped material is forbidden in operator input" in controller
     assert "secret-shaped material is forbidden in operator evidence" in controller
     assert "adminKey" not in controller.split('@app.route("/api/internal/controller/runs"', 1)[1].split('@app.route("/api/controller/overview"', 1)[0]
     assert "sovereign_session" not in controller

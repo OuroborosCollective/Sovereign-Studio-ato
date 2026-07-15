@@ -28,13 +28,15 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
 
     assert "from owner_input_runtime import register_owner_input_routes" in app
     assert "register_owner_input_routes(" in app
-    assert '"/opt/secure/owner-managed/openhands_api_key.txt"' in app
-    assert app.index('"/opt/secure/owner-managed/openhands_api_key.txt"') < app.index('"/opt/secure/openhands_api_key.txt"')
+    assert '"/opt/secure/owner-managed/openhands_api_key.txt"' not in app
+    assert '"/opt/secure/openhands_api_key.txt"' not in app
+    assert "OPENHANDS_API_URL" not in app
     assert "COPY owner_input_runtime.py ." in dockerfile
     owner_runtime = (ROOT / "owner_input_runtime.py").read_text("utf-8")
     swarm_agents = (ROOT / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
     swarm_routes = (ROOT / "agent_runtime" / "cognitive_swarm_routes.py").read_text("utf-8")
     assert '"openai_api_key"' in owner_runtime
+    assert '"openhands_api_key"' not in owner_runtime
     assert '"openai_api_key.txt"' in owner_runtime
     assert "SET status='expired', resolved_at=NOW(), result_code='expired'" in owner_runtime
     assert "ON CONFLICT (target_id) WHERE status IN ('pending','processing') DO NOTHING" in owner_runtime
@@ -65,3 +67,5 @@ def test_backend_deploy_keeps_global_secure_mount_read_only_and_only_owner_subdi
     assert 'if [ ! -d "$OWNER_INPUT_ROOT" ] || [ -L "$OWNER_INPUT_ROOT" ]; then' in workflow
     assert workflow.count('--volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw"') == 2
     assert workflow.count("--volume /opt/secure:/opt/secure:ro") == 2
+    assert "openhands-enterprise_default" not in workflow
+    assert "openhands-enterprise_default" not in deploy

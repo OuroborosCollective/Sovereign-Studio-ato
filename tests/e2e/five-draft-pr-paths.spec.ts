@@ -22,6 +22,13 @@ interface DraftPrEvidence {
 
 const evidence: DraftPrEvidence[] = [];
 
+test.use({
+  viewport: { width: 390, height: 844 },
+  trace: 'off',
+  screenshot: 'off',
+  video: 'off',
+});
+
 function assertLiveConfig(): void {
   const missing = [
     ['SOVEREIGN_E2E_ACCOUNT_KEY', ACCOUNT_KEY],
@@ -279,12 +286,6 @@ function instruction(pathId: string, emoji: string): { marker: string; text: str
 test.describe('real first-user UI reaches five verified Draft PRs', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(!LIVE_ENABLED, 'Live five-path Draft-PR validation runs only through the explicit protected workflow.');
-  test.use({
-    viewport: { width: 390, height: 844 },
-    trace: 'off',
-    screenshot: 'off',
-    video: 'off',
-  });
   test.setTimeout(240_000);
 
   test.beforeAll(() => assertLiveConfig());
