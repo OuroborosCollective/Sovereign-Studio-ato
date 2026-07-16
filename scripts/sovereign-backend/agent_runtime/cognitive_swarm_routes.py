@@ -25,7 +25,13 @@ from .cognitive_run_store import (
     request_agent_approval,
     transition_agent_run,
 )
-from .cognitive_swarm_agents import SwarmExecutionError, ensure_openai_runtime_key, run_cognitive_swarm
+from .cognitive_swarm_agents import (
+    ALLOWED_LITELLM_MODEL_ALIASES,
+    DEFAULT_MODEL,
+    SwarmExecutionError,
+    ensure_openai_runtime_key,
+    run_cognitive_swarm,
+)
 from .cognitive_swarm_manifest import manifest_payload
 
 
@@ -48,9 +54,10 @@ def _contains_secret_shaped_text(value: str) -> bool:
 
 
 def _allowed_models() -> frozenset[str]:
-    configured = os.getenv("SOVEREIGN_AGENTS_ALLOWED_MODELS", "gpt-5.4-mini")
+    configured = os.getenv("SOVEREIGN_AGENTS_ALLOWED_MODELS", DEFAULT_MODEL)
     values = frozenset(item.strip() for item in configured.split(",") if item.strip())
-    return values or frozenset({"gpt-5.4-mini"})
+    allowed = values & ALLOWED_LITELLM_MODEL_ALIASES
+    return allowed or frozenset({DEFAULT_MODEL})
 
 
 def _current_session_user_id() -> str:

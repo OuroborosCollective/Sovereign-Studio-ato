@@ -25,6 +25,9 @@ from .cognitive_swarm_manifest import (
 
 
 DEFAULT_MODEL: Final[str] = "sovereign-balanced"
+ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset(
+    {"sovereign-fast", "sovereign-balanced"}
+)
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
 RELEASE_HUNT_SKILL_PATH: Final[Path] = (
     Path(__file__).parent
@@ -230,7 +233,7 @@ def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionErr
     elif "maxturn" in lowered or "max_turn" in lowered:
         family, next_action, retryable = "AGENTS_TURN_LIMIT_EXHAUSTED", "REVIEW_AGENT_TURN_BUDGET", False
     elif "connection" in lowered or "network" in lowered:
-        family, next_action, retryable = "OPENAI_CONNECTION_FAILED", "RETRY_FROM_PERSISTED_RUN_STATE", True
+        family, next_action, retryable = "LITELLM_CONNECTION_FAILED", "RETRY_FROM_PERSISTED_RUN_STATE", True
     else:
         family, next_action, retryable = "AGENTS_SDK_EXECUTION_FAILED", "INSPECT_BOUNDED_SDK_FAILURE_EVIDENCE", True
     return SwarmExecutionError(
@@ -384,10 +387,12 @@ def _base_instructions(skill: str) -> str:
 
 
 def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
-    agent_class, _ = _require_agents_sdk()
     selected_model = (model or os.getenv("SOVEREIGN_AGENTS_MODEL") or DEFAULT_MODEL).strip()
     if not selected_model:
         raise ValueError("A model identifier is required.")
+    if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
+        raise ValueError("A Sovereign LiteLLM model alias is required.")
+    agent_class, _ = _require_agents_sdk()
 
     skill = _load_skill_instructions()
     base = _base_instructions(skill)
